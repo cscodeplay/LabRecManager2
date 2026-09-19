@@ -1151,9 +1151,40 @@ export default function ImplementationPlansPage() {
                                 <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300 mb-1">
                                     Results & Outcomes
                                 </h4>
-                                <p className="text-xs text-emerald-950 dark:text-emerald-200 leading-relaxed">
+                                <p className="text-xs text-emerald-950 dark:text-emerald-200 leading-relaxed whitespace-pre-line">
                                     {showViewModal.outcomes}
                                 </p>
+                            </div>
+                        )}
+
+                        {showViewModal.metadata && Object.keys(showViewModal.metadata).length > 0 && (
+                            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-800 space-y-2.5">
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                    <Layers className="w-3.5 h-3.5 text-blue-500" />
+                                    Architecture & Pillar Specifications
+                                </h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                                    {Object.entries(showViewModal.metadata).map(([key, val]) => (
+                                        <div key={key} className="bg-white dark:bg-slate-950 p-2.5 rounded-lg border border-slate-200/60 dark:border-slate-800">
+                                            <span className="font-semibold text-slate-700 dark:text-slate-300 capitalize block mb-1 text-[11px] uppercase tracking-wider">
+                                                {key.replace(/_/g, ' ')}
+                                            </span>
+                                            {Array.isArray(val) ? (
+                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                    {val.map((item, i) => (
+                                                        <span key={i} className="inline-flex items-center px-2 py-0.5 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50 rounded-md text-[11px]">
+                                                            {item}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <span className="text-slate-600 dark:text-slate-400 text-xs">
+                                                    {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+                                                </span>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
 

@@ -348,6 +348,64 @@ async function initTables() {
                 }
                 console.log('Seeded initial implementation plans successfully.');
             }
+
+            // Ensure Next Build Ultimate AIM plan exists
+            const nextBuildCheck = await prisma.$queryRawUnsafe(`
+                SELECT id FROM "implementation_plans" WHERE title ILIKE '%Ultimate AIM%' LIMIT 1
+            `);
+            if (!nextBuildCheck || nextBuildCheck.length === 0) {
+                console.log('Inserting Next Build Ultimate AIM implementation plan...');
+                const ultimateAimTasks = JSON.stringify([
+                    { id: 'qp-1', title: 'Architect 2D Interactive Blueprint Matrix (units/chapters vs 1m, 2m, 3m, 4m case-study, 5m questions with auto-tallying total marks)', completed: false, duration_minutes: 180 },
+                    { id: 'qp-2', title: 'Implement dynamic annual pattern presets (CBSE, ICSE, State Boards, custom school exam schemes with section-level internal "OR" choices)', completed: false, duration_minutes: 120 },
+                    { id: 'qp-3', title: 'Build syllabus & curriculum source ingestion (upload textbook PDF, syllabus doc, past papers with OCR parsing)', completed: false, duration_minutes: 150 },
+                    { id: 'qp-4', title: 'Engine dual-document generation: Student Exam Paper + Teacher Scoring Rubric & Step-by-Step Answer Key', completed: false, duration_minutes: 180 },
+                    { id: 'qp-5', title: 'Implement export to print-ready PDF with school letterhead, watermark, and 1-click cloud sync to 5TB Google Drive', completed: false, duration_minutes: 90 },
+                    { id: 'lp-1', title: 'Build period duration pacing calculator (30m, 35m, 40m, 45m, 80m block periods) with automatic minute allocation per phase', completed: false, duration_minutes: 120 },
+                    { id: 'lp-2', title: 'Implement pedagogy instructional frameworks selector (5E Model, Bloom\'s Taxonomy Mastery, Hands-on Lab Discovery, Problem-Based Learning)', completed: false, duration_minutes: 150 },
+                    { id: 'lp-3', title: 'Create comprehensive Classroom Pack generator: Lesson overview, blackboard/smart panel layout, teacher discussion prompts, and exit slips', completed: false, duration_minutes: 140 },
+                    { id: 'lp-4', title: 'Integrate multi-tier student differentiation engine (remedial scaffolds for struggling learners & advanced extension challenges for fast learners)', completed: false, duration_minutes: 120 },
+                    { id: 'sp-1', title: 'Develop touch-first high-contrast fullscreen IFPD presentation mode (optimized for 65", 75", 86" smart panels with pen overlay)', completed: false, duration_minutes: 200 },
+                    { id: 'sp-2', title: 'Build step-by-step interactive visual tracer (code execution, loop iterations, flowchart paths, math derivations with touch "Next Step" button)', completed: false, duration_minutes: 240 },
+                    { id: 'sp-3', title: 'Create clickable smart charts & concept maps engine (dynamic Mermaid.js, SVG flowcharts, expandable mind-maps)', completed: false, duration_minutes: 160 },
+                    { id: 'sp-4', title: 'Implement live student quick-poll / exit ticket system via QR code or short PIN with instant real-time response charts on smart panel', completed: false, duration_minutes: 210 },
+                    { id: 'sp-5', title: 'Add 1-click smart panel whiteboard snapshot capture with auto-export to student portal and class Google Drive folder', completed: false, duration_minutes: 90 },
+                    { id: 'ai-1', title: 'Set up multi-provider AI model router (Groq Llama 3.3 for high-speed text, Gemini 2.0 Flash for multimodal vision/PDF OCR, image/audio utilities)', completed: false, duration_minutes: 150 },
+                    { id: 'ai-2', title: 'Implement prompt template management and persistent teacher preset library for recurring department workflows', completed: false, duration_minutes: 100 }
+                ]);
+                const ultimateAimMeta = JSON.stringify({
+                    target_build: 'v2.0 (Ultimate AIM)',
+                    architecture: 'Next.js 14 App Router + Express Node.js + PostgreSQL Neon + Multi-LLM Orchestration',
+                    pillars: [
+                        'Dynamic Question Paper & Yearly Blueprint Engine',
+                        'Time-Aware & Pedagogy-Driven Lesson Planner',
+                        'Smart Panel Interactive Classroom Studio (IFPD 65"-86")',
+                        'Multimodal In-House AI Utilities'
+                    ],
+                    target_panels: ['65" 4K UHD', '75" 4K UHD', '86" 4K UHD Smart Panels'],
+                    board_standards: ['CBSE', 'ICSE', 'State Boards', 'Custom School Exams'],
+                    pedagogy_models: ['5E Model (Engage-Explore-Explain-Elaborate-Evaluate)', 'Bloom\'s Taxonomy Mastery', 'Hands-on Lab Discovery', 'Problem-Based Learning'],
+                    storage_sync: 'Google Drive 5TB Storage + Local Documents Vault'
+                });
+                await prisma.$executeRawUnsafe(`
+                    INSERT INTO "implementation_plans" (
+                        "title", "description", "category", "status",
+                        "started_at", "tasks", "outcomes", "metadata"
+                    ) VALUES (
+                        $1, $2, $3, $4,
+                        CURRENT_TIMESTAMP, $5::jsonb, $6, $7::jsonb
+                    )
+                `, 
+                    'Next Build: In-House AI Teaching & Classroom Management Suite (Ultimate AIM)',
+                    'All-in-one in-house AI-powered teaching, curriculum management, and classroom interactive suite leveraging multimodal LLM/vision/audio APIs. Empowers educators to complete daily prep in minimum time across three core pillars: (1) Dynamic Question Paper & Yearly Blueprint Engine with flexible chapter/unit weightage and multi-mark classification, (2) Time-Aware & Pedagogy-Driven Lesson Planner adapting to class durations (30/35/40/45/80 min) across 5E/Bloom\'s/Hands-on models, and (3) Smart Panel Interactive Classroom Studio (IFPD 65"-86") featuring step-by-step code/concept visual tracers, clickable smart charts, real-time student quick-polls via QR/PIN, and whiteboard sync.',
+                    'Curriculum & AI Studio',
+                    'in_progress',
+                    ultimateAimTasks,
+                    '1. Zero-friction creation of annual exam blueprints and balanced question papers with complete marking schemes and solution keys.\n2. Tailored, minute-by-minute lesson plans matching exact school period timings with pedagogy models and differentiation strategies.\n3. Active touch-first student engagement on 65"-86" Smart Interactive Flat Panels (IFPD) with real-time feedback and automatic Google Drive/Portal synchronization.\n4. Comprehensive multi-utility AI toolkit (text, image, OCR, document extraction) cutting daily teacher administration time by 80%.',
+                    ultimateAimMeta
+                );
+                console.log('Next Build Ultimate AIM plan seeded.');
+            }
             console.log('implementation_plans table verified successfully.');
         } catch (planErr) {
             console.warn('Implementation plans table init notice:', planErr.message);
