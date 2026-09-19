@@ -14,26 +14,127 @@ const upload = multer({
     limits: { fileSize: 50 * 1024 * 1024 } // 50MB
 });
 
-// Require authentication for all Google Drive routes
+function getClientBaseUrl(req) {
+    const host = req.get('host') || '';
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+        return 'http://localhost:3000';
+    }
+    return process.env.CLIENT_URL || 'http://localhost:3000';
+}
+
+function getCallbackUrl(req) {
+    if (process.env.GOOGLE_REDIRECT_URI) return process.env.GOOGLE_REDIRECT_URI;
+    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    return `${protocol}://${req.get('host')}/api/drive/auth/callback`;
+}
+
+/**
+ * @route   GET /api/drive/auth/callback
+ * @desc    OAuth 2.0 redirect callback endpoint from Google consent screen
+ * @access  Public (browser redirect from Google)
+ */
+router.get('/auth/callback', asyncHandler(async (req, res) => {
+    const { code, error } = req.query;
+    const clientBase = getClientBaseUrl(req);
+
+    if (error) {
+        console.warn('[GoogleDrive OAuth Callback Error from Google]:', error);
+        return res.redirect(`${clientBase}/documents?tab=drive&oauth=error&message=${encodeURIComponent(error)}`);
+    }
+
+    if (!code) {
+        return res.redirect(`${clientBase}/documents?tab=drive&oauth=error&message=No+authorization+code+provided`);
+    }
+
+    try {
+        const callbackUrl = getCallbackUrl(req);
+        await googleDriveService.handleOAuthCallback(code, callbackUrl);
+        return res.redirect(`${clientBase}/documents?tab=drive&oauth=success`);
+    } catch (err) {
+        console.error('[GoogleDrive OAuth Callback Exchange Error]:', err.message);
+        return res.redirect(`${clientBase}/documents?tab=drive&oauth=error&message=${encodeURIComponent(err.message)}`);
+    }
+}));
+
+// Require authentication for all protected Google Drive routes below
 router.use(authenticate);
 
 /**
  * @route   GET /api/drive/status
- * @desc    Check Google Drive integration status
+ * @desc    Check Google Drive integration status, auth mode, and storage quota
  */
-router.get('/status', (req, res) => {
+router.get('/status', asyncHandler(async (req, res) => {
+    const quotaData = await googleDriveService.getStorageQuota();
+    const oauthConfig = googleDriveService.getOAuthConfig();
+
     res.json({
         success: true,
         data: {
             isConfigured: googleDriveService.isConfigured(),
+            authType: googleDriveService.authType,
+            isOAuthConnected: googleDriveService.authType === 'oauth_user',
+            hasOAuthConfig: Boolean(oauthConfig.clientId && oauthConfig.clientSecret),
+            clientId: oauthConfig.clientId ? `${oauthConfig.clientId.substring(0, 16)}...` : null,
+            user: quotaData.user || null,
+            quota: quotaData.quota || null,
             folderId: googleDriveService.folderId,
             serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || null,
             ulrmsFolderUrl: 'https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp',
             ulrmsFilesFolderUrl: 'https://drive.google.com/drive/folders/1R6SmhanodL-ghLTOoBhX_EgQ5Farf853',
-            storageNotice: 'Google Service Accounts have a 0-byte quota for creating files in personal @gmail.com folders. Files placed directly in the ULRMS Google Drive folder are immediately readable, searchable, and usable by the AI chatbot and document manager.'
+            storageNotice: googleDriveService.authType === 'oauth_user'
+                ? `Connected to personal Google Drive (${quotaData.user?.emailAddress || 'User'}). 5 TB storage quota active.`
+                : 'Google Service Accounts have a 0-byte quota for creating files in personal @gmail.com folders. Connect your personal Google account via OAuth 2.0 to upload directly using your 5 TB storage plan.'
         }
     });
-});
+}));
+
+/**
+ * @route   GET /api/drive/auth/url
+ * @desc    Generate Google OAuth consent URL for user authorization
+ */
+router.get('/auth/url', asyncHandler(async (req, res) => {
+    const callbackUrl = getCallbackUrl(req);
+    const authUrl = googleDriveService.generateAuthUrl(callbackUrl);
+    res.json({
+        success: true,
+        data: {
+            authUrl,
+            callbackUrl
+        }
+    });
+}));
+
+/**
+ * @route   POST /api/drive/auth/config
+ * @desc    Save OAuth 2.0 Client ID and Secret (allows setup from UI)
+ */
+router.post('/auth/config', asyncHandler(async (req, res) => {
+    const { clientId, clientSecret, redirectUri } = req.body;
+    if (!clientId || !clientSecret) {
+        return res.status(400).json({ success: false, message: 'Both Client ID and Client Secret are required' });
+    }
+    const saved = googleDriveService.saveOAuthConfig({ clientId, clientSecret, redirectUri });
+    res.json({
+        success: true,
+        message: 'Google OAuth client credentials saved successfully',
+        data: {
+            hasOAuthConfig: Boolean(saved.clientId && saved.clientSecret),
+            clientId: saved.clientId ? `${saved.clientId.substring(0, 16)}...` : null
+        }
+    });
+}));
+
+/**
+ * @route   POST /api/drive/auth/disconnect
+ * @desc    Disconnect Google OAuth account
+ */
+router.post('/auth/disconnect', asyncHandler(async (req, res) => {
+    googleDriveService.disconnectOAuth();
+    res.json({
+        success: true,
+        message: 'Google OAuth account disconnected. Reverted to standard configuration.'
+    });
+}));
 
 /**
  * @route   GET /api/drive/files

@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     HardDrive, Folder, FileText, FileSpreadsheet, File, Search, RefreshCw,
     Download, Eye, ExternalLink, ChevronRight, CornerUpLeft, Grid3X3, List,
-    FolderPlus, Loader2, Check, AlertCircle, X, Clock, Database, Sparkles
+    FolderPlus, Loader2, Check, AlertCircle, X, Clock, Database, Sparkles,
+    Upload, LogOut, Settings, Key, ShieldCheck, User
 } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { googleDriveAPI } from '@/lib/api';
@@ -24,14 +25,28 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const [previewContent, setPreviewContent] = useState(null);
     const [previewLoading, setPreviewLoading] = useState(false);
 
+    // OAuth & Direct Upload state
+    const [connectingOAuth, setConnectingOAuth] = useState(false);
+    const [showOAuthConfigModal, setShowOAuthConfigModal] = useState(false);
+    const [oauthClientIdInput, setOauthClientIdInput] = useState('');
+    const [oauthClientSecretInput, setOauthClientSecretInput] = useState('');
+    const [savingConfig, setSavingConfig] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const fileUploadRef = useRef(null);
+
     // Fetch integration status
-    useEffect(() => {
-        googleDriveAPI.getStatus()
-            .then(res => {
-                setStatus(res.data?.data || null);
-            })
-            .catch(() => setStatus({ isConfigured: false }));
+    const refreshStatus = useCallback(async () => {
+        try {
+            const res = await googleDriveAPI.getStatus();
+            setStatus(res.data?.data || null);
+        } catch (err) {
+            setStatus({ isConfigured: false });
+        }
     }, []);
+
+    useEffect(() => {
+        refreshStatus();
+    }, [refreshStatus]);
 
     // Load files for current folder / search
     const fetchFiles = useCallback(async () => {
@@ -55,6 +70,117 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     useEffect(() => {
         fetchFiles();
     }, [fetchFiles]);
+
+    // Handle OAuth redirect return status in query params
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const urlParams = new URLSearchParams(window.location.search);
+        const oauthStatus = urlParams.get('oauth');
+        const oauthMessage = urlParams.get('message');
+
+        if (oauthStatus === 'success') {
+            toast.success('Successfully connected to 5TB Google Drive!');
+            refreshStatus();
+            fetchFiles();
+            urlParams.delete('oauth');
+            urlParams.delete('message');
+            const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+            window.history.replaceState({}, '', newUrl);
+        } else if (oauthStatus === 'error') {
+            toast.error(`Google Drive connection error: ${oauthMessage || 'Authorization failed'}`);
+            urlParams.delete('oauth');
+            urlParams.delete('message');
+            const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+            window.history.replaceState({}, '', newUrl);
+        }
+    }, [fetchFiles, refreshStatus]);
+
+    // Connect Personal Google Drive via OAuth 2.0
+    const handleConnectOAuth = async () => {
+        setConnectingOAuth(true);
+        try {
+            const res = await googleDriveAPI.getAuthUrl();
+            if (res.data?.data?.authUrl) {
+                window.location.href = res.data.data.authUrl;
+            } else {
+                setShowOAuthConfigModal(true);
+            }
+        } catch (err) {
+            // If OAuth credentials not yet configured on server, open modal
+            setShowOAuthConfigModal(true);
+        } finally {
+            setConnectingOAuth(false);
+        }
+    };
+
+    // Save Client ID / Secret from modal and trigger OAuth
+    const handleSaveOAuthConfig = async (e) => {
+        e?.preventDefault();
+        if (!oauthClientIdInput.trim() || !oauthClientSecretInput.trim()) {
+            toast.error('Please enter both Client ID and Client Secret');
+            return;
+        }
+        setSavingConfig(true);
+        try {
+            await googleDriveAPI.saveOAuthConfig({
+                clientId: oauthClientIdInput.trim(),
+                clientSecret: oauthClientSecretInput.trim()
+            });
+            toast.success('Credentials saved! Redirecting to Google authorization...');
+            setShowOAuthConfigModal(false);
+            const res = await googleDriveAPI.getAuthUrl();
+            if (res.data?.data?.authUrl) {
+                window.location.href = res.data.data.authUrl;
+            }
+        } catch (err) {
+            console.error('Failed to save OAuth config:', err);
+            toast.error(err.response?.data?.message || 'Failed to save credentials');
+        } finally {
+            setSavingConfig(false);
+        }
+    };
+
+    // Disconnect OAuth
+    const handleDisconnectOAuth = async () => {
+        if (!window.confirm('Disconnect your personal Google account?')) return;
+        try {
+            await googleDriveAPI.disconnect();
+            toast.success('Google account disconnected');
+            refreshStatus();
+            fetchFiles();
+        } catch (err) {
+            toast.error('Failed to disconnect Google account');
+        }
+    };
+
+    // Direct Upload to current Google Drive folder
+    const handleDirectUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploading(true);
+        const toastId = toast.loading(`Uploading "${file.name}" to Google Drive...`);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            if (currentFolderId && currentFolderId !== 'root') {
+                formData.append('folderId', currentFolderId);
+            }
+            const res = await googleDriveAPI.upload(formData);
+            if (res.data?.isLiveGoogleDrive) {
+                toast.success(`"${file.name}" uploaded directly to your 5TB Google Drive!`, { id: toastId });
+            } else {
+                toast.success(`"${file.name}" uploaded to Google Drive sync!`, { id: toastId });
+            }
+            fetchFiles();
+            refreshStatus();
+        } catch (err) {
+            console.error('Upload failed:', err);
+            toast.error(err.response?.data?.message || 'Failed to upload file', { id: toastId });
+        } finally {
+            setUploading(false);
+            if (fileUploadRef.current) fileUploadRef.current.value = '';
+        }
+    };
 
     // Navigate into folder
     const handleOpenFolder = (folder) => {
@@ -153,35 +279,143 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
 
     return (
         <div className="space-y-4">
-            {/* Google Drive Status & Live Folder Link */}
-            <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-indigo-500/10 border border-emerald-200 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
-                        <HardDrive className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-slate-800">Connected to Google Drive</span>
-                            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                                <Check className="w-2.5 h-2.5" /> ULRMS Shared Folder
-                            </span>
+            {/* Hidden file input for direct uploads */}
+            <input
+                type="file"
+                ref={fileUploadRef}
+                onChange={handleDirectUpload}
+                className="hidden"
+            />
+
+            {/* Google Drive Status & 5TB Quota Banner */}
+            {status?.isOAuthConnected ? (
+                <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-200 rounded-2xl p-4 shadow-xs">
+                    <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+                        {/* Account & Status Details */}
+                        <div className="flex items-start gap-3 min-w-0">
+                            {status.user?.photoLink ? (
+                                /* eslint-disable-next-line @next/next/no-img-element */
+                                <img
+                                    src={status.user.photoLink}
+                                    alt="User"
+                                    className="w-10 h-10 rounded-full border-2 border-emerald-500 flex-shrink-0 shadow-xs object-cover"
+                                />
+                            ) : (
+                                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                                    <HardDrive className="w-5 h-5" />
+                                </div>
+                            )}
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-slate-800 text-sm">Personal Google Drive</span>
+                                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
+                                        <Check className="w-2.5 h-2.5" /> 5 TB Google One AI Pro Active
+                                    </span>
+                                </div>
+                                <p className="text-slate-600 text-xs mt-0.5 font-medium flex items-center gap-1.5 flex-wrap">
+                                    <span>{status.user?.emailAddress || 'Personal Google Account'}</span>
+                                    {status.user?.displayName && <span className="text-slate-400">• {status.user.displayName}</span>}
+                                </p>
+                            </div>
                         </div>
-                        <p className="text-slate-500 text-[11px] mt-0.5">
-                            Files placed in your <strong>ULRMS</strong> Google Drive folder appear here automatically. To add new documents, drop them into your folder on Google Drive.
-                        </p>
+
+                        {/* Storage Meter & Actions */}
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+                            {/* Storage Gauge */}
+                            <div className="bg-white/80 backdrop-blur-xs border border-emerald-200/80 rounded-xl px-3 py-2 text-xs flex flex-col justify-center min-w-[210px]">
+                                <div className="flex justify-between items-center text-[11px] mb-1">
+                                    <span className="font-semibold text-slate-700">Storage Used</span>
+                                    <span className="font-bold text-emerald-700">{status.quota?.percentUsed || 0}%</span>
+                                </div>
+                                <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mb-1">
+                                    <div
+                                        className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                                        style={{ width: `${Math.max(2, status.quota?.percentUsed || 0)}%` }}
+                                    />
+                                </div>
+                                <div className="flex justify-between items-center text-[10px] text-slate-500">
+                                    <span>{status.quota?.usageFormatted || '0 GB'} used</span>
+                                    <span>{status.quota?.limitFormatted || '5.0 TB'} total</span>
+                                </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                                <button
+                                    type="button"
+                                    onClick={() => fileUploadRef.current?.click()}
+                                    disabled={uploading}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition shadow-xs text-xs disabled:opacity-50"
+                                    title="Upload a file directly to Google Drive"
+                                >
+                                    <Upload className={`w-3.5 h-3.5 ${uploading ? 'animate-bounce' : ''}`} />
+                                    <span>{uploading ? 'Uploading...' : 'Upload File'}</span>
+                                </button>
+                                <a
+                                    href={currentFolderId ? `https://drive.google.com/drive/folders/${currentFolderId}` : "https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp"}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-semibold transition shadow-xs text-xs"
+                                    title="Open Google Drive folder in a new tab"
+                                >
+                                    <span>Drive</span>
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                </a>
+                                <button
+                                    type="button"
+                                    onClick={handleDisconnectOAuth}
+                                    className="p-2 rounded-xl bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 transition"
+                                    title="Disconnect Google account"
+                                >
+                                    <LogOut className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <a
-                    href={currentFolderId ? `https://drive.google.com/drive/folders/${currentFolderId}` : "https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp"}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition shadow-xs flex-shrink-0 text-xs"
-                    title="Open Google Drive folder in a new tab"
-                >
-                    <span>Open in Google Drive</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-            </div>
+            ) : (
+                <div className="bg-gradient-to-r from-indigo-50 via-purple-50 to-slate-50 border border-indigo-200 rounded-2xl p-4 shadow-xs">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                        <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                                <Sparkles className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-slate-800 text-sm">Connect 5TB Personal Google Account</span>
+                                    <span className="bg-amber-100 text-amber-800 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-amber-200">
+                                        Service Account (0 MB quota)
+                                    </span>
+                                </div>
+                                <p className="text-slate-600 text-[11px] mt-0.5">
+                                    Connect your <strong>@gmail.com</strong> account to unlock your full <strong>5 TB Google One AI Pro quota</strong>, upload files directly, and sync with iPhone Files app.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+                            <button
+                                type="button"
+                                onClick={handleConnectOAuth}
+                                disabled={connectingOAuth}
+                                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition shadow-xs text-xs disabled:opacity-50"
+                            >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                <span>{connectingOAuth ? 'Connecting...' : 'Connect 5TB Drive'}</span>
+                            </button>
+                            <a
+                                href={currentFolderId ? `https://drive.google.com/drive/folders/${currentFolderId}` : "https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp"}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-semibold transition shadow-xs text-xs"
+                                title="Open Google Drive folder in a new tab"
+                            >
+                                <span>Open Drive</span>
+                                <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Top Bar: Breadcrumbs, Destination Folder, View Controls */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -546,6 +780,86 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                 </pre>
                             )}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* OAuth Credentials Configuration Modal */}
+            {showOAuthConfigModal && (
+                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="px-5 py-4 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                                <Key className="w-5 h-5 text-indigo-200" />
+                                <div>
+                                    <h3 className="font-bold text-sm">Configure Google OAuth 2.0</h3>
+                                    <p className="text-[11px] text-indigo-100">Connect personal 5TB Google One account</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowOAuthConfigModal(false)}
+                                className="p-1 rounded-lg hover:bg-indigo-500/50 text-indigo-200 hover:text-white transition"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleSaveOAuthConfig} className="p-5 space-y-4 text-xs">
+                            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-slate-700 space-y-1.5">
+                                <p className="font-bold text-indigo-950 flex items-center gap-1.5">
+                                    <ShieldCheck className="w-4 h-4 text-indigo-600" /> Quick 2-Minute Google Cloud Setup:
+                                </p>
+                                <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-600 ml-1">
+                                    <li>Open <a href="https://console.cloud.google.com/apis/credentials?project=ulrms-481916" target="_blank" rel="noreferrer" className="text-indigo-600 font-bold underline">Google Cloud Credentials (ulrms-481916) ↗</a></li>
+                                    <li>Click <strong>+ CREATE CREDENTIALS</strong> &rarr; <strong>OAuth client ID</strong></li>
+                                    <li>Application type: <strong>Web application</strong></li>
+                                    <li>Add Authorized redirect URI: <code className="bg-white px-1.5 py-0.5 rounded border border-indigo-200 font-mono text-[10px] select-all">http://localhost:5001/api/drive/auth/callback</code></li>
+                                    <li>Paste the generated <strong>Client ID</strong> and <strong>Client Secret</strong> below:</li>
+                                </ol>
+                            </div>
+
+                            <div>
+                                <label className="block text-slate-700 font-bold mb-1">OAuth Client ID</label>
+                                <input
+                                    type="text"
+                                    value={oauthClientIdInput}
+                                    onChange={(e) => setOauthClientIdInput(e.target.value)}
+                                    placeholder="e.g. 1234567890-abcdef.apps.googleusercontent.com"
+                                    required
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-slate-700 font-bold mb-1">OAuth Client Secret</label>
+                                <input
+                                    type="password"
+                                    value={oauthClientSecretInput}
+                                    onChange={(e) => setOauthClientSecretInput(e.target.value)}
+                                    placeholder="GOCSPX-..."
+                                    required
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                                />
+                            </div>
+
+                            <div className="pt-2 flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowOAuthConfigModal(false)}
+                                    className="px-3.5 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={savingConfig}
+                                    className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-xs transition disabled:opacity-50 flex items-center gap-1.5"
+                                >
+                                    {savingConfig ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                                    <span>Save & Connect</span>
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

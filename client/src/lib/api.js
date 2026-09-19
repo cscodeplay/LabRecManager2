@@ -747,6 +747,9 @@ export const googleDriveAPI = {
         });
     },
     importToDocuments: (data) => api.post('/drive/import-to-documents', data),
+    getAuthUrl: () => api.get('/drive/auth/url'),
+    saveOAuthConfig: (data) => api.post('/drive/auth/config', data),
+    disconnect: () => api.post('/drive/auth/disconnect'),
 };
 
 
