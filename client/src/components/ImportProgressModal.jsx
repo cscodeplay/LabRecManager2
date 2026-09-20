@@ -4,7 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import {
     Loader2, CheckCircle2, XCircle, Clock,
     FolderPlus, RefreshCw, X, ArrowRight, FileText, Folder,
-    Minimize2, Maximize2, ChevronDown, ChevronUp, Layers, Check
+    Minimize2, Maximize2, ChevronDown, ChevronUp, Layers, Check, Zap
 } from 'lucide-react';
 
 function formatBytes(bytes) {
@@ -23,6 +23,7 @@ export default function ImportProgressModal({
     items = [],
     progress = 0,
     currentIndex = 0,
+    speed = '',
     onMinimize,
     onMaximize,
     onToggleDetails,
@@ -80,6 +81,12 @@ export default function ImportProgressModal({
                     </div>
 
                     <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                        {isImporting && speed && speed !== '—' && (
+                            <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-950/80 border border-amber-800/80 px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-xs animate-in fade-in duration-150">
+                                <Zap className="w-2.5 h-2.5 text-amber-400 fill-amber-400 animate-pulse" />
+                                <span>{speed}</span>
+                            </span>
+                        )}
                         <span className="text-[11px] font-mono font-bold text-emerald-300 bg-emerald-950/90 border border-emerald-800/80 px-2 py-0.5 rounded-md">
                             {progress}%
                         </span>
@@ -213,9 +220,17 @@ export default function ImportProgressModal({
                         <span className="text-slate-700 dark:text-slate-300">
                             {isCompleted ? 'Finished' : `Overall Progress (${progress}%)`}
                         </span>
-                        <span className="text-slate-500 font-mono text-[11px]">
-                            {successCount} succeeded {failedCount > 0 && `• ${failedCount} failed`}
-                        </span>
+                        <div className="flex items-center gap-2">
+                            {isImporting && speed && speed !== '—' && (
+                                <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800/50 font-mono text-[11px]">
+                                    <Zap className="w-3 h-3 fill-amber-500 text-amber-500 animate-pulse" />
+                                    <span>{speed}</span>
+                                </span>
+                            )}
+                            <span className="text-slate-500 font-mono text-[11px]">
+                                {successCount} succeeded {failedCount > 0 && `• ${failedCount} failed`}
+                            </span>
+                        </div>
                     </div>
                     <div className="w-full h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                         <div
@@ -247,7 +262,7 @@ export default function ImportProgressModal({
                         </div>
                         <div className="text-right flex-shrink-0">
                             <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                                {formatBytes(currentItem.size)}
+                                {formatBytes(currentItem.size)} {speed && speed !== '—' && `• ${speed}`}
                             </span>
                             {currentItem.folderName && (
                                 <span className="block text-[10px] text-amber-700 dark:text-amber-400 truncate max-w-[120px]">

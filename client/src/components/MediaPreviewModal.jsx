@@ -96,17 +96,25 @@ export default function MediaPreviewModal({
                     // Local document or direct URL
                     const res = await fetch(file.url);
                     if (!res.ok) throw new Error(`Could not fetch file: ${res.statusText}`);
-                    blob = await res.blob();
+                    const arrayBuffer = await res.arrayBuffer();
+                    let mime = file.mimeType || res.headers.get('content-type') || 'application/octet-stream';
+                    if (category === 'pdf' || (file.name || file.fileName || '').toLowerCase().endsWith('.pdf')) {
+                        mime = 'application/pdf';
+                    }
+                    blob = new Blob([arrayBuffer], { type: mime });
                 } else if (file.id) {
                     // Google Drive file
                     const res = await googleDriveAPI.downloadContent(file.id);
                     let blobType = file.mimeType || 'application/octet-stream';
-                    if (file.mimeType === 'application/vnd.google-apps.document') {
+                    if (category === 'pdf' || (file.name || file.fileName || '').toLowerCase().endsWith('.pdf')) {
+                        blobType = 'application/pdf';
+                    } else if (file.mimeType === 'application/vnd.google-apps.document') {
                         blobType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
                     } else if (file.mimeType === 'application/vnd.google-apps.spreadsheet') {
                         blobType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
                     }
-                    blob = new Blob([res.data], { type: blobType });
+                    const dataBuffer = res.data instanceof ArrayBuffer ? res.data : (res.data?.arrayBuffer ? await res.data.arrayBuffer() : res.data);
+                    blob = new Blob([dataBuffer], { type: blobType });
                 }
 
                 if (!isMounted || !blob) return;
@@ -361,24 +369,19 @@ export default function MediaPreviewModal({
                             /* Category Renderers */
                             <div className="w-full h-full flex flex-col">
                                 {/* PDF */}
-                                {category === 'pdf' && blobUrl && (
+                                {category === 'pdf' && (blobUrl || file.url) && (
                                     <div className="w-full h-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xs bg-white">
                                         <object
-                                            data={blobUrl}
+                                            data={blobUrl ? `${blobUrl}#toolbar=1&navpanes=0&scrollbar=1` : (file.url || '')}
                                             type="application/pdf"
                                             className="w-full h-full"
+                                            title={file.name || file.fileName || 'PDF Document Preview'}
                                         >
-                                            <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center">
-                                                <FileText className="w-12 h-12 text-slate-400 mb-2" />
-                                                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Unable to display PDF preview directly in browser.</p>
-                                                <a
-                                                    href={blobUrl}
-                                                    download={file.name || file.fileName || 'document.pdf'}
-                                                    className="mt-3 px-3.5 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition"
-                                                >
-                                                    Download PDF
-                                                </a>
-                                            </div>
+                                            <iframe
+                                                src={blobUrl ? `${blobUrl}#toolbar=1` : (file.url || '')}
+                                                className="w-full h-full border-0"
+                                                title={file.name || file.fileName || 'PDF Document Preview'}
+                                            />
                                         </object>
                                     </div>
                                 )}

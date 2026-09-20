@@ -120,7 +120,14 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(requestLogger);
 
 // Static files for uploads & RAG documents
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
+    setHeaders: (res, filePath) => {
+        if (filePath.toLowerCase().endsWith('.pdf')) {
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', 'inline');
+        }
+    }
+}));
 app.use('/RAG', express.static(path.join(__dirname, '../../RAG')));
 app.use('/RAG', express.static(path.join(__dirname, '../../client/public/RAG')));
 
