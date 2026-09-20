@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { ExternalLink, FileText, Download, Maximize, Minimize } from 'lucide-react';
 import HtmlPreview from '@/components/HtmlPreview';
 import PdfViewer from '@/components/PdfViewer';
+import FileViewer from '@/components/FileViewer';
 import { documentsAPI } from '@/lib/api';
 
 const FILE_ICONS = {
@@ -98,6 +99,16 @@ export default function ViewDocumentPage() {
                                     isFullscreen={isFullscreen}
                                 />
                             );
+                        } else if (['docx', 'doc', 'xlsx', 'xls', 'csv'].includes(type)) {
+                            return (
+                                <FileViewer
+                                    url={doc.url}
+                                    fileType={type}
+                                    name={doc.name}
+                                    documentId={doc.id}
+                                    className={isFullscreen ? 'h-full min-h-[calc(100vh-89px)]' : 'h-[80vh]'}
+                                />
+                            );
                         } else if (['ppt', 'pptx'].includes(type)) {
                             const fullUrl = doc.url.startsWith('http') ? doc.url : `${typeof window !== 'undefined' ? window.location.origin : ''}${doc.url}`;
                             return (
@@ -107,7 +118,7 @@ export default function ViewDocumentPage() {
                                     title="Document Preview"
                                 />
                             );
-                        } else if (['doc', 'docx', 'xls', 'xlsx', 'odp'].includes(type)) {
+                        } else if (['odp'].includes(type)) {
                             const fullUrl = doc.url.startsWith('http') ? doc.url : `${typeof window !== 'undefined' ? window.location.origin : ''}${doc.url}`;
                             return (
                                 <iframe

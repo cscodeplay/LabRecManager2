@@ -752,6 +752,7 @@ export const googleDriveAPI = {
     disconnect: () => api.post('/drive/auth/disconnect'),
     createFolder: (data) => api.post('/drive/folders', data),
     importBatch: (data) => api.post('/drive/import-batch', data),
+    exportFromDocuments: (data) => api.post('/drive/export-from-documents', data),
     getFolderStats: (id) => api.get(`/drive/folder-tree/${id}`),
     checkStorage: () => api.get('/drive/storage-check'),
 };

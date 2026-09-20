@@ -8,19 +8,21 @@ import {
     Presentation, Maximize2, AlertCircle, RefreshCw
 } from 'lucide-react';
 import * as xlsx from 'xlsx';
-import * as docx from 'docx-preview';
 import JSZip from 'jszip';
 import { googleDriveAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import SpreadsheetViewer from './SpreadsheetViewer';
+import DocxViewer from './DocxViewer';
 
 function detectFileCategory(file) {
-    const name = (file?.name || '').toLowerCase();
+    const name = (file?.name || file?.fileName || '').toLowerCase();
     const mime = (file?.mimeType || '').toLowerCase();
 
-    if (name.endsWith('.pdf') || mime.includes('pdf')) return 'pdf';
-    if (name.match(/\.(xlsx|xls|csv)$/) || mime.includes('spreadsheet') || mime.includes('csv')) return 'spreadsheet';
+    // Google Docs / Sheets / Slides
+    if (mime === 'application/vnd.google-apps.document' || name.endsWith('.pdf') || mime.includes('pdf')) return 'pdf';
+    if (mime === 'application/vnd.google-apps.spreadsheet' || name.match(/\.(xlsx|xls|csv)$/) || mime.includes('spreadsheet') || mime.includes('csv')) return 'spreadsheet';
+    if (mime === 'application/vnd.google-apps.presentation' || name.match(/\.(pptx|ppt)$/) || mime.includes('presentationml') || mime.includes('powerpoint')) return 'presentation';
     if (name.match(/\.(docx|doc)$/) || mime.includes('wordprocessingml') || mime.includes('msword')) return 'word';
-    if (name.match(/\.(pptx|ppt)$/) || mime.includes('presentationml') || mime.includes('powerpoint')) return 'presentation';
     if (name.match(/\.(png|jpg|jpeg|webp|gif|svg|bmp)$/) || mime.startsWith('image/')) return 'image';
     if (name.match(/\.(mp3|wav|ogg|m4a|aac|flac)$/) || mime.startsWith('audio/')) return 'audio';
     if (name.match(/\.(py|js|jsx|ts|tsx|html|css|json|sql|sh|c|cpp|java|php|rb|go|rs|md|yaml|yml|xml|env)$/)) return 'code';
@@ -52,12 +54,8 @@ export default function MediaPreviewModal({
     // Content specific states
     const category = detectFileCategory(file);
     const [textContent, setTextContent] = useState('');
-    const [sheets, setSheets] = useState([]);
-    const [activeSheet, setActiveSheet] = useState(0);
-    const [sheetSearch, setSheetSearch] = useState('');
     const [slides, setSlides] = useState([]);
     const [imageZoom, setImageZoom] = useState(1);
-    const docxContainerRef = useRef(null);
 
     // On-Demand AI Text Extraction
     const [extractedText, setExtractedText] = useState(null);
@@ -75,15 +73,25 @@ export default function MediaPreviewModal({
         let createdUrl = null;
 
         const loadContent = async () => {
-            if (!file?.id) return;
+            if (!file?.id && !file?.url) return;
             setLoading(true);
             setError(null);
 
             try {
-                const res = await googleDriveAPI.downloadContent(file.id);
-                if (!isMounted) return;
+                let blob = null;
+                if (file.url) {
+                    // Local document or direct URL
+                    const res = await fetch(file.url);
+                    if (!res.ok) throw new Error(`Could not fetch file: ${res.statusText}`);
+                    blob = await res.blob();
+                } else if (file.id) {
+                    // Google Drive file
+                    const res = await googleDriveAPI.downloadContent(file.id);
+                    blob = new Blob([res.data], { type: file.mimeType || 'application/octet-stream' });
+                }
 
-                const blob = new Blob([res.data], { type: file.mimeType || 'application/octet-stream' });
+                if (!isMounted || !blob) return;
+
                 setFileBlob(blob);
                 createdUrl = URL.createObjectURL(blob);
                 setBlobUrl(createdUrl);
@@ -92,21 +100,6 @@ export default function MediaPreviewModal({
                 if (category === 'text' || category === 'code') {
                     const text = await blob.text();
                     if (isMounted) setTextContent(text);
-                } else if (category === 'spreadsheet') {
-                    const buffer = await blob.arrayBuffer();
-                    let parsedSheets = [];
-                    if (file.name.toLowerCase().endsWith('.csv')) {
-                        const csvText = await blob.text();
-                        const rows = csvText.split('\n').map(r => r.split(',').map(c => c.trim().replace(/^"|"$/g, '')));
-                        parsedSheets = [{ name: 'CSV Data', data: rows }];
-                    } else {
-                        const wb = xlsx.read(buffer, { type: 'array' });
-                        parsedSheets = wb.SheetNames.map(name => ({
-                            name,
-                            data: xlsx.utils.sheet_to_json(wb.Sheets[name], { header: 1 })
-                        }));
-                    }
-                    if (isMounted) setSheets(parsedSheets);
                 } else if (category === 'presentation') {
                     try {
                         const zip = await JSZip.loadAsync(blob);
@@ -138,7 +131,7 @@ export default function MediaPreviewModal({
                 }
             } catch (err) {
                 console.error('Failed to load file preview:', err);
-                if (isMounted) setError(err.response?.data?.message || 'Could not load file stream from Google Drive.');
+                if (isMounted) setError(err.response?.data?.message || err.message || 'Could not load file stream.');
             } finally {
                 if (isMounted) setLoading(false);
             }
@@ -150,22 +143,7 @@ export default function MediaPreviewModal({
             isMounted = false;
             if (createdUrl) URL.revokeObjectURL(createdUrl);
         };
-    }, [file?.id, category, file?.mimeType, file?.name]);
-
-    // DOCX rendering when ref is available
-    useEffect(() => {
-        if (category === 'word' && fileBlob && docxContainerRef.current && !loading) {
-            docxContainerRef.current.innerHTML = '';
-            docx.renderAsync(fileBlob, docxContainerRef.current, null, {
-                className: 'docx-preview-wrapper',
-                inWrapper: true,
-                ignoreWidth: false,
-                ignoreHeight: false
-            }).catch(e => {
-                console.warn('DOCX render error:', e);
-            });
-        }
-    }, [category, fileBlob, loading]);
+    }, [file?.id, file?.url, category, file?.mimeType, file?.name, file?.fileName]);
 
     // Optional On-Demand AI Text Extraction
     const handleExtractText = async () => {
@@ -257,32 +235,30 @@ export default function MediaPreviewModal({
                         </div>
                     </div>
 
-                    {/* Action Buttons Toolbar */}
+                    {/* Action Buttons Toolbar (Icon-Only with tooltips) */}
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                         {/* Optional AI Text Extraction Trigger */}
                         <button
                             type="button"
                             onClick={handleExtractText}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition border ${
+                            className={`p-2 rounded-lg transition border ${
                                 showTextDrawer
                                     ? 'bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border-purple-300 dark:border-purple-700'
                                     : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-purple-50 dark:hover:bg-purple-900/30 hover:text-purple-700'
                             }`}
                             title="Extract text using AI OCR (Optional)"
                         >
-                            <Sparkles className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                            <span className="hidden md:inline">Extract Text</span>
+                            <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                         </button>
 
                         {/* Attach to AI Bot */}
                         <button
                             type="button"
                             onClick={handleAttachCurrentFile}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition"
-                            title="Attach file to AI Copilot for questions, summaries, and teaching aids"
+                            className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition"
+                            title="Attach file to AI Copilot"
                         >
-                            <Bot className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                            <span className="hidden sm:inline">Attach to Bot</span>
+                            <Bot className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                         </button>
 
                         {/* Import to Documents */}
@@ -290,11 +266,10 @@ export default function MediaPreviewModal({
                             <button
                                 type="button"
                                 onClick={() => onImport(file)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs transition"
+                                className="p-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs transition"
                                 title="Import to ULRMS Documents"
                             >
-                                <FolderPlus className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Import</span>
+                                <FolderPlus className="w-4 h-4" />
                             </button>
                         )}
 
@@ -303,7 +278,7 @@ export default function MediaPreviewModal({
                             <button
                                 type="button"
                                 onClick={() => onDownload(file)}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                                className="p-2 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
                                 title="Download file"
                             >
                                 <Download className="w-4 h-4" />
@@ -316,7 +291,7 @@ export default function MediaPreviewModal({
                                 href={file.webViewLink}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                                className="p-2 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
                                 title="Open in Google Drive"
                             >
                                 <ExternalLink className="w-4 h-4" />
@@ -327,7 +302,7 @@ export default function MediaPreviewModal({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                            className="p-2 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
                             title="Close preview"
                         >
                             <X className="w-4 h-4" />
@@ -370,7 +345,7 @@ export default function MediaPreviewModal({
                                 {category === 'pdf' && blobUrl && (
                                     <iframe
                                         src={blobUrl}
-                                        title={file.name}
+                                        title={file.name || file.fileName}
                                         className="w-full h-full rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs bg-white"
                                     />
                                 )}
@@ -415,76 +390,14 @@ export default function MediaPreviewModal({
                                     </div>
                                 )}
 
-                                {/* Spreadsheets (Excel, CSV) */}
+                                {/* Spreadsheets (Excel, CSV, Google Sheets) */}
                                 {category === 'spreadsheet' && (
-                                    <div className="w-full h-full flex flex-col bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                                        {/* Sheet Search & Tabs Header */}
-                                        <div className="p-2 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/50">
-                                            <div className="flex items-center gap-1 overflow-x-auto max-w-md">
-                                                {sheets.map((s, idx) => (
-                                                    <button
-                                                        key={idx}
-                                                        type="button"
-                                                        onClick={() => setActiveSheet(idx)}
-                                                        className={`px-3 py-1 text-xs font-semibold rounded-md transition whitespace-nowrap ${
-                                                            activeSheet === idx
-                                                                ? 'bg-emerald-600 text-white shadow-2xs'
-                                                                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                                        }`}
-                                                    >
-                                                        {s.name}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                            <div className="relative w-48">
-                                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-2" />
-                                                <input
-                                                    type="text"
-                                                    value={sheetSearch}
-                                                    onChange={e => setSheetSearch(e.target.value)}
-                                                    placeholder="Search cells..."
-                                                    className="w-full pl-7 pr-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {/* Table Viewport */}
-                                        <div className="flex-1 overflow-auto p-2">
-                                            {sheets[activeSheet]?.data ? (
-                                                <table className="w-full border-collapse text-xs font-mono">
-                                                    <tbody>
-                                                        {sheets[activeSheet].data
-                                                            .filter(row => {
-                                                                if (!sheetSearch.trim()) return true;
-                                                                return row.some(cell => String(cell || '').toLowerCase().includes(sheetSearch.toLowerCase()));
-                                                            })
-                                                            .slice(0, 100)
-                                                            .map((row, rIdx) => (
-                                                                <tr key={rIdx} className={rIdx === 0 ? 'bg-slate-100 dark:bg-slate-800 font-bold' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800'}>
-                                                                    <td className="px-2 py-1 text-[10px] text-slate-400 select-none bg-slate-50 dark:bg-slate-800/80 border-r border-slate-200 dark:border-slate-700 text-right w-10">
-                                                                        {rIdx + 1}
-                                                                    </td>
-                                                                    {row.map((cell, cIdx) => (
-                                                                        <td key={cIdx} className="px-3 py-1.5 border border-slate-200 dark:border-slate-800 truncate max-w-xs" title={String(cell ?? '')}>
-                                                                            {String(cell ?? '')}
-                                                                        </td>
-                                                                    ))}
-                                                                </tr>
-                                                            ))}
-                                                    </tbody>
-                                                </table>
-                                            ) : (
-                                                <p className="p-8 text-center text-xs text-slate-400">Empty worksheet</p>
-                                            )}
-                                        </div>
-                                    </div>
+                                    <SpreadsheetViewer data={fileBlob} fileName={file.name || file.fileName} />
                                 )}
 
-                                {/* Word Documents (DOCX) */}
+                                {/* Word Documents (DOCX, DOC) */}
                                 {category === 'word' && (
-                                    <div className="w-full h-full bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-auto p-6 shadow-xs">
-                                        <div ref={docxContainerRef} className="docx-container max-w-3xl mx-auto" />
-                                    </div>
+                                    <DocxViewer data={fileBlob} fileName={file.name || file.fileName} />
                                 )}
 
                                 {/* PowerPoint Presentations */}

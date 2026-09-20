@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive } from 'lucide-react';
+import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { useAuthStore } from '@/lib/store';
@@ -15,6 +15,8 @@ import FileViewer from '@/components/FileViewer';
 import PdfViewer from '@/components/PdfViewer';
 import HtmlPreview from '@/components/HtmlPreview';
 import GoogleDriveBrowser from '@/components/GoogleDriveBrowser';
+import MediaPreviewModal from '@/components/MediaPreviewModal';
+import MoveCopyToDriveModal from '@/components/MoveCopyToDriveModal';
 import GenericDataImportConfirmCard from '@/components/GenericDataImportConfirmCard';
 import QRCode from 'qrcode';
 
@@ -126,6 +128,25 @@ export default function DocumentsPage() {
     const [selectedDocs, setSelectedDocs] = useState(new Set());
     const [selectedFolders, setSelectedFolders] = useState(new Set());
     const [clipboard, setClipboard] = useState(null); // { mode: 'copy' | 'cut', documents: [], folders: [] }
+
+    // Google Drive Transfer Modal
+    const [showMoveToDriveModal, setShowMoveToDriveModal] = useState(false);
+    const [docsForDriveTransfer, setDocsForDriveTransfer] = useState([]);
+
+    const handleOpenBulkTransferToDrive = () => {
+        const docs = documents.filter(d => selectedDocs.has(d.id));
+        if (docs.length === 0) {
+            toast.error('Please select at least one document to transfer');
+            return;
+        }
+        setDocsForDriveTransfer(docs);
+        setShowMoveToDriveModal(true);
+    };
+
+    const handleOpenSingleTransferToDrive = (doc) => {
+        setDocsForDriveTransfer([doc]);
+        setShowMoveToDriveModal(true);
+    };
 
     // Folder Preview Modal
     const [folderPreview, setFolderPreview] = useState(null); // { folder, documents: [], subfolders: [] }
@@ -1139,37 +1160,40 @@ export default function DocumentsPage() {
                     
                     {activeTab === 'my' && (
                         <>
-                            <button onClick={() => handleBulkCopy('copy')} title="Copy" className="flex items-center justify-center text-slate-600 hover:text-primary-600 p-2 rounded hover:bg-slate-50 transition-colors">
+                            <button onClick={() => handleBulkCopy('copy')} title="Copy Selected" className="h-9 w-9 flex items-center justify-center text-slate-600 hover:text-primary-600 p-2 rounded-lg hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition">
                                 <ClipboardCopy className="w-5 h-5" />
                             </button>
-                            <button onClick={() => handleBulkCopy('cut')} title="Cut" className="flex items-center justify-center text-slate-600 hover:text-orange-600 p-2 rounded hover:bg-slate-50 transition-colors">
+                            <button onClick={() => handleBulkCopy('cut')} title="Cut Selected" className="h-9 w-9 flex items-center justify-center text-slate-600 hover:text-orange-600 p-2 rounded-lg hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition">
                                 <Scissors className="w-5 h-5" />
                             </button>
-                            <button onClick={handleBulkDelete} title="Delete" className="flex items-center justify-center text-slate-600 hover:text-red-600 p-2 rounded hover:bg-slate-50 transition-colors">
+                            <button onClick={handleOpenBulkTransferToDrive} title="Move/Copy to Google Drive" className="h-9 w-9 flex items-center justify-center text-slate-600 hover:text-emerald-600 p-2 rounded-lg hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition">
+                                <HardDriveUpload className="w-5 h-5" />
+                            </button>
+                            <button onClick={handleBulkDelete} title="Move to Trash" className="h-9 w-9 flex items-center justify-center text-slate-600 hover:text-red-600 p-2 rounded-lg hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition">
                                 <Trash2 className="w-5 h-5" />
                             </button>
                         </>
                     )}
 
                     {(activeTab === 'my' || activeTab === 'shared') && (
-                        <button onClick={handleBulkDownload} disabled={isCompressing} title="Compress & Download" className="flex items-center justify-center text-slate-600 hover:text-blue-600 p-2 rounded hover:bg-slate-50 transition-colors disabled:opacity-50">
+                        <button onClick={handleBulkDownload} disabled={isCompressing} title="Compress & Download (ZIP)" className="h-9 w-9 flex items-center justify-center text-slate-600 hover:text-blue-600 p-2 rounded-lg hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition disabled:opacity-50">
                             <Archive className="w-5 h-5" />
                         </button>
                     )}
 
                     {activeTab === 'trash' && (
                         <>
-                            <button onClick={handleBulkRestore} title="Restore" className="flex items-center justify-center text-slate-600 hover:text-emerald-600 p-2 rounded hover:bg-slate-50 transition-colors">
+                            <button onClick={handleBulkRestore} title="Restore Selected" className="h-9 w-9 flex items-center justify-center text-slate-600 hover:text-emerald-600 p-2 rounded-lg hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition">
                                 <ArchiveRestore className="w-5 h-5" />
                             </button>
-                            <button onClick={handleBulkDelete} title="Delete Permanently" className="flex items-center justify-center text-slate-600 hover:text-red-600 p-2 rounded hover:bg-slate-50 transition-colors">
+                            <button onClick={handleBulkDelete} title="Delete Permanently" className="h-9 w-9 flex items-center justify-center text-slate-600 hover:text-red-600 p-2 rounded-lg hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition">
                                 <Trash className="w-5 h-5" />
                             </button>
                         </>
                     )}
 
-                    <div className="h-6 w-px bg-slate-200" />
-                    <button onClick={() => { setSelectedDocs(new Set()); setSelectedFolders(new Set()); }} className="text-slate-400 hover:text-slate-600">
+                    <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 flex-shrink-0" />
+                    <button onClick={() => { setSelectedDocs(new Set()); setSelectedFolders(new Set()); }} title="Clear Selection" className="h-9 w-9 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2 rounded-lg transition">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -1200,75 +1224,86 @@ export default function DocumentsPage() {
                         </div>
                     )}
                     {canUpload && (
-                        <div className="flex gap-2">
-                            <button onClick={() => setShowCreateFolder(true)} className="btn bg-slate-100 text-slate-700 hover:bg-slate-200">
-                                <FolderPlus className="w-4 h-4" /> New Folder
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setShowCreateFolder(true)}
+                                className="h-9 w-9 rounded-xl flex items-center justify-center bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 transition"
+                                title="Create New Folder"
+                            >
+                                <FolderPlus className="w-4 h-4" />
                             </button>
-                            <button onClick={() => setShowUpload(true)} className="btn btn-primary">
-                                <Upload className="w-4 h-4" /> Upload Document
+                            <button
+                                onClick={() => setShowUpload(true)}
+                                className="h-9 w-9 rounded-xl flex items-center justify-center bg-primary-600 hover:bg-primary-700 text-white shadow-2xs transition"
+                                title="Upload Document"
+                            >
+                                <Upload className="w-4 h-4" />
                             </button>
                         </div>
                     )}
                     {clipboard && canUpload && (
-                        <button onClick={handlePaste} className="btn bg-blue-100 text-blue-700 hover:bg-blue-200" title="Paste items here">
-                            <Clipboard className="w-4 h-4 mr-2" /> Paste ({clipboard.documents.length + clipboard.folders.length})
+                        <button
+                            onClick={handlePaste}
+                            className="h-9 w-9 rounded-xl flex items-center justify-center bg-blue-100 text-blue-700 hover:bg-blue-200 transition"
+                            title={`Paste items (${clipboard.documents.length + clipboard.folders.length})`}
+                        >
+                            <Clipboard className="w-4 h-4" />
                         </button>
                     )}
                 </div>
             </div>
 
-            <div className="flex gap-2 mb-4 flex-wrap">
+            {/* Tabs (Icon-Only with Tooltips) */}
+            <div className="flex items-center gap-2 mb-4">
                 <button
                     onClick={() => setActiveTab('my')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === 'my'
-                        ? 'bg-primary-600 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    className={`h-10 w-10 rounded-xl flex items-center justify-center transition shadow-2xs ${activeTab === 'my'
+                        ? 'bg-primary-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
+                    title="My Documents"
                 >
-                    <FileText className="w-4 h-4 inline mr-2" />
-                    My Documents
+                    <FileText className="w-5 h-5" />
                 </button>
                 <button
                     onClick={() => setActiveTab('shared')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${activeTab === 'shared'
-                        ? 'bg-primary-600 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    className={`h-10 w-10 rounded-xl relative flex items-center justify-center transition shadow-2xs ${activeTab === 'shared'
+                        ? 'bg-primary-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
+                    title={`Shared with Me${sharedDocuments.length > 0 ? ` (${sharedDocuments.length})` : ''}`}
                 >
-                    <Inbox className="w-4 h-4" />
-                    Shared with Me
+                    <Inbox className="w-5 h-5" />
                     {sharedDocuments.length > 0 && (
-                        <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full ring-2 ring-white dark:ring-slate-900">
                             {sharedDocuments.length}
                         </span>
                     )}
                 </button>
-                {
-                    canUpload && (
-                        <button
-                            onClick={() => setActiveTab('trash')}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${activeTab === 'trash'
-                                ? 'bg-red-600 text-white'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                        >
-                            <Trash className="w-4 h-4" />
-                            Trash
-                            {trashDocuments.length > 0 && (
-                                <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                                    {trashDocuments.length}
-                                </span>
-                            )}
-                        </button>
-                    )
-                }
+                {canUpload && (
+                    <button
+                        onClick={() => setActiveTab('trash')}
+                        className={`h-10 w-10 rounded-xl relative flex items-center justify-center transition shadow-2xs ${activeTab === 'trash'
+                            ? 'bg-red-600 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
+                        title={`Trash${trashDocuments.length > 0 ? ` (${trashDocuments.length})` : ''}`}
+                    >
+                        <Trash className="w-5 h-5" />
+                        {trashDocuments.length > 0 && (
+                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full ring-2 ring-white dark:ring-slate-900">
+                                {trashDocuments.length}
+                            </span>
+                        )}
+                    </button>
+                )}
                 <button
                     onClick={() => setActiveTab('drive')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${activeTab === 'drive'
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    className={`h-10 w-10 rounded-xl flex items-center justify-center transition shadow-2xs ${activeTab === 'drive'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
+                    title="Google Drive"
                 >
-                    <HardDrive className="w-4 h-4" />
-                    Google Drive
+                    <HardDrive className="w-5 h-5" />
                 </button>
-            </div >
+            </div>
 
             {activeTab !== 'drive' && (
                 <div className="flex flex-col gap-3 mb-6">
@@ -1630,30 +1665,33 @@ export default function DocumentsPage() {
                                         {formatDate(shareInfo ? shareInfo.sharedAt : doc.createdAt)}
                                     </div>
 
-                                    <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
-                                        <button title="View" onClick={() => setViewingDoc(shareInfo ? { ...doc, sharePermission: shareInfo.permission } : doc)} className="btn btn-secondary text-xs py-1.5">
+                                    <div className="flex flex-wrap items-center gap-1.5 mt-4 pt-3 border-t border-slate-100">
+                                        <button title="View Preview" onClick={() => setViewingDoc(shareInfo ? { ...doc, sharePermission: shareInfo.permission } : doc)} className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition" aria-label="View">
                                             <Eye className="w-4 h-4" />
                                         </button>
                                         {activeTab === 'my' && canUpload && (
                                             <>
-                                                <button onClick={() => handleEdit(doc)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded">
+                                                <button onClick={() => handleEdit(doc)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Edit Document" aria-label="Edit">
                                                     <Edit2 className="w-4 h-4" />
                                                 </button>
-                                                <button onClick={() => handleOpenMoveDialog(doc)} className="p-1.5 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded" title="Move">
+                                                <button onClick={() => handleOpenMoveDialog(doc)} className="p-1.5 text-slate-500 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition" title="Move to Local Folder" aria-label="Move locally">
                                                     <FolderInput className="w-4 h-4" />
                                                 </button>
-                                                <button onClick={() => handleShare(doc)} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded">
+                                                <button onClick={() => handleOpenSingleTransferToDrive(doc)} className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition" title="Copy / Move to Google Drive" aria-label="Transfer to Google Drive">
+                                                    <HardDriveUpload className="w-4 h-4" />
+                                                </button>
+                                                <button onClick={() => handleShare(doc)} className="p-1.5 text-slate-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition" title="Share Document" aria-label="Share">
                                                     <Share2 className="w-4 h-4" />
                                                 </button>
-                                                <button onClick={() => setDeleteDialog({ open: true, doc })} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded">
+                                                <button onClick={() => setDeleteDialog({ open: true, doc })} className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Delete Document" aria-label="Delete">
                                                     <Trash2 className="w-4 h-4" />
                                                 </button>
                                                 {['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(doc.fileType?.toLowerCase()) && (
-                                                    <button onClick={() => handleExtractAI(doc)} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded" title="Extract AI Inventory">
+                                                    <button onClick={() => handleExtractAI(doc)} className="p-1.5 text-slate-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition" title="Extract AI Inventory" aria-label="Extract AI Inventory">
                                                         <Wand2 className="w-4 h-4" />
                                                     </button>
                                                 )}
-                                                <button onClick={() => handleOpenAnalytics(doc)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded" title="Analytics">
+                                                <button onClick={() => handleOpenAnalytics(doc)} className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition" title="View Analytics" aria-label="Analytics">
                                                     <BarChart2 className="w-4 h-4" />
                                                 </button>
                                             </>
@@ -1845,36 +1883,39 @@ export default function DocumentsPage() {
                                                 )}
                                                 <td className="p-3 text-sm text-slate-500">{formatDate(shareInfo ? shareInfo.sharedAt : doc.createdAt)}</td>
                                                 <td className="p-3">
-                                                    <div className="flex gap-1">
-                                                        <button onClick={() => setViewingDoc(shareInfo ? { ...doc, sharePermission: shareInfo.permission } : doc)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded" title="View">
+                                                    <div className="flex items-center gap-1">
+                                                        <button onClick={() => setViewingDoc(shareInfo ? { ...doc, sharePermission: shareInfo.permission } : doc)} className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition" title="View Preview" aria-label="View">
                                                             <Eye className="w-4 h-4" />
                                                         </button>
                                                         {activeTab === 'my' && canUpload && (
                                                             <>
-                                                                <button onClick={() => handleEdit(doc)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit">
+                                                                <button onClick={() => handleEdit(doc)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Edit Document" aria-label="Edit">
                                                                     <Edit2 className="w-4 h-4" />
                                                                 </button>
-                                                                <button onClick={() => handleOpenMoveDialog(doc)} className="p-1.5 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded" title="Move">
+                                                                <button onClick={() => handleOpenMoveDialog(doc)} className="p-1.5 text-slate-500 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition" title="Move to Local Folder" aria-label="Move locally">
                                                                     <FolderInput className="w-4 h-4" />
                                                                 </button>
-                                                                <button onClick={() => handleShare(doc)} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded" title="Share">
+                                                                <button onClick={() => handleOpenSingleTransferToDrive(doc)} className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition" title="Copy / Move to Google Drive" aria-label="Transfer to Google Drive">
+                                                                    <HardDriveUpload className="w-4 h-4" />
+                                                                </button>
+                                                                <button onClick={() => handleShare(doc)} className="p-1.5 text-slate-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition" title="Share Document" aria-label="Share">
                                                                     <Share2 className="w-4 h-4" />
                                                                 </button>
-                                                                <button onClick={() => setDeleteDialog({ open: true, doc })} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete">
+                                                                <button onClick={() => setDeleteDialog({ open: true, doc })} className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Delete Document" aria-label="Delete">
                                                                     <Trash2 className="w-4 h-4" />
                                                                 </button>
                                                                 {['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(doc.fileType?.toLowerCase()) && (
-                                                                    <button onClick={() => handleExtractAI(doc)} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded" title="Extract AI Inventory">
+                                                                    <button onClick={() => handleExtractAI(doc)} className="p-1.5 text-slate-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition" title="Extract AI Inventory" aria-label="Extract AI Inventory">
                                                                         <Wand2 className="w-4 h-4" />
                                                                     </button>
                                                                 )}
-                                                                <button onClick={() => handleOpenAnalytics(doc)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded" title="Analytics">
+                                                                <button onClick={() => handleOpenAnalytics(doc)} className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition" title="View Analytics" aria-label="Analytics">
                                                                     <BarChart2 className="w-4 h-4" />
                                                                 </button>
                                                             </>
                                                         )}
                                                         {activeTab === 'shared' && shareInfo?.permission !== 'view' && (
-                                                            <a href={doc.url} download={doc.fileName || doc.name} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded" title="Download">
+                                                            <a href={doc.url} download={doc.fileName || doc.name} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Download Document" aria-label="Download">
                                                                 <Download className="w-4 h-4" />
                                                             </a>
                                                         )}
@@ -2016,8 +2057,14 @@ export default function DocumentsPage() {
                                                             <FolderInput className="w-3.5 h-3.5" /> Move
                                                         </button>
                                                         <button
-                                                            onClick={() => handleShare(doc)}
+                                                            onClick={() => handleOpenSingleTransferToDrive(doc)}
                                                             className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex-1 min-w-[90px]"
+                                                        >
+                                                            <HardDriveUpload className="w-3.5 h-3.5" /> To Drive
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleShare(doc)}
+                                                            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-green-50 text-green-700 hover:bg-green-100 flex-1 min-w-[90px]"
                                                         >
                                                             <Share2 className="w-3.5 h-3.5" /> Share
                                                         </button>
@@ -2217,109 +2264,27 @@ export default function DocumentsPage() {
             }
 
             {/* View/Preview Modal */}
-            {
-                viewingDoc && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-0 sm:p-4">
-                        <div className={`bg-white flex flex-col transition-all ${
-                            isPreviewFullscreen 
-                                ? 'fixed inset-0 w-full h-full rounded-none z-[100]' 
-                                : 'rounded-2xl max-w-4xl w-full max-h-[90vh]'
-                        }`}>
-                            <div className="p-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
-                                <div>
-                                    <h3 className="text-lg font-semibold">{viewingDoc.name}</h3>
-                                    <p className="text-sm text-slate-500">{viewingDoc.fileType.toUpperCase()} • {viewingDoc.fileSizeFormatted}</p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <button onClick={() => setIsPreviewFullscreen(!isPreviewFullscreen)} title="Toggle Fullscreen" className="btn btn-secondary text-sm p-2">
-                                        {isPreviewFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-                                    </button>
-                                    <a title="Download" href={viewingDoc.url} download={viewingDoc.fileName || viewingDoc.name} target="_blank" rel="noopener noreferrer" className="btn btn-secondary text-sm p-2">
-                                        <Download className="w-5 h-5" />
-                                    </a>
-                                    <button onClick={() => { setViewingDoc(null); setIsPreviewFullscreen(false); }} className="text-slate-400 hover:text-slate-600 p-2"><X className="w-5 h-5" /></button>
-                                </div>
-                            </div>
-                            <div className="flex-1 overflow-auto bg-slate-100 p-4">
-                                {(() => {
-                                    const ext = viewingDoc.url.split('.').pop().toLowerCase();
-                                    const type = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odp', 'mp4', 'mpeg', 'ogg', 'webm', 'avi', 'mov', 'mp3', 'wav', 'm4a', 'aac', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'txt', 'html', 'csv'].includes(ext) ? ext : viewingDoc.fileType;
-                                    
-                                    if (['docx', 'xlsx', 'xls', 'csv'].includes(type)) {
-                                        return <FileViewer url={viewingDoc.url} fileType={type} name={viewingDoc.name} />;
-                                    } else if (type === 'pdf') {
-                                        return (
-                                            <PdfViewer
-                                                url={viewingDoc.url}
-                                                documentId={viewingDoc.id}
-                                                name={viewingDoc.name}
-                                                isFullscreen={isPreviewFullscreen}
-                                            />
-                                        );
-                                    } else if (['ppt', 'pptx'].includes(type)) {
-                                        const fullUrl = viewingDoc.url.startsWith('http') ? viewingDoc.url : `${typeof window !== 'undefined' ? window.location.origin : ''}${viewingDoc.url}`;
-                                        return (
-                                            <iframe
-                                                src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fullUrl)}`}
-                                                className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
-                                                title="Document Preview"
-                                            />
-                                        );
-                                    } else if (['doc', 'odp'].includes(type)) {
-                                        const fullUrl = viewingDoc.url.startsWith('http') ? viewingDoc.url : `${typeof window !== 'undefined' ? window.location.origin : ''}${viewingDoc.url}`;
-                                        return (
-                                            <iframe
-                                                src={`https://docs.google.com/viewer?url=${encodeURIComponent(fullUrl)}&embedded=true`}
-                                                className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
-                                                title="Document Preview"
-                                            />
-                                        );
-                                    } else if (['mp4', 'mpeg', 'ogg', 'webm', 'avi', 'mov'].includes(type)) {
-                                        return (
-                                            <div className="flex items-center justify-center h-full min-h-[500px] bg-black rounded-lg">
-                                                <video controls src={viewingDoc.url} className="max-w-full max-h-[500px]" title="Video Preview" />
-                                            </div>
-                                        );
-                                    } else if (['mp3', 'wav', 'm4a', 'aac'].includes(type)) {
-                                        return (
-                                            <div className="flex items-center justify-center h-full min-h-[200px] bg-slate-900 rounded-lg">
-                                                <audio controls src={viewingDoc.url} className="w-3/4 max-w-md" title="Audio Preview" />
-                                            </div>
-                                        );
-                                    } else if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(type)) {
-                                        return (
-                                            <div className="flex items-center justify-center h-full min-h-[400px] bg-white rounded-lg border border-slate-200">
-                                                <img
-                                                    src={viewingDoc.url}
-                                                    alt={viewingDoc.name}
-                                                    className="max-w-full max-h-[500px] object-contain"
-                                                />
-                                            </div>
-                                        );
-                                    } else if (['txt', 'html'].includes(type)) {
-                                        return <HtmlPreview url={viewingDoc.url} className={isPreviewFullscreen ? 'min-h-[80vh] rounded-none border-0' : ''} />;
-                                    } else {
-                                        return (
-                                            <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-slate-500">
-                                                <span className="text-6xl mb-4">{FILE_ICONS[viewingDoc.fileType] || FILE_ICONS.file}</span>
-                                                <p className="mb-4">Preview not available for {viewingDoc.fileType.toUpperCase()} files</p>
-                                                <a href={viewingDoc.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
-                                                    <ExternalLink className="w-4 h-4" /> Open in New Tab
-                                                </a>
-                                            </div>
-                                        );
-                                    }
-                                })()}
-                            </div>
-                            {viewingDoc.description && (
-                                <div className="p-4 border-t border-slate-200 bg-slate-50 flex-shrink-0">
-                                    <p className="text-sm text-slate-600">{viewingDoc.description}</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )
-            }
+            {viewingDoc && (
+                <MediaPreviewModal
+                    file={{
+                        ...viewingDoc,
+                        name: viewingDoc.fileName || viewingDoc.name,
+                        fileSize: viewingDoc.fileSize || viewingDoc.size
+                    }}
+                    onClose={() => setViewingDoc(null)}
+                    onDownload={(f) => {
+                        const dlUrl = f.url || viewingDoc.url;
+                        if (dlUrl) {
+                            const link = document.createElement('a');
+                            link.href = dlUrl;
+                            link.download = f.name || f.fileName || viewingDoc.name || 'download';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                        }
+                    }}
+                />
+            )}
 
             {/* Edit Modal */}
             {
@@ -3166,6 +3131,17 @@ export default function DocumentsPage() {
                     </div>
                 )
             }
+
+            {/* Move/Copy to Google Drive Modal */}
+            <MoveCopyToDriveModal
+                isOpen={showMoveToDriveModal}
+                onClose={() => setShowMoveToDriveModal(false)}
+                selectedDocuments={docsForDriveTransfer}
+                onSuccess={() => {
+                    loadDocuments();
+                    setSelectedDocs(new Set());
+                }}
+            />
 
         </div>
     );

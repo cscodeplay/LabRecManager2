@@ -205,13 +205,128 @@ router.get('/files/:id/content', asyncHandler(async (req, res) => {
     const metadata = await googleDriveService.getFileMetadata(id);
     const buffer = await googleDriveService.downloadFileBuffer(id);
 
-    const filename = metadata.name || 'download';
-    const mimeType = metadata.mimeType || 'application/octet-stream';
+    let filename = metadata.name || 'download';
+    let mimeType = metadata.mimeType || 'application/octet-stream';
+
+    // Google Docs / Sheets / Slides exports require matching MIME types and extensions
+    if (mimeType === 'application/vnd.google-apps.document') {
+        mimeType = 'application/pdf';
+        if (!filename.toLowerCase().endsWith('.pdf')) filename += '.pdf';
+    } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+        mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        if (!filename.toLowerCase().endsWith('.xlsx')) filename += '.xlsx';
+    } else if (mimeType === 'application/vnd.google-apps.presentation') {
+        mimeType = 'application/pdf';
+        if (!filename.toLowerCase().endsWith('.pdf')) filename += '.pdf';
+    }
 
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
     res.setHeader('Content-Length', buffer.length);
     res.end(buffer);
+}));
+
+/**
+ * @route   POST /api/drive/export-from-documents
+ * @desc    Export / Copy / Move selected documents from My Documents to a Google Drive folder
+ * @access  Private
+ */
+router.post('/export-from-documents', authenticate, asyncHandler(async (req, res) => {
+    const { documentIds, targetFolderId = null, isMove = false } = req.body;
+
+    if (!Array.isArray(documentIds) || documentIds.length === 0) {
+        return res.status(400).json({ success: false, message: 'No document IDs provided' });
+    }
+
+    const documents = await prisma.document.findMany({
+        where: {
+            id: { in: documentIds },
+            schoolId: req.user.schoolId,
+            deletedAt: null
+        }
+    });
+
+    if (documents.length === 0) {
+        return res.status(404).json({ success: false, message: 'No matching documents found' });
+    }
+
+    const results = [];
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const doc of documents) {
+        try {
+            let fileBuffer = null;
+
+            // 1. Check local disk upload
+            if (doc.url && doc.url.startsWith('/uploads/')) {
+                const relativePath = doc.url.replace(/^\//, '');
+                const diskPath = path.join(__dirname, '../../', relativePath);
+                if (fs.existsSync(diskPath)) {
+                    fileBuffer = fs.readFileSync(diskPath);
+                }
+            }
+
+            // 2. If not on disk, try fetching via axios
+            if (!fileBuffer && doc.url && doc.url.startsWith('http')) {
+                const axios = require('axios');
+                const fileRes = await axios.get(doc.url, { responseType: 'arraybuffer' });
+                fileBuffer = Buffer.from(fileRes.data);
+            }
+
+            if (!fileBuffer) {
+                throw new Error(`File buffer could not be loaded for document "${doc.name}"`);
+            }
+
+            const fileName = doc.fileName || doc.name || 'document';
+            const mimeType = doc.mimeType || 'application/octet-stream';
+
+            // Upload to Google Drive
+            const driveFile = await googleDriveService.uploadFile(
+                fileBuffer,
+                fileName,
+                mimeType,
+                targetFolderId || null
+            );
+
+            // If move, soft-delete from local documents
+            if (isMove) {
+                await prisma.document.update({
+                    where: { id: doc.id },
+                    data: {
+                        deletedAt: new Date(),
+                        deletedById: req.user.id
+                    }
+                });
+            }
+
+            results.push({
+                id: doc.id,
+                name: fileName,
+                driveId: driveFile.id,
+                status: 'success'
+            });
+            successCount++;
+        } catch (err) {
+            console.error(`[Drive Export] Failed to transfer doc ${doc.id}:`, err.message);
+            results.push({
+                id: doc.id,
+                name: doc.name,
+                status: 'failed',
+                error: err.message
+            });
+            failCount++;
+        }
+    }
+
+    res.json({
+        success: successCount > 0,
+        message: `Successfully transferred ${successCount} document${successCount === 1 ? '' : 's'} to Google Drive${failCount > 0 ? ` (${failCount} failed)` : ''}`,
+        transferredCount: successCount,
+        failedCount: failCount,
+        isMove,
+        results
+    });
 }));
 
 /**

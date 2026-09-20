@@ -8,7 +8,7 @@ import {
     Upload, LogOut, Settings, Key, ShieldCheck, User, Bot, CheckSquare, Square
 } from 'lucide-react';
 import { saveAs } from 'file-saver';
-import { googleDriveAPI } from '@/lib/api';
+import { googleDriveAPI, foldersAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import MediaPreviewModal from './MediaPreviewModal';
 import ImportProgressModal from './ImportProgressModal';
@@ -24,6 +24,41 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const [importingId, setImportingId] = useState(null);
     const [selectedTargetFolderId, setSelectedTargetFolderId] = useState('');
     const [previewFile, setPreviewFile] = useState(null);
+
+    // Local Destination Folders state
+    const [localFoldersList, setLocalFoldersList] = useState(availableFolders);
+    const [showNewLocalFolderModal, setShowNewLocalFolderModal] = useState(false);
+    const [newLocalFolderName, setNewLocalFolderName] = useState('');
+    const [creatingLocalFolder, setCreatingLocalFolder] = useState(false);
+
+    useEffect(() => {
+        setLocalFoldersList(availableFolders);
+    }, [availableFolders]);
+
+    const handleCreateLocalFolder = async (e) => {
+        e?.preventDefault();
+        if (!newLocalFolderName.trim()) {
+            toast.error('Please enter a folder name');
+            return;
+        }
+        setCreatingLocalFolder(true);
+        try {
+            const res = await foldersAPI.create({ name: newLocalFolderName.trim() });
+            const created = res.data?.data;
+            if (created) {
+                setLocalFoldersList(prev => [...prev, created]);
+                setSelectedTargetFolderId(created.id);
+                toast.success(`Local folder "${created.name}" created and selected!`);
+                setShowNewLocalFolderModal(false);
+                setNewLocalFolderName('');
+            }
+        } catch (err) {
+            console.error('Failed to create local folder:', err);
+            toast.error(err.response?.data?.message || 'Failed to create folder');
+        } finally {
+            setCreatingLocalFolder(false);
+        }
+    };
 
     // Multi-Selection State
     const [selectedIds, setSelectedIds] = useState(new Set());
@@ -680,23 +715,36 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
 
                 {/* Search & Actions */}
                 <div className="flex items-center gap-2 flex-wrap">
-                    {/* Destination Folder Selector */}
-                    {availableFolders.length > 0 && (
-                        <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200">
-                            <span className="font-medium text-slate-500">Import to:</span>
-                            <select
-                                value={selectedTargetFolderId}
-                                onChange={(e) => setSelectedTargetFolderId(e.target.value)}
-                                className="bg-white border border-slate-200 rounded px-2 py-0.5 text-slate-700 font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                                title="Target folder when importing from Google Drive to My Documents"
-                            >
-                                <option value="">Root (No Folder)</option>
-                                {availableFolders.map(f => (
-                                    <option key={f.id} value={f.id}>{f.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
+                    {/* Destination Folder Selector with New Folder Button */}
+                    <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <span className="font-medium text-slate-500 dark:text-slate-400">Import to:</span>
+                        <select
+                            value={selectedTargetFolderId}
+                            onChange={(e) => {
+                                if (e.target.value === '__NEW__') {
+                                    setShowNewLocalFolderModal(true);
+                                } else {
+                                    setSelectedTargetFolderId(e.target.value);
+                                }
+                            }}
+                            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-0.5 text-slate-700 dark:text-slate-200 font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                            title="Target folder when importing from Google Drive to My Documents"
+                        >
+                            <option value="">Root (No Folder)</option>
+                            {localFoldersList.map(f => (
+                                <option key={f.id} value={f.id}>{f.name}</option>
+                            ))}
+                            <option value="__NEW__">+ New Local Folder...</option>
+                        </select>
+                        <button
+                            type="button"
+                            onClick={() => setShowNewLocalFolderModal(true)}
+                            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-emerald-600 dark:text-emerald-400 transition"
+                            title="Create new local folder to import into"
+                        >
+                            <FolderPlus className="w-4 h-4" />
+                        </button>
+                    </div>
 
                     {/* Search */}
                     <div className="relative">
@@ -1051,21 +1099,34 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                     <div className="h-4 w-px bg-slate-700" />
 
                     {/* Target Folder Selector */}
-                    {availableFolders.length > 0 && (
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-slate-400 hidden sm:inline">Import to:</span>
-                            <select
-                                value={selectedTargetFolderId}
-                                onChange={(e) => setSelectedTargetFolderId(e.target.value)}
-                                className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 max-w-[150px] truncate"
-                            >
-                                <option value="">(Root Documents)</option>
-                                {availableFolders.map(f => (
-                                    <option key={f.id} value={f.id}>{f.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-slate-400 hidden sm:inline text-xs">Import to:</span>
+                        <select
+                            value={selectedTargetFolderId}
+                            onChange={(e) => {
+                                if (e.target.value === '__NEW__') {
+                                    setShowNewLocalFolderModal(true);
+                                } else {
+                                    setSelectedTargetFolderId(e.target.value);
+                                }
+                            }}
+                            className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 max-w-[150px] truncate"
+                        >
+                            <option value="">(Root Documents)</option>
+                            {localFoldersList.map(f => (
+                                <option key={f.id} value={f.id}>{f.name}</option>
+                            ))}
+                            <option value="__NEW__">+ New Local Folder...</option>
+                        </select>
+                        <button
+                            type="button"
+                            onClick={() => setShowNewLocalFolderModal(true)}
+                            className="p-1 rounded hover:bg-slate-800 text-emerald-400"
+                            title="Create new local folder to import into"
+                        >
+                            <FolderPlus className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
 
                     {/* Batch Actions */}
                     <div className="flex items-center gap-2">
@@ -1308,6 +1369,68 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                 >
                                     {creatingFolder ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderPlus className="w-3.5 h-3.5" />}
                                     <span>Create Folder</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Create New Local Folder Modal (For Import Destination) */}
+            {showNewLocalFolderModal && (
+                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-sm w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="px-5 py-4 bg-emerald-600 text-white flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <FolderPlus className="w-5 h-5 text-emerald-100" />
+                                <h3 className="font-bold text-sm">New Local Folder</h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowNewLocalFolderModal(false);
+                                    setNewLocalFolderName('');
+                                }}
+                                className="p-1 rounded-lg hover:bg-emerald-500 text-emerald-100 hover:text-white transition"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleCreateLocalFolder} className="p-5 space-y-4 text-xs">
+                            <div>
+                                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">Folder Name</label>
+                                <input
+                                    type="text"
+                                    value={newLocalFolderName}
+                                    onChange={(e) => setNewLocalFolderName(e.target.value)}
+                                    placeholder="e.g. Science Lab Records, Syllabus 2026"
+                                    autoFocus
+                                    required
+                                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                />
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                    This folder will be created in your <span className="font-semibold text-slate-700 dark:text-slate-300">My Documents</span> library and automatically selected for imported files.
+                                </p>
+                            </div>
+
+                            <div className="pt-2 flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowNewLocalFolderModal(false);
+                                        setNewLocalFolderName('');
+                                    }}
+                                    className="px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 font-medium"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={creatingLocalFolder || !newLocalFolderName.trim()}
+                                    className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs transition disabled:opacity-50 flex items-center gap-1.5"
+                                >
+                                    {creatingLocalFolder ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderPlus className="w-3.5 h-3.5" />}
+                                    <span>Create & Select</span>
                                 </button>
                             </div>
                         </form>

@@ -598,17 +598,26 @@ class GoogleDriveService {
 
         const mime = meta.data.mimeType;
 
-        // If it's a native Google Doc, export to PDF or plain text
+        // If it's a native Google Doc, export to high-fidelity PDF
         if (mime === 'application/vnd.google-apps.document') {
             const exp = await this.drive.files.export(
-                { fileId, mimeType: 'text/plain' },
+                { fileId, mimeType: 'application/pdf' },
                 { responseType: 'arraybuffer' }
             );
             return Buffer.from(exp.data);
         }
+        // If it's a native Google Sheet, export as full XLSX workbook (preserves all sheets and merged cells)
         if (mime === 'application/vnd.google-apps.spreadsheet') {
             const exp = await this.drive.files.export(
-                { fileId, mimeType: 'text/csv' },
+                { fileId, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+                { responseType: 'arraybuffer' }
+            );
+            return Buffer.from(exp.data);
+        }
+        // If it's a native Google Slides presentation, export to high-fidelity PDF
+        if (mime === 'application/vnd.google-apps.presentation') {
+            const exp = await this.drive.files.export(
+                { fileId, mimeType: 'application/pdf' },
                 { responseType: 'arraybuffer' }
             );
             return Buffer.from(exp.data);
