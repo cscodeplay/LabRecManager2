@@ -443,7 +443,13 @@ async function importSingleDriveFile({ fileId, folderId, name, category, descrip
         throw new Error(`Storage quota exceeded. Used ${usedMb} MB of ${quotaMb} MB limit.`);
     }
 
-    const buffer = await googleDriveService.downloadFileBuffer(fileId);
+    let buffer;
+    try {
+        buffer = await googleDriveService.downloadFileBuffer(fileId);
+    } catch (dlErr) {
+        throw new Error(`Failed to download "${metadata.name || 'file'}" from Google Drive: ${dlErr.message}`);
+    }
+
     let docName = name || metadata.name.replace(/\.[^.]+$/, '');
     let fileName = metadata.name || `${docName}.docx`;
     let mimeType = metadata.mimeType || 'application/octet-stream';
@@ -459,7 +465,7 @@ async function importSingleDriveFile({ fileId, folderId, name, category, descrip
         if (!fileName.toLowerCase().endsWith('.pdf')) fileName += '.pdf';
     }
 
-    const fileSize = buffer.length;
+    const fileSize = buffer ? buffer.length : 0;
 
     if (currentUsed + fileSize > quotaBytes) {
         throw new Error(`Storage quota exceeded for "${fileName}" (${(fileSize / (1024 * 1024)).toFixed(1)} MB)`);
@@ -493,7 +499,7 @@ async function importSingleDriveFile({ fileId, folderId, name, category, descrip
     }
 
     const ext = path.extname(fileName).toLowerCase().replace('.', '') || 'pdf';
-    const cleanFolderId = (folderId && typeof folderId === 'string' && folderId !== 'null' && folderId !== 'undefined' && folderId !== '__NEW__' && folderId.length === 36) ? folderId : null;
+    const cleanFolderId = (folderId && typeof folderId === 'string' && folderId !== 'null' && folderId !== 'undefined' && folderId !== '__NEW__' && folderId.trim().length === 36) ? folderId.trim() : null;
 
     const doc = await prisma.document.create({
         data: {
@@ -516,11 +522,15 @@ async function importSingleDriveFile({ fileId, folderId, name, category, descrip
         }
     });
 
-    // Increment user's used storage
-    await prisma.user.update({
-        where: { id: userId },
-        data: { storageUsedBytes: currentUsed + fileSize }
-    });
+    // Increment user's used storage atomically
+    try {
+        await prisma.user.update({
+            where: { id: userId },
+            data: { storageUsedBytes: { increment: fileSize } }
+        });
+    } catch (storageUpdateErr) {
+        console.warn('[Drive Import] storageUsedBytes update notice:', storageUpdateErr.message);
+    }
 
     return doc;
 }
@@ -530,6 +540,7 @@ async function importSingleDriveFile({ fileId, folderId, name, category, descrip
  * @desc    Import a single Google Drive file into school's Document management repository
  */
 router.post('/import-to-documents', asyncHandler(async (req, res) => {
+    if (req.setTimeout) req.setTimeout(300000);
     const { fileId, folderId, name, category, description } = req.body;
     const userId = req.user.id;
     const schoolId = req.user.schoolId || null;
@@ -567,6 +578,7 @@ router.post('/import-to-documents', asyncHandler(async (req, res) => {
  * @desc    Batch import multiple files and folders with real-time tracking
  */
 router.post('/import-batch', asyncHandler(async (req, res) => {
+    if (req.setTimeout) req.setTimeout(300000);
     const { items = [], targetFolderId = null } = req.body;
     const userId = req.user.id;
     let schoolId = req.user.schoolId || null;

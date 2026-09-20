@@ -14,6 +14,7 @@ import MeetingProvider from './MeetingProvider';
 import LiveMeetingBanner from './LiveMeetingBanner';
 import DynamicIsland from './DynamicIsland';
 import InstructorLectureIsland from './InstructorLectureIsland';
+import { DriveImportProvider } from '@/context/DriveImportContext';
 
 function LanguageInitializer() {
     const { language } = useLanguageStore();
@@ -79,9 +80,11 @@ export function Providers({ children }) {
                     <DynamicIsland />
                     <InstructorLectureIsland />
                     <LiveMeetingBanner />
-                    <AppLayout>
-                        {children}
-                    </AppLayout>
+                    <DriveImportProvider>
+                        <AppLayout>
+                            {children}
+                        </AppLayout>
+                    </DriveImportProvider>
                     <WhiteboardNotificationListener />
                     <TimetableNotificationListener />
                     <MeetingNotificationListener />

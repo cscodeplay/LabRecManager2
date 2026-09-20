@@ -11,7 +11,7 @@ import { saveAs } from 'file-saver';
 import { googleDriveAPI, foldersAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import MediaPreviewModal from './MediaPreviewModal';
-import ImportProgressModal from './ImportProgressModal';
+import { useDriveImport } from '@/context/DriveImportContext';
 
 export default function GoogleDriveBrowser({ onImportSuccess, availableFolders = [], onLocalFolderCreated }) {
     const [status, setStatus] = useState(null);
@@ -69,12 +69,12 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const [selectedIds, setSelectedIds] = useState(new Set());
     const [failedThumbnails, setFailedThumbnails] = useState(new Set());
 
-    // Batch Import & Progress State
-    const [showProgressModal, setShowProgressModal] = useState(false);
-    const [isBatchImporting, setIsBatchImporting] = useState(false);
-    const [importQueue, setImportQueue] = useState([]);
-    const [importProgress, setImportProgress] = useState(0);
-    const [importCurrentIndex, setImportCurrentIndex] = useState(0);
+    // Global Drive Import Engine & Progress State
+    const {
+        executeImport: executeGlobalImport,
+        isImporting: isBatchImporting,
+        openModal: openImportModal,
+    } = useDriveImport();
 
     // Quota Alert Modal state
     const [showQuotaAlert, setShowQuotaAlert] = useState(false);
@@ -361,126 +361,50 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         return acc + (parseInt(f.size, 10) || 0);
     }, 0);
 
-    // Pre-Import Space Check & Multi-Item Import Engine
-    const executeImport = async (itemsToImport, targetFolder) => {
+    // Global Drive Import Invocation
+    const executeImport = (itemsToImport, targetFolder) => {
         if (!itemsToImport || itemsToImport.length === 0) return;
 
-        toast.loading('Checking storage quota...', { id: 'drive-space-check' });
-        try {
-            const checkRes = await googleDriveAPI.checkStorage();
-            const { remainingBytes, quotaMb } = checkRes.data?.data || {};
-
-            let totalBytesNeeded = 0;
-            const preparedItems = [];
-
-            for (const item of itemsToImport) {
-                const isFolder = item.isFolder || item.mimeType === 'application/vnd.google-apps.folder';
-                if (isFolder) {
-                    try {
-                        const statsRes = await googleDriveAPI.getFolderStats(item.id);
-                        const folderBytes = statsRes.data?.data?.totalBytes || 0;
-                        totalBytesNeeded += folderBytes;
-                        preparedItems.push({
-                            ...item,
-                            isFolder: true,
-                            size: folderBytes,
-                            status: 'pending'
-                        });
-                    } catch (e) {
-                        preparedItems.push({
-                            ...item,
-                            isFolder: true,
-                            size: 0,
-                            status: 'pending'
-                        });
-                    }
-                } else {
-                    const sz = parseInt(item.size, 10) || 0;
-                    totalBytesNeeded += sz;
-                    preparedItems.push({
-                        ...item,
-                        isFolder: false,
-                        size: sz,
-                        status: 'pending'
-                    });
-                }
-            }
-
-            toast.dismiss('drive-space-check');
-
-            // Quota Guard: Block if insufficient space
-            if (remainingBytes !== undefined && totalBytesNeeded > remainingBytes) {
-                setQuotaAlertInfo({
-                    requiredBytes: totalBytesNeeded,
-                    remainingBytes,
-                    quotaMb
+        executeGlobalImport(itemsToImport, targetFolder, {
+            onLocalFolderCreated: (created) => {
+                setLocalFoldersList(prev => {
+                    if (prev.some(f => f.id === created.id)) return prev;
+                    return [...prev, created];
                 });
-                setShowQuotaAlert(true);
-                return;
-            }
-
-            // Space OK: Launch live progress modal
-            setImportQueue(preparedItems);
-            setImportProgress(0);
-            setImportCurrentIndex(0);
-            setIsBatchImporting(true);
-            setShowProgressModal(true);
-
-            let succeeded = 0;
-            let failed = 0;
-
-            for (let i = 0; i < preparedItems.length; i++) {
-                setImportCurrentIndex(i);
-                setImportQueue(prev => prev.map((it, idx) => idx === i ? { ...it, status: 'importing' } : it));
-
-                const item = preparedItems[i];
-                try {
-                    if (item.isFolder) {
-                        const res = await googleDriveAPI.importBatch({
-                            items: [{ id: item.id, name: item.name, isFolder: true, size: item.size }],
-                            targetFolderId: targetFolder || null
-                        });
-                        if (res.data?.summary?.failed > 0) {
-                            throw new Error(res.data.results?.find(r => r.status === 'failed')?.error || 'Some items inside folder failed');
-                        }
-                    } else {
-                        await googleDriveAPI.importToDocuments({
-                            fileId: item.id,
-                            folderId: targetFolder || null,
-                            name: item.name
-                        });
-                    }
-
-                    succeeded++;
-                    setImportQueue(prev => prev.map((it, idx) => idx === i ? { ...it, status: 'success' } : it));
-                } catch (err) {
-                    failed++;
-                    const errMsg = err.response?.data?.message || err.message || 'Import failed';
-                    setImportQueue(prev => prev.map((it, idx) => idx === i ? { ...it, status: 'failed', error: errMsg } : it));
-                }
-
-                setImportProgress(Math.round(((i + 1) / preparedItems.length) * 100));
-            }
-
-            setIsBatchImporting(false);
-            if (succeeded > 0) {
-                toast.success(`Imported ${succeeded} item${succeeded > 1 ? 's' : ''} to Documents!`);
+                if (onLocalFolderCreated) onLocalFolderCreated(created);
+            },
+            onImportSuccess: () => {
+                fetchFiles();
+                clearSelection();
                 if (onImportSuccess) onImportSuccess();
             }
-            if (failed > 0) {
-                toast.error(`${failed} item${failed > 1 ? 's' : ''} failed to import`);
-            }
-        } catch (err) {
-            toast.dismiss('drive-space-check');
-            toast.error(err.response?.data?.message || 'Failed to check storage space');
-        }
+        });
     };
 
-    const handleRetryFailed = async () => {
-        const failedItems = importQueue.filter(i => i.status === 'failed');
-        if (failedItems.length === 0) return;
-        executeImport(failedItems, selectedTargetFolderId);
-    };
+    // Auto-sync folder list and file list when background imports complete
+    useEffect(() => {
+        const handleImportDone = () => {
+            fetchFiles();
+            clearSelection();
+            if (onImportSuccess) onImportSuccess();
+        };
+
+        const handleFolderCreated = (e) => {
+            if (e.detail?.id) {
+                setLocalFoldersList(prev => {
+                    if (prev.some(f => f.id === e.detail.id)) return prev;
+                    return [...prev, e.detail];
+                });
+            }
+        };
+
+        window.addEventListener('drive-import-completed', handleImportDone);
+        window.addEventListener('drive-local-folder-created', handleFolderCreated);
+        return () => {
+            window.removeEventListener('drive-import-completed', handleImportDone);
+            window.removeEventListener('drive-local-folder-created', handleFolderCreated);
+        };
+    }, [fetchFiles, onImportSuccess]);
 
     // Attach file to Floating AI Copilot
     const handleAttachFileToBot = (file, customPrompt = '') => {
@@ -1258,24 +1182,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                 />
             )}
 
-            {/* Batch Import Progress & Logging Modal */}
-            <ImportProgressModal
-                isOpen={showProgressModal}
-                isImporting={isBatchImporting}
-                items={importQueue}
-                progress={importProgress}
-                currentIndex={importCurrentIndex}
-                onRetryFailed={handleRetryFailed}
-                onClose={() => {
-                    setShowProgressModal(false);
-                    fetchFiles();
-                    clearSelection();
-                }}
-                onViewDocuments={() => {
-                    setShowProgressModal(false);
-                    if (onImportSuccess) onImportSuccess();
-                }}
-            />
+
 
             {/* Insufficient Storage Quota Warning Modal */}
             {showQuotaAlert && quotaAlertInfo && (

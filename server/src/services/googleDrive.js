@@ -762,7 +762,7 @@ class GoogleDriveService {
     /**
      * Recursively calculate total files and bytes inside a Google Drive folder
      */
-    async getFolderStats(folderId) {
+    async getFolderStats(folderId, parentPath = '') {
         await this.ensureInitialized();
         if (!this.drive) return { totalFiles: 0, totalBytes: 0, files: [] };
         try {
@@ -772,13 +772,17 @@ class GoogleDriveService {
 
             for (const item of items) {
                 if (item.isFolder) {
-                    const sub = await this.getFolderStats(item.id);
+                    const currentPath = parentPath ? `${parentPath}/${item.name}` : item.name;
+                    const sub = await this.getFolderStats(item.id, currentPath);
                     totalBytes += sub.totalBytes;
                     fileList = fileList.concat(sub.files);
                 } else {
                     const sz = parseInt(item.size, 10) || 0;
                     totalBytes += sz;
-                    fileList.push(item);
+                    fileList.push({
+                        ...item,
+                        relativeFolder: parentPath || null
+                    });
                 }
             }
 

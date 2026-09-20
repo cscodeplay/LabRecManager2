@@ -176,9 +176,21 @@ export default function DocumentsPage() {
     useEffect(() => {
         const handleRefresh = () => {
             loadDocuments();
+            loadSharedDocuments();
+            loadFolders();
+            loadStorage();
+        };
+        const handleFolderCreated = () => {
+            loadFolders();
         };
         window.addEventListener('documents:refresh', handleRefresh);
-        return () => window.removeEventListener('documents:refresh', handleRefresh);
+        window.addEventListener('drive-import-completed', handleRefresh);
+        window.addEventListener('drive-local-folder-created', handleFolderCreated);
+        return () => {
+            window.removeEventListener('documents:refresh', handleRefresh);
+            window.removeEventListener('drive-import-completed', handleRefresh);
+            window.removeEventListener('drive-local-folder-created', handleFolderCreated);
+        };
     }, []);
 
     const loadDocuments = async () => {
