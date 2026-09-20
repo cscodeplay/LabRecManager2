@@ -386,43 +386,81 @@ export default function MediaPreviewModal({
                                     </div>
                                 )}
 
-                                {/* Image */}
+                                {/* Image with Dual-Axis Horizontal & Vertical Scrolling */}
                                 {category === 'image' && blobUrl && (
-                                    <div className="w-full h-full flex flex-col items-center justify-center relative overflow-hidden bg-slate-900/90 rounded-xl p-4">
-                                        <div className="absolute top-3 right-3 flex items-center gap-1 bg-slate-800/80 backdrop-blur-xs p-1 rounded-lg border border-slate-700 text-white z-10">
+                                    <div className="w-full h-full relative overflow-hidden bg-slate-950/95 rounded-xl flex flex-col">
+                                        {/* Pinned Zoom Toolbar */}
+                                        <div className="absolute top-3 right-3 flex items-center gap-1 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl border border-slate-700/80 text-white z-20 shadow-xl">
                                             <button
                                                 type="button"
-                                                onClick={() => setImageZoom(z => Math.max(0.5, z - 0.25))}
-                                                className="p-1 hover:bg-slate-700 rounded"
+                                                onClick={() => setImageZoom(z => Math.max(0.25, Number((z - 0.25).toFixed(2))))}
+                                                className="p-1 hover:bg-slate-700/80 rounded transition text-slate-300 hover:text-white"
                                                 title="Zoom out"
                                             >
                                                 <ZoomOut className="w-3.5 h-3.5" />
                                             </button>
-                                            <span className="text-[10px] font-mono px-1.5">{Math.round(imageZoom * 100)}%</span>
+                                            <span className="text-[11px] font-mono font-medium px-2 min-w-[48px] text-center text-slate-200">
+                                                {Math.round(imageZoom * 100)}%
+                                            </span>
                                             <button
                                                 type="button"
-                                                onClick={() => setImageZoom(z => Math.min(3, z + 0.25))}
-                                                className="p-1 hover:bg-slate-700 rounded"
+                                                onClick={() => setImageZoom(z => Math.min(4, Number((z + 0.25).toFixed(2))))}
+                                                className="p-1 hover:bg-slate-700/80 rounded transition text-slate-300 hover:text-white"
                                                 title="Zoom in"
                                             >
                                                 <ZoomIn className="w-3.5 h-3.5" />
                                             </button>
+                                            <div className="h-3.5 w-px bg-slate-700 mx-0.5" />
                                             <button
                                                 type="button"
                                                 onClick={() => setImageZoom(1)}
-                                                className="p-1 hover:bg-slate-700 rounded"
+                                                className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${imageZoom === 1 ? 'bg-primary-600 text-white' : 'hover:bg-slate-700/80 text-slate-300'}`}
+                                                title="Fit to screen"
+                                            >
+                                                Fit
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setImageZoom(2)}
+                                                className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${imageZoom === 2 ? 'bg-primary-600 text-white' : 'hover:bg-slate-700/80 text-slate-300'}`}
+                                                title="200% zoom"
+                                            >
+                                                2x
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setImageZoom(1)}
+                                                className="p-1 hover:bg-slate-700/80 rounded transition text-slate-300 hover:text-white"
                                                 title="Reset zoom"
                                             >
                                                 <RotateCcw className="w-3.5 h-3.5" />
                                             </button>
                                         </div>
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img
-                                            src={blobUrl}
-                                            alt={file.name}
-                                            style={{ transform: `scale(${imageZoom})`, transition: 'transform 0.15s ease' }}
-                                            className="max-w-full max-h-full object-contain rounded-lg shadow-lg select-none"
-                                        />
+
+                                        {/* Scrollable Canvas for Both Dimensions */}
+                                        <div 
+                                            className="w-full h-full overflow-x-auto overflow-y-auto p-4 sm:p-8 flex"
+                                            style={{
+                                                scrollbarWidth: 'auto',
+                                                scrollbarColor: '#475569 #0f172a'
+                                            }}
+                                        >
+                                            <div className="m-auto min-w-full min-h-full flex items-center justify-center">
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img
+                                                    src={blobUrl}
+                                                    alt={file.name}
+                                                    style={{
+                                                        width: imageZoom === 1 ? 'auto' : `${imageZoom * 100}%`,
+                                                        maxWidth: imageZoom === 1 ? '100%' : 'none',
+                                                        maxHeight: imageZoom === 1 ? 'calc(100vh - 240px)' : 'none',
+                                                        transition: 'width 0.15s ease'
+                                                    }}
+                                                    className="object-contain rounded-lg shadow-2xl select-none block mx-auto"
+                                                    draggable={false}
+                                                />
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
 

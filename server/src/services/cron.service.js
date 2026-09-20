@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const prisma = require('../config/database');
+const emailService = require('./email.service');
 const logger = console; // Use console as logger fallback
 
 let ioInstance = null;
@@ -347,6 +348,16 @@ const initCronJobs = () => {
     });
 
     // ===========================================
+    // WEEKLY STORAGE QUOTA REPORT CRON
+    // Runs every Monday at 08:00 AM (0 8 * * 1)
+    // Dispatches storage utilization reports to administrators
+    // ===========================================
+    cron.schedule('0 8 * * 1', async () => {
+        logger.info('[Storage Cron] Running automated weekly storage quota report via email');
+        await sendWeeklyStorageQuotaReports();
+    });
+
+    // ===========================================
     // MEETING LIFECYCLE: Auto-end & Auto-start cron
     // Runs every 20 seconds to auto-complete meetings when duration is over
     // and auto-start / expire scheduled meetings
@@ -449,7 +460,116 @@ const checkAndManageMeetings = async () => {
     }
 };
 
+const sendWeeklyStorageQuotaReports = async (specificSchoolId = null, targetEmail = null) => {
+    try {
+        const schools = await prisma.school.findMany({
+            where: specificSchoolId ? { id: specificSchoolId } : {},
+            select: { id: true, name: true }
+        });
+
+        const roles = ['student', 'instructor', 'lab_assistant', 'principal', 'admin'];
+        const DEFAULT_QUOTAS = { student: 100, instructor: 1024, lab_assistant: 1024, principal: 5120, admin: 10240 };
+
+        const formatBytes = (bytes) => {
+            if (!bytes) return '0 B';
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+        };
+
+        const results = [];
+
+        for (const school of schools) {
+            const users = await prisma.user.findMany({
+                where: { schoolId: school.id },
+                select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                    role: true,
+                    storageQuotaMb: true,
+                    storageUsedBytes: true
+                },
+                orderBy: [{ role: 'asc' }, { firstName: 'asc' }]
+            });
+
+            if (users.length === 0) continue;
+
+            const summary = [];
+            for (const role of roles) {
+                const roleUsers = users.filter(u => u.role === role);
+                const totalUsedBytes = roleUsers.reduce((sum, u) => sum + Number(u.storageUsedBytes || 0), 0);
+                const totalQuotaBytes = roleUsers.reduce((sum, u) => sum + ((u.storageQuotaMb || DEFAULT_QUOTAS[role]) * 1024 * 1024), 0);
+
+                summary.push({
+                    role,
+                    userCount: roleUsers.length,
+                    totalUsedBytes,
+                    totalUsedFormatted: formatBytes(totalUsedBytes),
+                    totalQuotaBytes,
+                    percentUsed: totalQuotaBytes > 0 ? Math.round((totalUsedBytes / totalQuotaBytes) * 100) : 0
+                });
+            }
+
+            const formattedUsers = users.map(u => {
+                const quotaBytes = (u.storageQuotaMb || DEFAULT_QUOTAS[u.role] || 500) * 1024 * 1024;
+                const usedBytes = Number(u.storageUsedBytes || 0);
+                return {
+                    ...u,
+                    storageUsedBytes: usedBytes,
+                    usedFormatted: formatBytes(usedBytes),
+                    quotaFormatted: formatBytes(quotaBytes),
+                    percentUsed: quotaBytes > 0 ? Math.round((usedBytes / quotaBytes) * 100) : 0
+                };
+            });
+
+            // Find administrators / principals to notify
+            let recipientEmails = [];
+            if (targetEmail) {
+                recipientEmails = [targetEmail];
+            } else {
+                const admins = users.filter(u => ['admin', 'principal'].includes(u.role) && u.email);
+                recipientEmails = admins.map(a => a.email);
+                if (process.env.SMTP_ADMIN_EMAIL) {
+                    recipientEmails.push(process.env.SMTP_ADMIN_EMAIL);
+                }
+            }
+
+            recipientEmails = Array.from(new Set(recipientEmails.filter(Boolean)));
+            if (recipientEmails.length === 0) {
+                logger.warn(`[Storage Cron] No admin email found for school "${school.name}". Skipping dispatch.`);
+                continue;
+            }
+
+            const dispatchRes = await emailService.sendStorageQuotaReport({
+                to: recipientEmails,
+                summary,
+                users: formattedUsers,
+                schoolName: school.name,
+                includeAttachment: true
+            });
+
+            logger.info(`[Storage Cron] Sent weekly storage quota report for "${school.name}" to ${recipientEmails.join(', ')}`);
+            results.push({ school: school.name, recipients: recipientEmails, dispatchRes });
+        }
+
+        return results;
+    } catch (err) {
+        logger.error('[Storage Cron] Error sending weekly storage quota reports:', err.message);
+        throw err;
+    }
+};
+
 const getSocketIO = () => ioInstance;
 
-module.exports = { initCronJobs, setSocketIO, getSocketIO, ensureCurrentSession, checkAndManageMeetings };
+module.exports = {
+    initCronJobs,
+    setSocketIO,
+    getSocketIO,
+    ensureCurrentSession,
+    checkAndManageMeetings,
+    sendWeeklyStorageQuotaReports
+};
 

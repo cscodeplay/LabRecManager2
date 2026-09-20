@@ -125,6 +125,9 @@ export const storageAPI = {
     setDefaultForRole: (role, quotaMb) => api.put('/storage/defaults', { role, quotaMb }),
     applyDefaults: (studentQuotaMb, instructorQuotaMb) => api.post('/storage/apply-defaults', { studentQuotaMb, instructorQuotaMb }),
     getSummary: () => api.get('/storage/summary'),
+    getEmailStatus: () => api.get('/storage/email-status'),
+    testEmail: () => api.post('/storage/test-email'),
+    sendQuotaReport: (data = {}) => api.post('/storage/send-quota-report', data),
 };
 
 // Folders API - Document folder management

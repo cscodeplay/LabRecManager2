@@ -16,7 +16,11 @@ function getSmtpConfig() {
 
   const isConfigured = Boolean(user && pass);
 
-  return { host, port, secure, user, pass, from, isConfigured };
+  let serverType = 'custom';
+  if (host.toLowerCase().includes('gmail.com')) serverType = 'gmail';
+  else if (host.toLowerCase().includes('office365.com') || host.toLowerCase().includes('outlook.com')) serverType = 'outlook';
+
+  return { host, port, secure, user, pass, from, isConfigured, serverType };
 }
 
 let cachedTransporter = null;
@@ -238,8 +242,288 @@ async function sendImplementationReport({ to, subject, message, attachments = []
   }
 }
 
+
+/**
+ * Generate a responsive branded HTML email body for Weekly Storage Quota reports
+ */
+function generateStorageQuotaEmailHtml({ title = 'Weekly Storage Quota & Capacity Report', summary = [], allUsers = [], usersOverQuota = [], schoolName = 'LabRecManager Institution' }) {
+  const timestamp = new Date().toLocaleString('en-US', {
+    dateStyle: 'full',
+    timeStyle: 'medium'
+  });
+
+  const totalUsedBytes = summary.reduce((sum, s) => sum + (s.totalUsedBytes || 0), 0);
+  const totalQuotaBytes = summary.reduce((sum, s) => sum + (s.totalQuotaBytes || 0), 0);
+  const totalUsers = summary.reduce((sum, s) => sum + (s.userCount || 0), 0);
+  const percentUsed = totalQuotaBytes > 0 ? Math.round((totalUsedBytes / totalQuotaBytes) * 100) : 0;
+
+  const formatSize = (bytes) => {
+    if (!bytes) return '0 B';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  };
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 20px; color: #1e293b; }
+    .container { max-width: 680px; margin: 0 auto; background: #ffffff; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; }
+    .header { background: linear-gradient(135deg, #1e1b4b, #312e81, #4338ca); padding: 32px 24px; text-align: center; color: #ffffff; }
+    .header h1 { margin: 0 0 6px 0; font-size: 22px; font-weight: 700; letter-spacing: -0.025em; }
+    .header p { margin: 0; font-size: 13px; opacity: 0.85; }
+    .content { padding: 28px 24px; }
+    .badge { display: inline-block; padding: 3px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+    .badge-ok { background: #dcfce7; color: #15803d; }
+    .badge-warn { background: #fef3c7; color: #b45309; }
+    .badge-danger { background: #fee2e2; color: #b91c1c; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+    .kpi-card { background: #f1f5f9; border-radius: 10px; padding: 14px 10px; text-align: center; border: 1px solid #e2e8f0; }
+    .kpi-value { font-size: 20px; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
+    .kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-weight: 600; }
+    .alert-box { background: #fff1f2; border: 1px solid #fecdd3; border-left: 4px solid #e11d48; padding: 14px 16px; border-radius: 8px; margin-bottom: 24px; font-size: 13px; color: #881337; }
+    .table-container { margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+    th { background: #f8fafc; padding: 10px 12px; font-weight: 600; color: #475569; border-bottom: 1px solid #e2e8f0; }
+    td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+    tr:last-child td { border-bottom: none; }
+    .progress-bar-bg { background: #e2e8f0; height: 6px; border-radius: 9999px; overflow: hidden; margin-top: 4px; }
+    .progress-bar-fill { height: 100%; border-radius: 9999px; }
+    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 18px; text-align: center; font-size: 11px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📊 ${title}</h1>
+      <p>${schoolName} • Automated System Storage Governance</p>
+    </div>
+    <div class="content">
+      <!-- KPI Overview -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-value">${formatSize(totalUsedBytes)}</div>
+          <div class="kpi-label">Used Storage</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value">${formatSize(totalQuotaBytes)}</div>
+          <div class="kpi-label">Total Allocated</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value ${percentUsed >= 90 ? 'badge-danger' : percentUsed >= 70 ? 'badge-warn' : 'badge-ok'}">${percentUsed}%</div>
+          <div class="kpi-label">Capacity Used</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value">${totalUsers}</div>
+          <div class="kpi-label">Active Users</div>
+        </div>
+      </div>
+
+      ${usersOverQuota.length > 0 ? `
+      <div class="alert-box">
+        <strong>⚠️ Attention Required (${usersOverQuota.length} Accounts Near or Exceeding Quota):</strong><br/>
+        <ul style="margin: 6px 0 0 16px; padding: 0;">
+          ${usersOverQuota.slice(0, 5).map(u => `
+            <li><strong>${u.firstName} ${u.lastName}</strong> (${u.role}) — ${u.usedFormatted} of ${u.quotaFormatted} (${u.percentUsed}%)</li>
+          `).join('')}
+          ${usersOverQuota.length > 5 ? `<li>...and ${usersOverQuota.length - 5} more users (see attached CSV)</li>` : ''}
+        </ul>
+      </div>
+      ` : `
+      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-left: 4px solid #16a34a; padding: 12px 16px; border-radius: 8px; margin-bottom: 24px; font-size: 13px; color: #14532d;">
+        ✅ <strong>Healthy Capacity:</strong> All user accounts are operating within their allocated storage thresholds.
+      </div>
+      `}
+
+      <!-- Role Breakdown -->
+      <h3 style="font-size: 14px; margin: 0 0 10px 0; color: #0f172a; text-transform: uppercase; letter-spacing: 0.05em;">Storage Breakdown by Role</h3>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Role</th>
+              <th>Users</th>
+              <th>Total Used</th>
+              <th>Total Quota</th>
+              <th>Utilization</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${summary.map(s => `
+              <tr>
+                <td style="font-weight: 600; text-transform: capitalize;">${(s.role || '').replace('_', ' ')}</td>
+                <td>${s.userCount}</td>
+                <td>${s.totalUsedFormatted || formatSize(s.totalUsedBytes)}</td>
+                <td>${formatSize(s.totalQuotaBytes)}</td>
+                <td>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-weight: 600; font-size: 11px;">${s.percentUsed}%</span>
+                    <div class="progress-bar-bg" style="flex: 1;">
+                      <div class="progress-bar-fill" style="width: ${Math.min(100, s.percentUsed)}%; background: ${s.percentUsed >= 90 ? '#ef4444' : s.percentUsed >= 70 ? '#f59e0b' : '#10b981'};"></div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <div style="font-size: 12px; color: #64748b; background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px dashed #cbd5e1;">
+        📎 <strong>Attached Report:</strong> A complete individual user breakdown spreadsheet (CSV) is attached to this email for audit compliance and quota adjustments.
+      </div>
+    </div>
+    <div class="footer">
+      <p>Report generated automatically on ${timestamp}</p>
+      <p>© ${new Date().getFullYear()} LabRecManager Administration & Infrastructure Portal.</p>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim();
+}
+
+/**
+ * Generate CSV text for user storage breakdown
+ */
+function generateStorageCsvAttachment(users = []) {
+  const headers = ['User ID', 'First Name', 'Last Name', 'Email', 'Role', 'Quota (MB)', 'Used (Bytes)', 'Used Formatted', 'Quota Formatted', 'Percent Used'];
+  const rows = users.map(u => [
+    `"${u.id || ''}"`,
+    `"${(u.firstName || '').replace(/"/g, '""')}"`,
+    `"${(u.lastName || '').replace(/"/g, '""')}"`,
+    `"${(u.email || '').replace(/"/g, '""')}"`,
+    `"${u.role || ''}"`,
+    u.storageQuotaMb || 500,
+    u.storageUsedBytes || 0,
+    `"${u.usedFormatted || ''}"`,
+    `"${u.quotaFormatted || ''}"`,
+    `${u.percentUsed || 0}%`
+  ]);
+
+  return [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
+}
+
+/**
+ * Send Weekly Storage Quota Report Email
+ */
+async function sendStorageQuotaReport({ to, subject, summary = [], users = [], schoolName = 'LabRecManager Institution', includeAttachment = true }) {
+  const config = getSmtpConfig();
+  const recipients = Array.isArray(to) ? to.join(', ') : to;
+
+  if (!recipients || !recipients.trim()) {
+    throw new Error('Recipient email address is required');
+  }
+
+  const usersOverQuota = users.filter(u => (u.percentUsed || 0) >= 85);
+  const finalSubject = subject || `[LabRecManager] Weekly Storage Quota Report - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  const html = generateStorageQuotaEmailHtml({ title: finalSubject, summary, allUsers: users, usersOverQuota, schoolName });
+
+  const attachments = [];
+  if (includeAttachment && users.length > 0) {
+    const csvContent = generateStorageCsvAttachment(users);
+    attachments.push({
+      filename: `storage-quota-report-${new Date().toISOString().split('T')[0]}.csv`,
+      content: Buffer.from(csvContent, 'utf-8'),
+      contentType: 'text/csv'
+    });
+  }
+
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    console.warn('[EmailService] SMTP credentials not configured. Simulating weekly storage quota report:');
+    console.log(`[EmailService] Simulated To: ${recipients}`);
+    console.log(`[EmailService] Simulated Subject: ${finalSubject}`);
+    console.log(`[EmailService] Simulated Attachment: ${attachments.map(a => a.filename).join(', ') || 'None'}`);
+
+    return {
+      success: true,
+      simulated: true,
+      messageId: `simulated-storage-${Date.now()}`,
+      recipients: recipients.split(',').map(s => s.trim()),
+      attachmentsCount: attachments.length,
+      note: 'SMTP not configured in environment. Weekly storage report simulated successfully.'
+    };
+  }
+
+  try {
+    const info = await transporter.sendMail({
+      from: config.from,
+      to: recipients,
+      subject: finalSubject,
+      text: `${finalSubject}\n\nWeekly storage quota report for ${schoolName}.\nPlease find the attached CSV for full user breakdown.\n\nGenerated by LabRecManager.`,
+      html,
+      attachments
+    });
+
+    console.log(`[EmailService] Storage quota report sent successfully. Message ID: ${info.messageId}`);
+    return {
+      success: true,
+      simulated: false,
+      messageId: info.messageId,
+      recipients: recipients.split(',').map(s => s.trim()),
+      attachmentsCount: attachments.length
+    };
+  } catch (err) {
+    console.error('[EmailService] Failed to send storage quota report:', err);
+    throw new Error(`Email dispatch failed: ${err.message}`);
+  }
+}
+
+/**
+ * Test SMTP connection
+ */
+async function testSmtpConnection() {
+  const config = getSmtpConfig();
+  if (!config.isConfigured) {
+    return {
+      configured: false,
+      serverType: config.serverType,
+      host: config.host,
+      port: config.port,
+      user: config.user,
+      message: 'SMTP credentials not configured (SMTP_USER/SMTP_PASS are empty). System is using simulation mode.'
+    };
+  }
+
+  const transporter = createTransporter();
+  try {
+    await transporter.verify();
+    return {
+      configured: true,
+      connected: true,
+      serverType: config.serverType,
+      host: config.host,
+      port: config.port,
+      user: config.user,
+      from: config.from,
+      message: `Successfully connected to ${config.serverType.toUpperCase()} SMTP server (${config.host}:${config.port}).`
+    };
+  } catch (err) {
+    return {
+      configured: true,
+      connected: false,
+      serverType: config.serverType,
+      host: config.host,
+      port: config.port,
+      error: err.message,
+      message: `Failed to connect to SMTP server: ${err.message}`
+    };
+  }
+}
+
 module.exports = {
   getSmtpConfig,
   sendImplementationReport,
-  generateEmailHtml
+  generateEmailHtml,
+  generateStorageQuotaEmailHtml,
+  sendStorageQuotaReport,
+  testSmtpConnection
 };

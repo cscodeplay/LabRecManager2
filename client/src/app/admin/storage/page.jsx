@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { HardDrive, Users, Settings, Save, RefreshCw, ChevronDown, ChevronUp, Search, AlertCircle, Check, Database } from 'lucide-react';
+import { HardDrive, Users, Settings, Save, RefreshCw, ChevronDown, ChevronUp, Search, AlertCircle, Check, Database, Mail, Send, Clock, ShieldCheck, X } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { storageAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -43,12 +43,23 @@ export default function StorageManagementPage() {
     const [studentQuota, setStudentQuota] = useState(100);
     const [instructorQuota, setInstructorQuota] = useState(1024);
 
+    // Email Quota Report state
+    const [showEmailModal, setShowEmailModal] = useState(false);
+    const [emailRecipient, setEmailRecipient] = useState('');
+    const [emailStatus, setEmailStatus] = useState(null);
+    const [sendingReport, setSendingReport] = useState(false);
+    const [testingSmtp, setTestingSmtp] = useState(false);
+    const [includeAttachment, setIncludeAttachment] = useState(true);
+
     useEffect(() => {
         if (!_hasHydrated) return;
         if (!isAuthenticated) { router.push('/login'); return; }
         if (!['admin', 'principal'].includes(user?.role)) {
             router.push('/dashboard');
             return;
+        }
+        if (user?.email) {
+            setEmailRecipient(user.email);
         }
         loadData();
     }, [_hasHydrated, isAuthenticated, user]);
@@ -64,6 +75,13 @@ export default function StorageManagementPage() {
             setSummary(summaryRes.data.data.summary || []);
             setDefaults(defaultsRes.data.data.defaults || []);
             setUsers(usersRes.data.data.users || []);
+
+            try {
+                const statusRes = await storageAPI.getEmailStatus();
+                if (statusRes.data.success) setEmailStatus(statusRes.data.data);
+            } catch (e) {
+                console.warn('Could not load email status:', e);
+            }
 
             // Set initial quota values from defaults
             const studentDefault = defaultsRes.data.data.defaults.find(d => d.role === 'student');
@@ -126,6 +144,36 @@ export default function StorageManagementPage() {
             loadData();
         } catch (err) {
             toast.error('Failed to recalculate');
+        }
+    };
+
+    const handleSendReport = async () => {
+        setSendingReport(true);
+        try {
+            const target = emailRecipient.trim() || user?.email;
+            const res = await storageAPI.sendQuotaReport({ email: target, includeAttachment });
+            toast.success(res.data.message || `Storage quota report sent to ${target}`);
+            setShowEmailModal(false);
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to send storage quota report');
+        } finally {
+            setSendingReport(false);
+        }
+    };
+
+    const handleTestSmtp = async () => {
+        setTestingSmtp(true);
+        try {
+            const res = await storageAPI.testEmail();
+            if (res.data.data?.connected) {
+                toast.success(res.data.data.message || 'SMTP Connection Successful!');
+            } else {
+                toast(res.data.data?.message || 'SMTP in simulation mode', { icon: 'ℹ️' });
+            }
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'SMTP test failed');
+        } finally {
+            setTestingSmtp(false);
         }
     };
 
@@ -214,9 +262,18 @@ export default function StorageManagementPage() {
                     </h1>
                     <p className="text-slate-500">Manage storage quotas for users by role</p>
                 </div>
-                <button onClick={handleRecalculate} className="btn btn-secondary">
-                    <RefreshCw className="w-4 h-4" /> Recalculate Usage
-                </button>
+                <div className="flex items-center gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setShowEmailModal(true)}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm transition shadow-xs"
+                    >
+                        <Mail className="w-4 h-4" /> Email Storage Report
+                    </button>
+                    <button onClick={handleRecalculate} className="btn btn-secondary">
+                        <RefreshCw className="w-4 h-4" /> Recalculate Usage
+                    </button>
+                </div>
             </div>
 
             {/* Summary Cards */}
@@ -472,6 +529,113 @@ export default function StorageManagementPage() {
                     </div>
                 )}
             </div>
+
+            {/* Email Storage Report Modal */}
+            {showEmailModal && (
+                <div className="fixed inset-0 z-[99999] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100 dark:border-slate-800">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+                                    <Mail className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-900 dark:text-white text-base">Weekly Storage Quota Report</h3>
+                                    <p className="text-xs text-slate-500">Automated Capacity Governance</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowEmailModal(false)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Automated Schedule Card */}
+                        <div className="mb-4 p-3.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 text-xs">
+                            <div className="flex items-center gap-2 text-indigo-900 dark:text-indigo-200 font-semibold mb-1">
+                                <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                Automated Weekly Schedule: Active
+                            </div>
+                            <p className="text-indigo-700 dark:text-indigo-300">
+                                This comprehensive report is automatically compiled and emailed to administrators every <strong>Monday at 08:00 AM</strong>.
+                            </p>
+                        </div>
+
+                        {/* Server Status Badge */}
+                        <div className="mb-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <ShieldCheck className={`w-4 h-4 ${emailStatus?.isConfigured ? 'text-emerald-600' : 'text-amber-500'}`} />
+                                <span className="text-slate-700 dark:text-slate-300">
+                                    Server: <strong>{emailStatus?.serverType ? emailStatus.serverType.toUpperCase() : 'SMTP'}</strong> ({emailStatus?.isConfigured ? 'Connected' : 'Simulation Mode'})
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleTestSmtp}
+                                disabled={testingSmtp}
+                                className="px-2 py-1 text-[11px] rounded font-medium bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 transition disabled:opacity-50"
+                            >
+                                {testingSmtp ? 'Testing...' : 'Test Connection'}
+                            </button>
+                        </div>
+
+                        {/* Recipient Input */}
+                        <div className="mb-4">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                Recipient Email Address
+                            </label>
+                            <input
+                                type="email"
+                                value={emailRecipient}
+                                onChange={(e) => setEmailRecipient(e.target.value)}
+                                placeholder="admin@school.org"
+                                className="input w-full text-sm"
+                            />
+                            <p className="text-[11px] text-slate-500 mt-1">
+                                Leave as your email or specify an administrative mailing list.
+                            </p>
+                        </div>
+
+                        {/* Options */}
+                        <div className="mb-5 flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                id="includeAttachmentCheck"
+                                checked={includeAttachment}
+                                onChange={(e) => setIncludeAttachment(e.target.checked)}
+                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <label htmlFor="includeAttachmentCheck" className="text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                                Attach complete user breakdown spreadsheet (<code className="text-[11px] bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">.csv</code>)
+                            </label>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                            <button
+                                type="button"
+                                onClick={() => setShowEmailModal(false)}
+                                className="btn btn-secondary text-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSendReport}
+                                disabled={sendingReport}
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm transition shadow-xs disabled:opacity-50"
+                            >
+                                <Send className="w-4 h-4" />
+                                {sendingReport ? 'Dispatching...' : 'Send Report Now'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -8825,6 +8825,7 @@ export default function FloatingChatbot() {
                     fileType: file.fileType || file.mimeType || fn.split('.').pop() || 'pdf',
                     driveFileId: file.driveFileId || file.id,
                     isGoogleDrive: Boolean(file.isGoogleDrive || !file.url),
+                    url: file.url,
                     webViewLink: file.webViewLink
                 }];
             });

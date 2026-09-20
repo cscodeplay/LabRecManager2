@@ -348,15 +348,15 @@ async function initTables() {
                         title: 'Multi-Tenant Cloud Storage Quota & Archival System',
                         description: 'Optimizing file uploads, Cloudinary/Render bucket usage tracking, and automated quota re-calculation.',
                         category: 'Storage & Infra',
-                        status: 'in_progress',
+                        status: 'completed',
                         started_at: '2026-09-18 11:00:00',
-                        ended_at: null,
+                        ended_at: '2026-09-20 21:30:00',
                         tasks: JSON.stringify([
                             { title: 'Implement chunked multipart upload for files > 50MB', completed: true, completedAt: '2026-09-18T11:45:00Z' },
                             { title: 'Add real-time storage quota gauges in admin dashboard', completed: true, completedAt: '2026-09-18T12:00:00Z' },
-                            { title: 'Automate weekly storage quota reports via email', completed: false, completedAt: null }
+                            { title: 'Automate weekly storage quota reports via email', completed: true, completedAt: '2026-09-20T21:30:00Z' }
                         ]),
-                        outcomes: 'In progress - Storage calculation active with real-time tracking.'
+                        outcomes: 'Completed - Automated weekly storage quota email reporting active via node-cron with on-demand admin dispatch and real-time quota tracking.'
                     }
                 ];
 

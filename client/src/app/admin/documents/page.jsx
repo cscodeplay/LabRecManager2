@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive } from 'lucide-react';
+import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive, Bot } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { useAuthStore } from '@/lib/store';
@@ -939,6 +939,51 @@ export default function DocumentsPage() {
         setSelectedFolders(new Set());
     };
 
+    // Attach document to Floating AI Copilot
+    const handleAttachFileToBot = (doc, customPrompt = '') => {
+        if (!doc) return;
+        window.dispatchEvent(new CustomEvent('attach-to-bot', {
+            detail: {
+                file: {
+                    id: doc.id,
+                    name: doc.fileName || doc.name,
+                    fileName: doc.fileName || doc.name,
+                    fileType: doc.fileType || doc.mimeType || 'pdf',
+                    mimeType: doc.mimeType,
+                    url: doc.url,
+                    isGoogleDrive: Boolean(doc.isGoogleDrive),
+                    driveFileId: doc.driveFileId
+                },
+                prompt: customPrompt || `I have attached "${doc.fileName || doc.name}". Please summarize its key concepts and suggest 3 teaching ideas.`
+            }
+        }));
+    };
+
+    // Attach all selected documents to Floating AI Copilot
+    const handleAttachSelectedToBot = () => {
+        if (selectedDocs.size === 0) return;
+        const selectedDocObjects = documents.filter(d => selectedDocs.has(d.id));
+        selectedDocObjects.forEach(doc => {
+            window.dispatchEvent(new CustomEvent('attach-to-bot', {
+                detail: {
+                    file: {
+                        id: doc.id,
+                        name: doc.fileName || doc.name,
+                        fileName: doc.fileName || doc.name,
+                        fileType: doc.fileType || doc.mimeType || 'pdf',
+                        mimeType: doc.mimeType,
+                        url: doc.url,
+                        isGoogleDrive: Boolean(doc.isGoogleDrive),
+                        driveFileId: doc.driveFileId
+                    },
+                    prompt: `I have attached ${selectedDocObjects.length} documents. Please analyze them.`
+                }
+            }));
+        });
+        setSelectedDocs(new Set());
+        setSelectedFolders(new Set());
+    };
+
     const handlePaste = async () => {
         if (!clipboard) return;
         const targetFolderId = currentFolder ? currentFolder.id : 'root';
@@ -1181,6 +1226,11 @@ export default function DocumentsPage() {
                             <button onClick={handleOpenBulkTransferToDrive} title="Move/Copy to Google Drive" className="h-9 w-9 flex items-center justify-center text-slate-600 hover:text-emerald-600 p-2 rounded-lg hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition">
                                 <HardDriveUpload className="w-5 h-5" />
                             </button>
+                            {selectedDocs.size > 0 && (
+                                <button onClick={handleAttachSelectedToBot} title="Attach Selected to AI Copilot" className="h-9 w-9 flex items-center justify-center text-indigo-600 hover:text-indigo-700 p-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition">
+                                    <Bot className="w-5 h-5" />
+                                </button>
+                            )}
                             <button onClick={handleBulkDelete} title="Move to Trash" className="h-9 w-9 flex items-center justify-center text-slate-600 hover:text-red-600 p-2 rounded-lg hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition">
                                 <Trash2 className="w-5 h-5" />
                             </button>
@@ -1746,6 +1796,9 @@ export default function DocumentsPage() {
                                         <button title="View Preview" onClick={() => setViewingDoc(shareInfo ? { ...doc, sharePermission: shareInfo.permission } : doc)} className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition" aria-label="View">
                                             <Eye className="w-4 h-4" />
                                         </button>
+                                        <button title="Attach to AI Copilot" onClick={() => handleAttachFileToBot(doc)} className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition" aria-label="Attach to AI Copilot">
+                                            <Bot className="w-4 h-4" />
+                                        </button>
                                         {activeTab === 'my' && canUpload && (
                                             <>
                                                 <button onClick={() => handleEdit(doc)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Edit Document" aria-label="Edit">
@@ -1976,6 +2029,9 @@ export default function DocumentsPage() {
                                                         <button onClick={() => setViewingDoc(shareInfo ? { ...doc, sharePermission: shareInfo.permission } : doc)} className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition" title="View Preview" aria-label="View">
                                                             <Eye className="w-4 h-4" />
                                                         </button>
+                                                        <button onClick={() => handleAttachFileToBot(doc)} className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition" title="Attach to AI Copilot" aria-label="Attach to AI Copilot">
+                                                            <Bot className="w-4 h-4" />
+                                                        </button>
                                                         {activeTab === 'my' && canUpload && (
                                                             <>
                                                                 <button onClick={() => handleEdit(doc)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Edit Document" aria-label="Edit">
@@ -2142,6 +2198,12 @@ export default function DocumentsPage() {
                                                     className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex-1 min-w-[90px]"
                                                 >
                                                     <Eye className="w-3.5 h-3.5" /> View
+                                                </button>
+                                                <button
+                                                    onClick={() => handleAttachFileToBot(doc)}
+                                                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 flex-1 min-w-[90px]"
+                                                >
+                                                    <Bot className="w-3.5 h-3.5" /> Attach to Bot
                                                 </button>
                                                 {activeTab === 'my' && canUpload && (
                                                     <>
@@ -2373,6 +2435,7 @@ export default function DocumentsPage() {
                         fileSize: viewingDoc.fileSize || viewingDoc.size
                     }}
                     onClose={() => setViewingDoc(null)}
+                    onAttachToBot={(f, text) => handleAttachFileToBot(f || viewingDoc, text)}
                     onDownload={(f) => {
                         const dlUrl = f.url || viewingDoc.url;
                         if (dlUrl) {

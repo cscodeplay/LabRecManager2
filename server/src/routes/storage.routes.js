@@ -3,6 +3,8 @@ const router = express.Router();
 const prisma = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const emailService = require('../services/email.service');
+const { sendWeeklyStorageQuotaReports } = require('../services/cron.service');
 
 // Helper to format bytes
 function formatBytes(bytes) {
@@ -323,6 +325,65 @@ router.get('/summary', authenticate, authorize('admin', 'principal'), asyncHandl
     res.json({
         success: true,
         data: { summary }
+    });
+}));
+
+/**
+ * @route   GET /api/storage/email-status
+ * @desc    Get SMTP server and email report configuration status
+ * @access  Private (Admin/Principal)
+ */
+router.get('/email-status', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const config = emailService.getSmtpConfig();
+    res.json({
+        success: true,
+        data: {
+            isConfigured: config.isConfigured,
+            serverType: config.serverType,
+            host: config.host,
+            port: config.port,
+            user: config.user ? `${config.user.substring(0, 3)}***@${config.user.split('@')[1] || 'domain'}` : null,
+            from: config.from,
+            automatedSchedule: 'Every Monday at 08:00 AM (0 8 * * 1)'
+        }
+    });
+}));
+
+/**
+ * @route   POST /api/storage/test-email
+ * @desc    Test SMTP connection
+ * @access  Private (Admin/Principal)
+ */
+router.post('/test-email', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const result = await emailService.testSmtpConnection();
+    res.json({
+        success: true,
+        data: result
+    });
+}));
+
+/**
+ * @route   POST /api/storage/send-quota-report
+ * @desc    Trigger on-demand dispatch of weekly storage quota report via email
+ * @access  Private (Admin/Principal)
+ */
+router.post('/send-quota-report', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { email, includeAttachment = true } = req.body;
+    const recipientEmail = (email && email.trim()) || req.user.email;
+
+    if (!recipientEmail) {
+        return res.status(400).json({ success: false, message: 'Recipient email is required' });
+    }
+
+    const results = await sendWeeklyStorageQuotaReports(req.user.schoolId, recipientEmail);
+
+    res.json({
+        success: true,
+        message: `Storage quota report successfully dispatched to ${recipientEmail}`,
+        data: {
+            recipient: recipientEmail,
+            results
+        }
     });
 }));
 
