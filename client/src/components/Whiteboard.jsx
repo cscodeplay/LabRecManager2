@@ -11,7 +11,8 @@ import {
     Diamond, Cloud, Spline, ArrowLeftRight, Waypoints, StickyNote as StickyNoteIcon, PaintBucket,
     BringToFront, SendToBack, AlignLeft, AlignCenterHorizontal, AlignRight,
     AlignStartVertical, AlignCenterVertical, AlignEndVertical,
-    AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween, Group, Ungroup, Lock, Unlock, Users, MessageCircle, User
+    AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween, Group, Ungroup, Lock, Unlock, Users, MessageCircle, User,
+    Folder, Upload
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
@@ -21,6 +22,7 @@ import { BRUSH_TYPES, renderCalligraphy, renderCrayon, renderWatercolor, renderF
 import StickyNoteRenderer, { createStickyNoteObject, STICKY_COLORS } from './StickyNote';
 import ConnectorLine from './ConnectorLine';
 import TemplateGallery from './TemplateGallery';
+import WhiteboardImagePickerModal from './WhiteboardImagePickerModal';
 import api from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/lib/store';
@@ -379,6 +381,7 @@ export default function Whiteboard({
     const [selectMode, setSelectMode] = useState('rectangle'); // rectangle, lasso
     const [toolbarDock, setToolbarDock] = useState('bottom'); // bottom, top, left, right
     const [showImagePicker, setShowImagePicker] = useState(false);
+    const [showImagePickerModal, setShowImagePickerModal] = useState(false);
     const [showScreenshotModal, setShowScreenshotModal] = useState(false);
     const [screenshotPreview, setScreenshotPreview] = useState(null);
     const [screenshotBlob, setScreenshotBlob] = useState(null);
@@ -4119,6 +4122,57 @@ export default function Whiteboard({
         if (currentPage < totalPages - 1) loadPage(currentPage + 1);
     }, [currentPage, totalPages, loadPage]);
 
+    // Generic image inserter from Data URL or remote URL
+    const insertImageFromSrc = useCallback((srcUrl) => {
+        if (!srcUrl) return;
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+            const canvas = canvasRef.current;
+            let imgWidth = img.width || 400;
+            let imgHeight = img.height || 300;
+            const maxWidth = (canvas?.width || 800) * 0.6;
+            const maxHeight = (canvas?.height || 600) * 0.6;
+
+            if (imgWidth > maxWidth) {
+                const ratio = maxWidth / imgWidth;
+                imgWidth = maxWidth;
+                imgHeight *= ratio;
+            }
+            if (imgHeight > maxHeight) {
+                const ratio = maxHeight / imgHeight;
+                imgHeight = maxHeight;
+                imgWidth *= ratio;
+            }
+
+            const imageObj = {
+                id: Date.now(),
+                type: 'image',
+                src: srcUrl,
+                x: canvas ? (canvas.width - imgWidth) / 2 : 100,
+                y: canvas ? (canvas.height - imgHeight) / 2 : 100,
+                width: imgWidth,
+                height: imgHeight,
+                rotation: 0,
+                imageElement: img
+            };
+
+            setImageObjects(prev => [...prev, imageObj]);
+            setSelectedImageId(imageObj.id);
+
+            // Emit image event
+            emitDrawEvent({
+                type: 'image',
+                imageData: srcUrl,
+                x: imageObj.x,
+                y: imageObj.y,
+                width: imgWidth,
+                height: imgHeight
+            });
+        };
+        img.src = srcUrl;
+    }, [emitDrawEvent]);
+
     // Image insert handler - creates selectable image objects
     const handleImageInsert = useCallback((e) => {
         const file = e.target.files?.[0];
@@ -4126,58 +4180,11 @@ export default function Whiteboard({
 
         const reader = new FileReader();
         reader.onload = (event) => {
-            const img = new Image();
-            img.onload = () => {
-                const canvas = canvasRef.current;
-                if (!canvas) return;
-
-                // Scale image to fit canvas if too large
-                let imgWidth = img.width;
-                let imgHeight = img.height;
-                const maxWidth = canvas.width * 0.6;
-                const maxHeight = canvas.height * 0.6;
-
-                if (imgWidth > maxWidth) {
-                    const ratio = maxWidth / imgWidth;
-                    imgWidth = maxWidth;
-                    imgHeight *= ratio;
-                }
-                if (imgHeight > maxHeight) {
-                    const ratio = maxHeight / imgHeight;
-                    imgHeight = maxHeight;
-                    imgWidth *= ratio;
-                }
-
-                // Create image object for manipulation
-                const imageObj = {
-                    id: Date.now(),
-                    src: event.target.result,
-                    x: (canvas.width - imgWidth) / 2,
-                    y: (canvas.height - imgHeight) / 2,
-                    width: imgWidth,
-                    height: imgHeight,
-                    rotation: 0, // degrees
-                    imageElement: img
-                };
-
-                setImageObjects(prev => [...prev, imageObj]);
-                setSelectedImageId(imageObj.id);
-
-                // Emit image event
-                emitDrawEvent({
-                    type: 'image',
-                    imageData: event.target.result,
-                    x: imageObj.x,
-                    y: imageObj.y,
-                    width: imgWidth,
-                    height: imgHeight
-                });
-            };
-            img.src = event.target.result;
+            insertImageFromSrc(event.target.result);
         };
         reader.readAsDataURL(file);
         e.target.value = ''; // Reset input
-    }, [emitDrawEvent]);
+    }, [insertImageFromSrc]);
 
     // Handle tool click - special handling for image tool
     const handleToolClick = useCallback((toolId) => {
@@ -4467,17 +4474,26 @@ export default function Whiteboard({
 
                                 {/* Image Tool Popover */}
                                 {tool === t.id && t.id === 'image' && showImagePicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 min-w-[150px]`}>
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 min-w-[200px]`}>
+                                        <button 
+                                            onClick={() => { setShowImagePickerModal(true); setShowImagePicker(false); }}
+                                            className="text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded-md transition flex items-center gap-2"
+                                        >
+                                            <Folder className="w-4 h-4 text-emerald-400" />
+                                            Documents & Google Drive
+                                        </button>
                                         <button 
                                             onClick={() => { imageInputRef.current?.click(); setShowImagePicker(false); }}
-                                            className="text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded-md transition"
+                                            className="text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded-md transition flex items-center gap-2"
                                         >
+                                            <Upload className="w-4 h-4 text-blue-400" />
                                             Upload from Device
                                         </button>
                                         <button 
                                             onClick={() => { setShowScreenshotModal(true); setShowImagePicker(false); }}
-                                            className="text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded-md transition"
+                                            className="text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded-md transition flex items-center gap-2"
                                         >
+                                            <Camera className="w-4 h-4 text-purple-400" />
                                             Insert Screenshot
                                         </button>
                                     </div>
@@ -6715,22 +6731,19 @@ export default function Whiteboard({
                 <ScreenshotPickerModal 
                     onClose={() => setShowScreenshotModal(false)}
                     onSelect={(url) => {
-                        const img = new Image();
-                        img.crossOrigin = 'anonymous';
-                        img.onload = () => {
-                            const newObj = {
-                                id: Date.now(),
-                                type: 'image',
-                                src: url,
-                                x: 100,
-                                y: 100,
-                                width: Math.min(img.width, 400),
-                                height: Math.min(img.height, (400 / img.width) * img.height)
-                            };
-                            setImageObjects(prev => [...prev, newObj]);
-                        };
-                        img.src = url;
+                        insertImageFromSrc(url);
                         setShowScreenshotModal(false);
+                    }}
+                />
+            )}
+
+            {showImagePickerModal && (
+                <WhiteboardImagePickerModal
+                    isOpen={showImagePickerModal}
+                    onClose={() => setShowImagePickerModal(false)}
+                    onSelectImage={(url) => {
+                        insertImageFromSrc(url);
+                        setShowImagePickerModal(false);
                     }}
                 />
             )}

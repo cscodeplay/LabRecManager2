@@ -1223,24 +1223,6 @@ export default function DocumentsPage() {
                             </div>
                         </div>
                     )}
-                    {canUpload && (
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setShowCreateFolder(true)}
-                                className="h-9 w-9 rounded-xl flex items-center justify-center bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 transition"
-                                title="Create New Folder"
-                            >
-                                <FolderPlus className="w-4 h-4" />
-                            </button>
-                            <button
-                                onClick={() => setShowUpload(true)}
-                                className="h-9 w-9 rounded-xl flex items-center justify-center bg-primary-600 hover:bg-primary-700 text-white shadow-2xs transition"
-                                title="Upload Document"
-                            >
-                                <Upload className="w-4 h-4" />
-                            </button>
-                        </div>
-                    )}
                     {clipboard && canUpload && (
                         <button
                             onClick={handlePaste}
@@ -1271,7 +1253,7 @@ export default function DocumentsPage() {
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
                     title={`Shared with Me${sharedDocuments.length > 0 ? ` (${sharedDocuments.length})` : ''}`}
                 >
-                    <Inbox className="w-5 h-5" />
+                    <Share2 className="w-5 h-5" />
                     {sharedDocuments.length > 0 && (
                         <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full ring-2 ring-white dark:ring-slate-900">
                             {sharedDocuments.length}
@@ -1339,21 +1321,44 @@ export default function DocumentsPage() {
                             )}
                         </div>
 
-                        <div className="flex bg-slate-100 rounded-lg p-1">
-                            <button
-                                onClick={() => setViewMode('grid')}
-                                className={`p-2 rounded ${viewMode === 'grid' ? 'bg-white shadow-sm' : 'text-slate-500'}`}
-                                title="Grid View"
-                            >
-                                <Grid3X3 className="w-4 h-4" />
-                            </button>
-                            <button
-                                onClick={() => setViewMode('list')}
-                                className={`p-2 rounded ${viewMode === 'list' ? 'bg-white shadow-sm' : 'text-slate-500'}`}
-                                title="List View"
-                            >
-                                <List className="w-4 h-4" />
-                            </button>
+                        {/* Actions & View Toggle */}
+                        <div className="flex items-center gap-2">
+                            {canUpload && activeTab === 'my' && (
+                                <div className="flex items-center gap-1.5 mr-1">
+                                    <button
+                                        onClick={() => setShowCreateFolder(true)}
+                                        className="h-8 w-8 rounded-lg flex items-center justify-center bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 transition"
+                                        title="Create New Folder"
+                                    >
+                                        <FolderPlus className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => setShowUpload(true)}
+                                        className="h-8 w-8 rounded-lg flex items-center justify-center bg-primary-600 hover:bg-primary-700 text-white shadow-2xs transition"
+                                        title="Upload Document"
+                                    >
+                                        <Upload className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* View Toggle */}
+                            <div className="flex bg-slate-100 rounded-lg p-1">
+                                <button
+                                    onClick={() => setViewMode('grid')}
+                                    className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}
+                                    title="Grid View"
+                                >
+                                    <Grid3X3 className="w-4 h-4" />
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('list')}
+                                    className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}
+                                    title="List View"
+                                >
+                                    <List className="w-4 h-4" />
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1397,9 +1402,11 @@ export default function DocumentsPage() {
                     <GoogleDriveBrowser
                         availableFolders={folders}
                         onImportSuccess={() => {
-                            fetchDocuments();
-                            fetchStorageInfo();
+                            loadDocuments();
+                            loadFolders();
+                            loadStorage();
                         }}
+                        onLocalFolderCreated={loadFolders}
                     />
                 ) : activeTab === 'trash' ? (
                     trashDocuments.length === 0 ? (
@@ -1444,7 +1451,19 @@ export default function DocumentsPage() {
                                                 </td>
                                                 <td className="p-3">
                                                     <div className="flex items-center gap-3">
-                                                        <span className="text-xl opacity-50">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                                        {['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(doc.fileType?.toLowerCase()) && doc.url ? (
+                                                            <div className="w-8 h-8 rounded-md bg-slate-100 flex-shrink-0 overflow-hidden border border-slate-200">
+                                                                <img
+                                                                    src={doc.url}
+                                                                    alt={doc.name}
+                                                                    className="w-full h-full object-cover rounded-md"
+                                                                    loading="lazy"
+                                                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                                                />
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-xl opacity-50">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                                        )}
                                                         <div>
                                                             <p className="font-medium text-slate-700">{doc.name}</p>
                                                             {doc.description && <p className="text-xs text-slate-500 truncate max-w-xs">{doc.description}</p>}
@@ -1492,7 +1511,19 @@ export default function DocumentsPage() {
                                                 onChange={() => toggleDocSelection(doc.id)}
                                                 className="mt-1 rounded border-slate-300 text-primary-600 focus:ring-primary-500 shrink-0"
                                             />
-                                            <span className="text-2xl opacity-60 shrink-0">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                            {['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(doc.fileType?.toLowerCase()) && doc.url ? (
+                                                <div className="w-10 h-10 rounded-lg bg-slate-100 shrink-0 overflow-hidden border border-slate-200">
+                                                    <img
+                                                        src={doc.url}
+                                                        alt={doc.name}
+                                                        className="w-full h-full object-cover rounded-lg"
+                                                        loading="lazy"
+                                                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <span className="text-2xl opacity-60 shrink-0">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                            )}
                                             <div className="min-w-0 flex-1">
                                                 <p className="font-semibold text-slate-900 truncate">{doc.name}</p>
                                                 <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500 flex-wrap">
@@ -1537,6 +1568,28 @@ export default function DocumentsPage() {
                     </div>
                 ) : viewMode === 'grid' ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {/* Select All Bar for Grid View */}
+                        <div className="col-span-full flex items-center justify-between px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                            <label className="flex items-center gap-2 cursor-pointer text-slate-700 font-semibold select-none">
+                                <input
+                                    type="checkbox"
+                                    checked={isAllSelected()}
+                                    onChange={handleSelectAll}
+                                    className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                                />
+                                <span>Select All ({sortedDocuments.length + (activeTab === 'my' ? folders.length : 0)} items)</span>
+                            </label>
+                            {(selectedDocs.size > 0 || selectedFolders.size > 0) && (
+                                <button
+                                    type="button"
+                                    onClick={() => { setSelectedDocs(new Set()); setSelectedFolders(new Set()); }}
+                                    className="text-xs text-slate-500 hover:text-slate-800 underline"
+                                >
+                                    Clear selection ({selectedDocs.size + selectedFolders.size})
+                                </button>
+                            )}
+                        </div>
+
                         {activeTab === 'my' && folders.map(folder => (
                             <div
                                 key={folder.id}
@@ -1613,9 +1666,21 @@ export default function DocumentsPage() {
                                         className="absolute top-3 right-3 z-10 w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                                     />
                                     <div className="flex items-start gap-3">
-                                        <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-2xl flex-shrink-0">
-                                            {FILE_ICONS[doc.fileType] || FILE_ICONS.file}
-                                        </div>
+                                        {['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(doc.fileType?.toLowerCase()) && doc.url ? (
+                                            <div className="w-12 h-12 rounded-lg bg-slate-100 flex-shrink-0 overflow-hidden border border-slate-200">
+                                                <img
+                                                    src={doc.url}
+                                                    alt={doc.name}
+                                                    className="w-full h-full object-cover rounded-lg"
+                                                    loading="lazy"
+                                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-2xl flex-shrink-0">
+                                                {FILE_ICONS[doc.fileType] || FILE_ICONS.file}
+                                            </div>
+                                        )}
                                         <div className="flex-1 min-w-0">
                                             <h3 className="font-semibold text-slate-900 truncate">{doc.name}</h3>
                                             <p className="text-sm text-slate-500">{doc.fileType?.toUpperCase()} • {doc.fileSizeFormatted || ''}</p>
@@ -1848,7 +1913,19 @@ export default function DocumentsPage() {
                                                 </td>
                                                 <td className="p-3">
                                                     <div className="flex items-center gap-3">
-                                                        <span className="text-xl">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                                        {['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(doc.fileType?.toLowerCase()) && doc.url ? (
+                                                            <div className="w-8 h-8 rounded-md bg-slate-100 flex-shrink-0 overflow-hidden border border-slate-200">
+                                                                <img
+                                                                    src={doc.url}
+                                                                    alt={doc.name}
+                                                                    className="w-full h-full object-cover rounded-md"
+                                                                    loading="lazy"
+                                                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                                                />
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-xl">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                                        )}
                                                         <div>
                                                             <p className="font-medium text-slate-900">{doc.name}</p>
                                                             {doc.description && <p className="text-xs text-slate-500 truncate max-w-xs">{doc.description}</p>}
@@ -2011,7 +2088,19 @@ export default function DocumentsPage() {
                                                     onChange={() => toggleDocSelection(doc.id)}
                                                     className="mt-1 rounded border-slate-300 text-primary-600 focus:ring-primary-500 shrink-0"
                                                 />
-                                                <span className="text-2xl shrink-0">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                                {['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(doc.fileType?.toLowerCase()) && doc.url ? (
+                                                    <div className="w-10 h-10 rounded-lg bg-slate-100 shrink-0 overflow-hidden border border-slate-200">
+                                                        <img
+                                                            src={doc.url}
+                                                            alt={doc.name}
+                                                            className="w-full h-full object-cover rounded-lg"
+                                                            loading="lazy"
+                                                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                                        />
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-2xl shrink-0">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                                )}
                                                 <div className="min-w-0 flex-1">
                                                     <p className="font-semibold text-slate-900 truncate" title={doc.name}>{doc.name}</p>
                                                     <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500 flex-wrap">

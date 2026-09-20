@@ -210,8 +210,8 @@ router.get('/files/:id/content', asyncHandler(async (req, res) => {
 
     // Google Docs / Sheets / Slides exports require matching MIME types and extensions
     if (mimeType === 'application/vnd.google-apps.document') {
-        mimeType = 'application/pdf';
-        if (!filename.toLowerCase().endsWith('.pdf')) filename += '.pdf';
+        mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        if (!filename.toLowerCase().endsWith('.docx')) filename += '.docx';
     } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
         mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         if (!filename.toLowerCase().endsWith('.xlsx')) filename += '.xlsx';
@@ -444,9 +444,21 @@ async function importSingleDriveFile({ fileId, folderId, name, category, descrip
     }
 
     const buffer = await googleDriveService.downloadFileBuffer(fileId);
-    const docName = name || metadata.name.replace(/\.[^.]+$/, '');
-    const fileName = metadata.name || `${docName}.pdf`;
-    const mimeType = metadata.mimeType || 'application/pdf';
+    let docName = name || metadata.name.replace(/\.[^.]+$/, '');
+    let fileName = metadata.name || `${docName}.docx`;
+    let mimeType = metadata.mimeType || 'application/octet-stream';
+
+    if (mimeType === 'application/vnd.google-apps.document') {
+        mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        if (!fileName.toLowerCase().endsWith('.docx')) fileName += '.docx';
+    } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+        mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        if (!fileName.toLowerCase().endsWith('.xlsx')) fileName += '.xlsx';
+    } else if (mimeType === 'application/vnd.google-apps.presentation') {
+        mimeType = 'application/pdf';
+        if (!fileName.toLowerCase().endsWith('.pdf')) fileName += '.pdf';
+    }
+
     const fileSize = buffer.length;
 
     if (currentUsed + fileSize > quotaBytes) {
@@ -481,12 +493,13 @@ async function importSingleDriveFile({ fileId, folderId, name, category, descrip
     }
 
     const ext = path.extname(fileName).toLowerCase().replace('.', '') || 'pdf';
+    const cleanFolderId = (folderId && typeof folderId === 'string' && folderId !== 'null' && folderId !== 'undefined' && folderId !== '__NEW__' && folderId.length === 36) ? folderId : null;
 
     const doc = await prisma.document.create({
         data: {
             schoolId: targetSchoolId,
             uploadedById: userId,
-            folderId: folderId || null,
+            folderId: cleanFolderId,
             name: docName,
             description: description || `Imported from Google Drive (${metadata.name})`,
             fileName,
@@ -578,6 +591,8 @@ router.post('/import-batch', asyncHandler(async (req, res) => {
     let succeeded = 0;
     let failed = 0;
 
+    const cleanTargetFolderId = (targetFolderId && typeof targetFolderId === 'string' && targetFolderId !== 'null' && targetFolderId !== 'undefined' && targetFolderId !== '__NEW__' && targetFolderId.length === 36) ? targetFolderId : null;
+
     for (const item of items) {
         if (item.isFolder) {
             try {
@@ -587,39 +602,51 @@ router.post('/import-batch', asyncHandler(async (req, res) => {
                         data: {
                             schoolId,
                             createdById: userId,
-                            parentId: targetFolderId || null,
+                            parentId: cleanTargetFolderId,
                             name: item.name || 'Imported Folder'
                         }
                     });
                 }
-                const subTargetFolderId = localFolder ? localFolder.id : targetFolderId;
+                const subTargetFolderId = localFolder ? localFolder.id : cleanTargetFolderId;
 
                 const folderStats = await googleDriveService.getFolderStats(item.id);
-                for (const subFile of folderStats.files) {
-                    try {
-                        const doc = await importSingleDriveFile({
-                            fileId: subFile.id,
-                            folderId: subTargetFolderId,
-                            name: subFile.name,
-                            userId,
-                            schoolId
-                        });
-                        results.push({
-                            id: subFile.id,
-                            name: subFile.name,
-                            status: 'success',
-                            size: doc.fileSize,
-                            documentId: doc.id
-                        });
-                        succeeded++;
-                    } catch (subErr) {
-                        results.push({
-                            id: subFile.id,
-                            name: subFile.name,
-                            status: 'failed',
-                            error: subErr.message
-                        });
-                        failed++;
+                if (folderStats.files.length === 0) {
+                    results.push({
+                        id: item.id,
+                        name: item.name,
+                        status: 'success',
+                        size: 0,
+                        isFolder: true,
+                        folderId: subTargetFolderId
+                    });
+                    succeeded++;
+                } else {
+                    for (const subFile of folderStats.files) {
+                        try {
+                            const doc = await importSingleDriveFile({
+                                fileId: subFile.id,
+                                folderId: subTargetFolderId,
+                                name: subFile.name,
+                                userId,
+                                schoolId
+                            });
+                            results.push({
+                                id: subFile.id,
+                                name: subFile.name,
+                                status: 'success',
+                                size: doc.fileSize,
+                                documentId: doc.id
+                            });
+                            succeeded++;
+                        } catch (subErr) {
+                            results.push({
+                                id: subFile.id,
+                                name: subFile.name,
+                                status: 'failed',
+                                error: subErr.message
+                            });
+                            failed++;
+                        }
                     }
                 }
             } catch (folderErr) {
@@ -635,7 +662,7 @@ router.post('/import-batch', asyncHandler(async (req, res) => {
             try {
                 const doc = await importSingleDriveFile({
                     fileId: item.id,
-                    folderId: targetFolderId,
+                    folderId: cleanTargetFolderId,
                     name: item.name,
                     userId,
                     schoolId

@@ -17,14 +17,27 @@ import DocxViewer from './DocxViewer';
 function detectFileCategory(file) {
     const name = (file?.name || file?.fileName || '').toLowerCase();
     const mime = (file?.mimeType || '').toLowerCase();
+    const fileType = (file?.fileType || '').toLowerCase();
 
-    // Google Docs / Sheets / Slides
-    if (mime === 'application/vnd.google-apps.document' || name.endsWith('.pdf') || mime.includes('pdf')) return 'pdf';
-    if (mime === 'application/vnd.google-apps.spreadsheet' || name.match(/\.(xlsx|xls|csv)$/) || mime.includes('spreadsheet') || mime.includes('csv')) return 'spreadsheet';
-    if (mime === 'application/vnd.google-apps.presentation' || name.match(/\.(pptx|ppt)$/) || mime.includes('presentationml') || mime.includes('powerpoint')) return 'presentation';
-    if (name.match(/\.(docx|doc)$/) || mime.includes('wordprocessingml') || mime.includes('msword')) return 'word';
-    if (name.match(/\.(png|jpg|jpeg|webp|gif|svg|bmp)$/) || mime.startsWith('image/')) return 'image';
-    if (name.match(/\.(mp3|wav|ogg|m4a|aac|flac)$/) || mime.startsWith('audio/')) return 'audio';
+    // Word Documents / Google Docs FIRST (High fidelity DocxViewer preview)
+    if (fileType === 'docx' || fileType === 'doc' || name.match(/\.(docx|doc)$/) || mime.includes('wordprocessingml') || mime.includes('msword') || mime === 'application/vnd.google-apps.document') return 'word';
+
+    // Spreadsheets / Google Sheets (SpreadsheetViewer with merged cells & sheet tabs)
+    if (fileType === 'xlsx' || fileType === 'xls' || fileType === 'csv' || mime === 'application/vnd.google-apps.spreadsheet' || name.match(/\.(xlsx|xls|csv)$/) || mime.includes('spreadsheet') || mime.includes('csv')) return 'spreadsheet';
+
+    // Google Slides / Presentations
+    if (fileType === 'pptx' || fileType === 'ppt' || mime === 'application/vnd.google-apps.presentation' || name.match(/\.(pptx|ppt)$/) || mime.includes('presentationml') || mime.includes('powerpoint')) return 'presentation';
+
+    // PDF Documents
+    if (fileType === 'pdf' || name.endsWith('.pdf') || mime.includes('pdf')) return 'pdf';
+
+    // Images
+    if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'].includes(fileType) || name.match(/\.(png|jpg|jpeg|webp|gif|svg|bmp)$/) || mime.startsWith('image/')) return 'image';
+
+    // Audio
+    if (['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].includes(fileType) || name.match(/\.(mp3|wav|ogg|m4a|aac|flac)$/) || mime.startsWith('audio/')) return 'audio';
+
+    // Code & Text
     if (name.match(/\.(py|js|jsx|ts|tsx|html|css|json|sql|sh|c|cpp|java|php|rb|go|rs|md|yaml|yml|xml|env)$/)) return 'code';
     if (name.endsWith('.txt') || mime.includes('text/plain')) return 'text';
 
@@ -87,7 +100,13 @@ export default function MediaPreviewModal({
                 } else if (file.id) {
                     // Google Drive file
                     const res = await googleDriveAPI.downloadContent(file.id);
-                    blob = new Blob([res.data], { type: file.mimeType || 'application/octet-stream' });
+                    let blobType = file.mimeType || 'application/octet-stream';
+                    if (file.mimeType === 'application/vnd.google-apps.document') {
+                        blobType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+                    } else if (file.mimeType === 'application/vnd.google-apps.spreadsheet') {
+                        blobType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                    }
+                    blob = new Blob([res.data], { type: blobType });
                 }
 
                 if (!isMounted || !blob) return;
@@ -343,11 +362,25 @@ export default function MediaPreviewModal({
                             <div className="w-full h-full flex flex-col">
                                 {/* PDF */}
                                 {category === 'pdf' && blobUrl && (
-                                    <iframe
-                                        src={blobUrl}
-                                        title={file.name || file.fileName}
-                                        className="w-full h-full rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs bg-white"
-                                    />
+                                    <div className="w-full h-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xs bg-white">
+                                        <object
+                                            data={blobUrl}
+                                            type="application/pdf"
+                                            className="w-full h-full"
+                                        >
+                                            <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center">
+                                                <FileText className="w-12 h-12 text-slate-400 mb-2" />
+                                                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Unable to display PDF preview directly in browser.</p>
+                                                <a
+                                                    href={blobUrl}
+                                                    download={file.name || file.fileName || 'document.pdf'}
+                                                    className="mt-3 px-3.5 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition"
+                                                >
+                                                    Download PDF
+                                                </a>
+                                            </div>
+                                        </object>
+                                    </div>
                                 )}
 
                                 {/* Image */}

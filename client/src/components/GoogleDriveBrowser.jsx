@@ -13,7 +13,7 @@ import toast from 'react-hot-toast';
 import MediaPreviewModal from './MediaPreviewModal';
 import ImportProgressModal from './ImportProgressModal';
 
-export default function GoogleDriveBrowser({ onImportSuccess, availableFolders = [] }) {
+export default function GoogleDriveBrowser({ onImportSuccess, availableFolders = [], onLocalFolderCreated }) {
     const [status, setStatus] = useState(null);
     const [loading, setLoading] = useState(true);
     const [files, setFiles] = useState([]);
@@ -31,6 +31,10 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const [newLocalFolderName, setNewLocalFolderName] = useState('');
     const [creatingLocalFolder, setCreatingLocalFolder] = useState(false);
 
+    // Folder Sizes Cache: { [folderId]: number }
+    const [folderSizes, setFolderSizes] = useState({});
+    const [calculatingFolderIds, setCalculatingFolderIds] = useState(new Set());
+
     useEffect(() => {
         setLocalFoldersList(availableFolders);
     }, [availableFolders]);
@@ -44,11 +48,12 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         setCreatingLocalFolder(true);
         try {
             const res = await foldersAPI.create({ name: newLocalFolderName.trim() });
-            const created = res.data?.data;
-            if (created) {
+            const created = res.data?.data?.folder || res.data?.data;
+            if (created && (created.id || created.name)) {
                 setLocalFoldersList(prev => [...prev, created]);
                 setSelectedTargetFolderId(created.id);
                 toast.success(`Local folder "${created.name}" created and selected!`);
+                onLocalFolderCreated?.(created);
                 setShowNewLocalFolderModal(false);
                 setNewLocalFolderName('');
             }
@@ -62,6 +67,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
 
     // Multi-Selection State
     const [selectedIds, setSelectedIds] = useState(new Set());
+    const [failedThumbnails, setFailedThumbnails] = useState(new Set());
 
     // Batch Import & Progress State
     const [showProgressModal, setShowProgressModal] = useState(false);
@@ -316,8 +322,44 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         setSelectedIds(new Set());
     };
 
+    // Fetch stats for selected folders to compute accurate size
+    useEffect(() => {
+        selectedIds.forEach(id => {
+            const item = files.find(f => f.id === id);
+            const isFolder = item && (item.isFolder || item.mimeType === 'application/vnd.google-apps.folder');
+            if (isFolder && folderSizes[id] === undefined && !calculatingFolderIds.has(id)) {
+                setCalculatingFolderIds(prev => new Set(prev).add(id));
+                googleDriveAPI.getFolderStats(id)
+                    .then(res => {
+                        const bytes = res.data?.data?.totalBytes || 0;
+                        setFolderSizes(prev => ({ ...prev, [id]: bytes }));
+                    })
+                    .catch(() => {
+                        setFolderSizes(prev => ({ ...prev, [id]: 0 }));
+                    })
+                    .finally(() => {
+                        setCalculatingFolderIds(prev => {
+                            const next = new Set(prev);
+                            next.delete(id);
+                            return next;
+                        });
+                    });
+            }
+        });
+    }, [selectedIds, files, folderSizes, calculatingFolderIds]);
+
     const selectedItems = files.filter(f => selectedIds.has(f.id));
-    const selectedTotalBytes = selectedItems.reduce((acc, f) => acc + (parseInt(f.size, 10) || 0), 0);
+    const isCalculatingSizes = selectedItems.some(f => {
+        const isFolder = f.isFolder || f.mimeType === 'application/vnd.google-apps.folder';
+        return isFolder && (folderSizes[f.id] === undefined || calculatingFolderIds.has(f.id));
+    });
+    const selectedTotalBytes = selectedItems.reduce((acc, f) => {
+        const isFolder = f.isFolder || f.mimeType === 'application/vnd.google-apps.folder';
+        if (isFolder) {
+            return acc + (folderSizes[f.id] || 0);
+        }
+        return acc + (parseInt(f.size, 10) || 0);
+    }, 0);
 
     // Pre-Import Space Check & Multi-Item Import Engine
     const executeImport = async (itemsToImport, targetFolder) => {
@@ -758,15 +800,15 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                         />
                     </div>
 
-                    {/* New Folder Button */}
+                    {/* New Folder Button (Icon-only with tooltip) */}
                     <button
                         type="button"
                         onClick={() => setShowNewFolderModal(true)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition"
-                        title="Create new folder in current Google Drive location"
+                        className="p-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition flex items-center justify-center"
+                        title="Create New Folder in Google Drive"
+                        aria-label="Create New Folder in Google Drive"
                     >
-                        <FolderPlus className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="hidden sm:inline">New Folder</span>
+                        <FolderPlus className="w-4 h-4 text-emerald-600" />
                     </button>
 
                     {/* Refresh */}
@@ -819,6 +861,28 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
             ) : viewMode === 'grid' ? (
                 /* Grid View */
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
+                    {/* Select All bar for Grid View */}
+                    <div className="col-span-full flex items-center justify-between px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                        <label className="flex items-center gap-2 cursor-pointer text-slate-700 font-semibold select-none">
+                            <input
+                                type="checkbox"
+                                checked={files.length > 0 && selectedIds.size === files.length}
+                                onChange={toggleSelectAll}
+                                className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                            />
+                            <span>Select All ({files.length} items)</span>
+                        </label>
+                        {selectedIds.size > 0 && (
+                            <button
+                                type="button"
+                                onClick={clearSelection}
+                                className="text-xs text-slate-500 hover:text-slate-800 underline"
+                            >
+                                Clear selection ({selectedIds.size})
+                            </button>
+                        )}
+                    </div>
+
                     {files.map(file => {
                         const isFolder = file.isFolder || file.mimeType === 'application/vnd.google-apps.folder';
 
@@ -879,8 +943,18 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                                 className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4 flex-shrink-0"
                                                 title="Select file"
                                             />
-                                            <div className="w-9 h-9 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0">
-                                                {getFileIcon(file)}
+                                            <div className="w-9 h-9 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                                {((file.thumbnailLink || file.mimeType?.startsWith('image/')) && !failedThumbnails.has(file.id)) ? (
+                                                    <img
+                                                        src={file.thumbnailLink || `/api/drive/files/${file.id}/content`}
+                                                        alt={file.name}
+                                                        className="w-full h-full object-cover rounded-lg"
+                                                        loading="lazy"
+                                                        onError={() => setFailedThumbnails(prev => new Set(prev).add(file.id))}
+                                                    />
+                                                ) : (
+                                                    getFileIcon(file)
+                                                )}
                                             </div>
                                         </div>
                                         {/* Icon-Only Action Buttons */}
@@ -1012,7 +1086,19 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                         </td>
                                         <td className="py-2.5 px-3">
                                             <div className="flex items-center gap-2.5">
-                                                {getFileIcon(file)}
+                                                <div className="w-7 h-7 rounded-md bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                                    {((file.thumbnailLink || file.mimeType?.startsWith('image/')) && !failedThumbnails.has(file.id)) ? (
+                                                        <img
+                                                            src={file.thumbnailLink || `/api/drive/files/${file.id}/content`}
+                                                            alt={file.name}
+                                                            className="w-full h-full object-cover rounded-md"
+                                                            loading="lazy"
+                                                            onError={() => setFailedThumbnails(prev => new Set(prev).add(file.id))}
+                                                        />
+                                                    ) : (
+                                                        getFileIcon(file)
+                                                    )}
+                                                </div>
                                                 <span className="font-medium text-slate-800 truncate max-w-sm" title={file.name}>
                                                     {file.name}
                                                 </span>
@@ -1092,7 +1178,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                             {selectedIds.size === 1 ? '1 item' : `${selectedIds.size} items`} selected
                         </span>
                         <span className="text-slate-400 font-mono text-[11px]">
-                            ({formatBytes(selectedTotalBytes)})
+                            {isCalculatingSizes ? '(Calculating size...)' : `(${formatBytes(selectedTotalBytes)})`}
                         </span>
                     </div>
 

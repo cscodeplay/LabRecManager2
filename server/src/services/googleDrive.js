@@ -496,9 +496,9 @@ class GoogleDriveService {
             }
         }
 
-        // 2. Also check local sync directory for any locally saved drive files
+        // 2. Also check local sync directory for any locally saved drive files (only at root level)
         try {
-            if (fs.existsSync(this.localSyncDir)) {
+            if ((!folderId || folderId === 'root' || folderId === 'all') && fs.existsSync(this.localSyncDir)) {
                 const localFiles = fs.readdirSync(this.localSyncDir);
                 for (const fileName of localFiles) {
                     if (fileName.startsWith('.')) continue;
@@ -525,6 +525,7 @@ class GoogleDriveService {
                                 size: stats.size,
                                 modifiedTime: stats.mtime.toISOString(),
                                 webViewLink: `/uploads/google_drive/${encodeURIComponent(fileName)}`,
+                                thumbnailLink: mimeMap[ext]?.startsWith('image/') ? `/uploads/google_drive/${encodeURIComponent(fileName)}` : undefined,
                                 isFolder: false,
                                 isGoogleDrive: true,
                                 isLocalSync: true,
@@ -551,9 +552,24 @@ class GoogleDriveService {
             const fullPath = path.join(this.localSyncDir, fileName);
             if (fs.existsSync(fullPath)) {
                 const stats = fs.statSync(fullPath);
+                const ext = path.extname(fileName).toLowerCase().replace('.', '');
+                const mimeMap = {
+                    pdf: 'application/pdf',
+                    png: 'image/png',
+                    jpg: 'image/jpeg',
+                    jpeg: 'image/jpeg',
+                    gif: 'image/gif',
+                    webp: 'image/webp',
+                    svg: 'image/svg+xml',
+                    csv: 'text/csv',
+                    txt: 'text/plain',
+                    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                };
                 return {
                     id: fileId,
                     name: fileName,
+                    mimeType: mimeMap[ext] || 'application/octet-stream',
                     size: stats.size,
                     modifiedTime: stats.mtime.toISOString(),
                     webViewLink: `/uploads/google_drive/${encodeURIComponent(fileName)}`,
@@ -598,10 +614,10 @@ class GoogleDriveService {
 
         const mime = meta.data.mimeType;
 
-        // If it's a native Google Doc, export to high-fidelity PDF
+        // If it's a native Google Doc, export as full OpenXML DOCX (enables DocxViewer preview)
         if (mime === 'application/vnd.google-apps.document') {
             const exp = await this.drive.files.export(
-                { fileId, mimeType: 'application/pdf' },
+                { fileId, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
                 { responseType: 'arraybuffer' }
             );
             return Buffer.from(exp.data);
