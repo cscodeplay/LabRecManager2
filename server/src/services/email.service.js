@@ -7,6 +7,9 @@
 const nodemailer = require('nodemailer');
 
 function getSmtpConfig() {
+  const resendApiKey = process.env.RESEND_API_KEY || '';
+  const brevoApiKey = process.env.BREVO_API_KEY || '';
+
   const host = process.env.SMTP_HOST || 'smtp.gmail.com';
   const port = parseInt(process.env.SMTP_PORT, 10) || 587;
   const secure = process.env.SMTP_SECURE === 'true' || port === 465;
@@ -14,13 +17,17 @@ function getSmtpConfig() {
   const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS || '';
   const from = process.env.SMTP_FROM || process.env.EMAIL_FROM || '"LabRec Implementation Manager" <noreply@labrecmanager.com>';
 
-  const isConfigured = Boolean(user && pass);
+  const isHttpConfigured = Boolean(resendApiKey || brevoApiKey);
+  const isSmtpConfigured = Boolean(user && pass);
+  const isConfigured = isHttpConfigured || isSmtpConfigured;
 
   let serverType = 'custom';
-  if (host.toLowerCase().includes('gmail.com')) serverType = 'gmail';
+  if (resendApiKey) serverType = 'resend';
+  else if (brevoApiKey) serverType = 'brevo';
+  else if (host.toLowerCase().includes('gmail.com')) serverType = 'gmail';
   else if (host.toLowerCase().includes('office365.com') || host.toLowerCase().includes('outlook.com')) serverType = 'outlook';
 
-  return { host, port, secure, user, pass, from, isConfigured, serverType };
+  return { host, port, secure, user, pass, from, isConfigured, isHttpConfigured, resendApiKey, brevoApiKey, serverType };
 }
 
 let cachedTransporter = null;
@@ -28,7 +35,7 @@ let cachedTransporter = null;
 function createTransporter() {
   const config = getSmtpConfig();
 
-  if (!config.isConfigured) {
+  if (!config.isConfigured || config.isHttpConfigured) {
     return null;
   }
 
@@ -40,6 +47,9 @@ function createTransporter() {
     host: config.host,
     port: config.port,
     secure: config.secure,
+    connectionTimeout: 10000, // 10s connection timeout to fail fast if port is firewalled
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
     auth: {
       user: config.user,
       pass: config.pass
@@ -50,6 +60,80 @@ function createTransporter() {
   });
 
   return cachedTransporter;
+}
+
+/**
+ * Send email via Resend HTTP REST API (Port 443 - works on Render Free Tier)
+ */
+async function sendViaResend({ to, subject, html, text, attachments = [] }) {
+  const config = getSmtpConfig();
+  const apiKey = config.resendApiKey;
+  const from = process.env.RESEND_FROM || config.from || 'LabRecManager <onboarding@resend.dev>';
+
+  const formattedAttachments = attachments.map(att => ({
+    filename: att.filename,
+    content: Buffer.isBuffer(att.content) ? att.content.toString('base64') : Buffer.from(att.content).toString('base64')
+  }));
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from,
+      to: Array.isArray(to) ? to : to.split(',').map(s => s.trim()),
+      subject,
+      html,
+      text,
+      attachments: formattedAttachments.length > 0 ? formattedAttachments : undefined
+    })
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message || `Resend error (${res.status}): ${JSON.stringify(data)}`);
+  }
+  return data;
+}
+
+/**
+ * Send email via Brevo HTTP REST API (Port 443 - works on Render Free Tier)
+ */
+async function sendViaBrevo({ to, subject, html, text, attachments = [] }) {
+  const config = getSmtpConfig();
+  const apiKey = config.brevoApiKey;
+  const fromEmail = config.user || 'noreply@labrecmanager.com';
+
+  const formattedAttachments = attachments.map(att => ({
+    name: att.filename,
+    content: Buffer.isBuffer(att.content) ? att.content.toString('base64') : Buffer.from(att.content).toString('base64')
+  }));
+
+  const recipientList = (Array.isArray(to) ? to : to.split(',')).map(email => ({ email: email.trim() }));
+
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': apiKey,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      sender: { name: 'LabRecManager', email: fromEmail },
+      to: recipientList,
+      subject,
+      htmlContent: html,
+      textContent: text,
+      attachment: formattedAttachments.length > 0 ? formattedAttachments : undefined
+    })
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message || `Brevo error (${res.status}): ${JSON.stringify(data)}`);
+  }
+  return data;
 }
 
 /**
@@ -199,6 +283,42 @@ async function sendImplementationReport({ to, subject, message, attachments = []
     content: att.content,
     contentType: att.contentType
   }));
+
+  // If HTTP API is configured (Resend / Brevo), use it (Render Port 443 compatible)
+  if (config.isHttpConfigured) {
+    try {
+      let info;
+      if (config.resendApiKey) {
+        info = await sendViaResend({
+          to: recipients,
+          subject: finalSubject,
+          html,
+          text: `${finalSubject}\n\n${message || 'Please find attached the exported Implementation Plans report.'}\n\nGenerated by LabRecManager.`,
+          attachments: mailAttachments
+        });
+      } else if (config.brevoApiKey) {
+        info = await sendViaBrevo({
+          to: recipients,
+          subject: finalSubject,
+          html,
+          text: `${finalSubject}\n\n${message || 'Please find attached the exported Implementation Plans report.'}\n\nGenerated by LabRecManager.`,
+          attachments: mailAttachments
+        });
+      }
+
+      console.log(`[EmailService] Implementation report sent successfully via HTTP API. ID: ${info?.id || 'ok'}`);
+      return {
+        success: true,
+        simulated: false,
+        messageId: info?.id || `http-${Date.now()}`,
+        recipients: recipients.split(',').map(s => s.trim()),
+        attachmentsCount: mailAttachments.length
+      };
+    } catch (err) {
+      console.error('[EmailService] Failed to send implementation report via HTTP API:', err);
+      throw new Error(`Email dispatch failed: ${err.message}`);
+    }
+  }
 
   const transporter = createTransporter();
 
@@ -435,6 +555,42 @@ async function sendStorageQuotaReport({ to, subject, summary = [], users = [], s
     });
   }
 
+  // If HTTP API is configured (Resend / Brevo), use it (Render Port 443 compatible)
+  if (config.isHttpConfigured) {
+    try {
+      let info;
+      if (config.resendApiKey) {
+        info = await sendViaResend({
+          to: recipients,
+          subject: finalSubject,
+          html,
+          text: `${finalSubject}\n\nWeekly storage quota report for ${schoolName}.\nPlease find the attached CSV for full user breakdown.\n\nGenerated by LabRecManager.`,
+          attachments
+        });
+      } else if (config.brevoApiKey) {
+        info = await sendViaBrevo({
+          to: recipients,
+          subject: finalSubject,
+          html,
+          text: `${finalSubject}\n\nWeekly storage quota report for ${schoolName}.\nPlease find the attached CSV for full user breakdown.\n\nGenerated by LabRecManager.`,
+          attachments
+        });
+      }
+
+      console.log(`[EmailService] Storage quota report sent successfully via HTTP API. ID: ${info?.id || 'ok'}`);
+      return {
+        success: true,
+        simulated: false,
+        messageId: info?.id || `http-${Date.now()}`,
+        recipients: recipients.split(',').map(s => s.trim()),
+        attachmentsCount: attachments.length
+      };
+    } catch (err) {
+      console.error('[EmailService] Failed to send storage quota report via HTTP API:', err);
+      throw new Error(`Email dispatch failed: ${err.message}`);
+    }
+  }
+
   const transporter = createTransporter();
 
   if (!transporter) {
@@ -493,6 +649,50 @@ async function testSmtpConnection() {
     };
   }
 
+  // If HTTP API is configured, verify API key over HTTPS Port 443
+  if (config.isHttpConfigured) {
+    if (config.resendApiKey) {
+      try {
+        const res = await fetch('https://api.resend.com/api-keys', {
+          headers: { 'Authorization': `Bearer ${config.resendApiKey}` }
+        });
+        if (res.ok) {
+          return {
+            configured: true,
+            connected: true,
+            serverType: 'resend',
+            host: 'api.resend.com (HTTPS Port 443)',
+            port: 443,
+            user: 'Resend API Key',
+            from: config.from,
+            message: 'Successfully verified Resend HTTP Email API (Render Port 443 Compatible)!'
+          };
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          return {
+            configured: true,
+            connected: false,
+            serverType: 'resend',
+            host: 'api.resend.com',
+            port: 443,
+            error: errData.message || `HTTP ${res.status}`,
+            message: `Resend API authentication failed: ${errData.message || res.statusText}`
+          };
+        }
+      } catch (err) {
+        return {
+          configured: true,
+          connected: false,
+          serverType: 'resend',
+          host: 'api.resend.com',
+          port: 443,
+          error: err.message,
+          message: `Failed to connect to Resend API: ${err.message}`
+        };
+      }
+    }
+  }
+
   const transporter = createTransporter();
   try {
     await transporter.verify();
@@ -507,6 +707,13 @@ async function testSmtpConnection() {
       message: `Successfully connected to ${config.serverType.toUpperCase()} SMTP server (${config.host}:${config.port}).`
     };
   } catch (err) {
+    let friendlyMessage = `Failed to connect to SMTP server: ${err.message}`;
+    if (err.message?.includes('ETIMEDOUT') || err.code === 'ETIMEDOUT' || err.message?.includes('Greeting never received')) {
+      friendlyMessage = `Connection timed out to ${config.host}:${config.port}. Note: Render Free Tier blocks outbound SMTP traffic on ports 25, 465, and 587. To send emails from Render, add RESEND_API_KEY (HTTP Port 443).`;
+    } else if (err.message?.includes('535') || err.message?.includes('BadCredentials') || err.message?.includes('Username and Password not accepted')) {
+      friendlyMessage = `Authentication failed on ${config.host}. Please verify your 16-character Google App Password (not your regular account password).`;
+    }
+
     return {
       configured: true,
       connected: false,
@@ -514,7 +721,7 @@ async function testSmtpConnection() {
       host: config.host,
       port: config.port,
       error: err.message,
-      message: `Failed to connect to SMTP server: ${err.message}`
+      message: friendlyMessage
     };
   }
 }
