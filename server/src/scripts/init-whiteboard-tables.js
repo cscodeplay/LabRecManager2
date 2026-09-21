@@ -453,6 +453,51 @@ async function initTables() {
                 );
                 console.log('Next Build Ultimate AIM plan seeded.');
             }
+
+            // Ensure Custom Domain examssolved.com plan exists
+            const customDomainCheck = await prisma.$queryRawUnsafe(`
+                SELECT id FROM "implementation_plans" WHERE title ILIKE '%examssolved.com%' LIMIT 1
+            `);
+            if (!customDomainCheck || customDomainCheck.length === 0) {
+                console.log('Inserting Custom Domain examssolved.com implementation plan...');
+                const domainTasks = JSON.stringify([
+                    { id: 'dns-1', title: 'Add domain examssolved.com in Resend dashboard to generate DKIM and SPF DNS records', completed: false, duration_minutes: 15 },
+                    { id: 'dns-2', title: 'Configure TXT DKIM record (resend._domainkey) in Namecheap Advanced DNS', completed: false, duration_minutes: 15 },
+                    { id: 'dns-3', title: 'Configure TXT SPF record (bounces.examssolved.com) in Namecheap Advanced DNS', completed: false, duration_minutes: 15 },
+                    { id: 'dns-4', title: 'Configure MX bounce handling record in Namecheap Advanced DNS', completed: false, duration_minutes: 15 },
+                    { id: 'dns-5', title: 'Verify domain status on Resend and test DKIM/SPF DNS propagation', completed: false, duration_minutes: 20 },
+                    { id: 'dns-6', title: 'Configure DMARC policy record (_dmarc.examssolved.com) for spam defense and spoofing protection', completed: false, duration_minutes: 20 },
+                    { id: 'dns-7', title: 'Update Render environment variable RESEND_FROM to custom address (e.g. notifications@examssolved.com)', completed: false, duration_minutes: 10 },
+                    { id: 'dns-8', title: 'Dispatch live test email to Gmail and Outlook to verify 10/10 deliverability score and authentic TLS badges', completed: false, duration_minutes: 20 }
+                ]);
+                const domainMeta = JSON.stringify({
+                    target_domain: 'examssolved.com',
+                    registrar: 'Namecheap',
+                    email_provider: 'Resend HTTP API (Port 443)',
+                    sender_options: ['notifications@examssolved.com', 'admin@examssolved.com', 'reports@examssolved.com'],
+                    auth_standards: ['DKIM', 'SPF', 'DMARC']
+                });
+                await prisma.$executeRawUnsafe(`
+                    INSERT INTO "implementation_plans" (
+                        "title", "description", "category", "status",
+                        "tasks", "outcomes", "metadata",
+                        "created_at", "updated_at"
+                    ) VALUES (
+                        $1, $2, $3, $4,
+                        $5::jsonb, $6, $7::jsonb,
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                `,
+                    'Custom Domain & Enterprise Email Deliverability Setup (examssolved.com DNS, DKIM, SPF & Branded Dispatches)',
+                    'Setup of verified custom domain examssolved.com on Namecheap DNS with Resend HTTP API (DKIM keys, SPF records, DMARC alignment, MX bounce routing) for white-labeled school transactional, administrative, and storage quota email delivery.',
+                    'Email & Domain Infra',
+                    'draft',
+                    domainTasks,
+                    '1. 100% white-label email delivery directly from notifications@examssolved.com or admin@examssolved.com.\n2. Full DKIM, SPF, and DMARC authentication eliminating spam folder delivery across Gmail, Outlook, and Yahoo.\n3. Custom branded sender name and seamless automated weekly report dispatches.',
+                    domainMeta
+                );
+                console.log('Custom Domain examssolved.com plan seeded.');
+            }
             console.log('implementation_plans table verified successfully.');
         } catch (planErr) {
             console.warn('Implementation plans table init notice:', planErr.message);
