@@ -431,6 +431,7 @@ router.get('/assignment-analytics/:id', authenticate, asyncHandler(async (req, r
 }));
 
 const reportService = require('../services/report.service');
+const reportEmailService = require('../services/report.email.service');
 
 /**
  * @route   GET /api/reports/columns
@@ -472,6 +473,82 @@ router.post('/custom-generate', authenticate, authorize('admin', 'instructor', '
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to generate custom report'
+        });
+    }
+}));
+
+/**
+ * @route   POST /api/reports/send-email
+ * @desc    Compile and dispatch custom report via email to any recipient(s)
+ * @access  Private (Admin, Instructor, Principal)
+ */
+router.post('/send-email', authenticate, authorize('admin', 'instructor', 'principal'), asyncHandler(async (req, res) => {
+    try {
+        const {
+            to,
+            subject,
+            message,
+            reportTitle = 'Official Institutional Report',
+            entities = ['students'],
+            selectedColumns = {},
+            filters = {},
+            formats = { xlsx: true, csv: false }
+        } = req.body;
+
+        if (!to || (Array.isArray(to) && to.length === 0)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Recipient email address (to) is required'
+            });
+        }
+
+        const schoolId = req.user.schoolId;
+        const sessionId = req.headers['x-academic-session'];
+
+        // Get school name for branding
+        let schoolName = 'LabRecManager Institution';
+        if (schoolId) {
+            const school = await prisma.school.findUnique({
+                where: { id: schoolId },
+                select: { name: true }
+            });
+            if (school?.name) schoolName = school.name;
+        }
+
+        // Use provided reportResults or generate fresh
+        let reportResults = req.body.reportResults;
+        if (!reportResults) {
+            const generated = await reportService.generateCustomReportData({
+                entities,
+                selectedColumns,
+                filters,
+                schoolId,
+                sessionId
+            });
+            reportResults = generated.reportResults;
+        }
+
+        const dispatchResult = await reportEmailService.sendCustomReportEmail({
+            to,
+            subject,
+            message,
+            reportTitle,
+            reportResults,
+            filters,
+            schoolName,
+            formats
+        });
+
+        res.json({
+            success: true,
+            message: `Report successfully dispatched to ${Array.isArray(to) ? to.join(', ') : to}`,
+            data: dispatchResult
+        });
+    } catch (error) {
+        console.error('[POST /api/reports/send-email] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to send report email'
         });
     }
 }));

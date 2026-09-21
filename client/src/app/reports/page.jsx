@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
     TrendingUp, Users, FileText, Award, Download, BarChart3, Calendar, CheckCircle,
     Filter, UsersRound, School, Monitor, Sparkles, CheckSquare, Square, Eye, FileSpreadsheet, RefreshCw,
-    ChevronLeft, ChevronRight
+    ChevronLeft, ChevronRight, Mail, Send, X, Layers
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api, { classesAPI, reportsAPI } from '@/lib/api';
@@ -128,6 +128,20 @@ export default function ReportsPage() {
     const [tablePages, setTablePages] = useState({});
     const [rowsPerPage, setRowsPerPage] = useState(10);
 
+    // Table View Filter (tabs above preview tables: 'all', 'unified', or specific entity)
+    const [viewTableKey, setViewTableKey] = useState('all');
+
+    // Email Dispatch Modal State
+    const [showEmailModal, setShowEmailModal] = useState(false);
+    const [emailForm, setEmailForm] = useState({
+        to: '',
+        subject: '',
+        message: '',
+        includeXlsx: true,
+        includeCsv: false
+    });
+    const [sendingEmail, setSendingEmail] = useState(false);
+
     // Overview Stats State
     const [stats, setStats] = useState({
         totalStudents: 0, totalAssignments: 0, totalSubmissions: 0,
@@ -231,6 +245,45 @@ export default function ReportsPage() {
             toast.error(msg);
         } finally {
             setGenerating(false);
+        }
+    };
+
+    // Dispatch Report via Email
+    const handleSendEmailReport = async (e) => {
+        if (e) e.preventDefault();
+        if (!emailForm.to || !emailForm.to.trim()) {
+            toast.error('Please specify at least one recipient email address');
+            return;
+        }
+        setSendingEmail(true);
+        try {
+            const reportTitle = (selectedEntities || ['Institutional']).map(e => ENTITY_CONFIG[e]?.label || e).join(' & ') + ' Report';
+            await reportsAPI.sendEmail({
+                to: emailForm.to.trim(),
+                subject: emailForm.subject.trim() || `[LabRecManager] ${reportTitle} - ${new Date().toLocaleDateString()}`,
+                message: emailForm.message.trim(),
+                reportTitle,
+                reportResults: generatedReport?.reportResults,
+                entities: selectedEntities,
+                selectedColumns: columnSelection,
+                filters: {
+                    classId: selectedClassId,
+                    gender: genderFilter,
+                    dateRange
+                },
+                formats: {
+                    xlsx: emailForm.includeXlsx,
+                    csv: emailForm.includeCsv
+                }
+            });
+            toast.success(`Report email successfully sent to ${emailForm.to}!`);
+            setShowEmailModal(false);
+        } catch (err) {
+            console.error('Send report email error:', err);
+            const msg = err.response?.data?.message || err.message || 'Failed to dispatch report email';
+            toast.error(msg);
+        } finally {
+            setSendingEmail(false);
         }
     };
 
@@ -584,6 +637,22 @@ export default function ReportsPage() {
                                     {/* EXPORT ACTION BUTTONS */}
                                     <div className="flex flex-wrap items-center gap-2">
                                         <button
+                                            onClick={() => {
+                                                const defaultSubject = `[LabRecManager] ${(selectedEntities || ['Institutional']).map(e => ENTITY_CONFIG[e]?.label || e).join(' & ')} Report - ${new Date().toLocaleDateString()}`;
+                                                setEmailForm(prev => ({
+                                                    ...prev,
+                                                    to: prev.to || user?.email || 'charan881130@gmail.com',
+                                                    subject: defaultSubject
+                                                }));
+                                                setShowEmailModal(true);
+                                            }}
+                                            className="btn bg-indigo-600 hover:bg-indigo-700 text-white p-2 px-3 flex items-center justify-center rounded-lg shadow-sm gap-1.5"
+                                            title="Email Report (Excel/CSV Attachment) to Any Recipient"
+                                        >
+                                            <Mail className="w-5 h-5" />
+                                            <span className="hidden sm:inline text-xs font-bold">Email Report</span>
+                                        </button>
+                                        <button
                                             onClick={handleExportXLSX}
                                             className="btn bg-emerald-600 hover:bg-emerald-700 text-white p-2 flex items-center justify-center rounded-lg shadow-sm"
                                             title="Export Multi-Tab Excel Workbook (XLSX)"
@@ -608,20 +677,74 @@ export default function ReportsPage() {
                                 </div>
 
                                 {/* Multi-Table Preview Tables */}
-                                <div className="space-y-8">
-                                    {/* View mode indicator when multiple entities generated */}
-                                    {generatedReport.reportResults.unified && (
+                                <div className="space-y-6">
+                                    {/* Table View Selector Tabs */}
+                                    <div className="flex items-center gap-2 overflow-x-auto pb-1 mb-2 border-b border-slate-200">
+                                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mr-1 flex items-center gap-1 shrink-0">
+                                            <Layers className="w-3.5 h-3.5" /> Tables:
+                                        </span>
+                                        <button
+                                            onClick={() => setViewTableKey('all')}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                                                viewTableKey === 'all'
+                                                    ? 'bg-primary-600 text-white shadow-xs'
+                                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                            }`}
+                                        >
+                                            All Selected Tables ({Object.keys(generatedReport.reportResults).filter(k => k !== 'unified').length})
+                                        </button>
+                                        {generatedReport.reportResults.unified && (
+                                            <button
+                                                onClick={() => setViewTableKey('unified')}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                                                    viewTableKey === 'unified'
+                                                        ? 'bg-indigo-600 text-white shadow-xs'
+                                                        : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'
+                                                }`}
+                                            >
+                                                <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                                                Unified Master View ({generatedReport.reportResults.unified.rows?.length || 0})
+                                            </button>
+                                        )}
+                                        {Object.keys(generatedReport.reportResults).filter(k => k !== 'unified').map(key => {
+                                            const entityRes = generatedReport.reportResults[key];
+                                            const cfg = ENTITY_CONFIG[key];
+                                            const count = entityRes.rows?.length || 0;
+                                            return (
+                                                <button
+                                                    key={key}
+                                                    onClick={() => setViewTableKey(key)}
+                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
+                                                        viewTableKey === key
+                                                            ? 'bg-primary-600 text-white shadow-xs'
+                                                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                                    }`}
+                                                >
+                                                    {cfg?.label || entityRes.title || key}
+                                                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${viewTableKey === key ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-800'}`}>
+                                                        {count}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* View mode indicator when multiple entities generated and unified is selected */}
+                                    {generatedReport.reportResults.unified && (viewTableKey === 'unified' || viewTableKey === 'all') && (
                                         <div className="p-3 bg-primary-50 border border-primary-200 rounded-xl flex items-center justify-between">
                                             <div className="flex items-center gap-2 text-primary-900 font-bold text-sm">
                                                 <Sparkles className="w-5 h-5 text-primary-600" />
-                                                <span>Intelligent Joined Table Mode Active — Automatically joined {selectedEntities.length} entities into 1 unified master table</span>
+                                                <span>{viewTableKey === 'unified' ? 'Unified Master Joined View' : `Multi-Entity Mode: ${selectedEntities.length} entities selected. Switch tabs above to inspect each table separately.`}</span>
                                             </div>
                                         </div>
                                     )}
 
                                     {Object.keys(generatedReport.reportResults).map(key => {
-                                        // If unified exists, show unified first; skip disjoint entity tables unless requested
-                                        if (generatedReport.reportResults.unified && key !== 'unified') {
+                                        // Filter tables according to active viewTableKey
+                                        if (viewTableKey !== 'all' && viewTableKey !== key) {
+                                            return null;
+                                        }
+                                        if (viewTableKey === 'all' && key === 'unified' && Object.keys(generatedReport.reportResults).length > 1) {
                                             return null;
                                         }
                                         const res = generatedReport.reportResults[key];
@@ -828,6 +951,144 @@ export default function ReportsPage() {
                     </div>
                 )}
             </main>
+
+            {/* EMAIL REPORT DISPATCH MODAL */}
+            {showEmailModal && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+                    <div className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200">
+                        {/* Modal Header */}
+                        <div className="bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 text-white p-5 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center">
+                                    <Mail className="w-5 h-5 text-white" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-base leading-tight">Email Institutional Report</h3>
+                                    <p className="text-xs text-indigo-100 mt-0.5">Send compiled data directly to any recipient</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowEmailModal(false)}
+                                disabled={sendingEmail}
+                                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Modal Form */}
+                        <form onSubmit={handleSendEmailReport} className="p-6 space-y-4">
+                            <div>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="text-xs font-bold text-slate-700">Recipient Email(s) *</label>
+                                    <div className="flex items-center gap-1.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => setEmailForm(prev => ({ ...prev, to: 'charan881130@gmail.com' }))}
+                                            className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-full font-bold transition"
+                                        >
+                                            + charan881130@gmail.com
+                                        </button>
+                                        {user?.email && user.email !== 'charan881130@gmail.com' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setEmailForm(prev => ({ ...prev, to: user.email }))}
+                                                className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-full font-semibold transition"
+                                            >
+                                                + My Email
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                                <input
+                                    type="text"
+                                    required
+                                    value={emailForm.to}
+                                    onChange={(e) => setEmailForm(prev => ({ ...prev, to: e.target.value }))}
+                                    placeholder="e.g. principal@institution.edu, charan881130@gmail.com"
+                                    className="input w-full text-sm font-medium"
+                                />
+                                <p className="text-[11px] text-slate-400 mt-1">Separate multiple recipients with commas.</p>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Subject Line</label>
+                                <input
+                                    type="text"
+                                    value={emailForm.subject}
+                                    onChange={(e) => setEmailForm(prev => ({ ...prev, subject: e.target.value }))}
+                                    placeholder="Report subject line"
+                                    className="input w-full text-sm"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Administrative Note / Message (Optional)</label>
+                                <textarea
+                                    rows={3}
+                                    value={emailForm.message}
+                                    onChange={(e) => setEmailForm(prev => ({ ...prev, message: e.target.value }))}
+                                    placeholder="Add any context, deadlines, or remarks for the recipient..."
+                                    className="input w-full text-sm resize-none"
+                                />
+                            </div>
+
+                            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                                <label className="block text-xs font-bold text-slate-700 mb-2">Include File Attachments:</label>
+                                <div className="grid grid-cols-2 gap-3 text-xs">
+                                    <label className="flex items-center gap-2 font-medium text-slate-700 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={emailForm.includeXlsx}
+                                            onChange={(e) => setEmailForm(prev => ({ ...prev, includeXlsx: e.target.checked }))}
+                                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                        />
+                                        <span>📊 Excel Workbook (.xlsx)</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 font-medium text-slate-700 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={emailForm.includeCsv}
+                                            onChange={(e) => setEmailForm(prev => ({ ...prev, includeCsv: e.target.checked }))}
+                                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                        />
+                                        <span>📑 CSV File (.csv)</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowEmailModal(false)}
+                                    disabled={sendingEmail}
+                                    className="btn btn-secondary px-4 py-2 text-xs font-bold"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={sendingEmail}
+                                    className="btn bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 text-xs font-bold flex items-center gap-2 rounded-lg shadow-sm disabled:opacity-50"
+                                >
+                                    {sendingEmail ? (
+                                        <>
+                                            <RefreshCw className="w-4 h-4 animate-spin" />
+                                            <span>Sending Email...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Send className="w-4 h-4" />
+                                            <span>Send Report Email</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

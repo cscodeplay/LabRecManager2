@@ -16,6 +16,8 @@ const prisma = require('../config/database');
 const aiService = require('./ai.service');
 const notificationService = require('./notificationService');
 const cronService = require('./cron.service');
+const reportService = require('./report.service');
+const reportEmailService = require('./report.email.service');
 const { detectTableAndMapping, applyMapping, TABLE_SCHEMAS } = require('../utils/tableSchemaDetector');
 
 class ChatbotService {
@@ -467,9 +469,13 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
    \`\`\`
    - Keep "data" as an empty array []. The system will automatically inject the SQL results into it.
    - Supported chart types: "pie", "doughnut", "bar", "line", "area", "composed".
-8. **REPORT GENERATION**: When the user asks to generate, export, or download a report (e.g. "generate PDF report for XII NM-A girls", "export Excel report of student groups"), include this tag:
-   <!--REPORT_ACTION:{"entities":["students","groups"],"filters":{"gender":"female","classId":""},"format":"pdf"}:END_REPORT-->
-   Supported entities: "students", "classes", "groups", "assignments", "lab_pcs". Supported formats: "pdf", "xlsx", "csv".
+8. **REPORT GENERATION & EMAIL DISPATCH**:
+- When the user asks to generate, export, download, or email an institutional report (e.g. "generate PDF report for XII NM-A girls", "export Excel report of student groups", "email assignment report to charan881130@gmail.com", "generate attendance report and email it"):
+  Include this tag:
+  <!--REPORT_ACTION:{"entities":["students","groups"],"filters":{"gender":"female","classId":""},"format":"xlsx","emailTo":"recipient@domain.com","reportTitle":"Institutional Report"}:END_REPORT-->
+  Supported entities: "students", "classes", "groups", "assignments", "lab_pcs". Supported formats: "xlsx", "csv", "pdf".
+- If the user explicitly asks to email the report to a specific address, extract it into "emailTo". If they say "email me the report", set "emailTo": "me".
+- Always confirm that the report is generated and can be downloaded or is being dispatched.
 9. **CALENDAR & HOLIDAY PROCESSING (MULTILINGUAL - PUNJABI / HINDI / ENGLISH)**:
 - The school calendar is stored in the \`school_calendar\` table:
   (id UUID, school_id UUID, academic_year_id UUID, date DATE, title VARCHAR(255), title_hindi VARCHAR(255), type calendar_event_type, is_holiday BOOLEAN, source calendar_source, created_at TIMESTAMP).
@@ -6625,14 +6631,19 @@ ${documentContext || message}
 
         // If user prompt mentions report/pdf/excel/csv but model didn't emit tag, auto-build report action
         const isTemplateOrImport = msgLower.includes('template') || msgLower.includes('import') || msgLower.includes('upload');
+        const isReportIntent = !isTemplateOrImport && (
+            msgLower.includes('report') || msgLower.includes('pdf') ||
+            msgLower.includes('excel') || msgLower.includes('csv') ||
+            msgLower.includes('xlsx') || (msgLower.includes('email') && (msgLower.includes('student') || msgLower.includes('class') || msgLower.includes('assignment') || msgLower.includes('inventory') || msgLower.includes('hardware')))
+        );
         
-        if (!reportAction && !isTemplateOrImport && (msgLower.includes('report') || msgLower.includes('pdf') || msgLower.includes('excel') || msgLower.includes('csv'))) {
+        if (!reportAction && isReportIntent) {
             const entities = [];
-            if (msgLower.includes('student') || msgLower.includes('girl') || msgLower.includes('boy')) entities.push('students');
+            if (msgLower.includes('student') || msgLower.includes('girl') || msgLower.includes('boy') || msgLower.includes('attendance') || msgLower.includes('roster')) entities.push('students');
             if (msgLower.includes('group')) entities.push('groups');
-            if (msgLower.includes('class')) entities.push('classes');
-            if (msgLower.includes('assignment') || msgLower.includes('score') || msgLower.includes('marks')) entities.push('assignments');
-            if (msgLower.includes('pc') || msgLower.includes('lab') || msgLower.includes('computer') || msgLower.includes('inventory') || msgLower.includes('equipment') || msgLower.includes('item')) entities.push('lab_pcs');
+            if (msgLower.includes('class') || msgLower.includes('section')) entities.push('classes');
+            if (msgLower.includes('assignment') || msgLower.includes('score') || msgLower.includes('marks') || msgLower.includes('grade')) entities.push('assignments');
+            if (msgLower.includes('pc') || msgLower.includes('lab') || msgLower.includes('computer') || msgLower.includes('inventory') || msgLower.includes('equipment') || msgLower.includes('item') || msgLower.includes('hardware')) entities.push('lab_pcs');
 
             if (entities.length === 0) entities.push('students');
 
@@ -6640,11 +6651,59 @@ ${documentContext || message}
             if (msgLower.includes('girl') || msgLower.includes('female')) filters.gender = 'female';
             else if (msgLower.includes('boy') || msgLower.includes('male')) filters.gender = 'male';
 
-            let format = 'pdf';
-            if (msgLower.includes('excel') || msgLower.includes('xlsx') || msgLower.includes('sheet')) format = 'xlsx';
+            let format = 'xlsx';
+            if (msgLower.includes('pdf')) format = 'pdf';
             else if (msgLower.includes('csv')) format = 'csv';
 
             reportAction = { entities, filters, format };
+        }
+
+        // Handle Report Emailing on prompt (e.g. "email assignment report to charan881130@gmail.com")
+        if (reportAction) {
+            const emailInMsgMatch = message.match(/\b([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b/);
+            const asksToEmail = msgLower.includes('email') || msgLower.includes('mail') || msgLower.includes('send') || Boolean(reportAction.emailTo);
+            
+            let targetEmail = null;
+            if (reportAction.emailTo && reportAction.emailTo !== 'me') {
+                targetEmail = reportAction.emailTo;
+            } else if (emailInMsgMatch) {
+                targetEmail = emailInMsgMatch[1];
+            } else if (asksToEmail && options.userEmail) {
+                targetEmail = options.userEmail;
+            }
+
+            if (asksToEmail && targetEmail) {
+                try {
+                    const repData = await reportService.generateCustomReportData({
+                        entities: reportAction.entities || ['students'],
+                        filters: reportAction.filters || {},
+                        schoolId: options.schoolId,
+                        sessionId: options.academicYearId
+                    });
+                    const reportTitle = reportAction.reportTitle || `${(reportAction.entities || ['Institutional']).map(e => e.toUpperCase()).join(' & ')} Report`;
+                    
+                    await reportEmailService.sendCustomReportEmail({
+                        to: targetEmail,
+                        subject: `[LabRecManager] ${reportTitle} - ${new Date().toLocaleDateString()}`,
+                        reportTitle,
+                        reportResults: repData.reportResults,
+                        filters: reportAction.filters,
+                        formats: { xlsx: true, csv: reportAction.format === 'csv' }
+                    });
+
+                    reportAction.emailSent = true;
+                    reportAction.emailRecipient = targetEmail;
+                    reportAction.reportResults = repData.reportResults;
+
+                    aiText += `\n\n📧 **Report Dispatched via Email**:\nI have compiled the official report and sent it directly to **${targetEmail}** with the multi-tab Excel (.xlsx) workbook attached. You can also preview or download it directly below.`;
+                } catch (emailErr) {
+                    console.error('[ChatBot Report Email Error]:', emailErr.message);
+                    reportAction.emailError = emailErr.message;
+                    aiText += `\n\n⚠️ **Email Notice**: The report was compiled below, but automated email dispatch to **${targetEmail}** failed: ${emailErr.message}.`;
+                }
+            } else if (asksToEmail && !targetEmail) {
+                aiText += `\n\n💡 *Please specify which email address you would like this report sent to (e.g., "Email to charan881130@gmail.com"), or click the Email button on the card below.*`;
+            }
         }
 
         // Extract document fetch request

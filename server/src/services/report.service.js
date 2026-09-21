@@ -387,8 +387,8 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
         }
     }
 
-    // 6. INTELLIGENT UNIFIED JOINED MASTER TABLE (When 2+ entities requested)
-    if (entities.length > 1) {
+    // 6. INTELLIGENT UNIFIED JOINED MASTER TABLE (When 2+ entities requested and includes student context)
+    if (entities.length > 1 && (entities.includes('students') || entities.includes('classes') || entities.includes('groups'))) {
         try {
             const studentWhere = {
                 role: 'student',
@@ -431,6 +431,12 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
                 orderBy: { firstName: 'asc' }
             });
 
+            const stdCols = selectedColumns.students || ['admissionNumber', 'fullName', 'className', 'rollNumber', 'gender', 'email'];
+            const clsCols = selectedColumns.classes || ['name', 'gradeLevel', 'section', 'stream'];
+            const grpCols = selectedColumns.groups || ['name', 'className', 'genderType', 'memberCount', 'assignedPc'];
+            const pcCols = selectedColumns.lab_pcs || ['itemNumber', 'labName', 'status', 'ipAddress'];
+            const asgCols = selectedColumns.assignments || ['title', 'submissionsCount', 'avgScore'];
+
             const unifiedRows = masterStudents.map(s => {
                 const enrollment = s.classEnrollments?.[0];
                 const cls = enrollment?.class;
@@ -445,51 +451,58 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
                 const avgScore = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '-';
 
                 const row = {};
-                // Students fields
-                if (entities.includes('students') || true) {
-                    row['Student Name'] = `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Student';
-                    row['Admission ID'] = s.studentId || s.admissionNumber || '-';
-                    row['Roll Number'] = s.rollNumber ? `#${s.rollNumber}` : '-';
-                    row['Gender'] = s.gender === 'female' ? 'Female' : 'Male';
-                    row['Email Address'] = s.email || '-';
+
+                // Students fields (only if students entity requested)
+                if (entities.includes('students')) {
+                    if (stdCols.includes('fullName')) row['Student Name'] = `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Student';
+                    if (stdCols.includes('admissionNumber')) row['Admission ID'] = s.studentId || s.admissionNumber || '-';
+                    if (stdCols.includes('rollNumber')) row['Roll Number'] = s.rollNumber ? `#${s.rollNumber}` : '-';
+                    if (stdCols.includes('gender')) row['Gender'] = s.gender === 'female' ? 'Female' : 'Male';
+                    if (stdCols.includes('email')) row['Email Address'] = s.email || '-';
+                    if (stdCols.includes('phone')) row['Phone Number'] = s.phone || '-';
                 }
 
-                // Classes fields
-                if (entities.includes('classes') || entities.includes('students')) {
-                    row['Enrolled Class'] = cls?.name || '-';
-                    row['Section'] = cls?.section || '-';
-                    row['Grade Level'] = cls?.gradeLevel || '-';
+                // Classes fields (only if classes entity requested)
+                if (entities.includes('classes')) {
+                    if (clsCols.includes('name')) row['Enrolled Class'] = cls?.name || '-';
+                    if (clsCols.includes('section')) row['Section'] = cls?.section || '-';
+                    if (clsCols.includes('gradeLevel')) row['Grade Level'] = cls?.gradeLevel || '-';
+                    if (clsCols.includes('stream')) row['Stream'] = cls?.stream || '-';
                 }
 
-                // Groups fields
-                if (entities.includes('groups') || entities.includes('students')) {
-                    row['Assigned Group'] = group?.name || 'Ungrouped';
-                    row['Group Leader'] = leader ? `${leader.firstName || ''} ${leader.lastName || ''}`.trim() : '-';
-                    row['Group Member Count'] = group?.members?.length || 0;
+                // Groups fields (only if groups entity requested)
+                if (entities.includes('groups')) {
+                    if (grpCols.includes('name')) row['Assigned Group'] = group?.name || 'Ungrouped';
+                    if (grpCols.includes('genderType')) row['Group Gender'] = group?.genderType || '-';
+                    if (grpCols.includes('leaderName')) row['Group Leader'] = leader ? `${leader.firstName || ''} ${leader.lastName || ''}`.trim() : '-';
+                    if (grpCols.includes('memberCount')) row['Group Member Count'] = group?.members?.length || 0;
                 }
 
-                // Lab PCs fields
-                if (entities.includes('lab_pcs') || entities.includes('groups') || entities.includes('students')) {
-                    row['Assigned Lab PC'] = pc ? `${pc.itemNumber}` : 'No PC';
-                    row['Lab Location'] = pc?.lab?.name || '-';
-                    row['PC Status'] = pc?.status || '-';
-                    row['IP Address'] = (pc?.specs && pc.specs.ipAddress) ? pc.specs.ipAddress : '-';
+                // Lab PCs fields (only if lab_pcs entity requested)
+                if (entities.includes('lab_pcs')) {
+                    if (pcCols.includes('itemNumber')) row['Assigned Lab PC'] = pc ? `${pc.itemNumber}` : 'No PC';
+                    if (pcCols.includes('labName')) row['Lab Location'] = pc?.lab?.name || '-';
+                    if (pcCols.includes('status')) row['PC Status'] = pc?.status || '-';
+                    if (pcCols.includes('ipAddress')) row['IP Address'] = (pc?.specs && pc.specs.ipAddress) ? pc.specs.ipAddress : '-';
                 }
 
-                // Assignments & Submissions fields
-                if (entities.includes('assignments') || entities.includes('students')) {
-                    row['Total Submissions'] = s.submissions?.length || 0;
-                    row['Average Score (%)'] = avgScore;
+                // Assignments & Submissions fields (only if assignments entity requested)
+                if (entities.includes('assignments')) {
+                    if (asgCols.includes('submissionsCount')) row['Total Submissions'] = s.submissions?.length || 0;
+                    if (asgCols.includes('avgScore')) row['Average Score (%)'] = avgScore;
                 }
 
                 return row;
             });
 
-            reportResults.unified = {
-                title: `Unified Joined Master Report (${entities.map(e => e.toUpperCase()).join(' + ')})`,
-                count: unifiedRows.length,
-                rows: unifiedRows
-            };
+            // Only add unified table if at least one column was populated
+            if (unifiedRows.length > 0 && Object.keys(unifiedRows[0]).length > 0) {
+                reportResults.unified = {
+                    title: `Unified Joined Master Report (${entities.map(e => e.toUpperCase()).join(' + ')})`,
+                    count: unifiedRows.length,
+                    rows: unifiedRows
+                };
+            }
         } catch (err) {
             console.error('Error generating unified joined master report:', err);
         }

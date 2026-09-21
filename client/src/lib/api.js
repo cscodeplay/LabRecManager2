@@ -393,6 +393,7 @@ export const reportsAPI = {
     getAssignmentAnalytics: (assignmentId) => api.get(`/reports/assignment-analytics/${assignmentId}`),
     getColumns: () => api.get('/reports/columns'),
     generateCustom: (data) => api.post('/reports/custom-generate', data),
+    sendEmail: (data) => api.post('/reports/send-email', data),
 };
 
 // Notifications API

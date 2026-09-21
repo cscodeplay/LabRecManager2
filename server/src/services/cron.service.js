@@ -1,6 +1,8 @@
 const cron = require('node-cron');
 const prisma = require('../config/database');
 const emailService = require('./email.service');
+const reportService = require('./report.service');
+const reportEmailService = require('./report.email.service');
 const logger = console; // Use console as logger fallback
 
 let ioInstance = null;
@@ -358,6 +360,92 @@ const initCronJobs = () => {
     });
 
     // ===========================================
+    // 1. WEEKLY ACADEMIC & PERFORMANCE DIGEST
+    // Runs every Monday at 09:00 AM (0 9 * * 1)
+    // Dispatches academic performance & student activity summary
+    // ===========================================
+    cron.schedule('0 9 * * 1', async () => {
+        logger.info('[Report Cron] Running Weekly Academic Digest');
+        await dispatchAutomatedReport({
+            reportKey: 'weekly-academic-digest',
+            title: 'Weekly Academic & Class Performance Digest',
+            entities: ['students', 'assignments', 'classes'],
+            filters: { dateRange: 'week' },
+            note: 'Weekly institutional summary of enrolled students, recent assignments, and overall performance statistics.'
+        });
+    });
+
+    // ===========================================
+    // 2. DAILY ATTENDANCE & PERFORMANCE ALERT
+    // Runs Monday through Friday at 03:30 PM (30 15 * * 1-5)
+    // Dispatches daily summary of completed submissions & practicals
+    // ===========================================
+    cron.schedule('30 15 * * 1-5', async () => {
+        logger.info('[Report Cron] Running Daily Attendance & Activity Alert');
+        await dispatchAutomatedReport({
+            reportKey: 'daily-activity-alert',
+            title: 'Daily Academic Activity & Submission Alert',
+            entities: ['students', 'assignments'],
+            filters: { dateRange: 'week' },
+            note: 'Daily weekday status of student lab submissions, completed practicals, and active coursework.'
+        });
+    });
+
+    // ===========================================
+    // 3. WEEKLY ASSIGNMENT DEFAULTER AUDIT
+    // Runs every Friday at 04:00 PM (0 16 * * 5)
+    // Dispatches pending assignment audits and defaulter lists
+    // ===========================================
+    cron.schedule('0 16 * * 5', async () => {
+        logger.info('[Report Cron] Running Weekly Assignment Defaulter Audit');
+        await dispatchAutomatedReport({
+            reportKey: 'weekly-defaulters',
+            title: 'Weekly Lab Assignment Submission & Defaulter Audit',
+            entities: ['assignments', 'students', 'groups'],
+            filters: { dateRange: 'month' },
+            note: 'End-of-week audit detailing assignments, submission percentages, and pending student practicals.'
+        });
+    });
+
+    // ===========================================
+    // 4. MONTHLY HARDWARE & PC INVENTORY STATUS
+    // Runs on the 1st of every month at 08:30 AM (30 8 1 * *)
+    // Dispatches lab equipment and PC inventory audit
+    // ===========================================
+    cron.schedule('30 8 1 * *', async () => {
+        logger.info('[Report Cron] Running Monthly Hardware & PC Inventory Status');
+        await dispatchAutomatedReport({
+            reportKey: 'monthly-inventory',
+            title: 'Monthly Lab PC & Hardware Inventory Audit',
+            entities: ['lab_pcs'],
+            filters: {},
+            note: 'Monthly hardware audit report covering PC operational status, lab allocations, and group workstations.'
+        });
+    });
+
+    // ===========================================
+    // 5. MONTHLY ENROLLMENT & CLASS CAPACITY SUMMARY
+    // Runs on days 28-31 at 06:00 PM (0 18 28-31 * *), executes on final day of month
+    // Dispatches grade/section capacity and student gender distribution
+    // ===========================================
+    cron.schedule('0 18 28-31 * *', async () => {
+        const now = new Date();
+        const tomorrow = new Date(now);
+        tomorrow.setDate(now.getDate() + 1);
+        // Only run on the actual last day of the calendar month
+        if (tomorrow.getDate() !== 1) return;
+
+        logger.info('[Report Cron] Running Monthly Enrollment & Class Capacity Summary');
+        await dispatchAutomatedReport({
+            reportKey: 'monthly-enrollment',
+            title: 'Monthly Student Enrollment & Class Capacity Summary',
+            entities: ['classes', 'students', 'groups'],
+            filters: {},
+            note: 'Comprehensive monthly institutional enrollment audit, section headcounts, gender ratio, and group distribution.'
+        });
+    });
+
+    // ===========================================
     // MEETING LIFECYCLE: Auto-end & Auto-start cron
     // Runs every 20 seconds to auto-complete meetings when duration is over
     // and auto-start / expire scheduled meetings
@@ -365,7 +453,7 @@ const initCronJobs = () => {
     checkAndManageMeetings(); // Run immediately on startup
     setInterval(checkAndManageMeetings, 20000);
 
-    logger.info('Cron jobs initialized (with DB keep-alive + timetable notifications + meeting auto-end)');
+    logger.info('Cron jobs initialized (with DB keep-alive + timetable notifications + meeting auto-end + 6 automated report schedules)');
 };
 
 const checkAndManageMeetings = async () => {
@@ -562,6 +650,81 @@ const sendWeeklyStorageQuotaReports = async (specificSchoolId = null, targetEmai
     }
 };
 
+/**
+ * Retrieve verified institutional report recipients (All Active Admins + Principals, plus SMTP_ADMIN_EMAIL)
+ */
+const getInstitutionalReportRecipients = async (schoolId = null) => {
+    try {
+        const admins = await prisma.user.findMany({
+            where: {
+                role: { in: ['admin', 'principal'] },
+                isActive: true,
+                ...(schoolId ? { schoolId } : {})
+            },
+            select: { email: true }
+        });
+        const emails = admins.map(a => a.email).filter(Boolean);
+        if (process.env.SMTP_ADMIN_EMAIL) {
+            emails.push(process.env.SMTP_ADMIN_EMAIL);
+        }
+        return Array.from(new Set(emails));
+    } catch (e) {
+        logger.error('[Report Cron] Error fetching recipient admins:', e.message);
+        return process.env.SMTP_ADMIN_EMAIL ? [process.env.SMTP_ADMIN_EMAIL] : [];
+    }
+};
+
+/**
+ * Compile and dispatch an automated institutional report for all schools
+ */
+const dispatchAutomatedReport = async ({
+    reportKey,
+    title,
+    entities,
+    filters = {},
+    formats = { xlsx: true, csv: false },
+    note = ''
+}) => {
+    try {
+        const schools = await prisma.school.findMany({ select: { id: true, name: true } });
+        for (const school of schools) {
+            const recipients = await getInstitutionalReportRecipients(school.id);
+            if (recipients.length === 0) {
+                logger.warn(`[Report Cron - ${reportKey}] No admin recipients found for school "${school.name}". Skipping.`);
+                continue;
+            }
+
+            // Find current academic session for school
+            const currentSession = await prisma.academicYear.findFirst({
+                where: { schoolId: school.id, isCurrent: true },
+                select: { id: true }
+            });
+
+            const reportData = await reportService.generateCustomReportData({
+                entities,
+                filters,
+                schoolId: school.id,
+                sessionId: currentSession?.id
+            });
+
+            await reportEmailService.sendCustomReportEmail({
+                to: recipients,
+                subject: `[Automated Report] ${title} - ${school.name}`,
+                message: note || `This is an automated scheduled institutional report for ${school.name}.`,
+                reportTitle: title,
+                reportResults: reportData.reportResults,
+                filters,
+                schoolName: school.name,
+                formats
+            });
+
+            logger.info(`[Report Cron - ${reportKey}] Dispatched "${title}" for "${school.name}" to ${recipients.join(', ')}`);
+        }
+    } catch (err) {
+        logger.error(`[Report Cron - ${reportKey}] Error during automated dispatch:`, err.message);
+    }
+};
+
 const getSocketIO = () => ioInstance;
 
 module.exports = {
@@ -570,6 +733,8 @@ module.exports = {
     getSocketIO,
     ensureCurrentSession,
     checkAndManageMeetings,
-    sendWeeklyStorageQuotaReports
+    sendWeeklyStorageQuotaReports,
+    getInstitutionalReportRecipients,
+    dispatchAutomatedReport
 };
 

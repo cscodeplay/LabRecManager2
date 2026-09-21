@@ -12,7 +12,7 @@ import {
     Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2, Ticket,
     ShoppingBag, Code, Terminal, Award, Package, Zap, Wifi, Network, Headphones, ScanLine, Cable, Camera,
     Share2, Folder, Truck, ArrowRight, UsersRound, Search, RotateCcw, UserCheck, ShieldAlert, FolderPlus, Square,
-    GripHorizontal, FileSpreadsheet, Settings, Palette, Sliders, CheckCheck, UserPlus
+    GripHorizontal, FileSpreadsheet, Settings, Palette, Sliders, CheckCheck, UserPlus, Mail
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
@@ -1181,6 +1181,9 @@ function ReportActionCard({ action }) {
     const [downloading, setDownloading] = useState(false);
     const [previewData, setPreviewData] = useState(null);
     const [showPreview, setShowPreview] = useState(false);
+    const [showEmailDialog, setShowEmailDialog] = useState(false);
+    const [emailTo, setEmailTo] = useState(action.emailRecipient || 'charan881130@gmail.com');
+    const [sendingEmail, setSendingEmail] = useState(false);
 
     const fetchReportData = async () => {
         if (action.reportResults) return { reportResults: action.reportResults };
@@ -1189,6 +1192,34 @@ function ReportActionCard({ action }) {
             filters: action.filters || {}
         });
         return res.data;
+    };
+
+    const handleSendEmail = async () => {
+        if (!emailTo || !emailTo.trim()) {
+            toast.error('Please enter a recipient email');
+            return;
+        }
+        setSendingEmail(true);
+        try {
+            const reportData = await fetchReportData();
+            const reportTitle = `${(action.entities || ['Institutional']).join(' & ')} Report`;
+            await reportsAPI.sendEmail({
+                to: emailTo.trim(),
+                subject: `[LabRecManager] ${reportTitle} - ${new Date().toLocaleDateString()}`,
+                reportTitle,
+                reportResults: reportData?.reportResults,
+                entities: action.entities || ['students'],
+                filters: action.filters || {},
+                formats: { xlsx: true, csv: false }
+            });
+            toast.success(`Report email dispatched to ${emailTo}!`);
+            setShowEmailDialog(false);
+        } catch (err) {
+            console.error('In-chat report email error:', err);
+            toast.error(err.response?.data?.message || err.message || 'Failed to email report');
+        } finally {
+            setSendingEmail(false);
+        }
     };
 
     const handleDownload = async (format) => {
@@ -1343,9 +1374,71 @@ function ReportActionCard({ action }) {
                 </span>
             </div>
 
+            {/* Email Dispatched Status Banner */}
+            {action.emailSent && (
+                <div className="px-3 py-1.5 bg-emerald-50 border-b border-emerald-100 flex items-center gap-1.5 text-emerald-800 text-[11px] font-semibold">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Emailed successfully to <strong>{action.emailRecipient}</strong></span>
+                </div>
+            )}
+
+            {/* Inline Email Dispatch Dialog */}
+            {showEmailDialog && (
+                <div className="p-3 bg-indigo-50 border-b border-indigo-100 space-y-2">
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-indigo-900 flex items-center gap-1">
+                            <Mail className="w-3.5 h-3.5 text-indigo-600" /> Dispatch Report via Email
+                        </span>
+                        <button
+                            onClick={() => setShowEmailDialog(false)}
+                            className="text-indigo-400 hover:text-indigo-700 text-xs font-bold"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <input
+                            type="email"
+                            value={emailTo}
+                            onChange={(e) => setEmailTo(e.target.value)}
+                            placeholder="charan881130@gmail.com"
+                            className="input bg-white text-xs py-1 px-2.5 flex-1 border border-indigo-200 rounded"
+                        />
+                        <button
+                            onClick={handleSendEmail}
+                            disabled={sendingEmail || !emailTo.trim()}
+                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-md flex items-center gap-1 disabled:opacity-50 transition"
+                        >
+                            {sendingEmail ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                            Send
+                        </button>
+                    </div>
+                    <div className="flex items-center gap-1 text-[10px] text-indigo-700">
+                        <span>Quick fill:</span>
+                        <button
+                            type="button"
+                            onClick={() => setEmailTo('charan881130@gmail.com')}
+                            className="underline hover:text-indigo-900 font-bold"
+                        >
+                            charan881130@gmail.com
+                        </button>
+                    </div>
+                </div>
+            )}
+
             <div className="p-3 bg-slate-50 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
                 <span className="text-slate-600 text-[11px] font-medium">Download / Export formats:</span>
                 <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* Email */}
+                    <button
+                        onClick={() => setShowEmailDialog(prev => !prev)}
+                        disabled={downloading}
+                        title="Email this report to any recipient"
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-[11px] transition shadow-2xs disabled:opacity-50"
+                    >
+                        <Mail className="w-3.5 h-3.5" /> Email
+                    </button>
+
                     {/* PDF */}
                     <button
                         onClick={() => handleDownload('pdf')}
