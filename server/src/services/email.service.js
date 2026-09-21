@@ -68,12 +68,28 @@ function createTransporter() {
 async function sendViaResend({ to, subject, html, text, attachments = [] }) {
   const config = getSmtpConfig();
   const apiKey = config.resendApiKey;
-  const from = process.env.RESEND_FROM || config.from || 'LabRecManager <onboarding@resend.dev>';
 
-  const formattedAttachments = attachments.map(att => ({
-    filename: att.filename,
-    content: Buffer.isBuffer(att.content) ? att.content.toString('base64') : Buffer.from(att.content).toString('base64')
-  }));
+  // Resend strictly requires a verified custom domain, or its sandbox onboarding address.
+  // Standard free domains (@gmail.com, @yahoo.com, etc.) cannot be used directly as 'from' without domain DNS verification.
+  let from = process.env.RESEND_FROM;
+  if (!from || from.includes('@gmail.com') || from.includes('@yahoo.com') || from.includes('@outlook.com') || from.includes('@hotmail.com')) {
+    from = 'LabRecManager <onboarding@resend.dev>';
+  }
+
+  const replyTo = config.user || (config.from?.match(/<([^>]+)>/)?.[1]) || undefined;
+
+  const formattedAttachments = attachments.map(att => {
+    let base64Content = '';
+    if (Buffer.isBuffer(att.content)) {
+      base64Content = att.content.toString('base64');
+    } else if (typeof att.content === 'string') {
+      base64Content = Buffer.from(att.content, 'utf-8').toString('base64');
+    }
+    return {
+      filename: att.filename,
+      content: base64Content
+    };
+  });
 
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -84,6 +100,7 @@ async function sendViaResend({ to, subject, html, text, attachments = [] }) {
     body: JSON.stringify({
       from,
       to: Array.isArray(to) ? to : to.split(',').map(s => s.trim()),
+      reply_to: replyTo,
       subject,
       html,
       text,
