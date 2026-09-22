@@ -12,7 +12,7 @@ import {
     BringToFront, SendToBack, AlignLeft, AlignCenterHorizontal, AlignRight,
     AlignStartVertical, AlignCenterVertical, AlignEndVertical,
     AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween, Group, Ungroup, Lock, Unlock, Users, MessageCircle, User,
-    Folder, Upload
+    Folder, Upload, Loader2
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
@@ -659,9 +659,16 @@ export default function Whiteboard({
     }, [isDrawing]);
     const STORAGE_KEY = whiteboardId ? `whiteboard_${whiteboardId}` : null;
 
-    // Load state from localStorage or API on mount
+    // Load state from localStorage or API on mount & reset loading state on whiteboard switch
     useEffect(() => {
-        if (!STORAGE_KEY || isStateLoaded) return;
+        setIsStateLoaded(false);
+
+        if (!STORAGE_KEY) {
+            const t = setTimeout(() => setIsStateLoaded(true), 200);
+            return () => clearTimeout(t);
+        }
+
+        let isMounted = true;
 
         const loadState = async () => {
             try {
@@ -692,44 +699,54 @@ export default function Whiteboard({
                     saved = localStorage.getItem(STORAGE_KEY);
                 }
 
-                if (saved) {
-                const state = JSON.parse(saved);
-                // Restore all state
-                if (state.pages) setPages(state.pages);
-                if (state.currentPage !== undefined) setCurrentPage(state.currentPage);
-                if (state.totalPages !== undefined) setTotalPages(state.totalPages);
-                if (state.pageBackgrounds) setPageBackgrounds(state.pageBackgrounds);
-                if (state.pageImageObjects) setPageImageObjects(state.pageImageObjects);
-                if (state.pageTextObjects) setPageTextObjects(state.pageTextObjects);
-                if (state.pageShapeObjects) setPageShapeObjects(state.pageShapeObjects);
-                if (state.color) setColor(state.color);
-                if (state.strokeWidth) setStrokeWidth(state.strokeWidth);
-                if (state.eraserSize) setEraserSize(state.eraserSize);
-                if (state.strokeStyle) setStrokeStyle(state.strokeStyle);
-                if (state.tool) setTool(state.tool);
+                if (saved && isMounted) {
+                    const state = typeof saved === 'string' ? JSON.parse(saved) : saved;
+                    // Restore all state
+                    if (state.pages) setPages(state.pages);
+                    if (state.currentPage !== undefined) setCurrentPage(state.currentPage);
+                    if (state.totalPages !== undefined) setTotalPages(state.totalPages);
+                    if (state.pageBackgrounds) setPageBackgrounds(state.pageBackgrounds);
+                    if (state.pageImageObjects) setPageImageObjects(state.pageImageObjects);
+                    if (state.pageTextObjects) setPageTextObjects(state.pageTextObjects);
+                    if (state.pageShapeObjects) setPageShapeObjects(state.pageShapeObjects);
+                    if (state.color) setColor(state.color);
+                    if (state.strokeWidth) setStrokeWidth(state.strokeWidth);
+                    if (state.eraserSize) setEraserSize(state.eraserSize);
+                    if (state.strokeStyle) setStrokeStyle(state.strokeStyle);
+                    if (state.tool) setTool(state.tool);
 
-                // Restore canvas content for current page
-                if (state.pages && state.pages[state.currentPage || 0]) {
-                    const canvas = canvasRef.current;
-                    if (canvas) {
-                        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                        const img = new Image();
-                        img.onload = () => {
-                            ctx.clearRect(0, 0, canvas.width, canvas.height);
-                            ctx.drawImage(img, 0, 0);
-                        };
-                        img.src = state.pages[state.currentPage || 0];
+                    // Restore canvas content for current page
+                    if (state.pages && state.pages[state.currentPage || 0]) {
+                        const canvas = canvasRef.current;
+                        if (canvas) {
+                            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                            const img = new Image();
+                            img.onload = () => {
+                                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                                ctx.drawImage(img, 0, 0);
+                            };
+                            img.src = state.pages[state.currentPage || 0];
+                        }
                     }
+                    console.log('✅ Whiteboard state restored from storage');
                 }
-                console.log('✅ Whiteboard state restored from storage');
+            } catch (e) {
+                console.error('Error loading whiteboard state:', e);
+            } finally {
+                if (isMounted) {
+                    // Small delay to ensure canvas and child components are fully rendered before removing blur
+                    setTimeout(() => {
+                        if (isMounted) setIsStateLoaded(true);
+                    }, 250);
+                }
             }
-        } catch (e) {
-            console.error('Error loading whiteboard state:', e);
-        }
-        setIsStateLoaded(true);
-    };
-    
-    loadState();
+        };
+        
+        loadState();
+
+        return () => {
+            isMounted = false;
+        };
     }, [STORAGE_KEY, whiteboardId]);
 
     // Save state to localStorage on changes (debounced)
@@ -4382,7 +4399,9 @@ export default function Whiteboard({
                     : 'bottom-full left-1/2 -translate-x-1/2 mb-2';
 
                 return (
-                <div className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 flex z-40 overflow-visible whitespace-nowrap hide-scrollbar transition-all ${
+                <div className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 flex z-40 overflow-visible whitespace-nowrap hide-scrollbar transition-all duration-300 ${
+                    !isStateLoaded ? 'pointer-events-none opacity-60 filter blur-[0.5px]' : 'pointer-events-auto opacity-100'
+                } ${
                     toolbarDock === 'top'
                         ? 'top-4 left-1/2 transform -translate-x-1/2 flex-row items-center px-2 py-1 rounded-full gap-0.5 max-w-[95%]'
                         : toolbarDock === 'left'
@@ -4474,13 +4493,13 @@ export default function Whiteboard({
 
                                 {/* Image Tool Popover */}
                                 {tool === t.id && t.id === 'image' && showImagePicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 min-w-[200px]`}>
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 min-w-[180px]`}>
                                         <button 
                                             onClick={() => { setShowImagePickerModal(true); setShowImagePicker(false); }}
                                             className="text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded-md transition flex items-center gap-2"
                                         >
                                             <Folder className="w-4 h-4 text-emerald-400" />
-                                            Documents & Google Drive
+                                            Drive & Docs
                                         </button>
                                         <button 
                                             onClick={() => { imageInputRef.current?.click(); setShowImagePicker(false); }}
@@ -4488,13 +4507,6 @@ export default function Whiteboard({
                                         >
                                             <Upload className="w-4 h-4 text-blue-400" />
                                             Upload from Device
-                                        </button>
-                                        <button 
-                                            onClick={() => { setShowScreenshotModal(true); setShowImagePicker(false); }}
-                                            className="text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded-md transition flex items-center gap-2"
-                                        >
-                                            <Camera className="w-4 h-4 text-purple-400" />
-                                            Insert Screenshot
                                         </button>
                                     </div>
                                 )}
@@ -5203,7 +5215,9 @@ export default function Whiteboard({
 
                 <div 
                     ref={canvasWrapperRef}
-                    className="relative rounded-lg shadow-lg overflow-hidden touch-none select-none overscroll-none"
+                    className={`relative rounded-lg shadow-lg overflow-hidden touch-none select-none overscroll-none transition-all duration-300 ${
+                        !isStateLoaded ? 'filter blur-sm pointer-events-none select-none opacity-80' : 'filter-none opacity-100'
+                    }`}
                     style={{
                         width: canvasWidth,
                         height: canvasHeight,
@@ -6627,6 +6641,26 @@ export default function Whiteboard({
                     {/* 360-Degree Rotation Protractor & Angle Dial Overlay */}
                     {activeRotatingObject && <RotationDial obj={activeRotatingObject} />}
                 </div>
+
+                {/* Full-surface Loading Overlay & Interaction Lock */}
+                {!isStateLoaded && (
+                    <div className="absolute inset-0 z-50 bg-slate-900/30 backdrop-blur-xs flex flex-col items-center justify-center select-none pointer-events-auto transition-all duration-300">
+                        <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-2xl shadow-2xl p-6 flex flex-col items-center max-w-xs mx-4 border border-slate-200/80 dark:border-slate-700/80 animate-in fade-in zoom-in-95 duration-200">
+                            <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-tr from-primary-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-primary-500/25 mb-3.5">
+                                <Pencil className="w-7 h-7 animate-pulse" />
+                                <div className="absolute -inset-1 rounded-2xl border-2 border-primary-400/40 animate-ping pointer-events-none" />
+                            </div>
+                            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Loading Whiteboard</h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 text-center mt-1.5 leading-relaxed">
+                                Restoring canvas elements, layers, drawings and tools...
+                            </p>
+                            <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-primary-600 dark:text-primary-400">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Please wait...</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Template Gallery Modal */}

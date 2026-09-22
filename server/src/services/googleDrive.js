@@ -432,7 +432,7 @@ class GoogleDriveService {
     /**
      * List files and folders accessible from Google Drive
      */
-    async listFiles({ folderId = null, query = '', mimeType = null, pageSize = 50 } = {}) {
+    async listFiles({ folderId = null, query = '', mimeType = null, pageSize = 50, scope = null, recursive = false } = {}) {
         await this.ensureInitialized();
         const results = [];
 
@@ -442,20 +442,25 @@ class GoogleDriveService {
                 const conditions = ['trashed = false'];
 
                 // Target folder logic: Default to this.folderId (ULRMS) if not explicitly root/all
-                const activeFolder = folderId !== null && folderId !== undefined ? folderId : this.folderId;
+                let activeFolder = folderId !== null && folderId !== undefined ? folderId : this.folderId;
+                if (folderId === 'all' || recursive === true || recursive === 'true' || (scope === 'all' && (folderId === 'all' || !folderId))) {
+                    activeFolder = 'all';
+                }
 
                 if (activeFolder && activeFolder !== 'root' && activeFolder !== 'all') {
                     conditions.push(`'${activeFolder}' in parents`);
                 } else if (activeFolder === 'root') {
                     conditions.push(`'root' in parents`);
                 }
-                // If activeFolder === 'all', do not constrain parents
+                // If activeFolder === 'all', do not constrain parents (scans across all folders)
 
                 if (mimeType) {
                     if (mimeType === 'folder') {
                         conditions.push(`mimeType = 'application/vnd.google-apps.folder'`);
                     } else if (mimeType === 'document') {
                         conditions.push(`mimeType != 'application/vnd.google-apps.folder'`);
+                    } else if (mimeType === 'image' || mimeType === 'image/*' || mimeType.startsWith('image')) {
+                        conditions.push(`mimeType contains 'image/'`);
                     } else {
                         conditions.push(`mimeType = '${mimeType}'`);
                     }

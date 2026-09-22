@@ -163,13 +163,15 @@ router.post('/auth/disconnect', asyncHandler(async (req, res) => {
  * @desc    List files and folders from Google Drive
  */
 router.get('/files', asyncHandler(async (req, res) => {
-    const { folderId, query, mimeType, pageSize } = req.query;
+    const { folderId, query, search, mimeType, pageSize, scope, recursive } = req.query;
 
     const files = await googleDriveService.listFiles({
         folderId: folderId || null,
-        query: query || '',
+        query: query || search || '',
         mimeType: mimeType || null,
-        pageSize: pageSize ? parseInt(pageSize, 10) : 50
+        pageSize: pageSize ? parseInt(pageSize, 10) : 50,
+        scope: scope || null,
+        recursive: recursive === 'true' || recursive === true
     });
 
     res.json({

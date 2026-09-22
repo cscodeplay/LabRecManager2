@@ -31,6 +31,7 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
     const [driveImages, setDriveImages] = useState([]);
     const [currentDriveFolder, setCurrentDriveFolder] = useState('root');
     const [driveBreadcrumbs, setDriveBreadcrumbs] = useState([]);
+    const [driveViewMode, setDriveViewMode] = useState('all'); // 'all' (all folders recursive) | 'folders' (browse folder by folder)
 
     // --- Tab 3: Screenshots State ---
     const [screenshots, setScreenshots] = useState([]);
@@ -85,24 +86,47 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
                 return;
             }
 
-            const params = {
-                folderId: currentDriveFolder,
-                pageSize: 60,
-                scope: 'all'
-            };
-            if (searchQuery) params.search = searchQuery;
+            if (driveViewMode === 'all') {
+                // Search recursively across all folders and subfolders
+                const params = {
+                    folderId: 'all',
+                    recursive: true,
+                    mimeType: 'image',
+                    pageSize: 100
+                };
+                if (searchQuery) params.search = searchQuery;
 
-            const res = await googleDriveAPI.listFiles(params);
-            const files = res.data?.data?.files || [];
+                const res = await googleDriveAPI.listFiles(params);
+                const files = res.data?.data?.files || [];
 
-            setDriveFolders(files.filter(f => f.isFolder));
-            const imgs = files.filter(f => {
-                if (f.isFolder) return false;
-                if (f.mimeType?.startsWith('image/')) return true;
-                const ext = f.name?.split('.').pop()?.toLowerCase();
-                return IMAGE_EXTENSIONS.includes(ext);
-            });
-            setDriveImages(imgs);
+                setDriveFolders([]);
+                const imgs = files.filter(f => {
+                    if (f.isFolder) return false;
+                    if (f.mimeType?.startsWith('image/')) return true;
+                    const ext = f.name?.split('.').pop()?.toLowerCase();
+                    return IMAGE_EXTENSIONS.includes(ext);
+                });
+                setDriveImages(imgs);
+            } else {
+                // Browse by specific folder
+                const params = {
+                    folderId: currentDriveFolder,
+                    pageSize: 60
+                };
+                if (searchQuery) params.search = searchQuery;
+
+                const res = await googleDriveAPI.listFiles(params);
+                const files = res.data?.data?.files || [];
+
+                setDriveFolders(files.filter(f => f.isFolder));
+                const imgs = files.filter(f => {
+                    if (f.isFolder) return false;
+                    if (f.mimeType?.startsWith('image/')) return true;
+                    const ext = f.name?.split('.').pop()?.toLowerCase();
+                    return IMAGE_EXTENSIONS.includes(ext);
+                });
+                setDriveImages(imgs);
+            }
         } catch (err) {
             console.error('Failed to load Google Drive files:', err);
             toast.error('Failed to load Google Drive files');
@@ -135,7 +159,7 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
         } else if (activeTab === 'screenshots') {
             loadScreenshotsData();
         }
-    }, [activeTab, currentDocFolder, currentDriveFolder, searchQuery]);
+    }, [activeTab, currentDocFolder, currentDriveFolder, driveViewMode, searchQuery]);
 
     // Handle Documents Folder Navigation
     const handleDocFolderClick = (folder) => {
@@ -351,7 +375,56 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
                     </div>
                 )}
 
+                {/* Google Drive Account ID Banner & View Mode Toggle */}
                 {activeTab === 'drive' && driveStatus?.isConfigured && (
+                    <div className="px-6 py-2.5 bg-emerald-50/70 border-b border-emerald-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                                <HardDrive className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0 text-xs">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-semibold text-slate-900">
+                                        {driveStatus?.user?.displayName ? `${driveStatus.user.displayName} ` : 'Google Drive'}
+                                    </span>
+                                    <span className="font-mono text-[11px] bg-white px-1.5 py-0.5 rounded border border-emerald-200 text-emerald-950 truncate max-w-[260px]" title={driveStatus?.user?.emailAddress || driveStatus?.serviceAccountEmail || 'Connected'}>
+                                        {driveStatus?.user?.emailAddress || driveStatus?.serviceAccountEmail || 'Connected Account'}
+                                    </span>
+                                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                        {driveStatus?.authType === 'oauth_user' ? 'OAuth 2.0 (5 TB)' : 'Service Account'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-emerald-200 shrink-0 text-xs">
+                            <button
+                                type="button"
+                                onClick={() => setDriveViewMode('all')}
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
+                                    driveViewMode === 'all'
+                                        ? 'bg-emerald-600 text-white shadow-2xs font-semibold'
+                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                }`}
+                            >
+                                All Drive Images
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setDriveViewMode('folders')}
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
+                                    driveViewMode === 'folders'
+                                        ? 'bg-emerald-600 text-white shadow-2xs font-semibold'
+                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                }`}
+                            >
+                                Browse Folders
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'drive' && driveStatus?.isConfigured && driveViewMode === 'folders' && (
                     <div className="px-6 py-2 border-b border-slate-100 bg-white flex items-center gap-1.5 text-xs text-slate-600 overflow-x-auto">
                         <button
                             type="button"
@@ -466,8 +539,8 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
                                 </div>
                             ) : (
                                 <div>
-                                    {/* Drive Folders */}
-                                    {driveFolders.length > 0 && (
+                                    {/* Drive Folders (only in folder browsing mode) */}
+                                    {driveViewMode === 'folders' && driveFolders.length > 0 && (
                                         <div className="mb-5">
                                             <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2.5">Drive Folders</h3>
                                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -490,13 +563,53 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
 
                                     {/* Drive Images */}
                                     <div>
-                                        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2.5">
-                                            Drive Images {driveImages.length > 0 && `(${driveImages.length})`}
-                                        </h3>
+                                        <div className="flex items-center justify-between mb-2.5">
+                                            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                                {driveViewMode === 'all' ? 'All Images Across Drive' : 'Folder Images'} {driveImages.length > 0 && `(${driveImages.length})`}
+                                            </h3>
+                                            {driveViewMode === 'folders' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDriveViewMode('all')}
+                                                    className="text-xs font-medium text-emerald-600 hover:text-emerald-700 hover:underline inline-flex items-center gap-1"
+                                                >
+                                                    <Search className="w-3 h-3" /> Search all folders instead
+                                                </button>
+                                            )}
+                                        </div>
+
                                         {driveImages.length === 0 ? (
-                                            <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                                            <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200 p-6">
                                                 <ImageIcon className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-                                                <p className="text-xs text-slate-600 font-medium">No image files found in this Drive folder</p>
+                                                <p className="text-xs text-slate-700 font-semibold">
+                                                    {driveViewMode === 'folders' ? 'No image files directly in this folder' : 'No image files found on this Google Drive'}
+                                                </p>
+                                                {driveViewMode === 'folders' && driveFolders.length > 0 ? (
+                                                    <div className="mt-2 text-xs text-slate-500 max-w-md mx-auto">
+                                                        <p>This folder contains {driveFolders.length} subfolder(s). Your images might be stored inside subfolders.</p>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setDriveViewMode('all')}
+                                                            className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-2xs"
+                                                        >
+                                                            <Search className="w-3.5 h-3.5" />
+                                                            Search All Drive Folders for Images
+                                                        </button>
+                                                    </div>
+                                                ) : driveViewMode === 'folders' ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setDriveViewMode('all')}
+                                                        className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-2xs"
+                                                    >
+                                                        <Search className="w-3.5 h-3.5" />
+                                                        Search All Drive Folders
+                                                    </button>
+                                                ) : (
+                                                    <p className="text-[11px] text-slate-400 mt-1">
+                                                        Make sure images are saved in JPEG, PNG, WEBP, or SVG format, or upload directly from your device.
+                                                    </p>
+                                                )}
                                             </div>
                                         ) : (
                                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
