@@ -67,7 +67,13 @@ async function seedPlan() {
                 '4-Stage Sales & Pipeline Funnel (MS Office): Lead capture -> Conversion funnel',
                 'Milestone Roadmap (MS Office): Q1-Q4 quarterly milestone delivery roadmap',
                 '2x2 Strategic SWOT Matrix (MS Office): Strengths, Weaknesses, Opportunities, Threats',
-                'Swimlane Workflow Diagram (MS Office): Instructor, Students, Evaluator cross-functional lanes'
+                'Swimlane Workflow Diagram (MS Office): Instructor, Students, Evaluator cross-functional lanes',
+                '5-Stage Chevron Process (MS Office): Sequential progression (Initiate -> Analyze -> Design -> Validate -> Deploy)',
+                'Radial Cluster Matrix (MS Office): Central core platform branching to 4 satellite capability pillars',
+                'Interlocking Systems Triad (MS Visio): Tri-engine continuous alignment (People, Process, AI)',
+                'Concentric Target Rings (MS Office): 3-tiered bullseye model (Macro Ecosystem -> Program Strategy -> Target Mastery)',
+                'Ishikawa Fishbone Diagram (MS Visio): Cause & Effect root cause analysis across 4 categories',
+                'Action Priority Matrix (MS Excel/PPT): 2x2 Impact vs Effort grid (Quick Wins, Major Projects, Fill-ins, Slogs)'
             ],
             smart_panel_tools: [
                 'Classroom Countdown Timer & Stopwatch (audio chimes, presets, lap recording, floating pill)',

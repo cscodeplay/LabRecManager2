@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import { 
     X, Search, Grid, Layers, Brain, Code, BookOpen, 
     ArrowRight, Network, Database, GitBranch, BarChart3, Workflow,
-    Users, GitFork, Building2, RefreshCw, Triangle, CircleDot, Filter, Milestone, LayoutGrid, Award
+    Users, GitFork, Building2, RefreshCw, Triangle, CircleDot, Filter, Milestone, LayoutGrid, Award,
+    Target, Sliders, CheckSquare, Boxes, Activity, TrendingUp, GitMerge
 } from 'lucide-react';
 
 const uuid = () => Date.now().toString(36) + Math.random().toString(36).substring(2);
@@ -512,6 +513,143 @@ const templates = [
             ],
             texts: [
                 { id: uuid(), x: 330, y: 45, width: 440, height: 40, text: 'Cross-Functional Swimlane Workflow', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'ms-chevron-process',
+        title: '5-Stage Chevron Process (MS Office)',
+        category: 'MS Office & SmartArt',
+        description: 'Standard 5-stage sequential arrow progression flow (Initiate → Analyze → Design → Validate → Deploy) with deliverables.',
+        icon: <ArrowRight className="w-6 h-6" />,
+        previewColors: ['#0284c7', '#2563eb', '#6366f1', '#7c3aed', '#059669'],
+        data: {
+            title: 'Sequential 5-Stage Process Flow',
+            background: { pattern: 'grid', color: '#fcfcfd' },
+            shapes: [
+                { id: uuid(), type: 'rounded_rect', x: 20, y: 140, width: 180, height: 75, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: '1. INITIATION\nScope & Goals', textColor: '#0369a1', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 215, y: 140, width: 180, height: 75, color: '#2563eb', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: '2. ANALYSIS\nData & Needs', textColor: '#1e40af', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 410, y: 140, width: 180, height: 75, color: '#6366f1', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: '3. DESIGN\nArchitecture & UI', textColor: '#312e81', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 605, y: 140, width: 180, height: 75, color: '#7c3aed', fillColor: '#ede9fe', strokeWidth: 2, rotation: 0, text: '4. VALIDATE\nTesting & Pilots', textColor: '#5b21b6', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 800, y: 140, width: 180, height: 75, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: '5. DEPLOY\nRelease & Scale', textColor: '#047857', fontSize: 13 },
+
+                { id: uuid(), type: 'rectangle', x: 20, y: 235, width: 180, height: 170, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '• Stakeholder kickoff\n• Success metrics\n• Budget approval\n• Resource plan', textColor: '#334155', fontSize: 12 },
+                { id: uuid(), type: 'rectangle', x: 215, y: 235, width: 180, height: 170, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '• User interviews\n• Tech constraints\n• Legacy DB audit\n• Risk analysis', textColor: '#334155', fontSize: 12 },
+                { id: uuid(), type: 'rectangle', x: 410, y: 235, width: 180, height: 170, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '• Schema models\n• Component library\n• API contracts\n• Wireframes', textColor: '#334155', fontSize: 12 },
+                { id: uuid(), type: 'rectangle', x: 605, y: 235, width: 180, height: 170, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '• Unit & E2E tests\n• Load benchmarking\n• Security audit\n• User sign-off', textColor: '#334155', fontSize: 12 },
+                { id: uuid(), type: 'rectangle', x: 800, y: 235, width: 180, height: 170, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '• Production rollout\n• Live monitoring\n• SLA governance\n• Knowledge base', textColor: '#334155', fontSize: 12 },
+            ],
+            texts: [
+                { id: uuid(), x: 330, y: 45, width: 440, height: 40, text: 'Sequential 5-Stage Process Flow', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'ms-radial-cluster',
+        title: 'Radial Cluster Matrix (MS Office)',
+        category: 'MS Office & SmartArt',
+        description: 'Central organizational nucleus branching outward to 4 key satellite capability pillars.',
+        icon: <Network className="w-6 h-6" />,
+        previewColors: ['#4f46e5', '#0284c7', '#16a34a', '#d97706'],
+        data: {
+            title: 'Radial Capability Cluster',
+            background: { pattern: 'dots', color: '#f8fafc' },
+            shapes: [
+                { id: uuid(), type: 'circle', x: 400, y: 270, width: 190, height: 190, color: '#1e293b', fillColor: '#f1f5f9', strokeWidth: 3, rotation: 0, text: 'CORE PLATFORM\nLab Management\n& AI Suite', textColor: '#0f172a', fontSize: 14 },
+                
+                { id: uuid(), type: 'rounded_rect', x: 395, y: 90, width: 200, height: 80, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: '1. CURRICULUM\nSyllabus & Blueprints', textColor: '#0369a1', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 395, y: 530, width: 200, height: 80, color: '#16a34a', fillColor: '#dcfce7', strokeWidth: 2, rotation: 0, text: '3. ASSESSMENTS\nRubrics & Grade Sync', textColor: '#166534', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 110, y: 325, width: 200, height: 80, color: '#7c3aed', fillColor: '#ede9fe', strokeWidth: 2, rotation: 0, text: '4. CLOUD STORAGE\n5TB Drive & OneDrive', textColor: '#5b21b6', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 680, y: 325, width: 200, height: 80, color: '#d97706', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: '2. WHITEBOARD\nRealtime IFP Tools', textColor: '#92400e', fontSize: 13 },
+            ],
+            texts: [
+                { id: uuid(), x: 330, y: 30, width: 440, height: 40, text: 'Radial Capability Cluster', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'ms-interlocking-gears',
+        title: 'Interlocking Systems Triad (MS Visio)',
+        category: 'MS Office & SmartArt',
+        description: 'Tri-system alignment showing the continuous synergy of People, Process, and Technology engines.',
+        icon: <Boxes className="w-6 h-6" />,
+        previewColors: ['#2563eb', '#059669', '#d97706'],
+        data: {
+            title: 'Tri-System Operational Engine',
+            background: { pattern: 'none', color: '#ffffff' },
+            shapes: [
+                { id: uuid(), type: 'circle', x: 250, y: 140, width: 230, height: 230, color: '#2563eb', fillColor: '#dbeafe', strokeWidth: 3, rotation: 0, text: 'ENGINE 1\nPEOPLE & CULTURE\n\n• Trained Faculty\n• Student Agility\n• Continuous Upskilling', textColor: '#1e40af', fontSize: 13 },
+                { id: uuid(), type: 'circle', x: 510, y: 140, width: 230, height: 230, color: '#059669', fillColor: '#d1fae5', strokeWidth: 3, rotation: 0, text: 'ENGINE 2\nPROCESS & RIGOR\n\n• Standard SOPs\n• Quality Gates\n• Automated Rubrics', textColor: '#047857', fontSize: 13 },
+                { id: uuid(), type: 'circle', x: 380, y: 340, width: 230, height: 230, color: '#d97706', fillColor: '#fef3c7', strokeWidth: 3, rotation: 0, text: 'ENGINE 3\nPLATFORM & AI\n\n• Cloud Sockets\n• Smart IFP Tools\n• Real-Time Sync', textColor: '#92400e', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 420, y: 275, width: 150, height: 45, color: '#1e293b', fillColor: '#ffffff', strokeWidth: 2, rotation: 0, text: 'SYNCHRONIZED', textColor: '#0f172a', fontSize: 12 },
+            ],
+            texts: [
+                { id: uuid(), x: 320, y: 45, width: 440, height: 40, text: 'Tri-System Operational Engine', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'ms-concentric-target',
+        title: 'Concentric Target Rings (MS Office)',
+        category: 'MS Office & SmartArt',
+        description: '3-tiered bullseye model: Outer Macro Ecosystem → Mid Program Strategy → Inner Bullseye Target.',
+        icon: <Target className="w-6 h-6" />,
+        previewColors: ['#93c5fd', '#3b82f6', '#1d4ed8'],
+        data: {
+            title: 'Strategic Target & Bullseye Model',
+            background: { pattern: 'none', color: '#ffffff' },
+            shapes: [
+                { id: uuid(), type: 'circle', x: 230, y: 100, width: 540, height: 540, color: '#93c5fd', fillColor: '#eff6ff', strokeWidth: 2, rotation: 0, text: 'OUTER TIER: MACRO ECOSYSTEM\nRegulatory Standards (CBSE / State Boards), Cloud Partners & Community Engagement', textColor: '#1e40af', fontSize: 13 },
+                { id: uuid(), type: 'circle', x: 315, y: 185, width: 370, height: 370, color: '#3b82f6', fillColor: '#dbeafe', strokeWidth: 2.5, rotation: 0, text: 'MIDDLE TIER: PROGRAM STRATEGY\nStandardized Lab Curriculum, Rubrics & Real-Time Telemetry', textColor: '#1d4ed8', fontSize: 13 },
+                { id: uuid(), type: 'circle', x: 400, y: 270, width: 200, height: 200, color: '#1d4ed8', fillColor: '#1e40af', strokeWidth: 3, rotation: 0, text: 'BULLSEYE\n100% Student\nMastery & Placement', textColor: '#ffffff', fontSize: 14 },
+            ],
+            texts: [
+                { id: uuid(), x: 310, y: 35, width: 460, height: 40, text: 'Strategic Target & Bullseye Model', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'ms-ishikawa-fishbone',
+        title: 'Ishikawa Fishbone Diagram (MS Visio)',
+        category: 'MS Office & SmartArt',
+        description: 'Classic Cause-and-Effect root cause analysis mapping People, Methods, Machines, and Materials to a problem.',
+        icon: <GitFork className="w-6 h-6" />,
+        previewColors: ['#dc2626', '#4338ca', '#0284c7', '#059669'],
+        data: {
+            title: 'Ishikawa Cause & Effect Analysis',
+            background: { pattern: 'grid', color: '#fcfcfd' },
+            shapes: [
+                { id: uuid(), type: 'rounded_rect', x: 800, y: 270, width: 170, height: 100, color: '#dc2626', fillColor: '#fee2e2', strokeWidth: 2.5, rotation: 0, text: 'PROBLEM:\nLab Session\nLatency / Drop', textColor: '#991b1b', fontSize: 14 },
+                { id: uuid(), type: 'rectangle', x: 40, y: 315, width: 760, height: 10, color: '#334155', fillColor: '#334155', strokeWidth: 1, rotation: 0, text: '' },
+                
+                { id: uuid(), type: 'rounded_rect', x: 80, y: 140, width: 230, height: 80, color: '#4338ca', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: '1. PEOPLE (Faculty/Students)\n• Inadequate training\n• Missing credentials', textColor: '#312e81', fontSize: 12 },
+                { id: uuid(), type: 'rounded_rect', x: 460, y: 140, width: 230, height: 80, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: '2. METHODS (Curriculum)\n• Outdated lab manuals\n• Unstructured timing', textColor: '#0369a1', fontSize: 12 },
+                { id: uuid(), type: 'rounded_rect', x: 80, y: 430, width: 230, height: 80, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: '3. MACHINES (Hardware)\n• High RAM utilization\n• Legacy OS builds', textColor: '#047857', fontSize: 12 },
+                { id: uuid(), type: 'rounded_rect', x: 460, y: 430, width: 230, height: 80, color: '#d97706', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: '4. ENVIRONMENT (Network)\n• Wi-Fi packet drops\n• Bandwidth congestion', textColor: '#92400e', fontSize: 12 },
+            ],
+            texts: [
+                { id: uuid(), x: 310, y: 40, width: 460, height: 40, text: 'Ishikawa Cause & Effect Analysis', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'ms-priority-matrix',
+        title: 'Action Priority Matrix (MS Excel / PPT)',
+        category: 'MS Office & SmartArt',
+        description: '2x2 Impact vs Effort prioritization grid categorizing Quick Wins, Major Projects, Fill-ins, and Thankless Tasks.',
+        icon: <Grid className="w-6 h-6" />,
+        previewColors: ['#16a34a', '#2563eb', '#ca8a04', '#dc2626'],
+        data: {
+            title: 'Action Priority Matrix (Impact vs Effort)',
+            background: { pattern: 'none', color: '#ffffff' },
+            shapes: [
+                { id: uuid(), type: 'rectangle', x: 120, y: 140, width: 390, height: 210, color: '#16a34a', fillColor: '#dcfce7', strokeWidth: 2, rotation: 0, text: 'QUICK WINS (High Impact, Low Effort)\n\n• Automated attendance QR code\n• 1-Click Excel report export\n• Whiteboard timer widget\n• Serial ID plan deep linking', textColor: '#14532d', fontSize: 13 },
+                { id: uuid(), type: 'rectangle', x: 530, y: 140, width: 390, height: 210, color: '#2563eb', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: 'MAJOR PROJECTS (High Impact, High Effort)\n\n• Socratic AI Copilot curriculum\n• Multi-cloud storage federation\n• Smart panel IFPD presentation mode\n• End-to-end exam blueprint matrix', textColor: '#1e40af', fontSize: 13 },
+                { id: uuid(), type: 'rectangle', x: 120, y: 370, width: 390, height: 210, color: '#ca8a04', fillColor: '#fef9c3', strokeWidth: 2, rotation: 0, text: 'FILL-INS (Low Impact, Low Effort)\n\n• Color swatch updates\n• Card badge hover effects\n• Minor typo adjustments\n• Tooltip styling polish', textColor: '#713f12', fontSize: 13 },
+                { id: uuid(), type: 'rectangle', x: 530, y: 370, width: 390, height: 210, color: '#dc2626', fillColor: '#fee2e2', strokeWidth: 2, rotation: 0, text: 'THANKLESS TASKS (Low Impact, High Effort)\n\n• Legacy database sync migrations\n• Manual CSV reformatting\n• Deprecated library wrappers\n• Redundant telemetry logging', textColor: '#7f1d1d', fontSize: 13 },
+            ],
+            texts: [
+                { id: uuid(), x: 330, y: 40, width: 440, height: 40, text: 'Action Priority Matrix (Impact vs Effort)', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
             ]
         }
     }

@@ -13,7 +13,7 @@ router.use(authorize('admin', 'principal'));
 /**
  * Helper to normalize and format a raw implementation plan record
  */
-function formatPlan(row) {
+function formatPlan(row, index) {
     let tasks = [];
     if (row.tasks) {
         if (Array.isArray(row.tasks)) {
@@ -46,7 +46,7 @@ function formatPlan(row) {
 
     const duration = exportService.calculateDuration(row.started_at, row.ended_at);
 
-    const serialNo = Number(row.serial_no || (index !== undefined ? index + 1 : 1));
+    const serialNo = Number(row.serial_no || (typeof index === 'number' ? index + 1 : 1));
     const serialId = metadata.serial_id || `PLAN-${String(serialNo).padStart(3, '0')}`;
 
     // Ensure tasks have structured sequential IDs
