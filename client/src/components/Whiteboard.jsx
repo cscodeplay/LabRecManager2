@@ -21,7 +21,7 @@ import AdminPermissionsPanel from './AdminPermissionsPanel';
 import RadialToolbar from './RadialToolbar';
 import { BRUSH_TYPES, renderCalligraphy, renderCrayon, renderWatercolor, renderFountainPen, floodFill, sampleColor } from './WhiteboardBrushEngine';
 import StickyNoteRenderer, { createStickyNoteObject, STICKY_COLORS } from './StickyNote';
-import ConnectorLine from './ConnectorLine';
+import ConnectorLine, { findNearestShape, getAnchorPoint } from './ConnectorLine';
 import TemplateGallery from './TemplateGallery';
 import ClassroomTimerModal from './ClassroomTimerModal';
 import WhiteboardImagePickerModal from './WhiteboardImagePickerModal';
@@ -583,6 +583,7 @@ export default function Whiteboard({
 
     // ─── Template Gallery State ─────────────────────────────────────────
     const [showTemplateGallery, setShowTemplateGallery] = useState(false);
+    const [hoveredShapeId, setHoveredShapeId] = useState(null);
 
     // ─── Smart Panel & Flat Panel Tools State (BenQ EZWrite & ViewSonic) ──
     const [showClassroomTimer, setShowClassroomTimer] = useState(false);
@@ -3189,27 +3190,61 @@ export default function Whiteboard({
             const w = Math.abs(startPos.x - pos.x) || 1;
             const h = Math.abs(startPos.y - pos.y) || 1;
 
-            const resolvedLineType = lineType === 'arrow' ? 'arrow' : (lineType === 'double_arrow' ? 'double_arrow' : (lineType === 'arc' ? 'arc' : (lineType === 'dashed' ? 'dashed_line' : 'line')));
+            if (lineType.startsWith('connector')) {
+                const nonConnectorShapes = shapeObjects.filter(s => s.type !== 'connector');
+                const startSnap = findNearestShape(startPos, nonConnectorShapes, 40);
+                const endSnap = findNearestShape(pos, nonConnectorShapes, 40);
+                const connPathType = lineType === 'connector_elbow' ? 'orthogonal' : (lineType === 'connector_curved' ? 'curved' : 'straight');
 
-            const newShapeObj = {
-                id: Date.now().toString(),
-                type: resolvedLineType,
-                x: minX,
-                y: minY,
-                width: w,
-                height: h,
-                originalWidth: w,
-                originalHeight: h,
-                startX: startPos.x - minX,
-                startY: startPos.y - minY,
-                endX: pos.x - minX,
-                endY: pos.y - minY,
-                rotation: 0,
-                color: color,
-                strokeWidth: strokeWidth
-            };
-            setShapeObjects(prev => [...prev, newShapeObj]);
-            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                const newShapeObj = {
+                    id: Date.now().toString(),
+                    type: 'connector',
+                    sourceId: startSnap?.shape?.id || null,
+                    sourceAnchor: startSnap?.anchor || 'auto',
+                    sourcePoint: startSnap ? getAnchorPoint(startSnap.shape, startSnap.anchor) : { x: startPos.x, y: startPos.y },
+                    targetId: endSnap?.shape?.id || null,
+                    targetAnchor: endSnap?.anchor || 'auto',
+                    targetPoint: endSnap ? getAnchorPoint(endSnap.shape, endSnap.anchor) : { x: pos.x, y: pos.y },
+                    pathType: connPathType,
+                    color: color,
+                    strokeWidth: strokeWidth,
+                    arrowEnd: 'arrow',
+                    arrowStart: 'none',
+                    waypoint: null
+                };
+                setShapeObjects(prev => [...prev, newShapeObj]);
+                if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                setSelectedShapeIds([newShapeObj.id]);
+                setSelectedTextIds([]);
+                setSelectedImageId(null);
+                setTool('select');
+            } else {
+                const resolvedLineType = lineType === 'arrow' ? 'arrow' : (lineType === 'double_arrow' ? 'double_arrow' : (lineType === 'arc' ? 'arc' : (lineType === 'dashed' ? 'dashed_line' : 'line')));
+
+                const newShapeObj = {
+                    id: Date.now().toString(),
+                    type: resolvedLineType,
+                    x: minX,
+                    y: minY,
+                    width: w,
+                    height: h,
+                    originalWidth: w,
+                    originalHeight: h,
+                    startX: startPos.x - minX,
+                    startY: startPos.y - minY,
+                    endX: pos.x - minX,
+                    endY: pos.y - minY,
+                    rotation: 0,
+                    color: color,
+                    strokeWidth: strokeWidth
+                };
+                setShapeObjects(prev => [...prev, newShapeObj]);
+                if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                setSelectedShapeIds([newShapeObj.id]);
+                setSelectedTextIds([]);
+                setSelectedImageId(null);
+                setTool('select');
+            }
         } else if (tool === 'shape') {
             setShapePreview(null);
             const w = Math.abs(pos.x - startPos.x);
@@ -3241,6 +3276,10 @@ export default function Whiteboard({
                 if (socket && sessionId) {
                     socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
                 }
+                setSelectedShapeIds([newShapeObj.id]);
+                setSelectedTextIds([]);
+                setSelectedImageId(null);
+                setTool('select');
             }
         } else if (tool === 'laser') {
             setLaserPos(null);
@@ -4562,7 +4601,7 @@ export default function Whiteboard({
                             { id: 'pen', icon: Pencil, label: 'Pen' },
                             { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
                             { id: 'eraser', icon: Eraser, label: 'Eraser' },
-                            { id: 'line', icon: lineType === 'arrow' ? MoveRight : Minus, label: 'Lines & Arrows' },
+                            { id: 'line', icon: lineType.startsWith('connector') ? Waypoints : (lineType === 'arrow' ? MoveRight : Minus), label: 'Lines & Arrows' },
                             { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : RectangleHorizontal)), label: 'Shapes' },
                             { id: 'text', icon: Type, label: 'Text' },
                             { id: 'image', icon: ImageIcon, label: 'Image' },
@@ -4590,7 +4629,12 @@ export default function Whiteboard({
                                         if (t.id === 'spotlight') {
                                             setIsSpotlightActive(prev => {
                                                 const next = !prev;
-                                                if (next) toast('Spotlight active: move cursor to illuminate area', { icon: '🔦' });
+                                                if (next) {
+                                                    toast('Spotlight active: move cursor to illuminate, scroll to zoom', { icon: '🔦' });
+                                                    setSelectedShapeIds([]);
+                                                    setSelectedTextIds([]);
+                                                    setSelectedImageId(null);
+                                                }
                                                 return next;
                                             });
                                             return;
@@ -4752,7 +4796,7 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'line' && showLinePicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 w-[120px]`}>
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 w-[150px]`}>
                                         <button
                                             onClick={() => { setLineType('line'); setShowLinePicker(false); }}
                                             className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'line' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
@@ -4780,6 +4824,29 @@ export default function Whiteboard({
                                             title="Curved Arc"
                                         >
                                             <Spline className="w-3.5 h-3.5" /> Curved Arc
+                                        </button>
+                                        <div className="w-full h-px bg-slate-700 my-1" />
+                                        <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider px-1">Connectors</div>
+                                        <button
+                                            onClick={() => { setLineType('connector_straight'); setShowLinePicker(false); }}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_straight' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            title="Straight Snap Connector"
+                                        >
+                                            <MoveRight className="w-3.5 h-3.5" /> Straight Snap
+                                        </button>
+                                        <button
+                                            onClick={() => { setLineType('connector_elbow'); setShowLinePicker(false); }}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_elbow' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            title="Elbow (90°) Connector"
+                                        >
+                                            <Waypoints className="w-3.5 h-3.5" /> Elbow (90°)
+                                        </button>
+                                        <button
+                                            onClick={() => { setLineType('connector_curved'); setShowLinePicker(false); }}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_curved' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            title="Curved Path Connector"
+                                        >
+                                            <Spline className="w-3.5 h-3.5" /> Curved Path
                                         </button>
                                     </div>
                                 )}
@@ -5666,6 +5733,10 @@ export default function Whiteboard({
                                         {/* Image Quick Actions Toolbar */}
                                         <div
                                             className="absolute -top-11 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-lg shadow-xl px-2 py-1 z-40 pointer-events-auto text-slate-200"
+                                            style={{
+                                                transform: `translateX(-50%) ${imgObj.flipX ? 'scaleX(-1)' : ''} ${imgObj.flipY ? 'scaleY(-1)' : ''} rotate(-${imgObj.rotation || 0}deg)`,
+                                                transformOrigin: 'center center'
+                                            }}
                                             onClick={(e) => e.stopPropagation()}
                                             onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                                         >
@@ -5697,6 +5768,10 @@ export default function Whiteboard({
                                         {showImageAdjustModal && (
                                             <div
                                                 className="absolute -top-52 left-1/2 -translate-x-1/2 w-64 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl shadow-2xl p-3 z-50 pointer-events-auto text-slate-200 flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-150"
+                                                style={{
+                                                    transform: `translateX(-50%) ${imgObj.flipX ? 'scaleX(-1)' : ''} ${imgObj.flipY ? 'scaleY(-1)' : ''} rotate(-${imgObj.rotation || 0}deg)`,
+                                                    transformOrigin: 'center center'
+                                                }}
                                                 onClick={(e) => e.stopPropagation()}
                                                 onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                                             >
@@ -6459,8 +6534,10 @@ export default function Whiteboard({
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : 'crosshair',
                                     zIndex: shpObj.zIndex || ((shpObj.type === 'ruler' || shpObj.type === 'protractor') ? 60 : (isSelected ? 20 : 10)),
-                                    pointerEvents: tool === 'select' ? 'auto' : 'none',
+                                    pointerEvents: (tool === 'select' || tool === 'line' || isSelected) ? 'auto' : 'none',
                                 }}
+                                onMouseEnter={() => setHoveredShapeId(shpObj.id)}
+                                onMouseLeave={() => setHoveredShapeId(null)}
                                 onPointerDown={(e) => {
                                     let activeSelectionIds = selectedShapeIds;
                                     if (tool === 'select') {
@@ -6532,7 +6609,13 @@ export default function Whiteboard({
 
                                 
                                 {shpObj.text !== undefined && shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && (
-                                    <div className="absolute inset-0 flex items-center justify-center p-2">
+                                    <div 
+                                        className="absolute inset-0 flex items-center justify-center p-2"
+                                        style={{
+                                            transform: `${shpObj.flipX ? 'scaleX(-1)' : ''} ${shpObj.flipY ? 'scaleY(-1)' : ''}`,
+                                            pointerEvents: 'auto'
+                                        }}
+                                    >
                                         <textarea
                                             value={shpObj.text}
                                             onChange={(e) => {
@@ -6550,6 +6633,56 @@ export default function Whiteboard({
                                             }}
                                         />
                                     </div>
+                                )}
+
+                                {/* Magnetic Connection Hooks (N, E, S, W) for linking diagrams & connectors */}
+                                {(isSelected || tool === 'line' || hoveredShapeId === shpObj.id) && shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && shpObj.type !== 'connector' && (
+                                    <>
+                                        {[
+                                            { anchor: 'top', label: 'N', style: { left: '50%', top: 0 } },
+                                            { anchor: 'right', label: 'E', style: { left: '100%', top: '50%' } },
+                                            { anchor: 'bottom', label: 'S', style: { left: '50%', top: '100%' } },
+                                            { anchor: 'left', label: 'W', style: { left: 0, top: '50%' } },
+                                        ].map(({ anchor, label, style }) => (
+                                            <div
+                                                key={anchor}
+                                                className="absolute w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-500 border-2 border-white shadow-md hover:bg-blue-600 hover:scale-125 transition-all z-35 flex items-center justify-center cursor-crosshair group/hook"
+                                                style={{ ...style, pointerEvents: 'auto' }}
+                                                title={`Connect from ${anchor.toUpperCase()} hook`}
+                                                onMouseDown={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    const connPathType = lineType === 'connector_elbow' ? 'orthogonal' : (lineType === 'connector_curved' ? 'curved' : 'straight');
+                                                    const offsetDir = anchor === 'right' ? { x: 90, y: 0 } : (anchor === 'left' ? { x: -90, y: 0 } : (anchor === 'bottom' ? { x: 0, y: 90 } : { x: 0, y: -90 }));
+                                                    const hookPt = getAnchorPoint(shpObj, anchor);
+                                                    const newConn = {
+                                                        id: Date.now().toString(),
+                                                        type: 'connector',
+                                                        sourceId: shpObj.id,
+                                                        sourceAnchor: anchor,
+                                                        sourcePoint: hookPt,
+                                                        targetId: null,
+                                                        targetAnchor: 'auto',
+                                                        targetPoint: { x: hookPt.x + offsetDir.x, y: hookPt.y + offsetDir.y },
+                                                        pathType: connPathType,
+                                                        color: color || '#3b82f6',
+                                                        strokeWidth: strokeWidth || 2,
+                                                        arrowEnd: 'arrow',
+                                                        arrowStart: 'none',
+                                                        waypoint: null
+                                                    };
+                                                    setShapeObjects(prev => [...prev, newConn]);
+                                                    if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newConn });
+                                                    setSelectedShapeIds([newConn.id]);
+                                                    setSelectedTextIds([]);
+                                                    setSelectedImageId(null);
+                                                    setTool('select');
+                                                }}
+                                            >
+                                                <div className="w-1 h-1 rounded-full bg-white pointer-events-none" />
+                                            </div>
+                                        ))}
+                                    </>
                                 )}
 
                                 {/* Selection Border & Handles */}
@@ -6621,11 +6754,11 @@ export default function Whiteboard({
                                             );
                                         })}
                                         {/* Rotate Handle */}
-                                        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center z-30" style={{ bottom: -35 }}>
+                                        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col-reverse items-center z-30" style={{ top: -38 }}>
                                             <div className="w-px h-5 bg-purple-500" />
                                             <div
                                                 data-handle="rotate"
-                                                className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center cursor-grab hover:bg-purple-600" style={{ cursor: 'grab' }}
+                                                className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center cursor-grab hover:bg-purple-600 shadow-md" style={{ cursor: 'grab' }}
                                                 onMouseDown={(e) => {
                                                     e.stopPropagation();
                                                     e.preventDefault();
@@ -6646,7 +6779,7 @@ export default function Whiteboard({
                                                 onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, rotation: parseInt(e.target.value) || 0 } : s))}
                                                 onPointerDown={(e) => e.stopPropagation()}
                                                 onKeyDown={(e) => e.stopPropagation()}
-                                                className="absolute top-6 w-12 text-center text-xs bg-slate-800 text-white px-1 py-0.5 rounded shadow-lg z-50 border border-slate-600 outline-none appearance-none"
+                                                className="mb-1 w-12 text-center text-xs bg-slate-800 text-white px-1 py-0.5 rounded shadow-lg z-50 border border-slate-600 outline-none appearance-none"
                                             />
                                         </div>
                                     </>
@@ -6838,40 +6971,6 @@ export default function Whiteboard({
                                     <X className="w-4 h-4" />
                                 </button>
                             </div>
-
-                            {/* Flip Hooks along Selection Bounding Box */}
-                            {/* Left edge - Flip Horizontal */}
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleFlipSelection(true); }}
-                                className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full flex items-center justify-center shadow-lg border border-white pointer-events-auto transition hover:scale-115 z-30 cursor-pointer"
-                                title="Flip Horizontal"
-                            >
-                                <FlipHorizontal className="w-3.5 h-3.5" />
-                            </button>
-                            {/* Right edge - Flip Horizontal */}
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleFlipSelection(true); }}
-                                className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full flex items-center justify-center shadow-lg border border-white pointer-events-auto transition hover:scale-115 z-30 cursor-pointer"
-                                title="Flip Horizontal"
-                            >
-                                <FlipHorizontal className="w-3.5 h-3.5" />
-                            </button>
-                            {/* Top edge - Flip Vertical */}
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleFlipSelection(false); }}
-                                className="absolute left-1/2 -top-3 -translate-x-1/2 w-6 h-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full flex items-center justify-center shadow-lg border border-white pointer-events-auto transition hover:scale-115 z-30 cursor-pointer"
-                                title="Flip Vertical"
-                            >
-                                <FlipVertical className="w-3.5 h-3.5" />
-                            </button>
-                            {/* Bottom edge - Flip Vertical */}
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleFlipSelection(false); }}
-                                className="absolute left-1/2 -bottom-3 -translate-x-1/2 w-6 h-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full flex items-center justify-center shadow-lg border border-white pointer-events-auto transition hover:scale-115 z-30 cursor-pointer"
-                                title="Flip Vertical"
-                            >
-                                <FlipVertical className="w-3.5 h-3.5" />
-                            </button>
                         </div>
                     )}
 
@@ -6986,6 +7085,12 @@ export default function Whiteboard({
                     {isSpotlightActive && (
                         <div
                             className="absolute inset-0 z-40 pointer-events-auto cursor-crosshair overflow-hidden"
+                            onWheel={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const delta = e.deltaY < 0 ? 20 : -20;
+                                setSpotlightRadius(r => Math.max(50, Math.min(600, r + delta)));
+                            }}
                             onMouseMove={(e) => {
                                 const rect = e.currentTarget.getBoundingClientRect();
                                 setSpotlightPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
@@ -7030,26 +7135,38 @@ export default function Whiteboard({
                             {/* Floating Spotlight Controls */}
                             <div 
                                 className="absolute top-4 right-4 bg-slate-900/90 text-white backdrop-blur-md px-3 py-1.5 rounded-full shadow-2xl flex items-center gap-3 border border-slate-700 text-xs font-medium z-50 pointer-events-auto"
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onTouchStart={(e) => e.stopPropagation()}
                                 onClick={(e) => e.stopPropagation()}
                             >
-                                <span className="flex items-center gap-1.5 text-amber-300 font-semibold">
+                                <span className="flex items-center gap-1.5 text-amber-300 font-semibold select-none">
                                     <Sparkles className="w-3.5 h-3.5 animate-pulse" />
                                     Spotlight
                                 </span>
                                 <div className="flex items-center gap-1 bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700">
                                     <button
                                         type="button"
-                                        onClick={() => setSpotlightRadius(r => Math.max(60, r - 30))}
-                                        className="w-5 h-5 flex items-center justify-center hover:bg-slate-700 rounded text-slate-300 hover:text-white font-bold"
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onTouchStart={(e) => e.stopPropagation()}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSpotlightRadius(r => Math.max(50, r - 30));
+                                        }}
+                                        className="w-5 h-5 flex items-center justify-center hover:bg-slate-700 rounded text-slate-300 hover:text-white font-bold cursor-pointer"
                                         title="Decrease Radius"
                                     >
                                         -
                                     </button>
-                                    <span className="text-[11px] text-slate-300 w-9 text-center font-mono">{spotlightRadius}px</span>
+                                    <span className="text-[11px] text-slate-300 px-1 font-mono select-none">Scroll to zoom</span>
                                     <button
                                         type="button"
-                                        onClick={() => setSpotlightRadius(r => Math.min(360, r + 30))}
-                                        className="w-5 h-5 flex items-center justify-center hover:bg-slate-700 rounded text-slate-300 hover:text-white font-bold"
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onTouchStart={(e) => e.stopPropagation()}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSpotlightRadius(r => Math.min(600, r + 30));
+                                        }}
+                                        className="w-5 h-5 flex items-center justify-center hover:bg-slate-700 rounded text-slate-300 hover:text-white font-bold cursor-pointer"
                                         title="Increase Radius"
                                     >
                                         +
@@ -7057,8 +7174,13 @@ export default function Whiteboard({
                                 </div>
                                 <button
                                     type="button"
-                                    onClick={() => setIsSpotlightActive(false)}
-                                    className="p-1 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-full transition-colors"
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onTouchStart={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setIsSpotlightActive(false);
+                                    }}
+                                    className="p-1 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-full transition-colors cursor-pointer pointer-events-auto"
                                     title="Exit Spotlight"
                                 >
                                     <X className="w-3.5 h-3.5" />
@@ -7128,21 +7250,25 @@ export default function Whiteboard({
                                 <div className="flex items-center gap-2">
                                     <button
                                         type="button"
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onTouchStart={(e) => e.stopPropagation()}
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             setCurtainHeight(h => h > 50 ? 20 : 80);
                                         }}
-                                        className="text-[11px] px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white/90"
+                                        className="text-[11px] px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white/90 cursor-pointer pointer-events-auto"
                                     >
                                         {curtainHeight > 50 ? 'Roll Up' : 'Roll Down'}
                                     </button>
                                     <button
                                         type="button"
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onTouchStart={(e) => e.stopPropagation()}
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             setIsCurtainActive(false);
                                         }}
-                                        className="p-1 rounded hover:bg-white/20 text-white/80 hover:text-white"
+                                        className="p-1 rounded hover:bg-white/20 text-white/80 hover:text-white cursor-pointer pointer-events-auto"
                                         title="Close Screen Shade"
                                     >
                                         <X className="w-4 h-4" />

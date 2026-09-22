@@ -59,13 +59,22 @@ export const findNearestShape = (point, shapes, threshold = 30) => {
 };
 
 // Returns an SVG path string (d attribute) for the connector
-export const getConnectorPath = (startPt, endPt, pathType = 'straight') => {
+export const getConnectorPath = (startPt, endPt, pathType = 'straight', waypoint = null) => {
     if (pathType === 'straight') {
+        if (waypoint) {
+            return `M ${startPt.x} ${startPt.y} L ${waypoint.x} ${waypoint.y} L ${endPt.x} ${endPt.y}`;
+        }
         return `M ${startPt.x} ${startPt.y} L ${endPt.x} ${endPt.y}`;
     } else if (pathType === 'orthogonal') {
-        const midX = (startPt.x + endPt.x) / 2;
-        return `M ${startPt.x} ${startPt.y} L ${midX} ${startPt.y} L ${midX} ${endPt.y} L ${endPt.x} ${endPt.y}`;
+        const stepX = waypoint ? waypoint.x : (startPt.x + endPt.x) / 2;
+        return `M ${startPt.x} ${startPt.y} L ${stepX} ${startPt.y} L ${stepX} ${endPt.y} L ${endPt.x} ${endPt.y}`;
     } else if (pathType === 'curved') {
+        if (waypoint) {
+            // Quadratic Bezier passing smoothly through the waypoint
+            const cpX = 2 * waypoint.x - 0.5 * (startPt.x + endPt.x);
+            const cpY = 2 * waypoint.y - 0.5 * (startPt.y + endPt.y);
+            return `M ${startPt.x} ${startPt.y} Q ${cpX} ${cpY} ${endPt.x} ${endPt.y}`;
+        }
         const dx = endPt.x - startPt.x;
         const dy = endPt.y - startPt.y;
         
@@ -129,6 +138,7 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
         targetAnchor = 'auto',
         sourcePoint = { x: 0, y: 0 },
         targetPoint = { x: 100, y: 100 },
+        waypoint = null,
         pathType = 'straight',
         arrowStart = 'none',
         arrowEnd = 'arrow',
@@ -138,7 +148,7 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
     } = connector;
 
     const [isHovered, setIsHovered] = useState(false);
-    const [draggingEndpoint, setDraggingEndpoint] = useState(null); // 'source' or 'target'
+    const [draggingEndpoint, setDraggingEndpoint] = useState(null); // 'source', 'target', or 'waypoint'
     const [dragPoint, setDragPoint] = useState(null); // {x, y}
     const [snapTarget, setSnapTarget] = useState(null); // { shape, anchor }
 
@@ -158,30 +168,42 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
         return targetPoint;
     }, [targetShape, targetAnchor, draggingEndpoint, dragPoint, targetPoint, sourceShape, sourcePoint]);
 
-    const pathData = useMemo(() => getConnectorPath(actualSourcePoint, actualTargetPoint, pathType), [actualSourcePoint, actualTargetPoint, pathType]);
+    const actualWaypoint = useMemo(() => {
+        if (draggingEndpoint === 'waypoint' && dragPoint) return dragPoint;
+        if (waypoint) return waypoint;
+        return {
+            x: (actualSourcePoint.x + actualTargetPoint.x) / 2,
+            y: (actualSourcePoint.y + actualTargetPoint.y) / 2
+        };
+    }, [draggingEndpoint, dragPoint, waypoint, actualSourcePoint, actualTargetPoint]);
+
+    const pathData = useMemo(() => {
+        const wp = (waypoint || draggingEndpoint === 'waypoint') ? actualWaypoint : null;
+        return getConnectorPath(actualSourcePoint, actualTargetPoint, pathType, wp);
+    }, [actualSourcePoint, actualTargetPoint, pathType, waypoint, draggingEndpoint, actualWaypoint]);
 
     // Handle dragging
     useEffect(() => {
         if (!draggingEndpoint) return;
 
         const handlePointerMove = (e) => {
-            // Simplified drag math; assumes SVG coordinate space aligns with window or requires inverse CTM
-            // In a real whiteboard, you'd pass a screen-to-canvas coordinate converter, but we use movement deltas or raw coordinates.
-            // Using movementX/Y is safest if we don't have the svg element ref.
-            setDragPoint(prev => ({
-                x: prev.x + e.movementX / scale,
-                y: prev.y + e.movementY / scale
-            }));
-
-            // Snapping logic
-            const snap = findNearestShape(dragPoint, shapes, 40 / scale);
-            setSnapTarget(snap);
+            setDragPoint(prev => {
+                const nextX = (prev ? prev.x : 0) + e.movementX / scale;
+                const nextY = (prev ? prev.y : 0) + e.movementY / scale;
+                const nextPoint = { x: nextX, y: nextY };
+                if (draggingEndpoint === 'source' || draggingEndpoint === 'target') {
+                    const snap = findNearestShape(nextPoint, shapes, 40 / scale);
+                    setSnapTarget(snap);
+                }
+                return nextPoint;
+            });
         };
 
         const handlePointerUp = () => {
-            // Commit drag
             const updates = {};
-            if (snapTarget) {
+            if (draggingEndpoint === 'waypoint') {
+                updates.waypoint = dragPoint;
+            } else if (snapTarget) {
                 if (draggingEndpoint === 'source') {
                     updates.sourceId = snapTarget.shape.id;
                     updates.sourceAnchor = snapTarget.anchor;
@@ -217,7 +239,9 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
     const handlePointerDown = (endpoint, e) => {
         e.stopPropagation();
         setDraggingEndpoint(endpoint);
-        setDragPoint(endpoint === 'source' ? actualSourcePoint : actualTargetPoint);
+        if (endpoint === 'source') setDragPoint(actualSourcePoint);
+        else if (endpoint === 'target') setDragPoint(actualTargetPoint);
+        else if (endpoint === 'waypoint') setDragPoint(actualWaypoint);
     };
 
     // Calculate angles for arrows
@@ -299,6 +323,26 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
                         className="cursor-move hover:scale-125 transition-transform"
                         onPointerDown={(e) => handlePointerDown('target', e)}
                     />
+                    {/* Draggable Midpoint / Waypoint Handle (Lucidchart bend tool to change shape of line) */}
+                    <g 
+                        className="cursor-grab active:cursor-grabbing hover:scale-125 transition-transform"
+                        onPointerDown={(e) => handlePointerDown('waypoint', e)}
+                        onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            onUpdate(id, { waypoint: null });
+                        }}
+                    >
+                        <circle
+                            cx={actualWaypoint.x}
+                            cy={actualWaypoint.y}
+                            r={7 / scale}
+                            fill="#f59e0b"
+                            stroke="#ffffff"
+                            strokeWidth={2 / scale}
+                            className="shadow-sm"
+                        />
+                        <title>Drag to reshape line bend (Double-click to reset)</title>
+                    </g>
                 </>
             )}
 

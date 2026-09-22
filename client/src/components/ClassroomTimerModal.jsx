@@ -8,9 +8,9 @@ import {
 
 export default function ClassroomTimerModal({ isOpen, onClose }) {
     const [mode, setMode] = useState('countdown'); // 'countdown' | 'stopwatch'
-    const [duration, setDuration] = useState(300); // 5 minutes default in seconds
-    const [timeLeft, setTimeLeft] = useState(300);
-    const [stopwatchTime, setStopwatchTime] = useState(0);
+    const [duration, setDuration] = useState(300); // in seconds
+    const [timeLeftMs, setTimeLeftMs] = useState(300 * 1000);
+    const [stopwatchTimeMs, setStopwatchTimeMs] = useState(0);
     const [isRunning, setIsRunning] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
     const [soundEnabled, setSoundEnabled] = useState(true);
@@ -20,81 +20,164 @@ export default function ClassroomTimerModal({ isOpen, onClose }) {
     const [pos, setPos] = useState({ x: 40, y: 100 });
     const isDraggingRef = useRef(false);
     const dragOffsetRef = useRef({ x: 0, y: 0 });
+    const audioCtxRef = useRef(null);
+    const lastBeepSecRef = useRef(-1);
 
-    // Sound chime generator using Web Audio API
+    // Audio helper that unlocks AudioContext
+    const getAudioCtx = () => {
+        if (!soundEnabled) return null;
+        try {
+            if (!audioCtxRef.current) {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (AudioContextClass) {
+                    audioCtxRef.current = new AudioContextClass();
+                }
+            }
+            if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+                audioCtxRef.current.resume();
+            }
+            return audioCtxRef.current;
+        } catch (e) {
+            console.warn('[Audio] Init failed:', e);
+            return null;
+        }
+    };
+
+    // Countdown short pip / beep for final 10 seconds
+    const playPip = (freq = 880) => {
+        if (!soundEnabled) return;
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        try {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, ctx.currentTime);
+            gain.gain.setValueAtTime(0.2, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.08);
+        } catch (e) {
+            console.warn('[Audio Pip] Error:', e);
+        }
+    };
+
+    // Celebratory finish chime generator
     const playChime = () => {
         if (!soundEnabled) return;
+        const ctx = getAudioCtx();
+        if (!ctx) return;
         try {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
             const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
             notes.forEach((freq, idx) => {
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.type = 'sine';
-                osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.15);
-                gain.gain.setValueAtTime(0, ctx.currentTime + idx * 0.15);
-                gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + idx * 0.15 + 0.05);
-                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.15 + 0.6);
+                const startTime = ctx.currentTime + idx * 0.15;
+                osc.frequency.setValueAtTime(freq, startTime);
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(0.35, startTime + 0.04);
+                gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.6);
                 osc.connect(gain);
                 gain.connect(ctx.destination);
-                osc.start(ctx.currentTime + idx * 0.15);
-                osc.stop(ctx.currentTime + idx * 0.15 + 0.6);
+                osc.start(startTime);
+                osc.stop(startTime + 0.6);
             });
         } catch (e) {
-            console.error('Audio chime error:', e);
+            console.warn('[Audio Chime] Error:', e);
         }
     };
 
-    // Countdown / Stopwatch timer tick
+    // High-resolution timer tick loop (50ms interval)
     useEffect(() => {
         let interval = null;
         if (isRunning) {
+            let lastTick = Date.now();
             interval = setInterval(() => {
+                const now = Date.now();
+                const delta = now - lastTick;
+                lastTick = now;
+
                 if (mode === 'countdown') {
-                    setTimeLeft(prev => {
-                        if (prev <= 1) {
+                    setTimeLeftMs(prev => {
+                        const next = Math.max(0, prev - delta);
+                        const currentWholeSec = Math.ceil(next / 1000);
+
+                        // 10-second countdown audio pips (seconds 10, 9, 8... down to 1)
+                        if (currentWholeSec > 0 && currentWholeSec <= 10 && currentWholeSec !== lastBeepSecRef.current) {
+                            lastBeepSecRef.current = currentWholeSec;
+                            playPip(currentWholeSec === 1 ? 1046.5 : 880);
+                        }
+
+                        if (next <= 0) {
                             setIsRunning(false);
                             playChime();
                             return 0;
                         }
-                        return prev - 1;
+                        return next;
                     });
                 } else {
-                    setStopwatchTime(prev => prev + 1);
+                    setStopwatchTimeMs(prev => prev + delta);
                 }
-            }, 1000);
+            }, 50);
         }
         return () => {
             if (interval) clearInterval(interval);
         };
     }, [isRunning, mode, soundEnabled]);
 
-    // Format seconds into MM:SS or HH:MM:SS
-    const formatTime = (secs) => {
-        const m = Math.floor(secs / 60);
-        const s = secs % 60;
+    // Format milliseconds into MM:SS.cs (e.g. 04:59.85)
+    const formatTimeMs = (ms) => {
+        const totalSec = Math.floor(ms / 1000);
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        const cs = Math.floor((ms % 1000) / 10);
+        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+    };
+
+    // Format simple MM:SS without centiseconds for compact pill
+    const formatTimeSec = (ms) => {
+        const totalSec = Math.floor(ms / 1000);
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
         return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     };
 
     const handleSetCountdown = (seconds) => {
         setIsRunning(false);
         setDuration(seconds);
-        setTimeLeft(seconds);
+        setTimeLeftMs(seconds * 1000);
+        lastBeepSecRef.current = -1;
     };
 
     const handleReset = () => {
         setIsRunning(false);
+        lastBeepSecRef.current = -1;
         if (mode === 'countdown') {
-            setTimeLeft(duration);
+            setTimeLeftMs(duration * 1000);
         } else {
-            setStopwatchTime(0);
+            setStopwatchTimeMs(0);
             setLaps([]);
         }
     };
 
+    const handleToggleStart = () => {
+        getAudioCtx(); // unlock audio on user gesture
+        if (mode === 'countdown' && timeLeftMs <= 0) {
+            // If already finished at 0:00, reset and restart cleanly without chime
+            setTimeLeftMs(duration * 1000);
+            lastBeepSecRef.current = -1;
+            setIsRunning(true);
+            return;
+        }
+        setIsRunning(!isRunning);
+    };
+
     const handleAddLap = () => {
         if (mode === 'stopwatch' && isRunning) {
-            setLaps(prev => [stopwatchTime, ...prev.slice(0, 9)]);
+            setLaps(prev => [stopwatchTimeMs, ...prev.slice(0, 9)]);
         }
     };
 
@@ -128,8 +211,10 @@ export default function ClassroomTimerModal({ isOpen, onClose }) {
 
     if (!isOpen) return null;
 
-    const progressPct = mode === 'countdown' && duration > 0 ? ((duration - timeLeft) / duration) * 100 : 0;
-    const isCompleted = mode === 'countdown' && timeLeft === 0;
+    const totalDurationMs = duration * 1000;
+    const progressPct = mode === 'countdown' && totalDurationMs > 0 ? ((totalDurationMs - timeLeftMs) / totalDurationMs) * 100 : 0;
+    const isCompleted = mode === 'countdown' && timeLeftMs <= 0;
+    const isNearEnd = mode === 'countdown' && timeLeftMs > 0 && timeLeftMs <= totalDurationMs * 0.05;
 
     // Minimized Floating Pill Mode
     if (isMinimized) {
@@ -139,14 +224,14 @@ export default function ClassroomTimerModal({ isOpen, onClose }) {
                 onMouseDown={handleMouseDown}
                 className="fixed z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-slate-900/90 text-white shadow-2xl backdrop-blur-md border border-slate-700/80 cursor-grab active:cursor-grabbing select-none"
             >
-                <div className={`p-1.5 rounded-full ${isCompleted ? 'bg-rose-500 animate-bounce' : (isRunning ? 'bg-blue-600 animate-pulse' : 'bg-slate-700')}`}>
+                <div className={`p-1.5 rounded-full ${isCompleted ? 'bg-rose-500 animate-bounce' : (isNearEnd ? 'bg-red-500 animate-pulse' : (isRunning ? 'bg-blue-600 animate-pulse' : 'bg-slate-700'))}`}>
                     <Clock className="w-3.5 h-3.5 text-white" />
                 </div>
-                <span className={`font-mono text-sm font-bold ${isCompleted ? 'text-rose-400 animate-pulse' : 'text-white'}`}>
-                    {mode === 'countdown' ? formatTime(timeLeft) : formatTime(stopwatchTime)}
+                <span className={`font-mono text-sm font-bold ${isCompleted ? 'text-rose-400 animate-pulse' : (isNearEnd ? 'text-rose-400 animate-pulse' : 'text-white')}`}>
+                    {mode === 'countdown' ? formatTimeMs(timeLeftMs) : formatTimeMs(stopwatchTimeMs)}
                 </span>
                 <button
-                    onClick={() => setIsRunning(!isRunning)}
+                    onClick={handleToggleStart}
                     className="p-1 rounded-full hover:bg-slate-800 text-slate-300 hover:text-white"
                 >
                     {isRunning ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
@@ -233,27 +318,32 @@ export default function ClassroomTimerModal({ isOpen, onClose }) {
                 </button>
             </div>
 
-            {/* Big Time Display */}
+            {/* Big Time Display with Running Milliseconds */}
             <div className={`text-center py-4 rounded-xl border transition-colors ${
                 isCompleted 
                     ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900 animate-pulse' 
-                    : 'bg-slate-50 dark:bg-slate-950/60 border-slate-100 dark:border-slate-800/80'
+                    : (isNearEnd ? 'bg-red-50/80 dark:bg-red-950/30 border-red-300 dark:border-red-900' : 'bg-slate-50 dark:bg-slate-950/60 border-slate-100 dark:border-slate-800/80')
             }`}>
                 <div className={`text-4xl font-mono font-black tracking-wider ${
-                    isCompleted ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'
+                    isCompleted ? 'text-rose-600 dark:text-rose-400' : (isNearEnd ? 'text-red-600 dark:text-red-400 animate-pulse' : 'text-slate-900 dark:text-white')
                 }`}>
-                    {mode === 'countdown' ? formatTime(timeLeft) : formatTime(stopwatchTime)}
+                    {mode === 'countdown' ? formatTimeMs(timeLeftMs) : formatTimeMs(stopwatchTimeMs)}
                 </div>
                 {mode === 'countdown' && (
                     <div className="mt-3 px-6">
-                        <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div className="h-2 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
                             <div 
-                                className={`h-full transition-all duration-500 rounded-full ${
-                                    isCompleted ? 'bg-rose-500' : 'bg-blue-600'
+                                className={`h-full transition-all duration-75 rounded-full ${
+                                    isCompleted || isNearEnd ? 'bg-red-500 animate-pulse shadow-sm shadow-red-500/50' : 'bg-blue-600'
                                 }`}
                                 style={{ width: `${Math.min(100, progressPct)}%` }}
                             />
                         </div>
+                        {isNearEnd && !isCompleted && (
+                            <div className="text-[10px] font-bold text-red-600 dark:text-red-400 mt-1 uppercase tracking-wider animate-pulse">
+                                Final 5% Remaining
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -285,10 +375,10 @@ export default function ClassroomTimerModal({ isOpen, onClose }) {
             {/* Laps List for Stopwatch */}
             {mode === 'stopwatch' && laps.length > 0 && (
                 <div className="max-h-24 overflow-y-auto space-y-1 text-xs">
-                    {laps.map((lapSec, i) => (
+                    {laps.map((lapMs, i) => (
                         <div key={i} className="flex justify-between px-2 py-1 bg-slate-50 dark:bg-slate-950 rounded text-slate-600 dark:text-slate-400">
                             <span>Lap {laps.length - i}</span>
-                            <span className="font-mono font-semibold">{formatTime(lapSec)}</span>
+                            <span className="font-mono font-semibold">{formatTimeMs(lapMs)}</span>
                         </div>
                     ))}
                 </div>
@@ -297,7 +387,7 @@ export default function ClassroomTimerModal({ isOpen, onClose }) {
             {/* Controls */}
             <div className="flex items-center gap-2 pt-1">
                 <button
-                    onClick={() => setIsRunning(!isRunning)}
+                    onClick={handleToggleStart}
                     className={`flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 text-white shadow-md transition-all ${
                         isRunning 
                             ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20' 
