@@ -12,7 +12,7 @@ import {
     BringToFront, SendToBack, AlignLeft, AlignCenterHorizontal, AlignRight,
     AlignStartVertical, AlignCenterVertical, AlignEndVertical,
     AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween, Group, Ungroup, Lock, Unlock, Users, MessageCircle, User,
-    Folder, Upload, Loader2
+    Folder, Upload, Loader2, FlipHorizontal, FlipVertical, Sun, Contrast, Sliders
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
@@ -545,6 +545,7 @@ export default function Whiteboard({
     const [pageImageObjects, setPageImageObjects] = useState({ 0: [] });
     const [selectedImageId, setSelectedImageId] = useState(null);
     const [imageDragState, setImageDragState] = useState(null); // { id, action, startX, startY, startObj }
+    const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
 
     // Text objects for manipulation (like images)
     const [pageTextObjects, setPageTextObjects] = useState({ 0: [] });
@@ -1341,6 +1342,113 @@ export default function Whiteboard({
         saveToHistory();
     }, [selection, handleCopySelection, saveToHistory]);
 
+    // Flip selection contents (canvas ink, shapes, images)
+    const handleFlipSelection = useCallback((horizontal = true) => {
+        if (!selection) return;
+        const canvas = canvasRef.current;
+        const { x, y, width, height } = selection;
+        if (width <= 0 || height <= 0) return;
+
+        if (canvas) {
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            // Create temporary canvas of the selected region
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = width;
+            tempCanvas.height = height;
+            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+
+            if (selection.path && selection.path.length > 0) {
+                tempCtx.save();
+                tempCtx.beginPath();
+                tempCtx.moveTo(selection.path[0].x - x, selection.path[0].y - y);
+                for (let i = 1; i < selection.path.length; i++) {
+                    tempCtx.lineTo(selection.path[i].x - x, selection.path[i].y - y);
+                }
+                tempCtx.closePath();
+                tempCtx.clip();
+                tempCtx.drawImage(canvas, -x, -y);
+                tempCtx.restore();
+
+                // Erase old region
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(selection.path[0].x, selection.path[0].y);
+                for (let i = 1; i < selection.path.length; i++) {
+                    ctx.lineTo(selection.path[i].x, selection.path[i].y);
+                }
+                ctx.closePath();
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.fillStyle = 'black';
+                ctx.fill();
+                ctx.restore();
+            } else {
+                tempCtx.drawImage(canvas, x, y, width, height, 0, 0, width, height);
+                ctx.clearRect(x, y, width, height);
+            }
+
+            // Draw flipped pixels back
+            ctx.save();
+            if (horizontal) {
+                ctx.translate(x + width, y);
+                ctx.scale(-1, 1);
+            } else {
+                ctx.translate(x, y + height);
+                ctx.scale(1, -1);
+            }
+            ctx.drawImage(tempCanvas, 0, 0);
+            ctx.restore();
+        }
+
+        // Also flip any selected shapes
+        if (selectedShapeIds.length > 0) {
+            setPageShapeObjects(prev => ({
+                ...prev,
+                [currentPage]: (prev[currentPage] || []).map(shp => {
+                    if (selectedShapeIds.includes(shp.id)) {
+                        return {
+                            ...shp,
+                            flipX: horizontal ? !shp.flipX : shp.flipX,
+                            flipY: !horizontal ? !shp.flipY : shp.flipY
+                        };
+                    }
+                    return shp;
+                })
+            }));
+        }
+
+        // Also flip selected image
+        if (selectedImageId) {
+            setImageObjects(prev => prev.map(img => {
+                if (img.id === selectedImageId) {
+                    return {
+                        ...img,
+                        flipX: horizontal ? !img.flipX : img.flipX,
+                        flipY: !horizontal ? !img.flipY : img.flipY
+                    };
+                }
+                return img;
+            }));
+        }
+
+        saveToHistory();
+        toast.success(`Flipped ${horizontal ? 'Horizontally' : 'Vertically'}`, { icon: '🔄' });
+    }, [selection, selectedShapeIds, selectedImageId, currentPage, saveToHistory]);
+
+    // Update filters on currently selected image
+    const updateSelectedImageFilters = useCallback((updates) => {
+        if (!selectedImageId) return;
+        setImageObjects(prev => prev.map(img => {
+            if (img.id === selectedImageId) {
+                return {
+                    ...img,
+                    ...updates
+                };
+            }
+            return img;
+        }));
+        saveToHistory();
+    }, [selectedImageId, saveToHistory]);
+
     // Paste from clipboard
     const handlePasteItem = useCallback((item) => {
         if (!item) return;
@@ -1743,7 +1851,7 @@ export default function Whiteboard({
     }, [selectedShapeIds, selectedTextIds, selectedImageId, saveToHistory]);
 
     // ─── Radial Toolbar & Template Callbacks ──────────────────────────────
-    const handleRadialToolSelect = useCallback((toolId, options = {}) => {
+    const handleRadialToolSelect = useCallback((toolId, options = {}, hasSubTools = false) => {
         if (toolId === 'pen') {
             setTool('pen');
             if (options.brushType) {
@@ -1872,7 +1980,9 @@ export default function Whiteboard({
                 toast.success(`Inserted DateTime: ${now}`, { icon: '📅' });
             }
         }
-        setShowRadialMenu(false);
+        if (!hasSubTools) {
+            setShowRadialMenu(false);
+        }
     }, [currentPage, color, strokeWidth, handleClear, handleUndo, handleRedo]);
 
     const handleApplyTemplate = useCallback((templateData) => {
@@ -3176,7 +3286,12 @@ export default function Whiteboard({
                             setSelectedShapeIds(selectedShapes);
                             setSelectedTextIds(selectedTexts);
                             setSelectedImageId(selectedImages.length > 0 ? selectedImages[selectedImages.length - 1] : null);
-                            setSelection({ x: minX, y: minY, width: selWidth, height: selHeight, path: lassoPath });
+                            setSelection({ x: minX, y: minY, width: selWidth, height: selHeight, path: lassoPath, isAreaSelect: false });
+                        } else if (selWidth > 15 && selHeight > 15) {
+                            setSelectedShapeIds([]);
+                            setSelectedTextIds([]);
+                            setSelectedImageId(null);
+                            setSelection({ x: minX, y: minY, width: selWidth, height: selHeight, path: lassoPath, isAreaSelect: true });
                         } else {
                             setSelectedShapeIds([]);
                             setSelectedTextIds([]);
@@ -3249,7 +3364,12 @@ export default function Whiteboard({
                         setSelectedShapeIds(selectedShapes);
                         setSelectedTextIds(selectedTexts);
                         setSelectedImageId(selectedImages.length > 0 ? selectedImages[selectedImages.length - 1] : null);
-                        setSelection({ x, y, width: selWidth, height: selHeight });
+                        setSelection({ x, y, width: selWidth, height: selHeight, isAreaSelect: false });
+                    } else if (selWidth > 15 && selHeight > 15) {
+                        setSelectedShapeIds([]);
+                        setSelectedTextIds([]);
+                        setSelectedImageId(null);
+                        setSelection({ x, y, width: selWidth, height: selHeight, isAreaSelect: true });
                     } else {
                         setSelectedShapeIds([]);
                         setSelectedTextIds([]);
@@ -4472,7 +4592,17 @@ export default function Whiteboard({
                                     className={`p-1 rounded-full transition-colors flex items-center justify-center ${tool === t.id || (t.id === 'recorder' && showRecorder) ? 'bg-primary-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                                     title={t.label}
                                 >
-                                    <t.icon className="w-3.5 h-3.5" />
+                                    {t.id === 'highlighter' ? (
+                                        <div className="relative flex items-center justify-center">
+                                            <t.icon className="w-3.5 h-3.5" style={{ color: highlighterColor }} />
+                                            <span
+                                                className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-slate-900 shadow-xs"
+                                                style={{ backgroundColor: highlighterColor }}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <t.icon className="w-3.5 h-3.5" />
+                                    )}
                                 </button>
                                 
                                 {/* Popovers rendered with dynamic positioning */}
@@ -5434,7 +5564,7 @@ export default function Whiteboard({
                                     width: imgObj.width,
                                     height: imgObj.height,
                                     zIndex: imgObj.zIndex || (isSelected ? 25 : 10),
-                                    transform: `rotate(${imgObj.rotation || 0}deg)`,
+                                    transform: `rotate(${imgObj.rotation || 0}deg) ${imgObj.flipX ? 'scaleX(-1)' : ''} ${imgObj.flipY ? 'scaleY(-1)' : ''}`,
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : (tool === 'select' ? 'pointer' : 'default'),
                                     pointerEvents: canInteract ? 'auto' : ((tool === 'pen' || tool === 'eraser' || tool === 'highlighter') && !isSelected ? 'none' : 'auto'),
@@ -5455,6 +5585,9 @@ export default function Whiteboard({
                                     src={imgObj.src}
                                     alt="Inserted"
                                     className="w-full h-full object-contain pointer-events-none select-none"
+                                    style={{
+                                        filter: `brightness(${imgObj.brightness ?? 100}%) contrast(${imgObj.contrast ?? 100}%) ${imgObj.sharpness ? `contrast(${100 + (imgObj.sharpness || 0) * 15}%) drop-shadow(0 0 ${(imgObj.sharpness || 0) * 0.4}px rgba(0,0,0,0.6))` : ''}`
+                                    }}
                                     draggable={false}
                                 />
 
@@ -5469,6 +5602,105 @@ export default function Whiteboard({
                                             onPointerDown={handleStartMove}
                                             onTouchStart={handleStartMove}
                                         />
+
+                                        {/* Image Quick Actions Toolbar */}
+                                        <div
+                                            className="absolute -top-11 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-lg shadow-xl px-2 py-1 z-40 pointer-events-auto text-slate-200"
+                                            onClick={(e) => e.stopPropagation()}
+                                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                        >
+                                            <button
+                                                onClick={() => updateSelectedImageFilters({ flipX: !imgObj.flipX })}
+                                                className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${imgObj.flipX ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}
+                                                title="Flip Horizontally"
+                                            >
+                                                <FlipHorizontal className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                onClick={() => updateSelectedImageFilters({ flipY: !imgObj.flipY })}
+                                                className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${imgObj.flipY ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}
+                                                title="Flip Vertically"
+                                            >
+                                                <FlipVertical className="w-3.5 h-3.5" />
+                                            </button>
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+                                            <button
+                                                onClick={() => setShowImageAdjustModal(prev => !prev)}
+                                                className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showImageAdjustModal || (imgObj.brightness && imgObj.brightness !== 100) || (imgObj.contrast && imgObj.contrast !== 100) || (imgObj.sharpness && imgObj.sharpness > 0) ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}
+                                                title="Adjust Brightness, Contrast & Sharpness"
+                                            >
+                                                <Sliders className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+
+                                        {/* Image Adjustments Popover */}
+                                        {showImageAdjustModal && (
+                                            <div
+                                                className="absolute -top-52 left-1/2 -translate-x-1/2 w-64 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl shadow-2xl p-3 z-50 pointer-events-auto text-slate-200 flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-150"
+                                                onClick={(e) => e.stopPropagation()}
+                                                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                            >
+                                                <div className="flex items-center justify-between pb-1 border-b border-slate-800">
+                                                    <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
+                                                        <Sliders className="w-3.5 h-3.5 text-indigo-400" /> Image Adjustments
+                                                    </span>
+                                                    <button
+                                                        onClick={() => updateSelectedImageFilters({ brightness: 100, contrast: 100, sharpness: 0 })}
+                                                        className="text-[10px] text-indigo-400 hover:text-indigo-300 hover:underline"
+                                                    >
+                                                        Reset
+                                                    </button>
+                                                </div>
+
+                                                {/* Brightness */}
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                                                        <span className="flex items-center gap-1"><Sun className="w-3 h-3 text-amber-400" /> Brightness</span>
+                                                        <span className="font-mono text-white">{imgObj.brightness ?? 100}%</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="30"
+                                                        max="200"
+                                                        value={imgObj.brightness ?? 100}
+                                                        onChange={(e) => updateSelectedImageFilters({ brightness: parseInt(e.target.value, 10) })}
+                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                    />
+                                                </div>
+
+                                                {/* Contrast */}
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                                                        <span className="flex items-center gap-1"><Contrast className="w-3 h-3 text-sky-400" /> Contrast</span>
+                                                        <span className="font-mono text-white">{imgObj.contrast ?? 100}%</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="30"
+                                                        max="200"
+                                                        value={imgObj.contrast ?? 100}
+                                                        onChange={(e) => updateSelectedImageFilters({ contrast: parseInt(e.target.value, 10) })}
+                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                    />
+                                                </div>
+
+                                                {/* Sharpness */}
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                                                        <span className="flex items-center gap-1"><Sparkles className="w-3 h-3 text-pink-400" /> Sharpness</span>
+                                                        <span className="font-mono text-white">{imgObj.sharpness ?? 0}</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="0"
+                                                        max="10"
+                                                        value={imgObj.sharpness ?? 0}
+                                                        onChange={(e) => updateSelectedImageFilters({ sharpness: parseInt(e.target.value, 10) })}
+                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
 
                                         {!imgObj.isLocked && (
                                             <>
@@ -6163,7 +6395,7 @@ export default function Whiteboard({
                                     top: shpObj.y,
                                     width: shpObj.width,
                                     height: shpObj.height,
-                                    transform: `rotate(${shpObj.rotation || 0}deg)`,
+                                    transform: `rotate(${shpObj.rotation || 0}deg) ${shpObj.flipX ? 'scaleX(-1)' : ''} ${shpObj.flipY ? 'scaleY(-1)' : ''}`,
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : 'crosshair',
                                     zIndex: shpObj.zIndex || ((shpObj.type === 'ruler' || shpObj.type === 'protractor') ? 60 : (isSelected ? 20 : 10)),
@@ -6516,6 +6748,21 @@ export default function Whiteboard({
                                 </button>
                                 <div className="w-px h-5 bg-slate-700 mx-1"></div>
                                 <button
+                                    onClick={() => handleFlipSelection(true)}
+                                    className="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+                                    title="Flip Horizontally"
+                                >
+                                    <FlipHorizontal className="w-4 h-4" />
+                                </button>
+                                <button
+                                    onClick={() => handleFlipSelection(false)}
+                                    className="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+                                    title="Flip Vertically"
+                                >
+                                    <FlipVertical className="w-4 h-4" />
+                                </button>
+                                <div className="w-px h-5 bg-slate-700 mx-1"></div>
+                                <button
                                     onClick={handleDeleteSelection}
                                     className="w-7 h-7 flex items-center justify-center rounded text-red-400 hover:text-red-300 hover:bg-red-400/20 transition-colors"
                                     title="Delete"
@@ -6531,6 +6778,40 @@ export default function Whiteboard({
                                     <X className="w-4 h-4" />
                                 </button>
                             </div>
+
+                            {/* Flip Hooks along Selection Bounding Box */}
+                            {/* Left edge - Flip Horizontal */}
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleFlipSelection(true); }}
+                                className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full flex items-center justify-center shadow-lg border border-white pointer-events-auto transition hover:scale-115 z-30 cursor-pointer"
+                                title="Flip Horizontal"
+                            >
+                                <FlipHorizontal className="w-3.5 h-3.5" />
+                            </button>
+                            {/* Right edge - Flip Horizontal */}
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleFlipSelection(true); }}
+                                className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full flex items-center justify-center shadow-lg border border-white pointer-events-auto transition hover:scale-115 z-30 cursor-pointer"
+                                title="Flip Horizontal"
+                            >
+                                <FlipHorizontal className="w-3.5 h-3.5" />
+                            </button>
+                            {/* Top edge - Flip Vertical */}
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleFlipSelection(false); }}
+                                className="absolute left-1/2 -top-3 -translate-x-1/2 w-6 h-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full flex items-center justify-center shadow-lg border border-white pointer-events-auto transition hover:scale-115 z-30 cursor-pointer"
+                                title="Flip Vertical"
+                            >
+                                <FlipVertical className="w-3.5 h-3.5" />
+                            </button>
+                            {/* Bottom edge - Flip Vertical */}
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleFlipSelection(false); }}
+                                className="absolute left-1/2 -bottom-3 -translate-x-1/2 w-6 h-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full flex items-center justify-center shadow-lg border border-white pointer-events-auto transition hover:scale-115 z-30 cursor-pointer"
+                                title="Flip Vertical"
+                            >
+                                <FlipVertical className="w-3.5 h-3.5" />
+                            </button>
                         </div>
                     )}
 

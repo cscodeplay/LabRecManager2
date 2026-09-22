@@ -47,13 +47,13 @@ const OUTER_TOOLS = {
         { id: 'pen_fountain', label: 'Fount', icon: Feather, action: { brushType: 'fountain' } },
     ],
     highlighter: [
-        { id: 'hl_yellow', label: 'Yellow', icon: Highlighter, action: { color: 'yellow' }, colorClass: 'text-yellow-400 bg-yellow-400/20' },
-        { id: 'hl_green', label: 'Green', icon: Highlighter, action: { color: 'green' }, colorClass: 'text-emerald-400 bg-emerald-400/20' },
-        { id: 'hl_blue', label: 'Blue', icon: Highlighter, action: { color: 'blue' }, colorClass: 'text-sky-400 bg-sky-400/20' },
-        { id: 'hl_pink', label: 'Pink', icon: Highlighter, action: { color: 'pink' }, colorClass: 'text-pink-400 bg-pink-400/20' },
-        { id: 'hl_orange', label: 'Orange', icon: Highlighter, action: { color: 'orange' }, colorClass: 'text-orange-400 bg-orange-400/20' },
-        { id: 'hl_purple', label: 'Purple', icon: Highlighter, action: { color: 'purple' }, colorClass: 'text-purple-400 bg-purple-400/20' },
-        { id: 'hl_cyan', label: 'Cyan', icon: Highlighter, action: { color: 'cyan' }, colorClass: 'text-cyan-400 bg-cyan-400/20' },
+        { id: 'hl_yellow', label: 'Yellow', icon: Highlighter, action: { color: 'yellow' }, colorHex: '#facc15' },
+        { id: 'hl_green', label: 'Green', icon: Highlighter, action: { color: 'green' }, colorHex: '#22c55e' },
+        { id: 'hl_blue', label: 'Blue', icon: Highlighter, action: { color: 'blue' }, colorHex: '#38bdf8' },
+        { id: 'hl_pink', label: 'Pink', icon: Highlighter, action: { color: 'pink' }, colorHex: '#ec4899' },
+        { id: 'hl_orange', label: 'Orange', icon: Highlighter, action: { color: 'orange' }, colorHex: '#f97316' },
+        { id: 'hl_purple', label: 'Purple', icon: Highlighter, action: { color: 'purple' }, colorHex: '#a855f7' },
+        { id: 'hl_cyan', label: 'Cyan', icon: Highlighter, action: { color: 'cyan' }, colorHex: '#06b6d4' },
     ],
     eraser: [
         { id: 'erase_small', label: '6px', icon: Eraser, action: { eraserSize: 6, eraserMode: 'pixel' } },
@@ -256,8 +256,9 @@ export default function RadialToolbar({
         e.stopPropagation();
         e.preventDefault();
         setHoveredInner(tool.id);
-        onToolSelect(tool.id);
-        if (!OUTER_TOOLS[tool.id]) {
+        const hasSubTools = Boolean(OUTER_TOOLS[tool.id]);
+        onToolSelect(tool.id, {}, hasSubTools);
+        if (!hasSubTools) {
             onClose();
         }
     };
@@ -265,7 +266,7 @@ export default function RadialToolbar({
     const handleOuterClick = (e, innerId, outerTool) => {
         e.stopPropagation();
         e.preventDefault();
-        onToolSelect(innerId, outerTool.action);
+        onToolSelect(innerId, outerTool.action, false);
         onClose();
     };
 
@@ -422,6 +423,8 @@ export default function RadialToolbar({
             {/* ─── Outer Sub-Tool Badges (Concentric, Non-Overlapping) ─── */}
             {activeOuterTools && subToolPositions.map(({ tool, x, y }) => {
                 const isHovered = hoveredOuter === tool.id;
+                const hasColor = Boolean(tool.colorHex);
+
                 return (
                     <button
                         key={tool.id}
@@ -429,21 +432,38 @@ export default function RadialToolbar({
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => handleOuterClick(e, hoveredInner, tool)}
                         onMouseEnter={() => setHoveredOuter(tool.id)}
-                        className={`absolute flex flex-col items-center justify-center w-7 h-7 rounded-full transition-all duration-150 z-30 cursor-pointer ${
+                        className={`absolute flex flex-col items-center justify-center w-8 h-8 rounded-full transition-all duration-150 z-30 cursor-pointer ${
                             isHovered
-                                ? 'bg-indigo-600 text-white scale-115 border-2 border-white shadow-lg shadow-indigo-500/50'
-                                : 'bg-slate-900/95 text-slate-200 border border-indigo-400/60 hover:border-white shadow-md'
+                                ? 'scale-125 border-2 border-white shadow-lg shadow-indigo-500/50'
+                                : 'shadow-md'
+                        } ${
+                            hasColor
+                                ? 'border-2 border-white/95'
+                                : isHovered
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'bg-slate-900/95 text-slate-200 border border-indigo-400/60 hover:border-white'
                         }`}
                         style={{
                             left: x,
                             top: y,
                             transform: 'translate(-50%, -50%)',
+                            backgroundColor: hasColor ? tool.colorHex : undefined,
+                            color: hasColor ? '#0f172a' : undefined
                         }}
+                        title={tool.label}
                     >
-                        <tool.icon className={`w-3.5 h-3.5 ${tool.colorClass ? '' : ''}`} />
-                        <span className="text-[7px] font-semibold leading-none mt-0.5 px-0.5 rounded bg-slate-950/80 text-indigo-200 whitespace-nowrap">
-                            {tool.label}
-                        </span>
+                        {hasColor ? (
+                            <div className="flex items-center justify-center">
+                                <tool.icon className="w-4 h-4 text-slate-950 stroke-[2.5]" />
+                            </div>
+                        ) : (
+                            <>
+                                <tool.icon className="w-3.5 h-3.5" />
+                                <span className="text-[7px] font-semibold leading-none mt-0.5 px-0.5 rounded bg-slate-950/80 text-indigo-200 whitespace-nowrap">
+                                    {tool.label}
+                                </span>
+                            </>
+                        )}
                     </button>
                 );
             })}

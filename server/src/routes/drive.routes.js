@@ -85,27 +85,30 @@ router.use(asyncHandler(async (req, res, next) => {
 router.get('/status', asyncHandler(async (req, res) => {
     const quotaData = await googleDriveService.getStorageQuota();
     const oauthConfig = googleDriveService.getOAuthConfig();
+    const connectedUser = googleDriveService.getConnectedUser();
+    const effectiveAuthType = quotaData.authType || googleDriveService.authType;
+    const isOAuthConnected = effectiveAuthType === 'oauth_user' || Boolean(connectedUser?.emailAddress);
+    const resolvedUser = quotaData.user || connectedUser || null;
 
     res.json({
         success: true,
         data: {
-            isConfigured: googleDriveService.isConfigured(),
-            authType: googleDriveService.authType,
-            isOAuthConnected: googleDriveService.authType === 'oauth_user' && !quotaData.error,
+            isConfigured: googleDriveService.isConfigured() || Boolean(connectedUser),
+            authType: effectiveAuthType,
+            isOAuthConnected,
             authError: quotaData.error || null,
+            scopeNotice: quotaData.scopeNotice || null,
             hasOAuthConfig: Boolean(oauthConfig.clientId && oauthConfig.clientSecret),
             clientId: oauthConfig.clientId ? `${oauthConfig.clientId.substring(0, 16)}...` : null,
-            user: quotaData.user || null,
+            user: resolvedUser,
             quota: quotaData.quota || null,
             folderId: googleDriveService.folderId,
             serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || null,
             ulrmsFolderUrl: 'https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp',
             ulrmsFilesFolderUrl: 'https://drive.google.com/drive/folders/1R6SmhanodL-ghLTOoBhX_EgQ5Farf853',
-            storageNotice: googleDriveService.authType === 'oauth_user' && !quotaData.error
-                ? `Connected to personal Google Drive (${quotaData.user?.emailAddress || 'User'}). 5 TB storage quota active.`
-                : (quotaData.error
-                    ? `Google Drive authorization notice: ${quotaData.error}`
-                    : 'Google Service Accounts have a 0-byte quota for creating files in personal @gmail.com folders. Connect your personal Google account via OAuth 2.0 to upload directly using your 5 TB storage plan.')
+            storageNotice: isOAuthConnected
+                ? `Connected to personal Google Drive (${resolvedUser?.emailAddress || 'User'}). 5 TB storage quota active.`
+                : 'Google Service Accounts have a 0-byte quota for creating files in personal @gmail.com folders. Connect your personal Google account via OAuth 2.0 to upload directly using your 5 TB storage plan.'
         }
     });
 }));

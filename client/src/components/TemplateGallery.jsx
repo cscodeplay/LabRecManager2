@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 import { 
     X, Search, Grid, Layers, Brain, Code, BookOpen, 
-    ArrowRight, Network, Database, GitBranch, BarChart3, Workflow 
+    ArrowRight, Network, Database, GitBranch, BarChart3, Workflow,
+    Users, GitFork, Building2
 } from 'lucide-react';
 
 const uuid = () => Date.now().toString(36) + Math.random().toString(36).substring(2);
@@ -253,10 +254,114 @@ const templates = [
                 { id: uuid(), x: 500, y: 50, width: 300, height: 40, text: 'Mind Map', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
             ]
         }
+    },
+    {
+        id: 'ezwrite-hierarchical-org',
+        title: 'Hierarchical Org Chart (EZWrite)',
+        category: 'Org Charts',
+        description: 'Multi-tiered corporate or academic organizational hierarchy with leadership, departments, and teams.',
+        icon: <Users className="w-6 h-6" />,
+        previewColors: ['#4f46e5', '#0284c7', '#059669', '#d97706'],
+        data: {
+            title: 'Organizational Hierarchy Chart',
+            background: { pattern: 'dots', color: '#f8fafc' },
+            shapes: [
+                // Level 1: Leadership / Executive
+                { id: uuid(), type: 'rounded_rect', x: 420, y: 120, width: 240, height: 75, color: '#4338ca', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Chief Executive Officer\n(Leadership)', textColor: '#312e81', fontSize: 15 },
+                
+                // Level 2: Functional VPs / Heads
+                { id: uuid(), type: 'rounded_rect', x: 120, y: 280, width: 220, height: 65, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'VP of Engineering\nTechnology Lead', textColor: '#0369a1', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 430, y: 280, width: 220, height: 65, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'VP of Product\nStrategy & UX', textColor: '#047857', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 740, y: 280, width: 220, height: 65, color: '#d97706', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: 'VP of Operations\nLab & Research Mgmt', textColor: '#b45309', fontSize: 14 },
+
+                // Level 3: Department Leads & Teams
+                { id: uuid(), type: 'rounded_rect', x: 40, y: 430, width: 170, height: 55, color: '#6366f1', fillColor: '#eef2ff', strokeWidth: 1.5, rotation: 0, text: 'Core Platform\nLead Engineer', textColor: '#4338ca', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 230, y: 430, width: 170, height: 55, color: '#6366f1', fillColor: '#eef2ff', strokeWidth: 1.5, rotation: 0, text: 'Cloud & DevOps\nInfrastructure', textColor: '#4338ca', fontSize: 13 },
+
+                { id: uuid(), type: 'rounded_rect', x: 430, y: 430, width: 220, height: 55, color: '#10b981', fillColor: '#ecfdf5', strokeWidth: 1.5, rotation: 0, text: 'Design & Analytics\nProduct Squads', textColor: '#065f46', fontSize: 13 },
+
+                { id: uuid(), type: 'rounded_rect', x: 680, y: 430, width: 170, height: 55, color: '#f59e0b', fillColor: '#fffbeb', strokeWidth: 1.5, rotation: 0, text: 'Lab Supervisors\nOperations', textColor: '#92400e', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 870, y: 430, width: 170, height: 55, color: '#f59e0b', fillColor: '#fffbeb', strokeWidth: 1.5, rotation: 0, text: 'Compliance & Safety\nAudit Officer', textColor: '#92400e', fontSize: 13 },
+            ],
+            texts: [
+                { id: uuid(), x: 380, y: 45, width: 350, height: 40, text: 'Organizational Hierarchy Chart', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'ezwrite-matrix-org',
+        title: 'Team Matrix Org Chart (EZWrite)',
+        category: 'Org Charts',
+        description: 'Cross-functional matrix structure aligning technical discipline chapters with product squads.',
+        icon: <GitFork className="w-6 h-6" />,
+        previewColors: ['#6366f1', '#8b5cf6', '#ec4899'],
+        data: {
+            title: 'Cross-Functional Team Matrix',
+            background: { pattern: 'grid', color: '#fcfcfd' },
+            shapes: [
+                // Functional Chapters (Vertical Columns Header)
+                { id: uuid(), type: 'rounded_rect', x: 220, y: 120, width: 200, height: 50, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Frontend Chapter', textColor: '#3730a3', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 460, y: 120, width: 200, height: 50, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'Backend & Cloud', textColor: '#0369a1', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 700, y: 120, width: 200, height: 50, color: '#7c3aed', fillColor: '#ede9fe', strokeWidth: 2, rotation: 0, text: 'AI & Data Science', textColor: '#5b21b6', fontSize: 14 },
+
+                // Product Squads (Horizontal Row Labels)
+                { id: uuid(), type: 'rounded_rect', x: 40, y: 210, width: 150, height: 70, color: '#d97706', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: 'Squad Alpha\nWhiteboard & Realtime', textColor: '#92400e', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 40, y: 320, width: 150, height: 70, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'Squad Beta\nLab Records & Docs', textColor: '#065f46', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 40, y: 430, width: 150, height: 70, color: '#e11d48', fillColor: '#ffe4e6', strokeWidth: 2, rotation: 0, text: 'Squad Gamma\nAI Analytics & Reports', textColor: '#9f1239', fontSize: 13 },
+
+                // Matrix Intersections (Staff Cards)
+                { id: uuid(), type: 'rectangle', x: 220, y: 210, width: 200, height: 70, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: 'Canvas Engineers\n(2 Full-Time)', textColor: '#334155', fontSize: 12 },
+                { id: uuid(), type: 'rectangle', x: 460, y: 210, width: 200, height: 70, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: 'WebSocket / Socket.io\n(1 Senior Eng)', textColor: '#334155', fontSize: 12 },
+                { id: uuid(), type: 'rectangle', x: 700, y: 210, width: 200, height: 70, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: 'Gesture Recognition\n(1 ML Specialist)', textColor: '#334155', fontSize: 12 },
+
+                { id: uuid(), type: 'rectangle', x: 220, y: 320, width: 200, height: 70, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: 'Next.js UI Leads\n(2 Developers)', textColor: '#334155', fontSize: 12 },
+                { id: uuid(), type: 'rectangle', x: 460, y: 320, width: 200, height: 70, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: 'PostgreSQL & Drive\n(2 Backend Eng)', textColor: '#334155', fontSize: 12 },
+                { id: uuid(), type: 'rectangle', x: 700, y: 320, width: 200, height: 70, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: 'Document OCR / NLP\n(1 Data Eng)', textColor: '#334155', fontSize: 12 },
+
+                { id: uuid(), type: 'rectangle', x: 220, y: 430, width: 200, height: 70, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: 'Chart & Dashboard\n(1 UI Eng)', textColor: '#334155', fontSize: 12 },
+                { id: uuid(), type: 'rectangle', x: 460, y: 430, width: 200, height: 70, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: 'Analytics APIs\n(1 Backend Eng)', textColor: '#334155', fontSize: 12 },
+                { id: uuid(), type: 'rectangle', x: 700, y: 430, width: 200, height: 70, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: 'Predictive Insights\n(2 AI Researchers)', textColor: '#334155', fontSize: 12 },
+            ],
+            texts: [
+                { id: uuid(), x: 340, y: 45, width: 400, height: 40, text: 'Cross-Functional Team Matrix', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'ezwrite-process-hierarchy',
+        title: 'Process Hierarchy Flow (EZWrite)',
+        category: 'Org Charts',
+        description: 'Structured stage-gate decision hierarchy for corporate initiatives and laboratory approvals.',
+        icon: <Building2 className="w-6 h-6" />,
+        previewColors: ['#2563eb', '#16a34a', '#ca8a04', '#9333ea'],
+        data: {
+            title: 'Stage-Gate Process Hierarchy',
+            background: { pattern: 'dots', color: '#f8fafc' },
+            shapes: [
+                // Phase 1: Intake & Assessment
+                { id: uuid(), type: 'rounded_rect', x: 80, y: 150, width: 180, height: 70, color: '#2563eb', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: 'Phase 1: Proposal\nLab Project Intake', textColor: '#1e40af', fontSize: 14 },
+                { id: uuid(), type: 'diamond', x: 120, y: 280, width: 100, height: 100, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'Gate 1:\nFeasibility', textColor: '#0369a1', fontSize: 12 },
+
+                // Phase 2: Design & Review
+                { id: uuid(), type: 'rounded_rect', x: 320, y: 150, width: 180, height: 70, color: '#7c3aed', fillColor: '#ede9fe', strokeWidth: 2, rotation: 0, text: 'Phase 2: Planning\nMethodology & Risk', textColor: '#5b21b6', fontSize: 14 },
+                { id: uuid(), type: 'diamond', x: 360, y: 280, width: 100, height: 100, color: '#6d28d9', fillColor: '#ede9fe', strokeWidth: 2, rotation: 0, text: 'Gate 2:\nSafety Review', textColor: '#4c1d95', fontSize: 12 },
+
+                // Phase 3: Execution & Testing
+                { id: uuid(), type: 'rounded_rect', x: 560, y: 150, width: 180, height: 70, color: '#d97706', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: 'Phase 3: Execution\nLive Testing & Logs', textColor: '#b45309', fontSize: 14 },
+                { id: uuid(), type: 'diamond', x: 600, y: 280, width: 100, height: 100, color: '#b45309', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: 'Gate 3:\nQuality Audit', textColor: '#78350f', fontSize: 12 },
+
+                // Phase 4: Signoff & Delivery
+                { id: uuid(), type: 'rounded_rect', x: 800, y: 150, width: 180, height: 70, color: '#16a34a', fillColor: '#dcfce7', strokeWidth: 2, rotation: 0, text: 'Phase 4: Closure\nFinal Report & Archival', textColor: '#166534', fontSize: 14 },
+                { id: uuid(), type: 'circle', x: 850, y: 300, width: 80, height: 80, color: '#16a34a', fillColor: '#bbf7d0', strokeWidth: 3, rotation: 0, text: 'Approved\nComplete', textColor: '#14532d', fontSize: 12 },
+            ],
+            texts: [
+                { id: uuid(), x: 350, y: 50, width: 400, height: 40, text: 'Stage-Gate Process Hierarchy', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
     }
 ];
 
-const categories = ['All', 'CS Fundamentals', 'AI & ML', 'General'];
+const categories = ['All', 'Org Charts', 'CS Fundamentals', 'AI & ML', 'General'];
 
 export default function TemplateGallery({ 
     isOpen, 

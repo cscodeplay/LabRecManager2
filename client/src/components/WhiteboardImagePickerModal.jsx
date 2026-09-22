@@ -387,12 +387,23 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
                                     <span className="font-semibold text-slate-900">
                                         {driveStatus?.user?.displayName ? `${driveStatus.user.displayName} ` : 'Google Drive'}
                                     </span>
-                                    <span className="font-mono text-[11px] bg-white px-1.5 py-0.5 rounded border border-emerald-200 text-emerald-950 truncate max-w-[260px]" title={driveStatus?.user?.emailAddress || driveStatus?.serviceAccountEmail || 'Connected'}>
-                                        {driveStatus?.user?.emailAddress || driveStatus?.serviceAccountEmail || 'Connected Account'}
+                                    <span className="font-mono text-[11px] bg-white px-1.5 py-0.5 rounded border border-emerald-200 text-emerald-950 truncate max-w-[260px]" title={driveStatus?.user?.emailAddress || 'charan881130@gmail.com'}>
+                                        {driveStatus?.user?.emailAddress || (driveStatus?.authType === 'oauth_user' ? 'charan881130@gmail.com' : driveStatus?.serviceAccountEmail) || 'charan881130@gmail.com'}
                                     </span>
                                     <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
                                         {driveStatus?.authType === 'oauth_user' ? 'OAuth 2.0 (5 TB)' : 'Service Account'}
                                     </span>
+                                    {driveStatus?.scopeNotice && (
+                                        <a
+                                            href="/documents?tab=drive"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-[10px] text-emerald-700 underline font-medium hover:text-emerald-900 ml-1"
+                                            title={driveStatus.scopeNotice}
+                                        >
+                                            Re-authorize Full Scopes
+                                        </a>
+                                    )}
                                 </div>
                             </div>
                         </div>
