@@ -131,6 +131,26 @@ export default function ImplementationPlansPage() {
         }
     }, [user, mailRecipient]);
 
+    // Handle deep-link call parameter (e.g. ?call=PLAN-003 or ?call=3)
+    useEffect(() => {
+        if (typeof window !== 'undefined' && plans.length > 0) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const callTarget = urlParams.get('call') || urlParams.get('plan');
+            if (callTarget) {
+                const cleanCall = callTarget.trim().toLowerCase();
+                const matchedPlan = plans.find(p => 
+                    p.serial_id?.toLowerCase() === cleanCall ||
+                    String(p.serial_no) === cleanCall.replace(/\D/g, '') ||
+                    p.id === callTarget
+                );
+                if (matchedPlan) {
+                    setShowViewModal(matchedPlan);
+                    toast.success(`Loaded plan: ${matchedPlan.serial_id || matchedPlan.title}`);
+                }
+            }
+        }
+    }, [plans]);
+
     // Handle Quick Start
     const handleQuickStart = async (plan) => {
         try {
@@ -655,7 +675,10 @@ export default function ImplementationPlansPage() {
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        {plans.map(plan => (
+                        {plans.map((plan, index) => {
+                            const serialId = plan.serial_id || `PLAN-${String(plan.serial_no || index + 1).padStart(3, '0')}`;
+                            const serialNo = plan.serial_no || (index + 1);
+                            return (
                             <div
                                 key={plan.id}
                                 className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all space-y-4"
@@ -665,8 +688,20 @@ export default function ImplementationPlansPage() {
                                     <div className="space-y-1.5">
                                         <div className="flex items-center gap-2 flex-wrap">
                                             {getStatusBadge(plan.status)}
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    navigator.clipboard.writeText(serialId);
+                                                    toast.success(`Copied ${serialId} to clipboard!`);
+                                                }}
+                                                title="Click to copy Serial ID"
+                                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 hover:border-blue-300 transition-all cursor-pointer"
+                                            >
+                                                <Tag className="w-3 h-3 text-blue-500" />
+                                                #{serialNo} · {serialId}
+                                            </button>
                                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                                                <Tag className="w-3 h-3 text-slate-400" />
                                                 {plan.category || 'General'}
                                             </span>
                                             {plan.duration && plan.duration !== 'Not Started' && (
@@ -797,7 +832,7 @@ export default function ImplementationPlansPage() {
                                                     key={idx}
                                                     type="button"
                                                     onClick={() => handleToggleTask(plan.id, idx, task.completed)}
-                                                    className="flex items-start gap-2.5 p-2 rounded-xl text-left bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors group"
+                                                    className="flex items-start gap-2 p-2 rounded-xl text-left bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors group"
                                                 >
                                                     <div className={`mt-0.5 p-0.5 rounded ${
                                                         task.completed 
@@ -806,6 +841,9 @@ export default function ImplementationPlansPage() {
                                                     }`}>
                                                         <Check className="w-3 h-3 stroke-[3]" />
                                                     </div>
+                                                    <span className="text-[11px] font-mono font-bold text-slate-400 dark:text-slate-500 shrink-0 mt-0.5">
+                                                        #{task.task_num || (idx + 1)}
+                                                    </span>
                                                     <span className={`text-xs ${
                                                         task.completed 
                                                             ? 'line-through text-slate-400 dark:text-slate-500' 
@@ -835,7 +873,8 @@ export default function ImplementationPlansPage() {
                                     </div>
                                 )}
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>
@@ -1054,9 +1093,22 @@ export default function ImplementationPlansPage() {
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
                     <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-3xl w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5 my-8">
                         <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
-                            <div className="space-y-1">
-                                <div className="flex items-center gap-2">
+                            <div className="space-y-1.5">
+                                <div className="flex items-center gap-2 flex-wrap">
                                     {getStatusBadge(showViewModal.status)}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const serial = showViewModal.serial_id || `PLAN-${String(showViewModal.serial_no || 1).padStart(3, '0')}`;
+                                            navigator.clipboard.writeText(serial);
+                                            toast.success(`Copied ${serial} to clipboard!`);
+                                        }}
+                                        title="Click to copy Serial ID"
+                                        className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1 cursor-pointer hover:bg-blue-100 transition-colors"
+                                    >
+                                        <Tag className="w-3 h-3 text-blue-500" />
+                                        #{showViewModal.serial_no || 1} · {showViewModal.serial_id || `PLAN-${String(showViewModal.serial_no || 1).padStart(3, '0')}`}
+                                    </button>
                                     <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                                         {showViewModal.category || 'General'}
                                     </span>
@@ -1125,11 +1177,14 @@ export default function ImplementationPlansPage() {
                                             onClick={() => handleToggleTask(showViewModal.id, idx, task.completed)}
                                             className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors"
                                         >
-                                            <div className="flex items-center gap-3">
+                                            <div className="flex items-center gap-2.5">
                                                 <div className={`p-1 rounded ${task.completed ? 'bg-emerald-500 text-white' : 'border border-slate-300 dark:border-slate-700'}`}>
                                                     <Check className="w-3.5 h-3.5 stroke-[3]" />
                                                 </div>
-                                                <span className={`text-sm ${task.completed ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-200'}`}>
+                                                <span className="text-xs font-mono font-bold text-slate-400 dark:text-slate-500 shrink-0">
+                                                    #{task.task_num || (idx + 1)}
+                                                </span>
+                                                <span className={`text-sm ${task.completed ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-200 font-medium'}`}>
                                                     {task.title}
                                                 </span>
                                             </div>

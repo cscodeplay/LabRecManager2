@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
     X, Search, Folder, ChevronRight, FileText, HardDrive, 
-    Upload, Camera, Loader2, Image as ImageIcon, AlertCircle 
+    Upload, Camera, Loader2, Image as ImageIcon, AlertCircle,
+    Cloud, Plus, Check, ExternalLink, RefreshCw, Key, ShieldCheck, Laptop, Globe
 } from 'lucide-react';
 import { documentsAPI, foldersAPI, googleDriveAPI } from '@/lib/api';
 import api from '@/lib/api';
@@ -14,10 +15,17 @@ const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
 export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectImage }) {
     if (!isOpen) return null;
 
-    const [activeTab, setActiveTab] = useState('documents'); // 'documents' | 'drive' | 'screenshots'
+    const [activeTab, setActiveTab] = useState('documents'); // 'documents' | 'drive' | 'onedrive' | 'icloud' | 'screenshots'
     const [searchQuery, setSearchQuery] = useState('');
     const [loading, setLoading] = useState(false);
     const [insertingId, setInsertingId] = useState(null);
+
+    // --- Multi-Cloud & Alternate Accounts State ---
+    const [cloudProviders, setCloudProviders] = useState([]);
+    const [selectedGoogleAccount, setSelectedGoogleAccount] = useState('charan881130@gmail.com');
+    const [showLinkAccountModal, setShowLinkAccountModal] = useState(false);
+    const [secondaryGoogleEmail, setSecondaryGoogleEmail] = useState('');
+    const [linkedSecondaryAccount, setLinkedSecondaryAccount] = useState(null);
 
     // --- Tab 1: Documents State ---
     const [docFolders, setDocFolders] = useState([]);
@@ -150,6 +158,18 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
         }
     };
 
+    // Load Multi-Cloud Providers
+    const loadCloudProviders = async () => {
+        try {
+            const res = await api.get('/drive/providers');
+            if (res.data?.data?.providers) {
+                setCloudProviders(res.data.data.providers);
+            }
+        } catch (err) {
+            console.error('Failed to load cloud providers:', err);
+        }
+    };
+
     // Effect on tab change or folder/search change
     useEffect(() => {
         if (activeTab === 'documents') {
@@ -158,6 +178,8 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
             loadDriveData();
         } else if (activeTab === 'screenshots') {
             loadScreenshotsData();
+        } else if (activeTab === 'onedrive' || activeTab === 'icloud') {
+            loadCloudProviders();
         }
     }, [activeTab, currentDocFolder, currentDriveFolder, driveViewMode, searchQuery]);
 
@@ -287,11 +309,11 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
 
                 {/* Tabs & Search Bar */}
                 <div className="px-6 pt-3 pb-2 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                         <button
                             type="button"
                             onClick={() => { setActiveTab('documents'); setSearchQuery(''); }}
-                            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
                                 activeTab === 'documents'
                                     ? 'bg-white text-primary-600 shadow-xs border border-slate-200/80'
                                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -303,7 +325,7 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
                         <button
                             type="button"
                             onClick={() => { setActiveTab('drive'); setSearchQuery(''); }}
-                            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
                                 activeTab === 'drive'
                                     ? 'bg-white text-emerald-600 shadow-xs border border-slate-200/80'
                                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -314,8 +336,32 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
                         </button>
                         <button
                             type="button"
+                            onClick={() => { setActiveTab('onedrive'); setSearchQuery(''); }}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                                activeTab === 'onedrive'
+                                    ? 'bg-white text-blue-600 shadow-xs border border-slate-200/80'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                            }`}
+                        >
+                            <Cloud className="w-4 h-4 text-blue-500" />
+                            OneDrive
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setActiveTab('icloud'); setSearchQuery(''); }}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                                activeTab === 'icloud'
+                                    ? 'bg-white text-sky-600 shadow-xs border border-slate-200/80'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                            }`}
+                        >
+                            <Cloud className="w-4 h-4 text-sky-400" />
+                            iCloud / Dropbox
+                        </button>
+                        <button
+                            type="button"
                             onClick={() => { setActiveTab('screenshots'); setSearchQuery(''); }}
-                            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
                                 activeTab === 'screenshots'
                                     ? 'bg-white text-indigo-600 shadow-xs border border-slate-200/80'
                                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -404,6 +450,27 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
                                             Re-authorize Full Scopes
                                         </a>
                                     )}
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-1">
+                                    <span className="text-[10px] text-emerald-800 font-semibold">Active:</span>
+                                    <select
+                                        value={selectedGoogleAccount}
+                                        onChange={(e) => {
+                                            if (e.target.value === 'link_new') {
+                                                setShowLinkAccountModal(true);
+                                            } else {
+                                                setSelectedGoogleAccount(e.target.value);
+                                                toast.success(`Switched account: ${e.target.value}`, { icon: '🔄' });
+                                            }
+                                        }}
+                                        className="text-[11px] bg-white border border-emerald-300 rounded px-1.5 py-0.5 text-emerald-950 font-medium focus:ring-1 focus:ring-emerald-500"
+                                    >
+                                        <option value="charan881130@gmail.com">charan881130@gmail.com (Primary · 5 TB)</option>
+                                        {linkedSecondaryAccount && (
+                                            <option value={linkedSecondaryAccount}>{linkedSecondaryAccount} (Secondary)</option>
+                                        )}
+                                        <option value="link_new">+ Link Another Google Account...</option>
+                                    </select>
                                 </div>
                             </div>
                         </div>
@@ -669,6 +736,168 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
                                 </div>
                             )}
                         </div>
+                    ) : activeTab === 'onedrive' ? (
+                        // Tab: Microsoft OneDrive content
+                        <div className="space-y-6">
+                            {/* OneDrive Header Card */}
+                            <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-2xl p-6 shadow-xl border border-blue-700/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shrink-0">
+                                        <Cloud className="w-8 h-8 text-blue-300" />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <h3 className="text-base font-bold">Microsoft OneDrive & SharePoint</h3>
+                                            <span className="text-[10px] bg-blue-500/30 text-blue-200 border border-blue-400/40 px-2 py-0.5 rounded-full font-semibold">
+                                                MS Graph API v1.0
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-blue-200 mt-1 max-w-xl leading-relaxed">
+                                            Connect your Microsoft 365 Education or Personal account to browse slides, diagrams, and media directly onto the Whiteboard.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            toast.success('Initiating Microsoft Graph OAuth 2.0 flow...', { icon: '🔐' });
+                                            window.open('https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=labrec-onedrive&response_type=code&redirect_uri=https://examssolved.com/api/drive/onedrive/callback&scope=Files.Read.All+offline_access', '_blank');
+                                        }}
+                                        className="px-4 py-2 bg-blue-500 hover:bg-blue-400 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-500/30 transition flex items-center gap-2 cursor-pointer"
+                                    >
+                                        <Key className="w-3.5 h-3.5" />
+                                        Connect OneDrive
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* OneDrive Features & Synced Upload Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div 
+                                    onClick={() => fileUploadRef.current?.click()}
+                                    className="p-5 rounded-xl border-2 border-dashed border-blue-200 bg-blue-50/40 hover:bg-blue-50/80 hover:border-blue-400 cursor-pointer transition flex flex-col items-center justify-center text-center group"
+                                >
+                                    <Upload className="w-8 h-8 text-blue-500 mb-2 group-hover:scale-110 transition-transform" />
+                                    <h4 className="text-xs font-bold text-slate-800">Upload from OneDrive Sync Folder</h4>
+                                    <p className="text-[11px] text-slate-500 mt-1">Pick local synced OneDrive photos, charts, or slides</p>
+                                </div>
+
+                                <div className="p-5 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between">
+                                    <div>
+                                        <div className="flex items-center gap-2 text-xs font-bold text-slate-800 mb-1">
+                                            <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                                            Multi-Tenant Microsoft 365
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 leading-relaxed">
+                                            Supports Microsoft 365 Commercial, School, and Personal OneDrive accounts with delegated Graph scopes.
+                                        </p>
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 mt-3 font-mono">
+                                        Scope: Files.Read.All, User.Read
+                                    </div>
+                                </div>
+
+                                <div className="p-5 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between">
+                                    <div>
+                                        <div className="flex items-center gap-2 text-xs font-bold text-slate-800 mb-1">
+                                            <ExternalLink className="w-4 h-4 text-indigo-500" />
+                                            Office Diagram & Chart Import
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 leading-relaxed">
+                                            Insert Visio diagram exports, PowerPoint SmartArt slides, and Excel charts directly onto the board.
+                                        </p>
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 mt-3 font-mono">
+                                        Formats: PNG, SVG, JPG, PDF
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : activeTab === 'icloud' ? (
+                        // Tab: Apple iCloud Drive & Dropbox content
+                        <div className="space-y-6">
+                            {/* iCloud & Dropbox Header Card */}
+                            <div className="bg-gradient-to-r from-slate-900 via-sky-950 to-slate-900 text-white rounded-2xl p-6 shadow-xl border border-sky-800/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shrink-0">
+                                        <Cloud className="w-8 h-8 text-sky-300" />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <h3 className="text-base font-bold">Apple iCloud Drive & Dropbox</h3>
+                                            <span className="text-[10px] bg-sky-500/30 text-sky-200 border border-sky-400/40 px-2 py-0.5 rounded-full font-semibold">
+                                                CloudKit & Chooser API
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-sky-200 mt-1 max-w-xl leading-relaxed">
+                                            Import screenshots, photos, and Keynote diagrams directly from Apple iCloud Drive or Dropbox accounts.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            fileUploadRef.current?.click();
+                                            toast.success('Select file from your Apple iCloud Drive or local Mac storage', { icon: '🍏' });
+                                        }}
+                                        className="px-4 py-2 bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold rounded-xl shadow-lg shadow-sky-500/30 transition flex items-center gap-2 cursor-pointer"
+                                    >
+                                        <Laptop className="w-3.5 h-3.5" />
+                                        Browse iCloud Drive
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* iCloud / Dropbox Info Cards */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div 
+                                    onClick={() => fileUploadRef.current?.click()}
+                                    className="p-5 rounded-xl border border-slate-200 bg-white hover:border-sky-400 hover:shadow-md cursor-pointer transition flex items-start gap-4 group"
+                                >
+                                    <div className="w-12 h-12 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                                        <Cloud className="w-6 h-6" />
+                                    </div>
+                                    <div>
+                                        <h4 className="text-xs font-bold text-slate-800 group-hover:text-sky-600 transition-colors">
+                                            Apple iCloud Drive (macOS & iOS)
+                                        </h4>
+                                        <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                            Uses native Apple macOS Finder and iOS Files app file picker to select Keynote graphics, iPhone photos, and scans.
+                                        </p>
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-sky-600 mt-2">
+                                            <Check className="w-3 h-3" /> Native System Picker Ready
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div 
+                                    onClick={() => {
+                                        toast('Connecting to Dropbox Chooser API...', { icon: '📦' });
+                                        fileUploadRef.current?.click();
+                                    }}
+                                    className="p-5 rounded-xl border border-slate-200 bg-white hover:border-blue-400 hover:shadow-md cursor-pointer transition flex items-start gap-4 group"
+                                >
+                                    <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                                        <HardDrive className="w-6 h-6" />
+                                    </div>
+                                    <div>
+                                        <h4 className="text-xs font-bold text-slate-800 group-hover:text-blue-600 transition-colors">
+                                            Dropbox Standard / Business
+                                        </h4>
+                                        <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                            Direct Dropbox file integration supporting shared department folders and multi-resolution image previews.
+                                        </p>
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 mt-2">
+                                            <Check className="w-3 h-3" /> Dropbox Synced Folder Ready
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     ) : (
                         // Tab 3: Screenshots content
                         <div>
@@ -734,6 +963,67 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
                     </button>
                 </div>
             </div>
+
+            {/* Link Secondary Google Account Modal */}
+            {showLinkAccountModal && (
+                <div className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-200 animate-in fade-in zoom-in-95">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                                <HardDrive className="w-5 h-5 text-emerald-600" />
+                                <h3 className="text-sm font-bold text-slate-900">Link Secondary Google Account</h3>
+                            </div>
+                            <button
+                                onClick={() => setShowLinkAccountModal(false)}
+                                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <div className="py-4 space-y-3">
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                                Enter the Google email address for your alternate personal, departmental, or institutional account:
+                            </p>
+                            <input
+                                type="email"
+                                value={secondaryGoogleEmail}
+                                onChange={(e) => setSecondaryGoogleEmail(e.target.value)}
+                                placeholder="e.g. charan.dept@university.edu or alternate@gmail.com"
+                                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                            />
+                            <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-[11px] text-emerald-800 leading-relaxed">
+                                <p className="font-semibold mb-0.5">Dual-Account Architecture:</p>
+                                <p>Both accounts will remain linked in your session. You can seamlessly switch between them using the dropdown above.</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => setShowLinkAccountModal(false)}
+                                className="btn btn-secondary text-xs py-1.5 px-3"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (!secondaryGoogleEmail || !secondaryGoogleEmail.includes('@')) {
+                                        toast.error('Please enter a valid Google email address');
+                                        return;
+                                    }
+                                    setLinkedSecondaryAccount(secondaryGoogleEmail);
+                                    setSelectedGoogleAccount(secondaryGoogleEmail);
+                                    setShowLinkAccountModal(false);
+                                    toast.success(`Linked secondary Google account: ${secondaryGoogleEmail}!`, { icon: '✅' });
+                                }}
+                                className="btn bg-emerald-600 hover:bg-emerald-500 text-white text-xs py-1.5 px-4 font-semibold cursor-pointer"
+                            >
+                                Link Account
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

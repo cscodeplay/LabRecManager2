@@ -12,7 +12,8 @@ import {
     BringToFront, SendToBack, AlignLeft, AlignCenterHorizontal, AlignRight,
     AlignStartVertical, AlignCenterVertical, AlignEndVertical,
     AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween, Group, Ungroup, Lock, Unlock, Users, MessageCircle, User,
-    Folder, Upload, Loader2, FlipHorizontal, FlipVertical, Sun, Contrast, Sliders
+    Folder, Upload, Loader2, FlipHorizontal, FlipVertical, Sun, Contrast, Sliders,
+    Clock, GripHorizontal, LayoutTemplate
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
@@ -22,6 +23,7 @@ import { BRUSH_TYPES, renderCalligraphy, renderCrayon, renderWatercolor, renderF
 import StickyNoteRenderer, { createStickyNoteObject, STICKY_COLORS } from './StickyNote';
 import ConnectorLine from './ConnectorLine';
 import TemplateGallery from './TemplateGallery';
+import ClassroomTimerModal from './ClassroomTimerModal';
 import WhiteboardImagePickerModal from './WhiteboardImagePickerModal';
 import api from '@/lib/api';
 import { toast } from 'react-hot-toast';
@@ -581,6 +583,14 @@ export default function Whiteboard({
 
     // ─── Template Gallery State ─────────────────────────────────────────
     const [showTemplateGallery, setShowTemplateGallery] = useState(false);
+
+    // ─── Smart Panel & Flat Panel Tools State (BenQ EZWrite & ViewSonic) ──
+    const [showClassroomTimer, setShowClassroomTimer] = useState(false);
+    const [isSpotlightActive, setIsSpotlightActive] = useState(false);
+    const [spotlightPos, setSpotlightPos] = useState({ x: 400, y: 300 });
+    const [spotlightRadius, setSpotlightRadius] = useState(160);
+    const [isCurtainActive, setIsCurtainActive] = useState(false);
+    const [curtainHeight, setCurtainHeight] = useState(40);
 
     // ─── Pressure Sensitivity ───────────────────────────────────────────
     const [pressureSensitivity, setPressureSensitivity] = useState(true);
@@ -1946,6 +1956,20 @@ export default function Whiteboard({
         } else if (toolId === 'more') {
             if (options.action === 'templates') {
                 setShowTemplateGallery(true);
+            } else if (options.action === 'timer') {
+                setShowClassroomTimer(prev => !prev);
+            } else if (options.action === 'spotlight') {
+                setIsSpotlightActive(prev => {
+                    const next = !prev;
+                    if (next) toast('Spotlight active: move cursor to illuminate area', { icon: '🔦' });
+                    return next;
+                });
+            } else if (options.action === 'curtain') {
+                setIsCurtainActive(prev => {
+                    const next = !prev;
+                    if (next) toast('Screen Curtain active: drag bottom bar to reveal', { icon: '🎭' });
+                    return next;
+                });
             } else if (options.action === 'fill') {
                 setTool('fill');
                 toast('Paint Bucket: click anywhere to flood fill', { icon: '🎨' });
@@ -4542,6 +4566,10 @@ export default function Whiteboard({
                             { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : RectangleHorizontal)), label: 'Shapes' },
                             { id: 'text', icon: Type, label: 'Text' },
                             { id: 'image', icon: ImageIcon, label: 'Image' },
+                            { id: 'templates', icon: LayoutTemplate, label: 'Templates & SmartArt (MS Office)' },
+                            { id: 'timer', icon: Clock, label: 'Classroom Timer & Stopwatch' },
+                            { id: 'spotlight', icon: Sparkles, label: 'Spotlight Focus' },
+                            { id: 'curtain', icon: StickyNoteIcon, label: 'Screen Curtain / Shade' },
                             { id: 'laser', icon: Sparkles, label: 'Laser Pointer' },
                             { id: 'datetime', icon: CalendarClock, label: 'Insert DateTime' },
                             { id: 'recorder', icon: Video, label: 'Toggle Recorder' },
@@ -4551,6 +4579,30 @@ export default function Whiteboard({
                             <div key={t.id} className="relative">
                                 <button
                                     onClick={() => {
+                                        if (t.id === 'templates') {
+                                            setShowTemplateGallery(true);
+                                            return;
+                                        }
+                                        if (t.id === 'timer') {
+                                            setShowClassroomTimer(prev => !prev);
+                                            return;
+                                        }
+                                        if (t.id === 'spotlight') {
+                                            setIsSpotlightActive(prev => {
+                                                const next = !prev;
+                                                if (next) toast('Spotlight active: move cursor to illuminate area', { icon: '🔦' });
+                                                return next;
+                                            });
+                                            return;
+                                        }
+                                        if (t.id === 'curtain') {
+                                            setIsCurtainActive(prev => {
+                                                const next = !prev;
+                                                if (next) toast('Screen Curtain active: drag bottom bar to reveal', { icon: '🎭' });
+                                                return next;
+                                            });
+                                            return;
+                                        }
                                         if (t.id === 'datetime') {
                                             handleInsertDateTime();
                                             return;
@@ -4589,7 +4641,15 @@ export default function Whiteboard({
                                             setShowImagePicker(t.id === 'image');
                                         }
                                     }}
-                                    className={`p-1 rounded-full transition-colors flex items-center justify-center ${tool === t.id || (t.id === 'recorder' && showRecorder) ? 'bg-primary-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                    className={`p-1 rounded-full transition-colors flex items-center justify-center ${
+                                        tool === t.id ||
+                                        (t.id === 'recorder' && showRecorder) ||
+                                        (t.id === 'timer' && showClassroomTimer) ||
+                                        (t.id === 'spotlight' && isSpotlightActive) ||
+                                        (t.id === 'curtain' && isCurtainActive)
+                                            ? 'bg-primary-500 text-white shadow-inner'
+                                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                    }`}
                                     title={t.label}
                                 >
                                     {t.id === 'highlighter' ? (
@@ -6921,6 +6981,176 @@ export default function Whiteboard({
 
                     {/* 360-Degree Rotation Protractor & Angle Dial Overlay */}
                     {activeRotatingObject && <RotationDial obj={activeRotatingObject} />}
+
+                    {/* Spotlight Focus Tool (BenQ EZWrite & ViewSonic myViewBoard) */}
+                    {isSpotlightActive && (
+                        <div
+                            className="absolute inset-0 z-40 pointer-events-auto cursor-crosshair overflow-hidden"
+                            onMouseMove={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setSpotlightPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+                            }}
+                            onTouchMove={(e) => {
+                                if (e.touches[0]) {
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setSpotlightPos({ x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top });
+                                }
+                            }}
+                        >
+                            <svg className="w-full h-full">
+                                <defs>
+                                    <mask id="whiteboard-spotlight-mask">
+                                        <rect width="100%" height="100%" fill="white" />
+                                        <circle
+                                            cx={spotlightPos.x}
+                                            cy={spotlightPos.y}
+                                            r={spotlightRadius}
+                                            fill="black"
+                                        />
+                                    </mask>
+                                </defs>
+                                <rect
+                                    width="100%"
+                                    height="100%"
+                                    fill="rgba(15, 23, 42, 0.84)"
+                                    mask="url(#whiteboard-spotlight-mask)"
+                                />
+                                <circle
+                                    cx={spotlightPos.x}
+                                    cy={spotlightPos.y}
+                                    r={spotlightRadius}
+                                    fill="none"
+                                    stroke="rgba(255, 255, 255, 0.6)"
+                                    strokeWidth="2.5"
+                                    strokeDasharray="6 4"
+                                    className="pointer-events-none"
+                                />
+                            </svg>
+
+                            {/* Floating Spotlight Controls */}
+                            <div 
+                                className="absolute top-4 right-4 bg-slate-900/90 text-white backdrop-blur-md px-3 py-1.5 rounded-full shadow-2xl flex items-center gap-3 border border-slate-700 text-xs font-medium z-50 pointer-events-auto"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <span className="flex items-center gap-1.5 text-amber-300 font-semibold">
+                                    <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+                                    Spotlight
+                                </span>
+                                <div className="flex items-center gap-1 bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSpotlightRadius(r => Math.max(60, r - 30))}
+                                        className="w-5 h-5 flex items-center justify-center hover:bg-slate-700 rounded text-slate-300 hover:text-white font-bold"
+                                        title="Decrease Radius"
+                                    >
+                                        -
+                                    </button>
+                                    <span className="text-[11px] text-slate-300 w-9 text-center font-mono">{spotlightRadius}px</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSpotlightRadius(r => Math.min(360, r + 30))}
+                                        className="w-5 h-5 flex items-center justify-center hover:bg-slate-700 rounded text-slate-300 hover:text-white font-bold"
+                                        title="Increase Radius"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsSpotlightActive(false)}
+                                    className="p-1 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-full transition-colors"
+                                    title="Exit Spotlight"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Screen Shade / Curtain Tool (BenQ EZWrite & ViewSonic myViewBoard) */}
+                    {isCurtainActive && (
+                        <div 
+                            className="absolute top-0 left-0 right-0 z-40 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 shadow-2xl transition-[height] duration-75 overflow-hidden flex flex-col justify-between select-none"
+                            style={{ height: `${curtainHeight}%` }}
+                        >
+                            <div className="flex-1 flex flex-col items-center justify-center text-slate-500 text-xs font-medium tracking-wider uppercase opacity-70">
+                                <StickyNoteIcon className="w-6 h-6 mb-1 text-slate-400" />
+                                <span>Screen Shade (Drag bottom bar down/up)</span>
+                            </div>
+
+                            {/* Resizable bottom grab bar */}
+                            <div
+                                className="w-full h-8 bg-gradient-to-r from-indigo-700 via-purple-700 to-indigo-700 hover:from-indigo-600 hover:to-purple-600 flex items-center justify-between px-4 cursor-ns-resize text-white shadow-md border-t border-white/20 select-none"
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    const startY = e.clientY;
+                                    const startHeight = curtainHeight;
+                                    const wrapperRect = canvasWrapperRef.current?.getBoundingClientRect();
+                                    const totalH = wrapperRect?.height || window.innerHeight;
+
+                                    const onMouseMove = (moveEvent) => {
+                                        const deltaY = moveEvent.clientY - startY;
+                                        const deltaPct = (deltaY / totalH) * 100;
+                                        setCurtainHeight(Math.max(10, Math.min(100, startHeight + deltaPct)));
+                                    };
+                                    const onMouseUp = () => {
+                                        window.removeEventListener('mousemove', onMouseMove);
+                                        window.removeEventListener('mouseup', onMouseUp);
+                                    };
+                                    window.addEventListener('mousemove', onMouseMove);
+                                    window.addEventListener('mouseup', onMouseUp);
+                                }}
+                                onTouchStart={(e) => {
+                                    if (!e.touches[0]) return;
+                                    const startY = e.touches[0].clientY;
+                                    const startHeight = curtainHeight;
+                                    const wrapperRect = canvasWrapperRef.current?.getBoundingClientRect();
+                                    const totalH = wrapperRect?.height || window.innerHeight;
+
+                                    const onTouchMove = (moveEvent) => {
+                                        if (!moveEvent.touches[0]) return;
+                                        const deltaY = moveEvent.touches[0].clientY - startY;
+                                        const deltaPct = (deltaY / totalH) * 100;
+                                        setCurtainHeight(Math.max(10, Math.min(100, startHeight + deltaPct)));
+                                    };
+                                    const onTouchEnd = () => {
+                                        window.removeEventListener('touchmove', onTouchMove);
+                                        window.removeEventListener('touchend', onTouchEnd);
+                                    };
+                                    window.addEventListener('touchmove', onTouchMove);
+                                    window.addEventListener('touchend', onTouchEnd);
+                                }}
+                            >
+                                <div className="flex items-center gap-2 text-xs font-semibold">
+                                    <GripHorizontal className="w-4 h-4 text-white/70" />
+                                    <span>Drag to reveal content ({Math.round(curtainHeight)}%)</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setCurtainHeight(h => h > 50 ? 20 : 80);
+                                        }}
+                                        className="text-[11px] px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white/90"
+                                    >
+                                        {curtainHeight > 50 ? 'Roll Up' : 'Roll Down'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsCurtainActive(false);
+                                        }}
+                                        className="p-1 rounded hover:bg-white/20 text-white/80 hover:text-white"
+                                        title="Close Screen Shade"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Full-surface Loading Overlay & Interaction Lock */}
@@ -6951,6 +7181,12 @@ export default function Whiteboard({
                 onApplyTemplate={handleApplyTemplate}
                 canvasWidth={canvasWrapperRef.current?.clientWidth || 1920}
                 canvasHeight={canvasWrapperRef.current?.clientHeight || 1080}
+            />
+
+            {/* Classroom Countdown Timer & Stopwatch (BenQ & ViewSonic IFP feature) */}
+            <ClassroomTimerModal
+                isOpen={showClassroomTimer}
+                onClose={() => setShowClassroomTimer(false)}
             />
 
             {/* Footer */}

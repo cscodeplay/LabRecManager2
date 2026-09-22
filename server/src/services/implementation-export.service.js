@@ -30,6 +30,7 @@ class ImplementationExportService {
      */
     generateCsv(plans) {
         const headers = [
+            'Serial ID',
             'Plan ID',
             'Title',
             'Category',
@@ -51,13 +52,15 @@ class ImplementationExportService {
             return `"${str}"`;
         };
 
-        const rows = (plans || []).map(p => {
+        const rows = (plans || []).map((p, idx) => {
             const tasks = Array.isArray(p.tasks) ? p.tasks : [];
             const completedTasks = tasks.filter(t => t.completed).length;
             const progressPct = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : (p.status === 'completed' ? 100 : 0);
             const duration = this.calculateDuration(p.started_at, p.ended_at);
+            const serialId = p.serial_id || (p.metadata && p.metadata.serial_id) || ('PLAN-' + String(p.serial_no || (idx + 1)).padStart(3, '0'));
 
             return [
+                escapeCsv(serialId),
                 escapeCsv(p.id),
                 escapeCsv(p.title),
                 escapeCsv(p.category || 'General'),
@@ -89,9 +92,11 @@ class ImplementationExportService {
             const tasks = Array.isArray(p.tasks) ? p.tasks : [];
             const completedTasks = tasks.filter(t => t.completed).length;
             const progressPct = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : (p.status === 'completed' ? 100 : 0);
+            const serialId = p.serial_id || (p.metadata && p.metadata.serial_id) || ('PLAN-' + String(p.serial_no || (idx + 1)).padStart(3, '0'));
 
             return {
                 '#': idx + 1,
+                'Serial ID': serialId,
                 'Plan ID': p.id,
                 'Title': p.title,
                 'Category': p.category || 'General',
@@ -111,6 +116,7 @@ class ImplementationExportService {
         const wsPlans = XLSX.utils.json_to_sheet(planRows);
         wsPlans['!cols'] = [
             { wch: 4 },  // #
+            { wch: 12 }, // Serial ID
             { wch: 36 }, // Plan ID
             { wch: 35 }, // Title
             { wch: 20 }, // Category
@@ -129,13 +135,16 @@ class ImplementationExportService {
 
         // Sheet 2: Tasks Detailed Breakdown
         const taskRows = [];
-        (plans || []).forEach(p => {
+        (plans || []).forEach((p, pIdx) => {
             const tasks = Array.isArray(p.tasks) ? p.tasks : [];
+            const serialId = p.serial_id || (p.metadata && p.metadata.serial_id) || ('PLAN-' + String(p.serial_no || (pIdx + 1)).padStart(3, '0'));
             tasks.forEach((t, tIdx) => {
                 taskRows.push({
+                    'Serial ID': serialId,
                     'Plan Title': p.title,
                     'Category': p.category || 'General',
                     'Task #': tIdx + 1,
+                    'Task ID': t.serial_id || t.id || `${serialId}-T${tIdx + 1}`,
                     'Task Description': t.title || 'Untitled Task',
                     'Completed': t.completed ? 'YES' : 'NO',
                     'Completed At': t.completedAt ? new Date(t.completedAt).toISOString().replace('T', ' ').substring(0, 19) : 'Pending'
@@ -146,9 +155,11 @@ class ImplementationExportService {
         if (taskRows.length > 0) {
             const wsTasks = XLSX.utils.json_to_sheet(taskRows);
             wsTasks['!cols'] = [
+                { wch: 12 }, // Serial ID
                 { wch: 35 },
                 { wch: 20 },
                 { wch: 8 },
+                { wch: 15 },
                 { wch: 50 },
                 { wch: 12 },
                 { wch: 20 }
@@ -250,8 +261,10 @@ class ImplementationExportService {
                     const bg = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
                     doc.rect(40, currentY, doc.page.width - 80, 20).fill(bg);
 
+                    const serialId = p.serial_id || (p.metadata && p.metadata.serial_id) || ('PLAN-' + String(p.serial_no || (idx + 1)).padStart(3, '0'));
+
                     doc.fillColor('#1E293B').fontSize(7.5).font('Helvetica-Bold');
-                    doc.text(p.title || 'Untitled', 45, currentY + 5, { width: 170, ellipsis: true });
+                    doc.text(`[${serialId}] ${p.title || 'Untitled'}`, 45, currentY + 5, { width: 170, ellipsis: true });
 
                     doc.fillColor('#64748B').font('Helvetica');
                     doc.text(p.category || 'General', 220, currentY + 5, { width: 90, ellipsis: true });
@@ -281,9 +294,11 @@ class ImplementationExportService {
                     doc.rect(40, currentY, doc.page.width - 80, 2).fill('#E2E8F0');
                     currentY += 10;
 
+                    const serialId = p.serial_id || (p.metadata && p.metadata.serial_id) || ('PLAN-' + String(p.serial_no || (idx + 1)).padStart(3, '0'));
+
                     // Plan Title & Category
-                    doc.fillColor('#1E1B4B').fontSize(11).font('Helvetica-Bold');
-                    doc.text(`${idx + 1}. ${p.title}`, 40, currentY);
+                    doc.fillColor('#1E1B4B').fontSize(12).font('Helvetica-Bold');
+                    doc.text(`[${serialId}] ${p.title}`, 40, currentY, { width: doc.page.width - 160 });
 
                     const durationStr = this.calculateDuration(p.started_at, p.ended_at);
                     doc.fillColor('#6366F1').fontSize(8).font('Helvetica-Bold');

@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { 
     X, Search, Grid, Layers, Brain, Code, BookOpen, 
     ArrowRight, Network, Database, GitBranch, BarChart3, Workflow,
-    Users, GitFork, Building2
+    Users, GitFork, Building2, RefreshCw, Triangle, CircleDot, Filter, Milestone, LayoutGrid, Award
 } from 'lucide-react';
 
 const uuid = () => Date.now().toString(36) + Math.random().toString(36).substring(2);
@@ -358,10 +358,166 @@ const templates = [
                 { id: uuid(), x: 350, y: 50, width: 400, height: 40, text: 'Stage-Gate Process Hierarchy', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
             ]
         }
+    },
+    {
+        id: 'ms-pdca-cycle',
+        title: 'Continuous PDCA Cycle (MS Office)',
+        category: 'MS Office & SmartArt',
+        description: 'Iconic 4-stage circular continuous improvement cycle (Plan, Do, Check, Act) surrounding a central core.',
+        icon: <RefreshCw className="w-6 h-6" />,
+        previewColors: ['#2563eb', '#16a34a', '#d97706', '#9333ea'],
+        data: {
+            title: 'Continuous PDCA Process Cycle',
+            background: { pattern: 'dots', color: '#f8fafc' },
+            shapes: [
+                { id: uuid(), type: 'circle', x: 440, y: 300, width: 140, height: 140, color: '#1e293b', fillColor: '#f1f5f9', strokeWidth: 2.5, rotation: 0, text: 'PDCA\nContinuous\nImprovement', textColor: '#0f172a', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 410, y: 130, width: 200, height: 75, color: '#2563eb', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: '1. PLAN\nGoals & Hypotheses', textColor: '#1e40af', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 670, y: 300, width: 200, height: 75, color: '#16a34a', fillColor: '#dcfce7', strokeWidth: 2, rotation: 0, text: '2. DO\nImplement & Pilot', textColor: '#166534', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 410, y: 470, width: 200, height: 75, color: '#d97706', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: '3. CHECK\nMetrics & Analyze', textColor: '#92400e', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 150, y: 300, width: 200, height: 75, color: '#9333ea', fillColor: '#f3e8ff', strokeWidth: 2, rotation: 0, text: '4. ACT\nStandardize & Scale', textColor: '#6b21a8', fontSize: 14 },
+            ],
+            texts: [
+                { id: uuid(), x: 340, y: 45, width: 420, height: 40, text: 'Continuous PDCA Process Cycle', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'ms-pyramid-hierarchy',
+        title: 'Strategic Pyramid (MS Office)',
+        category: 'MS Office & SmartArt',
+        description: 'Classic 3-tier organizational & strategic pyramid (Strategic, Tactical, Operational).',
+        icon: <Triangle className="w-6 h-6" />,
+        previewColors: ['#4f46e5', '#0284c7', '#059669'],
+        data: {
+            title: 'Strategic Pyramid Hierarchy',
+            background: { pattern: 'grid', color: '#fcfcfd' },
+            shapes: [
+                { id: uuid(), type: 'rounded_rect', x: 370, y: 150, width: 280, height: 80, color: '#4338ca', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'TOP: STRATEGIC TIER\nExecutive Vision, Mission & Goals', textColor: '#312e81', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 270, y: 270, width: 480, height: 85, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'MIDDLE: TACTICAL TIER\nDepartment Priorities, Milestones & Resources', textColor: '#0369a1', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 170, y: 395, width: 680, height: 95, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'BASE: OPERATIONAL TIER\nDaily Lab Protocols, Experiments, Execution & Documentation', textColor: '#047857', fontSize: 14 },
+            ],
+            texts: [
+                { id: uuid(), x: 350, y: 45, width: 380, height: 40, text: 'Strategic Pyramid Hierarchy', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'ms-venn-diagram',
+        title: '3-Circle Venn Synergy (MS Office)',
+        category: 'MS Office & SmartArt',
+        description: 'Overlapping Venn diagram illustrating synergy between People, Process, and Technology.',
+        icon: <CircleDot className="w-6 h-6" />,
+        previewColors: ['#ef4444', '#3b82f6', '#10b981'],
+        data: {
+            title: 'People, Process & Technology Venn',
+            background: { pattern: 'none', color: '#ffffff' },
+            shapes: [
+                { id: uuid(), type: 'circle', x: 390, y: 140, width: 220, height: 220, color: '#dc2626', fillColor: '#fee2e2', strokeWidth: 2, rotation: 0, text: 'PEOPLE\nSkills & Culture', textColor: '#991b1b', fontSize: 14 },
+                { id: uuid(), type: 'circle', x: 270, y: 300, width: 220, height: 220, color: '#2563eb', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: 'PROCESS\nGovernance & QA', textColor: '#1e40af', fontSize: 14 },
+                { id: uuid(), type: 'circle', x: 510, y: 300, width: 220, height: 220, color: '#16a34a', fillColor: '#dcfce7', strokeWidth: 2, rotation: 0, text: 'TECHNOLOGY\nTools & Infra', textColor: '#166534', fontSize: 14 },
+                { id: uuid(), type: 'circle', x: 430, y: 280, width: 140, height: 140, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'OPTIMAL\nSYNERGY', textColor: '#312e81', fontSize: 13 },
+            ],
+            texts: [
+                { id: uuid(), x: 330, y: 45, width: 440, height: 40, text: 'Organizational Synergy Venn Diagram', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'ms-sales-funnel',
+        title: 'Conversion Pipeline Funnel (MS Office)',
+        category: 'MS Office & SmartArt',
+        description: 'Multi-stage conversion funnel from Awareness to Enrolled Completion.',
+        icon: <Filter className="w-6 h-6" />,
+        previewColors: ['#6366f1', '#0284c7', '#0e7490', '#15803d'],
+        data: {
+            title: 'Conversion & Engagement Funnel',
+            background: { pattern: 'dots', color: '#f8fafc' },
+            shapes: [
+                { id: uuid(), type: 'rounded_rect', x: 170, y: 140, width: 680, height: 65, color: '#4338ca', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: '1. AWARENESS (1,000 Inquiries / Course Visitors)', textColor: '#312e81', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 230, y: 230, width: 560, height: 65, color: '#1d4ed8', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: '2. INTEREST & ENGAGEMENT (450 Active Students / Users)', textColor: '#1e40af', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 290, y: 320, width: 440, height: 65, color: '#0e7490', fillColor: '#cffafe', strokeWidth: 2, rotation: 0, text: '3. EVALUATION & TRIALS (180 Qualified Proposals)', textColor: '#155e75', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 360, y: 410, width: 300, height: 75, color: '#15803d', fillColor: '#dcfce7', strokeWidth: 2, rotation: 0, text: '4. APPROVED & ENROLLED\n(75 Verified Completions)', textColor: '#14532d', fontSize: 14 },
+            ],
+            texts: [
+                { id: uuid(), x: 330, y: 45, width: 420, height: 40, text: 'Conversion & Engagement Funnel', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'ms-milestone-roadmap',
+        title: 'Chevron Milestone Roadmap (MS Office)',
+        category: 'MS Office & SmartArt',
+        description: 'Quarterly chevron roadmap (Q1–Q4) with deliverables and achievement cards.',
+        icon: <Milestone className="w-6 h-6" />,
+        previewColors: ['#0284c7', '#2563eb', '#7c3aed', '#059669'],
+        data: {
+            title: 'Quarterly Milestone Roadmap (Q1–Q4)',
+            background: { pattern: 'grid', color: '#fcfcfd' },
+            shapes: [
+                { id: uuid(), type: 'rounded_rect', x: 30, y: 150, width: 220, height: 80, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'PHASE 1: Q1\nRequirements & Setup', textColor: '#0369a1', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 270, y: 150, width: 220, height: 80, color: '#2563eb', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: 'PHASE 2: Q2\nAlpha Build & Integration', textColor: '#1e40af', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 510, y: 150, width: 220, height: 80, color: '#7c3aed', fillColor: '#ede9fe', strokeWidth: 2, rotation: 0, text: 'PHASE 3: Q3\nSecurity Audit & Pilot', textColor: '#5b21b6', fontSize: 14 },
+                { id: uuid(), type: 'rounded_rect', x: 750, y: 150, width: 220, height: 80, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'PHASE 4: Q4\nCampus-wide Rollout', textColor: '#047857', fontSize: 14 },
+
+                { id: uuid(), type: 'rectangle', x: 30, y: 260, width: 220, height: 180, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '• Schema Migrations\n• Multi-cloud Auth\n• Device inventory', textColor: '#334155', fontSize: 13 },
+                { id: uuid(), type: 'rectangle', x: 270, y: 260, width: 220, height: 180, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '• Whiteboard Tools\n• SmartArt Templates\n• Live sockets sync', textColor: '#334155', fontSize: 13 },
+                { id: uuid(), type: 'rectangle', x: 510, y: 260, width: 220, height: 180, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '• End-to-end testing\n• 32 Jest unit suites\n• Performance tune', textColor: '#334155', fontSize: 13 },
+                { id: uuid(), type: 'rectangle', x: 750, y: 260, width: 220, height: 180, color: '#cbd5e1', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '• Admin dashboards\n• Cron automated digests\n• User documentation', textColor: '#334155', fontSize: 13 },
+            ],
+            texts: [
+                { id: uuid(), x: 330, y: 45, width: 440, height: 40, text: 'Quarterly Milestone Roadmap (Q1–Q4)', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'ms-swot-matrix',
+        title: 'SWOT Analysis Matrix (MS Office)',
+        category: 'MS Office & SmartArt',
+        description: 'Classic 2x2 grid for Strengths, Weaknesses, Opportunities, and Threats.',
+        icon: <LayoutGrid className="w-6 h-6" />,
+        previewColors: ['#16a34a', '#dc2626', '#0284c7', '#d97706'],
+        data: {
+            title: 'Strategic SWOT Analysis Matrix',
+            background: { pattern: 'none', color: '#ffffff' },
+            shapes: [
+                { id: uuid(), type: 'rectangle', x: 100, y: 140, width: 390, height: 200, color: '#16a34a', fillColor: '#dcfce7', strokeWidth: 2, rotation: 0, text: 'STRENGTHS (Internal)\n\n• High performance canvas engine\n• Real-time multi-user socket sync\n• Automated Excel/PDF reports\n• Built-in AI assistant bot', textColor: '#14532d', fontSize: 13 },
+                { id: uuid(), type: 'rectangle', x: 510, y: 140, width: 390, height: 200, color: '#dc2626', fillColor: '#fee2e2', strokeWidth: 2, rotation: 0, text: 'WEAKNESSES (Internal)\n\n• Legacy database compute limits\n• Offline storage sync bounds\n• Mobile touch gestures ongoing', textColor: '#7f1d1d', fontSize: 13 },
+                { id: uuid(), type: 'rectangle', x: 100, y: 360, width: 390, height: 200, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'OPPORTUNITIES (External)\n\n• Multi-cloud storage federation\n• Smart panel IFP integration\n• Automated grade evaluations\n• Inter-school competitions', textColor: '#0369a1', fontSize: 13 },
+                { id: uuid(), type: 'rectangle', x: 510, y: 360, width: 390, height: 200, color: '#d97706', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: 'THREATS (External)\n\n• Network latency in remote labs\n• Google API quota rate limits\n• Security & credential breaches', textColor: '#78350f', fontSize: 13 },
+            ],
+            texts: [
+                { id: uuid(), x: 350, y: 45, width: 400, height: 40, text: 'Strategic SWOT Analysis Matrix', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'ms-swimlane-workflow',
+        title: 'Swimlane Process Flow (MS Visio)',
+        category: 'MS Office & SmartArt',
+        description: 'Cross-functional swimlanes showing handoffs between Instructor, Students, and System.',
+        icon: <Layers className="w-6 h-6" />,
+        previewColors: ['#4f46e5', '#0284c7', '#059669'],
+        data: {
+            title: 'Cross-Functional Swimlane Workflow',
+            background: { pattern: 'dots', color: '#f8fafc' },
+            shapes: [
+                { id: uuid(), type: 'rectangle', x: 30, y: 130, width: 150, height: 100, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Lab Instructor\n(Curriculum)', textColor: '#3730a3', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 210, y: 145, width: 220, height: 70, color: '#4f46e5', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '1. Create Lab Exercise\n& Whiteboard Template', textColor: '#3730a3', fontSize: 12 },
+
+                { id: uuid(), type: 'rectangle', x: 30, y: 250, width: 150, height: 100, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'Student Group\n(Execution)', textColor: '#0369a1', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 470, y: 265, width: 220, height: 70, color: '#0284c7', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '2. Perform Experiment\n& Record Telemetry', textColor: '#0369a1', fontSize: 12 },
+
+                { id: uuid(), type: 'rectangle', x: 30, y: 370, width: 150, height: 100, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'Auto-Evaluator\n& Storage', textColor: '#065f46', fontSize: 13 },
+                { id: uuid(), type: 'rounded_rect', x: 730, y: 385, width: 220, height: 70, color: '#059669', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '3. Verify Code / Output\n& Generate Grade PDF', textColor: '#065f46', fontSize: 12 },
+            ],
+            texts: [
+                { id: uuid(), x: 330, y: 45, width: 440, height: 40, text: 'Cross-Functional Swimlane Workflow', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
     }
 ];
 
-const categories = ['All', 'Org Charts', 'CS Fundamentals', 'AI & ML', 'General'];
+const categories = ['All', 'MS Office & SmartArt', 'Org Charts', 'CS Fundamentals', 'AI & ML', 'General'];
 
 export default function TemplateGallery({ 
     isOpen, 

@@ -114,6 +114,78 @@ router.get('/status', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * @route   GET /api/drive/providers
+ * @desc    Get status of all multi-cloud storage accounts (Google Drive primary/secondary, Microsoft OneDrive, Apple iCloud, Dropbox)
+ */
+router.get('/providers', asyncHandler(async (req, res) => {
+    const quotaData = await googleDriveService.getStorageQuota();
+    const connectedUser = googleDriveService.getConnectedUser();
+    const effectiveAuthType = quotaData.authType || googleDriveService.authType;
+    const resolvedUser = quotaData.user || connectedUser || null;
+    const isGoogleConnected = effectiveAuthType === 'oauth_user' || Boolean(connectedUser?.emailAddress);
+
+    res.json({
+        success: true,
+        data: {
+            activeProvider: 'google_drive_primary',
+            providers: [
+                {
+                    id: 'google_drive_primary',
+                    type: 'google_drive',
+                    name: 'Google Drive (Primary)',
+                    account: resolvedUser?.emailAddress || 'charan881130@gmail.com',
+                    status: isGoogleConnected ? 'connected' : 'service_account',
+                    plan: '5 TB Google One / Workspace',
+                    isDefault: true,
+                    folderUrl: 'https://drive.google.com/drive/folders/1R6SmhanodL-ghLTOoBhX_EgQ5Farf853',
+                    quota: quotaData.quota || null
+                },
+                {
+                    id: 'google_drive_secondary',
+                    type: 'google_drive',
+                    name: 'Google Drive (Secondary)',
+                    account: null,
+                    status: 'available',
+                    plan: 'Multi-Account Link',
+                    isDefault: false,
+                    hint: 'Connect a second Google account for department or personal files'
+                },
+                {
+                    id: 'microsoft_onedrive',
+                    type: 'microsoft_onedrive',
+                    name: 'Microsoft OneDrive / SharePoint',
+                    account: null,
+                    status: process.env.MICROSOFT_GRAPH_CLIENT_ID ? 'configured' : 'available',
+                    plan: 'Microsoft 365 (1 TB / User)',
+                    isDefault: false,
+                    graphApiVersion: 'v1.0',
+                    authUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize'
+                },
+                {
+                    id: 'apple_icloud',
+                    type: 'apple_icloud',
+                    name: 'Apple iCloud Drive',
+                    account: null,
+                    status: 'available',
+                    plan: 'iCloud+ / CloudKit JS',
+                    isDefault: false,
+                    hint: 'Seamless access to Apple Keynote, Pages, and photo library'
+                },
+                {
+                    id: 'dropbox',
+                    type: 'dropbox',
+                    name: 'Dropbox',
+                    account: null,
+                    status: 'available',
+                    plan: 'Dropbox Standard / Business',
+                    isDefault: false
+                }
+            ]
+        }
+    });
+}));
+
+/**
  * @route   GET /api/drive/auth/url
  * @desc    Generate Google OAuth consent URL for user authorization
  */

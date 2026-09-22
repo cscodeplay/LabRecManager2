@@ -46,8 +46,20 @@ function formatPlan(row) {
 
     const duration = exportService.calculateDuration(row.started_at, row.ended_at);
 
+    const serialNo = Number(row.serial_no || (index !== undefined ? index + 1 : 1));
+    const serialId = metadata.serial_id || `PLAN-${String(serialNo).padStart(3, '0')}`;
+
+    // Ensure tasks have structured sequential IDs
+    tasks = tasks.map((t, idx) => ({
+        ...t,
+        task_num: idx + 1,
+        serial_id: t.id || `${serialId}-T${idx + 1}`
+    }));
+
     return {
         id: row.id,
+        serial_no: serialNo,
+        serial_id: serialId,
         school_id: row.school_id,
         created_by_id: row.created_by_id,
         title: row.title,
@@ -62,7 +74,11 @@ function formatPlan(row) {
         completedTasks,
         progress,
         outcomes: row.outcomes || '',
-        metadata,
+        metadata: {
+            ...metadata,
+            serial_id: serialId,
+            serial_no: serialNo
+        },
         created_at: row.created_at,
         updated_at: row.updated_at,
         creator: row.first_name ? {
@@ -81,62 +97,88 @@ async function fetchPlansWithFilters({ status, category, search, startDate, endD
     let idx = 1;
 
     if (planId) {
-        conditions.push(`p.id = $${idx++}::uuid`);
-        values.push(planId);
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(planId).trim());
+        if (isUuid) {
+            conditions.push(`rp.id = $${idx++}::uuid`);
+            values.push(String(planId).trim());
+        } else {
+            const cleanId = String(planId).trim().toLowerCase();
+            const cleanNum = cleanId.replace(/\D/g, '') || '-1';
+            conditions.push(`(
+                LOWER(COALESCE(rp.metadata->>'serial_id', '')) = $${idx} OR 
+                LOWER(rp.title) LIKE $${idx + 1} OR
+                rp.serial_no::text = $${idx + 2}
+            )`);
+            values.push(cleanId, `%${cleanId}%`, cleanNum);
+            idx += 3;
+        }
     }
 
     if (status && status !== 'all') {
-        conditions.push(`p.status = $${idx++}`);
+        conditions.push(`rp.status = $${idx++}`);
         values.push(status);
     }
 
     if (category && category !== 'all') {
-        conditions.push(`p.category = $${idx++}`);
+        conditions.push(`rp.category = $${idx++}`);
         values.push(category);
     }
 
     if (search && search.trim()) {
         const query = `%${search.trim().toLowerCase()}%`;
-        conditions.push(`(LOWER(p.title) LIKE $${idx} OR LOWER(COALESCE(p.description, '')) LIKE $${idx} OR LOWER(p.category) LIKE $${idx})`);
+        conditions.push(`(
+            LOWER(rp.title) LIKE $${idx} OR 
+            LOWER(COALESCE(rp.description, '')) LIKE $${idx} OR 
+            LOWER(rp.category) LIKE $${idx} OR 
+            LOWER(COALESCE(rp.metadata->>'serial_id', '')) LIKE $${idx} OR
+            LOWER('plan-' || LPAD(rp.serial_no::text, 3, '0')) LIKE $${idx} OR
+            ('#' || rp.serial_no::text) LIKE $${idx} OR
+            LOWER(COALESCE(rp.outcomes, '')) LIKE $${idx}
+        )`);
         values.push(query);
         idx++;
     }
 
     if (startDate) {
-        conditions.push(`p.started_at >= $${idx++}::timestamp`);
+        conditions.push(`rp.started_at >= $${idx++}::timestamp`);
         values.push(new Date(startDate).toISOString());
     }
 
     if (endDate) {
-        conditions.push(`p.ended_at <= $${idx++}::timestamp`);
+        conditions.push(`rp.ended_at <= $${idx++}::timestamp`);
         values.push(new Date(endDate).toISOString());
     }
 
     if (schoolId) {
-        conditions.push(`(p.school_id = $${idx++}::uuid OR p.school_id IS NULL)`);
+        conditions.push(`(rp.school_id = $${idx++}::uuid OR rp.school_id IS NULL)`);
         values.push(schoolId);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const sql = `
-        SELECT p.*, u.first_name, u.last_name, u.email as creator_email
-        FROM implementation_plans p
-        LEFT JOIN users u ON p.created_by_id = u.id
+        WITH ranked_plans AS (
+            SELECT p.*,
+                   DENSE_RANK() OVER (ORDER BY p.created_at ASC) as serial_no
+            FROM implementation_plans p
+        )
+        SELECT rp.*, u.first_name, u.last_name, u.email as creator_email
+        FROM ranked_plans rp
+        LEFT JOIN users u ON rp.created_by_id = u.id
         ${whereClause}
         ORDER BY 
             CASE 
-                WHEN p.status = 'in_progress' THEN 1
-                WHEN p.status = 'draft' THEN 2
-                WHEN p.status = 'on_hold' THEN 3
-                WHEN p.status = 'completed' THEN 4
+                WHEN rp.status = 'in_progress' THEN 1
+                WHEN rp.status = 'draft' THEN 2
+                WHEN rp.status = 'on_hold' THEN 3
+                WHEN rp.status = 'completed' THEN 4
                 ELSE 5
             END,
-            COALESCE(p.started_at, p.created_at) DESC
+            COALESCE(rp.started_at, rp.created_at) DESC
     `;
 
     const rows = await prisma.$queryRawUnsafe(sql, ...values);
-    return rows.map(formatPlan);
+    return rows.map((r, i) => formatPlan(r, i));
 }
 
 /**
@@ -395,14 +437,47 @@ router.post('/export/email', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * @route   GET /api/admin/implementation-plans/by-serial/:serialId
+ * @desc    Get single implementation plan by Serial ID (e.g. PLAN-001, #1, 1)
+ */
+router.get('/by-serial/:serialId', asyncHandler(async (req, res) => {
+    const { serialId } = req.params;
+    const schoolId = req.user.schoolId || null;
+
+    const plans = await fetchPlansWithFilters({ planId: serialId, schoolId });
+    if (!plans || plans.length === 0) {
+        return res.status(404).json({ success: false, message: `Implementation plan "${serialId}" not found` });
+    }
+
+    res.json({
+        success: true,
+        data: plans[0]
+    });
+}));
+
+/**
  * @route   GET /api/admin/implementation-plans/:id
- * @desc    Get single implementation plan by ID
+ * @desc    Get single implementation plan by UUID or Serial ID
  */
 router.get('/:id', asyncHandler(async (req, res) => {
     const { id } = req.params;
     const schoolId = req.user.schoolId || null;
 
-    const plans = await fetchPlansWithFilters({ planId: id, schoolId });
+    let plans = await fetchPlansWithFilters({ planId: id, schoolId });
+    if (!plans || plans.length === 0) {
+        // Fallback to checking by serial_id or serial_no across all plans
+        const allPlans = await fetchPlansWithFilters({ schoolId });
+        const cleanId = String(id).trim().toLowerCase();
+        const target = allPlans.find(p => 
+            p.serial_id?.toLowerCase() === cleanId ||
+            String(p.serial_no) === cleanId.replace(/\D/g, '') ||
+            p.id === id
+        );
+        if (target) {
+            plans = [target];
+        }
+    }
+
     if (!plans || plans.length === 0) {
         return res.status(404).json({ success: false, message: 'Implementation plan not found' });
     }

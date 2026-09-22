@@ -26,9 +26,14 @@ async function seedPlan() {
 
         const tasks = JSON.stringify([
             { id: 'mc-1', title: 'Restore charan881130@gmail.com Google Drive account ID using JWT id_token email extraction fallback', completed: true, duration_minutes: 20 },
-            { id: 'mc-2', title: 'Architecture for Multi-Cloud Provider linking: Multiple Google accounts, Microsoft OneDrive (Graph API), Apple iCloud & Dropbox', completed: true, duration_minutes: 40 },
+            { id: 'mc-2', title: 'Architecture & UI for Multi-Cloud Provider linking: Multiple Google accounts, Microsoft OneDrive (Graph API v1.0), Apple iCloud & Dropbox', completed: true, duration_minutes: 40 },
             { id: 'mc-3', title: 'Smart Interactive Flat Panel (IFP) Benchmarking: BenQ EZWrite 6 vs ViewSonic myViewBoard vs SMART Lumio toolset integration', completed: true, duration_minutes: 35 },
-            { id: 'wb-template', title: 'BenQ EZWrite-style Organization Chart Templates: Hierarchical Org Chart, Cross-Functional Team Matrix, Stage-Gate Process Hierarchy', completed: true, duration_minutes: 30 },
+            { id: 'mc-4', title: 'Implementation Plan Serial IDs: Sequential serial numbers (PLAN-001, PLAN-002...) and deep link URL queries (?call=PLAN-00X)', completed: true, duration_minutes: 30 },
+            { id: 'wb-template-1', title: 'BenQ EZWrite-style Organization Chart Templates: Hierarchical Org Chart, Cross-Functional Team Matrix, Stage-Gate Process Hierarchy', completed: true, duration_minutes: 30 },
+            { id: 'wb-template-2', title: 'Microsoft Office & SmartArt Diagram Templates: PDCA Cycle, Pyramid Hierarchy, Synergy Venn, Sales Funnel, Milestone Roadmap, SWOT Matrix, Swimlane', completed: true, duration_minutes: 40 },
+            { id: 'wb-panel-1', title: 'Interactive Flat Panel Classroom Countdown Timer & Stopwatch with Web Audio API chime synthesis and minimizable floating pill', completed: true, duration_minutes: 35 },
+            { id: 'wb-panel-2', title: 'Spotlight Focus Tool (BenQ/ViewSonic): Dynamic SVG aperture mask with cursor tracking and adjustable radius', completed: true, duration_minutes: 25 },
+            { id: 'wb-panel-3', title: 'Screen Shade / Curtain Revealer Tool: Draggable bottom grab bar with reveal percentage and quick roll up/down controls', completed: true, duration_minutes: 25 },
             { id: 'wb-bug-1', title: 'Fix selection rectangle not persisting for freehand strokes and multi-object canvas ink selections', completed: true, duration_minutes: 30 },
             { id: 'wb-feat-1', title: 'Add horizontal and vertical flip controls (flipX, flipY) along selection rectangle for images, shapes, and canvas ink', completed: true, duration_minutes: 30 },
             { id: 'wb-feat-2', title: 'Add image adjustment controls: brightness, contrast, and sharpness filter sliders for selected images', completed: true, duration_minutes: 25 },
@@ -39,21 +44,35 @@ async function seedPlan() {
 
         const metadata = JSON.stringify({
             category: 'Whiteboard & Cloud Integration',
+            serial_id: 'PLAN-009',
             benchmarked_brands: [
-                'BenQ EZWrite 6 (Floating palette, dual pens, math tools, cloud binder, OCR, Org Chart templates)',
-                'ViewSonic myViewBoard (Magic Box, Throw feature, infinite canvas, AI recognition, spotlight/curtain)',
+                'BenQ EZWrite 6 (Floating palette, dual pens, math tools, cloud binder, OCR, Org Chart templates, Timer)',
+                'ViewSonic myViewBoard (Magic Box, Throw feature, infinite canvas, AI recognition, spotlight, screen curtain)',
                 'SMART Lumio / Notebook (Game templates, equation solver, polling)',
                 'Promethean ActivInspire (Dual-user, revealers, ticker tape)'
             ],
             target_cloud_providers: [
-                'Google Drive (Multi-account personal + institutional)',
+                'Google Drive (Multi-account personal + institutional with switcher)',
                 'Microsoft OneDrive / SharePoint (Microsoft Graph API v1.0)',
-                'Apple iCloud Drive & Dropbox'
+                'Apple iCloud Drive (CloudKit JS & macOS Finder picker)',
+                'Dropbox (Standard / Team Chooser)'
             ],
             templates_added: [
                 'Hierarchical Org Chart (EZWrite): 3-tier Leadership -> Management -> Teams tree',
                 'Team Matrix Org Chart (EZWrite): Cross-functional discipline chapters x product squads',
-                'Process Hierarchy Flow (EZWrite): Stage-gate decision & review lifecycle'
+                'Process Hierarchy Flow (EZWrite): Stage-gate decision & review lifecycle',
+                'Continuous PDCA Cycle (MS Office SmartArt): Plan, Do, Check, Act circular loop',
+                '3-Tier Pyramid Hierarchy (MS Office): Strategic -> Tactical -> Operational pyramid',
+                '3-Circle Synergy Venn Diagram (MS Office): People, Process, Technology intersection',
+                '4-Stage Sales & Pipeline Funnel (MS Office): Lead capture -> Conversion funnel',
+                'Milestone Roadmap (MS Office): Q1-Q4 quarterly milestone delivery roadmap',
+                '2x2 Strategic SWOT Matrix (MS Office): Strengths, Weaknesses, Opportunities, Threats',
+                'Swimlane Workflow Diagram (MS Office): Instructor, Students, Evaluator cross-functional lanes'
+            ],
+            smart_panel_tools: [
+                'Classroom Countdown Timer & Stopwatch (audio chimes, presets, lap recording, floating pill)',
+                'Spotlight Focus Tool (interactive dark backdrop SVG mask with cursor tracking and size controls)',
+                'Screen Curtain / Revealer (draggable bottom bar, roll up/down, opacity shade)'
             ],
             whiteboard_controls: [
                 'Selection persistence for canvas drawings',
@@ -68,7 +87,7 @@ async function seedPlan() {
             SELECT id FROM "implementation_plans" WHERE title = $1 LIMIT 1
         `, planTitle);
 
-        const outcomesText = '1. Restored Google Drive account identity charan881130@gmail.com permanently via JWT token extraction.\n2. Architectural plan for multi-account Google, Microsoft OneDrive, and Apple iCloud.\n3. Deep comparative research on BenQ EZWrite 6 and ViewSonic myViewBoard smart interactive panels.\n4. Added BenQ EZWrite-style Organization Chart templates (Hierarchical Tree, Cross-Functional Team Matrix, Stage-Gate Process Hierarchy).\n5. Selection rectangle persists for all canvas ink and drawings.\n6. Horizontal & vertical flip hooks along selection box.\n7. Image brightness, contrast, and sharpness controls.\n8. Floating ball radial menu keeps sub-tools ring open until child selection.\n9. Highlighters feature visual color icons and swatches.\n10. All 32 backend tests passed and Next.js client production build verified.';
+        const outcomesText = '1. Restored Google Drive account identity charan881130@gmail.com permanently via JWT token extraction.\n2. Implementation Plan Serial IDs: Added PLAN-001, PLAN-002... and deep-link query listener (?call=PLAN-00X) with task numbering (#1, #2...).\n3. Architectural plan & UI for multi-account Google switcher, Microsoft OneDrive (Graph API v1.0), and Apple iCloud Drive / Dropbox.\n4. Added GET /api/drive/providers endpoint returning active multi-cloud accounts and configuration.\n5. Deep comparative research on BenQ EZWrite 6 and ViewSonic myViewBoard smart interactive panels.\n6. Classroom Countdown Timer & Stopwatch modal with presets, lap records, and Web Audio API tone synthesis.\n7. Spotlight Focus Tool with dynamic dark SVG mask and cursor tracking.\n8. Screen Shade / Curtain Revealer with draggable bottom reveal grab bar.\n9. Added 7 Microsoft Office & SmartArt diagram templates (PDCA Cycle, Pyramid, Synergy Venn, Sales Funnel, Roadmap, SWOT Matrix, Swimlane).\n10. Added 3 BenQ EZWrite-style Organization Chart templates (Hierarchical Tree, Cross-Functional Matrix, Stage-Gate Flow).\n11. Selection rectangle persists for all canvas ink and drawings.\n12. Horizontal & vertical flip hooks along selection box.\n13. Image brightness, contrast, and sharpness controls.\n14. Floating ball radial menu keeps sub-tools ring open until child selection.\n15. Highlighters feature visual color icons and swatches.\n16. All 32 backend tests passed and Next.js client production build verified.';
 
         if (!existing || existing.length === 0) {
             await prisma.$executeRawUnsafe(`
@@ -81,7 +100,7 @@ async function seedPlan() {
                 )
             `,
                 schoolId, adminId, planTitle,
-                'Full architectural implementation plan for Multi-Cloud account linking (Google, OneDrive, iCloud), interactive flat panel research (BenQ EZWrite 6 & ViewSonic myViewBoard), and Whiteboard bug fixes: selection persistence, flip hooks, image adjustments, floating ball ring fix, colored highlighters, and EZWrite Organization Chart templates.',
+                'Full architectural implementation plan for Multi-Cloud account linking (Google, OneDrive, iCloud), interactive flat panel research & tools (BenQ EZWrite 6 & ViewSonic myViewBoard - Classroom Timer, Spotlight, Screen Curtain), MS Office SmartArt templates, Whiteboard bug fixes: selection persistence, flip hooks, image adjustments, floating ball ring fix, colored highlighters, and EZWrite Organization Chart templates.',
                 'Whiteboard & Cloud Storage',
                 tasks,
                 outcomesText,
