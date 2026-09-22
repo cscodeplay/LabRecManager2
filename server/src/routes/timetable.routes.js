@@ -591,14 +591,21 @@ router.get('/live', authenticate, asyncHandler(async (req, res) => {
     const now = new Date();
 
     // Check if today is a holiday
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const holiday = await prisma.schoolCalendar.findFirst({
-        where: {
-            schoolId,
-            date: todayStart,
-            isHoliday: true
+    let holiday = null;
+    if (schoolId) {
+        try {
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            holiday = await prisma.schoolCalendar.findFirst({
+                where: {
+                    schoolId,
+                    date: todayStart,
+                    isHoliday: true
+                }
+            });
+        } catch (calErr) {
+            console.warn('[Timetable Live] Calendar holiday lookup failed:', calErr.message);
         }
-    });
+    }
 
     if (holiday) {
         return res.json({

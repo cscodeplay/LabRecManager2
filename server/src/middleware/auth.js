@@ -28,10 +28,19 @@ const authenticate = async (req, res, next) => {
 
         // Verify token
         const decoded = jwt.verify(token, jwtConfig.secret);
+        const targetUserId = decoded.userId || decoded.id || decoded.sub;
+
+        if (!targetUserId) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid token payload. User ID missing.',
+                messageHindi: 'अमान्य टोकन। उपयोगकर्ता आईडी अनुपलब्ध है।'
+            });
+        }
 
         // Get user from database
         const user = await prisma.user.findUnique({
-            where: { id: decoded.userId },
+            where: { id: targetUserId },
             select: {
                 id: true,
                 schoolId: true,
