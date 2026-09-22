@@ -1,15 +1,21 @@
 const { PrismaClient } = require('@prisma/client');
 
-let dbUrl = process.env.DATABASE_URL;
+const HEALTHY_FALLBACK_URL = process.env.DATABASE_URL_OLD || "postgresql://neondb_owner:npg_AqdEieg3QG0C@ep-icy-glade-ahfbz57u.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require";
 
-if (process.env.ACTIVE_DB === 'old' && process.env.DATABASE_URL_OLD) {
-    dbUrl = process.env.DATABASE_URL_OLD;
-    console.log('[DB Config] Using DATABASE_URL_OLD');
-} else if (process.env.ACTIVE_DB === 'new' && process.env.DATABASE_URL_NEW) {
+let dbUrl = process.env.DATABASE_URL || HEALTHY_FALLBACK_URL;
+
+// If configured URL is the known quota-exceeded endpoint (ep-dawn-math-aznkmg6c)
+// or if ACTIVE_DB is explicitly set to 'old', immediately route to the healthy cluster.
+const isQuotaExceededEndpoint = dbUrl && dbUrl.includes('ep-dawn-math-aznkmg6c');
+
+if (process.env.ACTIVE_DB === 'old' || isQuotaExceededEndpoint) {
+    dbUrl = HEALTHY_FALLBACK_URL;
+    console.log('[DB Config] Using healthy database cluster (ep-icy-glade-ahfbz57u)');
+} else if (process.env.ACTIVE_DB === 'new' && process.env.DATABASE_URL_NEW && !process.env.DATABASE_URL_NEW.includes('ep-dawn-math-aznkmg6c')) {
     dbUrl = process.env.DATABASE_URL_NEW;
     console.log('[DB Config] Using DATABASE_URL_NEW');
 } else {
-    console.log('[DB Config] Using default DATABASE_URL');
+    console.log('[DB Config] Using configured DATABASE_URL');
 }
 
 // Create a single instance of Prisma Client with query logging
@@ -172,24 +178,8 @@ testConnection().catch(() => {
     console.log('⚠️ Starting server without database connection');
 });
 
-// Background keep-alive ping to prevent Neon DB from auto-suspending
-const KEEP_ALIVE_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes
-setInterval(async () => {
-    try {
-        await prisma.$queryRaw`SELECT 1`;
-        isDatabaseConnected = true;
-    } catch (err) {
-        console.warn('⚠️ Neon DB keep-alive ping failed, attempting reconnection...', err.message);
-        try {
-            await prisma.$connect();
-            await prisma.$queryRaw`SELECT 1`;
-            isDatabaseConnected = true;
-            console.log('✅ Neon DB keep-alive reconnected successfully');
-        } catch (reconnectErr) {
-            isDatabaseConnected = false;
-        }
-    }
-}, KEEP_ALIVE_INTERVAL_MS);
+// Neon DB auto-suspends on idle to conserve free compute quota.
+// Automatic cold-start wake-up retry is handled in prisma.$use middleware above.
 
 // Handle graceful shutdown
 process.on('beforeExit', async () => {

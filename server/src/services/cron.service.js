@@ -238,16 +238,6 @@ const initCronJobs = () => {
         await ensureCurrentSession();
     });
 
-    // Keep-alive ping every 4 minutes to prevent Neon DB cold starts
-    cron.schedule('*/4 * * * *', async () => {
-        try {
-            await prisma.$queryRaw`SELECT 1`;
-            logger.info('DB keep-alive ping OK');
-        } catch (error) {
-            logger.error('DB keep-alive ping failed:', error.message);
-        }
-    });
-
     // ===========================================
     // TIMETABLE: 5-minute-before notification
     // Runs every minute, checks for periods starting within 5 minutes
