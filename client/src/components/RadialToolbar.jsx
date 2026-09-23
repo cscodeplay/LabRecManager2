@@ -9,6 +9,7 @@ import {
     ArrowUpRight, ArrowLeftRight, Spline, MoreHorizontal, Diamond, Hexagon, Cloud,
     CheckSquare, Trash2, Undo2, Redo2, RectangleHorizontal, X
 } from 'lucide-react';
+import TorchIcon from './TorchIcon';
 
 // ─── Geometric Dimensions (Sleek Proportions) ──────────────────────────────
 const R_INNER_RING = 60;       // Inner edge of main wheel
@@ -84,7 +85,7 @@ const OUTER_TOOLS = {
     ],
     more: [
         { id: 'more_timer', label: 'Timer', icon: Clock, action: { action: 'timer' } },
-        { id: 'more_spotlight', label: 'Spotlight', icon: Sparkles, action: { action: 'spotlight' } },
+        { id: 'more_spotlight', label: 'Spotlight', icon: TorchIcon, action: { action: 'spotlight' } },
         { id: 'more_curtain', label: 'Curtain', icon: StickyNote, action: { action: 'curtain' } },
         { id: 'more_laser', label: 'Laser', icon: Sparkles, action: { action: 'laser' } },
         { id: 'more_fill', label: 'Fill', icon: PaintBucket, action: { action: 'fill' } },

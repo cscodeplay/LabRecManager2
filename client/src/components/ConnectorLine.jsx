@@ -125,7 +125,7 @@ export const renderArrowhead = (type, point, angle, size = 12, color) => {
 };
 
 // Calculates angle in degrees for the arrowhead
-const calculateAngle = (p1, p2) => {
+export const calculateAngle = (p1, p2) => {
     return (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI;
 };
 

@@ -21,10 +21,11 @@ import AdminPermissionsPanel from './AdminPermissionsPanel';
 import RadialToolbar from './RadialToolbar';
 import { BRUSH_TYPES, renderCalligraphy, renderCrayon, renderWatercolor, renderFountainPen, floodFill, sampleColor } from './WhiteboardBrushEngine';
 import StickyNoteRenderer, { createStickyNoteObject, STICKY_COLORS } from './StickyNote';
-import ConnectorLine, { findNearestShape, getAnchorPoint } from './ConnectorLine';
+import ConnectorLine, { findNearestShape, getAnchorPoint, getConnectorPath, renderArrowhead, calculateAngle } from './ConnectorLine';
 import TemplateGallery from './TemplateGallery';
 import ClassroomTimerModal from './ClassroomTimerModal';
 import WhiteboardImagePickerModal from './WhiteboardImagePickerModal';
+import TorchIcon from './TorchIcon';
 import api from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/lib/store';
@@ -47,6 +48,107 @@ const HIGHLIGHTER_COLORS = [
 ];
 
 const STROKE_WIDTHS = [2, 4, 6, 8, 12];
+
+const CONNECTOR_PRESET_STYLES = [
+    {
+        id: 'single_arrow',
+        label: 'Single Arrow',
+        pathType: 'straight',
+        strokeStyle: 'solid',
+        arrowStart: 'none',
+        arrowEnd: 'arrow',
+        icon: (
+            <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="2" y1="8" x2="13" y2="8" strokeLinecap="round" />
+                <polyline points="9,4 13,8 9,12" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        )
+    },
+    {
+        id: 'double_arrow',
+        label: 'Double Arrow',
+        pathType: 'straight',
+        strokeStyle: 'solid',
+        arrowStart: 'arrow',
+        arrowEnd: 'arrow',
+        icon: (
+            <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="3" y1="8" x2="13" y2="8" strokeLinecap="round" />
+                <polyline points="6,4 2,8 6,12" strokeLinecap="round" strokeLinejoin="round" />
+                <polyline points="10,4 14,8 10,12" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        )
+    },
+    {
+        id: 'plain_line',
+        label: 'Plain Line',
+        pathType: 'straight',
+        strokeStyle: 'solid',
+        arrowStart: 'none',
+        arrowEnd: 'none',
+        icon: (
+            <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="2" y1="8" x2="14" y2="8" strokeLinecap="round" />
+            </svg>
+        )
+    },
+    {
+        id: 'dashed_arrow',
+        label: 'Dashed Arrow',
+        pathType: 'straight',
+        strokeStyle: 'dashed',
+        arrowStart: 'none',
+        arrowEnd: 'arrow',
+        icon: (
+            <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="2" y1="8" x2="13" y2="8" strokeDasharray="3,2" strokeLinecap="round" />
+                <polyline points="9,4 13,8 9,12" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        )
+    },
+    {
+        id: 'dotted_arrow',
+        label: 'Dotted Arrow',
+        pathType: 'straight',
+        strokeStyle: 'dotted',
+        arrowStart: 'none',
+        arrowEnd: 'arrow',
+        icon: (
+            <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="2" y1="8" x2="13" y2="8" strokeDasharray="1,2" strokeLinecap="round" />
+                <polyline points="9,4 13,8 9,12" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        )
+    },
+    {
+        id: 'elbow_arrow',
+        label: 'Elbow / Orthogonal',
+        pathType: 'orthogonal',
+        strokeStyle: 'solid',
+        arrowStart: 'none',
+        arrowEnd: 'arrow',
+        icon: (
+            <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="2,4 8,4 8,12 13,12" strokeLinecap="round" strokeLinejoin="round" />
+                <polyline points="10,9 13,12 10,15" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        )
+    },
+    {
+        id: 'curved_arrow',
+        label: 'Curved Arrow',
+        pathType: 'curved',
+        strokeStyle: 'solid',
+        arrowStart: 'none',
+        arrowEnd: 'arrow',
+        icon: (
+            <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M 2 12 Q 8 2 13 8" strokeLinecap="round" />
+                <polyline points="11,5 14,8 11,11" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        )
+    }
+];
 
 // Helper: Convert hex to RGB
 const hexToRgb = (hex) => {
@@ -586,6 +688,11 @@ export default function Whiteboard({
     // ─── Template Gallery State ─────────────────────────────────────────
     const [showTemplateGallery, setShowTemplateGallery] = useState(false);
     const [hoveredShapeId, setHoveredShapeId] = useState(null);
+
+    // ─── Interactive Magnetic Hooks & Drag Connector Engine ───────────
+    const [hoveredHook, setHoveredHook] = useState(null); // { shapeId, anchor }
+    const [activeConnectorDrag, setActiveConnectorDrag] = useState(null); // { sourceId, sourceAnchor, sourcePt, currentPt, style, snappedTarget }
+    const hookHoverTimeoutRef = useRef(null);
 
     // ─── Smart Panel & Flat Panel Tools State (BenQ EZWrite & ViewSonic) ──
     const [showClassroomTimer, setShowClassroomTimer] = useState(false);
@@ -2035,15 +2142,46 @@ export default function Whiteboard({
         const { shapes, texts, background, title } = templateData;
         
         if (shapes && shapes.length > 0) {
+            const normalizedShapes = shapes.map(shape => {
+                if (['line', 'arrow', 'double_arrow', 'dashed_line'].includes(shape.type)) {
+                    const sx = shape.startX !== undefined ? (shape.x + shape.startX) : shape.x;
+                    const sy = shape.startY !== undefined ? (shape.y + shape.startY) : shape.y;
+                    const ex = shape.endX !== undefined ? (shape.x + shape.endX) : (shape.x + (shape.width || 0));
+                    const ey = shape.endY !== undefined ? (shape.y + shape.endY) : (shape.y + (shape.height || 0));
+                    const minX = Math.min(sx, ex);
+                    const minY = Math.min(sy, ey);
+                    const w = Math.max(Math.abs(ex - sx), 10);
+                    const h = Math.max(Math.abs(ey - sy), 10);
+                    return {
+                        ...shape,
+                        x: minX,
+                        y: minY,
+                        width: w,
+                        height: h,
+                        startX: sx - minX,
+                        startY: sy - minY,
+                        endX: ex - minX,
+                        endY: ey - minY
+                    };
+                }
+                return shape;
+            });
+
             setPageShapeObjects(prev => ({
                 ...prev,
-                [currentPage]: [...(prev[currentPage] || []), ...shapes]
+                [currentPage]: [...(prev[currentPage] || []), ...normalizedShapes]
             }));
         }
         if (texts && texts.length > 0) {
+            const normalizedTexts = texts.map(t => ({
+                ...t,
+                width: t.width || 450,
+                height: t.height || 50,
+                fontSize: t.fontSize || 22
+            }));
             setPageTextObjects(prev => ({
                 ...prev,
-                [currentPage]: [...(prev[currentPage] || []), ...texts]
+                [currentPage]: [...(prev[currentPage] || []), ...normalizedTexts]
             }));
         }
         if (background) {
@@ -2426,6 +2564,114 @@ export default function Whiteboard({
             window.removeEventListener('pointerup', handleMouseUp);
         };
     }, [shapeDragState, saveToHistory, setShapeObjects]);
+
+    // ─── Drag-to-Connect Engine from Shape Magnetic Hooks ─────────────
+    const startConnectorDrag = useCallback((shape, anchor, styleOption, e) => {
+        if (!canUserDraw) return;
+        e.stopPropagation();
+        e.preventDefault();
+        const sourcePt = getAnchorPoint(shape, anchor);
+        const resolvedStyle = styleOption || CONNECTOR_PRESET_STYLES[0];
+        
+        setActiveConnectorDrag({
+            sourceId: shape.id,
+            sourceAnchor: anchor,
+            sourcePt,
+            currentPt: sourcePt,
+            style: resolvedStyle,
+            snappedTarget: null
+        });
+        setHoveredHook(null);
+    }, [canUserDraw]);
+
+    useEffect(() => {
+        if (!activeConnectorDrag) return;
+
+        const handlePointerMove = (e) => {
+            const canvasEl = canvasRef.current;
+            if (!canvasEl) return;
+            const rect = canvasEl.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            const scaleX = canvasEl.width / rect.width;
+            const scaleY = canvasEl.height / rect.height;
+            const currentMousePt = {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+
+            // Find nearest hook on any OTHER shape
+            const eligibleShapes = shapeObjects.filter(s => 
+                s.id !== activeConnectorDrag.sourceId && 
+                !['line', 'arrow', 'double_arrow', 'dashed_line', 'connector', 'ruler', 'protractor'].includes(s.type)
+            );
+
+            let snapTarget = null;
+            let minDist = 35; // 35px snap distance
+            eligibleShapes.forEach(shape => {
+                ['top', 'right', 'bottom', 'left'].forEach(anchor => {
+                    const pt = getAnchorPoint(shape, anchor);
+                    const dist = Math.hypot(pt.x - currentMousePt.x, pt.y - currentMousePt.y);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        snapTarget = { shape, anchor, pt };
+                    }
+                });
+            });
+
+            setActiveConnectorDrag(prev => prev ? {
+                ...prev,
+                currentPt: snapTarget ? snapTarget.pt : currentMousePt,
+                snappedTarget: snapTarget
+            } : null);
+        };
+
+        const handlePointerUp = () => {
+            if (!activeConnectorDrag) return;
+
+            if (activeConnectorDrag.snappedTarget) {
+                // Connected successfully to another shape's hook!
+                const targetShape = activeConnectorDrag.snappedTarget.shape;
+                const targetAnchor = activeConnectorDrag.snappedTarget.anchor;
+
+                const newConn = {
+                    id: Date.now().toString(),
+                    type: 'connector',
+                    sourceId: activeConnectorDrag.sourceId,
+                    sourceAnchor: activeConnectorDrag.sourceAnchor,
+                    sourcePoint: activeConnectorDrag.sourcePt,
+                    targetId: targetShape.id,
+                    targetAnchor: targetAnchor,
+                    targetPoint: activeConnectorDrag.snappedTarget.pt,
+                    pathType: activeConnectorDrag.style.pathType,
+                    strokeStyle: activeConnectorDrag.style.strokeStyle,
+                    arrowEnd: activeConnectorDrag.style.arrowEnd,
+                    arrowStart: activeConnectorDrag.style.arrowStart,
+                    color: color || '#2563eb',
+                    strokeWidth: strokeWidth || 2,
+                    waypoint: null
+                };
+
+                setShapeObjects(prev => [...prev, newConn]);
+                if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newConn });
+                saveToHistory();
+                justCreatedShapeRef.current = true;
+                setSelectedShapeIds([newConn.id]);
+                setSelectedTextIds([]);
+                setSelectedImageId(null);
+                toast.success('Connected shapes!', { icon: '🔗' });
+            }
+            // If released in blank space, clean cancel! No connector created.
+            setActiveConnectorDrag(null);
+            setHoveredHook(null);
+        };
+
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+        return () => {
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+        };
+    }, [activeConnectorDrag, shapeObjects, color, strokeWidth, socket, sessionId, saveToHistory, setShapeObjects]);
 
     // Click on canvas to deselect images, text, and shapes
     const handleCanvasClick = useCallback(() => {
@@ -3502,14 +3748,17 @@ export default function Whiteboard({
             e.preventDefault();
         }
 
-        // Ignore clicks on radial toolbar, FAB button, spotlight overlay, screen curtain, connectors, or shape hooks
+        // Ignore clicks on radial toolbar, FAB button, spotlight overlay, screen curtain, connectors, shape hooks, shapes, or text items
         if (
             e.target?.closest?.('.radial-toolbar-container') || 
             e.target?.closest?.('.radial-fab-button') ||
             e.target?.closest?.('.whiteboard-spotlight-overlay') ||
             e.target?.closest?.('.whiteboard-curtain-container') ||
             e.target?.closest?.('.connector-line-group') ||
-            e.target?.closest?.('.shape-magnetic-hook')
+            e.target?.closest?.('.shape-magnetic-hook') ||
+            e.target?.closest?.('.whiteboard-shape-item') ||
+            e.target?.closest?.('.whiteboard-text-item') ||
+            e.target?.closest?.('.connector-hover-popover')
         ) {
             return;
         }
@@ -3858,18 +4107,26 @@ export default function Whiteboard({
                     ctx.restore();
                 }
             } else if (shpObj.type === 'line') {
-                ctx.moveTo(shpObj.x + shpObj.startX, shpObj.y + shpObj.startY);
-                ctx.lineTo(shpObj.x + shpObj.endX, shpObj.y + shpObj.endY);
+                const sx = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+                const sy = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+                const ex = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+                const ey = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                ctx.moveTo(shpObj.x + sx, shpObj.y + sy);
+                ctx.lineTo(shpObj.x + ex, shpObj.y + ey);
                 ctx.lineCap = 'round';
                 ctx.stroke();
             } else if (shpObj.type === 'arrow') {
-                ctx.moveTo(shpObj.x + shpObj.startX, shpObj.y + shpObj.startY);
-                ctx.lineTo(shpObj.x + shpObj.endX, shpObj.y + shpObj.endY);
-                const angle = Math.atan2(shpObj.endY - shpObj.startY, shpObj.endX - shpObj.startX);
+                const sx = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+                const sy = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+                const ex = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+                const ey = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                ctx.moveTo(shpObj.x + sx, shpObj.y + sy);
+                ctx.lineTo(shpObj.x + ex, shpObj.y + ey);
+                const angle = Math.atan2(ey - sy, ex - sx);
                 const headLength = shpObj.strokeWidth * 4;
-                const p1 = { x: shpObj.x + shpObj.endX, y: shpObj.y + shpObj.endY };
-                const p2 = { x: shpObj.x + shpObj.endX - headLength * Math.cos(angle - Math.PI / 6), y: shpObj.y + shpObj.endY - headLength * Math.sin(angle - Math.PI / 6) };
-                const p3 = { x: shpObj.x + shpObj.endX - headLength * Math.cos(angle + Math.PI / 6), y: shpObj.y + shpObj.endY - headLength * Math.sin(angle + Math.PI / 6) };
+                const p1 = { x: shpObj.x + ex, y: shpObj.y + ey };
+                const p2 = { x: shpObj.x + ex - headLength * Math.cos(angle - Math.PI / 6), y: shpObj.y + ey - headLength * Math.sin(angle - Math.PI / 6) };
+                const p3 = { x: shpObj.x + ex - headLength * Math.cos(angle + Math.PI / 6), y: shpObj.y + ey - headLength * Math.sin(angle + Math.PI / 6) };
                 ctx.stroke();
                 ctx.beginPath();
                 ctx.moveTo(p1.x, p1.y);
@@ -4498,19 +4755,111 @@ export default function Whiteboard({
                                 className="w-6 h-6 p-0 border border-slate-700 rounded cursor-pointer bg-slate-800"
                                 title="Border Color"
                             />
-                            <div className="relative group flex items-center">
-                                <input
-                                    type="color"
-                                    value={selectedShapeIds.length === 1 ? (shapeObjects.find(s => s.id === selectedShapeIds[0])?.fillColor || '#ffffff') : '#ffffff'}
-                                    onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: e.target.value } : s))}
-                                    className="w-6 h-6 p-0 border border-slate-700 rounded cursor-pointer bg-slate-800"
-                                    title="Fill Color"
-                                />
-                                <button
-                                    onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: 'transparent' } : s))}
-                                    className="text-xs bg-slate-800 px-1 py-1 ml-1 rounded hover:bg-slate-700 border border-slate-600" title="No Fill"><X size={12} />
-                                </button>
-                            </div>
+                            {/* If selected shape is a connector, show dedicated connector styling controls */}
+                            {selectedShapeIds.length === 1 && shapeObjects.find(s => s.id === selectedShapeIds[0])?.type === 'connector' ? (() => {
+                                const activeConn = shapeObjects.find(s => s.id === selectedShapeIds[0]);
+                                return (
+                                    <div className="flex items-center gap-1.5 bg-slate-850 px-2 py-0.5 rounded-lg border border-slate-700 text-xs">
+                                        {/* Path Type */}
+                                        <div className="flex items-center bg-slate-900 rounded p-0.5 border border-slate-700" title="Path Geometry">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, pathType: 'straight', waypoint: null } : s))}
+                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.pathType === 'straight' || !activeConn.pathType ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                title="Straight Line"
+                                            >
+                                                Straight
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, pathType: 'orthogonal', waypoint: null } : s))}
+                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.pathType === 'orthogonal' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                title="Elbow / Orthogonal"
+                                            >
+                                                Elbow
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, pathType: 'curved', waypoint: null } : s))}
+                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.pathType === 'curved' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                title="Curved"
+                                            >
+                                                Curved
+                                            </button>
+                                        </div>
+
+                                        {/* Stroke Dash Style */}
+                                        <div className="flex items-center bg-slate-900 rounded p-0.5 border border-slate-700" title="Dash Style">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, strokeStyle: 'solid' } : s))}
+                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.strokeStyle === 'solid' || !activeConn.strokeStyle ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                title="Solid Line"
+                                            >
+                                                Solid
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, strokeStyle: 'dashed' } : s))}
+                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.strokeStyle === 'dashed' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                title="Dashed Line"
+                                            >
+                                                Dashed
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, strokeStyle: 'dotted' } : s))}
+                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.strokeStyle === 'dotted' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                title="Dotted Line"
+                                            >
+                                                Dotted
+                                            </button>
+                                        </div>
+
+                                        {/* Arrowheads */}
+                                        <div className="flex items-center bg-slate-900 rounded p-0.5 border border-slate-700" title="Arrow Ends">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, arrowStart: 'none', arrowEnd: 'none' } : s))}
+                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.arrowStart === 'none' && activeConn.arrowEnd === 'none' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                title="Plain Line (No Arrows)"
+                                            >
+                                                —
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, arrowStart: 'none', arrowEnd: 'arrow' } : s))}
+                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.arrowStart === 'none' && activeConn.arrowEnd === 'arrow' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                title="Single Arrow (End)"
+                                            >
+                                                →
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, arrowStart: 'arrow', arrowEnd: 'arrow' } : s))}
+                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.arrowStart === 'arrow' && activeConn.arrowEnd === 'arrow' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                title="Double Arrow (Both Ends)"
+                                            >
+                                                ↔
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })() : (
+                                <div className="relative group flex items-center">
+                                    <input
+                                        type="color"
+                                        value={selectedShapeIds.length === 1 ? (shapeObjects.find(s => s.id === selectedShapeIds[0])?.fillColor || '#ffffff') : '#ffffff'}
+                                        onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: e.target.value } : s))}
+                                        className="w-6 h-6 p-0 border border-slate-700 rounded cursor-pointer bg-slate-800"
+                                        title="Fill Color"
+                                    />
+                                    <button
+                                        onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: 'transparent' } : s))}
+                                        className="text-xs bg-slate-800 px-1 py-1 ml-1 rounded hover:bg-slate-700 border border-slate-600" title="No Fill"><X size={12} />
+                                    </button>
+                                </div>
+                            )}
                             <div className="flex items-center bg-slate-800 border border-slate-700 rounded h-6 px-1" title="Border Width">
                                 <span className="text-xs text-slate-400 mr-1">px</span>
                                 <input
@@ -4641,7 +4990,7 @@ export default function Whiteboard({
                             { id: 'image', icon: ImageIcon, label: 'Image' },
                             { id: 'templates', icon: LayoutTemplate, label: 'Templates & SmartArt (MS Office)' },
                             { id: 'timer', icon: Clock, label: 'Classroom Timer & Stopwatch' },
-                            { id: 'spotlight', icon: Flashlight, label: 'Spotlight Focus' },
+                            { id: 'spotlight', icon: TorchIcon, label: 'Spotlight Focus (Torch)' },
                             { id: 'curtain', icon: StickyNoteIcon, label: 'Screen Curtain / Shade' },
                             { id: 'laser', icon: Sparkles, label: 'Laser Pointer' },
                             { id: 'datetime', icon: CalendarClock, label: 'Insert DateTime' },
@@ -6026,19 +6375,22 @@ export default function Whiteboard({
                         return (
                             <div
                                 key={txtObj.id}
-                                className="absolute"
-                                    style={{
-                                        left: txtObj.x,
-                                        top: txtObj.y,
-                                        width: txtObj.width,
-                                        minHeight: txtObj.height,
-                                        transform: `rotate(${txtObj.rotation || 0}deg)`,
-                                        transformOrigin: 'center center',
-                                        zIndex: txtObj.zIndex || (isSelected || isEditing ? 20 : 10),
-                                        cursor: isEditing ? 'text' : isSelected ? 'move' : 'crosshair',
-                                        pointerEvents: 'none',
-                                        backgroundColor: txtObj.bgColor || 'transparent',
-                                    }}
+                                className="whiteboard-text-item absolute"
+                                style={{
+                                    left: txtObj.x,
+                                    top: txtObj.y,
+                                    width: txtObj.width,
+                                    minHeight: txtObj.height,
+                                    transform: `rotate(${txtObj.rotation || 0}deg)`,
+                                    transformOrigin: 'center center',
+                                    zIndex: txtObj.zIndex || (isSelected || isEditing ? 20 : 10),
+                                    cursor: isEditing ? 'text' : isSelected ? 'move' : 'crosshair',
+                                    pointerEvents: (tool === 'select' || isSelected || isEditing) ? 'auto' : 'none',
+                                    backgroundColor: txtObj.bgColor || 'transparent',
+                                }}
+                                onPointerDown={(e) => {
+                                    e.stopPropagation();
+                                }}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     if (!isEditing) {
@@ -6399,12 +6751,16 @@ export default function Whiteboard({
                                     </g>
                                 );
                             } else if (shpObj.type === 'line') {
-                                return <line x1={shpObj.startX} y1={shpObj.startY} x2={shpObj.endX} y2={shpObj.endY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />;
+                                const localStartX = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+                                const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+                                const localEndX = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+                                const localEndY = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                                return <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />;
                             } else if (shpObj.type === 'arrow') {
-                                const localStartX = shpObj.startX;
-                                const localStartY = shpObj.startY;
-                                const localEndX = shpObj.endX;
-                                const localEndY = shpObj.endY;
+                                const localStartX = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+                                const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+                                const localEndX = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+                                const localEndY = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
                                 const angle = Math.atan2(localEndY - localStartY, localEndX - localStartX);
                                 const headLength = shpObj.strokeWidth * 4;
                                 const p1 = `${localEndX},${localEndY}`;
@@ -6417,10 +6773,10 @@ export default function Whiteboard({
                                     </g>
                                 );
                             } else if (shpObj.type === 'double_arrow') {
-                                const localStartX = shpObj.startX;
-                                const localStartY = shpObj.startY;
-                                const localEndX = shpObj.endX;
-                                const localEndY = shpObj.endY;
+                                const localStartX = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+                                const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+                                const localEndX = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+                                const localEndY = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
                                 const angle = Math.atan2(localEndY - localStartY, localEndX - localStartX);
                                 const headLength = shpObj.strokeWidth * 4;
                                 const p1 = `${localEndX},${localEndY}`;
@@ -6437,7 +6793,11 @@ export default function Whiteboard({
                                     </g>
                                 );
                             } else if (shpObj.type === 'dashed_line') {
-                                return <line x1={shpObj.startX} y1={shpObj.startY} x2={shpObj.endX} y2={shpObj.endY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" strokeDasharray="6,6" />;
+                                const localStartX = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+                                const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+                                const localEndX = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+                                const localEndY = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                                return <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" strokeDasharray="6,6" />;
                             } else if (shpObj.type === 'graph') {
                                 const step = shpObj.stepSize || 5;
                                 const xAxisY = shpObj.height / 2;
@@ -6558,7 +6918,7 @@ export default function Whiteboard({
                         return (
                             <div
                                 key={shpObj.id}
-                                className="absolute"
+                                className="whiteboard-shape-item absolute"
                                 style={{
                                     left: shpObj.x,
                                     top: shpObj.y,
@@ -6572,6 +6932,9 @@ export default function Whiteboard({
                                 }}
                                 onMouseEnter={() => setHoveredShapeId(shpObj.id)}
                                 onMouseLeave={() => setHoveredShapeId(null)}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                }}
                                 onPointerDown={(e) => {
                                     let activeSelectionIds = selectedShapeIds;
                                     if (tool === 'select') {
@@ -6670,7 +7033,9 @@ export default function Whiteboard({
                                 )}
 
                                 {/* Magnetic Connection Hooks (N, E, S, W) for linking diagrams & connectors */}
-                                {(isSelected || tool === 'line' || hoveredShapeId === shpObj.id) && shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && shpObj.type !== 'connector' && (
+                                {(isSelected || tool === 'line' || hoveredShapeId === shpObj.id) && 
+                                 !['line', 'arrow', 'double_arrow', 'dashed_line', 'arc', 'curved_line', 'path', 'freehand'].includes(shpObj.type) && 
+                                 shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && shpObj.type !== 'connector' && (
                                     <>
                                         {[
                                             { anchor: 'top', label: 'N', style: { left: '50%', top: 0 } },
@@ -6682,39 +7047,58 @@ export default function Whiteboard({
                                                 key={anchor}
                                                 className="shape-magnetic-hook absolute w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-500 border-2 border-white shadow-md hover:bg-blue-600 hover:scale-125 transition-all z-35 flex items-center justify-center cursor-crosshair group/hook"
                                                 style={{ ...style, pointerEvents: 'auto' }}
-                                                title={`Connect from ${anchor.toUpperCase()} hook`}
+                                                title={`Connect from ${anchor.toUpperCase()} hook (Hover to select style, drag to link)`}
+                                                onPointerEnter={() => {
+                                                    if (hookHoverTimeoutRef.current) clearTimeout(hookHoverTimeoutRef.current);
+                                                    setHoveredHook({ shapeId: shpObj.id, anchor });
+                                                }}
+                                                onPointerLeave={() => {
+                                                    hookHoverTimeoutRef.current = setTimeout(() => {
+                                                        setHoveredHook(null);
+                                                    }, 350);
+                                                }}
                                                 onPointerDown={(e) => {
-                                                    e.stopPropagation();
-                                                    e.preventDefault();
-                                                    const connPathType = lineType === 'connector_elbow' ? 'orthogonal' : (lineType === 'connector_curved' ? 'curved' : 'straight');
-                                                    const offsetDir = anchor === 'right' ? { x: 90, y: 0 } : (anchor === 'left' ? { x: -90, y: 0 } : (anchor === 'bottom' ? { x: 0, y: 90 } : { x: 0, y: -90 }));
-                                                    const hookPt = getAnchorPoint(shpObj, anchor);
-                                                    const newConn = {
-                                                        id: Date.now().toString(),
-                                                        type: 'connector',
-                                                        sourceId: shpObj.id,
-                                                        sourceAnchor: anchor,
-                                                        sourcePoint: hookPt,
-                                                        targetId: null,
-                                                        targetAnchor: 'auto',
-                                                        targetPoint: { x: hookPt.x + offsetDir.x, y: hookPt.y + offsetDir.y },
-                                                        pathType: connPathType,
-                                                        color: color || '#3b82f6',
-                                                        strokeWidth: strokeWidth || 2,
-                                                        arrowEnd: 'arrow',
-                                                        arrowStart: 'none',
-                                                        waypoint: null
-                                                    };
-                                                    setShapeObjects(prev => [...prev, newConn]);
-                                                    if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newConn });
-                                                    justCreatedShapeRef.current = true;
-                                                    setSelectedShapeIds([newConn.id]);
-                                                    setSelectedTextIds([]);
-                                                    setSelectedImageId(null);
-                                                    setTool('select');
+                                                    startConnectorDrag(shpObj, anchor, CONNECTOR_PRESET_STYLES[0], e);
                                                 }}
                                             >
-                                                <div className="w-1 h-1 rounded-full bg-white pointer-events-none" />
+                                                <div className="w-1.5 h-1.5 rounded-full bg-white pointer-events-none" />
+
+                                                {/* Hover Style Popover */}
+                                                {hoveredHook?.shapeId === shpObj.id && hoveredHook?.anchor === anchor && (
+                                                    <div
+                                                        className={`connector-hover-popover absolute z-50 flex items-center gap-1 bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-2xl rounded-xl p-1 text-white animate-in fade-in zoom-in-95 duration-150 ${
+                                                            anchor === 'top' ? 'bottom-full mb-2 left-1/2 -translate-x-1/2' :
+                                                            anchor === 'bottom' ? 'top-full mt-2 left-1/2 -translate-x-1/2' :
+                                                            anchor === 'left' ? 'right-full mr-2 top-1/2 -translate-y-1/2' :
+                                                            'left-full ml-2 top-1/2 -translate-y-1/2'
+                                                        }`}
+                                                        style={{ pointerEvents: 'auto' }}
+                                                        onPointerEnter={() => {
+                                                            if (hookHoverTimeoutRef.current) clearTimeout(hookHoverTimeoutRef.current);
+                                                        }}
+                                                        onPointerLeave={() => {
+                                                            hookHoverTimeoutRef.current = setTimeout(() => {
+                                                                setHoveredHook(null);
+                                                            }, 350);
+                                                        }}
+                                                        onPointerDown={(e) => e.stopPropagation()}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        {CONNECTOR_PRESET_STYLES.map((preset) => (
+                                                            <button
+                                                                key={preset.id}
+                                                                type="button"
+                                                                className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-blue-600/80 active:bg-blue-700 text-slate-300 hover:text-white transition-all cursor-grab active:cursor-grabbing group/btn"
+                                                                title={`${preset.label} (Drag to connect)`}
+                                                                onPointerDown={(e) => {
+                                                                    startConnectorDrag(shpObj, anchor, preset, e);
+                                                                }}
+                                                            >
+                                                                {preset.icon}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </>
@@ -7080,6 +7464,54 @@ export default function Whiteboard({
                                 }}
                             />
                         ))}
+
+                        {/* Live Interactive Connector Drag Preview */}
+                        {activeConnectorDrag && (
+                            <g className="connector-drag-preview pointer-events-none">
+                                <path
+                                    d={getConnectorPath(
+                                        activeConnectorDrag.sourcePt,
+                                        activeConnectorDrag.currentPt,
+                                        activeConnectorDrag.style.pathType,
+                                        null
+                                    )}
+                                    fill="none"
+                                    stroke={activeConnectorDrag.snappedTarget ? '#10b981' : (color || '#2563eb')}
+                                    strokeWidth={strokeWidth || 2}
+                                    strokeDasharray={
+                                        activeConnectorDrag.style.strokeStyle === 'dashed' ? '6,6' :
+                                        activeConnectorDrag.style.strokeStyle === 'dotted' ? '2,4' : 'none'
+                                    }
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                />
+                                {renderArrowhead(
+                                    activeConnectorDrag.style.arrowStart,
+                                    activeConnectorDrag.sourcePt,
+                                    calculateAngle(activeConnectorDrag.currentPt, activeConnectorDrag.sourcePt),
+                                    (strokeWidth || 2) * 4,
+                                    activeConnectorDrag.snappedTarget ? '#10b981' : (color || '#2563eb')
+                                )}
+                                {renderArrowhead(
+                                    activeConnectorDrag.style.arrowEnd,
+                                    activeConnectorDrag.currentPt,
+                                    calculateAngle(activeConnectorDrag.sourcePt, activeConnectorDrag.currentPt),
+                                    (strokeWidth || 2) * 4,
+                                    activeConnectorDrag.snappedTarget ? '#10b981' : (color || '#2563eb')
+                                )}
+                                {activeConnectorDrag.snappedTarget && (
+                                    <circle
+                                        cx={activeConnectorDrag.snappedTarget.pt.x}
+                                        cy={activeConnectorDrag.snappedTarget.pt.y}
+                                        r="12"
+                                        fill="rgba(16, 185, 129, 0.35)"
+                                        stroke="#10b981"
+                                        strokeWidth="2.5"
+                                        className="animate-ping"
+                                    />
+                                )}
+                            </g>
+                        )}
                     </svg>
 
                     {/* Floating Radial FAB Button (Bottom-Left) */}
@@ -7174,7 +7606,7 @@ export default function Whiteboard({
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 <span className="flex items-center gap-1.5 text-amber-300 font-semibold select-none">
-                                    <Flashlight className="w-3.5 h-3.5 animate-pulse text-amber-400" />
+                                    <TorchIcon className="w-3.5 h-3.5 animate-pulse text-amber-400" />
                                     Spotlight
                                 </span>
                                 <div className="flex items-center gap-1 bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700" onPointerDown={(e) => e.stopPropagation()}>

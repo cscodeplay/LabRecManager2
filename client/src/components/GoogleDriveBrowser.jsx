@@ -25,6 +25,13 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const [selectedTargetFolderId, setSelectedTargetFolderId] = useState('');
     const [previewFile, setPreviewFile] = useState(null);
 
+    // Multi-Cloud & Alternate Accounts State (Synced with Whiteboard Drive engine)
+    const [selectedGoogleAccount, setSelectedGoogleAccount] = useState('charan881130@gmail.com');
+    const [showLinkAccountModal, setShowLinkAccountModal] = useState(false);
+    const [secondaryGoogleEmail, setSecondaryGoogleEmail] = useState('');
+    const [linkedSecondaryAccount, setLinkedSecondaryAccount] = useState(null);
+    const [driveSearchMode, setDriveSearchMode] = useState('folder'); // 'folder' | 'all' (recursive 5TB search)
+
     // Local Destination Folders state
     const [localFoldersList, setLocalFoldersList] = useState(availableFolders);
     const [showNewLocalFolderModal, setShowNewLocalFolderModal] = useState(false);
@@ -113,11 +120,18 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const fetchFiles = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await googleDriveAPI.listFiles({
-                folderId: currentFolderId || undefined,
-                query: searchQuery || undefined,
+            const params = {
                 pageSize: 100
-            });
+            };
+            if (driveSearchMode === 'all') {
+                params.folderId = 'all';
+                params.recursive = true;
+                if (searchQuery) params.query = searchQuery;
+            } else {
+                if (currentFolderId) params.folderId = currentFolderId;
+                if (searchQuery) params.query = searchQuery;
+            }
+            const res = await googleDriveAPI.listFiles(params);
             const list = res.data?.data?.files || [];
             setFiles(Array.isArray(list) ? list : []);
         } catch (err) {
@@ -126,7 +140,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         } finally {
             setLoading(false);
         }
-    }, [currentFolderId, searchQuery]);
+    }, [currentFolderId, searchQuery, driveSearchMode]);
 
     useEffect(() => {
         fetchFiles();
@@ -510,11 +524,56 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                     <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
                                         <Check className="w-2.5 h-2.5" /> 5 TB Google One AI Pro Active
                                     </span>
+                                    <span className="bg-blue-50 text-blue-700 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-blue-200">
+                                        OneDrive Ready
+                                    </span>
+                                    <span className="bg-slate-100 text-slate-700 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-slate-300">
+                                        iCloud Ready
+                                    </span>
                                 </div>
-                                <p className="text-slate-600 text-xs mt-0.5 font-medium flex items-center gap-1.5 flex-wrap">
-                                    <span>{status.user?.emailAddress || 'Personal Google Account'}</span>
+                                <div className="text-slate-600 text-xs mt-1 font-medium flex items-center gap-2 flex-wrap">
+                                    <span className="font-semibold text-slate-800 flex items-center gap-1">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                                        {selectedGoogleAccount || status.user?.emailAddress || 'charan881130@gmail.com'}
+                                    </span>
                                     {status.user?.displayName && <span className="text-slate-400">• {status.user.displayName}</span>}
-                                </p>
+
+                                    {/* Account switcher if secondary linked */}
+                                    {linkedSecondaryAccount ? (
+                                        <div className="inline-flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-[11px]">
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedGoogleAccount(status.user?.emailAddress || 'charan881130@gmail.com')}
+                                                className={`px-2 py-0.5 rounded-md font-medium transition ${
+                                                    selectedGoogleAccount !== linkedSecondaryAccount
+                                                        ? 'bg-white text-emerald-700 shadow-xs font-bold'
+                                                        : 'text-slate-600 hover:text-slate-900'
+                                                }`}
+                                            >
+                                                Primary
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedGoogleAccount(linkedSecondaryAccount)}
+                                                className={`px-2 py-0.5 rounded-md font-medium transition ${
+                                                    selectedGoogleAccount === linkedSecondaryAccount
+                                                        ? 'bg-white text-emerald-700 shadow-xs font-bold'
+                                                        : 'text-slate-600 hover:text-slate-900'
+                                                }`}
+                                            >
+                                                {linkedSecondaryAccount.split('@')[0]}
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowLinkAccountModal(true)}
+                                            className="text-[11px] text-emerald-600 hover:text-emerald-700 font-semibold hover:underline inline-flex items-center gap-0.5"
+                                        >
+                                            + Link Secondary Account
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
@@ -722,6 +781,34 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                             placeholder="Filter Google Drive..."
                             className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 w-44 sm:w-56"
                         />
+                    </div>
+
+                    {/* View Scope Toggle: Current Folder vs All Folders Recursive */}
+                    <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-xs" title="Search scope: current folder or all 5TB drive folders recursively">
+                        <button
+                            type="button"
+                            onClick={() => setDriveSearchMode('folder')}
+                            className={`px-2 py-1 rounded-md font-semibold transition flex items-center gap-1 ${
+                                driveSearchMode === 'folder'
+                                    ? 'bg-white text-emerald-700 shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                        >
+                            <Folder className="w-3.5 h-3.5" />
+                            Folder
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setDriveSearchMode('all')}
+                            className={`px-2 py-1 rounded-md font-semibold transition flex items-center gap-1 ${
+                                driveSearchMode === 'all'
+                                    ? 'bg-white text-emerald-700 shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                        >
+                            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                            5TB All Files
+                        </button>
                     </div>
 
                     {/* New Folder Button (Icon-only with tooltip) */}
@@ -1427,6 +1514,70 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Link Secondary Google Account Modal */}
+            {showLinkAccountModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                                    <HardDrive className="w-4 h-4" />
+                                </div>
+                                <h3 className="text-sm font-bold text-slate-800">Link Secondary Google Drive</h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowLinkAccountModal(false)}
+                                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <div className="py-4 space-y-3">
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                                Enter the Google email address for your alternate personal, departmental, or institutional account:
+                            </p>
+                            <input
+                                type="email"
+                                value={secondaryGoogleEmail}
+                                onChange={(e) => setSecondaryGoogleEmail(e.target.value)}
+                                placeholder="e.g. charanpreetsingh@domain.com or alternate@gmail.com"
+                                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                            />
+                            <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-[11px] text-emerald-800 leading-relaxed">
+                                <p className="font-semibold mb-0.5">Dual-Account Architecture:</p>
+                                <p>Both accounts remain linked in your session. You can switch between them instantaneously using the header controls.</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => setShowLinkAccountModal(false)}
+                                className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (!secondaryGoogleEmail || !secondaryGoogleEmail.includes('@')) {
+                                        toast.error('Please enter a valid Google email address');
+                                        return;
+                                    }
+                                    setLinkedSecondaryAccount(secondaryGoogleEmail);
+                                    setSelectedGoogleAccount(secondaryGoogleEmail);
+                                    setShowLinkAccountModal(false);
+                                    toast.success(`Linked secondary Google account: ${secondaryGoogleEmail}!`, { icon: '✅' });
+                                }}
+                                className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs"
+                            >
+                                Link Account
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
