@@ -13,7 +13,7 @@ import {
     AlignStartVertical, AlignCenterVertical, AlignEndVertical,
     AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween, Group, Ungroup, Lock, Unlock, Users, MessageCircle, User,
     Folder, Upload, Loader2, FlipHorizontal, FlipVertical, Sun, Contrast, Sliders,
-    Clock, GripHorizontal, LayoutTemplate
+    Clock, GripHorizontal, LayoutTemplate, Flashlight
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
@@ -361,6 +361,8 @@ export default function Whiteboard({
     const preStrokeImageDataRef = useRef(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const wasDraggingRef = useRef(false);
+    const justCreatedShapeRef = useRef(false);
+    const spotlightOverlayRef = useRef(null);
     const [tool, setTool] = useState('pen'); // pen, eraser, select, highlighter, shape, laser, text, image
     const [color, setColor] = useState('#000000');
     const [strokeWidth, setStrokeWidth] = useState(2);
@@ -592,6 +594,24 @@ export default function Whiteboard({
     const [spotlightRadius, setSpotlightRadius] = useState(160);
     const [isCurtainActive, setIsCurtainActive] = useState(false);
     const [curtainHeight, setCurtainHeight] = useState(40);
+
+    // Non-passive wheel event listener for Spotlight zoom gestures (prevents 'Unable to preventDefault inside passive event listener')
+    useEffect(() => {
+        const el = spotlightOverlayRef.current;
+        if (!el || !isSpotlightActive) return;
+
+        const handleWheel = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const delta = e.deltaY < 0 ? 20 : -20;
+            setSpotlightRadius(r => Math.max(50, Math.min(600, r + delta)));
+        };
+
+        el.addEventListener('wheel', handleWheel, { passive: false });
+        return () => {
+            el.removeEventListener('wheel', handleWheel);
+        };
+    }, [isSpotlightActive]);
 
     // ─── Pressure Sensitivity ───────────────────────────────────────────
     const [pressureSensitivity, setPressureSensitivity] = useState(true);
@@ -2407,8 +2427,12 @@ export default function Whiteboard({
         };
     }, [shapeDragState, saveToHistory, setShapeObjects]);
 
-    // Click on canvas to deselect images and text
+    // Click on canvas to deselect images, text, and shapes
     const handleCanvasClick = useCallback(() => {
+        if (justCreatedShapeRef.current) {
+            justCreatedShapeRef.current = false;
+            return;
+        }
         if (wasDraggingRef.current) {
             wasDraggingRef.current = false;
             return;
@@ -3214,6 +3238,7 @@ export default function Whiteboard({
                 };
                 setShapeObjects(prev => [...prev, newShapeObj]);
                 if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                justCreatedShapeRef.current = true;
                 setSelectedShapeIds([newShapeObj.id]);
                 setSelectedTextIds([]);
                 setSelectedImageId(null);
@@ -3240,6 +3265,7 @@ export default function Whiteboard({
                 };
                 setShapeObjects(prev => [...prev, newShapeObj]);
                 if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                justCreatedShapeRef.current = true;
                 setSelectedShapeIds([newShapeObj.id]);
                 setSelectedTextIds([]);
                 setSelectedImageId(null);
@@ -3276,6 +3302,7 @@ export default function Whiteboard({
                 if (socket && sessionId) {
                     socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
                 }
+                justCreatedShapeRef.current = true;
                 setSelectedShapeIds([newShapeObj.id]);
                 setSelectedTextIds([]);
                 setSelectedImageId(null);
@@ -3475,8 +3502,15 @@ export default function Whiteboard({
             e.preventDefault();
         }
 
-        // Ignore clicks on radial toolbar or FAB button
-        if (e.target?.closest?.('.radial-toolbar-container') || e.target?.closest?.('.radial-fab-button')) {
+        // Ignore clicks on radial toolbar, FAB button, spotlight overlay, screen curtain, connectors, or shape hooks
+        if (
+            e.target?.closest?.('.radial-toolbar-container') || 
+            e.target?.closest?.('.radial-fab-button') ||
+            e.target?.closest?.('.whiteboard-spotlight-overlay') ||
+            e.target?.closest?.('.whiteboard-curtain-container') ||
+            e.target?.closest?.('.connector-line-group') ||
+            e.target?.closest?.('.shape-magnetic-hook')
+        ) {
             return;
         }
 
@@ -4607,7 +4641,7 @@ export default function Whiteboard({
                             { id: 'image', icon: ImageIcon, label: 'Image' },
                             { id: 'templates', icon: LayoutTemplate, label: 'Templates & SmartArt (MS Office)' },
                             { id: 'timer', icon: Clock, label: 'Classroom Timer & Stopwatch' },
-                            { id: 'spotlight', icon: Sparkles, label: 'Spotlight Focus' },
+                            { id: 'spotlight', icon: Flashlight, label: 'Spotlight Focus' },
                             { id: 'curtain', icon: StickyNoteIcon, label: 'Screen Curtain / Shade' },
                             { id: 'laser', icon: Sparkles, label: 'Laser Pointer' },
                             { id: 'datetime', icon: CalendarClock, label: 'Insert DateTime' },
@@ -6646,10 +6680,10 @@ export default function Whiteboard({
                                         ].map(({ anchor, label, style }) => (
                                             <div
                                                 key={anchor}
-                                                className="absolute w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-500 border-2 border-white shadow-md hover:bg-blue-600 hover:scale-125 transition-all z-35 flex items-center justify-center cursor-crosshair group/hook"
+                                                className="shape-magnetic-hook absolute w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-500 border-2 border-white shadow-md hover:bg-blue-600 hover:scale-125 transition-all z-35 flex items-center justify-center cursor-crosshair group/hook"
                                                 style={{ ...style, pointerEvents: 'auto' }}
                                                 title={`Connect from ${anchor.toUpperCase()} hook`}
-                                                onMouseDown={(e) => {
+                                                onPointerDown={(e) => {
                                                     e.stopPropagation();
                                                     e.preventDefault();
                                                     const connPathType = lineType === 'connector_elbow' ? 'orthogonal' : (lineType === 'connector_curved' ? 'curved' : 'straight');
@@ -6673,6 +6707,7 @@ export default function Whiteboard({
                                                     };
                                                     setShapeObjects(prev => [...prev, newConn]);
                                                     if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newConn });
+                                                    justCreatedShapeRef.current = true;
                                                     setSelectedShapeIds([newConn.id]);
                                                     setSelectedTextIds([]);
                                                     setSelectedImageId(null);
@@ -7084,12 +7119,10 @@ export default function Whiteboard({
                     {/* Spotlight Focus Tool (BenQ EZWrite & ViewSonic myViewBoard) */}
                     {isSpotlightActive && (
                         <div
-                            className="absolute inset-0 z-40 pointer-events-auto cursor-crosshair overflow-hidden"
-                            onWheel={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                const delta = e.deltaY < 0 ? 20 : -20;
-                                setSpotlightRadius(r => Math.max(50, Math.min(600, r + delta)));
+                            ref={spotlightOverlayRef}
+                            className="whiteboard-spotlight-overlay absolute inset-0 z-40 pointer-events-auto cursor-crosshair overflow-hidden"
+                            onPointerDown={(e) => {
+                                if (e.target.closest('button')) e.stopPropagation();
                             }}
                             onMouseMove={(e) => {
                                 const rect = e.currentTarget.getBoundingClientRect();
@@ -7135,17 +7168,19 @@ export default function Whiteboard({
                             {/* Floating Spotlight Controls */}
                             <div 
                                 className="absolute top-4 right-4 bg-slate-900/90 text-white backdrop-blur-md px-3 py-1.5 rounded-full shadow-2xl flex items-center gap-3 border border-slate-700 text-xs font-medium z-50 pointer-events-auto"
+                                onPointerDown={(e) => e.stopPropagation()}
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onTouchStart={(e) => e.stopPropagation()}
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 <span className="flex items-center gap-1.5 text-amber-300 font-semibold select-none">
-                                    <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+                                    <Flashlight className="w-3.5 h-3.5 animate-pulse text-amber-400" />
                                     Spotlight
                                 </span>
-                                <div className="flex items-center gap-1 bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700">
+                                <div className="flex items-center gap-1 bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700" onPointerDown={(e) => e.stopPropagation()}>
                                     <button
                                         type="button"
+                                        onPointerDown={(e) => e.stopPropagation()}
                                         onMouseDown={(e) => e.stopPropagation()}
                                         onTouchStart={(e) => e.stopPropagation()}
                                         onClick={(e) => {
@@ -7160,6 +7195,7 @@ export default function Whiteboard({
                                     <span className="text-[11px] text-slate-300 px-1 font-mono select-none">Scroll to zoom</span>
                                     <button
                                         type="button"
+                                        onPointerDown={(e) => e.stopPropagation()}
                                         onMouseDown={(e) => e.stopPropagation()}
                                         onTouchStart={(e) => e.stopPropagation()}
                                         onClick={(e) => {
@@ -7174,6 +7210,7 @@ export default function Whiteboard({
                                 </div>
                                 <button
                                     type="button"
+                                    onPointerDown={(e) => e.stopPropagation()}
                                     onMouseDown={(e) => e.stopPropagation()}
                                     onTouchStart={(e) => e.stopPropagation()}
                                     onClick={(e) => {
@@ -7192,8 +7229,9 @@ export default function Whiteboard({
                     {/* Screen Shade / Curtain Tool (BenQ EZWrite & ViewSonic myViewBoard) */}
                     {isCurtainActive && (
                         <div 
-                            className="absolute top-0 left-0 right-0 z-40 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 shadow-2xl transition-[height] duration-75 overflow-hidden flex flex-col justify-between select-none"
+                            className="whiteboard-curtain-container absolute top-0 left-0 right-0 z-40 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 shadow-2xl transition-[height] duration-75 overflow-hidden flex flex-col justify-between select-none"
                             style={{ height: `${curtainHeight}%` }}
+                            onPointerDown={(e) => e.stopPropagation()}
                         >
                             <div className="flex-1 flex flex-col items-center justify-center text-slate-500 text-xs font-medium tracking-wider uppercase opacity-70">
                                 <StickyNoteIcon className="w-6 h-6 mb-1 text-slate-400" />
@@ -7203,55 +7241,36 @@ export default function Whiteboard({
                             {/* Resizable bottom grab bar */}
                             <div
                                 className="w-full h-8 bg-gradient-to-r from-indigo-700 via-purple-700 to-indigo-700 hover:from-indigo-600 hover:to-purple-600 flex items-center justify-between px-4 cursor-ns-resize text-white shadow-md border-t border-white/20 select-none"
-                                onMouseDown={(e) => {
+                                onPointerDown={(e) => {
+                                    if (e.target.closest('button')) return;
                                     e.preventDefault();
+                                    e.stopPropagation();
                                     const startY = e.clientY;
                                     const startHeight = curtainHeight;
                                     const wrapperRect = canvasWrapperRef.current?.getBoundingClientRect();
                                     const totalH = wrapperRect?.height || window.innerHeight;
 
-                                    const onMouseMove = (moveEvent) => {
+                                    const onPointerMove = (moveEvent) => {
                                         const deltaY = moveEvent.clientY - startY;
                                         const deltaPct = (deltaY / totalH) * 100;
                                         setCurtainHeight(Math.max(10, Math.min(100, startHeight + deltaPct)));
                                     };
-                                    const onMouseUp = () => {
-                                        window.removeEventListener('mousemove', onMouseMove);
-                                        window.removeEventListener('mouseup', onMouseUp);
+                                    const onPointerUp = () => {
+                                        window.removeEventListener('pointermove', onPointerMove);
+                                        window.removeEventListener('pointerup', onPointerUp);
                                     };
-                                    window.addEventListener('mousemove', onMouseMove);
-                                    window.addEventListener('mouseup', onMouseUp);
-                                }}
-                                onTouchStart={(e) => {
-                                    if (!e.touches[0]) return;
-                                    const startY = e.touches[0].clientY;
-                                    const startHeight = curtainHeight;
-                                    const wrapperRect = canvasWrapperRef.current?.getBoundingClientRect();
-                                    const totalH = wrapperRect?.height || window.innerHeight;
-
-                                    const onTouchMove = (moveEvent) => {
-                                        if (!moveEvent.touches[0]) return;
-                                        const deltaY = moveEvent.touches[0].clientY - startY;
-                                        const deltaPct = (deltaY / totalH) * 100;
-                                        setCurtainHeight(Math.max(10, Math.min(100, startHeight + deltaPct)));
-                                    };
-                                    const onTouchEnd = () => {
-                                        window.removeEventListener('touchmove', onTouchMove);
-                                        window.removeEventListener('touchend', onTouchEnd);
-                                    };
-                                    window.addEventListener('touchmove', onTouchMove);
-                                    window.addEventListener('touchend', onTouchEnd);
+                                    window.addEventListener('pointermove', onPointerMove);
+                                    window.addEventListener('pointerup', onPointerUp);
                                 }}
                             >
                                 <div className="flex items-center gap-2 text-xs font-semibold">
                                     <GripHorizontal className="w-4 h-4 text-white/70" />
                                     <span>Drag to reveal content ({Math.round(curtainHeight)}%)</span>
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2" onPointerDown={(e) => e.stopPropagation()}>
                                     <button
                                         type="button"
-                                        onMouseDown={(e) => e.stopPropagation()}
-                                        onTouchStart={(e) => e.stopPropagation()}
+                                        onPointerDown={(e) => e.stopPropagation()}
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             setCurtainHeight(h => h > 50 ? 20 : 80);
@@ -7262,8 +7281,7 @@ export default function Whiteboard({
                                     </button>
                                     <button
                                         type="button"
-                                        onMouseDown={(e) => e.stopPropagation()}
-                                        onTouchStart={(e) => e.stopPropagation()}
+                                        onPointerDown={(e) => e.stopPropagation()}
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             setIsCurtainActive(false);

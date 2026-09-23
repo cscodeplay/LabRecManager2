@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 
 // Returns { x, y } for the midpoint of a shape's edge
 export const getAnchorPoint = (shape, anchor, otherPoint = null) => {
@@ -152,6 +152,10 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
     const [dragPoint, setDragPoint] = useState(null); // {x, y}
     const [snapTarget, setSnapTarget] = useState(null); // { shape, anchor }
 
+    const dragPointRef = useRef(null);
+    const snapTargetRef = useRef(null);
+    const draggingEndpointRef = useRef(null);
+
     // Resolve start and end points
     const sourceShape = useMemo(() => shapes.find(s => s.id === sourceId), [shapes, sourceId]);
     const targetShape = useMemo(() => shapes.find(s => s.id === targetId), [shapes, targetId]);
@@ -182,49 +186,69 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
         return getConnectorPath(actualSourcePoint, actualTargetPoint, pathType, wp);
     }, [actualSourcePoint, actualTargetPoint, pathType, waypoint, draggingEndpoint, actualWaypoint]);
 
-    // Handle dragging
+    // Handle dragging with canvas-relative coordinates
     useEffect(() => {
         if (!draggingEndpoint) return;
 
         const handlePointerMove = (e) => {
-            setDragPoint(prev => {
-                const nextX = (prev ? prev.x : 0) + e.movementX / scale;
-                const nextY = (prev ? prev.y : 0) + e.movementY / scale;
-                const nextPoint = { x: nextX, y: nextY };
-                if (draggingEndpoint === 'source' || draggingEndpoint === 'target') {
-                    const snap = findNearestShape(nextPoint, shapes, 40 / scale);
-                    setSnapTarget(snap);
-                }
-                return nextPoint;
-            });
+            const canvasEl = document.getElementById('main-whiteboard-canvas') || document.querySelector('.whiteboard-canvas');
+            const rect = canvasEl?.getBoundingClientRect();
+            if (!rect) return;
+
+            const scaleX = (canvasEl.width || rect.width) / rect.width;
+            const scaleY = (canvasEl.height || rect.height) / rect.height;
+            const nextPoint = {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+
+            dragPointRef.current = nextPoint;
+            setDragPoint(nextPoint);
+
+            if (draggingEndpointRef.current === 'source' || draggingEndpointRef.current === 'target') {
+                const snap = findNearestShape(nextPoint, shapes, 45);
+                snapTargetRef.current = snap;
+                setSnapTarget(snap);
+            }
         };
 
         const handlePointerUp = () => {
-            const updates = {};
-            if (draggingEndpoint === 'waypoint') {
-                updates.waypoint = dragPoint;
-            } else if (snapTarget) {
-                if (draggingEndpoint === 'source') {
-                    updates.sourceId = snapTarget.shape.id;
-                    updates.sourceAnchor = snapTarget.anchor;
+            const currentEndpoint = draggingEndpointRef.current;
+            const finalPoint = dragPointRef.current;
+            const finalSnap = snapTargetRef.current;
+
+            if (currentEndpoint && finalPoint) {
+                const updates = {};
+                if (currentEndpoint === 'waypoint') {
+                    updates.waypoint = finalPoint;
+                } else if (finalSnap) {
+                    if (currentEndpoint === 'source') {
+                        updates.sourceId = finalSnap.shape.id;
+                        updates.sourceAnchor = finalSnap.anchor;
+                        updates.sourcePoint = getAnchorPoint(finalSnap.shape, finalSnap.anchor);
+                    } else {
+                        updates.targetId = finalSnap.shape.id;
+                        updates.targetAnchor = finalSnap.anchor;
+                        updates.targetPoint = getAnchorPoint(finalSnap.shape, finalSnap.anchor);
+                    }
                 } else {
-                    updates.targetId = snapTarget.shape.id;
-                    updates.targetAnchor = snapTarget.anchor;
+                    if (currentEndpoint === 'source') {
+                        updates.sourceId = null;
+                        updates.sourcePoint = finalPoint;
+                    } else {
+                        updates.targetId = null;
+                        updates.targetPoint = finalPoint;
+                    }
                 }
-            } else {
-                if (draggingEndpoint === 'source') {
-                    updates.sourceId = null;
-                    updates.sourcePoint = dragPoint;
-                } else {
-                    updates.targetId = null;
-                    updates.targetPoint = dragPoint;
-                }
+                onUpdate(id, updates);
             }
-            onUpdate(id, updates);
             
             setDraggingEndpoint(null);
+            draggingEndpointRef.current = null;
             setDragPoint(null);
+            dragPointRef.current = null;
             setSnapTarget(null);
+            snapTargetRef.current = null;
         };
 
         window.addEventListener('pointermove', handlePointerMove);
@@ -234,18 +258,23 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
             window.removeEventListener('pointermove', handlePointerMove);
             window.removeEventListener('pointerup', handlePointerUp);
         };
-    }, [draggingEndpoint, dragPoint, scale, shapes, snapTarget, id, onUpdate]);
+    }, [draggingEndpoint, shapes, id, onUpdate]);
 
     const handlePointerDown = (endpoint, e) => {
         e.stopPropagation();
+        e.preventDefault();
         setDraggingEndpoint(endpoint);
-        if (endpoint === 'source') setDragPoint(actualSourcePoint);
-        else if (endpoint === 'target') setDragPoint(actualTargetPoint);
-        else if (endpoint === 'waypoint') setDragPoint(actualWaypoint);
+        draggingEndpointRef.current = endpoint;
+        let startPt = actualSourcePoint;
+        if (endpoint === 'target') startPt = actualTargetPoint;
+        else if (endpoint === 'waypoint') startPt = actualWaypoint;
+        setDragPoint(startPt);
+        dragPointRef.current = startPt;
+        snapTargetRef.current = null;
+        setSnapTarget(null);
     };
 
     // Calculate angles for arrows
-    // Very simplified tangent calculation based on path type
     const sourceAngle = calculateAngle(actualTargetPoint, actualSourcePoint); // reverse
     const targetAngle = calculateAngle(actualSourcePoint, actualTargetPoint);
 
@@ -257,6 +286,7 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
     return (
         <g 
             className="connector-line-group"
+            style={{ pointerEvents: 'auto' }}
             onPointerEnter={() => setIsHovered(true)}
             onPointerLeave={() => setIsHovered(false)}
             onClick={(e) => {
@@ -269,8 +299,9 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
                 d={pathData}
                 fill="none"
                 stroke="transparent"
-                strokeWidth={Math.max(15, strokeWidth * 3)}
+                strokeWidth={Math.max(16, strokeWidth * 3)}
                 className="cursor-pointer"
+                style={{ pointerEvents: 'auto' }}
             />
             
             {/* Glow / Hover effect */}
@@ -280,8 +311,8 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
                     fill="none"
                     stroke={color}
                     strokeWidth={strokeWidth + 4}
-                    strokeOpacity={0.2}
-                    className="transition-all duration-200"
+                    strokeOpacity={0.25}
+                    className="transition-all duration-200 pointer-events-none"
                 />
             )}
 
@@ -294,6 +325,7 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
                 strokeDasharray={strokeDasharray}
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                className="pointer-events-none"
             />
 
             {/* Arrowheads */}
@@ -311,6 +343,7 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
                         stroke="#2563eb" // tailwind blue-600
                         strokeWidth={2 / scale}
                         className="cursor-move hover:scale-125 transition-transform"
+                        style={{ pointerEvents: 'auto' }}
                         onPointerDown={(e) => handlePointerDown('source', e)}
                     />
                     <circle
@@ -321,11 +354,13 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
                         stroke="#2563eb"
                         strokeWidth={2 / scale}
                         className="cursor-move hover:scale-125 transition-transform"
+                        style={{ pointerEvents: 'auto' }}
                         onPointerDown={(e) => handlePointerDown('target', e)}
                     />
                     {/* Draggable Midpoint / Waypoint Handle (Lucidchart bend tool to change shape of line) */}
                     <g 
                         className="cursor-grab active:cursor-grabbing hover:scale-125 transition-transform"
+                        style={{ pointerEvents: 'auto' }}
                         onPointerDown={(e) => handlePointerDown('waypoint', e)}
                         onDoubleClick={(e) => {
                             e.stopPropagation();
@@ -340,6 +375,7 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
                             stroke="#ffffff"
                             strokeWidth={2 / scale}
                             className="shadow-sm"
+                            style={{ pointerEvents: 'auto' }}
                         />
                         <title>Drag to reshape line bend (Double-click to reset)</title>
                     </g>
@@ -351,10 +387,10 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
                 <circle
                     cx={getAnchorPoint(snapTarget.shape, snapTarget.anchor).x}
                     cy={getAnchorPoint(snapTarget.shape, snapTarget.anchor).y}
-                    r={8 / scale}
-                    fill="rgba(37, 99, 235, 0.4)" // blue-600 with opacity
+                    r={9 / scale}
+                    fill="rgba(37, 99, 235, 0.45)" // blue-600 with opacity
                     stroke="#2563eb"
-                    strokeWidth={2 / scale}
+                    strokeWidth={2.5 / scale}
                     className="animate-pulse pointer-events-none"
                 />
             )}

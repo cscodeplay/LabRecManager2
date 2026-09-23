@@ -20,15 +20,15 @@ const ENTITY_CONFIG = {
         necessary: [
             { key: 'admissionNumber', label: 'Admission / Student ID' },
             { key: 'fullName', label: 'Student Name' },
-            { key: 'className', label: 'Enrolled Class' }
+            { key: 'className', label: 'Class Name (Enrolled)' }
         ],
         optional: [
             { key: 'rollNumber', label: 'Roll Number' },
             { key: 'gender', label: 'Gender' },
             { key: 'email', label: 'Email Address' },
             { key: 'phone', label: 'Phone Number' },
-            { key: 'groupName', label: 'Assigned Group' },
-            { key: 'assignedPc', label: 'Assigned Lab PC' },
+            { key: 'groupName', label: 'Group Name' },
+            { key: 'assignedPc', label: 'PC Number / Lab PC' },
             { key: 'submissionsCount', label: 'Total Submissions' },
             { key: 'avgScore', label: 'Average Score (%)' }
         ]
@@ -61,7 +61,7 @@ const ENTITY_CONFIG = {
         optional: [
             { key: 'memberCount', label: 'Member Count' },
             { key: 'memberNames', label: 'Member Names' },
-            { key: 'assignedPc', label: 'Assigned Lab PC' },
+            { key: 'assignedPc', label: 'PC Number / Lab PC' },
             { key: 'labName', label: 'Lab Name' },
             { key: 'leaderName', label: 'Group Leader' }
         ]
@@ -77,7 +77,7 @@ const ENTITY_CONFIG = {
         optional: [
             { key: 'programmingLanguage', label: 'Language' },
             { key: 'maxMarks', label: 'Max Marks' },
-            { key: 'targetClasses', label: 'Target Classes/Groups' },
+            { key: 'targetClasses', label: 'Target Class / Group' },
             { key: 'submissionsCount', label: 'Total Submissions' },
             { key: 'avgScore', label: 'Average Score' },
             { key: 'status', label: 'Status' }
@@ -94,8 +94,8 @@ const ENTITY_CONFIG = {
         optional: [
             { key: 'ipAddress', label: 'IP Address' },
             { key: 'macAddress', label: 'MAC Address' },
-            { key: 'assignedGroup', label: 'Assigned Group' },
-            { key: 'assignedClass', label: 'Assigned Class' }
+            { key: 'assignedGroup', label: 'Group Name' },
+            { key: 'assignedClass', label: 'Class Name' }
         ]
     }
 };
@@ -562,6 +562,17 @@ export default function ReportsPage() {
                                 Column Selection (Necessary vs Optional Checkboxes)
                             </h3>
 
+                            {/* Relational Cross-Table Compatibility Guide */}
+                            <div className="mb-5 p-3.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 rounded-xl flex items-start gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                                    <Layers className="w-4 h-4" />
+                                </div>
+                                <div className="text-xs text-slate-700 leading-relaxed">
+                                    <span className="font-bold text-blue-900">Relational Cross-Table Linking:</span>{' '}
+                                    All tables share standardized relational keys (<span className="font-semibold text-indigo-700 bg-white px-1.5 py-0.5 rounded border border-indigo-200">Class Name</span>, <span className="font-semibold text-indigo-700 bg-white px-1.5 py-0.5 rounded border border-indigo-200">Group Name</span>, <span className="font-semibold text-indigo-700 bg-white px-1.5 py-0.5 rounded border border-indigo-200">PC Number</span>, and <span className="font-semibold text-indigo-700 bg-white px-1.5 py-0.5 rounded border border-indigo-200">Lab Name</span>). This ensures exported Excel worksheets can be linked via VLOOKUP/XLOOKUP or analyzed in PowerBI without foreign key gaps.
+                                </div>
+                            </div>
+
                             <div className="space-y-6 divide-y divide-slate-100">
                                 {selectedEntities.map(key => {
                                     const cfg = ENTITY_CONFIG[key];
@@ -978,6 +989,19 @@ export default function ReportsPage() {
 
                         {/* Modal Form */}
                         <form onSubmit={handleSendEmailReport} className="p-6 space-y-4">
+                            {/* Resend Sandbox Guidance Banner */}
+                            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2.5">
+                                <div className="w-5 h-5 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center shrink-0 text-[11px] font-bold mt-0.5">
+                                    i
+                                </div>
+                                <div className="leading-tight">
+                                    <p className="font-bold text-amber-900">Resend Free-Tier Sandbox Restriction:</p>
+                                    <p className="mt-1 text-[11px] text-amber-700 leading-normal">
+                                        Free Resend accounts without a custom verified domain can only deliver testing emails to the registered account owner (<strong>charan881130@gmail.com</strong>). Click the preset button below to test safely!
+                                    </p>
+                                </div>
+                            </div>
+
                             <div>
                                 <div className="flex items-center justify-between mb-1">
                                     <label className="text-xs font-bold text-slate-700">Recipient Email(s) *</label>

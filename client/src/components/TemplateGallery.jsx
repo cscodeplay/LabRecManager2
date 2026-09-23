@@ -41,7 +41,7 @@ function TemplateMiniPreview({ data }) {
         const tw = Math.max(20, t.width ?? 120);
         const th = Math.max(20, t.height ?? 30);
         minX = Math.min(minX, tx);
-        minY = Math.min(minY, sy);
+        minY = Math.min(minY, ty);
         maxX = Math.max(maxX, tx + tw);
         maxY = Math.max(maxY, ty + th);
     });
