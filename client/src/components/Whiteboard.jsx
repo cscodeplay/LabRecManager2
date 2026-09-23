@@ -25,6 +25,8 @@ import ConnectorLine, { findNearestShape, getAnchorPoint, getConnectorPath, rend
 import TemplateGallery from './TemplateGallery';
 import ClassroomTimerModal from './ClassroomTimerModal';
 import WhiteboardImagePickerModal from './WhiteboardImagePickerModal';
+import WhiteboardExportModal from './WhiteboardExportModal';
+import WhiteboardMinimap from './WhiteboardMinimap';
 import TorchIcon from './TorchIcon';
 import api from '@/lib/api';
 import { toast } from 'react-hot-toast';
@@ -676,11 +678,21 @@ export default function Whiteboard({
     // OCR toggle
     const [isOcrActive, setIsOcrActive] = useState(false);
 
-    // ─── Radial Toolbar State ───────────────────────────────────────────
+    // ─── Radial Toolbar & Draggable Ball State ──────────────────────────
     const [showRadialMenu, setShowRadialMenu] = useState(false);
-    const [radialMenuPos, setRadialMenuPos] = useState({ x: 0, y: 0 });
+    const [radialMenuPos, setRadialMenuPos] = useState({ x: 60, y: 600 });
+    const [floatingBallPos, setFloatingBallPos] = useState({ x: 24, y: 560 });
+    const [isDraggingBall, setIsDraggingBall] = useState(false);
+    const ballDragStartRef = useRef(null);
     const longPressTimerRef = useRef(null);
     const longPressStartPosRef = useRef(null);
+
+    // ─── Canvas Zoom & Minimap Navigation State ──────────────────────────
+    const [zoomLevel, setZoomLevel] = useState(1);
+    const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+
+    // ─── Export & Interactive Panel Sharing Modal State ──────────────────
+    const [showExportModal, setShowExportModal] = useState(false);
 
     // ─── Brush Engine State ─────────────────────────────────────────────
     const [brushType, setBrushType] = useState('normal'); // normal, calligraphy, crayon, watercolor, fountain
@@ -1587,6 +1599,35 @@ export default function Whiteboard({
         saveToHistory();
     }, [selectedImageId, saveToHistory]);
 
+    // Handle importing native WBF / IWB interactive panel format
+    const handleImportWBF = useCallback((data) => {
+        if (!data) return;
+        if (data.format === 'WBF') {
+            if (data.pageShapeObjects) setPageShapeObjects(data.pageShapeObjects);
+            if (data.pageTextObjects) setPageTextObjects(data.pageTextObjects);
+            if (data.pageImageObjects) setPageImageObjects(data.pageImageObjects);
+            if (data.pageBackgrounds) setPageBackgrounds(data.pageBackgrounds);
+            if (data.totalPages) setTotalPages(data.totalPages);
+            if (data.currentPage !== undefined) setCurrentPage(data.currentPage);
+            saveToHistory();
+            toast.success('Loaded Whiteboard session (.wbf)!', { icon: '📂' });
+        } else if (data.format === 'IWB') {
+            if (data.bgImage) {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = canvasRef.current;
+                    if (canvas) {
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                    }
+                };
+                img.src = data.bgImage;
+            }
+            saveToHistory();
+            toast.success('Loaded Interactive Whiteboard (.iwb) file!', { icon: '📟' });
+        }
+    }, [saveToHistory]);
+
     // Paste from clipboard
     const handlePasteItem = useCallback((item) => {
         if (!item) return;
@@ -2366,9 +2407,16 @@ export default function Whiteboard({
             const dy = clientY - imageDragState.startY;
             const startObj = imageDragState.startObj;
 
+            const canvasEl = canvasRef.current;
+            const rect = canvasEl ? canvasEl.getBoundingClientRect() : { width: 1, height: 1 };
+            const scaleX = (canvasEl && rect.width > 0) ? (canvasEl.width / rect.width) : 1;
+            const scaleY = (canvasEl && rect.height > 0) ? (canvasEl.height / rect.height) : 1;
+            const canvasDx = dx * scaleX;
+            const canvasDy = dy * scaleY;
+
             if (imageDragState.action === 'move') {
-                const deltaX = clientX - (imageDragState.lastX || imageDragState.startX);
-                const deltaY = clientY - (imageDragState.lastY || imageDragState.startY);
+                const deltaX = (clientX - (imageDragState.lastX || imageDragState.startX)) * scaleX;
+                const deltaY = (clientY - (imageDragState.lastY || imageDragState.startY)) * scaleY;
                 imageDragState.lastX = clientX;
                 imageDragState.lastY = clientY;
 
@@ -2377,18 +2425,18 @@ export default function Whiteboard({
                 } else {
                     setImageObjects(prev => prev.map(img =>
                         img.id === imageDragState.id
-                            ? { ...img, x: startObj.x + (clientX - imageDragState.startX), y: startObj.y + (clientY - imageDragState.startY) }
+                            ? { ...img, x: startObj.x + canvasDx, y: startObj.y + canvasDy }
                             : img
                     ));
                 }
             } else if (imageDragState.action === 'rotate') {
-                const canvas = canvasRef.current;
-                if (!canvas) return;
-                const rect = canvas.getBoundingClientRect();
+                if (!canvasEl) return;
+                const scaleToScreenX = (canvasEl && canvasEl.width > 0) ? rect.width / canvasEl.width : 1;
+                const scaleToScreenY = (canvasEl && canvasEl.height > 0) ? rect.height / canvasEl.height : 1;
                 const centerX = startObj.x + startObj.width / 2;
                 const centerY = startObj.y + startObj.height / 2;
-                const canvasCenterX = rect.left + centerX;
-                const canvasCenterY = rect.top + centerY;
+                const canvasCenterX = rect.left + centerX * scaleToScreenX;
+                const canvasCenterY = rect.top + centerY * scaleToScreenY;
 
                 const startAngle = Math.atan2(imageDragState.startY - canvasCenterY, imageDragState.startX - canvasCenterX);
                 const currentAngle = Math.atan2(clientY - canvasCenterY, clientX - canvasCenterX);
@@ -2407,18 +2455,18 @@ export default function Whiteboard({
                 const minSize = 50;
 
                 if (handle.includes('e')) {
-                    newWidth = Math.max(minSize, startObj.width + dx);
+                    newWidth = Math.max(minSize, startObj.width + canvasDx);
                 }
                 if (handle.includes('w')) {
-                    const widthChange = Math.min(dx, startObj.width - minSize);
+                    const widthChange = Math.min(canvasDx, startObj.width - minSize);
                     newX = startObj.x + widthChange;
                     newWidth = startObj.width - widthChange;
                 }
                 if (handle.includes('s')) {
-                    newHeight = Math.max(minSize, startObj.height + dy);
+                    newHeight = Math.max(minSize, startObj.height + canvasDy);
                 }
                 if (handle.includes('n')) {
-                    const heightChange = Math.min(dy, startObj.height - minSize);
+                    const heightChange = Math.min(canvasDy, startObj.height - minSize);
                     newY = startObj.y + heightChange;
                     newHeight = startObj.height - heightChange;
                 }
@@ -2462,9 +2510,16 @@ export default function Whiteboard({
             const dy = clientY - textDragState.startY;
             const startObj = textDragState.startObj;
 
+            const canvasEl = canvasRef.current;
+            const rect = canvasEl ? canvasEl.getBoundingClientRect() : { width: 1, height: 1 };
+            const scaleX = (canvasEl && rect.width > 0) ? (canvasEl.width / rect.width) : 1;
+            const scaleY = (canvasEl && rect.height > 0) ? (canvasEl.height / rect.height) : 1;
+            const canvasDx = dx * scaleX;
+            const canvasDy = dy * scaleY;
+
             if (textDragState.action === 'move') {
-                const deltaX = clientX - (textDragState.lastX || textDragState.startX);
-                const deltaY = clientY - (textDragState.lastY || textDragState.startY);
+                const deltaX = (clientX - (textDragState.lastX || textDragState.startX)) * scaleX;
+                const deltaY = (clientY - (textDragState.lastY || textDragState.startY)) * scaleY;
                 textDragState.lastX = clientX;
                 textDragState.lastY = clientY;
 
@@ -2473,18 +2528,18 @@ export default function Whiteboard({
                 } else {
                     setTextObjects(prev => prev.map(txt =>
                         txt.id === textDragState.id
-                            ? { ...txt, x: startObj.x + (clientX - textDragState.startX), y: startObj.y + (clientY - textDragState.startY) }
+                            ? { ...txt, x: startObj.x + canvasDx, y: startObj.y + canvasDy }
                             : txt
                     ));
                 }
             } else if (textDragState.action === 'rotate') {
-                const canvas = canvasRef.current;
-                if (!canvas) return;
-                const rect = canvas.getBoundingClientRect();
+                if (!canvasEl) return;
+                const scaleToScreenX = (canvasEl && canvasEl.width > 0) ? rect.width / canvasEl.width : 1;
+                const scaleToScreenY = (canvasEl && canvasEl.height > 0) ? rect.height / canvasEl.height : 1;
                 const centerX = startObj.x + startObj.width / 2;
                 const centerY = startObj.y + startObj.height / 2;
-                const canvasCenterX = rect.left + centerX;
-                const canvasCenterY = rect.top + centerY;
+                const canvasCenterX = rect.left + centerX * scaleToScreenX;
+                const canvasCenterY = rect.top + centerY * scaleToScreenY;
 
                 const startAngle = Math.atan2(textDragState.startY - canvasCenterY, textDragState.startX - canvasCenterX);
                 const currentAngle = Math.atan2(clientY - canvasCenterY, clientX - canvasCenterX);
@@ -2503,18 +2558,18 @@ export default function Whiteboard({
                 const minSize = 50;
 
                 if (handle.includes('e')) {
-                    newWidth = Math.max(minSize, startObj.width + dx);
+                    newWidth = Math.max(minSize, startObj.width + canvasDx);
                 }
                 if (handle.includes('w')) {
-                    const widthChange = Math.min(dx, startObj.width - minSize);
+                    const widthChange = Math.min(canvasDx, startObj.width - minSize);
                     newX = startObj.x + widthChange;
                     newWidth = startObj.width - widthChange;
                 }
                 if (handle.includes('s')) {
-                    newHeight = Math.max(minSize, startObj.height + dy);
+                    newHeight = Math.max(minSize, startObj.height + canvasDy);
                 }
                 if (handle.includes('n')) {
-                    const heightChange = Math.min(dy, startObj.height - minSize);
+                    const heightChange = Math.min(canvasDy, startObj.height - minSize);
                     newY = startObj.y + heightChange;
                     newHeight = startObj.height - heightChange;
                 }
@@ -2559,9 +2614,16 @@ export default function Whiteboard({
             const dy = clientY - shapeDragState.startY;
             const startObj = shapeDragState.startObj;
 
+            const canvasEl = canvasRef.current;
+            const rect = canvasEl ? canvasEl.getBoundingClientRect() : { width: 1, height: 1 };
+            const scaleX = (canvasEl && rect.width > 0) ? (canvasEl.width / rect.width) : 1;
+            const scaleY = (canvasEl && rect.height > 0) ? (canvasEl.height / rect.height) : 1;
+            const canvasDx = dx * scaleX;
+            const canvasDy = dy * scaleY;
+
             if (shapeDragState.action === 'move') {
-                const deltaX = clientX - (shapeDragState.lastX || shapeDragState.startX);
-                const deltaY = clientY - (shapeDragState.lastY || shapeDragState.startY);
+                const deltaX = (clientX - (shapeDragState.lastX || shapeDragState.startX)) * scaleX;
+                const deltaY = (clientY - (shapeDragState.lastY || shapeDragState.startY)) * scaleY;
                 shapeDragState.lastX = clientX;
                 shapeDragState.lastY = clientY;
 
@@ -2571,30 +2633,23 @@ export default function Whiteboard({
                     if (shapeDragState.startObjs && shapeDragState.startObjs.length > 0) {
                         setShapeObjects(prev => prev.map(shp => {
                             const sObj = shapeDragState.startObjs.find(s => s.id === shp.id);
-                            return sObj ? { ...shp, x: sObj.x + (clientX - shapeDragState.startX), y: sObj.y + (clientY - shapeDragState.startY) } : shp;
+                            return sObj ? { ...shp, x: sObj.x + canvasDx, y: sObj.y + canvasDy } : shp;
                         }));
                         if (shapeDragState.startTextObjs && shapeDragState.startTextObjs.length > 0) {
                             setTextObjects(prev => prev.map(txt => {
                                 const tObj = shapeDragState.startTextObjs.find(t => t.id === txt.id);
-                                return tObj ? { ...txt, x: tObj.x + (clientX - shapeDragState.startX), y: tObj.y + (clientY - shapeDragState.startY) } : txt;
+                                return tObj ? { ...txt, x: tObj.x + canvasDx, y: tObj.y + canvasDy } : txt;
                             }));
                         }
                     } else {
                         setShapeObjects(prev => prev.map(shp =>
                             shp.id === shapeDragState.id
-                                ? { ...shp, x: startObj.x + (clientX - shapeDragState.startX), y: startObj.y + (clientY - shapeDragState.startY) }
+                                ? { ...shp, x: startObj.x + canvasDx, y: startObj.y + canvasDy }
                                 : shp
                         ));
                     }
                 }
             } else if (shapeDragState.action === 'line-endpoint-start' || shapeDragState.action === 'line-endpoint-end') {
-                const canvasEl = canvasRef.current;
-                const rect = canvasEl ? canvasEl.getBoundingClientRect() : { width: 1, height: 1 };
-                const scaleX = canvasEl ? canvasEl.width / rect.width : 1;
-                const scaleY = canvasEl ? canvasEl.height / rect.height : 1;
-                const canvasDx = dx * scaleX;
-                const canvasDy = dy * scaleY;
-
                 // Center of startObj in canvas coordinates
                 const cx = startObj.x + startObj.width / 2;
                 const cy = startObj.y + startObj.height / 2;
@@ -2645,15 +2700,13 @@ export default function Whiteboard({
                         : shp
                 ));
             } else if (shapeDragState.action === 'rotate') {
-                const canvas = canvasRef.current;
-                const rect = canvas.getBoundingClientRect();
-                
-                // Get the center of the shape in screen coordinates
+                if (!canvasEl) return;
+                const scaleToScreenX = (canvasEl && canvasEl.width > 0) ? rect.width / canvasEl.width : 1;
+                const scaleToScreenY = (canvasEl && canvasEl.height > 0) ? rect.height / canvasEl.height : 1;
                 const centerX = startObj.x + startObj.width / 2;
                 const centerY = startObj.y + startObj.height / 2;
-                
-                const canvasCenterX = rect.left + centerX;
-                const canvasCenterY = rect.top + centerY;
+                const canvasCenterX = rect.left + centerX * scaleToScreenX;
+                const canvasCenterY = rect.top + centerY * scaleToScreenY;
 
                 const startAngle = Math.atan2(shapeDragState.startY - canvasCenterY, shapeDragState.startX - canvasCenterX);
                 const currentAngle = Math.atan2(clientY - canvasCenterY, clientX - canvasCenterX);
@@ -2672,18 +2725,18 @@ export default function Whiteboard({
                 const minSize = 20;
 
                 if (handle.includes('e')) {
-                    newWidth = Math.max(minSize, startObj.width + dx);
+                    newWidth = Math.max(minSize, startObj.width + canvasDx);
                 }
                 if (handle.includes('w')) {
-                    const widthChange = Math.min(dx, startObj.width - minSize);
+                    const widthChange = Math.min(canvasDx, startObj.width - minSize);
                     newX = startObj.x + widthChange;
                     newWidth = startObj.width - widthChange;
                 }
                 if (handle.includes('s')) {
-                    newHeight = Math.max(minSize, startObj.height + dy);
+                    newHeight = Math.max(minSize, startObj.height + canvasDy);
                 }
                 if (handle.includes('n')) {
-                    const heightChange = Math.min(dy, startObj.height - minSize);
+                    const heightChange = Math.min(canvasDy, startObj.height - minSize);
                     newY = startObj.y + heightChange;
                     newHeight = startObj.height - heightChange;
                 }
@@ -5166,7 +5219,6 @@ export default function Whiteboard({
                             { id: 'laser', icon: Sparkles, label: 'Laser Pointer' },
                             { id: 'datetime', icon: CalendarClock, label: 'Insert DateTime' },
                             { id: 'recorder', icon: Video, label: 'Toggle Recorder' },
-                            { id: 'fullscreen', icon: isFullscreen ? Minimize2 : Maximize2, label: 'Toggle Fullscreen' },
                             ...(isInstructor ? [{ id: 'permissions', icon: Users, label: 'Manage Permissions' }] : []),
                         ].map(t => (
                             <div key={t.id} className="relative">
@@ -5211,10 +5263,6 @@ export default function Whiteboard({
                                         }
                                         if (t.id === 'permissions') {
                                             setShowPermissions(true);
-                                            return;
-                                        }
-                                        if (t.id === 'fullscreen') {
-                                            if (onToggleFullscreen) onToggleFullscreen();
                                             return;
                                         }
                                         if (tool === t.id) {
@@ -5945,6 +5993,14 @@ export default function Whiteboard({
                         )}
 
                         <button
+                            onClick={() => setShowExportModal(true)}
+                            className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
+                            title="Export & Share Whiteboard (WBF, IWB, PDF, Images, QR Code)"
+                        >
+                            <Download className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
                             onClick={handleScreenshot}
                             className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
                             title="Take Screenshot (Selection or Full Page)"
@@ -6032,7 +6088,9 @@ export default function Whiteboard({
                     style={{
                         width: canvasWidth,
                         height: canvasHeight,
-                        transform: isFullscreen ? `scale(${fullscreenScale})` : 'none',
+                        transform: isFullscreen 
+                            ? `scale(${fullscreenScale * zoomLevel}) translate(${panOffset.x}px, ${panOffset.y}px)` 
+                            : `scale(${zoomLevel}) translate(${panOffset.x}px, ${panOffset.y}px)`,
                         transformOrigin: 'center center',
                         backgroundColor: bgColor,
                         touchAction: 'none',
@@ -6276,7 +6334,7 @@ export default function Whiteboard({
                                     width: imgObj.width,
                                     height: imgObj.height,
                                     zIndex: imgObj.zIndex || (isSelected ? 25 : 10),
-                                    transform: `rotate(${imgObj.rotation || 0}deg) ${imgObj.flipX ? 'scaleX(-1)' : ''} ${imgObj.flipY ? 'scaleY(-1)' : ''}`,
+                                    transform: `rotate(${imgObj.rotation || 0}deg)`,
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : (tool === 'select' ? 'pointer' : 'default'),
                                     pointerEvents: canInteract ? 'auto' : ((tool === 'pen' || tool === 'eraser' || tool === 'highlighter') && !isSelected ? 'none' : 'auto'),
@@ -6290,15 +6348,18 @@ export default function Whiteboard({
                                 }}
                                 onMouseDown={handleStartMove}
                                 onPointerDown={handleStartMove}
-                                onTouchStart={handleStartMove}
+                                touchAction="none"
                             >
-                                {/* Image */}
+                                {/* Image with flip and styling applied strictly to inner img */}
                                 <img
                                     src={imgObj.src}
                                     alt="Inserted"
                                     className="w-full h-full object-contain pointer-events-none select-none"
                                     style={{
-                                        filter: `brightness(${imgObj.brightness ?? 100}%) contrast(${imgObj.contrast ?? 100}%) ${imgObj.sharpness ? `contrast(${100 + (imgObj.sharpness || 0) * 15}%) drop-shadow(0 0 ${(imgObj.sharpness || 0) * 0.4}px rgba(0,0,0,0.6))` : ''}`
+                                        transform: `${imgObj.flipX ? 'scaleX(-1)' : ''} ${imgObj.flipY ? 'scaleY(-1)' : ''}`.trim() || undefined,
+                                        filter: `brightness(${imgObj.brightness ?? 100}%) contrast(${imgObj.contrast ?? 100}%) saturate(${imgObj.saturation ?? 100}%) opacity(${(imgObj.opacity ?? 100) / 100}) blur(${imgObj.blur ?? 0}px) ${imgObj.sharpness ? `contrast(${100 + (imgObj.sharpness || 0) * 15}%) drop-shadow(0 0 ${(imgObj.sharpness || 0) * 0.4}px rgba(0,0,0,0.6))` : ''}`,
+                                        border: imgObj.borderWidth ? `${imgObj.borderWidth}px ${imgObj.borderStyle || 'solid'} ${imgObj.borderColor || '#3b82f6'}` : undefined,
+                                        borderRadius: imgObj.borderRadius ? `${imgObj.borderRadius}px` : undefined,
                                     }}
                                     draggable={false}
                                 />
@@ -6312,14 +6373,27 @@ export default function Whiteboard({
                                             style={{ pointerEvents: 'auto', cursor: 'move', touchAction: 'none' }} 
                                             onMouseDown={handleStartMove}
                                             onPointerDown={handleStartMove}
-                                            onTouchStart={handleStartMove}
                                         />
+
+                                        {/* Corner Delete X Button */}
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setImageObjects(prev => prev.filter(i => i.id !== imgObj.id));
+                                                setSelectedImageId(null);
+                                            }}
+                                            className="absolute -top-3 -right-3 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-white/60 z-50 pointer-events-auto cursor-pointer transition-transform hover:scale-110 active:scale-95"
+                                            title="Delete Image"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
 
                                         {/* Image Quick Actions Toolbar */}
                                         <div
                                             className="absolute -top-11 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-lg shadow-xl px-2 py-1 z-40 pointer-events-auto text-slate-200"
                                             style={{
-                                                transform: `translateX(-50%) ${imgObj.flipX ? 'scaleX(-1)' : ''} ${imgObj.flipY ? 'scaleY(-1)' : ''} rotate(-${imgObj.rotation || 0}deg)`,
+                                                transform: 'translateX(-50%)',
                                                 transformOrigin: 'center center'
                                             }}
                                             onClick={(e) => e.stopPropagation()}
@@ -6343,7 +6417,7 @@ export default function Whiteboard({
                                             <button
                                                 onClick={() => setShowImageAdjustModal(prev => !prev)}
                                                 className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showImageAdjustModal || (imgObj.brightness && imgObj.brightness !== 100) || (imgObj.contrast && imgObj.contrast !== 100) || (imgObj.sharpness && imgObj.sharpness > 0) ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}
-                                                title="Adjust Brightness, Contrast & Sharpness"
+                                                title="Adjust Image Quality & Filters"
                                             >
                                                 <Sliders className="w-3.5 h-3.5" />
                                             </button>
@@ -6352,20 +6426,21 @@ export default function Whiteboard({
                                         {/* Image Adjustments Popover */}
                                         {showImageAdjustModal && (
                                             <div
-                                                className="absolute -top-52 left-1/2 -translate-x-1/2 w-64 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl shadow-2xl p-3 z-50 pointer-events-auto text-slate-200 flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-150"
+                                                className="absolute -top-72 left-1/2 -translate-x-1/2 w-68 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl shadow-2xl p-3 z-50 pointer-events-auto text-slate-200 flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-150 max-h-72 overflow-y-auto"
                                                 style={{
-                                                    transform: `translateX(-50%) ${imgObj.flipX ? 'scaleX(-1)' : ''} ${imgObj.flipY ? 'scaleY(-1)' : ''} rotate(-${imgObj.rotation || 0}deg)`,
+                                                    transform: 'translateX(-50%)',
                                                     transformOrigin: 'center center'
                                                 }}
                                                 onClick={(e) => e.stopPropagation()}
                                                 onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                                onPointerDown={(e) => e.stopPropagation()}
                                             >
                                                 <div className="flex items-center justify-between pb-1 border-b border-slate-800">
                                                     <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
                                                         <Sliders className="w-3.5 h-3.5 text-indigo-400" /> Image Adjustments
                                                     </span>
                                                     <button
-                                                        onClick={() => updateSelectedImageFilters({ brightness: 100, contrast: 100, sharpness: 0 })}
+                                                        onClick={() => updateSelectedImageFilters({ brightness: 100, contrast: 100, sharpness: 0, saturation: 100, opacity: 100, blur: 0, borderWidth: 0 })}
                                                         className="text-[10px] text-indigo-400 hover:text-indigo-300 hover:underline"
                                                     >
                                                         Reset
@@ -6384,6 +6459,8 @@ export default function Whiteboard({
                                                         max="200"
                                                         value={imgObj.brightness ?? 100}
                                                         onChange={(e) => updateSelectedImageFilters({ brightness: parseInt(e.target.value, 10) })}
+                                                        onPointerDown={(e) => e.stopPropagation()}
+                                                        onTouchStart={(e) => e.stopPropagation()}
                                                         className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
                                                     />
                                                 </div>
@@ -6400,6 +6477,44 @@ export default function Whiteboard({
                                                         max="200"
                                                         value={imgObj.contrast ?? 100}
                                                         onChange={(e) => updateSelectedImageFilters({ contrast: parseInt(e.target.value, 10) })}
+                                                        onPointerDown={(e) => e.stopPropagation()}
+                                                        onTouchStart={(e) => e.stopPropagation()}
+                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                    />
+                                                </div>
+
+                                                {/* Saturation */}
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                                                        <span className="flex items-center gap-1"><Palette className="w-3 h-3 text-emerald-400" /> Saturation</span>
+                                                        <span className="font-mono text-white">{imgObj.saturation ?? 100}%</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="0"
+                                                        max="200"
+                                                        value={imgObj.saturation ?? 100}
+                                                        onChange={(e) => updateSelectedImageFilters({ saturation: parseInt(e.target.value, 10) })}
+                                                        onPointerDown={(e) => e.stopPropagation()}
+                                                        onTouchStart={(e) => e.stopPropagation()}
+                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                    />
+                                                </div>
+
+                                                {/* Opacity */}
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                                                        <span>Opacity</span>
+                                                        <span className="font-mono text-white">{imgObj.opacity ?? 100}%</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="10"
+                                                        max="100"
+                                                        value={imgObj.opacity ?? 100}
+                                                        onChange={(e) => updateSelectedImageFilters({ opacity: parseInt(e.target.value, 10) })}
+                                                        onPointerDown={(e) => e.stopPropagation()}
+                                                        onTouchStart={(e) => e.stopPropagation()}
                                                         className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
                                                     />
                                                 </div>
@@ -6416,8 +6531,27 @@ export default function Whiteboard({
                                                         max="10"
                                                         value={imgObj.sharpness ?? 0}
                                                         onChange={(e) => updateSelectedImageFilters({ sharpness: parseInt(e.target.value, 10) })}
+                                                        onPointerDown={(e) => e.stopPropagation()}
+                                                        onTouchStart={(e) => e.stopPropagation()}
                                                         className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
                                                     />
+                                                </div>
+
+                                                {/* Border Styling */}
+                                                <div className="flex flex-col gap-1 pt-1 border-t border-slate-800">
+                                                    <div className="text-[10px] text-slate-400 font-medium">Border Frame</div>
+                                                    <div className="flex items-center gap-1">
+                                                        {[0, 2, 4, 6].map(bw => (
+                                                            <button
+                                                                key={bw}
+                                                                type="button"
+                                                                onClick={() => updateSelectedImageFilters({ borderWidth: bw, borderColor: imgObj.borderColor || '#3b82f6' })}
+                                                                className={`px-2 py-0.5 rounded text-[10px] ${imgObj.borderWidth === bw ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                                            >
+                                                                {bw === 0 ? 'None' : `${bw}px`}
+                                                            </button>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}
@@ -7149,6 +7283,12 @@ export default function Whiteboard({
                                 onClick={(e) => {
                                     e.stopPropagation();
                                 }}
+                                onDoubleClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!shpObj.isLocked && shpObj.type !== 'ruler' && shpObj.type !== 'protractor') {
+                                        setEditingShapeTextId(shpObj.id);
+                                    }
+                                }}
                                 onPointerDown={(e) => {
                                     let activeSelectionIds = selectedShapeIds;
                                     if (tool === 'select') {
@@ -7186,16 +7326,21 @@ export default function Whiteboard({
                                         return;
                                     }
                                     if (e.target.dataset.handle) return;
+                                    if (editingShapeTextId === shpObj.id) return;
                                     e.stopPropagation();
                                     if (shpObj.isLocked) return; // Cannot drag locked object
+
+                                    const clientX = e.clientX !== undefined ? e.clientX : (e.touches?.[0]?.clientX ?? 0);
+                                    const clientY = e.clientY !== undefined ? e.clientY : (e.touches?.[0]?.clientY ?? 0);
 
                                     setShapeDragState({
                                         id: shpObj.id,
                                         action: 'move',
-                                        startX: e.clientX,
-                                        startY: e.clientY,
+                                        startX: clientX,
+                                        startY: clientY,
                                         startObj: { ...shpObj },
-                                        startObjs: shapeObjects.filter(s => activeSelectionIds.includes(s.id) && !s.isLocked)
+                                        startObjs: shapeObjects.filter(s => activeSelectionIds.includes(s.id) && !s.isLocked),
+                                        startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id))
                                     });
                                 }}
                             >
@@ -7223,26 +7368,52 @@ export default function Whiteboard({
                                     <div 
                                         className="absolute inset-0 flex items-center justify-center p-2"
                                         style={{
-                                            transform: `${shpObj.flipX ? 'scaleX(-1)' : ''} ${shpObj.flipY ? 'scaleY(-1)' : ''}`,
-                                            pointerEvents: 'auto'
+                                            pointerEvents: editingShapeTextId === shpObj.id ? 'auto' : 'none'
                                         }}
                                     >
-                                        <textarea
-                                            value={shpObj.text}
-                                            onChange={(e) => {
-                                                setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, text: e.target.value } : s));
-                                            }}
-                                            onMouseDown={e => e.stopPropagation()}
-                                            placeholder="Text..."
-                                            className="w-full text-center bg-transparent border-none outline-none resize-none overflow-hidden"
-                                            style={{ 
-                                                color: shpObj.textColor || shpObj.color, 
-                                                fontSize: shpObj.fontSize || 20,
-                                                fontFamily: shpObj.fontFamily || 'sans-serif',
-                                                fontWeight: shpObj.fontWeight || 'normal',
-                                                fontStyle: shpObj.fontStyle || 'normal',
-                                            }}
-                                        />
+                                        {editingShapeTextId === shpObj.id ? (
+                                            <textarea
+                                                autoFocus
+                                                value={shpObj.text}
+                                                onChange={(e) => {
+                                                    setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, text: e.target.value } : s));
+                                                }}
+                                                onBlur={() => {
+                                                    setEditingShapeTextId(null);
+                                                    saveToHistory();
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Escape') {
+                                                        setEditingShapeTextId(null);
+                                                    }
+                                                    e.stopPropagation();
+                                                }}
+                                                onMouseDown={e => e.stopPropagation()}
+                                                onPointerDown={e => e.stopPropagation()}
+                                                placeholder="Type text..."
+                                                className="w-full text-center bg-white/60 dark:bg-black/60 backdrop-blur-xs border border-indigo-500 rounded outline-none resize-none overflow-hidden p-1 shadow-inner text-slate-800 dark:text-slate-100"
+                                                style={{ 
+                                                    color: shpObj.textColor || shpObj.color, 
+                                                    fontSize: shpObj.fontSize || 20,
+                                                    fontFamily: shpObj.fontFamily || 'sans-serif',
+                                                    fontWeight: shpObj.fontWeight || 'normal',
+                                                    fontStyle: shpObj.fontStyle || 'normal',
+                                                }}
+                                            />
+                                        ) : (
+                                            <div
+                                                className="w-full text-center select-none whitespace-pre-wrap break-words pointer-events-none"
+                                                style={{ 
+                                                    color: shpObj.textColor || shpObj.color, 
+                                                    fontSize: shpObj.fontSize || 20,
+                                                    fontFamily: shpObj.fontFamily || 'sans-serif',
+                                                    fontWeight: shpObj.fontWeight || 'normal',
+                                                    fontStyle: shpObj.fontStyle || 'normal',
+                                                }}
+                                            >
+                                                {shpObj.text || (isSelected ? <span className="text-slate-400 italic text-[11px] block select-none">Double-click to type</span> : '')}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
@@ -7324,7 +7495,32 @@ export default function Whiteboard({
                                         {!['line', 'arrow', 'double_arrow', 'dashed_line'].includes(shpObj.type) && (
                                             <div className="absolute inset-0 border-2 border-purple-500 pointer-events-none" />
                                         )}
-                                        <div className="absolute inset-0" style={{ pointerEvents: ['line', 'arrow', 'double_arrow', 'dashed_line'].includes(shpObj.type) ? 'none' : 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!canUserDraw) return; e.stopPropagation(); e.preventDefault(); if (shpObj.isLocked) return; setShapeDragState({ id: shpObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...shpObj }, startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)), startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)) }); }} />
+                                        <div 
+                                            className="absolute inset-0" 
+                                            style={{ 
+                                                pointerEvents: (editingShapeTextId === shpObj.id || ['line', 'arrow', 'double_arrow', 'dashed_line'].includes(shpObj.type)) ? 'none' : 'auto', 
+                                                cursor: 'move',
+                                                touchAction: 'none'
+                                            }} 
+                                            onPointerDown={(e) => { 
+                                                if (!canUserDraw) return; 
+                                                if (editingShapeTextId === shpObj.id) return;
+                                                e.stopPropagation(); 
+                                                if (e.cancelable) e.preventDefault(); 
+                                                if (shpObj.isLocked) return; 
+                                                const clientX = e.clientX !== undefined ? e.clientX : (e.touches?.[0]?.clientX ?? 0);
+                                                const clientY = e.clientY !== undefined ? e.clientY : (e.touches?.[0]?.clientY ?? 0);
+                                                setShapeDragState({ 
+                                                    id: shpObj.id, 
+                                                    action: 'move', 
+                                                    startX: clientX, 
+                                                    startY: clientY, 
+                                                    startObj: { ...shpObj }, 
+                                                    startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)), 
+                                                    startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)) 
+                                                }); 
+                                            }} 
+                                        />
                                         
 
                                         
@@ -7815,30 +8011,78 @@ export default function Whiteboard({
                         )}
                     </svg>
 
-                    {/* Floating Radial FAB Button (Bottom-Left) */}
-                    <button
-                        type="button"
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            const wrapper = canvasWrapperRef.current;
-                            if (wrapper) {
-                                const rect = wrapper.getBoundingClientRect();
-                                setRadialMenuPos({ x: rect.width / 2, y: rect.height / 2 });
-                                setShowRadialMenu(!showRadialMenu);
-                            }
+                    {/* Floating Draggable Radial Ball */}
+                    <div
+                        style={{
+                            position: 'absolute',
+                            left: `${floatingBallPos.x}px`,
+                            top: `${floatingBallPos.y}px`,
+                            touchAction: 'none'
                         }}
-                        className="radial-fab-button absolute bottom-20 left-4 z-40 w-11 h-11 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl shadow-indigo-500/30 border-2 border-white/20 flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all duration-200 cursor-pointer pointer-events-auto"
-                        title="Quick Tool Wheel (Press ~ or barrel button)"
+                        className="z-40 pointer-events-auto select-none"
                     >
-                        <Plus className="w-5 h-5" />
-                    </button>
+                        <button
+                            type="button"
+                            onPointerDown={(e) => {
+                                e.stopPropagation();
+                                const clientX = e.clientX !== undefined ? e.clientX : (e.touches?.[0]?.clientX ?? 0);
+                                const clientY = e.clientY !== undefined ? e.clientY : (e.touches?.[0]?.clientY ?? 0);
+                                ballDragStartRef.current = {
+                                    startX: clientX,
+                                    startY: clientY,
+                                    initialX: floatingBallPos.x,
+                                    initialY: floatingBallPos.y,
+                                    moved: false
+                                };
+                                setIsDraggingBall(true);
 
-                    {/* Circular Radial Toolbar */}
+                                const onMove = (me) => {
+                                    if (!ballDragStartRef.current) return;
+                                    const cx = me.clientX !== undefined ? me.clientX : (me.touches?.[0]?.clientX ?? 0);
+                                    const cy = me.clientY !== undefined ? me.clientY : (me.touches?.[0]?.clientY ?? 0);
+                                    const dx = cx - ballDragStartRef.current.startX;
+                                    const dy = cy - ballDragStartRef.current.startY;
+                                    if (Math.hypot(dx, dy) > 4) {
+                                        ballDragStartRef.current.moved = true;
+                                    }
+                                    const maxX = (canvasWrapperRef.current?.clientWidth || window.innerWidth) - 50;
+                                    const maxY = (canvasWrapperRef.current?.clientHeight || window.innerHeight) - 50;
+                                    const newX = Math.max(10, Math.min(maxX, ballDragStartRef.current.initialX + dx));
+                                    const newY = Math.max(10, Math.min(maxY, ballDragStartRef.current.initialY + dy));
+                                    setFloatingBallPos({ x: newX, y: newY });
+                                };
+
+                                const onUp = () => {
+                                    window.removeEventListener('pointermove', onMove);
+                                    window.removeEventListener('pointerup', onUp);
+                                    window.removeEventListener('touchmove', onMove);
+                                    window.removeEventListener('touchend', onUp);
+                                    setIsDraggingBall(false);
+                                    if (ballDragStartRef.current && !ballDragStartRef.current.moved) {
+                                        setRadialMenuPos({ x: floatingBallPos.x + 22, y: floatingBallPos.y + 22 });
+                                        setShowRadialMenu(prev => !prev);
+                                    }
+                                    ballDragStartRef.current = null;
+                                };
+
+                                window.addEventListener('pointermove', onMove);
+                                window.addEventListener('pointerup', onUp);
+                                window.addEventListener('touchmove', onMove, { passive: false });
+                                window.addEventListener('touchend', onUp);
+                            }}
+                            className={`radial-fab-button w-11 h-11 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl shadow-indigo-500/40 border-2 border-white/30 flex items-center justify-center text-white transition-transform duration-150 cursor-grab active:cursor-grabbing hover:scale-105 active:scale-95 ${
+                                isDraggingBall ? 'opacity-80 scale-105' : ''
+                            }`}
+                            title="Quick Radial Toolbar (Drag ball anywhere, tap to open)"
+                        >
+                            <Plus className={`w-5 h-5 transition-transform duration-200 ${showRadialMenu ? 'rotate-45' : ''}`} />
+                        </button>
+                    </div>
+
+                    {/* Circular Radial Toolbar Centered on Floating Ball */}
                     <RadialToolbar
                         isOpen={showRadialMenu}
-                        position={radialMenuPos}
+                        position={{ x: floatingBallPos.x + 22, y: floatingBallPos.y + 22 }}
                         currentTool={tool}
                         currentBrushType={brushType}
                         onToolSelect={handleRadialToolSelect}
@@ -8042,6 +8286,23 @@ export default function Whiteboard({
                     )}
                 </div>
 
+                {/* Interactive 16:9 Canvas Minimap with Zoom & Viewport Navigation */}
+                <div className="absolute bottom-4 right-4 z-40 pointer-events-auto">
+                    <WhiteboardMinimap
+                        canvasWidth={canvasWidth}
+                        canvasHeight={canvasHeight}
+                        shapeObjects={shapeObjects}
+                        textObjects={textObjects}
+                        imageObjects={imageObjects}
+                        zoomLevel={zoomLevel}
+                        onZoomChange={setZoomLevel}
+                        panOffset={panOffset}
+                        onPanChange={setPanOffset}
+                        viewportWidth={canvasWrapperRef.current?.clientWidth || canvasWidth}
+                        viewportHeight={canvasWrapperRef.current?.clientHeight || canvasHeight}
+                    />
+                </div>
+
                 {/* Full-surface Loading Overlay & Interaction Lock */}
                 {!isStateLoaded && (
                     <div className="absolute inset-0 z-50 bg-slate-900/30 backdrop-blur-xs flex flex-col items-center justify-center select-none pointer-events-auto transition-all duration-300">
@@ -8076,6 +8337,25 @@ export default function Whiteboard({
             <ClassroomTimerModal
                 isOpen={showClassroomTimer}
                 onClose={() => setShowClassroomTimer(false)}
+            />
+
+            {/* Whiteboard Export & Interactive Panel Sharing Modal (WBF, IWB, PDF, PNG, JPG, SVG, QR) */}
+            <WhiteboardExportModal
+                isOpen={showExportModal}
+                onClose={() => setShowExportModal(false)}
+                whiteboardData={{
+                    pageBackgrounds,
+                    pageImageObjects,
+                    pageTextObjects,
+                    pageShapeObjects,
+                    pages
+                }}
+                sessionId={sessionId}
+                whiteboardId={whiteboardId}
+                canvasRef={canvasRef}
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onImportWBF={handleImportWBF}
             />
 
             {/* Footer */}

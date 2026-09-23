@@ -186,20 +186,19 @@ const templates = [
         previewColors: ['#22c55e', '#3b82f6', '#eab308', '#ef4444'],
         data: {
             title: 'Algorithm Flowchart',
-            background: { pattern: 'dots', color: '#f8fafc' },
             shapes: [
                 { id: 'flow-start', type: 'rectangle', x: 400, y: 100, width: 200, height: 60, color: '#16a34a', fillColor: '#dcfce7', strokeWidth: 2, rotation: 0, text: 'Start', textColor: '#166534', fontSize: 16, radius: 30 },
-                { id: 'flow-input', type: 'rectangle', x: 400, y: 230, width: 200, height: 60, color: '#2563eb', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: 'Input', textColor: '#1e40af', fontSize: 16 },
-                { id: 'flow-decision', type: 'diamond', x: 420, y: 360, width: 160, height: 100, color: '#ca8a04', fillColor: '#fef08a', strokeWidth: 2, rotation: 0, text: 'Decision?', textColor: '#854d0e', fontSize: 15 },
-                { id: 'flow-output', type: 'rectangle', x: 400, y: 530, width: 200, height: 60, color: '#ea580c', fillColor: '#ffedd5', strokeWidth: 2, rotation: 0, text: 'Output', textColor: '#9a3412', fontSize: 16, skewX: 10 },
-                { id: 'flow-end', type: 'rectangle', x: 400, y: 660, width: 200, height: 60, color: '#dc2626', fillColor: '#fee2e2', strokeWidth: 2, rotation: 0, text: 'End', textColor: '#991b1b', fontSize: 16, radius: 30 },
+                { id: 'flow-input', type: 'rectangle', x: 400, y: 220, width: 200, height: 60, color: '#2563eb', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: 'Input', textColor: '#1e40af', fontSize: 16 },
+                { id: 'flow-decision', type: 'diamond', x: 420, y: 350, width: 160, height: 100, color: '#ca8a04', fillColor: '#fef08a', strokeWidth: 2, rotation: 0, text: 'Decision?', textColor: '#854d0e', fontSize: 15 },
+                { id: 'flow-output', type: 'rectangle', x: 400, y: 520, width: 200, height: 60, color: '#ea580c', fillColor: '#ffedd5', strokeWidth: 2, rotation: 0, text: 'Output', textColor: '#9a3412', fontSize: 16, skewX: 10 },
+                { id: 'flow-end', type: 'rectangle', x: 400, y: 650, width: 200, height: 60, color: '#dc2626', fillColor: '#fee2e2', strokeWidth: 2, rotation: 0, text: 'End', textColor: '#991b1b', fontSize: 16, radius: 30 },
                 { id: 'flow-conn-1', type: 'connector', sourceId: 'flow-start', sourceAnchor: 'bottom', targetId: 'flow-input', targetAnchor: 'top', pathType: 'curved', arrowEnd: 'arrow', color: '#475569', strokeWidth: 2 },
                 { id: 'flow-conn-2', type: 'connector', sourceId: 'flow-input', sourceAnchor: 'bottom', targetId: 'flow-decision', targetAnchor: 'top', pathType: 'curved', arrowEnd: 'arrow', color: '#475569', strokeWidth: 2 },
                 { id: 'flow-conn-3', type: 'connector', sourceId: 'flow-decision', sourceAnchor: 'bottom', targetId: 'flow-output', targetAnchor: 'top', pathType: 'curved', arrowEnd: 'arrow', color: '#475569', strokeWidth: 2 },
                 { id: 'flow-conn-4', type: 'connector', sourceId: 'flow-output', sourceAnchor: 'bottom', targetId: 'flow-end', targetAnchor: 'top', pathType: 'curved', arrowEnd: 'arrow', color: '#475569', strokeWidth: 2 },
             ],
             texts: [
-                { id: 'flow-title', x: 400, y: 50, width: 300, height: 40, text: 'Algorithm Flowchart', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+                { id: 'flow-title', x: 400, y: 40, width: 300, height: 40, text: 'Algorithm Flowchart', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
             ]
         }
     },
@@ -267,14 +266,14 @@ const templates = [
             title: 'UML Class Diagram',
             background: { pattern: 'none', color: '#ffffff' },
             shapes: [
-                { id: uuid(), type: 'rectangle', x: 300, y: 200, width: 250, height: 200, color: '#0f172a', fillColor: '#f8fafc', strokeWidth: 2, rotation: 0, text: '', textColor: '#0f172a', fontSize: 14 },
-                { id: uuid(), type: 'rectangle', x: 700, y: 200, width: 250, height: 200, color: '#0f172a', fillColor: '#f8fafc', strokeWidth: 2, rotation: 0, text: '', textColor: '#0f172a', fontSize: 14 },
-                { id: uuid(), type: 'rectangle', x: 500, y: 500, width: 250, height: 200, color: '#0f172a', fillColor: '#f8fafc', strokeWidth: 2, rotation: 0, text: '', textColor: '#0f172a', fontSize: 14 },
+                { id: 'uml-user', type: 'rectangle', x: 300, y: 200, width: 250, height: 200, color: '#0f172a', fillColor: '#f8fafc', strokeWidth: 2, rotation: 0, text: '', textColor: '#0f172a', fontSize: 14 },
+                { id: 'uml-db', type: 'rectangle', x: 700, y: 200, width: 250, height: 200, color: '#0f172a', fillColor: '#f8fafc', strokeWidth: 2, rotation: 0, text: '', textColor: '#0f172a', fontSize: 14 },
+                { id: 'uml-api', type: 'rectangle', x: 500, y: 500, width: 250, height: 200, color: '#0f172a', fillColor: '#f8fafc', strokeWidth: 2, rotation: 0, text: '', textColor: '#0f172a', fontSize: 14 },
                 
                 // Connecting Relationship Edges
-                { id: uuid(), type: 'arrow', x: 550, y: 300, width: 150, height: 0, color: '#475569', strokeWidth: 2 },
-                { id: uuid(), type: 'arrow', x: 425, y: 400, width: 75, height: 100, color: '#475569', strokeWidth: 2 },
-                { id: uuid(), type: 'arrow', x: 825, y: 400, width: -75, height: 100, color: '#475569', strokeWidth: 2 },
+                { id: 'uml-c1', type: 'connector', sourceId: 'uml-user', targetId: 'uml-db', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#475569', strokeWidth: 2, arrowEnd: 'arrow' },
+                { id: 'uml-c2', type: 'connector', sourceId: 'uml-user', targetId: 'uml-api', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'curved', color: '#475569', strokeWidth: 2, arrowEnd: 'arrow' },
+                { id: 'uml-c3', type: 'connector', sourceId: 'uml-db', targetId: 'uml-api', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'curved', color: '#475569', strokeWidth: 2, arrowEnd: 'arrow' },
             ],
             texts: [
                 { id: uuid(), x: 300, y: 120, width: 250, height: 30, text: 'User', fontSize: 18, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 },
@@ -296,18 +295,18 @@ const templates = [
             title: 'Entity-Relationship Diagram',
             background: { pattern: 'grid', color: '#fafafa' },
             shapes: [
-                { id: uuid(), type: 'rectangle', x: 200, y: 300, width: 160, height: 80, color: '#0369a1', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'Student', textColor: '#075985', fontSize: 18 },
-                { id: uuid(), type: 'rectangle', x: 800, y: 300, width: 160, height: 80, color: '#0369a1', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'Course', textColor: '#075985', fontSize: 18 },
-                { id: uuid(), type: 'rectangle', x: 500, y: 300, width: 160, height: 160, color: '#be123c', fillColor: '#ffe4e6', strokeWidth: 2, rotation: 45, text: 'Enrollment', textColor: '#881337', fontSize: 16 },
+                { id: 'er-student', type: 'rectangle', x: 200, y: 300, width: 160, height: 80, color: '#0369a1', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'Student', textColor: '#075985', fontSize: 18 },
+                { id: 'er-course', type: 'rectangle', x: 800, y: 300, width: 160, height: 80, color: '#0369a1', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'Course', textColor: '#075985', fontSize: 18 },
+                { id: 'er-enrollment', type: 'diamond', x: 500, y: 300, width: 160, height: 160, color: '#be123c', fillColor: '#ffe4e6', strokeWidth: 2, rotation: 0, text: 'Enrollment', textColor: '#881337', fontSize: 16 },
                 
-                { id: uuid(), type: 'circle', x: 100, y: 200, width: 100, height: 60, color: '#475569', fillColor: '#f1f5f9', strokeWidth: 2, rotation: 0, text: 'StudentID', textColor: '#334155', fontSize: 14 },
-                { id: uuid(), type: 'circle', x: 250, y: 150, width: 100, height: 60, color: '#475569', fillColor: '#f1f5f9', strokeWidth: 2, rotation: 0, text: 'Name', textColor: '#334155', fontSize: 14 },
+                { id: 'er-att-id', type: 'circle', x: 100, y: 190, width: 120, height: 60, color: '#475569', fillColor: '#f1f5f9', strokeWidth: 2, rotation: 0, text: 'StudentID', textColor: '#334155', fontSize: 14 },
+                { id: 'er-att-name', type: 'circle', x: 250, y: 150, width: 120, height: 60, color: '#475569', fillColor: '#f1f5f9', strokeWidth: 2, rotation: 0, text: 'Name', textColor: '#334155', fontSize: 14 },
 
                 // Relationship & attribute connectors
-                { id: uuid(), type: 'line', x: 360, y: 340, width: 140, height: 0, color: '#64748b', strokeWidth: 2 },
-                { id: uuid(), type: 'line', x: 660, y: 340, width: 140, height: 0, color: '#64748b', strokeWidth: 2 },
-                { id: uuid(), type: 'line', x: 150, y: 260, width: 90, height: 40, color: '#94a3b8', strokeWidth: 1.5 },
-                { id: uuid(), type: 'line', x: 280, y: 210, width: 0, height: 90, color: '#94a3b8', strokeWidth: 1.5 },
+                { id: 'er-c1', type: 'connector', sourceId: 'er-student', targetId: 'er-enrollment', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#64748b', strokeWidth: 2, arrowEnd: 'none' },
+                { id: 'er-c2', type: 'connector', sourceId: 'er-enrollment', targetId: 'er-course', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#64748b', strokeWidth: 2, arrowEnd: 'none' },
+                { id: 'er-c3', type: 'connector', sourceId: 'er-att-id', targetId: 'er-student', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#94a3b8', strokeWidth: 1.5, arrowEnd: 'none' },
+                { id: 'er-c4', type: 'connector', sourceId: 'er-att-name', targetId: 'er-student', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#94a3b8', strokeWidth: 1.5, arrowEnd: 'none' },
             ],
             texts: [
                 { id: uuid(), x: 500, y: 100, width: 400, height: 40, text: 'Entity-Relationship Diagram', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
@@ -325,11 +324,11 @@ const templates = [
             title: 'Data Flow Diagram - Level 0',
             background: { pattern: 'dots', color: '#ffffff' },
             shapes: [
-                { id: uuid(), type: 'rectangle', x: 200, y: 300, width: 140, height: 80, color: '#0f766e', fillColor: '#ccfbf1', strokeWidth: 2, rotation: 0, text: 'Customer', textColor: '#115e59', fontSize: 16 },
-                { id: uuid(), type: 'arrow', x: 340, y: 340, width: 160, height: 0, color: '#0f766e', strokeWidth: 2.5 },
-                { id: uuid(), type: 'circle', x: 500, y: 270, width: 140, height: 140, color: '#b45309', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: '0.1\nOrder\nSystem', textColor: '#92400e', fontSize: 16 },
-                { id: uuid(), type: 'arrow', x: 640, y: 340, width: 160, height: 0, color: '#4338ca', strokeWidth: 2.5 },
-                { id: uuid(), type: 'rectangle', x: 800, y: 300, width: 140, height: 80, color: '#4338ca', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'D1: Orders', textColor: '#3730a3', fontSize: 16 },
+                { id: 'dfd-customer', type: 'rectangle', x: 200, y: 300, width: 140, height: 80, color: '#0f766e', fillColor: '#ccfbf1', strokeWidth: 2, rotation: 0, text: 'Customer', textColor: '#115e59', fontSize: 16 },
+                { id: 'dfd-c1', type: 'connector', sourceId: 'dfd-customer', targetId: 'dfd-process', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#0f766e', strokeWidth: 2.5, arrowEnd: 'arrow' },
+                { id: 'dfd-process', type: 'circle', x: 500, y: 270, width: 140, height: 140, color: '#b45309', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: '0.1\nOrder\nSystem', textColor: '#92400e', fontSize: 16 },
+                { id: 'dfd-c2', type: 'connector', sourceId: 'dfd-process', targetId: 'dfd-store', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#4338ca', strokeWidth: 2.5, arrowEnd: 'arrow' },
+                { id: 'dfd-store', type: 'rectangle', x: 800, y: 300, width: 140, height: 80, color: '#4338ca', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'D1: Orders', textColor: '#3730a3', fontSize: 16 },
             ],
             texts: [
                 { id: uuid(), x: 500, y: 100, width: 400, height: 40, text: 'Data Flow Diagram - Level 0', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
@@ -347,21 +346,21 @@ const templates = [
             title: 'Decision Tree Classifier',
             background: { pattern: 'none', color: '#f8fafc' },
             shapes: [
-                { id: uuid(), type: 'rectangle', x: 500, y: 150, width: 220, height: 80, color: '#1d4ed8', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: 'Feature X > 0.5?', textColor: '#1e3a8a', fontSize: 16 },
+                { id: 'dt-root', type: 'rectangle', x: 500, y: 150, width: 220, height: 80, color: '#1d4ed8', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: 'Feature X > 0.5?', textColor: '#1e3a8a', fontSize: 16 },
                 
-                // Branch lines
-                { id: uuid(), type: 'arrow', x: 550, y: 230, width: -150, height: 120, color: '#047857', strokeWidth: 2 },
-                { id: uuid(), type: 'arrow', x: 670, y: 230, width: 130, height: 120, color: '#b91c1c', strokeWidth: 2 },
+                // Branch connectors
+                { id: 'dt-c1', type: 'connector', sourceId: 'dt-root', targetId: 'dt-class-a', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#047857', strokeWidth: 2, arrowEnd: 'arrow' },
+                { id: 'dt-c2', type: 'connector', sourceId: 'dt-root', targetId: 'dt-feature-y', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#b91c1c', strokeWidth: 2, arrowEnd: 'arrow' },
 
-                { id: uuid(), type: 'rectangle', x: 300, y: 350, width: 200, height: 80, color: '#047857', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'Class A (Yes)', textColor: '#064e3b', fontSize: 16 },
-                { id: uuid(), type: 'rectangle', x: 700, y: 350, width: 200, height: 80, color: '#b91c1c', fillColor: '#fee2e2', strokeWidth: 2, rotation: 0, text: 'Feature Y > 1.2?', textColor: '#7f1d1d', fontSize: 16 },
+                { id: 'dt-class-a', type: 'rectangle', x: 300, y: 350, width: 200, height: 80, color: '#047857', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'Class A (Yes)', textColor: '#064e3b', fontSize: 16 },
+                { id: 'dt-feature-y', type: 'rectangle', x: 700, y: 350, width: 200, height: 80, color: '#b91c1c', fillColor: '#fee2e2', strokeWidth: 2, rotation: 0, text: 'Feature Y > 1.2?', textColor: '#7f1d1d', fontSize: 16 },
                 
-                // Sub-branch lines
-                { id: uuid(), type: 'arrow', x: 750, y: 430, width: -70, height: 120, color: '#047857', strokeWidth: 2 },
-                { id: uuid(), type: 'arrow', x: 850, y: 430, width: 30, height: 120, color: '#047857', strokeWidth: 2 },
+                // Sub-branch connectors
+                { id: 'dt-c3', type: 'connector', sourceId: 'dt-feature-y', targetId: 'dt-class-b', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#047857', strokeWidth: 2, arrowEnd: 'arrow' },
+                { id: 'dt-c4', type: 'connector', sourceId: 'dt-feature-y', targetId: 'dt-class-c', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#047857', strokeWidth: 2, arrowEnd: 'arrow' },
 
-                { id: uuid(), type: 'rectangle', x: 600, y: 550, width: 160, height: 80, color: '#047857', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'Class B', textColor: '#064e3b', fontSize: 16 },
-                { id: uuid(), type: 'rectangle', x: 800, y: 550, width: 160, height: 80, color: '#047857', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'Class C', textColor: '#064e3b', fontSize: 16 },
+                { id: 'dt-class-b', type: 'rectangle', x: 600, y: 550, width: 160, height: 80, color: '#047857', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'Class B', textColor: '#064e3b', fontSize: 16 },
+                { id: 'dt-class-c', type: 'rectangle', x: 800, y: 550, width: 160, height: 80, color: '#047857', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'Class C', textColor: '#064e3b', fontSize: 16 },
             ],
             texts: [
                 { id: uuid(), x: 500, y: 50, width: 400, height: 40, text: 'Decision Tree Classifier', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
@@ -404,20 +403,20 @@ const templates = [
             title: 'Machine Learning Pipeline',
             background: { pattern: 'grid', color: '#f8fafc' },
             shapes: [
-                { id: uuid(), type: 'rectangle', x: 200, y: 300, width: 180, height: 80, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Data Collection', textColor: '#312e81', fontSize: 16, radius: 10 },
-                { id: uuid(), type: 'arrow', x: 380, y: 340, width: 70, height: 0, color: '#4f46e5', strokeWidth: 2.5 },
-                { id: uuid(), type: 'rectangle', x: 450, y: 300, width: 180, height: 80, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Preprocessing', textColor: '#312e81', fontSize: 16, radius: 10 },
-                { id: uuid(), type: 'arrow', x: 630, y: 340, width: 70, height: 0, color: '#4f46e5', strokeWidth: 2.5 },
-                { id: uuid(), type: 'rectangle', x: 700, y: 300, width: 180, height: 80, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Feature Eng', textColor: '#312e81', fontSize: 16, radius: 10 },
+                { id: 'mlp-collect', type: 'rectangle', x: 200, y: 300, width: 180, height: 80, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Data Collection', textColor: '#312e81', fontSize: 16, radius: 10 },
+                { id: 'mlp-c1', type: 'connector', sourceId: 'mlp-collect', targetId: 'mlp-prep', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#4f46e5', strokeWidth: 2.5, arrowEnd: 'arrow' },
+                { id: 'mlp-prep', type: 'rectangle', x: 450, y: 300, width: 180, height: 80, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Preprocessing', textColor: '#312e81', fontSize: 16, radius: 10 },
+                { id: 'mlp-c2', type: 'connector', sourceId: 'mlp-prep', targetId: 'mlp-feat', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#4f46e5', strokeWidth: 2.5, arrowEnd: 'arrow' },
+                { id: 'mlp-feat', type: 'rectangle', x: 700, y: 300, width: 180, height: 80, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Feature Eng', textColor: '#312e81', fontSize: 16, radius: 10 },
                 
                 // Pipeline Downward Sequence to Training
-                { id: uuid(), type: 'arrow', x: 790, y: 380, width: -480, height: 70, color: '#6366f1', strokeWidth: 2 },
+                { id: 'mlp-c3', type: 'connector', sourceId: 'mlp-feat', targetId: 'mlp-train', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#6366f1', strokeWidth: 2, arrowEnd: 'arrow' },
                 
-                { id: uuid(), type: 'rectangle', x: 200, y: 450, width: 180, height: 80, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Model Training', textColor: '#312e81', fontSize: 16, radius: 10 },
-                { id: uuid(), type: 'arrow', x: 380, y: 490, width: 70, height: 0, color: '#4f46e5', strokeWidth: 2.5 },
-                { id: uuid(), type: 'rectangle', x: 450, y: 450, width: 180, height: 80, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Evaluation', textColor: '#312e81', fontSize: 16, radius: 10 },
-                { id: uuid(), type: 'arrow', x: 630, y: 490, width: 70, height: 0, color: '#4f46e5', strokeWidth: 2.5 },
-                { id: uuid(), type: 'rectangle', x: 700, y: 450, width: 180, height: 80, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Deployment', textColor: '#312e81', fontSize: 16, radius: 10 },
+                { id: 'mlp-train', type: 'rectangle', x: 200, y: 450, width: 180, height: 80, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Model Training', textColor: '#312e81', fontSize: 16, radius: 10 },
+                { id: 'mlp-c4', type: 'connector', sourceId: 'mlp-train', targetId: 'mlp-eval', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#4f46e5', strokeWidth: 2.5, arrowEnd: 'arrow' },
+                { id: 'mlp-eval', type: 'rectangle', x: 450, y: 450, width: 180, height: 80, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Evaluation', textColor: '#312e81', fontSize: 16, radius: 10 },
+                { id: 'mlp-c5', type: 'connector', sourceId: 'mlp-eval', targetId: 'mlp-deploy', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#4f46e5', strokeWidth: 2.5, arrowEnd: 'arrow' },
+                { id: 'mlp-deploy', type: 'rectangle', x: 700, y: 450, width: 180, height: 80, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Deployment', textColor: '#312e81', fontSize: 16, radius: 10 },
             ],
             texts: [
                 { id: uuid(), x: 450, y: 150, width: 400, height: 40, text: 'Machine Learning Pipeline', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
@@ -458,22 +457,22 @@ const templates = [
             title: 'Mind Map',
             background: { pattern: 'none', color: '#ffffff' },
             shapes: [
-                { id: uuid(), type: 'circle', x: 500, y: 400, width: 140, height: 140, color: '#a855f7', fillColor: '#f3e8ff', strokeWidth: 3, rotation: 0, text: 'Main Topic', textColor: '#7e22ce', fontSize: 18 },
+                { id: 'mm-center', type: 'circle', x: 500, y: 400, width: 140, height: 140, color: '#a855f7', fillColor: '#f3e8ff', strokeWidth: 3, rotation: 0, text: 'Main Topic', textColor: '#7e22ce', fontSize: 18 },
                 
-                // Connecting radial lines from Main Topic to Subtopics
-                { id: uuid(), type: 'line', x: 500, y: 420, width: -150, height: -140, color: '#93c5fd', strokeWidth: 2 },
-                { id: uuid(), type: 'line', x: 640, y: 420, width: 110, height: -140, color: '#fda4af', strokeWidth: 2 },
-                { id: uuid(), type: 'line', x: 500, y: 470, width: -250, height: -20, color: '#6ee7b7', strokeWidth: 2 },
-                { id: uuid(), type: 'line', x: 640, y: 470, width: 210, height: -20, color: '#fcd34d', strokeWidth: 2 },
-                { id: uuid(), type: 'line', x: 500, y: 520, width: -150, height: 100, color: '#c4b5fd', strokeWidth: 2 },
-                { id: uuid(), type: 'line', x: 640, y: 520, width: 110, height: 100, color: '#5eead4', strokeWidth: 2 },
+                { id: 'mm-sub-1', type: 'circle', x: 250, y: 200, width: 100, height: 100, color: '#3b82f6', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: 'Subtopic 1', textColor: '#1e40af', fontSize: 14 },
+                { id: 'mm-sub-2', type: 'circle', x: 750, y: 200, width: 100, height: 100, color: '#f43f5e', fillColor: '#ffe4e6', strokeWidth: 2, rotation: 0, text: 'Subtopic 2', textColor: '#be123c', fontSize: 14 },
+                { id: 'mm-sub-3', type: 'circle', x: 150, y: 400, width: 100, height: 100, color: '#10b981', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'Subtopic 3', textColor: '#047857', fontSize: 14 },
+                { id: 'mm-sub-4', type: 'circle', x: 850, y: 400, width: 100, height: 100, color: '#f59e0b', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: 'Subtopic 4', textColor: '#b45309', fontSize: 14 },
+                { id: 'mm-sub-5', type: 'circle', x: 250, y: 600, width: 100, height: 100, color: '#8b5cf6', fillColor: '#ede9fe', strokeWidth: 2, rotation: 0, text: 'Subtopic 5', textColor: '#6d28d9', fontSize: 14 },
+                { id: 'mm-sub-6', type: 'circle', x: 750, y: 600, width: 100, height: 100, color: '#14b8a6', fillColor: '#ccfbf1', strokeWidth: 2, rotation: 0, text: 'Subtopic 6', textColor: '#0f766e', fontSize: 14 },
 
-                { id: uuid(), type: 'circle', x: 250, y: 200, width: 100, height: 100, color: '#3b82f6', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: 'Subtopic 1', textColor: '#1e40af', fontSize: 14 },
-                { id: uuid(), type: 'circle', x: 750, y: 200, width: 100, height: 100, color: '#f43f5e', fillColor: '#ffe4e6', strokeWidth: 2, rotation: 0, text: 'Subtopic 2', textColor: '#be123c', fontSize: 14 },
-                { id: uuid(), type: 'circle', x: 150, y: 400, width: 100, height: 100, color: '#10b981', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'Subtopic 3', textColor: '#047857', fontSize: 14 },
-                { id: uuid(), type: 'circle', x: 850, y: 400, width: 100, height: 100, color: '#f59e0b', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: 'Subtopic 4', textColor: '#b45309', fontSize: 14 },
-                { id: uuid(), type: 'circle', x: 250, y: 600, width: 100, height: 100, color: '#8b5cf6', fillColor: '#ede9fe', strokeWidth: 2, rotation: 0, text: 'Subtopic 5', textColor: '#6d28d9', fontSize: 14 },
-                { id: uuid(), type: 'circle', x: 750, y: 600, width: 100, height: 100, color: '#14b8a6', fillColor: '#ccfbf1', strokeWidth: 2, rotation: 0, text: 'Subtopic 6', textColor: '#0f766e', fontSize: 14 },
+                // Connecting radial connectors from Main Topic to Subtopics
+                { id: 'mm-c1', type: 'connector', sourceId: 'mm-center', targetId: 'mm-sub-1', sourceAnchor: 'left', targetAnchor: 'right', pathType: 'curved', color: '#93c5fd', strokeWidth: 2, arrowEnd: 'none' },
+                { id: 'mm-c2', type: 'connector', sourceId: 'mm-center', targetId: 'mm-sub-2', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'curved', color: '#fda4af', strokeWidth: 2, arrowEnd: 'none' },
+                { id: 'mm-c3', type: 'connector', sourceId: 'mm-center', targetId: 'mm-sub-3', sourceAnchor: 'left', targetAnchor: 'right', pathType: 'straight', color: '#6ee7b7', strokeWidth: 2, arrowEnd: 'none' },
+                { id: 'mm-c4', type: 'connector', sourceId: 'mm-center', targetId: 'mm-sub-4', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#fcd34d', strokeWidth: 2, arrowEnd: 'none' },
+                { id: 'mm-c5', type: 'connector', sourceId: 'mm-center', targetId: 'mm-sub-5', sourceAnchor: 'left', targetAnchor: 'right', pathType: 'curved', color: '#c4b5fd', strokeWidth: 2, arrowEnd: 'none' },
+                { id: 'mm-c6', type: 'connector', sourceId: 'mm-center', targetId: 'mm-sub-6', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'curved', color: '#5eead4', strokeWidth: 2, arrowEnd: 'none' },
             ],
             texts: [
                 { id: uuid(), x: 500, y: 50, width: 300, height: 40, text: 'Mind Map', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
@@ -492,37 +491,33 @@ const templates = [
             background: { pattern: 'dots', color: '#f8fafc' },
             shapes: [
                 // Level 1: Leadership / Executive
-                { id: uuid(), type: 'rounded_rect', x: 420, y: 120, width: 240, height: 75, color: '#4338ca', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Chief Executive Officer\n(Leadership)', textColor: '#312e81', fontSize: 15 },
+                { id: 'org-ceo', type: 'rounded_rect', x: 420, y: 120, width: 240, height: 75, color: '#4338ca', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Chief Executive Officer\n(Leadership)', textColor: '#312e81', fontSize: 15 },
                 
-                // Vertical trunk from CEO
-                { id: uuid(), type: 'line', x: 540, y: 195, width: 0, height: 45, color: '#64748b', strokeWidth: 2 },
-                // Horizontal distribution branch
-                { id: uuid(), type: 'line', x: 230, y: 240, width: 620, height: 0, color: '#64748b', strokeWidth: 2 },
-                // Drops to Level 2
-                { id: uuid(), type: 'arrow', x: 230, y: 240, width: 0, height: 40, color: '#64748b', strokeWidth: 2 },
-                { id: uuid(), type: 'arrow', x: 540, y: 240, width: 0, height: 40, color: '#64748b', strokeWidth: 2 },
-                { id: uuid(), type: 'arrow', x: 850, y: 240, width: 0, height: 40, color: '#64748b', strokeWidth: 2 },
-
                 // Level 2: Functional VPs / Heads
-                { id: uuid(), type: 'rounded_rect', x: 120, y: 280, width: 220, height: 65, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'VP of Engineering\nTechnology Lead', textColor: '#0369a1', fontSize: 14 },
-                { id: uuid(), type: 'rounded_rect', x: 430, y: 280, width: 220, height: 65, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'VP of Product\nStrategy & UX', textColor: '#047857', fontSize: 14 },
-                { id: uuid(), type: 'rounded_rect', x: 740, y: 280, width: 220, height: 65, color: '#d97706', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: 'VP of Operations\nLab & Research Mgmt', textColor: '#b45309', fontSize: 14 },
+                { id: 'org-vp-eng', type: 'rounded_rect', x: 120, y: 280, width: 220, height: 65, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'VP of Engineering\nTechnology Lead', textColor: '#0369a1', fontSize: 14 },
+                { id: 'org-vp-prod', type: 'rounded_rect', x: 430, y: 280, width: 220, height: 65, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'VP of Product\nStrategy & UX', textColor: '#047857', fontSize: 14 },
+                { id: 'org-vp-ops', type: 'rounded_rect', x: 740, y: 280, width: 220, height: 65, color: '#d97706', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: 'VP of Operations\nLab & Research Mgmt', textColor: '#b45309', fontSize: 14 },
 
-                // Level 2 to Level 3 connectors
-                { id: uuid(), type: 'arrow', x: 160, y: 345, width: -35, height: 85, color: '#94a3b8', strokeWidth: 1.5 },
-                { id: uuid(), type: 'arrow', x: 280, y: 345, width: 35, height: 85, color: '#94a3b8', strokeWidth: 1.5 },
-                { id: uuid(), type: 'arrow', x: 540, y: 345, width: 0, height: 85, color: '#94a3b8', strokeWidth: 1.5 },
-                { id: uuid(), type: 'arrow', x: 780, y: 345, width: -15, height: 85, color: '#94a3b8', strokeWidth: 1.5 },
-                { id: uuid(), type: 'arrow', x: 920, y: 345, width: 35, height: 85, color: '#94a3b8', strokeWidth: 1.5 },
+                // Connectors: Level 1 to Level 2
+                { id: 'org-c1', type: 'connector', sourceId: 'org-ceo', targetId: 'org-vp-eng', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#64748b', strokeWidth: 2, arrowEnd: 'arrow' },
+                { id: 'org-c2', type: 'connector', sourceId: 'org-ceo', targetId: 'org-vp-prod', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#64748b', strokeWidth: 2, arrowEnd: 'arrow' },
+                { id: 'org-c3', type: 'connector', sourceId: 'org-ceo', targetId: 'org-vp-ops', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#64748b', strokeWidth: 2, arrowEnd: 'arrow' },
 
                 // Level 3: Department Leads & Teams
-                { id: uuid(), type: 'rounded_rect', x: 40, y: 430, width: 170, height: 55, color: '#6366f1', fillColor: '#eef2ff', strokeWidth: 1.5, rotation: 0, text: 'Core Platform\nLead Engineer', textColor: '#4338ca', fontSize: 13 },
-                { id: uuid(), type: 'rounded_rect', x: 230, y: 430, width: 170, height: 55, color: '#6366f1', fillColor: '#eef2ff', strokeWidth: 1.5, rotation: 0, text: 'Cloud & DevOps\nInfrastructure', textColor: '#4338ca', fontSize: 13 },
+                { id: 'org-core', type: 'rounded_rect', x: 40, y: 430, width: 170, height: 55, color: '#6366f1', fillColor: '#eef2ff', strokeWidth: 1.5, rotation: 0, text: 'Core Platform\nLead Engineer', textColor: '#4338ca', fontSize: 13 },
+                { id: 'org-cloud', type: 'rounded_rect', x: 230, y: 430, width: 170, height: 55, color: '#6366f1', fillColor: '#eef2ff', strokeWidth: 1.5, rotation: 0, text: 'Cloud & DevOps\nInfrastructure', textColor: '#4338ca', fontSize: 13 },
 
-                { id: uuid(), type: 'rounded_rect', x: 430, y: 430, width: 220, height: 55, color: '#10b981', fillColor: '#ecfdf5', strokeWidth: 1.5, rotation: 0, text: 'Design & Analytics\nProduct Squads', textColor: '#065f46', fontSize: 13 },
+                { id: 'org-design', type: 'rounded_rect', x: 430, y: 430, width: 220, height: 55, color: '#10b981', fillColor: '#ecfdf5', strokeWidth: 1.5, rotation: 0, text: 'Design & Analytics\nProduct Squads', textColor: '#065f46', fontSize: 13 },
 
-                { id: uuid(), type: 'rounded_rect', x: 680, y: 430, width: 170, height: 55, color: '#f59e0b', fillColor: '#fffbeb', strokeWidth: 1.5, rotation: 0, text: 'Lab Supervisors\nOperations', textColor: '#92400e', fontSize: 13 },
-                { id: uuid(), type: 'rounded_rect', x: 870, y: 430, width: 170, height: 55, color: '#f59e0b', fillColor: '#fffbeb', strokeWidth: 1.5, rotation: 0, text: 'Compliance & Safety\nAudit Officer', textColor: '#92400e', fontSize: 13 },
+                { id: 'org-labs', type: 'rounded_rect', x: 680, y: 430, width: 170, height: 55, color: '#f59e0b', fillColor: '#fffbeb', strokeWidth: 1.5, rotation: 0, text: 'Lab Supervisors\nOperations', textColor: '#92400e', fontSize: 13 },
+                { id: 'org-safety', type: 'rounded_rect', x: 870, y: 430, width: 170, height: 55, color: '#f59e0b', fillColor: '#fffbeb', strokeWidth: 1.5, rotation: 0, text: 'Compliance & Safety\nAudit Officer', textColor: '#92400e', fontSize: 13 },
+
+                // Connectors: Level 2 to Level 3
+                { id: 'org-c4', type: 'connector', sourceId: 'org-vp-eng', targetId: 'org-core', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#94a3b8', strokeWidth: 1.5, arrowEnd: 'arrow' },
+                { id: 'org-c5', type: 'connector', sourceId: 'org-vp-eng', targetId: 'org-cloud', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#94a3b8', strokeWidth: 1.5, arrowEnd: 'arrow' },
+                { id: 'org-c6', type: 'connector', sourceId: 'org-vp-prod', targetId: 'org-design', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#94a3b8', strokeWidth: 1.5, arrowEnd: 'arrow' },
+                { id: 'org-c7', type: 'connector', sourceId: 'org-vp-ops', targetId: 'org-labs', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#94a3b8', strokeWidth: 1.5, arrowEnd: 'arrow' },
+                { id: 'org-c8', type: 'connector', sourceId: 'org-vp-ops', targetId: 'org-safety', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#94a3b8', strokeWidth: 1.5, arrowEnd: 'arrow' },
             ],
             texts: [
                 { id: uuid(), x: 380, y: 45, width: 350, height: 40, text: 'Organizational Hierarchy Chart', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
@@ -618,23 +613,17 @@ const templates = [
             title: 'Continuous PDCA Process Cycle',
             background: { pattern: 'dots', color: '#f8fafc' },
             shapes: [
-                { id: uuid(), type: 'circle', x: 440, y: 300, width: 140, height: 140, color: '#1e293b', fillColor: '#f1f5f9', strokeWidth: 2.5, rotation: 0, text: 'PDCA\nContinuous\nImprovement', textColor: '#0f172a', fontSize: 13 },
-                { id: uuid(), type: 'rounded_rect', x: 410, y: 130, width: 200, height: 75, color: '#2563eb', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: '1. PLAN\nGoals & Hypotheses', textColor: '#1e40af', fontSize: 14 },
-                
-                // Connecting arrows Plan -> Do -> Check -> Act -> Plan
-                { id: uuid(), type: 'arrow', x: 610, y: 170, width: 90, height: 130, color: '#2563eb', strokeWidth: 2.5 },
-                
-                { id: uuid(), type: 'rounded_rect', x: 670, y: 300, width: 200, height: 75, color: '#16a34a', fillColor: '#dcfce7', strokeWidth: 2, rotation: 0, text: '2. DO\nImplement & Pilot', textColor: '#166534', fontSize: 14 },
-                
-                { id: uuid(), type: 'arrow', x: 740, y: 375, width: -130, height: 95, color: '#16a34a', strokeWidth: 2.5 },
-                
-                { id: uuid(), type: 'rounded_rect', x: 410, y: 470, width: 200, height: 75, color: '#d97706', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: '3. CHECK\nMetrics & Analyze', textColor: '#92400e', fontSize: 14 },
-                
-                { id: uuid(), type: 'arrow', x: 410, y: 505, width: -130, height: -130, color: '#d97706', strokeWidth: 2.5 },
-                
-                { id: uuid(), type: 'rounded_rect', x: 150, y: 300, width: 200, height: 75, color: '#9333ea', fillColor: '#f3e8ff', strokeWidth: 2, rotation: 0, text: '4. ACT\nStandardize & Scale', textColor: '#6b21a8', fontSize: 14 },
-                
-                { id: uuid(), type: 'arrow', x: 280, y: 300, width: 130, height: -130, color: '#9333ea', strokeWidth: 2.5 },
+                { id: 'pdca-core', type: 'circle', x: 440, y: 300, width: 140, height: 140, color: '#1e293b', fillColor: '#f1f5f9', strokeWidth: 2.5, rotation: 0, text: 'PDCA\nContinuous\nImprovement', textColor: '#0f172a', fontSize: 13 },
+                { id: 'pdca-plan', type: 'rounded_rect', x: 410, y: 130, width: 200, height: 75, color: '#2563eb', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: '1. PLAN\nGoals & Hypotheses', textColor: '#1e40af', fontSize: 14 },
+                { id: 'pdca-do', type: 'rounded_rect', x: 670, y: 300, width: 200, height: 75, color: '#16a34a', fillColor: '#dcfce7', strokeWidth: 2, rotation: 0, text: '2. DO\nImplement & Pilot', textColor: '#166534', fontSize: 14 },
+                { id: 'pdca-check', type: 'rounded_rect', x: 410, y: 470, width: 200, height: 75, color: '#d97706', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: '3. CHECK\nMetrics & Analyze', textColor: '#92400e', fontSize: 14 },
+                { id: 'pdca-act', type: 'rounded_rect', x: 150, y: 300, width: 200, height: 75, color: '#9333ea', fillColor: '#f3e8ff', strokeWidth: 2, rotation: 0, text: '4. ACT\nStandardize & Scale', textColor: '#6b21a8', fontSize: 14 },
+
+                // Circular cycle connectors: Plan -> Do -> Check -> Act -> Plan
+                { id: 'pdca-c1', type: 'connector', sourceId: 'pdca-plan', targetId: 'pdca-do', sourceAnchor: 'right', targetAnchor: 'top', pathType: 'curved', color: '#2563eb', strokeWidth: 2.5, arrowEnd: 'arrow' },
+                { id: 'pdca-c2', type: 'connector', sourceId: 'pdca-do', targetId: 'pdca-check', sourceAnchor: 'bottom', targetAnchor: 'right', pathType: 'curved', color: '#16a34a', strokeWidth: 2.5, arrowEnd: 'arrow' },
+                { id: 'pdca-c3', type: 'connector', sourceId: 'pdca-check', targetId: 'pdca-act', sourceAnchor: 'left', targetAnchor: 'bottom', pathType: 'curved', color: '#d97706', strokeWidth: 2.5, arrowEnd: 'arrow' },
+                { id: 'pdca-c4', type: 'connector', sourceId: 'pdca-act', targetId: 'pdca-plan', sourceAnchor: 'top', targetAnchor: 'left', pathType: 'curved', color: '#9333ea', strokeWidth: 2.5, arrowEnd: 'arrow' },
             ],
             texts: [
                 { id: uuid(), x: 340, y: 45, width: 420, height: 40, text: 'Continuous PDCA Process Cycle', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
@@ -761,20 +750,18 @@ const templates = [
             title: 'Cross-Functional Swimlane Workflow',
             background: { pattern: 'dots', color: '#f8fafc' },
             shapes: [
-                { id: uuid(), type: 'rectangle', x: 30, y: 130, width: 150, height: 100, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Lab Instructor\n(Curriculum)', textColor: '#3730a3', fontSize: 13 },
-                { id: uuid(), type: 'rounded_rect', x: 210, y: 145, width: 220, height: 70, color: '#4f46e5', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '1. Create Lab Exercise\n& Whiteboard Template', textColor: '#3730a3', fontSize: 12 },
+                { id: 'swim-lanes-inst', type: 'rectangle', x: 30, y: 130, width: 150, height: 100, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, rotation: 0, text: 'Lab Instructor\n(Curriculum)', textColor: '#3730a3', fontSize: 13 },
+                { id: 'swim-step-1', type: 'rounded_rect', x: 210, y: 145, width: 220, height: 70, color: '#4f46e5', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '1. Create Lab Exercise\n& Whiteboard Template', textColor: '#3730a3', fontSize: 12 },
                 
-                // Handoff to student group
-                { id: uuid(), type: 'arrow', x: 430, y: 180, width: 40, height: 120, color: '#4f46e5', strokeWidth: 2.5 },
-
-                { id: uuid(), type: 'rectangle', x: 30, y: 250, width: 150, height: 100, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'Student Group\n(Execution)', textColor: '#0369a1', fontSize: 13 },
-                { id: uuid(), type: 'rounded_rect', x: 470, y: 265, width: 220, height: 70, color: '#0284c7', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '2. Perform Experiment\n& Record Telemetry', textColor: '#0369a1', fontSize: 12 },
+                { id: 'swim-lanes-stud', type: 'rectangle', x: 30, y: 250, width: 150, height: 100, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: 'Student Group\n(Execution)', textColor: '#0369a1', fontSize: 13 },
+                { id: 'swim-step-2', type: 'rounded_rect', x: 470, y: 265, width: 220, height: 70, color: '#0284c7', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '2. Perform Experiment\n& Record Telemetry', textColor: '#0369a1', fontSize: 12 },
                 
-                // Handoff to auto-evaluator
-                { id: uuid(), type: 'arrow', x: 690, y: 300, width: 40, height: 120, color: '#0284c7', strokeWidth: 2.5 },
+                { id: 'swim-lanes-sys', type: 'rectangle', x: 30, y: 370, width: 150, height: 100, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'Auto-Evaluator\n& Storage', textColor: '#065f46', fontSize: 13 },
+                { id: 'swim-step-3', type: 'rounded_rect', x: 730, y: 385, width: 220, height: 70, color: '#059669', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '3. Verify Code / Output\n& Generate Grade PDF', textColor: '#065f46', fontSize: 12 },
 
-                { id: uuid(), type: 'rectangle', x: 30, y: 370, width: 150, height: 100, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, rotation: 0, text: 'Auto-Evaluator\n& Storage', textColor: '#065f46', fontSize: 13 },
-                { id: uuid(), type: 'rounded_rect', x: 730, y: 385, width: 220, height: 70, color: '#059669', fillColor: '#ffffff', strokeWidth: 1.5, rotation: 0, text: '3. Verify Code / Output\n& Generate Grade PDF', textColor: '#065f46', fontSize: 12 },
+                // Handoff connectors between workflow steps
+                { id: 'swim-c1', type: 'connector', sourceId: 'swim-step-1', targetId: 'swim-step-2', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'orthogonal', color: '#4f46e5', strokeWidth: 2.5, arrowEnd: 'arrow' },
+                { id: 'swim-c2', type: 'connector', sourceId: 'swim-step-2', targetId: 'swim-step-3', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'orthogonal', color: '#0284c7', strokeWidth: 2.5, arrowEnd: 'arrow' },
             ],
             texts: [
                 { id: uuid(), x: 330, y: 45, width: 440, height: 40, text: 'Cross-Functional Swimlane Workflow', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
@@ -824,18 +811,18 @@ const templates = [
             title: 'Radial Capability Cluster',
             background: { pattern: 'dots', color: '#f8fafc' },
             shapes: [
-                { id: uuid(), type: 'circle', x: 400, y: 270, width: 190, height: 190, color: '#1e293b', fillColor: '#f1f5f9', strokeWidth: 3, rotation: 0, text: 'CORE PLATFORM\nLab Management\n& AI Suite', textColor: '#0f172a', fontSize: 14 },
-                
-                // Connecting lines to satellite pods
-                { id: uuid(), type: 'arrow', x: 495, y: 270, width: 0, height: -100, color: '#0284c7', strokeWidth: 2.5 },
-                { id: uuid(), type: 'arrow', x: 590, y: 365, width: 90, height: 0, color: '#d97706', strokeWidth: 2.5 },
-                { id: uuid(), type: 'arrow', x: 495, y: 460, width: 0, height: 70, color: '#16a34a', strokeWidth: 2.5 },
-                { id: uuid(), type: 'arrow', x: 400, y: 365, width: -90, height: 0, color: '#7c3aed', strokeWidth: 2.5 },
+                { id: 'rc-core', type: 'circle', x: 400, y: 270, width: 190, height: 190, color: '#1e293b', fillColor: '#f1f5f9', strokeWidth: 3, rotation: 0, text: 'CORE PLATFORM\nLab Management\n& AI Suite', textColor: '#0f172a', fontSize: 14 },
 
-                { id: uuid(), type: 'rounded_rect', x: 395, y: 90, width: 200, height: 80, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: '1. CURRICULUM\nSyllabus & Blueprints', textColor: '#0369a1', fontSize: 13 },
-                { id: uuid(), type: 'rounded_rect', x: 395, y: 530, width: 200, height: 80, color: '#16a34a', fillColor: '#dcfce7', strokeWidth: 2, rotation: 0, text: '3. ASSESSMENTS\nRubrics & Grade Sync', textColor: '#166534', fontSize: 13 },
-                { id: uuid(), type: 'rounded_rect', x: 110, y: 325, width: 200, height: 80, color: '#7c3aed', fillColor: '#ede9fe', strokeWidth: 2, rotation: 0, text: '4. CLOUD STORAGE\n5TB Drive & OneDrive', textColor: '#5b21b6', fontSize: 13 },
-                { id: uuid(), type: 'rounded_rect', x: 680, y: 325, width: 200, height: 80, color: '#d97706', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: '2. WHITEBOARD\nRealtime IFP Tools', textColor: '#92400e', fontSize: 13 },
+                { id: 'rc-top', type: 'rounded_rect', x: 395, y: 90, width: 200, height: 80, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, rotation: 0, text: '1. CURRICULUM\nSyllabus & Blueprints', textColor: '#0369a1', fontSize: 13 },
+                { id: 'rc-bottom', type: 'rounded_rect', x: 395, y: 530, width: 200, height: 80, color: '#16a34a', fillColor: '#dcfce7', strokeWidth: 2, rotation: 0, text: '3. ASSESSMENTS\nRubrics & Grade Sync', textColor: '#166534', fontSize: 13 },
+                { id: 'rc-left', type: 'rounded_rect', x: 110, y: 325, width: 200, height: 80, color: '#7c3aed', fillColor: '#ede9fe', strokeWidth: 2, rotation: 0, text: '4. CLOUD STORAGE\n5TB Drive & OneDrive', textColor: '#5b21b6', fontSize: 13 },
+                { id: 'rc-right', type: 'rounded_rect', x: 680, y: 325, width: 200, height: 80, color: '#d97706', fillColor: '#fef3c7', strokeWidth: 2, rotation: 0, text: '2. WHITEBOARD\nRealtime IFP Tools', textColor: '#92400e', fontSize: 13 },
+
+                // Connectors to satellite pods
+                { id: 'rc-c1', type: 'connector', sourceId: 'rc-core', targetId: 'rc-top', sourceAnchor: 'top', targetAnchor: 'bottom', pathType: 'straight', color: '#0284c7', strokeWidth: 2.5, arrowEnd: 'arrow' },
+                { id: 'rc-c2', type: 'connector', sourceId: 'rc-core', targetId: 'rc-right', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#d97706', strokeWidth: 2.5, arrowEnd: 'arrow' },
+                { id: 'rc-c3', type: 'connector', sourceId: 'rc-core', targetId: 'rc-bottom', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#16a34a', strokeWidth: 2.5, arrowEnd: 'arrow' },
+                { id: 'rc-c4', type: 'connector', sourceId: 'rc-core', targetId: 'rc-left', sourceAnchor: 'left', targetAnchor: 'right', pathType: 'straight', color: '#7c3aed', strokeWidth: 2.5, arrowEnd: 'arrow' },
             ],
             texts: [
                 { id: uuid(), x: 330, y: 30, width: 440, height: 40, text: 'Radial Capability Cluster', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
@@ -1087,14 +1074,6 @@ export default function TemplateGallery({
     const handleApply = (template) => {
         // Deep clone the template data to avoid reference issues
         const templateData = JSON.parse(JSON.stringify(template.data));
-        
-        // Ensure new IDs for all objects so they don't clash
-        if (templateData.shapes) {
-            templateData.shapes = templateData.shapes.map(s => ({ ...s, id: uuid() }));
-        }
-        if (templateData.texts) {
-            templateData.texts = templateData.texts.map(t => ({ ...t, id: uuid() }));
-        }
         
         onApplyTemplate(templateData);
         onClose();

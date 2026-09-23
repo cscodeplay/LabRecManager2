@@ -44,6 +44,12 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
     // --- Tab 3: Screenshots State ---
     const [screenshots, setScreenshots] = useState([]);
 
+    // --- Tab 4: Web Search & Image Reference State ---
+    const [webImages, setWebImages] = useState([]);
+    const [webSearchQuery, setWebSearchQuery] = useState('BenQ interactive panel');
+    const [webSource, setWebSource] = useState('all'); // 'all' | 'panels' | 'wikimedia'
+    const [isWebLoading, setIsWebLoading] = useState(false);
+
     const fileUploadRef = useRef(null);
 
     // Load Documents & Folders
@@ -266,6 +272,98 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
         e.target.value = '';
     };
 
+    // Web Search & Image Reference handler
+    const searchWebImages = async (query = webSearchQuery, source = webSource) => {
+        setIsWebLoading(true);
+        try {
+            const curatedPanelAssets = [
+                {
+                    id: 'benq-board-pro',
+                    name: 'BenQ Board Pro (RP03 Series) Interactive Panel',
+                    url: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=800&q=80',
+                    source: 'BenQ Display Reference',
+                    category: 'panels'
+                },
+                {
+                    id: 'viewsonic-viewboard',
+                    name: 'ViewSonic ViewBoard IFP7550 4K Interactive Display',
+                    url: 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?auto=format&fit=crop&w=800&q=80',
+                    source: 'ViewSonic ViewBoard',
+                    category: 'panels'
+                },
+                {
+                    id: 'ezwrite-whiteboard',
+                    name: 'EZWrite Whiteboard Digital Canvas & Tools',
+                    url: 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?auto=format&fit=crop&w=800&q=80',
+                    source: 'EZWrite Canvas',
+                    category: 'panels'
+                },
+                {
+                    id: 'smart-classroom-board',
+                    name: 'Smart Interactive Panel Classroom Setup',
+                    url: 'https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=800&q=80',
+                    source: 'Classroom Tech',
+                    category: 'panels'
+                },
+                {
+                    id: 'flowchart-architecture-ref',
+                    name: 'System Flowchart & Cloud Architecture Diagram',
+                    url: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=800&q=80',
+                    source: 'Technical Diagram',
+                    category: 'diagrams'
+                },
+                {
+                    id: 'science-lab-equipment',
+                    name: 'Chemistry Laboratory Apparatus & Glassware',
+                    url: 'https://images.unsplash.com/photo-1532094349884-543bc11b234d?auto=format&fit=crop&w=800&q=80',
+                    source: 'Science Equipment',
+                    category: 'science'
+                }
+            ];
+
+            const qLower = (query || '').toLowerCase();
+            const filteredCurated = curatedPanelAssets.filter(item => 
+                !query || item.name.toLowerCase().includes(qLower) || item.source.toLowerCase().includes(qLower)
+            );
+
+            let liveResults = [];
+            if (query && query.trim().length > 1) {
+                try {
+                    const wikiUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(query + ' filetype:bitmap')}&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url|size|mime&format=json&origin=*`;
+                    const res = await fetch(wikiUrl);
+                    if (res.ok) {
+                        const json = await res.json();
+                        const pages = json?.query?.pages || {};
+                        liveResults = Object.values(pages)
+                            .filter(p => p.imageinfo && p.imageinfo[0]?.url && !p.imageinfo[0]?.url.endsWith('.svg'))
+                            .map(p => ({
+                                id: 'wiki-' + p.pageid,
+                                name: (p.title || 'Image').replace('File:', '').replace(/\.[^/.]+$/, ''),
+                                url: p.imageinfo[0].url,
+                                source: 'Wikimedia Educational',
+                                category: 'web'
+                            }));
+                    }
+                } catch (wikiErr) {
+                    console.warn('Wikimedia search warning:', wikiErr);
+                }
+            }
+
+            setWebImages([...filteredCurated, ...liveResults]);
+        } catch (err) {
+            console.error('Web search error:', err);
+            toast.error('Failed to complete web image search');
+        } finally {
+            setIsWebLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'web' && webImages.length === 0) {
+            searchWebImages();
+        }
+    }, [activeTab]);
+
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
@@ -369,6 +467,18 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
                         >
                             <Camera className="w-4 h-4" />
                             Screenshots
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setActiveTab('web'); }}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                                activeTab === 'web'
+                                    ? 'bg-white text-indigo-600 shadow-xs border border-slate-200/80 font-bold'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                            }`}
+                        >
+                            <Globe className="w-4 h-4 text-indigo-500" />
+                            Web Search & Panels
                         </button>
                     </div>
 
@@ -898,8 +1008,8 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
                                 </div>
                             </div>
                         </div>
-                    ) : (
-                        // Tab 3: Screenshots content
+                    ) : activeTab === 'screenshots' ? (
+                        // Tab: Screenshots content
                         <div>
                             {screenshots.length === 0 ? (
                                 <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
@@ -933,6 +1043,111 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
                                                 <p className="text-[10px] text-slate-400 mt-0.5">
                                                     {new Date(doc.createdAt).toLocaleDateString()}
                                                 </p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        // Tab 4: Web Search & Image Reference
+                        <div className="space-y-4">
+                            {/* Search bar & quick filter chips */}
+                            <div className="space-y-2">
+                                <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                        <input
+                                            type="text"
+                                            value={webSearchQuery}
+                                            onChange={(e) => setWebSearchQuery(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') searchWebImages(webSearchQuery);
+                                            }}
+                                            placeholder="Search educational images, BenQ, ViewSonic, EZWrite, diagrams..."
+                                            className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => searchWebImages(webSearchQuery)}
+                                        disabled={isWebLoading}
+                                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50"
+                                    >
+                                        {isWebLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                                        Search
+                                    </button>
+                                </div>
+
+                                {/* Quick filter chips for interactive panels & classroom subjects */}
+                                <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar pb-1 text-xs">
+                                    <span className="text-[11px] text-slate-400 font-medium shrink-0">Quick Reference:</span>
+                                    {[
+                                        'BenQ Board',
+                                        'ViewSonic ViewBoard',
+                                        'EZWrite Canvas',
+                                        'Chemistry Glassware',
+                                        'Physics Circuit',
+                                        'Flowchart Diagram',
+                                        'Biology Cell',
+                                        'World Map'
+                                    ].map((chip) => (
+                                        <button
+                                            key={chip}
+                                            type="button"
+                                            onClick={() => {
+                                                setWebSearchQuery(chip);
+                                                searchWebImages(chip);
+                                            }}
+                                            className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 text-[11px] font-medium border border-slate-200/80 transition whitespace-nowrap"
+                                        >
+                                            {chip}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Images Grid */}
+                            {isWebLoading ? (
+                                <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                                    <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-2" />
+                                    <p className="text-xs">Searching web & educational image repositories...</p>
+                                </div>
+                            ) : webImages.length === 0 ? (
+                                <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                                    <Globe className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                                    <p className="text-xs text-slate-600 font-medium">No images found for "{webSearchQuery}"</p>
+                                    <p className="text-[11px] text-slate-400 mt-1">Try another keyword like BenQ, ViewSonic, Diagram, or Chemistry</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5 max-h-[50vh] overflow-y-auto pr-1">
+                                    {webImages.map((img) => (
+                                        <div
+                                            key={img.id}
+                                            onClick={() => {
+                                                onSelectImage(img.url);
+                                                onClose();
+                                            }}
+                                            className="group relative border border-slate-200 rounded-xl overflow-hidden cursor-pointer hover:border-indigo-500 hover:shadow-lg transition bg-white flex flex-col"
+                                        >
+                                            <div className="aspect-video bg-slate-100 relative overflow-hidden flex items-center justify-center">
+                                                <img
+                                                    src={img.url}
+                                                    alt={img.name}
+                                                    className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-200"
+                                                    loading="lazy"
+                                                />
+                                                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                                                    <span className="text-white text-xs font-semibold bg-indigo-600 px-3 py-1.5 rounded-full shadow-md">
+                                                        Insert into Board
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="p-2.5 flex-1 flex flex-col justify-between">
+                                                <p className="text-xs font-semibold text-slate-800 line-clamp-1" title={img.name}>{img.name}</p>
+                                                <span className="text-[10px] text-indigo-600 font-medium mt-1 truncate">
+                                                    {img.source || 'Web Reference'}
+                                                </span>
                                             </div>
                                         </div>
                                     ))}

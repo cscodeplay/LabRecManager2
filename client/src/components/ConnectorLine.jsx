@@ -217,21 +217,27 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
     const sourceShape = useMemo(() => shapes.find(s => s.id === sourceId), [shapes, sourceId]);
     const targetShape = useMemo(() => shapes.find(s => s.id === targetId), [shapes, targetId]);
 
+    // If neither shape exists and neither endpoint is currently being dragged, return null
+    if (!sourceShape && !targetShape && !draggingEndpoint) {
+        return null;
+    }
+
     const actualSourcePoint = useMemo(() => {
         if (draggingEndpoint === 'source' && dragPoint) return dragPoint;
         if (sourceShape) return getAnchorPoint(sourceShape, sourceAnchor, targetShape ? { x: targetShape.x, y: targetShape.y } : targetPoint);
-        return sourcePoint;
-    }, [sourceShape, sourceAnchor, draggingEndpoint, dragPoint, sourcePoint, targetShape, targetPoint]);
+        return sourcePoint || (targetShape ? getAnchorPoint(targetShape, targetAnchor) : null);
+    }, [sourceShape, sourceAnchor, draggingEndpoint, dragPoint, sourcePoint, targetShape, targetPoint, targetAnchor]);
 
     const actualTargetPoint = useMemo(() => {
         if (draggingEndpoint === 'target' && dragPoint) return dragPoint;
         if (targetShape) return getAnchorPoint(targetShape, targetAnchor, sourceShape ? { x: sourceShape.x, y: sourceShape.y } : sourcePoint);
-        return targetPoint;
-    }, [targetShape, targetAnchor, draggingEndpoint, dragPoint, targetPoint, sourceShape, sourcePoint]);
+        return targetPoint || (sourceShape ? getAnchorPoint(sourceShape, sourceAnchor) : null);
+    }, [targetShape, targetAnchor, draggingEndpoint, dragPoint, targetPoint, sourceShape, sourcePoint, sourceAnchor]);
 
     const actualWaypoint = useMemo(() => {
         if (draggingEndpoint === 'waypoint' && dragPoint) return dragPoint;
         if (waypoint) return waypoint;
+        if (!actualSourcePoint || !actualTargetPoint) return { x: 0, y: 0 };
         return {
             x: (actualSourcePoint.x + actualTargetPoint.x) / 2,
             y: (actualSourcePoint.y + actualTargetPoint.y) / 2
@@ -239,9 +245,14 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
     }, [draggingEndpoint, dragPoint, waypoint, actualSourcePoint, actualTargetPoint]);
 
     const pathData = useMemo(() => {
+        if (!actualSourcePoint || !actualTargetPoint) return '';
         const wp = (waypoint || draggingEndpoint === 'waypoint') ? actualWaypoint : null;
         return getConnectorPath(actualSourcePoint, actualTargetPoint, pathType, wp, sourceAnchor, targetAnchor);
     }, [actualSourcePoint, actualTargetPoint, pathType, waypoint, draggingEndpoint, actualWaypoint, sourceAnchor, targetAnchor]);
+
+    if (!actualSourcePoint || !actualTargetPoint || !pathData) {
+        return null;
+    }
 
     // Handle dragging with canvas-relative coordinates
     useEffect(() => {
