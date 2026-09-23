@@ -51,6 +51,20 @@ const STROKE_WIDTHS = [2, 4, 6, 8, 12];
 
 const CONNECTOR_PRESET_STYLES = [
     {
+        id: 'curved_arrow',
+        label: 'Curved Arrow (Default)',
+        pathType: 'curved',
+        strokeStyle: 'solid',
+        arrowStart: 'none',
+        arrowEnd: 'arrow',
+        icon: (
+            <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M 2 12 Q 8 2 13 8" strokeLinecap="round" />
+                <polyline points="11,5 14,8 11,11" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        )
+    },
+    {
         id: 'single_arrow',
         label: 'Single Arrow',
         pathType: 'straight',
@@ -61,6 +75,20 @@ const CONNECTOR_PRESET_STYLES = [
             <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="2" y1="8" x2="13" y2="8" strokeLinecap="round" />
                 <polyline points="9,4 13,8 9,12" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        )
+    },
+    {
+        id: 'elbow_arrow',
+        label: 'Elbow / Orthogonal',
+        pathType: 'orthogonal',
+        strokeStyle: 'solid',
+        arrowStart: 'none',
+        arrowEnd: 'arrow',
+        icon: (
+            <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="2,4 8,4 8,12 13,12" strokeLinecap="round" strokeLinejoin="round" />
+                <polyline points="10,9 13,12 10,15" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
         )
     },
@@ -117,34 +145,6 @@ const CONNECTOR_PRESET_STYLES = [
             <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="2" y1="8" x2="13" y2="8" strokeDasharray="1,2" strokeLinecap="round" />
                 <polyline points="9,4 13,8 9,12" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-        )
-    },
-    {
-        id: 'elbow_arrow',
-        label: 'Elbow / Orthogonal',
-        pathType: 'orthogonal',
-        strokeStyle: 'solid',
-        arrowStart: 'none',
-        arrowEnd: 'arrow',
-        icon: (
-            <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="2,4 8,4 8,12 13,12" strokeLinecap="round" strokeLinejoin="round" />
-                <polyline points="10,9 13,12 10,15" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-        )
-    },
-    {
-        id: 'curved_arrow',
-        label: 'Curved Arrow',
-        pathType: 'curved',
-        strokeStyle: 'solid',
-        arrowStart: 'none',
-        arrowEnd: 'arrow',
-        icon: (
-            <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M 2 12 Q 8 2 13 8" strokeLinecap="round" />
-                <polyline points="11,5 14,8 11,11" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
         )
     }
@@ -1636,21 +1636,49 @@ export default function Whiteboard({
                     y: item.data.y + 20
                 }
             ]);
+        } else if (item.type === 'texts') {
+            const timestamp = Date.now();
+            const newTexts = item.data.map((t, idx) => ({
+                ...t,
+                id: timestamp + idx,
+                x: t.x + 20,
+                y: t.y + 20
+            }));
+            setTextObjects(prev => [...prev, ...newTexts]);
+            setTimeout(() => setSelectedTextIds(newTexts.map(t => t.id)), 0);
         } else if (item.type === 'shapes') {
+            const idMap = {};
             const newIds = [];
-            setShapeObjects(prev => [
-                ...prev,
-                ...item.data.map((shape, index) => {
-                    const newId = Date.now() + index;
-                    newIds.push(newId);
+            const timestamp = Date.now();
+
+            item.data.forEach((shape, index) => {
+                const newId = (timestamp + index).toString();
+                idMap[shape.id] = newId;
+                newIds.push(newId);
+            });
+
+            const newShapes = item.data.map((shape) => {
+                const newId = idMap[shape.id];
+                if (shape.type === 'connector') {
                     return {
                         ...shape,
                         id: newId,
-                        x: shape.x + 20,
-                        y: shape.y + 20
+                        sourceId: idMap[shape.sourceId] || shape.sourceId,
+                        targetId: idMap[shape.targetId] || shape.targetId,
+                        sourcePoint: shape.sourcePoint ? { x: shape.sourcePoint.x + 20, y: shape.sourcePoint.y + 20 } : shape.sourcePoint,
+                        targetPoint: shape.targetPoint ? { x: shape.targetPoint.x + 20, y: shape.targetPoint.y + 20 } : shape.targetPoint,
+                        waypoint: shape.waypoint ? { x: shape.waypoint.x + 20, y: shape.waypoint.y + 20 } : null
                     };
-                })
-            ]);
+                }
+                return {
+                    ...shape,
+                    id: newId,
+                    x: (shape.x || 0) + 20,
+                    y: (shape.y || 0) + 20
+                };
+            });
+
+            setShapeObjects(prev => [...prev, ...newShapes]);
             setTimeout(() => setSelectedShapeIds(newIds), 0);
         }
     }, [saveToHistory]);
@@ -1744,39 +1772,72 @@ export default function Whiteboard({
 
     // Unified Delete
     const handleDelete = useCallback(() => {
+        let hasDeleted = false;
         if (selectedImageId) {
             setImageObjects(prev => prev.filter(img => img.id !== selectedImageId));
             setSelectedImageId(null);
-        } else if ((selectedTextIds.length > 0 ? selectedTextIds[0] : null)) {
-            setTextObjects(prev => prev.filter(txt => txt.id !== (selectedTextIds.length > 0 ? selectedTextIds[0] : null)));
-            setSelectedTextIds([]);
-        } else if (selectedShapeIds.length > 0) {
-            setShapeObjects(prev => prev.filter(shp => !selectedShapeIds.includes(shp.id)));
-            setSelectedShapeIds([]);
-        } else if (selection) {
-            handleDeleteSelection();
+            hasDeleted = true;
         }
-        saveToHistory();
-    }, [selectedImageId, (selectedTextIds.length > 0 ? selectedTextIds[0] : null), selectedShapeIds, selection, handleDeleteSelection, saveToHistory]);
+        if (selectedTextIds.length > 0) {
+            setTextObjects(prev => prev.filter(txt => !selectedTextIds.includes(txt.id)));
+            setSelectedTextIds([]);
+            hasDeleted = true;
+        }
+        if (selectedShapeIds.length > 0) {
+            setShapeObjects(prev => prev.filter(shp => {
+                if (selectedShapeIds.includes(shp.id)) return false;
+                // Cascade delete connectors attached to any deleted parent shape
+                if (shp.type === 'connector' && (selectedShapeIds.includes(shp.sourceId) || selectedShapeIds.includes(shp.targetId))) {
+                    return false;
+                }
+                return true;
+            }));
+            setSelectedShapeIds([]);
+            hasDeleted = true;
+        }
+        if (selection) {
+            handleDeleteSelection();
+            hasDeleted = true;
+        }
+        if (hasDeleted) {
+            saveToHistory();
+        }
+    }, [selectedImageId, selectedTextIds, selectedShapeIds, selection, handleDeleteSelection, saveToHistory]);
 
     // Unified Copy
     const handleCopy = useCallback(() => {
-        let objToCopy = null;
         if (selectedImageId) {
-            objToCopy = imageObjects.find(img => img.id === selectedImageId);
+            const objToCopy = imageObjects.find(img => img.id === selectedImageId);
             if (objToCopy) setClipboardHistory(prev => [{ id: Date.now(), type: 'image', data: { ...objToCopy }, dataURL: objToCopy.src }, ...prev].slice(0, 10));
-        } else if ((selectedTextIds.length > 0 ? selectedTextIds[0] : null)) {
-            objToCopy = textObjects.find(t => t.id === (selectedTextIds.length > 0 ? selectedTextIds[0] : null));
-            if (objToCopy) setClipboardHistory(prev => [{ id: Date.now(), type: 'text', data: { ...objToCopy } }, ...prev].slice(0, 10));
-        } else if (selectedShapeIds.length > 0) {
-            const objsToCopy = shapeObjects.filter(s => selectedShapeIds.includes(s.id));
-            if (objsToCopy.length > 0) {
-                setClipboardHistory(prev => [{ id: Date.now(), type: 'shapes', data: objsToCopy.map(o => ({...o})) }, ...prev].slice(0, 10));
+            return;
+        }
+        if (selectedTextIds.length > 0) {
+            const textsToCopy = textObjects.filter(t => selectedTextIds.includes(t.id));
+            if (textsToCopy.length === 1) {
+                setClipboardHistory(prev => [{ id: Date.now(), type: 'text', data: { ...textsToCopy[0] } }, ...prev].slice(0, 10));
+            } else if (textsToCopy.length > 1) {
+                setClipboardHistory(prev => [{ id: Date.now(), type: 'texts', data: textsToCopy.map(t => ({ ...t })) }, ...prev].slice(0, 10));
             }
-        } else if (selection) {
+            return;
+        }
+        if (selectedShapeIds.length > 0) {
+            const objsToCopy = shapeObjects.filter(s => selectedShapeIds.includes(s.id));
+            const internalConnectors = shapeObjects.filter(s => 
+                s.type === 'connector' && 
+                selectedShapeIds.includes(s.sourceId) && 
+                selectedShapeIds.includes(s.targetId) &&
+                !selectedShapeIds.includes(s.id)
+            );
+            const allToCopy = [...objsToCopy, ...internalConnectors];
+            if (allToCopy.length > 0) {
+                setClipboardHistory(prev => [{ id: Date.now(), type: 'shapes', data: allToCopy.map(o => ({...o})) }, ...prev].slice(0, 10));
+            }
+            return;
+        }
+        if (selection) {
             handleCopySelection();
         }
-    }, [selectedImageId, (selectedTextIds.length > 0 ? selectedTextIds[0] : null), selectedShapeIds, selection, imageObjects, textObjects, shapeObjects, handleCopySelection]);
+    }, [selectedImageId, selectedTextIds, selectedShapeIds, selection, imageObjects, textObjects, shapeObjects, handleCopySelection]);
 
     // Unified Cut
     const handleCut = useCallback(() => {
@@ -2142,7 +2203,36 @@ export default function Whiteboard({
         const { shapes, texts, background, title } = templateData;
         
         if (shapes && shapes.length > 0) {
+            // Generate unique IDs for all template shapes to avoid collision
+            const idMap = new Map();
+            shapes.forEach(s => {
+                if (s.id) {
+                    idMap.set(s.id, 'shape-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6));
+                }
+            });
+
             const normalizedShapes = shapes.map(shape => {
+                const newId = (shape.id && idMap.get(shape.id)) || ('shape-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6));
+                
+                // If template shape is already a connector or an arrow linking two shapes
+                if (shape.type === 'connector' || ((shape.type === 'arrow' || shape.type === 'line') && shape.sourceId && shape.targetId)) {
+                    return {
+                        id: newId,
+                        type: 'connector',
+                        sourceId: idMap.get(shape.sourceId) || shape.sourceId,
+                        sourceAnchor: shape.sourceAnchor || 'bottom',
+                        targetId: idMap.get(shape.targetId) || shape.targetId,
+                        targetAnchor: shape.targetAnchor || 'top',
+                        pathType: shape.pathType || 'curved',
+                        strokeStyle: shape.strokeStyle || 'solid',
+                        arrowEnd: shape.type === 'line' ? 'none' : (shape.arrowEnd || 'arrow'),
+                        arrowStart: shape.type === 'double_arrow' ? 'arrow' : (shape.arrowStart || 'none'),
+                        color: shape.color || '#475569',
+                        strokeWidth: shape.strokeWidth || 2,
+                        waypoint: null
+                    };
+                }
+
                 if (['line', 'arrow', 'double_arrow', 'dashed_line'].includes(shape.type)) {
                     const sx = shape.startX !== undefined ? (shape.x + shape.startX) : shape.x;
                     const sy = shape.startY !== undefined ? (shape.y + shape.startY) : shape.y;
@@ -2154,6 +2244,7 @@ export default function Whiteboard({
                     const h = Math.max(Math.abs(ey - sy), 10);
                     return {
                         ...shape,
+                        id: newId,
                         x: minX,
                         y: minY,
                         width: w,
@@ -2164,7 +2255,10 @@ export default function Whiteboard({
                         endY: ey - minY
                     };
                 }
-                return shape;
+                return {
+                    ...shape,
+                    id: newId
+                };
             });
 
             setPageShapeObjects(prev => ({
@@ -2175,6 +2269,7 @@ export default function Whiteboard({
         if (texts && texts.length > 0) {
             const normalizedTexts = texts.map(t => ({
                 ...t,
+                id: Date.now() + '-' + Math.random().toString(36).substr(2, 6),
                 width: t.width || 450,
                 height: t.height || 50,
                 fontSize: t.fontSize || 22
@@ -2227,7 +2322,7 @@ export default function Whiteboard({
                 e.preventDefault();
                 handleSendToBack();
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (!isInput || selectedImageId || selection || selectedShapeIds.length > 0) {
+                if (!isInput || selectedImageId || selection || selectedShapeIds.length > 0 || selectedTextIds.length > 0) {
                     // Only prevent backspace/delete if not in an input, OR if we have an image/selection active (which can't be typed into)
                     e.preventDefault();
                     handleDelete();
@@ -2258,7 +2353,7 @@ export default function Whiteboard({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedImageId, (selectedTextIds.length > 0 ? selectedTextIds[0] : null), selectedShapeIds, selection, showRadialMenu, showTemplateGallery, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack]);
+    }, [selectedImageId, selectedTextIds, selectedShapeIds, selection, showRadialMenu, showTemplateGallery, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack]);
 
     // Image manipulation mouse handlers
     useEffect(() => {
@@ -2492,6 +2587,63 @@ export default function Whiteboard({
                         ));
                     }
                 }
+            } else if (shapeDragState.action === 'line-endpoint-start' || shapeDragState.action === 'line-endpoint-end') {
+                const canvasEl = canvasRef.current;
+                const rect = canvasEl ? canvasEl.getBoundingClientRect() : { width: 1, height: 1 };
+                const scaleX = canvasEl ? canvasEl.width / rect.width : 1;
+                const scaleY = canvasEl ? canvasEl.height / rect.height : 1;
+                const canvasDx = dx * scaleX;
+                const canvasDy = dy * scaleY;
+
+                // Center of startObj in canvas coordinates
+                const cx = startObj.x + startObj.width / 2;
+                const cy = startObj.y + startObj.height / 2;
+                const rot = (startObj.rotation || 0) * (Math.PI / 180);
+
+                const unrotSx = (startObj.startX !== undefined ? startObj.startX : (startObj.width < 0 ? Math.abs(startObj.width) : 0)) - startObj.width / 2;
+                const unrotSy = (startObj.startY !== undefined ? startObj.startY : (startObj.height < 0 ? Math.abs(startObj.height) : 0)) - startObj.height / 2;
+                const canvasSx = cx + unrotSx * Math.cos(rot) - unrotSy * Math.sin(rot);
+                const canvasSy = cy + unrotSx * Math.sin(rot) + unrotSy * Math.cos(rot);
+
+                const unrotEx = (startObj.endX !== undefined ? startObj.endX : (startObj.width < 0 ? 0 : (startObj.width || 0))) - startObj.width / 2;
+                const unrotEy = (startObj.endY !== undefined ? startObj.endY : (startObj.height < 0 ? 0 : (startObj.height || 0))) - startObj.height / 2;
+                const canvasEx = cx + unrotEx * Math.cos(rot) - unrotEy * Math.sin(rot);
+                const canvasEy = cy + unrotEx * Math.sin(rot) + unrotEy * Math.cos(rot);
+
+                let newSx = canvasSx;
+                let newSy = canvasSy;
+                let newEx = canvasEx;
+                let newEy = canvasEy;
+
+                if (shapeDragState.action === 'line-endpoint-start') {
+                    newSx = canvasSx + canvasDx;
+                    newSy = canvasSy + canvasDy;
+                } else {
+                    newEx = canvasEx + canvasDx;
+                    newEy = canvasEy + canvasDy;
+                }
+
+                const minX = Math.min(newSx, newEx);
+                const minY = Math.min(newSy, newEy);
+                const w = Math.max(Math.abs(newEx - newSx), 1);
+                const h = Math.max(Math.abs(newEy - newSy), 1);
+
+                setShapeObjects(prev => prev.map(shp =>
+                    shp.id === shapeDragState.id
+                        ? {
+                            ...shp,
+                            x: minX,
+                            y: minY,
+                            width: w,
+                            height: h,
+                            startX: newSx - minX,
+                            startY: newSy - minY,
+                            endX: newEx - minX,
+                            endY: newEy - minY,
+                            rotation: 0
+                        }
+                        : shp
+                ));
             } else if (shapeDragState.action === 'rotate') {
                 const canvas = canvasRef.current;
                 const rect = canvas.getBoundingClientRect();
@@ -2571,7 +2723,17 @@ export default function Whiteboard({
         e.stopPropagation();
         e.preventDefault();
         const sourcePt = getAnchorPoint(shape, anchor);
-        const resolvedStyle = styleOption || CONNECTOR_PRESET_STYLES[0];
+        
+        let resolvedStyle = styleOption;
+        if (!resolvedStyle) {
+            if (lineType === 'connector_elbow') {
+                resolvedStyle = CONNECTOR_PRESET_STYLES.find(p => p.pathType === 'orthogonal') || CONNECTOR_PRESET_STYLES[2];
+            } else if (lineType === 'connector_straight') {
+                resolvedStyle = CONNECTOR_PRESET_STYLES.find(p => p.pathType === 'straight') || CONNECTOR_PRESET_STYLES[1];
+            } else {
+                resolvedStyle = CONNECTOR_PRESET_STYLES[0]; // curved_arrow (default)
+            }
+        }
         
         setActiveConnectorDrag({
             sourceId: shape.id,
@@ -2582,7 +2744,7 @@ export default function Whiteboard({
             snappedTarget: null
         });
         setHoveredHook(null);
-    }, [canUserDraw]);
+    }, [canUserDraw, lineType]);
 
     useEffect(() => {
         if (!activeConnectorDrag) return;
@@ -3461,20 +3623,27 @@ export default function Whiteboard({
             const h = Math.abs(startPos.y - pos.y) || 1;
 
             if (lineType.startsWith('connector')) {
-                const nonConnectorShapes = shapeObjects.filter(s => s.type !== 'connector');
-                const startSnap = findNearestShape(startPos, nonConnectorShapes, 40);
-                const endSnap = findNearestShape(pos, nonConnectorShapes, 40);
+                const nonConnectorShapes = shapeObjects.filter(s => s.type !== 'connector' && !['ruler', 'protractor'].includes(s.type));
+                const startSnap = findNearestShape(startPos, nonConnectorShapes, 50);
+                const endSnap = findNearestShape(pos, nonConnectorShapes, 50);
+
+                if (!startSnap || !endSnap || startSnap.shape.id === endSnap.shape.id) {
+                    toast.error("Connectors must connect two distinct shapes. Please start and end on shape hooks.", { id: 'connector-must-snap' });
+                    setTool('select');
+                    return;
+                }
+
                 const connPathType = lineType === 'connector_elbow' ? 'orthogonal' : (lineType === 'connector_curved' ? 'curved' : 'straight');
 
                 const newShapeObj = {
                     id: Date.now().toString(),
                     type: 'connector',
-                    sourceId: startSnap?.shape?.id || null,
-                    sourceAnchor: startSnap?.anchor || 'auto',
-                    sourcePoint: startSnap ? getAnchorPoint(startSnap.shape, startSnap.anchor) : { x: startPos.x, y: startPos.y },
-                    targetId: endSnap?.shape?.id || null,
-                    targetAnchor: endSnap?.anchor || 'auto',
-                    targetPoint: endSnap ? getAnchorPoint(endSnap.shape, endSnap.anchor) : { x: pos.x, y: pos.y },
+                    sourceId: startSnap.shape.id,
+                    sourceAnchor: startSnap.anchor || 'bottom',
+                    sourcePoint: getAnchorPoint(startSnap.shape, startSnap.anchor),
+                    targetId: endSnap.shape.id,
+                    targetAnchor: endSnap.anchor || 'top',
+                    targetPoint: getAnchorPoint(endSnap.shape, endSnap.anchor),
                     pathType: connPathType,
                     color: color,
                     strokeWidth: strokeWidth,
@@ -3484,11 +3653,13 @@ export default function Whiteboard({
                 };
                 setShapeObjects(prev => [...prev, newShapeObj]);
                 if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                saveToHistory();
                 justCreatedShapeRef.current = true;
                 setSelectedShapeIds([newShapeObj.id]);
                 setSelectedTextIds([]);
                 setSelectedImageId(null);
                 setTool('select');
+                toast.success('Connected shapes!', { icon: '🔗' });
             } else {
                 const resolvedLineType = lineType === 'arrow' ? 'arrow' : (lineType === 'double_arrow' ? 'double_arrow' : (lineType === 'arc' ? 'arc' : (lineType === 'dashed' ? 'dashed_line' : 'line')));
 
@@ -5948,16 +6119,47 @@ export default function Whiteboard({
                             viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
                         >
                             {tool === 'line' && (
-                                <line
-                                    x1={startPos.x}
-                                    y1={startPos.y}
-                                    x2={currentPos.x}
-                                    y2={currentPos.y}
-                                    stroke={color}
-                                    strokeWidth={strokeWidth}
-                                    strokeDasharray="5,5"
-                                    strokeLinecap="round"
-                                />
+                                lineType === 'connector_curved' ? (
+                                    <g>
+                                        <path
+                                            d={getConnectorPath(startPos, currentPos, 'curved', null)}
+                                            fill="none"
+                                            stroke={color}
+                                            strokeWidth={strokeWidth}
+                                            strokeDasharray="5,5"
+                                            strokeLinecap="round"
+                                        />
+                                        {renderArrowhead('arrow', currentPos, calculateAngle(startPos, currentPos), strokeWidth * 4, color)}
+                                    </g>
+                                ) : lineType === 'connector_elbow' ? (
+                                    <g>
+                                        <path
+                                            d={getConnectorPath(startPos, currentPos, 'orthogonal', null)}
+                                            fill="none"
+                                            stroke={color}
+                                            strokeWidth={strokeWidth}
+                                            strokeDasharray="5,5"
+                                            strokeLinecap="round"
+                                        />
+                                        {renderArrowhead('arrow', currentPos, calculateAngle(startPos, currentPos), strokeWidth * 4, color)}
+                                    </g>
+                                ) : (
+                                    <g>
+                                        <line
+                                            x1={startPos.x}
+                                            y1={startPos.y}
+                                            x2={currentPos.x}
+                                            y2={currentPos.y}
+                                            stroke={color}
+                                            strokeWidth={strokeWidth}
+                                            strokeDasharray="5,5"
+                                            strokeLinecap="round"
+                                        />
+                                        {(lineType === 'arrow' || lineType === 'connector_straight') && (
+                                            renderArrowhead('arrow', currentPos, calculateAngle(startPos, currentPos), strokeWidth * 4, color)
+                                        )}
+                                    </g>
+                                )
                             )}
                             {tool === 'arrow' && (
                                 <g>
@@ -6642,7 +6844,7 @@ export default function Whiteboard({
                     )}
 
                     {/* Shape Objects Layer - Selectable, Movable, Resizable, Rotatable */}
-                    {shapeObjects.map((shpObj) => {
+                    {shapeObjects.filter(s => s.type !== 'connector').map((shpObj) => {
                         const isSelected = selectedShapeIds.includes(shpObj.id);
                         const handleSize = 10;
                         const renderShapeSVG = () => {
@@ -6755,7 +6957,12 @@ export default function Whiteboard({
                                 const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
                                 const localEndX = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
                                 const localEndY = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
-                                return <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />;
+                                return (
+                                    <g>
+                                        <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke="transparent" strokeWidth={Math.max(shpObj.strokeWidth + 16, 20)} strokeLinecap="round" style={{ pointerEvents: (tool === 'select' || isSelected) ? 'stroke' : 'none', cursor: isSelected ? 'move' : 'pointer' }} />
+                                        <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" style={{ pointerEvents: 'none' }} />
+                                    </g>
+                                );
                             } else if (shpObj.type === 'arrow') {
                                 const localStartX = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
                                 const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
@@ -6768,8 +6975,9 @@ export default function Whiteboard({
                                 const p3 = `${localEndX - headLength * Math.cos(angle + Math.PI / 6)},${localEndY - headLength * Math.sin(angle + Math.PI / 6)}`;
                                 return (
                                     <g>
-                                        <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />
-                                        <polygon points={`${p1} ${p2} ${p3}`} fill={shpObj.color} stroke="none" />
+                                        <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke="transparent" strokeWidth={Math.max(shpObj.strokeWidth + 16, 20)} strokeLinecap="round" style={{ pointerEvents: (tool === 'select' || isSelected) ? 'stroke' : 'none', cursor: isSelected ? 'move' : 'pointer' }} />
+                                        <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" style={{ pointerEvents: 'none' }} />
+                                        <polygon points={`${p1} ${p2} ${p3}`} fill={shpObj.color} stroke="none" style={{ pointerEvents: 'none' }} />
                                     </g>
                                 );
                             } else if (shpObj.type === 'double_arrow') {
@@ -6787,9 +6995,10 @@ export default function Whiteboard({
                                 const p6 = `${localStartX + headLength * Math.cos(angle + Math.PI / 6)},${localStartY + headLength * Math.sin(angle + Math.PI / 6)}`;
                                 return (
                                     <g>
-                                        <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />
-                                        <polygon points={`${p1} ${p2} ${p3}`} fill={shpObj.color} stroke="none" />
-                                        <polygon points={`${p4} ${p5} ${p6}`} fill={shpObj.color} stroke="none" />
+                                        <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke="transparent" strokeWidth={Math.max(shpObj.strokeWidth + 16, 20)} strokeLinecap="round" style={{ pointerEvents: (tool === 'select' || isSelected) ? 'stroke' : 'none', cursor: isSelected ? 'move' : 'pointer' }} />
+                                        <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" style={{ pointerEvents: 'none' }} />
+                                        <polygon points={`${p1} ${p2} ${p3}`} fill={shpObj.color} stroke="none" style={{ pointerEvents: 'none' }} />
+                                        <polygon points={`${p4} ${p5} ${p6}`} fill={shpObj.color} stroke="none" style={{ pointerEvents: 'none' }} />
                                     </g>
                                 );
                             } else if (shpObj.type === 'dashed_line') {
@@ -6797,7 +7006,12 @@ export default function Whiteboard({
                                 const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
                                 const localEndX = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
                                 const localEndY = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
-                                return <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" strokeDasharray="6,6" />;
+                                return (
+                                    <g>
+                                        <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke="transparent" strokeWidth={Math.max(shpObj.strokeWidth + 16, 20)} strokeLinecap="round" style={{ pointerEvents: (tool === 'select' || isSelected) ? 'stroke' : 'none', cursor: isSelected ? 'move' : 'pointer' }} />
+                                        <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" strokeDasharray="6,6" style={{ pointerEvents: 'none' }} />
+                                    </g>
+                                );
                             } else if (shpObj.type === 'graph') {
                                 const step = shpObj.stepSize || 5;
                                 const xAxisY = shpObj.height / 2;
@@ -7055,10 +7269,10 @@ export default function Whiteboard({
                                                 onPointerLeave={() => {
                                                     hookHoverTimeoutRef.current = setTimeout(() => {
                                                         setHoveredHook(null);
-                                                    }, 350);
+                                                    }, 700);
                                                 }}
                                                 onPointerDown={(e) => {
-                                                    startConnectorDrag(shpObj, anchor, CONNECTOR_PRESET_STYLES[0], e);
+                                                    startConnectorDrag(shpObj, anchor, null, e);
                                                 }}
                                             >
                                                 <div className="w-1.5 h-1.5 rounded-full bg-white pointer-events-none" />
@@ -7066,7 +7280,7 @@ export default function Whiteboard({
                                                 {/* Hover Style Popover */}
                                                 {hoveredHook?.shapeId === shpObj.id && hoveredHook?.anchor === anchor && (
                                                     <div
-                                                        className={`connector-hover-popover absolute z-50 flex items-center gap-1 bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-2xl rounded-xl p-1 text-white animate-in fade-in zoom-in-95 duration-150 ${
+                                                        className={`connector-hover-popover absolute z-50 flex items-center gap-1 bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-2xl rounded-xl p-1 text-white animate-in fade-in zoom-in-95 duration-150 before:content-[''] before:absolute before:-inset-3 before:z-[-1] ${
                                                             anchor === 'top' ? 'bottom-full mb-2 left-1/2 -translate-x-1/2' :
                                                             anchor === 'bottom' ? 'top-full mt-2 left-1/2 -translate-x-1/2' :
                                                             anchor === 'left' ? 'right-full mr-2 top-1/2 -translate-y-1/2' :
@@ -7079,7 +7293,7 @@ export default function Whiteboard({
                                                         onPointerLeave={() => {
                                                             hookHoverTimeoutRef.current = setTimeout(() => {
                                                                 setHoveredHook(null);
-                                                            }, 350);
+                                                            }, 700);
                                                         }}
                                                         onPointerDown={(e) => e.stopPropagation()}
                                                         onClick={(e) => e.stopPropagation()}
@@ -7107,100 +7321,187 @@ export default function Whiteboard({
                                 {/* Selection Border & Handles */}
                                 {isSelected && (
                                     <>
-                                        <div className="absolute inset-0 border-2 border-purple-500 pointer-events-none" />
-                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!canUserDraw) return; e.stopPropagation(); e.preventDefault(); if (shpObj.isLocked) return; setShapeDragState({ id: shpObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...shpObj }, startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)), startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)) }); }} />
+                                        {!['line', 'arrow', 'double_arrow', 'dashed_line'].includes(shpObj.type) && (
+                                            <div className="absolute inset-0 border-2 border-purple-500 pointer-events-none" />
+                                        )}
+                                        <div className="absolute inset-0" style={{ pointerEvents: ['line', 'arrow', 'double_arrow', 'dashed_line'].includes(shpObj.type) ? 'none' : 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!canUserDraw) return; e.stopPropagation(); e.preventDefault(); if (shpObj.isLocked) return; setShapeDragState({ id: shpObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...shpObj }, startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)), startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)) }); }} />
                                         
 
                                         
                                         {!shpObj.isLocked && shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && (
-                                            <>
-                                        {/* Corner Resize Handles */}
-                                        {['nw', 'ne', 'sw', 'se'].map(corner => {
-                                            const pos = {
-                                                nw: { left: -handleSize / 2, top: -handleSize / 2, cursor: 'nwse-resize' },
-                                                ne: { right: -handleSize / 2, top: -handleSize / 2, cursor: 'nesw-resize' },
-                                                sw: { left: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nesw-resize' },
-                                                se: { right: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nwse-resize' },
-                                            }[corner];
-                                            return (
-                                                <div
-                                                    key={corner}
-                                                    data-handle={corner}
-                                                    className="absolute bg-white border-2 border-purple-500 z-30"
-                                                    style={{ width: handleSize, height: handleSize, ...pos }}
-                                                    onMouseDown={(e) => {
-                                                        e.stopPropagation();
-                                                        e.preventDefault();
-                                                        setShapeDragState({
-                                                            id: shpObj.id,
-                                                            action: `resize-${corner}`,
-                                                            startX: e.clientX,
-                                                            startY: e.clientY,
-                                                            startObj: { ...shpObj }
-                                                        });
-                                                    }}
-                                                />
-                                            );
-                                        })}
-                                            </>
+                                            ['line', 'arrow', 'double_arrow', 'dashed_line'].includes(shpObj.type) ? (
+                                                (() => {
+                                                    const localStartX = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+                                                    const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+                                                    const localEndX = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+                                                    const localEndY = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                                                    const midX = (localStartX + localEndX) / 2;
+                                                    const midY = (localStartY + localEndY) / 2;
+                                                    const lineAngle = Math.atan2(localEndY - localStartY, localEndX - localStartX);
+                                                    const normalAngle = lineAngle - Math.PI / 2;
+                                                    const rotX = midX + 28 * Math.cos(normalAngle);
+                                                    const rotY = midY + 28 * Math.sin(normalAngle);
+
+                                                    return (
+                                                        <>
+                                                            {/* Start Endpoint Handle */}
+                                                            <div
+                                                                data-handle="line-endpoint-start"
+                                                                className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white border-2 border-purple-600 shadow-lg hover:scale-125 transition-transform z-35 flex items-center justify-center cursor-move"
+                                                                style={{ left: localStartX, top: localStartY, pointerEvents: 'auto' }}
+                                                                title="Drag to reposition Start point"
+                                                                onMouseDown={(e) => {
+                                                                    e.stopPropagation();
+                                                                    e.preventDefault();
+                                                                    setShapeDragState({
+                                                                        id: shpObj.id,
+                                                                        action: 'line-endpoint-start',
+                                                                        startX: e.clientX,
+                                                                        startY: e.clientY,
+                                                                        startObj: { ...shpObj }
+                                                                    });
+                                                                }}
+                                                            >
+                                                                <div className="w-1.5 h-1.5 rounded-full bg-purple-600 pointer-events-none" />
+                                                            </div>
+
+                                                            {/* End Endpoint Handle */}
+                                                            <div
+                                                                data-handle="line-endpoint-end"
+                                                                className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white border-2 border-purple-600 shadow-lg hover:scale-125 transition-transform z-35 flex items-center justify-center cursor-move"
+                                                                style={{ left: localEndX, top: localEndY, pointerEvents: 'auto' }}
+                                                                title="Drag to reposition End point"
+                                                                onMouseDown={(e) => {
+                                                                    e.stopPropagation();
+                                                                    e.preventDefault();
+                                                                    setShapeDragState({
+                                                                        id: shpObj.id,
+                                                                        action: 'line-endpoint-end',
+                                                                        startX: e.clientX,
+                                                                        startY: e.clientY,
+                                                                        startObj: { ...shpObj }
+                                                                    });
+                                                                }}
+                                                            >
+                                                                <div className="w-1.5 h-1.5 rounded-full bg-purple-600 pointer-events-none" />
+                                                            </div>
+
+                                                            {/* Line Midpoint Rotate Hook */}
+                                                            <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-30">
+                                                                <line x1={midX} y1={midY} x2={rotX} y2={rotY} stroke="#a855f7" strokeWidth="1.5" strokeDasharray="3,3" />
+                                                            </svg>
+                                                            <div
+                                                                data-handle="rotate"
+                                                                className="absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-purple-500 hover:bg-purple-600 flex items-center justify-center cursor-grab shadow-md z-35 transition-transform hover:scale-110"
+                                                                style={{ left: rotX, top: rotY, pointerEvents: 'auto' }}
+                                                                title="Rotate Line"
+                                                                onMouseDown={(e) => {
+                                                                    e.stopPropagation();
+                                                                    e.preventDefault();
+                                                                    setShapeDragState({
+                                                                        id: shpObj.id,
+                                                                        action: 'rotate',
+                                                                        startX: e.clientX,
+                                                                        startY: e.clientY,
+                                                                        startObj: { ...shpObj }
+                                                                    });
+                                                                }}
+                                                            >
+                                                                <RotateCw className="w-3 h-3 text-white pointer-events-none" />
+                                                            </div>
+                                                        </>
+                                                    );
+                                                })()
+                                            ) : (
+                                                <>
+                                                    {/* Corner Resize Handles */}
+                                                    {['nw', 'ne', 'sw', 'se'].map(corner => {
+                                                        const pos = {
+                                                            nw: { left: -handleSize / 2, top: -handleSize / 2, cursor: 'nwse-resize' },
+                                                            ne: { right: -handleSize / 2, top: -handleSize / 2, cursor: 'nesw-resize' },
+                                                            sw: { left: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nesw-resize' },
+                                                            se: { right: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nwse-resize' },
+                                                        }[corner];
+                                                        return (
+                                                            <div
+                                                                key={corner}
+                                                                data-handle={corner}
+                                                                className="absolute bg-white border-2 border-purple-500 z-30"
+                                                                style={{ width: handleSize, height: handleSize, ...pos }}
+                                                                onMouseDown={(e) => {
+                                                                    e.stopPropagation();
+                                                                    e.preventDefault();
+                                                                    setShapeDragState({
+                                                                        id: shpObj.id,
+                                                                        action: `resize-${corner}`,
+                                                                        startX: e.clientX,
+                                                                        startY: e.clientY,
+                                                                        startObj: { ...shpObj }
+                                                                    });
+                                                                }}
+                                                            />
+                                                        );
+                                                    })}
+                                                    {/* Edge Resize Handles */}
+                                                    {['n', 'e', 's', 'w'].map(edge => {
+                                                        const pos = {
+                                                            n: { left: '50%', top: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
+                                                            s: { left: '50%', bottom: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
+                                                            e: { right: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
+                                                            w: { left: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
+                                                        }[edge];
+                                                        return (
+                                                            <div
+                                                                key={edge}
+                                                                data-handle={edge}
+                                                                className="absolute bg-white border-2 border-purple-500 z-30"
+                                                                style={{ width: handleSize, height: handleSize, ...pos }}
+                                                                onMouseDown={(e) => {
+                                                                    e.stopPropagation();
+                                                                    e.preventDefault();
+                                                                    setShapeDragState({
+                                                                        id: shpObj.id,
+                                                                        action: `resize-${edge}`,
+                                                                        startX: e.clientX,
+                                                                        startY: e.clientY,
+                                                                        startObj: { ...shpObj }
+                                                                    });
+                                                                }}
+                                                            />
+                                                        );
+                                                    })}
+                                                    {/* Rotate Handle */}
+                                                    <div className="absolute left-1/2 -translate-x-1/2 flex flex-col-reverse items-center z-30" style={{ top: -38 }}>
+                                                        <div className="w-px h-5 bg-purple-500" />
+                                                        <div
+                                                            data-handle="rotate"
+                                                            className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center cursor-grab hover:bg-purple-600 shadow-md" style={{ cursor: 'grab' }}
+                                                            onMouseDown={(e) => {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                setShapeDragState({
+                                                                    id: shpObj.id,
+                                                                    action: 'rotate',
+                                                                    startX: e.clientX,
+                                                                    startY: e.clientY,
+                                                                    startObj: { ...shpObj }
+                                                                });
+                                                            }}
+                                                        >
+                                                            <RotateCw className="w-3 h-3 text-white" />
+                                                        </div>
+                                                        <input
+                                                            type="number"
+                                                            value={Math.round(shpObj.rotation || 0)}
+                                                            onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, rotation: parseInt(e.target.value) || 0 } : s))}
+                                                            onPointerDown={(e) => e.stopPropagation()}
+                                                            onKeyDown={(e) => e.stopPropagation()}
+                                                            className="mb-1 w-12 text-center text-xs bg-slate-800 text-white px-1 py-0.5 rounded shadow-lg z-50 border border-slate-600 outline-none appearance-none"
+                                                        />
+                                                    </div>
+                                                </>
+                                            )
                                         )}
-                                        {/* Edge Resize Handles */}
-                                        {['n', 'e', 's', 'w'].map(edge => {
-                                            const pos = {
-                                                n: { left: '50%', top: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
-                                                s: { left: '50%', bottom: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
-                                                e: { right: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
-                                                w: { left: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
-                                            }[edge];
-                                            return (
-                                                <div
-                                                    key={edge}
-                                                    data-handle={edge}
-                                                    className="absolute bg-white border-2 border-purple-500 z-30"
-                                                    style={{ width: handleSize, height: handleSize, ...pos }}
-                                                    onMouseDown={(e) => {
-                                                        e.stopPropagation();
-                                                        e.preventDefault();
-                                                        setShapeDragState({
-                                                            id: shpObj.id,
-                                                            action: `resize-${edge}`,
-                                                            startX: e.clientX,
-                                                            startY: e.clientY,
-                                                            startObj: { ...shpObj }
-                                                        });
-                                                    }}
-                                                />
-                                            );
-                                        })}
-                                        {/* Rotate Handle */}
-                                        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col-reverse items-center z-30" style={{ top: -38 }}>
-                                            <div className="w-px h-5 bg-purple-500" />
-                                            <div
-                                                data-handle="rotate"
-                                                className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center cursor-grab hover:bg-purple-600 shadow-md" style={{ cursor: 'grab' }}
-                                                onMouseDown={(e) => {
-                                                    e.stopPropagation();
-                                                    e.preventDefault();
-                                                    setShapeDragState({
-                                                        id: shpObj.id,
-                                                        action: 'rotate',
-                                                        startX: e.clientX,
-                                                        startY: e.clientY,
-                                                        startObj: { ...shpObj }
-                                                    });
-                                                }}
-                                            >
-                                                <RotateCw className="w-3 h-3 text-white" />
-                                            </div>
-                                            <input
-                                                type="number"
-                                                value={Math.round(shpObj.rotation || 0)}
-                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, rotation: parseInt(e.target.value) || 0 } : s))}
-                                                onPointerDown={(e) => e.stopPropagation()}
-                                                onKeyDown={(e) => e.stopPropagation()}
-                                                className="mb-1 w-12 text-center text-xs bg-slate-800 text-white px-1 py-0.5 rounded shadow-lg z-50 border border-slate-600 outline-none appearance-none"
-                                            />
-                                        </div>
                                     </>
                                 )}
                             </div>
@@ -7558,16 +7859,28 @@ export default function Whiteboard({
                             }}
                             onMouseMove={(e) => {
                                 const rect = e.currentTarget.getBoundingClientRect();
-                                setSpotlightPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+                                if (!rect.width || !rect.height) return;
+                                const scaleX = canvasWidth / rect.width;
+                                const scaleY = canvasHeight / rect.height;
+                                setSpotlightPos({
+                                    x: (e.clientX - rect.left) * scaleX,
+                                    y: (e.clientY - rect.top) * scaleY
+                                });
                             }}
                             onTouchMove={(e) => {
                                 if (e.touches[0]) {
                                     const rect = e.currentTarget.getBoundingClientRect();
-                                    setSpotlightPos({ x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top });
+                                    if (!rect.width || !rect.height) return;
+                                    const scaleX = canvasWidth / rect.width;
+                                    const scaleY = canvasHeight / rect.height;
+                                    setSpotlightPos({
+                                        x: (e.touches[0].clientX - rect.left) * scaleX,
+                                        y: (e.touches[0].clientY - rect.top) * scaleY
+                                    });
                                 }
                             }}
                         >
-                            <svg className="w-full h-full">
+                            <svg className="w-full h-full" viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}>
                                 <defs>
                                     <mask id="whiteboard-spotlight-mask">
                                         <rect width="100%" height="100%" fill="white" />

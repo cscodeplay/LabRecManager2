@@ -7,6 +7,7 @@ import {
     Users, GitFork, Building2, RefreshCw, Triangle, CircleDot, Filter, Milestone, LayoutGrid, Award,
     Target, Sliders, CheckSquare, Boxes, Activity, TrendingUp, GitMerge
 } from 'lucide-react';
+import { getAnchorPoint } from './ConnectorLine';
 
 const uuid = () => Date.now().toString(36) + Math.random().toString(36).substring(2);
 
@@ -71,13 +72,30 @@ function TemplateMiniPreview({ data }) {
             {(data.shapes || []).filter(s => s.type === 'line' || s.type === 'arrow' || s.type === 'connector').map(s => {
                 const stroke = s.color || '#64748b';
                 const sw = Math.max(2, s.strokeWidth || 2);
-                const x1 = s.sourcePoint ? s.sourcePoint.x : s.x;
-                const y1 = s.sourcePoint ? s.sourcePoint.y : s.y;
-                const x2 = s.targetPoint ? s.targetPoint.x : (s.x + (s.width || 0));
-                const y2 = s.targetPoint ? s.targetPoint.y : (s.y + (s.height || 0));
+                let x1 = s.sourcePoint ? s.sourcePoint.x : s.x;
+                let y1 = s.sourcePoint ? s.sourcePoint.y : s.y;
+                let x2 = s.targetPoint ? s.targetPoint.x : (s.x + (s.width || 0));
+                let y2 = s.targetPoint ? s.targetPoint.y : (s.y + (s.height || 0));
+                
+                if (s.type === 'connector' && s.sourceId && s.targetId) {
+                    const src = (data.shapes || []).find(sh => sh.id === s.sourceId);
+                    const tgt = (data.shapes || []).find(sh => sh.id === s.targetId);
+                    if (src && tgt) {
+                        const pt1 = getAnchorPoint(src, s.sourceAnchor || 'bottom');
+                        const pt2 = getAnchorPoint(tgt, s.targetAnchor || 'top');
+                        x1 = pt1.x; y1 = pt1.y;
+                        x2 = pt2.x; y2 = pt2.y;
+                    }
+                }
+
+                const isCurved = s.pathType === 'curved' || (!s.pathType && s.type === 'connector');
+                const pathD = isCurved
+                    ? `M ${x1} ${y1} C ${x1} ${(y1 + y2) / 2}, ${x2} ${(y1 + y2) / 2}, ${x2} ${y2}`
+                    : `M ${x1} ${y1} L ${x2} ${y2}`;
+
                 return (
                     <g key={s.id}>
-                        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={stroke} strokeWidth={sw} strokeLinecap="round" markerEnd={(s.type === 'arrow' || s.arrowEnd === 'arrow') ? 'url(#preview-arrow-head)' : undefined} />
+                        <path d={pathD} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" markerEnd={(s.type === 'arrow' || s.arrowEnd === 'arrow') ? 'url(#preview-arrow-head)' : undefined} />
                     </g>
                 );
             })}
@@ -170,18 +188,18 @@ const templates = [
             title: 'Algorithm Flowchart',
             background: { pattern: 'dots', color: '#f8fafc' },
             shapes: [
-                { id: uuid(), type: 'rectangle', x: 400, y: 100, width: 200, height: 60, color: '#16a34a', fillColor: '#dcfce7', strokeWidth: 2, rotation: 0, text: 'Start', textColor: '#166534', fontSize: 16, radius: 30 },
-                { id: uuid(), type: 'arrow', x: 500, y: 160, width: 0, height: 90, color: '#475569', strokeWidth: 2 },
-                { id: uuid(), type: 'rectangle', x: 400, y: 250, width: 200, height: 60, color: '#2563eb', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: 'Input', textColor: '#1e40af', fontSize: 16 },
-                { id: uuid(), type: 'arrow', x: 500, y: 310, width: 0, height: 90, color: '#475569', strokeWidth: 2 },
-                { id: uuid(), type: 'rectangle', x: 400, y: 400, width: 200, height: 60, color: '#ca8a04', fillColor: '#fef08a', strokeWidth: 2, rotation: 45, text: 'Decision?', textColor: '#854d0e', fontSize: 16 },
-                { id: uuid(), type: 'arrow', x: 500, y: 460, width: 0, height: 90, color: '#475569', strokeWidth: 2 },
-                { id: uuid(), type: 'rectangle', x: 400, y: 550, width: 200, height: 60, color: '#ea580c', fillColor: '#ffedd5', strokeWidth: 2, rotation: 0, text: 'Output', textColor: '#9a3412', fontSize: 16, skewX: 10 },
-                { id: uuid(), type: 'arrow', x: 500, y: 610, width: 0, height: 90, color: '#475569', strokeWidth: 2 },
-                { id: uuid(), type: 'rectangle', x: 400, y: 700, width: 200, height: 60, color: '#dc2626', fillColor: '#fee2e2', strokeWidth: 2, rotation: 0, text: 'End', textColor: '#991b1b', fontSize: 16, radius: 30 },
+                { id: 'flow-start', type: 'rectangle', x: 400, y: 100, width: 200, height: 60, color: '#16a34a', fillColor: '#dcfce7', strokeWidth: 2, rotation: 0, text: 'Start', textColor: '#166534', fontSize: 16, radius: 30 },
+                { id: 'flow-input', type: 'rectangle', x: 400, y: 230, width: 200, height: 60, color: '#2563eb', fillColor: '#dbeafe', strokeWidth: 2, rotation: 0, text: 'Input', textColor: '#1e40af', fontSize: 16 },
+                { id: 'flow-decision', type: 'diamond', x: 420, y: 360, width: 160, height: 100, color: '#ca8a04', fillColor: '#fef08a', strokeWidth: 2, rotation: 0, text: 'Decision?', textColor: '#854d0e', fontSize: 15 },
+                { id: 'flow-output', type: 'rectangle', x: 400, y: 530, width: 200, height: 60, color: '#ea580c', fillColor: '#ffedd5', strokeWidth: 2, rotation: 0, text: 'Output', textColor: '#9a3412', fontSize: 16, skewX: 10 },
+                { id: 'flow-end', type: 'rectangle', x: 400, y: 660, width: 200, height: 60, color: '#dc2626', fillColor: '#fee2e2', strokeWidth: 2, rotation: 0, text: 'End', textColor: '#991b1b', fontSize: 16, radius: 30 },
+                { id: 'flow-conn-1', type: 'connector', sourceId: 'flow-start', sourceAnchor: 'bottom', targetId: 'flow-input', targetAnchor: 'top', pathType: 'curved', arrowEnd: 'arrow', color: '#475569', strokeWidth: 2 },
+                { id: 'flow-conn-2', type: 'connector', sourceId: 'flow-input', sourceAnchor: 'bottom', targetId: 'flow-decision', targetAnchor: 'top', pathType: 'curved', arrowEnd: 'arrow', color: '#475569', strokeWidth: 2 },
+                { id: 'flow-conn-3', type: 'connector', sourceId: 'flow-decision', sourceAnchor: 'bottom', targetId: 'flow-output', targetAnchor: 'top', pathType: 'curved', arrowEnd: 'arrow', color: '#475569', strokeWidth: 2 },
+                { id: 'flow-conn-4', type: 'connector', sourceId: 'flow-output', sourceAnchor: 'bottom', targetId: 'flow-end', targetAnchor: 'top', pathType: 'curved', arrowEnd: 'arrow', color: '#475569', strokeWidth: 2 },
             ],
             texts: [
-                { id: uuid(), x: 400, y: 50, width: 300, height: 40, text: 'Algorithm Flowchart', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+                { id: 'flow-title', x: 400, y: 50, width: 300, height: 40, text: 'Algorithm Flowchart', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
             ]
         }
     },

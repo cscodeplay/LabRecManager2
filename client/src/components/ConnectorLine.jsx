@@ -2,11 +2,14 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 
-// Returns { x, y } for the midpoint of a shape's edge
+// Returns { x, y } for the anchor of a shape, synchronized with rotation and flips
 export const getAnchorPoint = (shape, anchor, otherPoint = null) => {
     if (!shape) return { x: 0, y: 0 };
     
-    const center = { x: shape.x + shape.width / 2, y: shape.y + shape.height / 2 };
+    const center = { 
+        x: (shape.x || 0) + (shape.width || 100) / 2, 
+        y: (shape.y || 0) + (shape.height || 100) / 2 
+    };
     
     let resolvedAnchor = anchor;
     if (anchor === 'auto') {
@@ -23,13 +26,37 @@ export const getAnchorPoint = (shape, anchor, otherPoint = null) => {
         }
     }
 
+    let unrotatedPt;
     switch (resolvedAnchor) {
-        case 'top': return { x: center.x, y: shape.y };
-        case 'right': return { x: shape.x + shape.width, y: center.y };
-        case 'bottom': return { x: center.x, y: shape.y + shape.height };
-        case 'left': return { x: shape.x, y: center.y };
+        case 'top': unrotatedPt = { x: center.x, y: shape.y || 0 }; break;
+        case 'right': unrotatedPt = { x: (shape.x || 0) + (shape.width || 100), y: center.y }; break;
+        case 'bottom': unrotatedPt = { x: center.x, y: (shape.y || 0) + (shape.height || 100) }; break;
+        case 'left': unrotatedPt = { x: shape.x || 0, y: center.y }; break;
         default: return center;
     }
+
+    let dx = unrotatedPt.x - center.x;
+    let dy = unrotatedPt.y - center.y;
+
+    if (shape.flipX) dx = -dx;
+    if (shape.flipY) dy = -dy;
+
+    const rotation = shape.rotation || 0;
+    if (!rotation) {
+        return {
+            x: center.x + dx,
+            y: center.y + dy
+        };
+    }
+
+    const rad = (rotation * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+
+    return {
+        x: center.x + dx * cos - dy * sin,
+        y: center.y + dx * sin + dy * cos
+    };
 };
 
 // Returns { shape, anchor } or null if no shape is within threshold distance
@@ -59,7 +86,7 @@ export const findNearestShape = (point, shapes, threshold = 30) => {
 };
 
 // Returns an SVG path string (d attribute) for the connector
-export const getConnectorPath = (startPt, endPt, pathType = 'straight', waypoint = null) => {
+export const getConnectorPath = (startPt, endPt, pathType = 'curved', waypoint = null, sourceAnchor = null, targetAnchor = null) => {
     if (pathType === 'straight') {
         if (waypoint) {
             return `M ${startPt.x} ${startPt.y} L ${waypoint.x} ${waypoint.y} L ${endPt.x} ${endPt.y}`;
@@ -75,14 +102,44 @@ export const getConnectorPath = (startPt, endPt, pathType = 'straight', waypoint
             const cpY = 2 * waypoint.y - 0.5 * (startPt.y + endPt.y);
             return `M ${startPt.x} ${startPt.y} Q ${cpX} ${cpY} ${endPt.x} ${endPt.y}`;
         }
+
         const dx = endPt.x - startPt.x;
         const dy = endPt.y - startPt.y;
-        
-        // simple cubic bezier control points based on horizontal distance
-        const controlDistX = Math.abs(dx) * 0.5;
-        const cp1 = { x: startPt.x + controlDistX * Math.sign(dx || 1), y: startPt.y };
-        const cp2 = { x: endPt.x - controlDistX * Math.sign(dx || 1), y: endPt.y };
-        
+        const dist = Math.hypot(dx, dy);
+
+        let cp1, cp2;
+        const curveOffset = Math.max(25, Math.min(dist * 0.45, 120));
+
+        if (sourceAnchor || targetAnchor) {
+            const getAnchorVector = (anc, fallbackDx, fallbackDy) => {
+                if (anc === 'top') return { x: 0, y: -1 };
+                if (anc === 'bottom') return { x: 0, y: 1 };
+                if (anc === 'left') return { x: -1, y: 0 };
+                if (anc === 'right') return { x: 1, y: 0 };
+                return Math.abs(fallbackDx) >= Math.abs(fallbackDy)
+                    ? { x: Math.sign(fallbackDx) || 1, y: 0 }
+                    : { x: 0, y: Math.sign(fallbackDy) || 1 };
+            };
+
+            const v1 = getAnchorVector(sourceAnchor, dx, dy);
+            const v2 = getAnchorVector(targetAnchor, -dx, -dy);
+
+            cp1 = { x: startPt.x + v1.x * curveOffset, y: startPt.y + v1.y * curveOffset };
+            cp2 = { x: endPt.x + v2.x * curveOffset, y: endPt.y + v2.y * curveOffset };
+        } else {
+            if (Math.abs(dy) > Math.abs(dx)) {
+                // Vertical connection (e.g. flowchart step 1 -> step 2)
+                const lateralBow = Math.abs(dx) > 10 ? 0 : Math.min(35, dist * 0.2);
+                cp1 = { x: startPt.x + dx * 0.1 + lateralBow, y: startPt.y + dy * 0.5 };
+                cp2 = { x: endPt.x - dx * 0.1 + lateralBow, y: endPt.y - dy * 0.5 };
+            } else {
+                // Horizontal connection
+                const verticalBow = Math.abs(dy) > 10 ? 0 : Math.min(35, dist * 0.2);
+                cp1 = { x: startPt.x + dx * 0.5, y: startPt.y + dy * 0.1 + verticalBow };
+                cp2 = { x: endPt.x - dx * 0.5, y: endPt.y - dy * 0.1 + verticalBow };
+            }
+        }
+
         return `M ${startPt.x} ${startPt.y} C ${cp1.x} ${cp1.y}, ${cp2.x} ${cp2.y}, ${endPt.x} ${endPt.y}`;
     }
     return `M ${startPt.x} ${startPt.y} L ${endPt.x} ${endPt.y}`;
@@ -183,8 +240,8 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
 
     const pathData = useMemo(() => {
         const wp = (waypoint || draggingEndpoint === 'waypoint') ? actualWaypoint : null;
-        return getConnectorPath(actualSourcePoint, actualTargetPoint, pathType, wp);
-    }, [actualSourcePoint, actualTargetPoint, pathType, waypoint, draggingEndpoint, actualWaypoint]);
+        return getConnectorPath(actualSourcePoint, actualTargetPoint, pathType, wp, sourceAnchor, targetAnchor);
+    }, [actualSourcePoint, actualTargetPoint, pathType, waypoint, draggingEndpoint, actualWaypoint, sourceAnchor, targetAnchor]);
 
     // Handle dragging with canvas-relative coordinates
     useEffect(() => {
@@ -221,6 +278,7 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
                 const updates = {};
                 if (currentEndpoint === 'waypoint') {
                     updates.waypoint = finalPoint;
+                    onUpdate(id, updates);
                 } else if (finalSnap) {
                     if (currentEndpoint === 'source') {
                         updates.sourceId = finalSnap.shape.id;
@@ -231,16 +289,11 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
                         updates.targetAnchor = finalSnap.anchor;
                         updates.targetPoint = getAnchorPoint(finalSnap.shape, finalSnap.anchor);
                     }
-                } else {
-                    if (currentEndpoint === 'source') {
-                        updates.sourceId = null;
-                        updates.sourcePoint = finalPoint;
-                    } else {
-                        updates.targetId = null;
-                        updates.targetPoint = finalPoint;
-                    }
+                    onUpdate(id, updates);
                 }
-                onUpdate(id, updates);
+                // When dropped in empty space without a valid hook snap:
+                // Connectors must NEVER become standalone!
+                // Revert to the existing connected shape hook cleanly.
             }
             
             setDraggingEndpoint(null);
