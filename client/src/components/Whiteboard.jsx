@@ -638,6 +638,7 @@ export default function Whiteboard({
 
     // Image insert
     const imageInputRef = useRef(null);
+    const pasteCountRef = useRef(0);
 
     // Recently used colors (3x3 = 9 colors)
     const [recentColors, setRecentColors] = useState(DEFAULT_COLORS);
@@ -652,7 +653,19 @@ export default function Whiteboard({
     // Image objects for manipulation (selectable, movable, resizable, rotatable)
     // Store images per page: { [pageIndex]: [imageObjects] }
     const [pageImageObjects, setPageImageObjects] = useState({ 0: [] });
-    const [selectedImageId, setSelectedImageId] = useState(null);
+    const [selectedImageIds, setSelectedImageIds] = useState([]);
+    const selectedImageId = selectedImageIds.length > 0 ? selectedImageIds[selectedImageIds.length - 1] : null;
+    const setSelectedImageId = useCallback((idOrFn) => {
+        if (typeof idOrFn === 'function') {
+            setSelectedImageIds(prev => {
+                const currentId = prev.length > 0 ? prev[prev.length - 1] : null;
+                const newId = idOrFn(currentId);
+                return newId ? [newId] : [];
+            });
+        } else {
+            setSelectedImageIds(idOrFn ? [idOrFn] : []);
+        }
+    }, []);
     const [imageDragState, setImageDragState] = useState(null); // { id, action, startX, startY, startObj }
     const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
 
@@ -670,6 +683,7 @@ export default function Whiteboard({
     const [isItalic, setIsItalic] = useState(false);
     const [textBgColor, setTextBgColor] = useState('transparent');
     const [showTextBgPicker, setShowTextBgPicker] = useState(false);
+    const [activeTextBorderPopoverId, setActiveTextBorderPopoverId] = useState(null);
     
     // Shape objects for manipulation
     const [pageShapeObjects, setPageShapeObjects] = useState({ 0: [] });
@@ -1604,6 +1618,166 @@ export default function Whiteboard({
         saveToHistory();
     }, [selectedImageId, saveToHistory]);
 
+    // Update properties on currently selected text objects
+    const updateSelectedTextProps = useCallback((updates) => {
+        const activeIds = selectedTextIds.length > 0 ? selectedTextIds : (editingTextId ? [editingTextId] : []);
+        if (activeIds.length === 0) return;
+        setTextObjects(prev => prev.map(txt => {
+            if (activeIds.includes(txt.id)) {
+                return {
+                    ...txt,
+                    ...updates
+                };
+            }
+            return txt;
+        }));
+        saveToHistory();
+    }, [selectedTextIds, editingTextId, saveToHistory, setTextObjects]);
+
+    // Auto-close text border popover when no text is selected
+    useEffect(() => {
+        if (selectedTextIds.length === 0) {
+            setActiveTextBorderPopoverId(null);
+        }
+    }, [selectedTextIds]);
+
+    // Client-side automatic background removal using BFS flood-fill and boundary transparency
+    const handleRemoveImageBackground = useCallback((targetImgObj) => {
+        const imgObj = targetImgObj || (selectedImageId ? imageObjects.find(i => i.id === selectedImageId) : null);
+        if (!imgObj || !imgObj.src) return;
+
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(img, 0, 0);
+
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imgData.data;
+            const w = canvas.width;
+            const h = canvas.height;
+
+            // Sample corner pixels to find dominant background color
+            const corners = [
+                0, // top-left
+                (w - 1) * 4, // top-right
+                ((h - 1) * w) * 4, // bottom-left
+                ((h - 1) * w + (w - 1)) * 4 // bottom-right
+            ];
+
+            let bgR = 0, bgG = 0, bgB = 0, validSamples = 0;
+            corners.forEach(idx => {
+                if (data[idx + 3] > 10) {
+                    bgR += data[idx];
+                    bgG += data[idx + 1];
+                    bgB += data[idx + 2];
+                    validSamples++;
+                }
+            });
+
+            if (validSamples === 0) {
+                toast('Image already has transparent background', { icon: 'ℹ️' });
+                return;
+            }
+
+            bgR = Math.round(bgR / validSamples);
+            bgG = Math.round(bgG / validSamples);
+            bgB = Math.round(bgB / validSamples);
+
+            const visited = new Uint8Array(w * h);
+            const queue = [];
+
+            const colorDist = (idx) => {
+                const dr = data[idx] - bgR;
+                const dg = data[idx + 1] - bgG;
+                const db = data[idx + 2] - bgB;
+                return Math.sqrt(dr * dr + dg * dg + db * db);
+            };
+
+            const threshold = 38;
+            const feather = 18;
+
+            for (let x = 0; x < w; x++) {
+                let idxTop = x * 4;
+                if (colorDist(idxTop) < threshold + feather) {
+                    queue.push(x, 0);
+                    visited[x] = 1;
+                }
+                let idxBottom = ((h - 1) * w + x) * 4;
+                if (colorDist(idxBottom) < threshold + feather) {
+                    queue.push(x, h - 1);
+                    visited[(h - 1) * w + x] = 1;
+                }
+            }
+            for (let y = 0; y < h; y++) {
+                let idxLeft = (y * w) * 4;
+                if (colorDist(idxLeft) < threshold + feather && !visited[y * w]) {
+                    queue.push(0, y);
+                    visited[y * w] = 1;
+                }
+                let idxRight = (y * w + (w - 1)) * 4;
+                if (colorDist(idxRight) < threshold + feather && !visited[y * w + (w - 1)]) {
+                    queue.push(w - 1, y);
+                    visited[y * w + (w - 1)] = 1;
+                }
+            }
+
+            let head = 0;
+            while (head < queue.length) {
+                const qx = queue[head++];
+                const qy = queue[head++];
+                const pixelIdx = (qy * w + qx) * 4;
+                const dist = colorDist(pixelIdx);
+
+                if (dist <= threshold) {
+                    data[pixelIdx + 3] = 0;
+                } else if (dist < threshold + feather) {
+                    const alphaRatio = (dist - threshold) / feather;
+                    data[pixelIdx + 3] = Math.round(data[pixelIdx + 3] * alphaRatio);
+                }
+
+                const neighbors = [
+                    [qx + 1, qy],
+                    [qx - 1, qy],
+                    [qx, qy + 1],
+                    [qx, qy - 1]
+                ];
+
+                for (let i = 0; i < 4; i++) {
+                    const nx = neighbors[i][0];
+                    const ny = neighbors[i][1];
+                    if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                        const nPos = ny * w + nx;
+                        if (!visited[nPos]) {
+                            visited[nPos] = 1;
+                            const nIdx = nPos * 4;
+                            if (colorDist(nIdx) < threshold + feather) {
+                                queue.push(nx, ny);
+                            }
+                        }
+                    }
+                }
+            }
+
+            ctx.putImageData(imgData, 0, 0);
+            const transparentUrl = canvas.toDataURL('image/png');
+
+            setImageObjects(prev => prev.map(imgItem =>
+                imgItem.id === imgObj.id ? { ...imgItem, src: transparentUrl } : imgItem
+            ));
+            saveToHistory();
+            toast.success('Image background removed!', { icon: '🪄' });
+        };
+        img.onerror = () => {
+            toast.error('Failed to process image background removal');
+        };
+        img.src = imgObj.src;
+    }, [selectedImageId, imageObjects, saveToHistory, setImageObjects]);
+
+
     // Handle importing native WBF / IWB interactive panel format
     const handleImportWBF = useCallback((data) => {
         if (!data) return;
@@ -1671,15 +1845,36 @@ export default function Whiteboard({
             ctx.drawImage(tempCanvas, x, y);
             saveToHistory();
         } else if (item.type === 'image') {
-            setImageObjects(prev => [
-                ...prev,
-                {
-                    ...item.data,
-                    id: Date.now(),
-                    x: item.data.x + 20,
-                    y: item.data.y + 20
-                }
-            ]);
+            pasteCountRef.current += 1;
+            const stackOffset = ((pasteCountRef.current - 1) % 12 + 1) * 25;
+            const newId = Date.now().toString();
+            const newImage = {
+                ...item.data,
+                id: newId,
+                x: (item.data.x || 100) + stackOffset,
+                y: (item.data.y || 100) + stackOffset
+            };
+            setImageObjects(prev => [...prev, newImage]);
+            setSelectedImageIds([newId]);
+            setSelectedShapeIds([]);
+            setSelectedTextIds([]);
+            saveToHistory();
+        } else if (item.type === 'images') {
+            pasteCountRef.current += 1;
+            const stackOffset = ((pasteCountRef.current - 1) % 12 + 1) * 25;
+            const timestamp = Date.now();
+            const newImages = (item.data || []).map((img, idx) => ({
+                ...img,
+                id: (timestamp + idx).toString(),
+                x: (img.x || 100) + stackOffset,
+                y: (img.y || 100) + stackOffset
+            }));
+            setImageObjects(prev => [...prev, ...newImages]);
+            const newIds = newImages.map(img => img.id);
+            setSelectedImageIds(newIds);
+            setSelectedShapeIds([]);
+            setSelectedTextIds([]);
+            saveToHistory();
         } else if (item.type === 'text') {
             setTextObjects(prev => [
                 ...prev,
@@ -1837,9 +2032,9 @@ export default function Whiteboard({
     // Unified Delete
     const handleDelete = useCallback(() => {
         let hasDeleted = false;
-        if (selectedImageId) {
-            setImageObjects(prev => prev.filter(img => img.id !== selectedImageId));
-            setSelectedImageId(null);
+        if (selectedImageIds.length > 0) {
+            setImageObjects(prev => prev.filter(img => !selectedImageIds.includes(img.id)));
+            setSelectedImageIds([]);
             hasDeleted = true;
         }
         if (selectedTextIds.length > 0) {
@@ -1866,13 +2061,18 @@ export default function Whiteboard({
         if (hasDeleted) {
             saveToHistory();
         }
-    }, [selectedImageId, selectedTextIds, selectedShapeIds, selection, handleDeleteSelection, saveToHistory]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selection, handleDeleteSelection, saveToHistory]);
 
     // Unified Copy
     const handleCopy = useCallback(() => {
-        if (selectedImageId) {
-            const objToCopy = imageObjects.find(img => img.id === selectedImageId);
-            if (objToCopy) setClipboardHistory(prev => [{ id: Date.now(), type: 'image', data: { ...objToCopy }, dataURL: objToCopy.src }, ...prev].slice(0, 10));
+        pasteCountRef.current = 0;
+        if (selectedImageIds.length > 0) {
+            const imgsToCopy = imageObjects.filter(img => selectedImageIds.includes(img.id));
+            if (imgsToCopy.length === 1) {
+                setClipboardHistory(prev => [{ id: Date.now(), type: 'image', data: { ...imgsToCopy[0] }, dataURL: imgsToCopy[0].src }, ...prev].slice(0, 10));
+            } else if (imgsToCopy.length > 1) {
+                setClipboardHistory(prev => [{ id: Date.now(), type: 'images', data: imgsToCopy.map(img => ({ ...img })) }, ...prev].slice(0, 10));
+            }
             return;
         }
         if (selectedTextIds.length > 0) {
@@ -1901,7 +2101,7 @@ export default function Whiteboard({
         if (selection) {
             handleCopySelection();
         }
-    }, [selectedImageId, selectedTextIds, selectedShapeIds, selection, imageObjects, textObjects, shapeObjects, handleCopySelection]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selection, imageObjects, textObjects, shapeObjects, handleCopySelection]);
 
     // Unified Cut
     const handleCut = useCallback(() => {
@@ -2365,6 +2565,59 @@ export default function Whiteboard({
 
             if (isInput) return; // let default inputs work
 
+            // Arrow keys to nudge selected images, shapes, and texts
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                const hasSelectedImages = selectedImageIds.length > 0;
+                const hasSelectedShapes = selectedShapeIds.length > 0;
+                const hasSelectedTexts = selectedTextIds.length > 0;
+
+                if (hasSelectedImages || hasSelectedShapes || hasSelectedTexts) {
+                    e.preventDefault();
+                    const step = e.shiftKey ? 10 : 1;
+                    let dx = 0;
+                    let dy = 0;
+                    if (e.key === 'ArrowUp') dy = -step;
+                    else if (e.key === 'ArrowDown') dy = step;
+                    else if (e.key === 'ArrowLeft') dx = -step;
+                    else if (e.key === 'ArrowRight') dx = step;
+
+                    if (hasSelectedImages) {
+                        setImageObjects(prev => prev.map(img =>
+                            selectedImageIds.includes(img.id) && !img.isLocked
+                                ? { ...img, x: img.x + dx, y: img.y + dy }
+                                : img
+                        ));
+                    }
+                    if (hasSelectedShapes) {
+                        setShapeObjects(prev => prev.map(shp =>
+                            selectedShapeIds.includes(shp.id) && !shp.isLocked
+                                ? {
+                                    ...shp,
+                                    x: (shp.x || 0) + dx,
+                                    y: (shp.y || 0) + dy,
+                                    startX: shp.startX !== undefined ? shp.startX + dx : shp.startX,
+                                    startY: shp.startY !== undefined ? shp.startY + dy : shp.startY,
+                                    endX: shp.endX !== undefined ? shp.endX + dx : shp.endX,
+                                    endY: shp.endY !== undefined ? shp.endY + dy : shp.endY,
+                                    sourcePoint: shp.sourcePoint ? { x: shp.sourcePoint.x + dx, y: shp.sourcePoint.y + dy } : shp.sourcePoint,
+                                    targetPoint: shp.targetPoint ? { x: shp.targetPoint.x + dx, y: shp.targetPoint.y + dy } : shp.targetPoint,
+                                    waypoint: shp.waypoint ? { x: shp.waypoint.x + dx, y: shp.waypoint.y + dy } : shp.waypoint
+                                }
+                                : shp
+                        ));
+                    }
+                    if (hasSelectedTexts) {
+                        setTextObjects(prev => prev.map(txt =>
+                            selectedTextIds.includes(txt.id) && !txt.isLocked
+                                ? { ...txt, x: txt.x + dx, y: txt.y + dy }
+                                : txt
+                        ));
+                    }
+                    saveToHistory();
+                    return;
+                }
+            }
+
             if (modKey && e.key.toLowerCase() === 'c') {
                 e.preventDefault();
                 handleCopy();
@@ -2386,7 +2639,7 @@ export default function Whiteboard({
                 e.preventDefault();
                 handleSendToBack();
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (!isInput || selectedImageId || selection || selectedShapeIds.length > 0 || selectedTextIds.length > 0) {
+                if (!isInput || selectedImageIds.length > 0 || selection || selectedShapeIds.length > 0 || selectedTextIds.length > 0) {
                     // Only prevent backspace/delete if not in an input, OR if we have an image/selection active (which can't be typed into)
                     e.preventDefault();
                     handleDelete();
@@ -2400,7 +2653,7 @@ export default function Whiteboard({
                     setShowTemplateGallery(false);
                     return;
                 }
-                setSelectedImageId(null);
+                setSelectedImageIds([]);
                 setSelectedTextIds([]);
                 setSelectedShapeIds([]);
             } else if (e.key === '`' || e.key === '~') {
@@ -2417,7 +2670,7 @@ export default function Whiteboard({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedImageId, selectedTextIds, selectedShapeIds, selection, showRadialMenu, showTemplateGallery, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selection, showRadialMenu, showTemplateGallery, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack, saveToHistory]);
 
     // Image manipulation mouse handlers
     useEffect(() => {
@@ -2443,7 +2696,24 @@ export default function Whiteboard({
                 imageDragState.lastX = clientX;
                 imageDragState.lastY = clientY;
 
-                if (startObj.groupId) {
+                if (imageDragState.startImageObjs && imageDragState.startImageObjs.length > 0) {
+                    setImageObjects(prev => prev.map(img => {
+                        const iObj = imageDragState.startImageObjs.find(i => i.id === img.id);
+                        return iObj ? { ...img, x: iObj.x + canvasDx, y: iObj.y + canvasDy } : img;
+                    }));
+                    if (imageDragState.startShapeObjs && imageDragState.startShapeObjs.length > 0) {
+                        setShapeObjects(prev => prev.map(shp => {
+                            const sObj = imageDragState.startShapeObjs.find(s => s.id === shp.id);
+                            return sObj ? { ...shp, x: (sObj.x || 0) + canvasDx, y: (sObj.y || 0) + canvasDy } : shp;
+                        }));
+                    }
+                    if (imageDragState.startTextObjs && imageDragState.startTextObjs.length > 0) {
+                        setTextObjects(prev => prev.map(txt => {
+                            const tObj = imageDragState.startTextObjs.find(t => t.id === txt.id);
+                            return tObj ? { ...txt, x: (tObj.x || 0) + canvasDx, y: (tObj.y || 0) + canvasDy } : txt;
+                        }));
+                    }
+                } else if (startObj.groupId) {
                     moveGroup(startObj.groupId, deltaX, deltaY);
                 } else {
                     setImageObjects(prev => prev.map(img =>
@@ -2557,7 +2827,13 @@ export default function Whiteboard({
                         if (textDragState.startShapeObjs && textDragState.startShapeObjs.length > 0) {
                             setShapeObjects(prev => prev.map(shp => {
                                 const sObj = textDragState.startShapeObjs.find(s => s.id === shp.id);
-                                return sObj ? { ...shp, x: sObj.x + canvasDx, y: sObj.y + canvasDy } : shp;
+                                return sObj ? { ...shp, x: (sObj.x || 0) + canvasDx, y: (sObj.y || 0) + canvasDy } : shp;
+                            }));
+                        }
+                        if (textDragState.startImageObjs && textDragState.startImageObjs.length > 0) {
+                            setImageObjects(prev => prev.map(img => {
+                                const iObj = textDragState.startImageObjs.find(i => i.id === img.id);
+                                return iObj ? { ...img, x: iObj.x + canvasDx, y: iObj.y + canvasDy } : img;
                             }));
                         }
                     } else {
@@ -2675,6 +2951,12 @@ export default function Whiteboard({
                             setTextObjects(prev => prev.map(txt => {
                                 const tObj = shapeDragState.startTextObjs.find(t => t.id === txt.id);
                                 return tObj ? { ...txt, x: tObj.x + canvasDx, y: tObj.y + canvasDy } : txt;
+                            }));
+                        }
+                        if (shapeDragState.startImageObjs && shapeDragState.startImageObjs.length > 0) {
+                            setImageObjects(prev => prev.map(img => {
+                                const iObj = shapeDragState.startImageObjs.find(i => i.id === img.id);
+                                return iObj ? { ...img, x: iObj.x + canvasDx, y: iObj.y + canvasDy } : img;
                             }));
                         }
                     } else {
@@ -3887,31 +4169,31 @@ export default function Whiteboard({
                         if (selectedShapes.length > 0 || selectedTexts.length > 0 || selectedImages.length > 0) {
                             setSelectedShapeIds(selectedShapes);
                             setSelectedTextIds(selectedTexts);
-                            setSelectedImageId(selectedImages.length > 0 ? selectedImages[selectedImages.length - 1] : null);
+                            setSelectedImageIds(selectedImages);
                             setSelection(null);
                         } else if (selWidth > 15 && selHeight > 15) {
                             setSelectedShapeIds([]);
                             setSelectedTextIds([]);
-                            setSelectedImageId(null);
+                            setSelectedImageIds([]);
                             setSelection(null);
                         } else {
                             setSelectedShapeIds([]);
                             setSelectedTextIds([]);
-                            setSelectedImageId(null);
+                            setSelectedImageIds([]);
                             setSelection(null);
                             setEditingTextId(null);
                         }
                     } else {
                         setSelectedShapeIds([]);
                         setSelectedTextIds([]);
-                        setSelectedImageId(null);
+                        setSelectedImageIds([]);
                         setSelection(null);
                         setEditingTextId(null);
                     }
                 } else {
                     setSelectedShapeIds([]);
                     setSelectedTextIds([]);
-                    setSelectedImageId(null);
+                    setSelectedImageIds([]);
                     setSelection(null);
                     setEditingTextId(null);
                 }
@@ -3965,17 +4247,17 @@ export default function Whiteboard({
                     if (selectedShapes.length > 0 || selectedTexts.length > 0 || selectedImages.length > 0) {
                         setSelectedShapeIds(selectedShapes);
                         setSelectedTextIds(selectedTexts);
-                        setSelectedImageId(selectedImages.length > 0 ? selectedImages[selectedImages.length - 1] : null);
+                        setSelectedImageIds(selectedImages);
                         setSelection(null);
                     } else if (selWidth > 15 && selHeight > 15) {
                         setSelectedShapeIds([]);
                         setSelectedTextIds([]);
-                        setSelectedImageId(null);
+                        setSelectedImageIds([]);
                         setSelection(null);
                     } else {
                         setSelectedShapeIds([]);
                         setSelectedTextIds([]);
-                        setSelectedImageId(null);
+                        setSelectedImageIds([]);
                         setSelection(null);
                         setEditingTextId(null);
                     }
@@ -3983,7 +4265,7 @@ export default function Whiteboard({
                     // Click on empty space: deselect everything
                     setSelectedShapeIds([]);
                     setSelectedTextIds([]);
-                    setSelectedImageId(null);
+                    setSelectedImageIds([]);
                     setSelection(null);
                     setEditingTextId(null);
                 }
@@ -4545,6 +4827,36 @@ export default function Whiteboard({
             const centerY = txtObj.y + txtObj.height / 2;
             ctx.translate(centerX, centerY);
             ctx.rotate((txtObj.rotation || 0) * Math.PI / 180);
+
+            // Draw background and border if present
+            const hasBg = txtObj.bgColor && txtObj.bgColor !== 'transparent';
+            const bw = txtObj.borderWidth || 0;
+            if (hasBg || bw > 0) {
+                const rx = -txtObj.width / 2;
+                const ry = -txtObj.height / 2;
+                const rw = txtObj.width;
+                const rh = txtObj.height;
+                const cr = txtObj.borderRadius || 0;
+                ctx.beginPath();
+                if (ctx.roundRect) {
+                    ctx.roundRect(rx, ry, rw, rh, cr);
+                } else {
+                    ctx.rect(rx, ry, rw, rh);
+                }
+                if (hasBg) {
+                    ctx.fillStyle = txtObj.bgColor;
+                    ctx.fill();
+                }
+                if (bw > 0) {
+                    ctx.lineWidth = bw;
+                    ctx.strokeStyle = txtObj.borderColor || '#3b82f6';
+                    if (txtObj.borderStyle === 'dashed') ctx.setLineDash([6, 6]);
+                    else if (txtObj.borderStyle === 'dotted') ctx.setLineDash([3, 3]);
+                    else ctx.setLineDash([]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            }
 
             ctx.font = `${txtObj.fontStyle || 'normal'} ${txtObj.fontWeight || 'normal'} ${txtObj.fontSize}px ${txtObj.fontFamily || 'sans-serif'}`;
             ctx.fillStyle = txtObj.color;
@@ -5143,6 +5455,31 @@ export default function Whiteboard({
                     {(selectedTextIds.length > 0 || selectedShapeIds.length > 0) && (
                         <>
                             <div className="w-px h-4 bg-slate-700 mx-1"></div>
+                            {/* Font Family */}
+                            <select
+                                value={selectedTextIds.length > 0 ? (textObjects.find(t => t.id === selectedTextIds[0])?.fontFamily || 'sans-serif') : (shapeObjects.find(s => s.id === selectedShapeIds[0])?.fontFamily || 'sans-serif')}
+                                onChange={(e) => {
+                                    const font = e.target.value;
+                                    setSelectedFontFamily(font);
+                                    if (selectedTextIds.length > 0) {
+                                        setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, fontFamily: font } : t));
+                                    }
+                                    if (selectedShapeIds.length > 0) {
+                                        setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontFamily: font } : s));
+                                    }
+                                }}
+                                className="h-6 text-xs bg-slate-800 text-white border border-slate-700 rounded px-1.5 outline-none cursor-pointer"
+                                title="Font Family"
+                            >
+                                <option value="sans-serif">Sans-serif</option>
+                                <option value="serif">Serif</option>
+                                <option value="monospace">Monospace</option>
+                                <option value="Inter">Inter</option>
+                                <option value="Roboto">Roboto</option>
+                                <option value="Caveat">Caveat</option>
+                                <option value="Comic Sans MS">Comic Marker</option>
+                            </select>
+
                             <div className="relative w-7 h-7 flex flex-col items-center justify-center rounded hover:bg-slate-700 bg-slate-800 border border-slate-700 cursor-pointer overflow-hidden" title="Text Color">
                                 <span className="font-bold text-[14px] leading-none select-none text-slate-200 mt-0.5">A</span>
                                 <div className="w-4 h-1 mt-[2px] rounded-sm" style={{ backgroundColor: selectedTextIds.length > 0 ? (textObjects.find(t => t.id === selectedTextIds[0])?.color || '#000000') : (shapeObjects.find(s => s.id === selectedShapeIds[0])?.textColor || '#000000') }}></div>
@@ -5200,6 +5537,86 @@ export default function Whiteboard({
                                 className="h-6 w-12 px-1 text-xs border border-slate-700 rounded bg-slate-800 text-white outline-none"
                                 title="Font Size"
                             />
+
+                            {/* Text Specific Background & Border Controls */}
+                            {selectedTextIds.length > 0 && (() => {
+                                const activeText = textObjects.find(t => t.id === selectedTextIds[0]);
+                                return (
+                                    <>
+                                        <div className="w-px h-4 bg-slate-700 mx-1"></div>
+                                        {/* Background Fill */}
+                                        <div className="relative group flex items-center" title="Text Box Background">
+                                            <input
+                                                type="color"
+                                                value={activeText?.bgColor && activeText.bgColor !== 'transparent' ? activeText.bgColor : '#ffffff'}
+                                                onChange={(e) => setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, bgColor: e.target.value } : t))}
+                                                className="w-6 h-6 p-0 border border-slate-700 rounded cursor-pointer bg-slate-800"
+                                                title="Background Color"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, bgColor: 'transparent' } : t))}
+                                                className="text-xs bg-slate-800 px-1 py-1 ml-1 rounded hover:bg-slate-700 border border-slate-600 text-slate-300"
+                                                title="No Background Fill"
+                                            >
+                                                <X size={12} />
+                                            </button>
+                                        </div>
+                                        {/* Border Width */}
+                                        <div className="flex items-center bg-slate-800 border border-slate-700 rounded h-6 px-1" title="Border Width">
+                                            <span className="text-xs text-slate-400 mr-1">Border</span>
+                                            <select
+                                                value={activeText?.borderWidth ?? 0}
+                                                onChange={(e) => {
+                                                    const bw = parseInt(e.target.value);
+                                                    setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, borderWidth: bw, borderColor: t.borderColor || '#3b82f6', borderStyle: t.borderStyle || 'solid' } : t));
+                                                }}
+                                                className="text-xs bg-transparent text-white outline-none cursor-pointer"
+                                            >
+                                                <option value="0" className="bg-slate-800">None</option>
+                                                <option value="1" className="bg-slate-800">1px</option>
+                                                <option value="2" className="bg-slate-800">2px</option>
+                                                <option value="4" className="bg-slate-800">4px</option>
+                                                <option value="8" className="bg-slate-800">8px</option>
+                                            </select>
+                                        </div>
+                                        {/* Border Color, Style & Radius */}
+                                        {(activeText?.borderWidth || 0) > 0 && (
+                                            <>
+                                                <input
+                                                    type="color"
+                                                    value={activeText?.borderColor || '#3b82f6'}
+                                                    onChange={(e) => setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, borderColor: e.target.value } : t))}
+                                                    className="w-6 h-6 p-0 border border-slate-700 rounded cursor-pointer bg-slate-800"
+                                                    title="Border Color"
+                                                />
+                                                <select
+                                                    value={activeText?.borderStyle || 'solid'}
+                                                    onChange={(e) => setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, borderStyle: e.target.value } : t))}
+                                                    className="h-6 text-xs bg-slate-800 text-white border border-slate-700 rounded px-1 outline-none cursor-pointer"
+                                                    title="Border Style"
+                                                >
+                                                    <option value="solid">Solid</option>
+                                                    <option value="dashed">Dashed</option>
+                                                    <option value="dotted">Dotted</option>
+                                                    <option value="double">Double</option>
+                                                </select>
+                                                <select
+                                                    value={activeText?.borderRadius ?? 0}
+                                                    onChange={(e) => setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, borderRadius: parseInt(e.target.value) } : t))}
+                                                    className="h-6 text-xs bg-slate-800 text-white border border-slate-700 rounded px-1 outline-none cursor-pointer"
+                                                    title="Corner Radius"
+                                                >
+                                                    <option value="0">Square (0px)</option>
+                                                    <option value="4">Round 4px</option>
+                                                    <option value="8">Round 8px</option>
+                                                    <option value="16">Round 16px</option>
+                                                </select>
+                                            </>
+                                        )}
+                                    </>
+                                );
+                            })()}
                         </>
                     )}
                 </div>
@@ -5585,6 +6002,27 @@ export default function Whiteboard({
                                                     title={bg === 'transparent' ? 'No Background' : `Set Background (${bg})`}
                                                 >
                                                     {bg === 'transparent' && <span className="text-[8px] text-slate-400 block -mt-0.5">🚫</span>}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        <div className="w-px h-5 bg-slate-700" />
+                                        <div className="flex items-center gap-1 text-[11px] text-slate-300">
+                                            <span className="text-[10px] text-slate-400">Border:</span>
+                                            {[0, 1, 2, 4].map(bw => (
+                                                <button
+                                                    key={bw}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const targets = editingTextId ? [editingTextId] : selectedTextIds;
+                                                        if (targets.length > 0) {
+                                                            setTextObjects(prev => prev.map(t => targets.includes(t.id) ? { ...t, borderWidth: bw, borderColor: t.borderColor || '#3b82f6', borderStyle: t.borderStyle || 'solid' } : t));
+                                                        }
+                                                    }}
+                                                    className="px-1.5 py-0.5 rounded text-[10px] bg-slate-700 hover:bg-slate-600 text-slate-200"
+                                                    title={`Border ${bw === 0 ? 'None' : bw + 'px'}`}
+                                                >
+                                                    {bw === 0 ? 'None' : `${bw}px`}
                                                 </button>
                                             ))}
                                         </div>
@@ -6398,7 +6836,7 @@ export default function Whiteboard({
 
                     {/* Image Objects Layer - Selectable, Movable, Resizable, Rotatable */}
                     {imageObjects.map((imgObj) => {
-                        const isSelected = selectedImageId === imgObj.id;
+                        const isSelected = selectedImageIds.includes(imgObj.id);
                         const handleSize = 10;
                         const canInteract = tool === 'select' || isSelected || tool === 'pan';
 
@@ -6425,10 +6863,23 @@ export default function Whiteboard({
                             if (!canUserDraw) return;
                             e.stopPropagation();
                             if (e.target.dataset?.handle) return;
-                            setSelectedImageId(imgObj.id);
-                            if (!e.ctrlKey && !e.metaKey) {
-                                setSelectedShapeIds([]);
-                                setSelectedTextIds([]);
+                            
+                            const isMulti = e.ctrlKey || e.metaKey;
+                            let activeImageIds = selectedImageIds;
+                            if (isMulti) {
+                                if (selectedImageIds.includes(imgObj.id)) {
+                                    activeImageIds = selectedImageIds.filter(id => id !== imgObj.id);
+                                } else {
+                                    activeImageIds = [...selectedImageIds, imgObj.id];
+                                }
+                                setSelectedImageIds(activeImageIds);
+                            } else {
+                                if (!selectedImageIds.includes(imgObj.id)) {
+                                    activeImageIds = [imgObj.id];
+                                    setSelectedImageIds(activeImageIds);
+                                    setSelectedShapeIds([]);
+                                    setSelectedTextIds([]);
+                                }
                             }
                             if (imgObj.isLocked) return;
 
@@ -6439,7 +6890,10 @@ export default function Whiteboard({
                                 action: 'move',
                                 startX: clientX,
                                 startY: clientY,
-                                startObj: { ...imgObj }
+                                startObj: { ...imgObj },
+                                startImageObjs: imageObjects.filter(img => activeImageIds.includes(img.id) && !img.isLocked),
+                                startShapeObjs: shapeObjects.filter(shp => selectedShapeIds.includes(shp.id) && !shp.isLocked),
+                                startTextObjs: textObjects.filter(txt => selectedTextIds.includes(txt.id) && !txt.isLocked)
                             });
                         };
 
@@ -6463,8 +6917,10 @@ export default function Whiteboard({
                                     onMouseLeave={() => setHoveredImageId(null)}
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        setSelectedImageId(imgObj.id);
-                                        if (!e.ctrlKey && !e.metaKey) {
+                                        if (e.ctrlKey || e.metaKey) {
+                                            setSelectedImageIds(prev => prev.includes(imgObj.id) ? prev.filter(id => id !== imgObj.id) : [...prev, imgObj.id]);
+                                        } else {
+                                            setSelectedImageIds([imgObj.id]);
                                             setSelectedShapeIds([]);
                                             setSelectedTextIds([]);
                                         }
@@ -6472,6 +6928,18 @@ export default function Whiteboard({
                                     onMouseDown={handleStartMove}
                                     onPointerDown={handleStartMove}
                                 >
+                                    {/* Sharpness SVG convolution filter */}
+                                    {(imgObj.sharpness || 0) > 0 && (
+                                        <svg className="hidden absolute" width="0" height="0">
+                                            <filter id={`sharpness-${imgObj.id}`}>
+                                                <feConvolveMatrix
+                                                    order="3"
+                                                    kernelMatrix={`0 ${-(imgObj.sharpness || 0) * 0.15} 0 ${-(imgObj.sharpness || 0) * 0.15} ${1 + (imgObj.sharpness || 0) * 0.6} ${-(imgObj.sharpness || 0) * 0.15} 0 ${-(imgObj.sharpness || 0) * 0.15} 0`}
+                                                    preserveAlpha="true"
+                                                />
+                                            </filter>
+                                        </svg>
+                                    )}
                                     {/* Image with flip, border, and filters */}
                                     <img
                                         src={imgObj.src}
@@ -6479,7 +6947,7 @@ export default function Whiteboard({
                                         className="w-full h-full object-contain pointer-events-none select-none box-border"
                                         style={{
                                             transform: `${imgObj.flipX ? 'scaleX(-1)' : ''} ${imgObj.flipY ? 'scaleY(-1)' : ''}`.trim() || undefined,
-                                            filter: `brightness(${imgObj.brightness ?? 100}%) contrast(${imgObj.contrast ?? 100}%) saturate(${imgObj.saturation ?? 100}%) opacity(${(imgObj.opacity ?? 100) / 100}) blur(${imgObj.blur ?? 0}px) ${imgObj.sharpness ? `contrast(${100 + (imgObj.sharpness || 0) * 15}%) drop-shadow(0 0 ${(imgObj.sharpness || 0) * 0.4}px rgba(0,0,0,0.6))` : ''}`,
+                                            filter: `${(imgObj.sharpness || 0) > 0 ? `url(#sharpness-${imgObj.id}) ` : ''}brightness(${imgObj.brightness ?? 100}%) contrast(${imgObj.contrast ?? 100}%) saturate(${imgObj.saturation ?? 100}%) opacity(${(imgObj.opacity ?? 100) / 100}) blur(${imgObj.blur ?? 0}px)`,
                                             border: imgObj.borderWidth ? `${imgObj.borderWidth}px ${imgObj.borderStyle || 'solid'} ${imgObj.borderColor || '#3b82f6'}` : undefined,
                                             borderRadius: imgObj.borderRadius ? `${imgObj.borderRadius}px` : undefined,
                                             boxSizing: 'border-box'
@@ -6723,7 +7191,7 @@ export default function Whiteboard({
                                 </div>
 
                                 {/* Static Unrotated Floating Toolbar & Adjustments Popover positioned cleanly above rotated bounding box */}
-                                {isSelected && (
+                                {isSelected && (selectedImageId === imgObj.id) && (
                                     <div
                                         className="absolute pointer-events-auto select-none"
                                         style={{
@@ -6755,6 +7223,34 @@ export default function Whiteboard({
                                                 <FlipVertical className="w-3.5 h-3.5" />
                                             </button>
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
+                                            {/* Remove Background Button */}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveImageBackground(imgObj)}
+                                                className="h-6 px-2 flex items-center gap-1.5 rounded bg-indigo-600/30 hover:bg-indigo-600/60 text-indigo-300 hover:text-white text-[10.5px] font-medium transition shadow-xs"
+                                                title="Remove Image Background (Make Transparent)"
+                                            >
+                                                <Wand2 className="w-3 h-3 text-indigo-400" />
+                                                <span>Remove BG</span>
+                                            </button>
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+                                            {/* Quick Border Color Picker */}
+                                            <div className="flex items-center gap-1" title="Border Color (sets 2px border if none)">
+                                                <input
+                                                    type="color"
+                                                    value={imgObj.borderColor || '#3b82f6'}
+                                                    onChange={(e) => {
+                                                        const clr = e.target.value;
+                                                        updateSelectedImageFilters({
+                                                            borderColor: clr,
+                                                            borderWidth: imgObj.borderWidth ? imgObj.borderWidth : 2
+                                                        });
+                                                    }}
+                                                    className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
+                                                    title="Border Color (sets 2px border if none)"
+                                                />
+                                            </div>
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
                                             <button
                                                 type="button"
                                                 onClick={() => setShowImageAdjustModal(prev => !prev)}
@@ -6779,8 +7275,9 @@ export default function Whiteboard({
                                                     </span>
                                                     <button
                                                         type="button"
-                                                        onClick={() => updateSelectedImageFilters({ brightness: 100, contrast: 100, sharpness: 0, saturation: 100, opacity: 100, blur: 0, borderWidth: 0, borderRadius: 0, borderStyle: 'solid', borderColor: '#3b82f6' })}
-                                                        className="text-[10px] text-indigo-400 hover:text-indigo-300 hover:underline"
+                                                        onClick={() => updateSelectedImageFilters({ brightness: 100, contrast: 100, sharpness: 0, saturation: 100, opacity: 100, blur: 0 })}
+                                                        className="text-[10px] text-indigo-400 hover:text-indigo-300 hover:underline font-semibold"
+                                                        title="Reset brightness, contrast, sharpness, saturation, opacity & blur (keeps border intact)"
                                                     >
                                                         Reset
                                                     </button>
@@ -6788,109 +7285,187 @@ export default function Whiteboard({
 
                                                 {/* Brightness */}
                                                 <div className="flex flex-col gap-1">
-                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium cursor-pointer" onClick={() => document.getElementById(`brightness-slider-${imgObj.id}`)?.focus()}>
                                                         <span className="flex items-center gap-1"><Sun className="w-3 h-3 text-amber-400" /> Brightness</span>
                                                         <span className="font-mono text-white">{imgObj.brightness ?? 100}%</span>
                                                     </div>
                                                     <input
+                                                        id={`brightness-slider-${imgObj.id}`}
                                                         type="range"
                                                         min="30"
                                                         max="200"
+                                                        tabIndex={0}
                                                         value={imgObj.brightness ?? 100}
                                                         onChange={(e) => updateSelectedImageFilters({ brightness: parseInt(e.target.value, 10) })}
-                                                        onPointerDown={(e) => e.stopPropagation()}
-                                                        onTouchStart={(e) => e.stopPropagation()}
-                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                updateSelectedImageFilters({ brightness: Math.max(30, (imgObj.brightness ?? 100) - (e.shiftKey ? 10 : 2)) });
+                                                            } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                updateSelectedImageFilters({ brightness: Math.min(200, (imgObj.brightness ?? 100) + (e.shiftKey ? 10 : 2)) });
+                                                            }
+                                                        }}
+                                                        onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.focus(); }}
+                                                        onTouchStart={(e) => { e.stopPropagation(); e.currentTarget.focus(); }}
+                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 focus:ring-offset-slate-900"
                                                     />
                                                 </div>
 
                                                 {/* Contrast */}
                                                 <div className="flex flex-col gap-1">
-                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium cursor-pointer" onClick={() => document.getElementById(`contrast-slider-${imgObj.id}`)?.focus()}>
                                                         <span className="flex items-center gap-1"><Contrast className="w-3 h-3 text-sky-400" /> Contrast</span>
                                                         <span className="font-mono text-white">{imgObj.contrast ?? 100}%</span>
                                                     </div>
                                                     <input
+                                                        id={`contrast-slider-${imgObj.id}`}
                                                         type="range"
                                                         min="30"
                                                         max="200"
+                                                        tabIndex={0}
                                                         value={imgObj.contrast ?? 100}
                                                         onChange={(e) => updateSelectedImageFilters({ contrast: parseInt(e.target.value, 10) })}
-                                                        onPointerDown={(e) => e.stopPropagation()}
-                                                        onTouchStart={(e) => e.stopPropagation()}
-                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                updateSelectedImageFilters({ contrast: Math.max(30, (imgObj.contrast ?? 100) - (e.shiftKey ? 10 : 2)) });
+                                                            } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                updateSelectedImageFilters({ contrast: Math.min(200, (imgObj.contrast ?? 100) + (e.shiftKey ? 10 : 2)) });
+                                                            }
+                                                        }}
+                                                        onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.focus(); }}
+                                                        onTouchStart={(e) => { e.stopPropagation(); e.currentTarget.focus(); }}
+                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 focus:ring-offset-slate-900"
                                                     />
                                                 </div>
 
                                                 {/* Saturation */}
                                                 <div className="flex flex-col gap-1">
-                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium cursor-pointer" onClick={() => document.getElementById(`saturation-slider-${imgObj.id}`)?.focus()}>
                                                         <span className="flex items-center gap-1"><Palette className="w-3 h-3 text-emerald-400" /> Saturation</span>
                                                         <span className="font-mono text-white">{imgObj.saturation ?? 100}%</span>
                                                     </div>
                                                     <input
+                                                        id={`saturation-slider-${imgObj.id}`}
                                                         type="range"
                                                         min="0"
                                                         max="200"
+                                                        tabIndex={0}
                                                         value={imgObj.saturation ?? 100}
                                                         onChange={(e) => updateSelectedImageFilters({ saturation: parseInt(e.target.value, 10) })}
-                                                        onPointerDown={(e) => e.stopPropagation()}
-                                                        onTouchStart={(e) => e.stopPropagation()}
-                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                updateSelectedImageFilters({ saturation: Math.max(0, (imgObj.saturation ?? 100) - (e.shiftKey ? 10 : 2)) });
+                                                            } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                updateSelectedImageFilters({ saturation: Math.min(200, (imgObj.saturation ?? 100) + (e.shiftKey ? 10 : 2)) });
+                                                            }
+                                                        }}
+                                                        onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.focus(); }}
+                                                        onTouchStart={(e) => { e.stopPropagation(); e.currentTarget.focus(); }}
+                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 focus:ring-offset-slate-900"
                                                     />
                                                 </div>
 
                                                 {/* Opacity */}
                                                 <div className="flex flex-col gap-1">
-                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium cursor-pointer" onClick={() => document.getElementById(`opacity-slider-${imgObj.id}`)?.focus()}>
                                                         <span>Opacity</span>
                                                         <span className="font-mono text-white">{imgObj.opacity ?? 100}%</span>
                                                     </div>
                                                     <input
+                                                        id={`opacity-slider-${imgObj.id}`}
                                                         type="range"
                                                         min="10"
                                                         max="100"
+                                                        tabIndex={0}
                                                         value={imgObj.opacity ?? 100}
                                                         onChange={(e) => updateSelectedImageFilters({ opacity: parseInt(e.target.value, 10) })}
-                                                        onPointerDown={(e) => e.stopPropagation()}
-                                                        onTouchStart={(e) => e.stopPropagation()}
-                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                updateSelectedImageFilters({ opacity: Math.max(10, (imgObj.opacity ?? 100) - (e.shiftKey ? 10 : 2)) });
+                                                            } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                updateSelectedImageFilters({ opacity: Math.min(100, (imgObj.opacity ?? 100) + (e.shiftKey ? 10 : 2)) });
+                                                            }
+                                                        }}
+                                                        onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.focus(); }}
+                                                        onTouchStart={(e) => { e.stopPropagation(); e.currentTarget.focus(); }}
+                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 focus:ring-offset-slate-900"
                                                     />
                                                 </div>
 
                                                 {/* Sharpness */}
                                                 <div className="flex flex-col gap-1">
-                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium cursor-pointer" onClick={() => document.getElementById(`sharpness-slider-${imgObj.id}`)?.focus()}>
                                                         <span className="flex items-center gap-1"><Sparkles className="w-3 h-3 text-pink-400" /> Sharpness</span>
                                                         <span className="font-mono text-white">{imgObj.sharpness ?? 0}</span>
                                                     </div>
                                                     <input
+                                                        id={`sharpness-slider-${imgObj.id}`}
                                                         type="range"
                                                         min="0"
                                                         max="10"
+                                                        tabIndex={0}
                                                         value={imgObj.sharpness ?? 0}
                                                         onChange={(e) => updateSelectedImageFilters({ sharpness: parseInt(e.target.value, 10) })}
-                                                        onPointerDown={(e) => e.stopPropagation()}
-                                                        onTouchStart={(e) => e.stopPropagation()}
-                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                updateSelectedImageFilters({ sharpness: Math.max(0, (imgObj.sharpness ?? 0) - 1) });
+                                                            } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                updateSelectedImageFilters({ sharpness: Math.min(10, (imgObj.sharpness ?? 0) + 1) });
+                                                            }
+                                                        }}
+                                                        onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.focus(); }}
+                                                        onTouchStart={(e) => { e.stopPropagation(); e.currentTarget.focus(); }}
+                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 focus:ring-offset-slate-900"
                                                     />
                                                 </div>
 
                                                 {/* Corner Radius */}
                                                 <div className="flex flex-col gap-1 pt-1 border-t border-slate-800">
-                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium cursor-pointer" onClick={() => document.getElementById(`radius-slider-${imgObj.id}`)?.focus()}>
                                                         <span>Corner Radius</span>
                                                         <span className="font-mono text-white">{imgObj.borderRadius ?? 0}px</span>
                                                     </div>
                                                     <input
+                                                        id={`radius-slider-${imgObj.id}`}
                                                         type="range"
                                                         min="0"
                                                         max="60"
+                                                        tabIndex={0}
                                                         value={imgObj.borderRadius ?? 0}
                                                         onChange={(e) => updateSelectedImageFilters({ borderRadius: parseInt(e.target.value, 10) })}
-                                                        onPointerDown={(e) => e.stopPropagation()}
-                                                        onTouchStart={(e) => e.stopPropagation()}
-                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                updateSelectedImageFilters({ borderRadius: Math.max(0, (imgObj.borderRadius ?? 0) - 2) });
+                                                            } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                updateSelectedImageFilters({ borderRadius: Math.min(60, (imgObj.borderRadius ?? 0) + 2) });
+                                                            }
+                                                        }}
+                                                        onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.focus(); }}
+                                                        onTouchStart={(e) => { e.stopPropagation(); e.currentTarget.focus(); }}
+                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 focus:ring-offset-slate-900"
                                                     />
                                                 </div>
 
@@ -6910,44 +7485,40 @@ export default function Whiteboard({
                                                         ))}
                                                     </div>
 
-                                                    {(imgObj.borderWidth || 0) > 0 && (
-                                                        <>
-                                                            <div className="text-[10px] text-slate-400 font-medium mt-1">Border Style</div>
-                                                            <div className="grid grid-cols-4 gap-1">
-                                                                {['solid', 'dashed', 'dotted', 'double'].map(st => (
-                                                                    <button
-                                                                        key={st}
-                                                                        type="button"
-                                                                        onClick={() => updateSelectedImageFilters({ borderStyle: st })}
-                                                                        className={`py-0.5 rounded text-[10px] capitalize transition ${(imgObj.borderStyle || 'solid') === st ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
-                                                                    >
-                                                                        {st}
-                                                                    </button>
-                                                                ))}
-                                                            </div>
+                                                    <div className="text-[10px] text-slate-400 font-medium mt-1">Border Style</div>
+                                                    <div className="grid grid-cols-4 gap-1">
+                                                        {['solid', 'dashed', 'dotted', 'double'].map(st => (
+                                                            <button
+                                                                key={st}
+                                                                type="button"
+                                                                onClick={() => updateSelectedImageFilters({ borderStyle: st, borderWidth: imgObj.borderWidth || 2 })}
+                                                                className={`py-0.5 rounded text-[10px] capitalize transition ${(imgObj.borderStyle || 'solid') === st ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                                            >
+                                                                {st}
+                                                            </button>
+                                                        ))}
+                                                    </div>
 
-                                                            <div className="text-[10px] text-slate-400 font-medium mt-1">Border Color</div>
-                                                            <div className="flex items-center gap-1 flex-wrap">
-                                                                {['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#000000', '#ffffff'].map(clr => (
-                                                                    <button
-                                                                        key={clr}
-                                                                        type="button"
-                                                                        onClick={() => updateSelectedImageFilters({ borderColor: clr })}
-                                                                        className={`w-5 h-5 rounded-full border-2 transition ${imgObj.borderColor === clr ? 'border-white scale-110' : 'border-slate-600 hover:border-slate-400'}`}
-                                                                        style={{ backgroundColor: clr }}
-                                                                        title={clr}
-                                                                    />
-                                                                ))}
-                                                                <input
-                                                                    type="color"
-                                                                    value={imgObj.borderColor || '#3b82f6'}
-                                                                    onChange={(e) => updateSelectedImageFilters({ borderColor: e.target.value })}
-                                                                    className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
-                                                                    title="Custom Color"
-                                                                />
-                                                            </div>
-                                                        </>
-                                                    )}
+                                                    <div className="text-[10px] text-slate-400 font-medium mt-1">Border Color</div>
+                                                    <div className="flex items-center gap-1 flex-wrap">
+                                                        {['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#000000', '#ffffff'].map(clr => (
+                                                            <button
+                                                                key={clr}
+                                                                type="button"
+                                                                onClick={() => updateSelectedImageFilters({ borderColor: clr, borderWidth: imgObj.borderWidth || 2 })}
+                                                                className={`w-5 h-5 rounded-full border-2 transition ${imgObj.borderColor === clr ? 'border-white scale-110' : 'border-slate-600 hover:border-slate-400'}`}
+                                                                style={{ backgroundColor: clr }}
+                                                                title={clr}
+                                                            />
+                                                        ))}
+                                                        <input
+                                                            type="color"
+                                                            value={imgObj.borderColor || '#3b82f6'}
+                                                            onChange={(e) => updateSelectedImageFilters({ borderColor: e.target.value, borderWidth: imgObj.borderWidth || 2 })}
+                                                            className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
+                                                            title="Custom Color"
+                                                        />
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}
@@ -6963,223 +7534,571 @@ export default function Whiteboard({
                         const isEditing = editingTextId === txtObj.id;
                         const handleSize = 10;
 
+                        // Calculate unrotated bounding box center and top for floating toolbar
+                        const textW = txtObj.width || 120;
+                        const textH = txtObj.height || 40;
+                        const cx = (txtObj.x || 0) + textW / 2;
+                        const cy = (txtObj.y || 0) + textH / 2;
+                        const rad = ((txtObj.rotation || 0) * Math.PI) / 180;
+                        const cos = Math.cos(rad);
+                        const sin = Math.sin(rad);
+                        const halfW = textW / 2;
+                        const halfH = textH / 2;
+                        const corners = [
+                            { dx: -halfW, dy: -halfH },
+                            { dx: halfW, dy: -halfH },
+                            { dx: halfW, dy: halfH },
+                            { dx: -halfW, dy: halfH }
+                        ].map(p => ({
+                            x: cx + p.dx * cos - p.dy * sin,
+                            y: cy + p.dx * sin + p.dy * cos
+                        }));
+                        const textMinY = Math.min(...corners.map(c => c.y));
+
                         return (
-                            <div
-                                key={txtObj.id}
-                                className="whiteboard-text-item absolute"
-                                style={{
-                                    left: txtObj.x,
-                                    top: txtObj.y,
-                                    width: txtObj.width,
-                                    minHeight: txtObj.height,
-                                    transform: `rotate(${txtObj.rotation || 0}deg)`,
-                                    transformOrigin: 'center center',
-                                    zIndex: txtObj.zIndex || (isSelected || isEditing ? 20 : 10),
-                                    cursor: isEditing ? 'text' : isSelected ? 'move' : 'crosshair',
-                                    pointerEvents: (tool === 'select' || isSelected || isEditing) ? 'auto' : 'none',
-                                    backgroundColor: txtObj.bgColor || 'transparent',
-                                }}
-                                onPointerDown={(e) => {
-                                    e.stopPropagation();
-                                }}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (!isEditing) {
-                                        if (e.ctrlKey || e.metaKey) {
-                                            setSelectedTextIds(prev => prev.includes(txtObj.id) ? prev.filter(id => id !== txtObj.id) : [...prev, txtObj.id]);
-                                        } else {
-                                            setSelectedTextIds([txtObj.id]);
-                                            setSelectedImageId(null);
-                                            setSelectedShapeIds([]);
-                                        }
-                                    }
-                                }}
-                                onDoubleClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingTextId(txtObj.id);
-                                    setSelectedTextIds([txtObj.id]);
-                                }}
-                                onMouseDown={(e) => {
-                                    if (e.target.tagName.toLowerCase() === 'textarea' || e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'select' || e.target.tagName.toLowerCase() === 'button') {
-                                        return;
-                                    }
-                                    if (!isSelected) {
+                            <div key={txtObj.id}>
+                                <div
+                                    className="whiteboard-text-item absolute"
+                                    style={{
+                                        left: txtObj.x,
+                                        top: txtObj.y,
+                                        width: txtObj.width,
+                                        minHeight: txtObj.height,
+                                        transform: `rotate(${txtObj.rotation || 0}deg)`,
+                                        transformOrigin: 'center center',
+                                        zIndex: txtObj.zIndex || (isSelected || isEditing ? 20 : 10),
+                                        cursor: isEditing ? 'text' : isSelected ? 'move' : 'crosshair',
+                                        pointerEvents: (tool === 'select' || isSelected || isEditing) ? 'auto' : 'none',
+                                        backgroundColor: txtObj.bgColor || 'transparent',
+                                        border: txtObj.borderWidth ? `${txtObj.borderWidth}px ${txtObj.borderStyle || 'solid'} ${txtObj.borderColor || '#3b82f6'}` : undefined,
+                                        borderRadius: txtObj.borderRadius ? `${txtObj.borderRadius}px` : undefined,
+                                        boxSizing: 'border-box',
+                                    }}
+                                    onPointerDown={(e) => {
                                         e.stopPropagation();
-                                        if (tool === 'select' && (e.ctrlKey || e.metaKey)) {
-                                            setSelectedTextIds(prev => prev.includes(txtObj.id) ? prev.filter(id => id !== txtObj.id) : [...prev, txtObj.id]);
-                                        } else {
-                                            setSelectedTextIds([txtObj.id]);
-                                            setSelectedImageId(null);
-                                            setSelectedShapeIds([]);
+                                    }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!isEditing) {
+                                            if (e.ctrlKey || e.metaKey) {
+                                                setSelectedTextIds(prev => prev.includes(txtObj.id) ? prev.filter(id => id !== txtObj.id) : [...prev, txtObj.id]);
+                                            } else {
+                                                setSelectedTextIds([txtObj.id]);
+                                                setSelectedImageId(null);
+                                                setSelectedShapeIds([]);
+                                            }
                                         }
-                                        // allow drag state to be set
-                                    }
-                                    if (e.target.dataset.handle) return;
-                                    e.stopPropagation();
-                                    e.preventDefault(); // Prevent text selection deselect when dragging wrapper
-                                    setTextDragState({
-                                        id: txtObj.id,
-                                        action: 'move',
-                                        startX: e.clientX,
-                                        startY: e.clientY,
-                                        startObj: { ...txtObj },
-                                        startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id) || t.id === txtObj.id),
-                                        startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id))
-                                    });
-                                }}
-                            >
-                                {/* Text Content or Edit Textarea */}
-                                {isEditing ? (
-                                    <textarea
-                                        value={txtObj.text}
-                                        onChange={(e) => {
-                                            const newText = e.target.value;
-                                            setTextObjects(prev => prev.map(t =>
-                                                t.id === txtObj.id ? { ...t, text: newText } : t
-                                            ));
-                                        }}
-                                        autoFocus
-                                        className="w-full h-full p-2 bg-transparent border-2 border-blue-500 rounded resize-none focus:outline-none"
-                                        style={{
-                                            color: txtObj.color,
-                                            fontSize: `${txtObj.fontSize}px`,
-                                            fontWeight: txtObj.fontWeight || 'normal',
-                                            fontStyle: txtObj.fontStyle || 'normal',
-                                            fontFamily: txtObj.fontFamily || 'sans-serif',
-                                            textAlign: txtObj.textAlign || 'left',
-                                            lineHeight: 1.3,
-                                            minHeight: txtObj.height,
-                                        }}
-                                        onBlur={(e) => {
-                                            setEditingTextId(null);
-                                            saveToHistory();
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Escape') {
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingTextId(txtObj.id);
+                                        setSelectedTextIds([txtObj.id]);
+                                    }}
+                                    onMouseDown={(e) => {
+                                        if (e.target.tagName.toLowerCase() === 'textarea' || e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'select' || e.target.tagName.toLowerCase() === 'button') {
+                                            return;
+                                        }
+                                        if (!isSelected) {
+                                            e.stopPropagation();
+                                            if (tool === 'select' && (e.ctrlKey || e.metaKey)) {
+                                                setSelectedTextIds(prev => prev.includes(txtObj.id) ? prev.filter(id => id !== txtObj.id) : [...prev, txtObj.id]);
+                                            } else {
+                                                setSelectedTextIds([txtObj.id]);
+                                                setSelectedImageId(null);
+                                                setSelectedShapeIds([]);
+                                            }
+                                            // allow drag state to be set
+                                        }
+                                        if (e.target.dataset.handle) return;
+                                        e.stopPropagation();
+                                        e.preventDefault(); // Prevent text selection deselect when dragging wrapper
+                                        setTextDragState({
+                                            id: txtObj.id,
+                                            action: 'move',
+                                            startX: e.clientX,
+                                            startY: e.clientY,
+                                            startObj: { ...txtObj },
+                                            startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id) || t.id === txtObj.id),
+                                            startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id))
+                                        });
+                                    }}
+                                >
+                                    {/* Text Content or Edit Textarea */}
+                                    {isEditing ? (
+                                        <textarea
+                                            value={txtObj.text}
+                                            onChange={(e) => {
+                                                const newText = e.target.value;
+                                                setTextObjects(prev => prev.map(t =>
+                                                    t.id === txtObj.id ? { ...t, text: newText } : t
+                                                ));
+                                            }}
+                                            autoFocus
+                                            className="w-full h-full p-2 bg-transparent border-2 border-blue-500 rounded resize-none focus:outline-none"
+                                            style={{
+                                                color: txtObj.color,
+                                                fontSize: `${txtObj.fontSize}px`,
+                                                fontWeight: txtObj.fontWeight || 'normal',
+                                                fontStyle: txtObj.fontStyle || 'normal',
+                                                fontFamily: txtObj.fontFamily || 'sans-serif',
+                                                textAlign: txtObj.textAlign || 'left',
+                                                lineHeight: 1.3,
+                                                minHeight: txtObj.height,
+                                                borderRadius: txtObj.borderRadius ? `${txtObj.borderRadius}px` : undefined,
+                                            }}
+                                            onBlur={(e) => {
                                                 setEditingTextId(null);
-                                            }
-                                            if (e.key === 'Enter' && !e.shiftKey) {
-                                                e.preventDefault();
-                                                e.target.blur();
-                                            }
-                                        }}
-                                        onClick={(e) => e.stopPropagation()}
-                                    />
-                                ) : (
-                                    <div
-                                        className="w-full h-full p-2 whitespace-pre-wrap break-words select-none"
-                                        style={{
-                                            pointerEvents: (tool === 'select' || isSelected) ? 'auto' : 'none',
-                                            color: txtObj.color,
-                                            fontSize: `${txtObj.fontSize}px`,
-                                            fontWeight: txtObj.fontWeight || 'normal',
-                                            fontStyle: txtObj.fontStyle || 'normal',
-                                            fontFamily: txtObj.fontFamily || 'sans-serif',
-                                            textAlign: txtObj.textAlign || 'left',
-                                            lineHeight: 1.3,
-                                        }}
-                                    >
-                                        {txtObj.text}
-                                    </div>
-                                )}
-
-                                {/* Selection Border & Handles (not shown when editing) */}
-                                {isSelected && (
-                                    <>
-                                        <div className="absolute inset-0 border-2 border-green-500 pointer-events-none" />
-                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!canUserDraw) return; e.stopPropagation(); e.preventDefault(); if (txtObj.isLocked) return; setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }} />
-
-
-                                        {!txtObj.isLocked && (
-                                            <>
-                                        {/* Corner Resize Handles */}
-                                        {['nw', 'ne', 'sw', 'se'].map(corner => {
-                                            const pos = {
-                                                nw: { left: -handleSize / 2, top: -handleSize / 2, cursor: 'nwse-resize' },
-                                                ne: { right: -handleSize / 2, top: -handleSize / 2, cursor: 'nesw-resize' },
-                                                sw: { left: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nesw-resize' },
-                                                se: { right: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nwse-resize' },
-                                            }[corner];
-
-                                            return (
-                                                <div
-                                                    key={corner}
-                                                    data-handle={corner}
-                                                    className="absolute bg-white border-2 border-green-500 z-30"
-                                                    style={{
-                                                        width: handleSize,
-                                                        height: handleSize,
-                                                        ...pos,
-                                                    }}
-                                                    onMouseDown={(e) => {
-                                                        e.stopPropagation();
-                                                        e.preventDefault();
-                                                        setTextDragState({
-                                                            id: txtObj.id,
-                                                            action: `resize-${corner}`,
-                                                            startX: e.clientX,
-                                                            startY: e.clientY,
-                                                            startObj: { ...txtObj }
-                                                        });
-                                                    }}
-                                                />
-                                            );
-                                        })}
-                                            </>
-                                        )}
-                                        {/* Edge Resize Handles */}
-                                        {['n', 'e', 's', 'w'].map(edge => {
-                                            const pos = {
-                                                n: { left: '50%', top: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
-                                                s: { left: '50%', bottom: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
-                                                e: { right: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
-                                                w: { left: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
-                                            }[edge];
-
-                                            return (
-                                                <div
-                                                    key={edge}
-                                                    data-handle={edge}
-                                                    className="absolute bg-white border-2 border-green-500 z-30"
-                                                    style={{
-                                                        width: handleSize,
-                                                        height: handleSize,
-                                                        ...pos,
-                                                    }}
-                                                    onMouseDown={(e) => {
-                                                        e.stopPropagation();
-                                                        e.preventDefault();
-                                                        setTextDragState({
-                                                            id: txtObj.id,
-                                                            action: `resize-${edge}`,
-                                                            startX: e.clientX,
-                                                            startY: e.clientY,
-                                                            startObj: { ...txtObj }
-                                                        });
-                                                    }}
-                                                />
-                                            );
-                                        })}
-
-                                        
-
-                                        {!txtObj.isLocked && (
-                                            <>
-                                        {/* Delete Button */}
-                                        <button
-                                            className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center z-30 shadow-lg"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setTextObjects(prev => prev.filter(t => t.id !== txtObj.id));
-                                                setSelectedTextIds([]);
                                                 saveToHistory();
                                             }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Escape') {
+                                                    setEditingTextId(null);
+                                                }
+                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    e.target.blur();
+                                                }
+                                            }}
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                    ) : (
+                                        <div
+                                            className="w-full h-full p-2 whitespace-pre-wrap break-words select-none"
+                                            style={{
+                                                pointerEvents: (tool === 'select' || isSelected) ? 'auto' : 'none',
+                                                color: txtObj.color,
+                                                fontSize: `${txtObj.fontSize}px`,
+                                                fontWeight: txtObj.fontWeight || 'normal',
+                                                fontStyle: txtObj.fontStyle || 'normal',
+                                                fontFamily: txtObj.fontFamily || 'sans-serif',
+                                                textAlign: txtObj.textAlign || 'left',
+                                                lineHeight: 1.3,
+                                            }}
                                         >
-                                            <X className="w-3 h-3 text-white" />
+                                            {txtObj.text}
+                                        </div>
+                                    )}
+
+                                    {/* Selection Border & Handles (not shown when editing) */}
+                                    {isSelected && (
+                                        <>
+                                            <div className="absolute inset-0 border-2 border-green-500 pointer-events-none" style={{ borderRadius: txtObj.borderRadius ? `${txtObj.borderRadius}px` : undefined }} />
+                                            <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!canUserDraw) return; e.stopPropagation(); e.preventDefault(); if (txtObj.isLocked) return; setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }} />
+
+
+                                            {!txtObj.isLocked && (
+                                                <>
+                                            {/* Corner Resize Handles */}
+                                            {['nw', 'ne', 'sw', 'se'].map(corner => {
+                                                const pos = {
+                                                    nw: { left: -handleSize / 2, top: -handleSize / 2, cursor: 'nwse-resize' },
+                                                    ne: { right: -handleSize / 2, top: -handleSize / 2, cursor: 'nesw-resize' },
+                                                    sw: { left: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nesw-resize' },
+                                                    se: { right: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nwse-resize' },
+                                                }[corner];
+
+                                                return (
+                                                    <div
+                                                        key={corner}
+                                                        data-handle={corner}
+                                                        className="absolute bg-white border-2 border-green-500 z-30"
+                                                        style={{
+                                                            width: handleSize,
+                                                            height: handleSize,
+                                                            ...pos,
+                                                        }}
+                                                        onMouseDown={(e) => {
+                                                            e.stopPropagation();
+                                                            e.preventDefault();
+                                                            setTextDragState({
+                                                                id: txtObj.id,
+                                                                action: `resize-${corner}`,
+                                                                startX: e.clientX,
+                                                                startY: e.clientY,
+                                                                startObj: { ...txtObj }
+                                                            });
+                                                        }}
+                                                    />
+                                                );
+                                            })}
+                                                </>
+                                            )}
+                                            {/* Edge Resize Handles */}
+                                            {['n', 'e', 's', 'w'].map(edge => {
+                                                const pos = {
+                                                    n: { left: '50%', top: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
+                                                    s: { left: '50%', bottom: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
+                                                    e: { right: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
+                                                    w: { left: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
+                                                }[edge];
+
+                                                return (
+                                                    <div
+                                                        key={edge}
+                                                        data-handle={edge}
+                                                        className="absolute bg-white border-2 border-green-500 z-30"
+                                                        style={{
+                                                            width: handleSize,
+                                                            height: handleSize,
+                                                            ...pos,
+                                                        }}
+                                                        onMouseDown={(e) => {
+                                                            e.stopPropagation();
+                                                            e.preventDefault();
+                                                            setTextDragState({
+                                                                id: txtObj.id,
+                                                                action: `resize-${edge}`,
+                                                                startX: e.clientX,
+                                                                startY: e.clientY,
+                                                                startObj: { ...txtObj }
+                                                            });
+                                                        }}
+                                                    />
+                                                );
+                                            })}
+
+                                            {!txtObj.isLocked && (
+                                                <>
+                                                    {/* Rotate Handle */}
+                                                    <div
+                                                        className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center z-30"
+                                                        style={{ top: -35, pointerEvents: 'auto' }}
+                                                    >
+                                                        <div className="w-px h-5 bg-green-500" />
+                                                        <div
+                                                            data-handle="rotate"
+                                                            className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center cursor-grab hover:bg-green-700 shadow-md transition-transform hover:scale-110 active:cursor-grabbing"
+                                                            style={{ cursor: 'grab', touchAction: 'none', pointerEvents: 'auto' }}
+                                                            onMouseDown={(e) => {
+                                                                e.stopPropagation();
+                                                                const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                                const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                                setTextDragState({
+                                                                    id: txtObj.id,
+                                                                    action: 'rotate',
+                                                                    startX: clientX,
+                                                                    startY: clientY,
+                                                                    startObj: { ...txtObj }
+                                                                });
+                                                            }}
+                                                            onPointerDown={(e) => {
+                                                                e.stopPropagation();
+                                                                const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                                const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                                setTextDragState({
+                                                                    id: txtObj.id,
+                                                                    action: 'rotate',
+                                                                    startX: clientX,
+                                                                    startY: clientY,
+                                                                    startObj: { ...txtObj }
+                                                                });
+                                                            }}
+                                                        >
+                                                            <RotateCw className="w-3.5 h-3.5" />
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Delete Button */}
+                                                    <button
+                                                        className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center z-30 shadow-lg cursor-pointer"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setTextObjects(prev => prev.filter(t => t.id !== txtObj.id));
+                                                            setSelectedTextIds([]);
+                                                            saveToHistory();
+                                                        }}
+                                                    >
+                                                        <X className="w-3 h-3 text-white" />
+                                                    </button>
+                                                </>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+
+                                {/* Static Unrotated Floating Text Format Bar */}
+                                {isSelected && (selectedTextIds.length === 1 && selectedTextIds[0] === txtObj.id) && !isEditing && (
+                                    <div
+                                        className="absolute pointer-events-auto select-none"
+                                        style={{
+                                            left: cx,
+                                            top: textMinY - (txtObj.isLocked ? 14 : 44),
+                                            transform: 'translate(-50%, -100%)',
+                                            zIndex: 70,
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onPointerDown={(e) => e.stopPropagation()}
+                                    >
+                                        {/* Floating Toolbar Pill */}
+                                        <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-lg shadow-xl px-2 py-1 text-slate-200">
+                                            {/* Font Family */}
+                                            <select
+                                                value={txtObj.fontFamily || 'sans-serif'}
+                                                onChange={(e) => updateSelectedTextProps({ fontFamily: e.target.value })}
+                                                className="bg-slate-800 text-[11px] text-white rounded px-1.5 py-1 border border-slate-700 outline-none cursor-pointer hover:bg-slate-750 transition"
+                                                title="Font Family"
+                                            >
+                                                <option value="sans-serif">Sans-serif</option>
+                                                <option value="serif">Serif</option>
+                                                <option value="monospace">Monospace</option>
+                                                <option value="Inter">Inter</option>
+                                                <option value="Roboto">Roboto</option>
+                                                <option value="Caveat">Caveat</option>
+                                                <option value="Comic Sans MS">Comic Marker</option>
+                                            </select>
+
+                                            {/* Font Size +/- */}
+                                            <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-1 py-0.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => updateSelectedTextProps({ fontSize: Math.max(8, (txtObj.fontSize || 20) - 2) })}
+                                                    className="w-4 h-5 flex items-center justify-center text-xs text-slate-300 hover:text-white hover:bg-slate-700 rounded transition font-bold"
+                                                    title="Decrease Font Size"
+                                                >
+                                                    -
                                                 </button>
-                                            </>
+                                                <span className="text-[11px] font-mono text-white px-1 select-none min-w-[20px] text-center">
+                                                    {txtObj.fontSize || 20}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => updateSelectedTextProps({ fontSize: Math.min(120, (txtObj.fontSize || 20) + 2) })}
+                                                    className="w-4 h-5 flex items-center justify-center text-xs text-slate-300 hover:text-white hover:bg-slate-700 rounded transition font-bold"
+                                                    title="Increase Font Size"
+                                                >
+                                                    +
+                                                </button>
+                                            </div>
+
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+
+                                            {/* Bold & Italic */}
+                                            <button
+                                                type="button"
+                                                onClick={() => updateSelectedTextProps({ fontWeight: txtObj.fontWeight === 'bold' ? 'normal' : 'bold' })}
+                                                className={`w-6 h-6 flex items-center justify-center rounded text-xs font-bold transition ${txtObj.fontWeight === 'bold' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                title="Bold"
+                                            >
+                                                B
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => updateSelectedTextProps({ fontStyle: txtObj.fontStyle === 'italic' ? 'normal' : 'italic' })}
+                                                className={`w-6 h-6 flex items-center justify-center rounded text-xs italic font-serif transition ${txtObj.fontStyle === 'italic' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                title="Italic"
+                                            >
+                                                I
+                                            </button>
+
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+
+                                            {/* Alignment */}
+                                            <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => updateSelectedTextProps({ textAlign: 'left' })}
+                                                    className={`w-5 h-5 flex items-center justify-center rounded transition ${(txtObj.textAlign || 'left') === 'left' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                    title="Align Left"
+                                                >
+                                                    <AlignLeft className="w-3 h-3" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => updateSelectedTextProps({ textAlign: 'center' })}
+                                                    className={`w-5 h-5 flex items-center justify-center rounded transition ${txtObj.textAlign === 'center' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                    title="Align Center"
+                                                >
+                                                    <AlignCenterHorizontal className="w-3 h-3" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => updateSelectedTextProps({ textAlign: 'right' })}
+                                                    className={`w-5 h-5 flex items-center justify-center rounded transition ${txtObj.textAlign === 'right' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                    title="Align Right"
+                                                >
+                                                    <AlignRight className="w-3 h-3" />
+                                                </button>
+                                            </div>
+
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+
+                                            {/* Text Color */}
+                                            <div className="relative w-6 h-6 flex flex-col items-center justify-center rounded hover:bg-slate-800 border border-slate-700 cursor-pointer overflow-hidden" title="Text Color">
+                                                <span className="font-bold text-[12px] leading-none select-none text-slate-200 mt-0.5">A</span>
+                                                <div className="w-3.5 h-1 mt-[1px] rounded-xs" style={{ backgroundColor: txtObj.color || '#000000' }} />
+                                                <input
+                                                    type="color"
+                                                    value={txtObj.color || '#000000'}
+                                                    onChange={(e) => updateSelectedTextProps({ color: e.target.value })}
+                                                    className="absolute inset-[-10px] w-12 h-12 opacity-0 cursor-pointer"
+                                                    title="Change Text Color"
+                                                />
+                                            </div>
+
+                                            {/* Background Color */}
+                                            <div className="relative w-6 h-6 flex items-center justify-center rounded hover:bg-slate-800 border border-slate-700 cursor-pointer overflow-hidden" title="Background Fill">
+                                                <div className="w-3.5 h-3.5 rounded-xs border border-slate-500 flex items-center justify-center" style={{ backgroundColor: txtObj.bgColor || 'transparent' }}>
+                                                    {(!txtObj.bgColor || txtObj.bgColor === 'transparent') && (
+                                                        <span className="text-[7px] text-slate-400 leading-none">✕</span>
+                                                    )}
+                                                </div>
+                                                <input
+                                                    type="color"
+                                                    value={txtObj.bgColor && txtObj.bgColor !== 'transparent' ? txtObj.bgColor : '#ffffff'}
+                                                    onChange={(e) => updateSelectedTextProps({ bgColor: e.target.value })}
+                                                    className="absolute inset-[-10px] w-12 h-12 opacity-0 cursor-pointer"
+                                                    title="Change Background Color"
+                                                />
+                                            </div>
+                                            {txtObj.bgColor && txtObj.bgColor !== 'transparent' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => updateSelectedTextProps({ bgColor: 'transparent' })}
+                                                    className="w-4 h-5 flex items-center justify-center text-[10px] text-slate-400 hover:text-white rounded hover:bg-slate-800"
+                                                    title="Clear Background"
+                                                >
+                                                    ✕
+                                                </button>
+                                            )}
+
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+
+                                            {/* Border & Frame Popover Toggle */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setActiveTextBorderPopoverId(prev => prev === txtObj.id ? null : txtObj.id)}
+                                                className={`h-6 px-2 flex items-center gap-1 rounded text-[11px] font-medium transition ${activeTextBorderPopoverId === txtObj.id || (txtObj.borderWidth || 0) > 0 ? 'bg-indigo-600 text-white font-bold' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}
+                                                title="Border & Frame Settings"
+                                            >
+                                                <Square className="w-3 h-3" />
+                                                <span>Border{(txtObj.borderWidth || 0) > 0 ? ` (${txtObj.borderWidth}px)` : ''}</span>
+                                            </button>
+
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+
+                                            {/* Lock / Unlock */}
+                                            <button
+                                                type="button"
+                                                onClick={() => updateSelectedTextProps({ isLocked: !txtObj.isLocked })}
+                                                className={`w-6 h-6 flex items-center justify-center rounded transition ${txtObj.isLocked ? 'text-amber-400 bg-amber-500/20' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
+                                                title={txtObj.isLocked ? 'Unlock Text' : 'Lock Text'}
+                                            >
+                                                {txtObj.isLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                                            </button>
+
+                                            {/* Delete */}
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setTextObjects(prev => prev.filter(t => t.id !== txtObj.id));
+                                                    setSelectedTextIds([]);
+                                                    saveToHistory();
+                                                }}
+                                                className="w-6 h-6 flex items-center justify-center rounded text-red-400 hover:text-red-300 hover:bg-red-500/20 transition"
+                                                title="Delete Text"
+                                            >
+                                                <Trash2 className="w-3 h-3" />
+                                            </button>
+                                        </div>
+
+                                        {/* Text Border & Frame Popover */}
+                                        {activeTextBorderPopoverId === txtObj.id && (
+                                            <div
+                                                className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-900/98 backdrop-blur-md border border-slate-700 rounded-xl shadow-2xl z-50 flex flex-col gap-2.5 text-slate-200 animate-in fade-in zoom-in-95 duration-150"
+                                                onClick={(e) => e.stopPropagation()}
+                                                onMouseDown={(e) => e.stopPropagation()}
+                                            >
+                                                <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                                                    <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                                                        <Square className="w-3.5 h-3.5 text-indigo-400" /> Border & Frame
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setActiveTextBorderPopoverId(null)}
+                                                        className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-800"
+                                                    >
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+
+                                                {/* Border Width */}
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="text-[10px] text-slate-400 font-medium">Border Width</div>
+                                                    <div className="flex items-center gap-1">
+                                                        {[0, 1, 2, 4, 8].map(bw => (
+                                                            <button
+                                                                key={bw}
+                                                                type="button"
+                                                                onClick={() => updateSelectedTextProps({ borderWidth: bw, borderColor: txtObj.borderColor || '#3b82f6', borderStyle: txtObj.borderStyle || 'solid' })}
+                                                                className={`flex-1 py-0.5 rounded text-[10px] transition ${(txtObj.borderWidth ?? 0) === bw ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                                            >
+                                                                {bw === 0 ? 'None' : `${bw}px`}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {/* Border Style */}
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="text-[10px] text-slate-400 font-medium">Border Style</div>
+                                                    <div className="grid grid-cols-4 gap-1">
+                                                        {['solid', 'dashed', 'dotted', 'double'].map(st => (
+                                                            <button
+                                                                key={st}
+                                                                type="button"
+                                                                onClick={() => updateSelectedTextProps({ borderStyle: st, borderWidth: txtObj.borderWidth || 2 })}
+                                                                className={`py-0.5 rounded text-[10px] capitalize transition ${(txtObj.borderStyle || 'solid') === st ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                                            >
+                                                                {st}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {/* Border Color */}
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="text-[10px] text-slate-400 font-medium">Border Color</div>
+                                                    <div className="flex items-center gap-1 flex-wrap">
+                                                        {['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#000000', '#ffffff'].map(clr => (
+                                                            <button
+                                                                key={clr}
+                                                                type="button"
+                                                                onClick={() => updateSelectedTextProps({ borderColor: clr, borderWidth: txtObj.borderWidth || 2 })}
+                                                                className={`w-5 h-5 rounded-full border-2 transition ${txtObj.borderColor === clr ? 'border-white scale-110' : 'border-slate-600 hover:border-slate-400'}`}
+                                                                style={{ backgroundColor: clr }}
+                                                                title={clr}
+                                                            />
+                                                        ))}
+                                                        <input
+                                                            type="color"
+                                                            value={txtObj.borderColor || '#3b82f6'}
+                                                            onChange={(e) => updateSelectedTextProps({ borderColor: e.target.value, borderWidth: txtObj.borderWidth || 2 })}
+                                                            className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
+                                                            title="Custom Border Color"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                {/* Corner Radius */}
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="text-[10px] text-slate-400 font-medium">Corner Radius</div>
+                                                    <div className="flex items-center gap-1">
+                                                        {[0, 4, 8, 16, 24].map(cr => (
+                                                            <button
+                                                                key={cr}
+                                                                type="button"
+                                                                onClick={() => updateSelectedTextProps({ borderRadius: cr })}
+                                                                className={`flex-1 py-0.5 rounded text-[10px] transition ${(txtObj.borderRadius ?? 0) === cr ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                                            >
+                                                                {cr === 0 ? '0' : `${cr}px`}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
                                         )}
-                                    </>
+                                    </div>
                                 )}
                             </div>
                         );
@@ -7524,11 +8443,14 @@ export default function Whiteboard({
                             }
                             if (DOMAIN_SHAPES && DOMAIN_SHAPES[shpObj.type]) {
                                 const ds = DOMAIN_SHAPES[shpObj.type];
-                                return (
-                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
-                                        {ds.render(shpObj.width, shpObj.height, fill, shpObj.color, shpObj.strokeWidth || 2)}
-                                    </g>
-                                );
+                                const renderFn = ds.render || (ds.renderSVG ? (w, h, fill, stroke, sw) => ds.renderSVG(w, h, stroke, sw, fill) : null);
+                                if (renderFn) {
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            {renderFn(shpObj.width, shpObj.height, fill, shpObj.color, shpObj.strokeWidth || 2)}
+                                        </g>
+                                    );
+                                }
                             }
                             return null;
                         };
@@ -8591,39 +9513,6 @@ export default function Whiteboard({
                     />
                 </div>
 
-                {/* Domain-Specific Shape Library Modal */}
-                <DomainShapeLibraryModal
-                    isOpen={showDomainLibrary}
-                    onClose={() => setShowDomainLibrary(false)}
-                    onSelectShape={(symbol) => {
-                        const wrapper = canvasWrapperRef.current;
-                        const cx = wrapper ? (wrapper.clientWidth / 2 - (symbol.defaultWidth || 120) / 2) : 200;
-                        const cy = wrapper ? (wrapper.clientHeight / 2 - (symbol.defaultHeight || 120) / 2) : 200;
-                        const newShape = {
-                            id: Date.now().toString(),
-                            type: symbol.id,
-                            x: Math.max(20, cx),
-                            y: Math.max(20, cy),
-                            width: symbol.defaultWidth || 120,
-                            height: symbol.defaultHeight || 120,
-                            color: color || '#3b82f6',
-                            fillColor: 'transparent',
-                            strokeWidth: strokeWidth || 2,
-                            rotation: 0,
-                            name: symbol.name,
-                            category: symbol.category
-                        };
-                        setPageShapeObjects(prev => ({
-                            ...prev,
-                            [currentPage]: [...(prev[currentPage] || []), newShape]
-                        }));
-                        setTool('select');
-                        setSelectedShapeIds([newShape.id]);
-                        setShowDomainLibrary(false);
-                        toast.success(`Added ${symbol.name}`, { icon: '📐' });
-                    }}
-                />
-
                 {/* Full-surface Loading Overlay & Interaction Lock */}
                 {!isStateLoaded && (
                     <div className="absolute inset-0 z-50 bg-slate-900/30 backdrop-blur-xs flex flex-col items-center justify-center select-none pointer-events-auto transition-all duration-300">
@@ -8658,6 +9547,39 @@ export default function Whiteboard({
             <ClassroomTimerModal
                 isOpen={showClassroomTimer}
                 onClose={() => setShowClassroomTimer(false)}
+            />
+
+            {/* Domain-Specific Shape Library Modal */}
+            <DomainShapeLibraryModal
+                isOpen={showDomainLibrary}
+                onClose={() => setShowDomainLibrary(false)}
+                onSelectShape={(symbol) => {
+                    const wrapper = canvasWrapperRef.current;
+                    const cx = wrapper ? (wrapper.clientWidth / 2 - (symbol.defaultWidth || 120) / 2) : 200;
+                    const cy = wrapper ? (wrapper.clientHeight / 2 - (symbol.defaultHeight || 120) / 2) : 200;
+                    const newShape = {
+                        id: Date.now().toString(),
+                        type: symbol.id,
+                        x: Math.max(20, cx),
+                        y: Math.max(20, cy),
+                        width: symbol.defaultWidth || 120,
+                        height: symbol.defaultHeight || 120,
+                        color: color || '#3b82f6',
+                        fillColor: 'transparent',
+                        strokeWidth: strokeWidth || 2,
+                        rotation: 0,
+                        name: symbol.name,
+                        category: symbol.category
+                    };
+                    setPageShapeObjects(prev => ({
+                        ...prev,
+                        [currentPage]: [...(prev[currentPage] || []), newShape]
+                    }));
+                    setTool('select');
+                    setSelectedShapeIds([newShape.id]);
+                    setShowDomainLibrary(false);
+                    toast.success(`Added ${symbol.name}`, { icon: '📐' });
+                }}
             />
 
             {/* Whiteboard Export & Interactive Panel Sharing Modal (WBF, IWB, PDF, PNG, JPG, SVG, QR) */}

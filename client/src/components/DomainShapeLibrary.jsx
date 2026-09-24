@@ -702,6 +702,14 @@ export const DOMAIN_SHAPES = {
     }
 };
 
+// Ensure every shape has both renderSVG and render methods for seamless compatibility
+Object.values(DOMAIN_SHAPES).forEach(shape => {
+    if (!shape.render && shape.renderSVG) {
+        shape.render = (w, h, fill, stroke, sw) => shape.renderSVG(w, h, stroke, sw, fill);
+    }
+});
+
+
 export const DOMAIN_CATEGORIES = [
     { id: 'all', label: 'All Shapes', icon: Compass },
     { id: 'cs', label: 'Computer Science', icon: Laptop },

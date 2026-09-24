@@ -193,8 +193,10 @@ export default function WhiteboardExportModal({
         // Serialized Text Elements
         const textsSVG = currentTexts.map(t => {
             const rot = t.rotation ? `transform="rotate(${t.rotation} ${t.x + (t.width || 120)/2} ${t.y + (t.height || 30)/2})"` : '';
-            const bgRect = t.bgColor && t.bgColor !== 'transparent' 
-                ? `<rect x="${t.x}" y="${t.y}" width="${t.width || 120}" height="${t.height || 30}" fill="${t.bgColor}" rx="4" ${rot} />`
+            const hasBg = t.bgColor && t.bgColor !== 'transparent';
+            const hasBorder = (t.borderWidth || 0) > 0;
+            const bgRect = (hasBg || hasBorder) 
+                ? `<rect x="${t.x}" y="${t.y}" width="${t.width || 120}" height="${t.height || 30}" fill="${hasBg ? t.bgColor : 'none'}" stroke="${hasBorder ? (t.borderColor || '#3b82f6') : 'none'}" stroke-width="${hasBorder ? t.borderWidth : 0}" stroke-dasharray="${t.borderStyle === 'dashed' ? '6,6' : t.borderStyle === 'dotted' ? '3,3' : 'none'}" rx="${t.borderRadius || (hasBg ? 4 : 0)}" ${rot} />`
                 : '';
             const cleanText = (t.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             return `
@@ -352,7 +354,12 @@ export default function WhiteboardExportModal({
                     }
                     return '';
                 }).filter(Boolean).join('\n                ')}
-                ${currentTexts.map(t => `<text x="${t.x}" y="${t.y + (t.fontSize || 20)}" font-size="${t.fontSize || 20}" font-family="${t.fontFamily || 'sans-serif'}" fill="${t.color || '#000'}">${(t.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</text>`).join('\n                ')}
+                ${currentTexts.map(t => {
+                    const hasBg = t.bgColor && t.bgColor !== 'transparent';
+                    const hasBorder = (t.borderWidth || 0) > 0;
+                    const bgRect = (hasBg || hasBorder) ? `<rect x="${t.x}" y="${t.y}" width="${t.width || 120}" height="${t.height || 30}" fill="${hasBg ? t.bgColor : 'none'}" stroke="${hasBorder ? (t.borderColor || '#3b82f6') : 'none'}" stroke-width="${hasBorder ? t.borderWidth : 0}" rx="${t.borderRadius || 0}" />` : '';
+                    return `${bgRect}<text x="${t.x}" y="${t.y + (t.fontSize || 20)}" font-size="${t.fontSize || 20}" font-family="${t.fontFamily || 'sans-serif'}" fill="${t.color || '#000'}">${(t.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</text>`;
+                }).join('\n                ')}
             </svg>
         </page>
     </body>
