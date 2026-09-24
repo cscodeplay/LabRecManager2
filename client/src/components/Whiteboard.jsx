@@ -13,7 +13,7 @@ import {
     AlignStartVertical, AlignCenterVertical, AlignEndVertical,
     AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween, Group, Ungroup, Lock, Unlock, Users, MessageCircle, User,
     Folder, Upload, Loader2, FlipHorizontal, FlipVertical, Sun, Contrast, Sliders,
-    Clock, GripHorizontal, LayoutTemplate, Flashlight
+    Clock, GripHorizontal, LayoutTemplate, Flashlight, Library
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
@@ -27,6 +27,7 @@ import ClassroomTimerModal from './ClassroomTimerModal';
 import WhiteboardImagePickerModal from './WhiteboardImagePickerModal';
 import WhiteboardExportModal from './WhiteboardExportModal';
 import WhiteboardMinimap from './WhiteboardMinimap';
+import DomainShapeLibraryModal, { DOMAIN_SHAPES } from './DomainShapeLibrary';
 import TorchIcon from './TorchIcon';
 import api from '@/lib/api';
 import { toast } from 'react-hot-toast';
@@ -700,11 +701,15 @@ export default function Whiteboard({
     // ─── Template Gallery State ─────────────────────────────────────────
     const [showTemplateGallery, setShowTemplateGallery] = useState(false);
     const [hoveredShapeId, setHoveredShapeId] = useState(null);
+    const [hoveredImageId, setHoveredImageId] = useState(null);
 
     // ─── Interactive Magnetic Hooks & Drag Connector Engine ───────────
     const [hoveredHook, setHoveredHook] = useState(null); // { shapeId, anchor }
     const [activeConnectorDrag, setActiveConnectorDrag] = useState(null); // { sourceId, sourceAnchor, sourcePt, currentPt, style, snappedTarget }
+    const [activeConnectorPreset, setActiveConnectorPreset] = useState(CONNECTOR_PRESET_STYLES[0]);
     const hookHoverTimeoutRef = useRef(null);
+    const [showDomainLibrary, setShowDomainLibrary] = useState(false);
+    const [selectedFontFamily, setSelectedFontFamily] = useState('sans-serif');
 
     // ─── Smart Panel & Flat Panel Tools State (BenQ EZWrite & ViewSonic) ──
     const [showClassroomTimer, setShowClassroomTimer] = useState(false);
@@ -1623,10 +1628,28 @@ export default function Whiteboard({
                 };
                 img.src = data.bgImage;
             }
+            if (data.shapes && Array.isArray(data.shapes) && data.shapes.length > 0) {
+                setPageShapeObjects(prev => ({
+                    ...prev,
+                    [currentPage]: [...(prev[currentPage] || []), ...data.shapes]
+                }));
+            }
+            if (data.texts && Array.isArray(data.texts) && data.texts.length > 0) {
+                setPageTextObjects(prev => ({
+                    ...prev,
+                    [currentPage]: [...(prev[currentPage] || []), ...data.texts]
+                }));
+            }
+            if (data.images && Array.isArray(data.images) && data.images.length > 0) {
+                setPageImageObjects(prev => ({
+                    ...prev,
+                    [currentPage]: [...(prev[currentPage] || []), ...data.images]
+                }));
+            }
             saveToHistory();
             toast.success('Loaded Interactive Whiteboard (.iwb) file!', { icon: '📟' });
         }
-    }, [saveToHistory]);
+    }, [currentPage, saveToHistory]);
 
     // Paste from clipboard
     const handlePasteItem = useCallback((item) => {
@@ -2526,11 +2549,24 @@ export default function Whiteboard({
                 if (startObj.groupId) {
                     moveGroup(startObj.groupId, deltaX, deltaY);
                 } else {
-                    setTextObjects(prev => prev.map(txt =>
-                        txt.id === textDragState.id
-                            ? { ...txt, x: startObj.x + canvasDx, y: startObj.y + canvasDy }
-                            : txt
-                    ));
+                    if (textDragState.startTextObjs && textDragState.startTextObjs.length > 0) {
+                        setTextObjects(prev => prev.map(txt => {
+                            const tObj = textDragState.startTextObjs.find(t => t.id === txt.id);
+                            return tObj ? { ...txt, x: tObj.x + canvasDx, y: tObj.y + canvasDy } : txt;
+                        }));
+                        if (textDragState.startShapeObjs && textDragState.startShapeObjs.length > 0) {
+                            setShapeObjects(prev => prev.map(shp => {
+                                const sObj = textDragState.startShapeObjs.find(s => s.id === shp.id);
+                                return sObj ? { ...shp, x: sObj.x + canvasDx, y: sObj.y + canvasDy } : shp;
+                            }));
+                        }
+                    } else {
+                        setTextObjects(prev => prev.map(txt =>
+                            txt.id === textDragState.id
+                                ? { ...txt, x: startObj.x + canvasDx, y: startObj.y + canvasDy }
+                                : txt
+                        ));
+                    }
                 }
             } else if (textDragState.action === 'rotate') {
                 if (!canvasEl) return;
@@ -2779,12 +2815,15 @@ export default function Whiteboard({
         
         let resolvedStyle = styleOption;
         if (!resolvedStyle) {
-            if (lineType === 'connector_elbow') {
-                resolvedStyle = CONNECTOR_PRESET_STYLES.find(p => p.pathType === 'orthogonal') || CONNECTOR_PRESET_STYLES[2];
-            } else if (lineType === 'connector_straight') {
-                resolvedStyle = CONNECTOR_PRESET_STYLES.find(p => p.pathType === 'straight') || CONNECTOR_PRESET_STYLES[1];
-            } else {
-                resolvedStyle = CONNECTOR_PRESET_STYLES[0]; // curved_arrow (default)
+            resolvedStyle = activeConnectorPreset;
+            if (!resolvedStyle) {
+                if (lineType === 'connector_elbow') {
+                    resolvedStyle = CONNECTOR_PRESET_STYLES.find(p => p.pathType === 'orthogonal') || CONNECTOR_PRESET_STYLES[2];
+                } else if (lineType === 'connector_straight') {
+                    resolvedStyle = CONNECTOR_PRESET_STYLES.find(p => p.pathType === 'straight') || CONNECTOR_PRESET_STYLES[1];
+                } else {
+                    resolvedStyle = CONNECTOR_PRESET_STYLES[0]; // curved_arrow (default)
+                }
             }
         }
         
@@ -2797,7 +2836,7 @@ export default function Whiteboard({
             snappedTarget: null
         });
         setHoveredHook(null);
-    }, [canUserDraw, lineType]);
+    }, [canUserDraw, lineType, activeConnectorPreset]);
 
     useEffect(() => {
         if (!activeConnectorDrag) return;
@@ -2814,21 +2853,24 @@ export default function Whiteboard({
                 y: (e.clientY - rect.top) * scaleY
             };
 
-            // Find nearest hook on any OTHER shape
-            const eligibleShapes = shapeObjects.filter(s => 
-                s.id !== activeConnectorDrag.sourceId && 
-                !['line', 'arrow', 'double_arrow', 'dashed_line', 'connector', 'ruler', 'protractor'].includes(s.type)
-            );
+            // Find nearest hook on any OTHER shape or image
+            const eligibleConnectables = [
+                ...shapeObjects.filter(s => 
+                    s.id !== activeConnectorDrag.sourceId && 
+                    !['line', 'arrow', 'double_arrow', 'dashed_line', 'connector', 'ruler', 'protractor'].includes(s.type)
+                ),
+                ...imageObjects.filter(img => img.id !== activeConnectorDrag.sourceId)
+            ];
 
             let snapTarget = null;
             let minDist = 35; // 35px snap distance
-            eligibleShapes.forEach(shape => {
-                ['top', 'right', 'bottom', 'left'].forEach(anchor => {
-                    const pt = getAnchorPoint(shape, anchor);
+            eligibleConnectables.forEach(targetObj => {
+                ['top', 'right', 'bottom', 'left', 'center'].forEach(anchor => {
+                    const pt = getAnchorPoint(targetObj, anchor);
                     const dist = Math.hypot(pt.x - currentMousePt.x, pt.y - currentMousePt.y);
                     if (dist < minDist) {
                         minDist = dist;
-                        snapTarget = { shape, anchor, pt };
+                        snapTarget = { shape: targetObj, anchor, pt };
                     }
                 });
             });
@@ -2873,7 +2915,7 @@ export default function Whiteboard({
                 setSelectedShapeIds([newConn.id]);
                 setSelectedTextIds([]);
                 setSelectedImageId(null);
-                toast.success('Connected shapes!', { icon: '🔗' });
+                toast.success('Connected elements!', { icon: '🔗' });
             }
             // If released in blank space, clean cancel! No connector created.
             setActiveConnectorDrag(null);
@@ -2886,7 +2928,7 @@ export default function Whiteboard({
             window.removeEventListener('pointermove', handlePointerMove);
             window.removeEventListener('pointerup', handlePointerUp);
         };
-    }, [activeConnectorDrag, shapeObjects, color, strokeWidth, socket, sessionId, saveToHistory, setShapeObjects]);
+    }, [activeConnectorDrag, shapeObjects, imageObjects, color, strokeWidth, socket, sessionId, saveToHistory, setShapeObjects]);
 
     // Click on canvas to deselect images, text, and shapes
     const handleCanvasClick = useCallback(() => {
@@ -3846,12 +3888,12 @@ export default function Whiteboard({
                             setSelectedShapeIds(selectedShapes);
                             setSelectedTextIds(selectedTexts);
                             setSelectedImageId(selectedImages.length > 0 ? selectedImages[selectedImages.length - 1] : null);
-                            setSelection({ x: minX, y: minY, width: selWidth, height: selHeight, path: lassoPath, isAreaSelect: false });
+                            setSelection(null);
                         } else if (selWidth > 15 && selHeight > 15) {
                             setSelectedShapeIds([]);
                             setSelectedTextIds([]);
                             setSelectedImageId(null);
-                            setSelection({ x: minX, y: minY, width: selWidth, height: selHeight, path: lassoPath, isAreaSelect: true });
+                            setSelection(null);
                         } else {
                             setSelectedShapeIds([]);
                             setSelectedTextIds([]);
@@ -3924,12 +3966,12 @@ export default function Whiteboard({
                         setSelectedShapeIds(selectedShapes);
                         setSelectedTextIds(selectedTexts);
                         setSelectedImageId(selectedImages.length > 0 ? selectedImages[selectedImages.length - 1] : null);
-                        setSelection({ x, y, width: selWidth, height: selHeight, isAreaSelect: false });
+                        setSelection(null);
                     } else if (selWidth > 15 && selHeight > 15) {
                         setSelectedShapeIds([]);
                         setSelectedTextIds([]);
                         setSelectedImageId(null);
-                        setSelection({ x, y, width: selWidth, height: selHeight, isAreaSelect: true });
+                        setSelection(null);
                     } else {
                         setSelectedShapeIds([]);
                         setSelectedTextIds([]);
@@ -5454,55 +5496,98 @@ export default function Whiteboard({
                                 )}
                                 
                                 {tool === t.id && t.id === 'text' && showTextBgPicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex gap-2`}>
+                                    <div className={`absolute ${popoverPos} p-2.5 bg-slate-800 rounded-xl shadow-2xl border border-slate-700 z-50 flex items-center gap-2 text-slate-200 select-none animate-in fade-in zoom-in-95 duration-150`}>
+                                        {/* Font Family Selector */}
+                                        <select
+                                            value={selectedFontFamily || 'sans-serif'}
+                                            onChange={(e) => {
+                                                const font = e.target.value;
+                                                setSelectedFontFamily(font);
+                                                const targets = editingTextId ? [editingTextId] : selectedTextIds;
+                                                if (targets.length > 0) {
+                                                    setTextObjects(prev => prev.map(t => targets.includes(t.id) ? { ...t, fontFamily: font } : t));
+                                                }
+                                                if (selectedShapeIds.length > 0) {
+                                                    setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontFamily: font } : s));
+                                                }
+                                            }}
+                                            className="bg-slate-700 text-xs text-white rounded px-2 py-1 focus:outline-none border border-slate-600 cursor-pointer"
+                                            title="Font Family"
+                                        >
+                                            <option value="sans-serif">Sans-serif</option>
+                                            <option value="serif">Serif</option>
+                                            <option value="monospace">Monospace</option>
+                                            <option value="Inter">Inter</option>
+                                            <option value="Roboto">Roboto</option>
+                                            <option value="Caveat">Caveat (Handwritten)</option>
+                                            <option value="Comic Sans MS">Comic Marker</option>
+                                        </select>
+
+                                        <div className="w-px h-5 bg-slate-700" />
+
+                                        {/* Bold */}
                                         <button
                                             onClick={() => {
                                                 const newVal = !isBold;
                                                 setIsBold(newVal);
-                                                const activeId = editingTextId || (selectedTextIds.length > 0 ? selectedTextIds[0] : null);
-                                                if (activeId) {
-                                                    setTextObjects(prev => prev.map(t => t.id === activeId ? { ...t, fontWeight: newVal ? 'bold' : 'normal' } : t));
+                                                const targets = editingTextId ? [editingTextId] : selectedTextIds;
+                                                if (targets.length > 0) {
+                                                    setTextObjects(prev => prev.map(t => targets.includes(t.id) ? { ...t, fontWeight: newVal ? 'bold' : 'normal' } : t));
                                                 } else {
                                                     setTextObjects(prev => prev.map(t => ({ ...t, fontWeight: newVal ? 'bold' : 'normal' })));
                                                 }
+                                                if (selectedShapeIds.length > 0) {
+                                                    setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontWeight: newVal ? 'bold' : 'normal' } : s));
+                                                }
                                             }}
-                                            className={`p-1.5 rounded hover:bg-slate-700 ${isBold ? 'text-primary-400 font-bold' : 'text-slate-300'}`}
+                                            className={`w-7 h-7 flex items-center justify-center rounded font-bold text-xs transition ${isBold ? 'bg-primary-600 text-white' : 'hover:bg-slate-700 text-slate-300'}`}
                                             title="Bold"
                                         >B</button>
+
+                                        {/* Italic */}
                                         <button
                                             onClick={() => {
                                                 const newVal = !isItalic;
                                                 setIsItalic(newVal);
-                                                const activeId = editingTextId || (selectedTextIds.length > 0 ? selectedTextIds[0] : null);
-                                                if (activeId) {
-                                                    setTextObjects(prev => prev.map(t => t.id === activeId ? { ...t, fontStyle: newVal ? 'italic' : 'normal' } : t));
+                                                const targets = editingTextId ? [editingTextId] : selectedTextIds;
+                                                if (targets.length > 0) {
+                                                    setTextObjects(prev => prev.map(t => targets.includes(t.id) ? { ...t, fontStyle: newVal ? 'italic' : 'normal' } : t));
                                                 } else {
                                                     setTextObjects(prev => prev.map(t => ({ ...t, fontStyle: newVal ? 'italic' : 'normal' })));
                                                 }
+                                                if (selectedShapeIds.length > 0) {
+                                                    setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontStyle: newVal ? 'italic' : 'normal' } : s));
+                                                }
                                             }}
-                                            className={`p-1.5 rounded hover:bg-slate-700 italic ${isItalic ? 'text-primary-400' : 'text-slate-300'}`}
+                                            className={`w-7 h-7 flex items-center justify-center rounded italic text-xs transition ${isItalic ? 'bg-primary-600 text-white' : 'hover:bg-slate-700 text-slate-300'}`}
                                             title="Italic"
                                         >I</button>
-                                        <div className="w-px bg-slate-700 mx-1"></div>
-                                        {['transparent', '#fef08a', '#bbf7d0', '#bfdbfe', '#fecaca', '#e9d5ff'].map(bg => (
-                                            <button
-                                                key={bg}
-                                                onClick={() => {
-                                                    setTextBgColor(bg);
-                                                    const activeId = editingTextId || (selectedTextIds.length > 0 ? selectedTextIds[0] : null);
-                                                    if (activeId) {
-                                                        setTextObjects(prev => prev.map(t => t.id === activeId ? { ...t, bgColor: bg } : t));
-                                                    } else {
-                                                        setTextObjects(prev => prev.map(t => ({ ...t, bgColor: bg })));
-                                                    }
-                                                }}
-                                                className={`w-6 h-6 rounded-full border-2 ${textBgColor === bg ? 'border-primary-500' : 'border-slate-600'}`}
-                                                style={{ backgroundColor: bg === 'transparent' ? '#334155' : bg }}
-                                                title={bg === 'transparent' ? 'No Background' : 'Set Background'}
-                                            >
-                                                {bg === 'transparent' && <span className="text-[10px] text-slate-400 block mt-[2px] ml-[2px]">🚫</span>}
-                                            </button>
-                                        ))}
+
+                                        <div className="w-px h-5 bg-slate-700" />
+
+                                        {/* Background / Fill Colors */}
+                                        <div className="flex items-center gap-1">
+                                            {['transparent', '#fef08a', '#bbf7d0', '#bfdbfe', '#fecaca', '#e9d5ff', '#fed7aa', '#cbd5e1'].map(bg => (
+                                                <button
+                                                    key={bg}
+                                                    onClick={() => {
+                                                        setTextBgColor(bg);
+                                                        const targets = editingTextId ? [editingTextId] : selectedTextIds;
+                                                        if (targets.length > 0) {
+                                                            setTextObjects(prev => prev.map(t => targets.includes(t.id) ? { ...t, bgColor: bg } : t));
+                                                        }
+                                                        if (selectedShapeIds.length > 0) {
+                                                            setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: bg } : s));
+                                                        }
+                                                    }}
+                                                    className={`w-5 h-5 rounded-full border-2 transition ${textBgColor === bg ? 'border-primary-500 scale-110' : 'border-slate-600 hover:border-slate-400'}`}
+                                                    style={{ backgroundColor: bg === 'transparent' ? '#334155' : bg }}
+                                                    title={bg === 'transparent' ? 'No Background' : `Set Background (${bg})`}
+                                                >
+                                                    {bg === 'transparent' && <span className="text-[8px] text-slate-400 block -mt-0.5">🚫</span>}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
 
@@ -5550,6 +5635,19 @@ export default function Whiteboard({
                                                 <span className="text-[8.5px] truncate w-full text-center leading-tight">{s.label}</span>
                                             </button>
                                         ))}
+
+                                        {/* Domain Symbols Library Button */}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowShapePicker(false);
+                                                setShowDomainLibrary(true);
+                                            }}
+                                            className="col-span-3 mt-1 py-1.5 px-2 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-300 hover:text-white flex items-center justify-center gap-1.5 text-[11px] font-medium transition shadow-sm"
+                                        >
+                                            <Library className="w-3.5 h-3.5 text-indigo-400" />
+                                            <span>Domain Symbols Library</span>
+                                        </button>
                                     </div>
                                 )}
                             </div>
@@ -6304,13 +6402,34 @@ export default function Whiteboard({
                         const handleSize = 10;
                         const canInteract = tool === 'select' || isSelected || tool === 'pan';
 
+                        // Calculate unrotated bounding box center and top for floating toolbar
+                        const cx = (imgObj.x || 0) + (imgObj.width || 100) / 2;
+                        const cy = (imgObj.y || 0) + (imgObj.height || 100) / 2;
+                        const rad = ((imgObj.rotation || 0) * Math.PI) / 180;
+                        const cos = Math.cos(rad);
+                        const sin = Math.sin(rad);
+                        const halfW = (imgObj.width || 100) / 2;
+                        const halfH = (imgObj.height || 100) / 2;
+                        const corners = [
+                            { dx: -halfW, dy: -halfH },
+                            { dx: halfW, dy: -halfH },
+                            { dx: halfW, dy: halfH },
+                            { dx: -halfW, dy: halfH }
+                        ].map(p => ({
+                            x: cx + p.dx * cos - p.dy * sin,
+                            y: cy + p.dx * sin + p.dy * cos
+                        }));
+                        const imgMinY = Math.min(...corners.map(c => c.y));
+
                         const handleStartMove = (e) => {
                             if (!canUserDraw) return;
                             e.stopPropagation();
                             if (e.target.dataset?.handle) return;
                             setSelectedImageId(imgObj.id);
-                            setSelectedShapeIds([]);
-                            setSelectedTextIds([]);
+                            if (!e.ctrlKey && !e.metaKey) {
+                                setSelectedShapeIds([]);
+                                setSelectedTextIds([]);
+                            }
                             if (imgObj.isLocked) return;
 
                             const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
@@ -6325,81 +6444,302 @@ export default function Whiteboard({
                         };
 
                         return (
-                            <div
-                                key={imgObj.id}
-                                className="absolute select-none"
-                                style={{
-                                    left: imgObj.x,
-                                    top: imgObj.y,
-                                    width: imgObj.width,
-                                    height: imgObj.height,
-                                    zIndex: imgObj.zIndex || (isSelected ? 25 : 10),
-                                    transform: `rotate(${imgObj.rotation || 0}deg)`,
-                                    transformOrigin: 'center center',
-                                    cursor: isSelected ? 'move' : (tool === 'select' ? 'pointer' : 'default'),
-                                    pointerEvents: canInteract ? 'auto' : ((tool === 'pen' || tool === 'eraser' || tool === 'highlighter') && !isSelected ? 'none' : 'auto'),
-                                    touchAction: 'none'
-                                }}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedImageId(imgObj.id);
-                                    setSelectedShapeIds([]);
-                                    setSelectedTextIds([]);
-                                }}
-                                onMouseDown={handleStartMove}
-                                onPointerDown={handleStartMove}
-                                touchAction="none"
-                            >
-                                {/* Image with flip and styling applied strictly to inner img */}
-                                <img
-                                    src={imgObj.src}
-                                    alt="Inserted"
-                                    className="w-full h-full object-contain pointer-events-none select-none"
+                            <div key={imgObj.id}>
+                                <div
+                                    className="whiteboard-image-item absolute select-none"
                                     style={{
-                                        transform: `${imgObj.flipX ? 'scaleX(-1)' : ''} ${imgObj.flipY ? 'scaleY(-1)' : ''}`.trim() || undefined,
-                                        filter: `brightness(${imgObj.brightness ?? 100}%) contrast(${imgObj.contrast ?? 100}%) saturate(${imgObj.saturation ?? 100}%) opacity(${(imgObj.opacity ?? 100) / 100}) blur(${imgObj.blur ?? 0}px) ${imgObj.sharpness ? `contrast(${100 + (imgObj.sharpness || 0) * 15}%) drop-shadow(0 0 ${(imgObj.sharpness || 0) * 0.4}px rgba(0,0,0,0.6))` : ''}`,
-                                        border: imgObj.borderWidth ? `${imgObj.borderWidth}px ${imgObj.borderStyle || 'solid'} ${imgObj.borderColor || '#3b82f6'}` : undefined,
-                                        borderRadius: imgObj.borderRadius ? `${imgObj.borderRadius}px` : undefined,
+                                        left: imgObj.x,
+                                        top: imgObj.y,
+                                        width: imgObj.width,
+                                        height: imgObj.height,
+                                        zIndex: imgObj.zIndex || (isSelected ? 25 : 10),
+                                        transform: `rotate(${imgObj.rotation || 0}deg)`,
+                                        transformOrigin: 'center center',
+                                        cursor: isSelected ? 'move' : (tool === 'select' ? 'pointer' : 'default'),
+                                        pointerEvents: canInteract ? 'auto' : ((tool === 'pen' || tool === 'eraser' || tool === 'highlighter') && !isSelected ? 'none' : 'auto'),
+                                        touchAction: 'none'
                                     }}
-                                    draggable={false}
-                                />
+                                    onMouseEnter={() => setHoveredImageId(imgObj.id)}
+                                    onMouseLeave={() => setHoveredImageId(null)}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedImageId(imgObj.id);
+                                        if (!e.ctrlKey && !e.metaKey) {
+                                            setSelectedShapeIds([]);
+                                            setSelectedTextIds([]);
+                                        }
+                                    }}
+                                    onMouseDown={handleStartMove}
+                                    onPointerDown={handleStartMove}
+                                >
+                                    {/* Image with flip, border, and filters */}
+                                    <img
+                                        src={imgObj.src}
+                                        alt="Inserted"
+                                        className="w-full h-full object-contain pointer-events-none select-none box-border"
+                                        style={{
+                                            transform: `${imgObj.flipX ? 'scaleX(-1)' : ''} ${imgObj.flipY ? 'scaleY(-1)' : ''}`.trim() || undefined,
+                                            filter: `brightness(${imgObj.brightness ?? 100}%) contrast(${imgObj.contrast ?? 100}%) saturate(${imgObj.saturation ?? 100}%) opacity(${(imgObj.opacity ?? 100) / 100}) blur(${imgObj.blur ?? 0}px) ${imgObj.sharpness ? `contrast(${100 + (imgObj.sharpness || 0) * 15}%) drop-shadow(0 0 ${(imgObj.sharpness || 0) * 0.4}px rgba(0,0,0,0.6))` : ''}`,
+                                            border: imgObj.borderWidth ? `${imgObj.borderWidth}px ${imgObj.borderStyle || 'solid'} ${imgObj.borderColor || '#3b82f6'}` : undefined,
+                                            borderRadius: imgObj.borderRadius ? `${imgObj.borderRadius}px` : undefined,
+                                            boxSizing: 'border-box'
+                                        }}
+                                        draggable={false}
+                                    />
 
-                                {/* Selection Border & Handles */}
-                                {isSelected && (
-                                    <>
-                                        <div className="absolute inset-0 border-2 border-indigo-500 rounded-sm pointer-events-none shadow-sm" />
-                                        <div 
-                                            className="absolute inset-0" 
-                                            style={{ pointerEvents: 'auto', cursor: 'move', touchAction: 'none' }} 
-                                            onMouseDown={handleStartMove}
-                                            onPointerDown={handleStartMove}
-                                        />
+                                    {/* Magnetic Connector Hooks (N, E, S, W, Center) */}
+                                    {(isSelected || tool === 'line' || hoveredImageId === imgObj.id) && !imgObj.isLocked && (
+                                        <>
+                                            {[
+                                                { anchor: 'top', label: 'N', style: { left: '50%', top: 0 } },
+                                                { anchor: 'right', label: 'E', style: { left: '100%', top: '50%' } },
+                                                { anchor: 'bottom', label: 'S', style: { left: '50%', top: '100%' } },
+                                                { anchor: 'left', label: 'W', style: { left: 0, top: '50%' } },
+                                                { anchor: 'center', label: 'C', style: { left: '50%', top: '50%' } },
+                                            ].map(({ anchor, label, style }) => (
+                                                <div
+                                                    key={anchor}
+                                                    className="image-magnetic-hook absolute w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-500 border-2 border-white shadow-md hover:bg-blue-600 hover:scale-125 transition-all z-35 flex items-center justify-center cursor-crosshair group/imghook"
+                                                    style={{ ...style, pointerEvents: 'auto' }}
+                                                    title={`Connect from ${anchor.toUpperCase()} hook (Hover to select style, drag to link)`}
+                                                    onPointerEnter={() => {
+                                                        if (hookHoverTimeoutRef.current) clearTimeout(hookHoverTimeoutRef.current);
+                                                        setHoveredHook({ shapeId: imgObj.id, anchor });
+                                                    }}
+                                                    onPointerLeave={() => {
+                                                        hookHoverTimeoutRef.current = setTimeout(() => {
+                                                            setHoveredHook(null);
+                                                        }, 700);
+                                                    }}
+                                                    onPointerDown={(e) => {
+                                                        startConnectorDrag(imgObj, anchor, activeConnectorPreset, e);
+                                                    }}
+                                                >
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-white pointer-events-none" />
 
-                                        {/* Corner Delete X Button */}
-                                        <button
-                                            type="button"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setImageObjects(prev => prev.filter(i => i.id !== imgObj.id));
-                                                setSelectedImageId(null);
-                                            }}
-                                            className="absolute -top-3 -right-3 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-white/60 z-50 pointer-events-auto cursor-pointer transition-transform hover:scale-110 active:scale-95"
-                                            title="Delete Image"
-                                        >
-                                            <X className="w-3.5 h-3.5" />
-                                        </button>
+                                                    {/* Hover Style Popover */}
+                                                    {hoveredHook?.shapeId === imgObj.id && hoveredHook?.anchor === anchor && (
+                                                        <div
+                                                            className={`connector-hover-popover absolute z-50 flex items-center gap-1 bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-2xl rounded-xl p-1 text-white animate-in fade-in zoom-in-95 duration-150 before:content-[''] before:absolute before:-inset-3 before:z-[-1] ${
+                                                                anchor === 'top' ? 'bottom-full mb-2 left-1/2 -translate-x-1/2' :
+                                                                anchor === 'bottom' ? 'top-full mt-2 left-1/2 -translate-x-1/2' :
+                                                                anchor === 'left' ? 'right-full mr-2 top-1/2 -translate-y-1/2' :
+                                                                'left-full ml-2 top-1/2 -translate-y-1/2'
+                                                            }`}
+                                                            style={{ pointerEvents: 'auto' }}
+                                                            onPointerEnter={() => {
+                                                                if (hookHoverTimeoutRef.current) clearTimeout(hookHoverTimeoutRef.current);
+                                                            }}
+                                                            onPointerLeave={() => {
+                                                                hookHoverTimeoutRef.current = setTimeout(() => {
+                                                                    setHoveredHook(null);
+                                                                }, 700);
+                                                            }}
+                                                            onPointerDown={(e) => e.stopPropagation()}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            {CONNECTOR_PRESET_STYLES.map((preset) => (
+                                                                <button
+                                                                    key={preset.id}
+                                                                    type="button"
+                                                                    className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all cursor-grab active:cursor-grabbing group/btn ${
+                                                                        activeConnectorPreset?.id === preset.id 
+                                                                            ? 'bg-blue-600 text-white shadow' 
+                                                                            : 'hover:bg-slate-700 text-slate-300 hover:text-white'
+                                                                    }`}
+                                                                    title={`${preset.label} (Click to set active, drag to connect)`}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setActiveConnectorPreset(preset);
+                                                                    }}
+                                                                    onPointerDown={(e) => {
+                                                                        setActiveConnectorPreset(preset);
+                                                                        startConnectorDrag(imgObj, anchor, preset, e);
+                                                                    }}
+                                                                >
+                                                                    {preset.icon}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </>
+                                    )}
 
-                                        {/* Image Quick Actions Toolbar */}
-                                        <div
-                                            className="absolute -top-11 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-lg shadow-xl px-2 py-1 z-40 pointer-events-auto text-slate-200"
-                                            style={{
-                                                transform: 'translateX(-50%)',
-                                                transformOrigin: 'center center'
-                                            }}
-                                            onClick={(e) => e.stopPropagation()}
-                                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                                        >
+                                    {/* Selection Border & Handles */}
+                                    {isSelected && (
+                                        <>
+                                            <div className="absolute inset-0 border-2 border-indigo-500 rounded-sm pointer-events-none shadow-sm" />
+                                            <div 
+                                                className="absolute inset-0" 
+                                                style={{ pointerEvents: 'auto', cursor: 'move', touchAction: 'none' }} 
+                                                onMouseDown={handleStartMove}
+                                                onPointerDown={handleStartMove}
+                                            />
+
+                                            {/* Corner Delete X Button */}
                                             <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setImageObjects(prev => prev.filter(i => i.id !== imgObj.id));
+                                                    setSelectedImageId(null);
+                                                }}
+                                                className="absolute -top-3 -right-3 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-white/60 z-50 pointer-events-auto cursor-pointer transition-transform hover:scale-110 active:scale-95"
+                                                title="Delete Image"
+                                            >
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
+
+                                            {!imgObj.isLocked && (
+                                                <>
+                                                    {/* Corner Resize Handles */}
+                                                    {['nw', 'ne', 'sw', 'se'].map(corner => {
+                                                        const pos = {
+                                                            nw: { left: -handleSize / 2, top: -handleSize / 2, cursor: 'nwse-resize' },
+                                                            ne: { right: -handleSize / 2, top: -handleSize / 2, cursor: 'nesw-resize' },
+                                                            sw: { left: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nesw-resize' },
+                                                            se: { right: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nwse-resize' },
+                                                        }[corner];
+
+                                                        const handleResizeStart = (e) => {
+                                                            e.stopPropagation();
+                                                            if (e.cancelable) e.preventDefault();
+                                                            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                            const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                            setImageDragState({
+                                                                id: imgObj.id,
+                                                                action: `resize-${corner}`,
+                                                                startX: clientX,
+                                                                startY: clientY,
+                                                                startObj: { ...imgObj }
+                                                            });
+                                                        };
+
+                                                        return (
+                                                            <div
+                                                                key={corner}
+                                                                data-handle={corner}
+                                                                className="absolute bg-white border-2 border-indigo-600 rounded-sm shadow-md z-30"
+                                                                style={{
+                                                                    width: handleSize + 2,
+                                                                    height: handleSize + 2,
+                                                                    touchAction: 'none',
+                                                                    pointerEvents: 'auto',
+                                                                    ...pos,
+                                                                }}
+                                                                onMouseDown={handleResizeStart}
+                                                                onPointerDown={handleResizeStart}
+                                                                onTouchStart={handleResizeStart}
+                                                            />
+                                                        );
+                                                    })}
+
+                                                    {/* Edge Resize Handles */}
+                                                    {['n', 'e', 's', 'w'].map(edge => {
+                                                        const pos = {
+                                                            n: { left: '50%', top: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
+                                                            s: { left: '50%', bottom: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
+                                                            e: { right: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
+                                                            w: { left: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
+                                                        }[edge];
+
+                                                        const handleEdgeResizeStart = (e) => {
+                                                            e.stopPropagation();
+                                                            if (e.cancelable) e.preventDefault();
+                                                            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                            const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                            setImageDragState({
+                                                                id: imgObj.id,
+                                                                action: `resize-${edge}`,
+                                                                startX: clientX,
+                                                                startY: clientY,
+                                                                startObj: { ...imgObj }
+                                                            });
+                                                        };
+
+                                                        return (
+                                                            <div
+                                                                key={edge}
+                                                                data-handle={edge}
+                                                                className="absolute bg-white border-2 border-indigo-600 rounded-sm shadow-md z-30"
+                                                                style={{
+                                                                    width: handleSize,
+                                                                    height: handleSize,
+                                                                    touchAction: 'none',
+                                                                    pointerEvents: 'auto',
+                                                                    ...pos,
+                                                                }}
+                                                                onMouseDown={handleEdgeResizeStart}
+                                                                onPointerDown={handleEdgeResizeStart}
+                                                                onTouchStart={handleEdgeResizeStart}
+                                                            />
+                                                        );
+                                                    })}
+
+                                                    {/* Rotate Handle */}
+                                                    <div
+                                                        className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center z-30"
+                                                        style={{ top: -35, pointerEvents: 'auto' }}
+                                                    >
+                                                        <div className="w-px h-5 bg-indigo-500" />
+                                                        <div
+                                                            data-handle="rotate"
+                                                            className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center cursor-grab hover:bg-indigo-700 shadow-md transition-transform hover:scale-110 active:cursor-grabbing"
+                                                            style={{ cursor: 'grab', touchAction: 'none', pointerEvents: 'auto' }}
+                                                            onMouseDown={(e) => {
+                                                                e.stopPropagation();
+                                                                const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                                const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                                setImageDragState({
+                                                                    id: imgObj.id,
+                                                                    action: 'rotate',
+                                                                    startX: clientX,
+                                                                    startY: clientY,
+                                                                    startObj: { ...imgObj }
+                                                                });
+                                                            }}
+                                                            onPointerDown={(e) => {
+                                                                e.stopPropagation();
+                                                                const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                                const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                                setImageDragState({
+                                                                    id: imgObj.id,
+                                                                    action: 'rotate',
+                                                                    startX: clientX,
+                                                                    startY: clientY,
+                                                                    startObj: { ...imgObj }
+                                                                });
+                                                            }}
+                                                        >
+                                                            <RotateCw className="w-3.5 h-3.5" />
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+
+                                {/* Static Unrotated Floating Toolbar & Adjustments Popover positioned cleanly above rotated bounding box */}
+                                {isSelected && (
+                                    <div
+                                        className="absolute pointer-events-auto select-none"
+                                        style={{
+                                            left: cx,
+                                            top: imgMinY - 14,
+                                            transform: 'translate(-50%, -100%)',
+                                            zIndex: 60,
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onPointerDown={(e) => e.stopPropagation()}
+                                    >
+                                        {/* Image Quick Actions Toolbar */}
+                                        <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-lg shadow-xl px-2 py-1 text-slate-200">
+                                            <button
+                                                type="button"
                                                 onClick={() => updateSelectedImageFilters({ flipX: !imgObj.flipX })}
                                                 className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${imgObj.flipX ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}
                                                 title="Flip Horizontally"
@@ -6407,6 +6747,7 @@ export default function Whiteboard({
                                                 <FlipHorizontal className="w-3.5 h-3.5" />
                                             </button>
                                             <button
+                                                type="button"
                                                 onClick={() => updateSelectedImageFilters({ flipY: !imgObj.flipY })}
                                                 className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${imgObj.flipY ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}
                                                 title="Flip Vertically"
@@ -6415,9 +6756,10 @@ export default function Whiteboard({
                                             </button>
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
                                             <button
+                                                type="button"
                                                 onClick={() => setShowImageAdjustModal(prev => !prev)}
-                                                className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showImageAdjustModal || (imgObj.brightness && imgObj.brightness !== 100) || (imgObj.contrast && imgObj.contrast !== 100) || (imgObj.sharpness && imgObj.sharpness > 0) ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}
-                                                title="Adjust Image Quality & Filters"
+                                                className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showImageAdjustModal || (imgObj.brightness && imgObj.brightness !== 100) || (imgObj.contrast && imgObj.contrast !== 100) || (imgObj.sharpness && imgObj.sharpness > 0) || imgObj.borderWidth ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}
+                                                title="Adjust Image Quality, Borders & Filters"
                                             >
                                                 <Sliders className="w-3.5 h-3.5" />
                                             </button>
@@ -6426,13 +6768,9 @@ export default function Whiteboard({
                                         {/* Image Adjustments Popover */}
                                         {showImageAdjustModal && (
                                             <div
-                                                className="absolute -top-72 left-1/2 -translate-x-1/2 w-68 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl shadow-2xl p-3 z-50 pointer-events-auto text-slate-200 flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-150 max-h-72 overflow-y-auto"
-                                                style={{
-                                                    transform: 'translateX(-50%)',
-                                                    transformOrigin: 'center center'
-                                                }}
+                                                className="mt-2 w-72 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl shadow-2xl p-3 text-slate-200 flex flex-col gap-2.5 max-h-80 overflow-y-auto animate-in fade-in zoom-in-95 duration-150"
                                                 onClick={(e) => e.stopPropagation()}
-                                                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                                onMouseDown={(e) => e.stopPropagation()}
                                                 onPointerDown={(e) => e.stopPropagation()}
                                             >
                                                 <div className="flex items-center justify-between pb-1 border-b border-slate-800">
@@ -6440,7 +6778,8 @@ export default function Whiteboard({
                                                         <Sliders className="w-3.5 h-3.5 text-indigo-400" /> Image Adjustments
                                                     </span>
                                                     <button
-                                                        onClick={() => updateSelectedImageFilters({ brightness: 100, contrast: 100, sharpness: 0, saturation: 100, opacity: 100, blur: 0, borderWidth: 0 })}
+                                                        type="button"
+                                                        onClick={() => updateSelectedImageFilters({ brightness: 100, contrast: 100, sharpness: 0, saturation: 100, opacity: 100, blur: 0, borderWidth: 0, borderRadius: 0, borderStyle: 'solid', borderColor: '#3b82f6' })}
                                                         className="text-[10px] text-indigo-400 hover:text-indigo-300 hover:underline"
                                                     >
                                                         Reset
@@ -6537,166 +6876,82 @@ export default function Whiteboard({
                                                     />
                                                 </div>
 
-                                                {/* Border Styling */}
+                                                {/* Corner Radius */}
                                                 <div className="flex flex-col gap-1 pt-1 border-t border-slate-800">
-                                                    <div className="text-[10px] text-slate-400 font-medium">Border Frame</div>
+                                                    <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                                                        <span>Corner Radius</span>
+                                                        <span className="font-mono text-white">{imgObj.borderRadius ?? 0}px</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="0"
+                                                        max="60"
+                                                        value={imgObj.borderRadius ?? 0}
+                                                        onChange={(e) => updateSelectedImageFilters({ borderRadius: parseInt(e.target.value, 10) })}
+                                                        onPointerDown={(e) => e.stopPropagation()}
+                                                        onTouchStart={(e) => e.stopPropagation()}
+                                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                    />
+                                                </div>
+
+                                                {/* Border Frame & Style */}
+                                                <div className="flex flex-col gap-1.5 pt-1 border-t border-slate-800">
+                                                    <div className="text-[10px] text-slate-400 font-medium">Border Width</div>
                                                     <div className="flex items-center gap-1">
-                                                        {[0, 2, 4, 6].map(bw => (
+                                                        {[0, 1, 2, 4, 8].map(bw => (
                                                             <button
                                                                 key={bw}
                                                                 type="button"
-                                                                onClick={() => updateSelectedImageFilters({ borderWidth: bw, borderColor: imgObj.borderColor || '#3b82f6' })}
-                                                                className={`px-2 py-0.5 rounded text-[10px] ${imgObj.borderWidth === bw ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                                                onClick={() => updateSelectedImageFilters({ borderWidth: bw, borderColor: imgObj.borderColor || '#3b82f6', borderStyle: imgObj.borderStyle || 'solid' })}
+                                                                className={`flex-1 py-0.5 rounded text-[10px] transition ${imgObj.borderWidth === bw ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
                                                             >
                                                                 {bw === 0 ? 'None' : `${bw}px`}
                                                             </button>
                                                         ))}
                                                     </div>
+
+                                                    {(imgObj.borderWidth || 0) > 0 && (
+                                                        <>
+                                                            <div className="text-[10px] text-slate-400 font-medium mt-1">Border Style</div>
+                                                            <div className="grid grid-cols-4 gap-1">
+                                                                {['solid', 'dashed', 'dotted', 'double'].map(st => (
+                                                                    <button
+                                                                        key={st}
+                                                                        type="button"
+                                                                        onClick={() => updateSelectedImageFilters({ borderStyle: st })}
+                                                                        className={`py-0.5 rounded text-[10px] capitalize transition ${(imgObj.borderStyle || 'solid') === st ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                                                    >
+                                                                        {st}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+
+                                                            <div className="text-[10px] text-slate-400 font-medium mt-1">Border Color</div>
+                                                            <div className="flex items-center gap-1 flex-wrap">
+                                                                {['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#000000', '#ffffff'].map(clr => (
+                                                                    <button
+                                                                        key={clr}
+                                                                        type="button"
+                                                                        onClick={() => updateSelectedImageFilters({ borderColor: clr })}
+                                                                        className={`w-5 h-5 rounded-full border-2 transition ${imgObj.borderColor === clr ? 'border-white scale-110' : 'border-slate-600 hover:border-slate-400'}`}
+                                                                        style={{ backgroundColor: clr }}
+                                                                        title={clr}
+                                                                    />
+                                                                ))}
+                                                                <input
+                                                                    type="color"
+                                                                    value={imgObj.borderColor || '#3b82f6'}
+                                                                    onChange={(e) => updateSelectedImageFilters({ borderColor: e.target.value })}
+                                                                    className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
+                                                                    title="Custom Color"
+                                                                />
+                                                            </div>
+                                                        </>
+                                                    )}
                                                 </div>
                                             </div>
                                         )}
-
-                                        {!imgObj.isLocked && (
-                                            <>
-                                                {/* Corner Resize Handles */}
-                                                {['nw', 'ne', 'sw', 'se'].map(corner => {
-                                                    const pos = {
-                                                        nw: { left: -handleSize / 2, top: -handleSize / 2, cursor: 'nwse-resize' },
-                                                        ne: { right: -handleSize / 2, top: -handleSize / 2, cursor: 'nesw-resize' },
-                                                        sw: { left: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nesw-resize' },
-                                                        se: { right: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nwse-resize' },
-                                                    }[corner];
-
-                                                    const handleResizeStart = (e) => {
-                                                        e.stopPropagation();
-                                                        if (e.cancelable) e.preventDefault();
-                                                        const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-                                                        const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-                                                        setImageDragState({
-                                                            id: imgObj.id,
-                                                            action: `resize-${corner}`,
-                                                            startX: clientX,
-                                                            startY: clientY,
-                                                            startObj: { ...imgObj }
-                                                        });
-                                                    };
-
-                                                    return (
-                                                        <div
-                                                            key={corner}
-                                                            data-handle={corner}
-                                                            className="absolute bg-white border-2 border-indigo-600 rounded-sm shadow-md z-30"
-                                                            style={{
-                                                                width: handleSize + 2,
-                                                                height: handleSize + 2,
-                                                                touchAction: 'none',
-                                                                pointerEvents: 'auto',
-                                                                ...pos,
-                                                            }}
-                                                            onMouseDown={handleResizeStart}
-                                                            onPointerDown={handleResizeStart}
-                                                            onTouchStart={handleResizeStart}
-                                                        />
-                                                    );
-                                                })}
-
-                                                {/* Edge Resize Handles */}
-                                                {['n', 'e', 's', 'w'].map(edge => {
-                                                    const pos = {
-                                                        n: { left: '50%', top: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
-                                                        s: { left: '50%', bottom: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
-                                                        e: { right: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
-                                                        w: { left: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
-                                                    }[edge];
-
-                                                    const handleEdgeResizeStart = (e) => {
-                                                        e.stopPropagation();
-                                                        if (e.cancelable) e.preventDefault();
-                                                        const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-                                                        const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-                                                        setImageDragState({
-                                                            id: imgObj.id,
-                                                            action: `resize-${edge}`,
-                                                            startX: clientX,
-                                                            startY: clientY,
-                                                            startObj: { ...imgObj }
-                                                        });
-                                                    };
-
-                                                    return (
-                                                        <div
-                                                            key={edge}
-                                                            data-handle={edge}
-                                                            className="absolute bg-white border-2 border-indigo-600 rounded-sm shadow-md z-30"
-                                                            style={{
-                                                                width: handleSize,
-                                                                height: handleSize,
-                                                                touchAction: 'none',
-                                                                pointerEvents: 'auto',
-                                                                ...pos,
-                                                            }}
-                                                            onMouseDown={handleEdgeResizeStart}
-                                                            onPointerDown={handleEdgeResizeStart}
-                                                            onTouchStart={handleEdgeResizeStart}
-                                                        />
-                                                    );
-                                                })}
-
-                                                {/* Rotate Handle */}
-                                                <div
-                                                    className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center z-30"
-                                                    style={{ top: -35, pointerEvents: 'auto' }}
-                                                >
-                                                    <div className="w-px h-5 bg-indigo-500" />
-                                                    <div
-                                                        data-handle="rotate"
-                                                        className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center cursor-grab hover:bg-indigo-700 shadow-md transition-transform hover:scale-110 active:cursor-grabbing"
-                                                        style={{ cursor: 'grab', touchAction: 'none', pointerEvents: 'auto' }}
-                                                        onMouseDown={(e) => {
-                                                            e.stopPropagation();
-                                                            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-                                                            const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-                                                            setImageDragState({
-                                                                id: imgObj.id,
-                                                                action: 'rotate',
-                                                                startX: clientX,
-                                                                startY: clientY,
-                                                                startObj: { ...imgObj }
-                                                            });
-                                                        }}
-                                                        onPointerDown={(e) => {
-                                                            e.stopPropagation();
-                                                            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-                                                            const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-                                                            setImageDragState({
-                                                                id: imgObj.id,
-                                                                action: 'rotate',
-                                                                startX: clientX,
-                                                                startY: clientY,
-                                                                startObj: { ...imgObj }
-                                                            });
-                                                        }}
-                                                    >
-                                                        <RotateCw className="w-3.5 h-3.5" />
-                                                    </div>
-                                                </div>
-
-                                                {/* Delete Button */}
-                                                <button
-                                                    className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center z-30 shadow-lg text-white transition-transform hover:scale-110"
-                                                    style={{ pointerEvents: 'auto' }}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setImageObjects(prev => prev.filter(i => i.id !== imgObj.id));
-                                                        setSelectedImageId(null);
-                                                        saveToHistory();
-                                                    }}
-                                                >
-                                                    <X className="w-3.5 h-3.5" />
-                                                </button>
-                                            </>
-                                        )}
-                                    </>
+                                    </div>
                                 )}
                             </div>
                         );
@@ -6704,7 +6959,7 @@ export default function Whiteboard({
 
                     {/* Text Objects Layer - Selectable, Movable, Resizable, Rotatable, Editable */}
                     {textObjects.map((txtObj) => {
-                        const isSelected = (selectedTextIds.length > 0 ? selectedTextIds[0] : null) === txtObj.id;
+                        const isSelected = selectedTextIds.includes(txtObj.id);
                         const isEditing = editingTextId === txtObj.id;
                         const handleSize = 10;
 
@@ -6730,8 +6985,13 @@ export default function Whiteboard({
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     if (!isEditing) {
-                                        setSelectedTextIds([txtObj.id]);
-                                        setSelectedImageId(null);
+                                        if (e.ctrlKey || e.metaKey) {
+                                            setSelectedTextIds(prev => prev.includes(txtObj.id) ? prev.filter(id => id !== txtObj.id) : [...prev, txtObj.id]);
+                                        } else {
+                                            setSelectedTextIds([txtObj.id]);
+                                            setSelectedImageId(null);
+                                            setSelectedShapeIds([]);
+                                        }
                                     }
                                 }}
                                 onDoubleClick={(e) => {
@@ -6749,9 +7009,9 @@ export default function Whiteboard({
                                             setSelectedTextIds(prev => prev.includes(txtObj.id) ? prev.filter(id => id !== txtObj.id) : [...prev, txtObj.id]);
                                         } else {
                                             setSelectedTextIds([txtObj.id]);
+                                            setSelectedImageId(null);
+                                            setSelectedShapeIds([]);
                                         }
-                                        setSelectedImageId(null);
-                                        setSelectedShapeIds([]);
                                         // allow drag state to be set
                                     }
                                     if (e.target.dataset.handle) return;
@@ -6762,7 +7022,9 @@ export default function Whiteboard({
                                         action: 'move',
                                         startX: e.clientX,
                                         startY: e.clientY,
-                                        startObj: { ...txtObj }
+                                        startObj: { ...txtObj },
+                                        startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id) || t.id === txtObj.id),
+                                        startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id))
                                     });
                                 }}
                             >
@@ -7260,6 +7522,14 @@ export default function Whiteboard({
                                     </g>
                                 );
                             }
+                            if (DOMAIN_SHAPES && DOMAIN_SHAPES[shpObj.type]) {
+                                const ds = DOMAIN_SHAPES[shpObj.type];
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        {ds.render(shpObj.width, shpObj.height, fill, shpObj.color, shpObj.strokeWidth || 2)}
+                                    </g>
+                                );
+                            }
                             return null;
                         };
 
@@ -7315,10 +7585,10 @@ export default function Whiteboard({
                                                 }
                                                 setSelectedShapeIds(activeSelectionIds);
                                             }
+                                            setSelectedImageId(null);
+                                            setSelectedTextIds([]);
+                                            setEditingTextId(null);
                                         }
-                                        setSelectedImageId(null);
-                                        setSelectedTextIds([]);
-                                        setEditingTextId(null);
                                     } else if (tool === 'laser') {
                                         setSelectedImageId(null);
                                         setSelectedTextIds([]);
@@ -7427,6 +7697,7 @@ export default function Whiteboard({
                                             { anchor: 'right', label: 'E', style: { left: '100%', top: '50%' } },
                                             { anchor: 'bottom', label: 'S', style: { left: '50%', top: '100%' } },
                                             { anchor: 'left', label: 'W', style: { left: 0, top: '50%' } },
+                                            { anchor: 'center', label: 'C', style: { left: '50%', top: '50%' } },
                                         ].map(({ anchor, label, style }) => (
                                             <div
                                                 key={anchor}
@@ -7443,7 +7714,7 @@ export default function Whiteboard({
                                                     }, 700);
                                                 }}
                                                 onPointerDown={(e) => {
-                                                    startConnectorDrag(shpObj, anchor, null, e);
+                                                    startConnectorDrag(shpObj, anchor, activeConnectorPreset, e);
                                                 }}
                                             >
                                                 <div className="w-1.5 h-1.5 rounded-full bg-white pointer-events-none" />
@@ -7473,9 +7744,18 @@ export default function Whiteboard({
                                                             <button
                                                                 key={preset.id}
                                                                 type="button"
-                                                                className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-blue-600/80 active:bg-blue-700 text-slate-300 hover:text-white transition-all cursor-grab active:cursor-grabbing group/btn"
-                                                                title={`${preset.label} (Drag to connect)`}
+                                                                className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all cursor-grab active:cursor-grabbing group/btn ${
+                                                                    activeConnectorPreset?.id === preset.id 
+                                                                        ? 'bg-blue-600 text-white shadow' 
+                                                                        : 'hover:bg-slate-700 text-slate-300 hover:text-white'
+                                                                }`}
+                                                                title={`${preset.label} (Click to set active, drag to connect)`}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setActiveConnectorPreset(preset);
+                                                                }}
                                                                 onPointerDown={(e) => {
+                                                                    setActiveConnectorPreset(preset);
                                                                     startConnectorDrag(shpObj, anchor, preset, e);
                                                                 }}
                                                             >
@@ -7947,6 +8227,7 @@ export default function Whiteboard({
                                 key={conn.id}
                                 connector={conn}
                                 shapes={(pageShapeObjects[currentPage] || []).filter(s => s.type !== 'connector')}
+                                images={pageImageObjects[currentPage] || []}
                                 isSelected={selectedShapeIds.includes(conn.id)}
                                 onSelect={(id) => {
                                     setSelectedShapeIds([id]);
@@ -8291,17 +8572,57 @@ export default function Whiteboard({
                     <WhiteboardMinimap
                         canvasWidth={canvasWidth}
                         canvasHeight={canvasHeight}
+                        shapes={shapeObjects}
                         shapeObjects={shapeObjects}
+                        texts={textObjects}
                         textObjects={textObjects}
+                        images={imageObjects}
                         imageObjects={imageObjects}
+                        connectors={(pageShapeObjects[currentPage] || []).filter(s => s.type === 'connector')}
                         zoomLevel={zoomLevel}
+                        setZoomLevel={setZoomLevel}
                         onZoomChange={setZoomLevel}
                         panOffset={panOffset}
+                        setPanOffset={setPanOffset}
                         onPanChange={setPanOffset}
+                        containerRef={canvasWrapperRef}
                         viewportWidth={canvasWrapperRef.current?.clientWidth || canvasWidth}
                         viewportHeight={canvasWrapperRef.current?.clientHeight || canvasHeight}
                     />
                 </div>
+
+                {/* Domain-Specific Shape Library Modal */}
+                <DomainShapeLibraryModal
+                    isOpen={showDomainLibrary}
+                    onClose={() => setShowDomainLibrary(false)}
+                    onSelectShape={(symbol) => {
+                        const wrapper = canvasWrapperRef.current;
+                        const cx = wrapper ? (wrapper.clientWidth / 2 - (symbol.defaultWidth || 120) / 2) : 200;
+                        const cy = wrapper ? (wrapper.clientHeight / 2 - (symbol.defaultHeight || 120) / 2) : 200;
+                        const newShape = {
+                            id: Date.now().toString(),
+                            type: symbol.id,
+                            x: Math.max(20, cx),
+                            y: Math.max(20, cy),
+                            width: symbol.defaultWidth || 120,
+                            height: symbol.defaultHeight || 120,
+                            color: color || '#3b82f6',
+                            fillColor: 'transparent',
+                            strokeWidth: strokeWidth || 2,
+                            rotation: 0,
+                            name: symbol.name,
+                            category: symbol.category
+                        };
+                        setPageShapeObjects(prev => ({
+                            ...prev,
+                            [currentPage]: [...(prev[currentPage] || []), newShape]
+                        }));
+                        setTool('select');
+                        setSelectedShapeIds([newShape.id]);
+                        setShowDomainLibrary(false);
+                        toast.success(`Added ${symbol.name}`, { icon: '📐' });
+                    }}
+                />
 
                 {/* Full-surface Loading Overlay & Interaction Lock */}
                 {!isStateLoaded && (

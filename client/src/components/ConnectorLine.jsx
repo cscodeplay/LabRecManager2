@@ -32,6 +32,7 @@ export const getAnchorPoint = (shape, anchor, otherPoint = null) => {
         case 'right': unrotatedPt = { x: (shape.x || 0) + (shape.width || 100), y: center.y }; break;
         case 'bottom': unrotatedPt = { x: center.x, y: (shape.y || 0) + (shape.height || 100) }; break;
         case 'left': unrotatedPt = { x: shape.x || 0, y: center.y }; break;
+        case 'center': unrotatedPt = center; break;
         default: return center;
     }
 
@@ -65,7 +66,7 @@ export const findNearestShape = (point, shapes, threshold = 30) => {
     let minDistance = threshold;
     let bestAnchor = null;
 
-    const anchors = ['top', 'right', 'bottom', 'left'];
+    const anchors = ['top', 'right', 'bottom', 'left', 'center'];
 
     shapes.forEach(shape => {
         anchors.forEach(anchor => {
@@ -186,7 +187,7 @@ export const calculateAngle = (p1, p2) => {
     return (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI;
 };
 
-export default function ConnectorLine({ connector, shapes = [], isSelected, onUpdate, onSelect, scale = 1 }) {
+export default function ConnectorLine({ connector, shapes = [], images = [], isSelected, onUpdate, onSelect, scale = 1 }) {
     const {
         id,
         sourceId,
@@ -213,9 +214,12 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
     const snapTargetRef = useRef(null);
     const draggingEndpointRef = useRef(null);
 
+    // Combine shapes and images for connector hook resolution
+    const allConnectables = useMemo(() => [...shapes, ...(images || [])], [shapes, images]);
+
     // Resolve start and end points
-    const sourceShape = useMemo(() => shapes.find(s => s.id === sourceId), [shapes, sourceId]);
-    const targetShape = useMemo(() => shapes.find(s => s.id === targetId), [shapes, targetId]);
+    const sourceShape = useMemo(() => allConnectables.find(s => s.id === sourceId), [allConnectables, sourceId]);
+    const targetShape = useMemo(() => allConnectables.find(s => s.id === targetId), [allConnectables, targetId]);
 
     // If neither shape exists and neither endpoint is currently being dragged, return null
     if (!sourceShape && !targetShape && !draggingEndpoint) {
@@ -274,7 +278,7 @@ export default function ConnectorLine({ connector, shapes = [], isSelected, onUp
             setDragPoint(nextPoint);
 
             if (draggingEndpointRef.current === 'source' || draggingEndpointRef.current === 'target') {
-                const snap = findNearestShape(nextPoint, shapes, 45);
+                const snap = findNearestShape(nextPoint, allConnectables, 45);
                 snapTargetRef.current = snap;
                 setSnapTarget(snap);
             }

@@ -1,49 +1,77 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { ZoomIn, ZoomOut, RotateCcw, Map, ChevronUp, ChevronDown } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCcw, Map, ChevronUp, ChevronDown, Sliders } from 'lucide-react';
+import { getAnchorPoint } from './ConnectorLine';
 
 export default function WhiteboardMinimap({
     zoomLevel = 1,
     setZoomLevel,
+    onZoomChange,
     panOffset = { x: 0, y: 0 },
     setPanOffset,
+    onPanChange,
     canvasWidth = 1920,
     canvasHeight = 1080,
     containerRef,
     shapes = [],
+    shapeObjects = [],
     texts = [],
-    images = []
+    textObjects = [],
+    images = [],
+    imageObjects = []
 }) {
-    const [isExpanded, setIsExpanded] = useState(true);
+    // Keep canvas minimap default invisible; accessed from zoom bar
+    const [isExpanded, setIsExpanded] = useState(false);
     const [isDraggingViewport, setIsDraggingViewport] = useState(false);
     const minimapRef = useRef(null);
 
-    const MAP_WIDTH = 180;
-    const MAP_HEIGHT = 101; // 16:9 ratio
+    // Normalize callbacks and object lists
+    const changeZoom = useCallback((updater) => {
+        const fn = setZoomLevel || onZoomChange;
+        if (typeof fn === 'function') {
+            fn(updater);
+        }
+    }, [setZoomLevel, onZoomChange]);
+
+    const changePan = useCallback((updater) => {
+        const fn = setPanOffset || onPanChange;
+        if (typeof fn === 'function') {
+            fn(updater);
+        }
+    }, [setPanOffset, onPanChange]);
+
+    const resolvedShapes = useMemo(() => (shapes && shapes.length > 0 ? shapes : shapeObjects) || [], [shapes, shapeObjects]);
+    const resolvedTexts = useMemo(() => (texts && texts.length > 0 ? texts : textObjects) || [], [texts, textObjects]);
+    const resolvedImages = useMemo(() => (images && images.length > 0 ? images : imageObjects) || [], [images, imageObjects]);
+
+    const MAP_WIDTH = 200;
+    const MAP_HEIGHT = 112; // 16:9 ratio
     const scaleX = MAP_WIDTH / canvasWidth;
     const scaleY = MAP_HEIGHT / canvasHeight;
 
     // Viewport calculation
     const viewportRect = useMemo(() => {
-        if (!containerRef?.current) {
-            return { x: 0, y: 0, width: MAP_WIDTH, height: MAP_HEIGHT };
+        let containerW = 1200;
+        let containerH = 700;
+        if (containerRef?.current) {
+            containerW = containerRef.current.clientWidth || 1200;
+            containerH = containerRef.current.clientHeight || 700;
+        } else if (typeof window !== 'undefined') {
+            containerW = window.innerWidth;
+            containerH = window.innerHeight;
         }
-        const container = containerRef.current;
-        const containerW = container.clientWidth || 1200;
-        const containerH = container.clientHeight || 700;
 
-        // How much of the 1920x1080 canvas is visible inside container given zoomLevel and panOffset
         const visibleWidth = Math.min(canvasWidth, (containerW / zoomLevel));
         const visibleHeight = Math.min(canvasHeight, (containerH / zoomLevel));
 
         const leftCanvas = -panOffset.x / zoomLevel;
         const topCanvas = -panOffset.y / zoomLevel;
 
-        const vpX = Math.max(0, Math.min(MAP_WIDTH - 20, leftCanvas * scaleX));
-        const vpY = Math.max(0, Math.min(MAP_HEIGHT - 15, topCanvas * scaleY));
-        const vpW = Math.max(20, Math.min(MAP_WIDTH, visibleWidth * scaleX));
-        const vpH = Math.max(15, Math.min(MAP_HEIGHT, visibleHeight * scaleY));
+        const vpX = Math.max(0, Math.min(MAP_WIDTH - 10, leftCanvas * scaleX));
+        const vpY = Math.max(0, Math.min(MAP_HEIGHT - 10, topCanvas * scaleY));
+        const vpW = Math.max(15, Math.min(MAP_WIDTH, visibleWidth * scaleX));
+        const vpH = Math.max(12, Math.min(MAP_HEIGHT, visibleHeight * scaleY));
 
         return { x: vpX, y: vpY, width: vpW, height: vpH };
     }, [containerRef, zoomLevel, panOffset, canvasWidth, canvasHeight, scaleX, scaleY]);
@@ -52,23 +80,29 @@ export default function WhiteboardMinimap({
     const handleMinimapPointer = useCallback((e) => {
         if (!minimapRef.current) return;
         const rect = minimapRef.current.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const clickY = e.clientY - rect.top;
+        const clickX = Math.max(0, Math.min(MAP_WIDTH, e.clientX - rect.left));
+        const clickY = Math.max(0, Math.min(MAP_HEIGHT, e.clientY - rect.top));
 
         // Convert minimap click to canvas coordinates
         const targetCanvasX = (clickX / MAP_WIDTH) * canvasWidth;
         const targetCanvasY = (clickY / MAP_HEIGHT) * canvasHeight;
 
-        const container = containerRef?.current;
-        const containerW = container ? container.clientWidth : 1200;
-        const containerH = container ? container.clientHeight : 700;
+        let containerW = 1200;
+        let containerH = 700;
+        if (containerRef?.current) {
+            containerW = containerRef.current.clientWidth || 1200;
+            containerH = containerRef.current.clientHeight || 700;
+        } else if (typeof window !== 'undefined') {
+            containerW = window.innerWidth;
+            containerH = window.innerHeight;
+        }
 
         // Center viewport at target canvas point
         const newPanX = -(targetCanvasX * zoomLevel - containerW / 2);
         const newPanY = -(targetCanvasY * zoomLevel - containerH / 2);
 
-        setPanOffset({ x: newPanX, y: newPanY });
-    }, [canvasWidth, canvasHeight, containerRef, zoomLevel, setPanOffset]);
+        changePan({ x: newPanX, y: newPanY });
+    }, [canvasWidth, canvasHeight, containerRef, zoomLevel, changePan]);
 
     useEffect(() => {
         if (!isDraggingViewport) return;
@@ -90,21 +124,26 @@ export default function WhiteboardMinimap({
     }, [isDraggingViewport, handleMinimapPointer]);
 
     const zoomIn = () => {
-        setZoomLevel(prev => Math.min(3.0, Math.round((prev + 0.15) * 100) / 100));
+        changeZoom(prev => Math.min(3.0, Math.round(((typeof prev === 'number' ? prev : 1) + 0.15) * 100) / 100));
     };
 
     const zoomOut = () => {
-        setZoomLevel(prev => Math.max(0.25, Math.round((prev - 0.15) * 100) / 100));
+        changeZoom(prev => Math.max(0.25, Math.round(((typeof prev === 'number' ? prev : 1) - 0.15) * 100) / 100));
     };
 
     const resetZoom = () => {
-        setZoomLevel(1);
-        setPanOffset({ x: 0, y: 0 });
+        changeZoom(1);
+        changePan({ x: 0, y: 0 });
+    };
+
+    const handleSliderChange = (e) => {
+        const val = parseFloat(e.target.value) / 100;
+        changeZoom(Math.max(0.25, Math.min(3.0, Math.round(val * 100) / 100)));
     };
 
     return (
-        <div className="absolute bottom-4 right-4 z-40 flex flex-col items-end gap-2 pointer-events-auto select-none">
-            {/* Minimap Box */}
+        <div className="flex flex-col items-end gap-2 pointer-events-auto select-none">
+            {/* Minimap Expanded Panel */}
             {isExpanded && (
                 <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl p-2.5 flex flex-col gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
                     <div className="flex items-center justify-between px-1">
@@ -131,46 +170,83 @@ export default function WhiteboardMinimap({
                         }}
                     >
                         <svg className="w-full h-full pointer-events-none" viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}>
-                            {/* Render shapes */}
-                            {shapes.filter(s => s.type !== 'connector').map((s) => (
-                                <rect
-                                    key={s.id}
-                                    x={s.x || 0}
-                                    y={s.y || 0}
-                                    width={s.width || 60}
-                                    height={s.height || 40}
-                                    fill={s.fillColor && s.fillColor !== 'transparent' ? s.fillColor : (s.color || '#6366f1')}
-                                    opacity={0.7}
-                                    rx={4}
-                                />
+                            {/* Render regular geometric & domain shapes */}
+                            {resolvedShapes.filter(s => s.type !== 'connector').map((s) => (
+                                <g 
+                                    key={s.id} 
+                                    transform={`rotate(${s.rotation || 0} ${(s.x || 0) + (s.width || 60)/2} ${(s.y || 0) + (s.height || 40)/2})`}
+                                >
+                                    <rect
+                                        x={s.x || 0}
+                                        y={s.y || 0}
+                                        width={s.width || 60}
+                                        height={s.height || 40}
+                                        fill={s.fillColor && s.fillColor !== 'transparent' ? s.fillColor : (s.color || '#6366f1')}
+                                        stroke={s.color || '#4f46e5'}
+                                        strokeWidth={s.strokeWidth || 2}
+                                        opacity={0.75}
+                                        rx={4}
+                                    />
+                                </g>
                             ))}
 
+                            {/* Render Connectors */}
+                            {resolvedShapes.filter(s => s.type === 'connector').map((conn) => {
+                                const src = resolvedShapes.find(s => s.id === conn.sourceId) || resolvedImages.find(i => i.id === conn.sourceId);
+                                const tgt = resolvedShapes.find(s => s.id === conn.targetId) || resolvedImages.find(i => i.id === conn.targetId);
+                                const pt1 = src ? getAnchorPoint(src, conn.sourceAnchor || 'center') : (conn.sourcePoint || { x: 0, y: 0 });
+                                const pt2 = tgt ? getAnchorPoint(tgt, conn.targetAnchor || 'center') : (conn.targetPoint || { x: 100, y: 100 });
+                                return (
+                                    <line
+                                        key={conn.id}
+                                        x1={pt1.x}
+                                        y1={pt1.y}
+                                        x2={pt2.x}
+                                        y2={pt2.y}
+                                        stroke={conn.color || '#6366f1'}
+                                        strokeWidth={Math.max(conn.strokeWidth || 2, 4)}
+                                        strokeOpacity={0.8}
+                                        strokeDasharray={conn.strokeStyle === 'dashed' ? '6 6' : undefined}
+                                    />
+                                );
+                            })}
+
                             {/* Render texts */}
-                            {texts.map((t) => (
-                                <rect
+                            {resolvedTexts.map((t) => (
+                                <g
                                     key={t.id}
-                                    x={t.x || 0}
-                                    y={t.y || 0}
-                                    width={t.width || 120}
-                                    height={t.height || 30}
-                                    fill="#94a3b8"
-                                    opacity={0.5}
-                                    rx={2}
-                                />
+                                    transform={`rotate(${t.rotation || 0} ${(t.x || 0) + (t.width || 120)/2} ${(t.y || 0) + (t.height || 30)/2})`}
+                                >
+                                    <rect
+                                        x={t.x || 0}
+                                        y={t.y || 0}
+                                        width={t.width || 120}
+                                        height={t.height || 30}
+                                        fill={t.bgColor && t.bgColor !== 'transparent' ? t.bgColor : '#94a3b8'}
+                                        opacity={0.6}
+                                        rx={2}
+                                    />
+                                </g>
                             ))}
 
                             {/* Render images */}
-                            {images.map((img) => (
-                                <rect
+                            {resolvedImages.map((img) => (
+                                <g
                                     key={img.id}
-                                    x={img.x || 0}
-                                    y={img.y || 0}
-                                    width={img.width || 100}
-                                    height={img.height || 80}
-                                    fill="#38bdf8"
-                                    opacity={0.6}
-                                    rx={4}
-                                />
+                                    transform={`rotate(${img.rotation || 0} ${(img.x || 0) + (img.width || 100)/2} ${(img.y || 0) + (img.height || 80)/2})`}
+                                >
+                                    <rect
+                                        x={img.x || 0}
+                                        y={img.y || 0}
+                                        width={img.width || 100}
+                                        height={img.height || 80}
+                                        fill="#38bdf8"
+                                        stroke="#0284c7"
+                                        strokeWidth={2}
+                                        opacity={0.7}
+                                        rx={4}
+                                    />
+                                </g>
                             ))}
                         </svg>
 
@@ -188,18 +264,25 @@ export default function WhiteboardMinimap({
                 </div>
             )}
 
-            {/* Bottom Zoom Control Strip */}
+            {/* Bottom Zoom & Minimap Control Bar */}
             <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full shadow-2xl px-3 py-1.5 flex items-center gap-2">
-                {!isExpanded && (
-                    <button
-                        onClick={() => setIsExpanded(true)}
-                        className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-full transition"
-                        title="Expand Minimap"
-                    >
-                        <ChevronUp className="w-3.5 h-3.5" />
-                    </button>
-                )}
+                {/* Minimap Access Toggle Button */}
+                <button
+                    onClick={() => setIsExpanded(prev => !prev)}
+                    className={`p-1.5 rounded-full transition flex items-center gap-1 ${
+                        isExpanded 
+                            ? 'bg-indigo-600 text-white shadow-sm' 
+                            : 'hover:bg-slate-800 text-slate-300 hover:text-white'
+                    }`}
+                    title={isExpanded ? 'Hide Canvas Minimap' : 'Show Canvas Minimap'}
+                >
+                    <Map className="w-3.5 h-3.5 text-indigo-400" />
+                    {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3 text-slate-400" />}
+                </button>
 
+                <div className="w-px h-4 bg-slate-700" />
+
+                {/* Zoom Out */}
                 <button
                     onClick={zoomOut}
                     className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition active:scale-95"
@@ -208,6 +291,19 @@ export default function WhiteboardMinimap({
                     <ZoomOut className="w-3.5 h-3.5" />
                 </button>
 
+                {/* Interactive Zoom Slider */}
+                <input
+                    type="range"
+                    min="25"
+                    max="300"
+                    step="5"
+                    value={Math.round(zoomLevel * 100)}
+                    onChange={handleSliderChange}
+                    className="w-16 sm:w-20 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                    title={`Zoom: ${Math.round(zoomLevel * 100)}%`}
+                />
+
+                {/* Zoom Reset Button */}
                 <button
                     onClick={resetZoom}
                     className="px-2 py-0.5 hover:bg-slate-800 text-slate-200 hover:text-white rounded-md text-xs font-mono font-bold transition flex items-center gap-1"
@@ -217,6 +313,7 @@ export default function WhiteboardMinimap({
                     <RotateCcw className="w-3 h-3 text-slate-400" />
                 </button>
 
+                {/* Zoom In */}
                 <button
                     onClick={zoomIn}
                     className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition active:scale-95"
