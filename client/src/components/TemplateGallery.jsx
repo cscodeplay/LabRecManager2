@@ -5,7 +5,7 @@ import {
     X, Search, Grid, Layers, Brain, Code, BookOpen, 
     ArrowRight, Network, Database, GitBranch, BarChart3, Workflow,
     Users, GitFork, Building2, RefreshCw, Triangle, CircleDot, Filter, Milestone, LayoutGrid, Award,
-    Target, Sliders, CheckSquare, Boxes, Activity, TrendingUp, GitMerge
+    Target, Sliders, CheckSquare, Boxes, Activity, TrendingUp, GitMerge, Sparkles, Wand2, Zap
 } from 'lucide-react';
 import { getAnchorPoint } from './ConnectorLine';
 
@@ -1047,10 +1047,69 @@ const templates = [
                 { id: uuid(), x: 330, y: 40, width: 440, height: 40, text: 'Ansoff Market Expansion Grid', fontSize: 24, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
             ]
         }
+    },
+    {
+        id: 'enterprise_campus_network',
+        title: 'Enterprise Campus Network Architecture',
+        category: 'Networking & Infra',
+        description: 'Hierarchical 3-tier enterprise network topology with Core, Distribution, and Access layers.',
+        icon: <Network className="w-4 h-4 text-sky-500" />,
+        data: {
+            shapes: [
+                { id: 'wan_cloud', type: 'rounded_rect', x: 440, y: 80, width: 160, height: 50, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, radius: 8, text: 'WAN / Internet' },
+                { id: 'firewall_edge', type: 'rounded_rect', x: 440, y: 180, width: 160, height: 50, color: '#dc2626', fillColor: '#fee2e2', strokeWidth: 2, radius: 8, text: 'UTM Firewall' },
+                { id: 'core_switch', type: 'rounded_rect', x: 440, y: 280, width: 160, height: 55, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, radius: 8, text: 'Core Switch L3' },
+                { id: 'dist_a', type: 'rounded_rect', x: 260, y: 390, width: 150, height: 50, color: '#0891b2', fillColor: '#cffafe', strokeWidth: 2, radius: 8, text: 'Dist Switch A' },
+                { id: 'dist_b', type: 'rounded_rect', x: 620, y: 390, width: 150, height: 50, color: '#0891b2', fillColor: '#cffafe', strokeWidth: 2, radius: 8, text: 'Dist Switch B' },
+                { id: 'srv_farm', type: 'rounded_rect', x: 160, y: 500, width: 130, height: 45, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, radius: 6, text: 'Server Farm' },
+                { id: 'ap_wifi', type: 'rounded_rect', x: 340, y: 500, width: 130, height: 45, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, radius: 6, text: 'Wi-Fi AP' },
+                { id: 'pc_lan', type: 'rounded_rect', x: 560, y: 500, width: 130, height: 45, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, radius: 6, text: 'Workstations' },
+                { id: 'db_cluster', type: 'rounded_rect', x: 740, y: 500, width: 130, height: 45, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, radius: 6, text: 'DB Cluster' },
+
+                // Orthogonal Connectors with labels
+                { id: uuid(), type: 'connector', sourceId: 'wan_cloud', targetId: 'firewall_edge', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#0284c7', strokeWidth: 2, text: '1 Gbps Fiber' },
+                { id: uuid(), type: 'connector', sourceId: 'firewall_edge', targetId: 'core_switch', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#dc2626', strokeWidth: 2, text: 'DMZ Trunk' },
+                { id: uuid(), type: 'connector', sourceId: 'core_switch', targetId: 'dist_a', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#4f46e5', strokeWidth: 2, text: '10G Uplink' },
+                { id: uuid(), type: 'connector', sourceId: 'core_switch', targetId: 'dist_b', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#4f46e5', strokeWidth: 2, text: '10G Uplink' },
+                { id: uuid(), type: 'connector', sourceId: 'dist_a', targetId: 'srv_farm', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#0891b2', strokeWidth: 2, text: 'VLAN 10' },
+                { id: uuid(), type: 'connector', sourceId: 'dist_a', targetId: 'ap_wifi', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#0891b2', strokeWidth: 2, text: 'PoE+ Link' },
+                { id: uuid(), type: 'connector', sourceId: 'dist_b', targetId: 'pc_lan', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#0891b2', strokeWidth: 2, text: 'VLAN 20' },
+                { id: uuid(), type: 'connector', sourceId: 'dist_b', targetId: 'db_cluster', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#0891b2', strokeWidth: 2, text: 'VLAN 30' }
+            ],
+            texts: [
+                { id: uuid(), x: 360, y: 25, width: 340, height: 35, text: 'Campus Enterprise Network', fontSize: 22, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
+    },
+    {
+        id: 'dc_circuit_simulation',
+        title: 'DC Electrical Circuit & Series Resistors',
+        category: 'Science & STEM',
+        description: 'Complete closed-loop direct current circuit showing battery, current flow, ammeter, and series loads.',
+        icon: <Zap className="w-4 h-4 text-amber-500" />,
+        data: {
+            shapes: [
+                { id: 'dc_source', type: 'rounded_rect', x: 200, y: 250, width: 120, height: 60, color: '#f59e0b', fillColor: '#fef3c7', strokeWidth: 2, radius: 8, text: 'DC Battery\n(12V)' },
+                { id: 'sw_1', type: 'rounded_rect', x: 420, y: 150, width: 110, height: 50, color: '#10b981', fillColor: '#d1fae5', strokeWidth: 2, radius: 8, text: 'Switch\n(Closed)' },
+                { id: 'res_1', type: 'rounded_rect', x: 620, y: 150, width: 110, height: 50, color: '#6366f1', fillColor: '#e0e7ff', strokeWidth: 2, radius: 8, text: 'Resistor R1\n(100 Ω)' },
+                { id: 'res_2', type: 'rounded_rect', x: 620, y: 350, width: 110, height: 50, color: '#6366f1', fillColor: '#e0e7ff', strokeWidth: 2, radius: 8, text: 'Resistor R2\n(200 Ω)' },
+                { id: 'ammeter_node', type: 'circle', x: 420, y: 340, width: 70, height: 70, color: '#16a34a', fillColor: '#f0fdf4', strokeWidth: 2, text: 'A\n40mA' },
+
+                // Closed Circuit Orthogonal Wires
+                { id: uuid(), type: 'connector', sourceId: 'dc_source', targetId: 'sw_1', sourceAnchor: 'top', targetAnchor: 'left', pathType: 'orthogonal', color: '#dc2626', strokeWidth: 2.5, text: '+12V Rail' },
+                { id: uuid(), type: 'connector', sourceId: 'sw_1', targetId: 'res_1', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#dc2626', strokeWidth: 2.5, text: 'I = 40mA' },
+                { id: uuid(), type: 'connector', sourceId: 'res_1', targetId: 'res_2', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#334155', strokeWidth: 2.5, text: 'V_node = 8V' },
+                { id: uuid(), type: 'connector', sourceId: 'res_2', targetId: 'ammeter_node', sourceAnchor: 'left', targetAnchor: 'right', pathType: 'straight', color: '#334155', strokeWidth: 2.5 },
+                { id: uuid(), type: 'connector', sourceId: 'ammeter_node', targetId: 'dc_source', sourceAnchor: 'left', targetAnchor: 'bottom', pathType: 'orthogonal', color: '#0284c7', strokeWidth: 2.5, text: 'Ground Return (0V)' }
+            ],
+            texts: [
+                { id: uuid(), x: 350, y: 70, width: 340, height: 35, text: 'Series DC Circuit (Ohm’s Law)', fontSize: 22, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+            ]
+        }
     }
 ];
 
-const categories = ['All', 'MS Office & SmartArt', 'Org Charts', 'CS Fundamentals', 'AI & ML', 'General'];
+const categories = ['All', 'Networking & Infra', 'Science & STEM', 'MS Office & SmartArt', 'Org Charts', 'CS Fundamentals', 'AI & ML', 'General'];
 
 export default function TemplateGallery({ 
     isOpen, 
@@ -1061,6 +1120,8 @@ export default function TemplateGallery({
 }) {
     const [activeTab, setActiveTab] = useState('All');
     const [searchQuery, setSearchQuery] = useState('');
+    const [aiPrompt, setAiPrompt] = useState('');
+    const [isGeneratingAi, setIsGeneratingAi] = useState(false);
 
     if (!isOpen) return null;
 
@@ -1077,6 +1138,86 @@ export default function TemplateGallery({
         
         onApplyTemplate(templateData);
         onClose();
+    };
+
+    const handleGenerateAiTemplate = (customPrompt) => {
+        const query = (customPrompt || aiPrompt).trim();
+        if (!query) return;
+
+        setIsGeneratingAi(true);
+        setTimeout(() => {
+            setIsGeneratingAi(false);
+            const q = query.toLowerCase();
+            const cleanTitle = query.charAt(0).toUpperCase() + query.slice(1);
+            let generatedData;
+
+            if (q.includes('microservice') || q.includes('tier') || q.includes('cloud') || q.includes('k8s') || q.includes('kubernetes')) {
+                generatedData = {
+                    shapes: [
+                        { id: 'client_apps', type: 'rounded_rect', x: 420, y: 70, width: 180, height: 50, color: '#0284c7', fillColor: '#e0f2fe', strokeWidth: 2, radius: 8, text: 'Client Web / Mobile' },
+                        { id: 'api_gw', type: 'rounded_rect', x: 420, y: 170, width: 180, height: 50, color: '#7c3aed', fillColor: '#ede9fe', strokeWidth: 2, radius: 8, text: 'API Gateway / Ingress' },
+                        { id: 'auth_srv', type: 'rounded_rect', x: 180, y: 280, width: 160, height: 55, color: '#4f46e5', fillColor: '#e0e7ff', strokeWidth: 2, radius: 8, text: 'Auth & User Service' },
+                        { id: 'order_srv', type: 'rounded_rect', x: 420, y: 280, width: 180, height: 55, color: '#0891b2', fillColor: '#cffafe', strokeWidth: 2, radius: 8, text: 'Order Processing API' },
+                        { id: 'payment_srv', type: 'rounded_rect', x: 680, y: 280, width: 160, height: 55, color: '#059669', fillColor: '#d1fae5', strokeWidth: 2, radius: 8, text: 'Payment Gateway' },
+                        { id: 'msg_queue', type: 'rounded_rect', x: 420, y: 390, width: 180, height: 50, color: '#f59e0b', fillColor: '#fef3c7', strokeWidth: 2, radius: 8, text: 'Kafka / RabbitMQ' },
+                        { id: 'db_primary', type: 'rounded_rect', x: 280, y: 500, width: 170, height: 55, color: '#334155', fillColor: '#f1f5f9', strokeWidth: 2, radius: 8, text: 'PostgreSQL DB' },
+                        { id: 'redis_cache', type: 'rounded_rect', x: 570, y: 500, width: 170, height: 55, color: '#dc2626', fillColor: '#fee2e2', strokeWidth: 2, radius: 8, text: 'Redis Cache' },
+
+                        { id: uuid(), type: 'connector', sourceId: 'client_apps', targetId: 'api_gw', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#0284c7', strokeWidth: 2, text: 'HTTPS REST / gRPC' },
+                        { id: uuid(), type: 'connector', sourceId: 'api_gw', targetId: 'auth_srv', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#7c3aed', strokeWidth: 2, text: 'JWT Verify' },
+                        { id: uuid(), type: 'connector', sourceId: 'api_gw', targetId: 'order_srv', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#0891b2', strokeWidth: 2 },
+                        { id: uuid(), type: 'connector', sourceId: 'api_gw', targetId: 'payment_srv', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#059669', strokeWidth: 2 },
+                        { id: uuid(), type: 'connector', sourceId: 'order_srv', targetId: 'msg_queue', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#f59e0b', strokeWidth: 2, text: 'OrderPlaced Event' },
+                        { id: uuid(), type: 'connector', sourceId: 'msg_queue', targetId: 'db_primary', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#334155', strokeWidth: 2 },
+                        { id: uuid(), type: 'connector', sourceId: 'order_srv', targetId: 'redis_cache', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'orthogonal', color: '#dc2626', strokeWidth: 2, text: 'Read/Write Cache' }
+                    ],
+                    texts: [
+                        { id: uuid(), x: 340, y: 20, width: 360, height: 35, text: cleanTitle, fontSize: 22, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+                    ]
+                };
+            } else if (q.includes('photo') || q.includes('bio') || q.includes('cell') || q.includes('respiration') || q.includes('dna')) {
+                generatedData = {
+                    shapes: [
+                        { id: 'sun_energy', type: 'circle', x: 200, y: 120, width: 90, height: 90, color: '#f59e0b', fillColor: '#fef3c7', strokeWidth: 2, text: 'Sunlight (hν)' },
+                        { id: 'chloroplast', type: 'rounded_rect', x: 380, y: 130, width: 170, height: 70, color: '#16a34a', fillColor: '#dcfce7', strokeWidth: 2, radius: 10, text: 'Chloroplast\n(Light Reaction)' },
+                        { id: 'calvin_cycle', type: 'rounded_rect', x: 630, y: 130, width: 170, height: 70, color: '#15803d', fillColor: '#bbf7d0', strokeWidth: 2, radius: 10, text: 'Calvin Cycle\n(Dark Reaction)' },
+                        { id: 'glucose_out', type: 'rounded_rect', x: 630, y: 280, width: 170, height: 60, color: '#854d0e', fillColor: '#fef9c3', strokeWidth: 2, radius: 8, text: 'Glucose (C₆H₁₂O₆)\nHigh Chemical Energy' },
+                        { id: 'mitochondria', type: 'rounded_rect', x: 380, y: 280, width: 170, height: 60, color: '#ea580c', fillColor: '#ffedd5', strokeWidth: 2, radius: 8, text: 'Mitochondria\n(Cell Respiration)' },
+                        { id: 'atp_output', type: 'circle', x: 190, y: 270, width: 90, height: 90, color: '#ef4444', fillColor: '#fee2e2', strokeWidth: 2, text: '36-38 ATP\n(Cell Work)' },
+
+                        { id: uuid(), type: 'connector', sourceId: 'sun_energy', targetId: 'chloroplast', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#f59e0b', strokeWidth: 2, text: 'Photons' },
+                        { id: uuid(), type: 'connector', sourceId: 'chloroplast', targetId: 'calvin_cycle', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#16a34a', strokeWidth: 2, text: 'ATP & NADPH' },
+                        { id: uuid(), type: 'connector', sourceId: 'calvin_cycle', targetId: 'glucose_out', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', color: '#854d0e', strokeWidth: 2, text: 'CO₂ Fixed' },
+                        { id: uuid(), type: 'connector', sourceId: 'glucose_out', targetId: 'mitochondria', sourceAnchor: 'left', targetAnchor: 'right', pathType: 'straight', color: '#ea580c', strokeWidth: 2, text: 'Glycolysis' },
+                        { id: uuid(), type: 'connector', sourceId: 'mitochondria', targetId: 'atp_output', sourceAnchor: 'left', targetAnchor: 'right', pathType: 'straight', color: '#ef4444', strokeWidth: 2, text: 'Oxidative Phosphorylation' }
+                    ],
+                    texts: [
+                        { id: uuid(), x: 330, y: 35, width: 400, height: 35, text: cleanTitle, fontSize: 22, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+                    ]
+                };
+            } else {
+                generatedData = {
+                    shapes: [
+                        { id: 'step_1', type: 'rounded_rect', x: 200, y: 150, width: 150, height: 60, color: '#3b82f6', fillColor: '#eff6ff', strokeWidth: 2, radius: 8, text: '1. Input / Request' },
+                        { id: 'step_2', type: 'rounded_rect', x: 420, y: 150, width: 170, height: 60, color: '#8b5cf6', fillColor: '#f5f3ff', strokeWidth: 2, radius: 8, text: '2. Processing Engine' },
+                        { id: 'step_3', type: 'diamond', x: 670, y: 140, width: 110, height: 80, color: '#f59e0b', fillColor: '#fef3c7', strokeWidth: 2, text: 'Decision?' },
+                        { id: 'step_4a', type: 'rounded_rect', x: 860, y: 90, width: 150, height: 60, color: '#10b981', fillColor: '#ecfdf5', strokeWidth: 2, radius: 8, text: '3A. Success Path' },
+                        { id: 'step_4b', type: 'rounded_rect', x: 860, y: 220, width: 150, height: 60, color: '#ef4444', fillColor: '#fef2f2', strokeWidth: 2, radius: 8, text: '3B. Fallback / Retry' },
+
+                        { id: uuid(), type: 'connector', sourceId: 'step_1', targetId: 'step_2', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#3b82f6', strokeWidth: 2, text: 'Payload' },
+                        { id: uuid(), type: 'connector', sourceId: 'step_2', targetId: 'step_3', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', color: '#8b5cf6', strokeWidth: 2 },
+                        { id: uuid(), type: 'connector', sourceId: 'step_3', targetId: 'step_4a', sourceAnchor: 'top', targetAnchor: 'left', pathType: 'orthogonal', color: '#10b981', strokeWidth: 2, text: 'Valid' },
+                        { id: uuid(), type: 'connector', sourceId: 'step_3', targetId: 'step_4b', sourceAnchor: 'bottom', targetAnchor: 'left', pathType: 'orthogonal', color: '#ef4444', strokeWidth: 2, text: 'Error' }
+                    ],
+                    texts: [
+                        { id: uuid(), x: 360, y: 50, width: 350, height: 35, text: cleanTitle, fontSize: 22, fontWeight: 'bold', fontStyle: 'normal', color: '#0f172a', bgColor: 'transparent', rotation: 0 }
+                    ]
+                };
+            }
+
+            onApplyTemplate(generatedData);
+            onClose();
+        }, 700);
     };
 
     return (
@@ -1109,6 +1250,49 @@ export default function TemplateGallery({
                         >
                             <X className="w-6 h-6" />
                         </button>
+                    </div>
+                </div>
+
+                {/* AI Diagram / Whiteboard Template Generator Bar */}
+                <div className="px-6 py-3.5 bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-purple-900/40 border-b border-blue-500/20 flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                            <Sparkles className="w-4 h-4 text-blue-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                            <input
+                                type="text"
+                                placeholder="✨ Generate complete whiteboard diagram with AI (e.g. 3-tier microservices, star topology LAN, photosynthesis cycle)..."
+                                value={aiPrompt}
+                                onChange={(e) => setAiPrompt(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleGenerateAiTemplate();
+                                }}
+                                className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-blue-500/40 focus:border-blue-400 rounded-lg text-sm text-slate-100 placeholder-slate-400 outline-none"
+                            />
+                        </div>
+                        <button
+                            onClick={() => handleGenerateAiTemplate()}
+                            disabled={isGeneratingAi || !aiPrompt.trim()}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition shrink-0"
+                        >
+                            <Wand2 className="w-4 h-4" />
+                            <span>{isGeneratingAi ? 'Generating Diagram...' : 'Generate with AI'}</span>
+                        </button>
+                    </div>
+                    {/* Quick Suggestions */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto text-xs text-slate-400 pb-0.5 scrollbar-none">
+                        <span className="font-semibold text-blue-300">Quick AI Diagrams:</span>
+                        {['Star Topology LAN', '3-Tier Microservices', 'DC Series Circuit', 'Photosynthesis Flow', 'Kubernetes Architecture'].map((qp) => (
+                            <button
+                                key={qp}
+                                onClick={() => {
+                                    setAiPrompt(qp);
+                                    handleGenerateAiTemplate(qp);
+                                }}
+                                className="px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition whitespace-nowrap text-xs"
+                            >
+                                + {qp}
+                            </button>
+                        ))}
                     </div>
                 </div>
 

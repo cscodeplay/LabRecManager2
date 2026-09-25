@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Trash2 } from 'lucide-react';
 
 // Returns { x, y } for the anchor of a shape, synchronized with rotation and flips
 export const getAnchorPoint = (shape, anchor, otherPoint = null) => {
@@ -86,6 +87,77 @@ export const findNearestShape = (point, shapes, threshold = 30) => {
     return null;
 };
 
+// Helper to compute cubic control points for curved paths
+export const getCurvedControlPoints = (startPt, endPt, sourceAnchor = null, targetAnchor = null) => {
+    const dx = endPt.x - startPt.x;
+    const dy = endPt.y - startPt.y;
+    const dist = Math.hypot(dx, dy);
+
+    let cp1, cp2;
+    const curveOffset = Math.max(25, Math.min(dist * 0.45, 120));
+
+    if (sourceAnchor || targetAnchor) {
+        const getAnchorVector = (anc, fallbackDx, fallbackDy) => {
+            if (anc === 'top') return { x: 0, y: -1 };
+            if (anc === 'bottom') return { x: 0, y: 1 };
+            if (anc === 'left') return { x: -1, y: 0 };
+            if (anc === 'right') return { x: 1, y: 0 };
+            return Math.abs(fallbackDx) >= Math.abs(fallbackDy)
+                ? { x: Math.sign(fallbackDx) || 1, y: 0 }
+                : { x: 0, y: Math.sign(fallbackDy) || 1 };
+        };
+
+        const v1 = getAnchorVector(sourceAnchor, dx, dy);
+        const v2 = getAnchorVector(targetAnchor, -dx, -dy);
+
+        cp1 = { x: startPt.x + v1.x * curveOffset, y: startPt.y + v1.y * curveOffset };
+        cp2 = { x: endPt.x + v2.x * curveOffset, y: endPt.y + v2.y * curveOffset };
+    } else {
+        if (Math.abs(dy) > Math.abs(dx)) {
+            // Vertical connection (e.g. flowchart step 1 -> step 2)
+            const lateralBow = Math.abs(dx) > 10 ? 0 : Math.min(35, dist * 0.2);
+            cp1 = { x: startPt.x + dx * 0.1 + lateralBow, y: startPt.y + dy * 0.5 };
+            cp2 = { x: endPt.x - dx * 0.1 + lateralBow, y: endPt.y - dy * 0.5 };
+        } else {
+            // Horizontal connection
+            const verticalBow = Math.abs(dy) > 10 ? 0 : Math.min(35, dist * 0.2);
+            cp1 = { x: startPt.x + dx * 0.5, y: startPt.y + dy * 0.1 + verticalBow };
+            cp2 = { x: endPt.x - dx * 0.5, y: endPt.y - dy * 0.1 + verticalBow };
+        }
+    }
+    return { cp1, cp2 };
+};
+
+// Returns exact midpoint coordinates for any connector path type
+export const getConnectorMidpoint = (startPt, endPt, pathType = 'curved', waypoint = null, sourceAnchor = null, targetAnchor = null) => {
+    if (!startPt || !endPt) return { x: 0, y: 0 };
+
+    if (pathType === 'straight') {
+        if (waypoint) return waypoint;
+        return { x: (startPt.x + endPt.x) / 2, y: (startPt.y + endPt.y) / 2 };
+    }
+
+    if (pathType === 'orthogonal') {
+        const stepX = waypoint ? waypoint.x : (startPt.x + endPt.x) / 2;
+        return { x: stepX, y: (startPt.y + endPt.y) / 2 };
+    }
+
+    if (pathType === 'curved') {
+        if (waypoint) {
+            // Point at t = 0.5 on quadratic curve with control point cp is precisely waypoint
+            return waypoint;
+        }
+        const { cp1, cp2 } = getCurvedControlPoints(startPt, endPt, sourceAnchor, targetAnchor);
+        // Point on cubic Bezier at t = 0.5: B(0.5) = 1/8 P0 + 3/8 P1 + 3/8 P2 + 1/8 P3
+        return {
+            x: 0.125 * startPt.x + 0.375 * cp1.x + 0.375 * cp2.x + 0.125 * endPt.x,
+            y: 0.125 * startPt.y + 0.375 * cp1.y + 0.375 * cp2.y + 0.125 * endPt.y
+        };
+    }
+
+    return { x: (startPt.x + endPt.x) / 2, y: (startPt.y + endPt.y) / 2 };
+};
+
 // Returns an SVG path string (d attribute) for the connector
 export const getConnectorPath = (startPt, endPt, pathType = 'curved', waypoint = null, sourceAnchor = null, targetAnchor = null) => {
     if (pathType === 'straight') {
@@ -104,43 +176,7 @@ export const getConnectorPath = (startPt, endPt, pathType = 'curved', waypoint =
             return `M ${startPt.x} ${startPt.y} Q ${cpX} ${cpY} ${endPt.x} ${endPt.y}`;
         }
 
-        const dx = endPt.x - startPt.x;
-        const dy = endPt.y - startPt.y;
-        const dist = Math.hypot(dx, dy);
-
-        let cp1, cp2;
-        const curveOffset = Math.max(25, Math.min(dist * 0.45, 120));
-
-        if (sourceAnchor || targetAnchor) {
-            const getAnchorVector = (anc, fallbackDx, fallbackDy) => {
-                if (anc === 'top') return { x: 0, y: -1 };
-                if (anc === 'bottom') return { x: 0, y: 1 };
-                if (anc === 'left') return { x: -1, y: 0 };
-                if (anc === 'right') return { x: 1, y: 0 };
-                return Math.abs(fallbackDx) >= Math.abs(fallbackDy)
-                    ? { x: Math.sign(fallbackDx) || 1, y: 0 }
-                    : { x: 0, y: Math.sign(fallbackDy) || 1 };
-            };
-
-            const v1 = getAnchorVector(sourceAnchor, dx, dy);
-            const v2 = getAnchorVector(targetAnchor, -dx, -dy);
-
-            cp1 = { x: startPt.x + v1.x * curveOffset, y: startPt.y + v1.y * curveOffset };
-            cp2 = { x: endPt.x + v2.x * curveOffset, y: endPt.y + v2.y * curveOffset };
-        } else {
-            if (Math.abs(dy) > Math.abs(dx)) {
-                // Vertical connection (e.g. flowchart step 1 -> step 2)
-                const lateralBow = Math.abs(dx) > 10 ? 0 : Math.min(35, dist * 0.2);
-                cp1 = { x: startPt.x + dx * 0.1 + lateralBow, y: startPt.y + dy * 0.5 };
-                cp2 = { x: endPt.x - dx * 0.1 + lateralBow, y: endPt.y - dy * 0.5 };
-            } else {
-                // Horizontal connection
-                const verticalBow = Math.abs(dy) > 10 ? 0 : Math.min(35, dist * 0.2);
-                cp1 = { x: startPt.x + dx * 0.5, y: startPt.y + dy * 0.1 + verticalBow };
-                cp2 = { x: endPt.x - dx * 0.5, y: endPt.y - dy * 0.1 + verticalBow };
-            }
-        }
-
+        const { cp1, cp2 } = getCurvedControlPoints(startPt, endPt, sourceAnchor, targetAnchor);
         return `M ${startPt.x} ${startPt.y} C ${cp1.x} ${cp1.y}, ${cp2.x} ${cp2.y}, ${endPt.x} ${endPt.y}`;
     }
     return `M ${startPt.x} ${startPt.y} L ${endPt.x} ${endPt.y}`;
@@ -187,7 +223,7 @@ export const calculateAngle = (p1, p2) => {
     return (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI;
 };
 
-export default function ConnectorLine({ connector, shapes = [], images = [], isSelected, onUpdate, onSelect, scale = 1 }) {
+export default function ConnectorLine({ connector, shapes = [], images = [], isSelected, onUpdate, onSelect, onDelete = () => {}, scale = 1 }) {
     const {
         id,
         sourceId,
@@ -202,13 +238,20 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
         arrowEnd = 'arrow',
         color = '#000000',
         strokeWidth = 2,
-        strokeStyle = 'solid'
+        strokeStyle = 'solid',
+        label = ''
     } = connector;
 
     const [isHovered, setIsHovered] = useState(false);
     const [draggingEndpoint, setDraggingEndpoint] = useState(null); // 'source', 'target', or 'waypoint'
     const [dragPoint, setDragPoint] = useState(null); // {x, y}
     const [snapTarget, setSnapTarget] = useState(null); // { shape, anchor }
+    const [isEditingLabel, setIsEditingLabel] = useState(false);
+    const [labelText, setLabelText] = useState(label);
+
+    useEffect(() => {
+        setLabelText(label || '');
+    }, [label]);
 
     const dragPointRef = useRef(null);
     const snapTargetRef = useRef(null);
@@ -242,11 +285,13 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
         if (draggingEndpoint === 'waypoint' && dragPoint) return dragPoint;
         if (waypoint) return waypoint;
         if (!actualSourcePoint || !actualTargetPoint) return { x: 0, y: 0 };
-        return {
-            x: (actualSourcePoint.x + actualTargetPoint.x) / 2,
-            y: (actualSourcePoint.y + actualTargetPoint.y) / 2
-        };
-    }, [draggingEndpoint, dragPoint, waypoint, actualSourcePoint, actualTargetPoint]);
+        return getConnectorMidpoint(actualSourcePoint, actualTargetPoint, pathType, null, sourceAnchor, targetAnchor);
+    }, [draggingEndpoint, dragPoint, waypoint, actualSourcePoint, actualTargetPoint, pathType, sourceAnchor, targetAnchor]);
+
+    const connectorMidpoint = useMemo(() => {
+        if (!actualSourcePoint || !actualTargetPoint) return { x: 0, y: 0 };
+        return getConnectorMidpoint(actualSourcePoint, actualTargetPoint, pathType, waypoint || (draggingEndpoint === 'waypoint' ? actualWaypoint : null), sourceAnchor, targetAnchor);
+    }, [actualSourcePoint, actualTargetPoint, pathType, waypoint, draggingEndpoint, actualWaypoint, sourceAnchor, targetAnchor]);
 
     const pathData = useMemo(() => {
         if (!actualSourcePoint || !actualTargetPoint) return '';
@@ -273,6 +318,10 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                 x: (e.clientX - rect.left) * scaleX,
                 y: (e.clientY - rect.top) * scaleY
             };
+
+            if (draggingEndpointRef.current === 'waypoint' && pathType === 'orthogonal' && actualSourcePoint && actualTargetPoint) {
+                nextPoint.y = (actualSourcePoint.y + actualTargetPoint.y) / 2;
+            }
 
             dragPointRef.current = nextPoint;
             setDragPoint(nextPoint);
@@ -461,6 +510,239 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                     strokeWidth={2.5 / scale}
                     className="animate-pulse pointer-events-none"
                 />
+            )}
+
+            {/* Center / Midpoint Text Label & Inline Editor */}
+            {connectorMidpoint && (
+                <foreignObject
+                    x={connectorMidpoint.x - 75}
+                    y={connectorMidpoint.y - 14}
+                    width={150}
+                    height={28}
+                    style={{ overflow: 'visible', pointerEvents: 'none' }}
+                >
+                    <div 
+                        className="w-full h-full flex items-center justify-center"
+                        style={{ pointerEvents: 'none' }}
+                    >
+                        {isEditingLabel ? (
+                            <input
+                                autoFocus
+                                type="text"
+                                value={labelText}
+                                onChange={(e) => setLabelText(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        setIsEditingLabel(false);
+                                        onUpdate(id, { label: labelText.trim() });
+                                    } else if (e.key === 'Escape') {
+                                        setIsEditingLabel(false);
+                                        setLabelText(label || '');
+                                    }
+                                    e.stopPropagation();
+                                }}
+                                onBlur={() => {
+                                    setIsEditingLabel(false);
+                                    onUpdate(id, { label: labelText.trim() });
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                className="px-2 py-0.5 text-xs rounded-full border border-blue-500 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 shadow-md outline-none text-center font-medium min-w-[70px] max-w-[140px]"
+                                style={{ pointerEvents: 'auto' }}
+                                placeholder="Label..."
+                            />
+                        ) : label ? (
+                            <div
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsEditingLabel(true);
+                                }}
+                                className="px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-white/95 dark:bg-slate-800/95 text-slate-800 dark:text-slate-100 shadow-sm border border-slate-300 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500 cursor-pointer select-none transition-all hover:scale-105 backdrop-blur-xs max-w-[140px] truncate"
+                                style={{ pointerEvents: 'auto' }}
+                                title="Click to edit label"
+                            >
+                                {label}
+                            </div>
+                        ) : (isHovered || isSelected) ? (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsEditingLabel(true);
+                                }}
+                                className="px-2 py-0.5 text-[10.5px] font-medium rounded-full bg-blue-50/90 dark:bg-blue-950/80 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60 shadow-xs hover:bg-blue-100 dark:hover:bg-blue-900 cursor-pointer select-none transition-transform hover:scale-105 animate-in fade-in"
+                                style={{ pointerEvents: 'auto' }}
+                                title="Add label to connector"
+                            >
+                                + Label
+                            </button>
+                        ) : null}
+                    </div>
+                </foreignObject>
+            )}
+
+            {/* Inline Floating Connector Format Bar */}
+            {isSelected && !isEditingLabel && !draggingEndpoint && connectorMidpoint && (
+                <foreignObject
+                    x={connectorMidpoint.x - 170}
+                    y={connectorMidpoint.y - 54}
+                    width={340}
+                    height={46}
+                    style={{ overflow: 'visible', pointerEvents: 'none' }}
+                >
+                    <div 
+                        className="w-full h-full flex items-center justify-center"
+                        style={{ pointerEvents: 'none' }}
+                    >
+                        <div
+                            className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl px-2.5 py-1 text-slate-200 pointer-events-auto select-none"
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                        >
+                            {/* Path Geometry */}
+                            <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60" title="Path Geometry">
+                                <button
+                                    type="button"
+                                    onClick={() => onUpdate(id, { pathType: 'straight', waypoint: null })}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${pathType === 'straight' || !pathType ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    title="Straight Line"
+                                >
+                                    Straight
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => onUpdate(id, { pathType: 'orthogonal', waypoint: null })}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${pathType === 'orthogonal' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    title="Elbow / Orthogonal"
+                                >
+                                    Elbow
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => onUpdate(id, { pathType: 'curved', waypoint: null })}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${pathType === 'curved' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    title="Curved Line"
+                                >
+                                    Curved
+                                </button>
+                            </div>
+
+                            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+
+                            {/* Dash Style */}
+                            <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60" title="Dash Style">
+                                <button
+                                    type="button"
+                                    onClick={() => onUpdate(id, { strokeStyle: 'solid' })}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${strokeStyle === 'solid' || !strokeStyle ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    title="Solid Line"
+                                >
+                                    Solid
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => onUpdate(id, { strokeStyle: 'dashed' })}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${strokeStyle === 'dashed' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    title="Dashed Line"
+                                >
+                                    Dash
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => onUpdate(id, { strokeStyle: 'dotted' })}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${strokeStyle === 'dotted' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    title="Dotted Line"
+                                >
+                                    Dot
+                                </button>
+                            </div>
+
+                            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+
+                            {/* Arrow Ends */}
+                            <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60" title="Arrow Ends">
+                                <button
+                                    type="button"
+                                    onClick={() => onUpdate(id, { arrowStart: 'none', arrowEnd: 'none' })}
+                                    className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition ${arrowStart === 'none' && arrowEnd === 'none' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    title="Plain (No Arrows)"
+                                >
+                                    —
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => onUpdate(id, { arrowStart: 'none', arrowEnd: 'arrow' })}
+                                    className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition ${arrowStart === 'none' && arrowEnd === 'arrow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    title="Single Arrow (End)"
+                                >
+                                    →
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => onUpdate(id, { arrowStart: 'arrow', arrowEnd: 'arrow' })}
+                                    className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition ${arrowStart === 'arrow' && arrowEnd === 'arrow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    title="Double Arrow (Both Ends)"
+                                >
+                                    ↔
+                                </button>
+                            </div>
+
+                            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+
+                            {/* Color */}
+                            <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Connector Color">
+                                <div className="w-full h-full" style={{ backgroundColor: color || '#2563eb' }} />
+                                <input
+                                    type="color"
+                                    value={color || '#2563eb'}
+                                    onChange={(e) => onUpdate(id, { color: e.target.value })}
+                                    className="absolute inset-[-10px] w-10 h-10 opacity-0 cursor-pointer"
+                                    title="Change Color"
+                                />
+                            </div>
+
+                            {/* Stroke Width */}
+                            <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-1 py-0.5" title="Stroke Width">
+                                <button
+                                    type="button"
+                                    onClick={() => onUpdate(id, { strokeWidth: Math.max(1, (strokeWidth || 2) - 1) })}
+                                    className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                    title="Decrease Width"
+                                >
+                                    -
+                                </button>
+                                <span className="text-[10px] font-mono text-white px-1 select-none min-w-[14px] text-center">
+                                    {strokeWidth || 2}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => onUpdate(id, { strokeWidth: Math.min(20, (strokeWidth || 2) + 1) })}
+                                    className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                    title="Increase Width"
+                                >
+                                    +
+                                </button>
+                            </div>
+
+                            {onDelete && (
+                                <>
+                                    <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onDelete(id);
+                                        }}
+                                        className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded transition"
+                                        title="Delete Connector"
+                                    >
+                                        <Trash2 size={13} />
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </foreignObject>
             )}
         </g>
     );

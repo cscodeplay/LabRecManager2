@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
     Bot, Send, Upload, Database, ChevronDown, ChevronRight, Trash2,
     Sparkles, FileText, AlertTriangle, Copy, Check, RefreshCw, X,
@@ -8094,6 +8095,367 @@ function GroupActionCard({ action }) {
     );
 }
 
+/* ─── Whiteboard Diagram & Shape Generation Helper ─── */
+function generateWhiteboardDiagramFromPrompt(userPrompt = '', aiResponseText = '') {
+    const text = (userPrompt + ' ' + (aiResponseText || '')).toLowerCase();
+
+    // 1. Try parsing JSON code block if AI response provided one
+    if (aiResponseText) {
+        const jsonMatch = aiResponseText.match(/```(?:json)?\s*(\{[\s\S]*?"shapes"[\s\S]*?\})\s*```/i)
+            || aiResponseText.match(/(\{[\s\S]*?"title"[\s\S]*?"shapes"[\s\S]*?\})/i);
+        if (jsonMatch) {
+            try {
+                const parsed = JSON.parse(jsonMatch[1]);
+                if (parsed && (parsed.shapes || parsed.connectors)) {
+                    return {
+                        title: parsed.title || 'Generated Whiteboard Diagram',
+                        category: parsed.category || 'Architecture & Flow',
+                        description: parsed.description || 'AI-generated whiteboard diagram',
+                        shapes: parsed.shapes || [],
+                        texts: parsed.texts || [],
+                        connectors: parsed.connectors || [],
+                        background: parsed.background || { pattern: 'dots', color: '#f8fafc' }
+                    };
+                }
+            } catch (e) {
+                // fallback to template synthesis below
+            }
+        }
+    }
+
+    // 2. Network Topology & IT Infrastructure
+    if (text.match(/network|topology|switch|router|firewall|wan|lan|patch panel|server rack|datacenter|infrastructure/i)) {
+        return {
+            title: 'Enterprise Network Architecture & Topology',
+            category: 'Networking',
+            description: 'Edge-to-core network topology with security, routing, and HA database cluster.',
+            shapes: [
+                { id: 'wan_cloud', type: 'net_cloud_wan', text: 'WAN / Internet', x: 80, y: 160, width: 130, height: 85, color: '#0284c7' },
+                { id: 'edge_fw', type: 'net_firewall_utm', text: 'Next-Gen Firewall', x: 290, y: 160, width: 120, height: 85, color: '#dc2626' },
+                { id: 'core_sw', type: 'net_switch', text: 'Core Distribution Switch', x: 490, y: 165, width: 130, height: 75, color: '#0284c7' },
+                { id: 'svr_rack', type: 'net_server_rack', text: 'App Server Rack', x: 710, y: 80, width: 120, height: 95, color: '#475569' },
+                { id: 'db_cluster', type: 'net_database_cluster', text: 'Database Cluster', x: 710, y: 245, width: 125, height: 85, color: '#059669' },
+                { id: 'wifi_ap', type: 'net_access_point', text: 'Wi-Fi 6 AP', x: 495, y: 340, width: 115, height: 75, color: '#6366f1' },
+                { id: 'client_pc', type: 'laptop', text: 'Lab Workstations', x: 290, y: 345, width: 110, height: 70, color: '#334155' }
+            ],
+            connectors: [
+                { id: 'conn_1', type: 'connector', sourceId: 'wan_cloud', targetId: 'edge_fw', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', arrowEnd: 'arrow', color: '#0284c7', strokeWidth: 2, label: '10 Gbps Fiber' },
+                { id: 'conn_2', type: 'connector', sourceId: 'edge_fw', targetId: 'core_sw', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', arrowEnd: 'arrow', color: '#dc2626', strokeWidth: 2, label: 'Trunk VLAN 10/20' },
+                { id: 'conn_3', type: 'connector', sourceId: 'core_sw', targetId: 'svr_rack', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'curved', arrowEnd: 'arrow', color: '#0284c7', strokeWidth: 2, label: 'App Pool' },
+                { id: 'conn_4', type: 'connector', sourceId: 'core_sw', targetId: 'db_cluster', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'curved', arrowEnd: 'arrow', color: '#059669', strokeWidth: 2, label: 'SQL DB Link' },
+                { id: 'conn_5', type: 'connector', sourceId: 'core_sw', targetId: 'wifi_ap', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', arrowEnd: 'arrow', color: '#6366f1', strokeWidth: 2, label: 'PoE Uplink' },
+                { id: 'conn_6', type: 'connector', sourceId: 'wifi_ap', targetId: 'client_pc', sourceAnchor: 'left', targetAnchor: 'right', pathType: 'straight', arrowEnd: 'double_arrow', color: '#334155', strokeWidth: 2, label: 'SSID 5GHz' }
+            ],
+            texts: [
+                { id: 'txt_hdr', text: 'Campus Network & Data Center Topology', x: 80, y: 30, width: 450, height: 40, fontSize: 24, color: '#1e293b' }
+            ],
+            background: { pattern: 'dotted', color: '#f8fafc' }
+        };
+    }
+
+    // 3. Biology / Genetics / Cellular
+    if (text.match(/biology|cell|organelle|dna|genetics|neuron|mitochondria|chloroplast/i)) {
+        return {
+            title: 'Cellular Structure & Genetics Diagram',
+            category: 'Biology',
+            description: 'Comprehensive illustration of eukaryotic cell components, organelles, and DNA.',
+            shapes: [
+                { id: 'cell', type: 'bio_animal_cell', text: 'Animal Eukaryotic Cell', x: 80, y: 130, width: 170, height: 150, color: '#ec4899' },
+                { id: 'mito', type: 'bio_mitochondria', text: 'Mitochondrion (ATP)', x: 330, y: 80, width: 140, height: 110, color: '#f59e0b' },
+                { id: 'dna', type: 'bio_dna_double_helix', text: 'DNA Double Helix', x: 330, y: 240, width: 140, height: 110, color: '#3b82f6' },
+                { id: 'neuron', type: 'bio_neuron', text: 'Motor Neuron', x: 550, y: 150, width: 160, height: 130, color: '#8b5cf6' }
+            ],
+            connectors: [
+                { id: 'conn_1', type: 'connector', sourceId: 'cell', targetId: 'mito', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'curved', arrowEnd: 'arrow', color: '#f59e0b', strokeWidth: 2, label: 'Aerobic Respiration' },
+                { id: 'conn_2', type: 'connector', sourceId: 'cell', targetId: 'dna', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'curved', arrowEnd: 'arrow', color: '#3b82f6', strokeWidth: 2, label: 'Nuclear Genome' },
+                { id: 'conn_3', type: 'connector', sourceId: 'mito', targetId: 'neuron', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', arrowEnd: 'arrow', color: '#8b5cf6', strokeWidth: 2, label: 'Synaptic Energy' }
+            ],
+            texts: [
+                { id: 'txt_hdr', text: 'Molecular & Cellular Biology Overview', x: 80, y: 30, width: 450, height: 40, fontSize: 24, color: '#1e293b' }
+            ],
+            background: { pattern: 'dotted', color: '#fdf4ff' }
+        };
+    }
+
+    // 4. Chemistry / Lab Apparatus Setup
+    if (text.match(/chemistry|flask|beaker|reaction|burner|titration|condenser/i)) {
+        return {
+            title: 'Chemistry Laboratory Reaction Setup',
+            category: 'Chemistry',
+            description: 'Laboratory apparatus setup for distillation and chemical synthesis.',
+            shapes: [
+                { id: 'burner', type: 'chem_bunsen_burner', text: 'Bunsen Burner', x: 140, y: 260, width: 100, height: 150, color: '#f97316' },
+                { id: 'flask', type: 'chem_erlenmeyer_flask', text: 'Erlenmeyer Flask', x: 130, y: 90, width: 120, height: 140, color: '#06b6d4' },
+                { id: 'beaker', type: 'chem_beaker', text: 'Reaction Beaker', x: 340, y: 150, width: 110, height: 120, color: '#0284c7' },
+                { id: 'rack', type: 'chem_test_tube_rack', text: 'Test Tube Rack', x: 530, y: 160, width: 150, height: 110, color: '#64748b' }
+            ],
+            connectors: [
+                { id: 'conn_1', type: 'connector', sourceId: 'burner', targetId: 'flask', sourceAnchor: 'top', targetAnchor: 'bottom', pathType: 'straight', arrowEnd: 'arrow', color: '#f97316', strokeWidth: 2, label: 'Heat Convection' },
+                { id: 'conn_2', type: 'connector', sourceId: 'flask', targetId: 'beaker', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'curved', arrowEnd: 'arrow', color: '#06b6d4', strokeWidth: 2, label: 'Vapor Condensation' },
+                { id: 'conn_3', type: 'connector', sourceId: 'beaker', targetId: 'rack', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', arrowEnd: 'arrow', color: '#0284c7', strokeWidth: 2, label: 'Aliquots Transfer' }
+            ],
+            texts: [
+                { id: 'txt_hdr', text: 'Chemical Distillation & Synthesis Apparatus', x: 100, y: 30, width: 480, height: 40, fontSize: 24, color: '#1e293b' }
+            ],
+            background: { pattern: 'dotted', color: '#f0fdfa' }
+        };
+    }
+
+    // 5. Physics / Optics Setup
+    if (text.match(/physics|optics|laser|lens|prism|ray|refraction|mirror/i)) {
+        return {
+            title: 'Optics & Ray Refraction Experiment',
+            category: 'Physics',
+            description: 'Laser beam propagation through convex lens, dispersive prism, and detector.',
+            shapes: [
+                { id: 'laser', type: 'phys_laser', text: 'Laser Source (632nm)', x: 90, y: 180, width: 120, height: 75, color: '#ef4444' },
+                { id: 'lens', type: 'phys_convex_lens', text: 'Convex Lens (f=100mm)', x: 280, y: 145, width: 75, height: 150, color: '#06b6d4' },
+                { id: 'prism', type: 'phys_prism', text: 'Dispersive Prism', x: 440, y: 150, width: 110, height: 130, color: '#8b5cf6' },
+                { id: 'sensor', type: 'rounded_rect', text: 'CCD Optical Sensor', x: 630, y: 180, width: 130, height: 75, color: '#334155', fill: '#f8fafc', stroke: '#334155' }
+            ],
+            connectors: [
+                { id: 'conn_1', type: 'connector', sourceId: 'laser', targetId: 'lens', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', arrowEnd: 'arrow', color: '#ef4444', strokeWidth: 2, label: 'Collimated Beam' },
+                { id: 'conn_2', type: 'connector', sourceId: 'lens', targetId: 'prism', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', arrowEnd: 'arrow', color: '#06b6d4', strokeWidth: 2, label: 'Focused Ray' },
+                { id: 'conn_3', type: 'connector', sourceId: 'prism', targetId: 'sensor', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', arrowEnd: 'arrow', color: '#8b5cf6', strokeWidth: 2, label: 'Spectral Rays' }
+            ],
+            texts: [
+                { id: 'txt_hdr', text: 'Laser Refraction & Optical Bench Experiment', x: 90, y: 30, width: 480, height: 40, fontSize: 24, color: '#1e293b' }
+            ],
+            background: { pattern: 'dotted', color: '#faf5ff' }
+        };
+    }
+
+    // 6. Web / Cloud Microservices Architecture
+    if (text.match(/architecture|microservice|cloud|api|database|cache|redis|backend|frontend|system design/i)) {
+        return {
+            title: 'Modern Cloud Microservices Architecture',
+            category: 'Architecture',
+            description: 'Scalable service topology with API Gateway, auth, caching, and persistent database.',
+            shapes: [
+                { id: 'client', type: 'rounded_rect', text: 'Client App\n(Web & Mobile)', x: 80, y: 170, width: 130, height: 75, color: '#0284c7', fill: '#f0f9ff', stroke: '#0284c7' },
+                { id: 'gateway', type: 'rounded_rect', text: 'API Gateway &\nLoad Balancer', x: 280, y: 170, width: 140, height: 75, color: '#6366f1', fill: '#eef2ff', stroke: '#6366f1' },
+                { id: 'auth_svc', type: 'rounded_rect', text: 'Auth Service\n(JWT / OAuth)', x: 490, y: 80, width: 130, height: 70, color: '#d97706', fill: '#fffbeb', stroke: '#d97706' },
+                { id: 'core_svc', type: 'rounded_rect', text: 'Core Business\nMicroservice', x: 490, y: 240, width: 130, height: 70, color: '#059669', fill: '#f0fdf4', stroke: '#059669' },
+                { id: 'redis', type: 'database', text: 'Redis In-Memory\nCache', x: 700, y: 80, width: 130, height: 75, color: '#dc2626', fill: '#fef2f2', stroke: '#dc2626' },
+                { id: 'postgres', type: 'database', text: 'PostgreSQL\nPrimary DB', x: 700, y: 240, width: 130, height: 80, color: '#0284c7', fill: '#f0f9ff', stroke: '#0284c7' }
+            ],
+            connectors: [
+                { id: 'conn_1', type: 'connector', sourceId: 'client', targetId: 'gateway', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', arrowEnd: 'arrow', color: '#0284c7', strokeWidth: 2, label: 'HTTPS / REST' },
+                { id: 'conn_2', type: 'connector', sourceId: 'gateway', targetId: 'auth_svc', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'curved', arrowEnd: 'arrow', color: '#d97706', strokeWidth: 2, label: 'Verify Token' },
+                { id: 'conn_3', type: 'connector', sourceId: 'gateway', targetId: 'core_svc', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'curved', arrowEnd: 'arrow', color: '#059669', strokeWidth: 2, label: 'gRPC / JSON' },
+                { id: 'conn_4', type: 'connector', sourceId: 'core_svc', targetId: 'redis', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'curved', arrowEnd: 'arrow', color: '#dc2626', strokeWidth: 2, label: 'Cache Lookup' },
+                { id: 'conn_5', type: 'connector', sourceId: 'core_svc', targetId: 'postgres', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', arrowEnd: 'arrow', color: '#0284c7', strokeWidth: 2, label: 'CRUD Queries' }
+            ],
+            texts: [
+                { id: 'txt_hdr', text: 'Enterprise Cloud Microservices Architecture', x: 80, y: 30, width: 480, height: 40, fontSize: 24, color: '#1e293b' }
+            ],
+            background: { pattern: 'dotted', color: '#f8fafc' }
+        };
+    }
+
+    // 7. Flowchart / Process Workflow Default
+    return {
+        title: 'Decision & Workflow Process Flowchart',
+        category: 'Flowchart',
+        description: 'Multi-stage decision and execution workflow pipeline.',
+        shapes: [
+            { id: 'start', type: 'rounded_rect', text: 'Start Process\n(Request Received)', x: 80, y: 170, width: 140, height: 65, color: '#0284c7', fill: '#f0f9ff', stroke: '#0284c7' },
+            { id: 'step_1', type: 'rectangle', text: 'Validate Input &\nCredentials', x: 290, y: 170, width: 140, height: 65, color: '#6366f1', fill: '#eef2ff', stroke: '#6366f1' },
+            { id: 'decision', type: 'diamond', text: 'Criteria\nPassed?', x: 495, y: 155, width: 125, height: 95, color: '#f59e0b', fill: '#fffbeb', stroke: '#f59e0b' },
+            { id: 'approve', type: 'rectangle', text: 'Execute Action &\nPersist Changes', x: 690, y: 170, width: 145, height: 65, color: '#059669', fill: '#f0fdf4', stroke: '#059669' },
+            { id: 'reject', type: 'rounded_rect', text: 'Log Failure &\nNotify User', x: 490, y: 320, width: 135, height: 65, color: '#ef4444', fill: '#fef2f2', stroke: '#ef4444' },
+            { id: 'done', type: 'rounded_rect', text: 'Process Complete\n(Success)', x: 890, y: 170, width: 140, height: 65, color: '#059669', fill: '#f0fdf4', stroke: '#059669' }
+        ],
+        connectors: [
+            { id: 'conn_1', type: 'connector', sourceId: 'start', targetId: 'step_1', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', arrowEnd: 'arrow', color: '#0284c7', strokeWidth: 2, label: 'Initiate' },
+            { id: 'conn_2', type: 'connector', sourceId: 'step_1', targetId: 'decision', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', arrowEnd: 'arrow', color: '#6366f1', strokeWidth: 2, label: 'Parsed' },
+            { id: 'conn_3', type: 'connector', sourceId: 'decision', targetId: 'approve', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', arrowEnd: 'arrow', color: '#059669', strokeWidth: 2, label: 'Yes (Valid)' },
+            { id: 'conn_4', type: 'connector', sourceId: 'decision', targetId: 'reject', sourceAnchor: 'bottom', targetAnchor: 'top', pathType: 'straight', arrowEnd: 'arrow', color: '#ef4444', strokeWidth: 2, label: 'No (Errors)' },
+            { id: 'conn_5', type: 'connector', sourceId: 'approve', targetId: 'done', sourceAnchor: 'right', targetAnchor: 'left', pathType: 'straight', arrowEnd: 'arrow', color: '#059669', strokeWidth: 2, label: 'Success' }
+        ],
+        texts: [
+            { id: 'txt_hdr', text: 'Process Workflow & Decision Flowchart', x: 80, y: 30, width: 450, height: 40, fontSize: 24, color: '#1e293b' }
+        ],
+        background: { pattern: 'dotted', color: '#f8fafc' }
+    };
+}
+
+/* ─── Whiteboard Diagram & Shape Generation Action Card ─── */
+function WhiteboardDiagramActionCard({ action }) {
+    const router = useRouter();
+    const [copied, setCopied] = useState(false);
+    const [isOpened, setIsOpened] = useState(false);
+
+    if (!action) return null;
+
+    const {
+        title = 'Interactive Diagram',
+        category = 'Diagram & Architecture',
+        description = 'Whiteboard diagram generated by AI',
+        shapes = [],
+        connectors = [],
+        texts = []
+    } = action;
+
+    const totalShapes = shapes.length;
+    const totalConnectors = connectors.length;
+    const totalTexts = texts.length;
+
+    // Extract node labels for preview chips
+    const nodeLabels = shapes
+        .filter(s => s.type !== 'connector')
+        .map(s => s.text || s.label || s.title || s.name || s.type)
+        .filter(Boolean);
+
+    const handleOpenInWhiteboard = () => {
+        try {
+            // Save to sessionStorage so Whiteboard page picks it up on mount
+            const templateData = {
+                title,
+                description,
+                shapes,
+                connectors,
+                texts,
+                background: action.background || { pattern: 'dots', color: '#f8fafc' }
+            };
+            sessionStorage.setItem('pending_whiteboard_template', JSON.stringify(templateData));
+
+            // Also dispatch event in case whiteboard is already mounted in current view
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('whiteboard:load-external-template', { detail: templateData }));
+            }
+
+            setIsOpened(true);
+            toast.success(`Opening "${title}" on Whiteboard!`, { icon: '📐' });
+
+            // Navigate to whiteboard page
+            router.push('/whiteboard');
+        } catch (err) {
+            console.error('Failed to open diagram in whiteboard:', err);
+            toast.error('Could not load diagram into whiteboard');
+        }
+    };
+
+    const handleCopyJSON = () => {
+        try {
+            const dataStr = JSON.stringify(action, null, 2);
+            navigator.clipboard.writeText(dataStr);
+            setCopied(true);
+            toast.success('Diagram JSON copied to clipboard!');
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            toast.error('Failed to copy diagram data');
+        }
+    };
+
+    const handleDownloadJSON = () => {
+        try {
+            const blob = new Blob([JSON.stringify(action, null, 2)], { type: 'application/json' });
+            saveAs(blob, `${(title || 'diagram').toLowerCase().replace(/\s+/g, '_')}.whiteboard.json`);
+            toast.success('Diagram file downloaded!');
+        } catch (err) {
+            toast.error('Failed to download diagram file');
+        }
+    };
+
+    return (
+        <div className="mt-2.5 rounded-2xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50/70 via-white to-sky-50/50 shadow-sm overflow-hidden text-xs animate-in fade-in">
+            {/* Header */}
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-sky-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2 font-bold tracking-wide">
+                    <Sparkles className="w-4 h-4 text-indigo-200 shrink-0 animate-pulse" />
+                    <span>Whiteboard Diagram Generated</span>
+                </div>
+                <span className="text-[10px] bg-white/20 backdrop-blur-xs px-2 py-0.5 rounded-full font-semibold">
+                    {category}
+                </span>
+            </div>
+
+            <div className="p-3.5 space-y-3">
+                {/* Title & Description */}
+                <div>
+                    <h4 className="font-bold text-slate-800 text-[13px]">{title}</h4>
+                    {description && (
+                        <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">{description}</p>
+                    )}
+                </div>
+
+                {/* Metrics Badges */}
+                <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 font-semibold text-[11px]">
+                        <Layers className="w-3.5 h-3.5" />
+                        {totalShapes} {totalShapes === 1 ? 'Shape' : 'Shapes'} / Nodes
+                    </span>
+                    {totalConnectors > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-100 text-sky-700 font-semibold text-[11px]">
+                            <ArrowRight className="w-3.5 h-3.5" />
+                            {totalConnectors} Connectors
+                        </span>
+                    )}
+                    {totalTexts > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-[11px]">
+                            <FileText className="w-3.5 h-3.5" />
+                            {totalTexts} Labels
+                        </span>
+                    )}
+                </div>
+
+                {/* Preview Chips of Flow / Architecture */}
+                {nodeLabels.length > 0 && (
+                    <div className="bg-white/80 rounded-xl p-2.5 border border-indigo-100/80 space-y-1.5">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Flow / Component Hierarchy
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            {nodeLabels.map((lbl, idx) => (
+                                <span key={idx} className="inline-flex items-center gap-1">
+                                    <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-800 font-medium text-[11px]">
+                                        {lbl}
+                                    </span>
+                                    {idx < nodeLabels.length - 1 && (
+                                        <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
+                                    )}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                        type="button"
+                        onClick={handleOpenInWhiteboard}
+                        className="flex-1 min-w-[170px] inline-flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 text-white font-semibold text-[11px] shadow-sm hover:from-indigo-700 hover:to-violet-800 active:scale-[0.98] transition cursor-pointer"
+                    >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        {isOpened ? 'Opened in Whiteboard' : 'Open & Edit in Whiteboard'}
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={handleCopyJSON}
+                        className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[11px] transition cursor-pointer"
+                        title="Copy raw diagram JSON"
+                    >
+                        {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copied ? 'Copied' : 'JSON'}
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={handleDownloadJSON}
+                        className="inline-flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[11px] transition cursor-pointer"
+                        title="Download .whiteboard.json"
+                    >
+                        <Download className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 /* ─── Admin Bot Settings Modal (Palette, Model Defaults, Thinking State, Display) ─── */
 export function BotSettingsModal({ settings, onSave, onClose, isDialog = false }) {
     const [temp, setTemp] = useState({ ...settings });
@@ -9101,6 +9463,17 @@ export default function FloatingChatbot() {
                     title = generateChatTitle(msg);
                 }
                 
+                let whiteboardDiagramAction = d.whiteboardDiagramAction || null;
+                if (!whiteboardDiagramAction) {
+                    const isDiagramIntent = /(?:whiteboard|diagram|flowchart|topology|architecture|system design|circuit|network map|concept map)/i.test(msg) ||
+                        /(?:generate|create|draw|build|make)\s+(?:a\s+)?(?:shapes?|flow|diagram|template|map)/i.test(msg) ||
+                        (d.message && /```(?:json)?\s*\{[\s\S]*?"shapes"[\s\S]*?\}\s*```/i.test(d.message));
+                    
+                    if (isDiagramIntent) {
+                        whiteboardDiagramAction = generateWhiteboardDiagramFromPrompt(msg, d.message || d.text || '');
+                    }
+                }
+
                 setMessages(prev => {
                     const newMsgs = [...prev, { 
                         role: 'assistant', 
@@ -9133,6 +9506,7 @@ export default function FloatingChatbot() {
                         laptopIssueAction: d.laptopIssueAction,
                         laptopReturnAction: d.laptopReturnAction,
                         groupAction: d.groupAction,
+                        whiteboardDiagramAction,
                         model: d.model, 
                         provider: d.provider, 
                         timestamp: d.timestamp 
@@ -9233,6 +9607,17 @@ export default function FloatingChatbot() {
 
             if (res.data.success) {
                 const d = res.data.data;
+                let whiteboardDiagramAction = d.whiteboardDiagramAction || null;
+                if (!whiteboardDiagramAction) {
+                    const isDiagramIntent = /(?:whiteboard|diagram|flowchart|topology|architecture|system design|circuit|network map|concept map)/i.test(userMsg.content) ||
+                        /(?:generate|create|draw|build|make)\s+(?:a\s+)?(?:shapes?|flow|diagram|template|map)/i.test(userMsg.content) ||
+                        (d.message && /```(?:json)?\s*\{[\s\S]*?"shapes"[\s\S]*?\}\s*```/i.test(d.message));
+                    
+                    if (isDiagramIntent) {
+                        whiteboardDiagramAction = generateWhiteboardDiagramFromPrompt(userMsg.content, d.message || d.text || '');
+                    }
+                }
+
                 const newAssistantMsg = {
                     role: 'assistant',
                     content: d.message || d.text || '',
@@ -9264,6 +9649,7 @@ export default function FloatingChatbot() {
                     laptopIssueAction: d.laptopIssueAction,
                     laptopReturnAction: d.laptopReturnAction,
                     groupAction: d.groupAction,
+                    whiteboardDiagramAction,
                     model: d.model,
                     provider: d.provider,
                     timestamp: d.timestamp || new Date().toISOString()
@@ -9866,6 +10252,7 @@ export default function FloatingChatbot() {
                                     {msg.laptopIssueAction && <LaptopIssueActionCard action={msg.laptopIssueAction} />}
                                     {msg.laptopReturnAction && <LaptopReturnActionCard action={msg.laptopReturnAction} />}
                                     {msg.groupAction && <GroupActionCard action={msg.groupAction} />}
+                                    {msg.whiteboardDiagramAction && <WhiteboardDiagramActionCard action={msg.whiteboardDiagramAction} />}
                                     {msg.role === 'assistant' && (
                                         <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between gap-1 text-slate-400">
                                             <div className="flex items-center gap-1">

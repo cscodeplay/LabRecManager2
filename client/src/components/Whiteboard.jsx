@@ -2464,18 +2464,19 @@ export default function Whiteboard({
 
     const handleApplyTemplate = useCallback((templateData) => {
         if (!templateData) return;
-        const { shapes, texts, background, title } = templateData;
+        const { shapes = [], texts = [], background, title = 'Diagram', connectors = [] } = templateData;
+        const allShapes = [...shapes, ...connectors];
         
-        if (shapes && shapes.length > 0) {
+        if (allShapes && allShapes.length > 0) {
             // Generate unique IDs for all template shapes to avoid collision
             const idMap = new Map();
-            shapes.forEach(s => {
+            allShapes.forEach(s => {
                 if (s.id) {
                     idMap.set(s.id, 'shape-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6));
                 }
             });
 
-            const normalizedShapes = shapes.map(shape => {
+            const normalizedShapes = allShapes.map(shape => {
                 const newId = (shape.id && idMap.get(shape.id)) || ('shape-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6));
                 
                 // If template shape is already a connector or an arrow linking two shapes
@@ -2493,6 +2494,7 @@ export default function Whiteboard({
                         arrowStart: shape.type === 'double_arrow' ? 'arrow' : (shape.arrowStart || 'none'),
                         color: shape.color || '#475569',
                         strokeWidth: shape.strokeWidth || 2,
+                        label: shape.label || '',
                         waypoint: null
                     };
                 }
@@ -2554,6 +2556,37 @@ export default function Whiteboard({
         toast.success(`Applied "${title}" template!`, { icon: '📐' });
         saveToHistory();
     }, [currentPage, saveToHistory]);
+
+    // Listen for external templates dispatched or stored in sessionStorage by AI Assistant or external tools
+    useEffect(() => {
+        const checkPendingTemplate = () => {
+            try {
+                const stored = sessionStorage.getItem('pending_whiteboard_template');
+                if (stored) {
+                    sessionStorage.removeItem('pending_whiteboard_template');
+                    const parsed = JSON.parse(stored);
+                    if (parsed && (parsed.shapes || parsed.texts || parsed.connectors)) {
+                        handleApplyTemplate(parsed);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to load pending whiteboard template:', err);
+            }
+        };
+
+        checkPendingTemplate();
+
+        const handleExternalTemplateEvent = (e) => {
+            if (e.detail) {
+                handleApplyTemplate(e.detail);
+            }
+        };
+
+        window.addEventListener('whiteboard:load-external-template', handleExternalTemplateEvent);
+        return () => {
+            window.removeEventListener('whiteboard:load-external-template', handleExternalTemplateEvent);
+        };
+    }, [handleApplyTemplate]);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -2627,8 +2660,11 @@ export default function Whiteboard({
             } else if (modKey && e.key.toLowerCase() === 'v') {
                 // Don't prevent default if focusing an input (they might be pasting real text)
                 if (isInput) return;
-                e.preventDefault();
-                handlePaste();
+                if (clipboardHistory && clipboardHistory.length > 0) {
+                    e.preventDefault();
+                    handlePaste();
+                }
+                // If internal clipboard is empty, let native paste event fire so global paste handler captures image blobs from OS/browser
             } else if (modKey && e.key.toLowerCase() === 'd') {
                 e.preventDefault();
                 handleDuplicate();
@@ -2670,7 +2706,85 @@ export default function Whiteboard({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selection, showRadialMenu, showTemplateGallery, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack, saveToHistory]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selection, showRadialMenu, showTemplateGallery, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack, saveToHistory, clipboardHistory]);
+
+    // Global clipboard paste listener for pasting images directly from outside (operating system, browser clipboard, screenshots)
+    useEffect(() => {
+        const handleGlobalPaste = (e) => {
+            const activeTag = document.activeElement?.tagName?.toLowerCase();
+            const isEditingInput = activeTag === 'input' || activeTag === 'textarea';
+
+            const items = e.clipboardData?.items;
+            if (!items || items.length === 0) return;
+
+            let imageFile = null;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type && items[i].type.startsWith('image/')) {
+                    imageFile = items[i].getAsFile();
+                    break;
+                }
+            }
+
+            if (imageFile) {
+                // Always prevent default when an image is being pasted
+                e.preventDefault();
+                e.stopPropagation();
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const dataUrl = event.target.result;
+                    const img = new window.Image();
+                    img.onload = () => {
+                        const canvas = canvasRef.current;
+                        const cWidth = canvas ? canvas.width : 1920;
+                        const cHeight = canvas ? canvas.height : 1080;
+
+                        // Fit image proportionally within reasonable bounds (e.g. max 450x450)
+                        let w = img.width || 320;
+                        let h = img.height || 240;
+                        const maxDim = 460;
+                        if (w > maxDim || h > maxDim) {
+                            const ratio = Math.min(maxDim / w, maxDim / h);
+                            w = Math.round(w * ratio);
+                            h = Math.round(h * ratio);
+                        }
+
+                        pasteCountRef.current += 1;
+                        const offset = ((pasteCountRef.current - 1) % 8 + 1) * 25;
+                        const posX = Math.max(40, Math.round(cWidth / 2 - w / 2) + offset);
+                        const posY = Math.max(40, Math.round(cHeight / 2 - h / 2) + offset);
+
+                        const newId = `img_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+                        const newImageObj = {
+                            id: newId,
+                            src: dataUrl,
+                            x: posX,
+                            y: posY,
+                            width: w,
+                            height: h,
+                            rotation: 0,
+                            opacity: 1,
+                            isLocked: false,
+                            zIndex: 15
+                        };
+
+                        setImageObjects(prev => [...prev, newImageObj]);
+                        setSelectedImageIds([newId]);
+                        setSelectedImageId(newId);
+                        setSelectedShapeIds([]);
+                        setSelectedTextIds([]);
+                        saveToHistory();
+                        toast.success('Image pasted to whiteboard');
+                    };
+                    img.src = dataUrl;
+                };
+                reader.readAsDataURL(imageFile);
+            }
+        };
+
+        window.addEventListener('paste', handleGlobalPaste);
+        return () => window.removeEventListener('paste', handleGlobalPaste);
+    }, [saveToHistory, setImageObjects, setSelectedImageIds, setSelectedImageId, setSelectedShapeIds, setSelectedTextIds]);
 
     // Image manipulation mouse handlers
     useEffect(() => {
@@ -3222,10 +3336,14 @@ export default function Whiteboard({
             wasDraggingRef.current = false;
             return;
         }
+        document.activeElement?.blur?.();
         setSelectedImageId(null);
+        setSelectedImageIds([]);
         setSelectedTextIds([]);
         setEditingTextId(null);
         setSelectedShapeIds([]);
+        setEditingShapeTextId(null);
+        setSelection(null);
     }, []);
 
     // Get position from event (works for pointer, touch, and mouse)
@@ -3420,11 +3538,14 @@ export default function Whiteboard({
 
         // Handle select tool - start drawing selection box
         if (tool === 'select') {
+            document.activeElement?.blur?.();
             setSelection(null); // Clear previous selection
             setSelectedShapeIds([]);
             setSelectedTextIds([]);
             setSelectedImageId(null);
+            setSelectedImageIds([]);
             setEditingTextId(null);
+            setEditingShapeTextId(null);
             if (selectMode === 'lasso') {
                 setLassoPath([{ x: pos.x, y: pos.y }]);
             }
@@ -5273,352 +5394,129 @@ export default function Whiteboard({
 
             {/* Common Format Bar for selected items */}
             {(selectedShapeIds.length > 0 || selectedTextIds.length > 0) && (
-                <div className="absolute bottom-[4.5rem] left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/50 px-3 py-1.5 flex items-center gap-2 rounded-xl z-40 max-w-[95%] overflow-visible whitespace-nowrap hide-scrollbar transition-all text-slate-200">
-                    <button onClick={handleDelete} className="p-1 text-red-400 hover:text-red-300 hover:bg-slate-800 rounded" title="Delete Selection"><Trash2 size={16} /></button>
-                    <div className="w-px h-4 bg-slate-700 mx-1"></div>
-                    <button onClick={handleCopy} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Copy"><Copy size={16} /></button>
-                    <button onClick={handleCut} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Cut"><Scissors size={16} /></button>
-                    <button onClick={handlePaste} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Paste"><ClipboardPaste size={16} /></button>
-                    <button onClick={handleDuplicate} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Duplicate"><Files size={16} /></button>
-                    <div className="w-px h-4 bg-slate-700 mx-1"></div>
-                    <button onClick={handleBringToFront} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Bring to Front"><BringToFront size={16} /></button>
-                    <button onClick={handleSendToBack} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Send to Back"><SendToBack size={16} /></button>
-                    
-                    {selectedShapeIds.length > 1 && (
-                        <div className="relative">
-                            <button onClick={() => setShowAlignMenu(!showAlignMenu)} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded flex items-center" title="Align"><AlignLeft size={16} /> <ChevronDown size={12} /></button>
-                            {showAlignMenu && (
-                                <div className="absolute bottom-full left-0 mb-2 bg-slate-800 border border-slate-700 rounded-lg p-1 flex gap-1 shadow-xl">
-                                    <button onClick={() => { handleAlign('left'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Align Left"><AlignLeft size={14} /></button>
-                                    <button onClick={() => { handleAlign('center'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Align Center"><AlignCenterHorizontal size={14} /></button>
-                                    <button onClick={() => { handleAlign('right'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Align Right"><AlignRight size={14} /></button>
-                                    <div className="w-px h-6 bg-slate-700 mx-0.5"></div>
-                                    <button onClick={() => { handleAlign('top'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Align Top"><AlignStartVertical size={14} /></button>
-                                    <button onClick={() => { handleAlign('middle'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Align Middle"><AlignCenterVertical size={14} /></button>
-                                    <button onClick={() => { handleAlign('bottom'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Align Bottom"><AlignEndVertical size={14} /></button>
-                                    {selectedShapeIds.length > 2 && (
-                                        <>
-                                            <div className="w-px h-6 bg-slate-700 mx-0.5"></div>
-                                            <button onClick={() => { handleDistribute('horizontal'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Distribute Horizontally"><AlignHorizontalSpaceBetween size={14} /></button>
-                                            <button onClick={() => { handleDistribute('vertical'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Distribute Vertically"><AlignVerticalSpaceBetween size={14} /></button>
-                                        </>
-                                    )}
-                                </div>
+                <div className="absolute bottom-[4.5rem] left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 px-2 py-1 flex items-center gap-1.5 rounded-xl z-40 max-w-[95%] overflow-visible whitespace-nowrap hide-scrollbar transition-all text-slate-200">
+                    {/* Delete Selection */}
+                    <button 
+                        onClick={handleDelete} 
+                        className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-lg transition" 
+                        title="Delete Selection"
+                    >
+                        <Trash2 size={15} />
+                    </button>
+
+                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
+
+                    {/* Edit / Clipboard Hover Group */}
+                    <div className="relative group">
+                        <button className="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg flex items-center gap-1 transition" title="Clipboard Actions">
+                            <Copy size={14} />
+                            <span className="hidden sm:inline text-[11px] font-medium">Edit</span>
+                            <ChevronDown size={11} className="text-slate-400 group-hover:rotate-180 transition-transform" />
+                        </button>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-850/95 backdrop-blur-md border border-slate-700/80 rounded-xl p-1.5 shadow-2xl z-50 min-w-[130px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
+                            <button onClick={handleCopy} className="flex items-center justify-between px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
+                                <span className="flex items-center gap-2"><Copy size={13} /> Copy</span>
+                                <kbd className="text-[9px] text-slate-400 font-mono">⌘C</kbd>
+                            </button>
+                            <button onClick={handleCut} className="flex items-center justify-between px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
+                                <span className="flex items-center gap-2"><Scissors size={13} /> Cut</span>
+                                <kbd className="text-[9px] text-slate-400 font-mono">⌘X</kbd>
+                            </button>
+                            <button onClick={handlePaste} className="flex items-center justify-between px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
+                                <span className="flex items-center gap-2"><ClipboardPaste size={13} /> Paste</span>
+                                <kbd className="text-[9px] text-slate-400 font-mono">⌘V</kbd>
+                            </button>
+                            <button onClick={handleDuplicate} className="flex items-center justify-between px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
+                                <span className="flex items-center gap-2"><Files size={13} /> Duplicate</span>
+                                <kbd className="text-[9px] text-slate-400 font-mono">⌘D</kbd>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
+
+                    {/* Layers Hover Group */}
+                    <div className="relative group">
+                        <button className="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg flex items-center gap-1 transition" title="Layer Ordering">
+                            <BringToFront size={14} />
+                            <span className="hidden sm:inline text-[11px] font-medium">Layers</span>
+                            <ChevronDown size={11} className="text-slate-400 group-hover:rotate-180 transition-transform" />
+                        </button>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-850/95 backdrop-blur-md border border-slate-700/80 rounded-xl p-1.5 shadow-2xl z-50 min-w-[140px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
+                            <button onClick={handleBringToFront} className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
+                                <BringToFront size={13} /> Bring to Front
+                            </button>
+                            <button onClick={handleSendToBack} className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
+                                <SendToBack size={13} /> Send to Back
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
+
+                    {/* Align & Distribute Hover Group */}
+                    <div className="relative group">
+                        <button className="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg flex items-center gap-1 transition" title="Alignment & Distribution">
+                            <AlignLeft size={14} />
+                            <span className="hidden sm:inline text-[11px] font-medium">Align</span>
+                            <ChevronDown size={11} className="text-slate-400 group-hover:rotate-180 transition-transform" />
+                        </button>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-850/95 backdrop-blur-md border border-slate-700/80 rounded-xl p-2 shadow-2xl z-50 min-w-[170px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
+                            <div className="text-[10px] font-semibold text-slate-400 px-1 mb-1">Align</div>
+                            <div className="grid grid-cols-3 gap-1 mb-2">
+                                <button onClick={() => handleAlign('left')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center" title="Align Left"><AlignLeft size={13} /></button>
+                                <button onClick={() => handleAlign('center')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center" title="Align Center"><AlignCenterHorizontal size={13} /></button>
+                                <button onClick={() => handleAlign('right')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center" title="Align Right"><AlignRight size={13} /></button>
+                                <button onClick={() => handleAlign('top')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center" title="Align Top"><AlignStartVertical size={13} /></button>
+                                <button onClick={() => handleAlign('middle')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center" title="Align Middle"><AlignCenterVertical size={13} /></button>
+                                <button onClick={() => handleAlign('bottom')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center" title="Align Bottom"><AlignEndVertical size={13} /></button>
+                            </div>
+                            {(selectedShapeIds.length > 2 || selectedTextIds.length > 2) && (
+                                <>
+                                    <div className="w-full h-px bg-slate-700 my-1" />
+                                    <div className="text-[10px] font-semibold text-slate-400 px-1 mb-1">Distribute</div>
+                                    <div className="grid grid-cols-2 gap-1">
+                                        <button onClick={() => handleDistribute('horizontal')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center gap-1" title="Distribute Horizontally"><AlignHorizontalSpaceBetween size={13} /> Horiz</button>
+                                        <button onClick={() => handleDistribute('vertical')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center gap-1" title="Distribute Vertically"><AlignVerticalSpaceBetween size={13} /> Vert</button>
+                                    </div>
+                                </>
                             )}
                         </div>
-                    )}
+                    </div>
 
-                    {/* If shape is selected, show shape formatting */}
-                    {selectedShapeIds.length > 0 && (
-                        <>
-                            <div className="w-px h-4 bg-slate-700 mx-1"></div>
-                            <button onClick={handleToggleLock} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Toggle Lock">
-                                {shapeObjects.some(s => selectedShapeIds.includes(s.id) && !s.isLocked) ? <Unlock size={16} /> : <Lock size={16} />}
+                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
+
+                    {/* Organize Hover Group */}
+                    <div className="relative group">
+                        <button className="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg flex items-center gap-1 transition" title="Organize & Group">
+                            {shapeObjects.some(s => selectedShapeIds.includes(s.id) && s.isLocked) || textObjects.some(t => selectedTextIds.includes(t.id) && t.isLocked) ? (
+                                <Lock size={14} className="text-amber-400" />
+                            ) : (
+                                <Unlock size={14} />
+                            )}
+                            <span className="hidden sm:inline text-[11px] font-medium">Organize</span>
+                            <ChevronDown size={11} className="text-slate-400 group-hover:rotate-180 transition-transform" />
+                        </button>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-850/95 backdrop-blur-md border border-slate-700/80 rounded-xl p-1.5 shadow-2xl z-50 min-w-[130px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
+                            <button onClick={handleToggleLock} className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
+                                {shapeObjects.some(s => selectedShapeIds.includes(s.id) && s.isLocked) || textObjects.some(t => selectedTextIds.includes(t.id) && t.isLocked) ? (
+                                    <><Unlock size={13} /> Unlock</>
+                                ) : (
+                                    <><Lock size={13} /> Lock</>
+                                )}
                             </button>
-                            {selectedShapeIds.length > 1 && (
-                                <button onClick={handleGroup} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Group">
-                                    <Group size={16} />
+                            {(selectedShapeIds.length > 1 || selectedTextIds.length > 1) && (
+                                <button onClick={handleGroup} className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
+                                    <Group size={13} /> Group
                                 </button>
                             )}
-                            {shapeObjects.some(s => selectedShapeIds.includes(s.id) && s.groupId) && (
-                                <button onClick={handleUngroup} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Ungroup">
-                                    <Ungroup size={16} />
+                            {(shapeObjects.some(s => selectedShapeIds.includes(s.id) && s.groupId) || textObjects.some(t => selectedTextIds.includes(t.id) && t.groupId)) && (
+                                <button onClick={handleUngroup} className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
+                                    <Ungroup size={13} /> Ungroup
                                 </button>
                             )}
-                            <div className="w-px h-4 bg-slate-700 mx-1"></div>
-                            <input
-                                type="color"
-                                value={selectedShapeIds.length === 1 ? (shapeObjects.find(s => s.id === selectedShapeIds[0])?.color || '#000000') : '#000000'}
-                                onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, color: e.target.value } : s))}
-                                className="w-6 h-6 p-0 border border-slate-700 rounded cursor-pointer bg-slate-800"
-                                title="Border Color"
-                            />
-                            {/* If selected shape is a connector, show dedicated connector styling controls */}
-                            {selectedShapeIds.length === 1 && shapeObjects.find(s => s.id === selectedShapeIds[0])?.type === 'connector' ? (() => {
-                                const activeConn = shapeObjects.find(s => s.id === selectedShapeIds[0]);
-                                return (
-                                    <div className="flex items-center gap-1.5 bg-slate-850 px-2 py-0.5 rounded-lg border border-slate-700 text-xs">
-                                        {/* Path Type */}
-                                        <div className="flex items-center bg-slate-900 rounded p-0.5 border border-slate-700" title="Path Geometry">
-                                            <button
-                                                type="button"
-                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, pathType: 'straight', waypoint: null } : s))}
-                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.pathType === 'straight' || !activeConn.pathType ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                                                title="Straight Line"
-                                            >
-                                                Straight
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, pathType: 'orthogonal', waypoint: null } : s))}
-                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.pathType === 'orthogonal' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                                                title="Elbow / Orthogonal"
-                                            >
-                                                Elbow
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, pathType: 'curved', waypoint: null } : s))}
-                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.pathType === 'curved' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                                                title="Curved"
-                                            >
-                                                Curved
-                                            </button>
-                                        </div>
-
-                                        {/* Stroke Dash Style */}
-                                        <div className="flex items-center bg-slate-900 rounded p-0.5 border border-slate-700" title="Dash Style">
-                                            <button
-                                                type="button"
-                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, strokeStyle: 'solid' } : s))}
-                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.strokeStyle === 'solid' || !activeConn.strokeStyle ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                                                title="Solid Line"
-                                            >
-                                                Solid
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, strokeStyle: 'dashed' } : s))}
-                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.strokeStyle === 'dashed' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                                                title="Dashed Line"
-                                            >
-                                                Dashed
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, strokeStyle: 'dotted' } : s))}
-                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.strokeStyle === 'dotted' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                                                title="Dotted Line"
-                                            >
-                                                Dotted
-                                            </button>
-                                        </div>
-
-                                        {/* Arrowheads */}
-                                        <div className="flex items-center bg-slate-900 rounded p-0.5 border border-slate-700" title="Arrow Ends">
-                                            <button
-                                                type="button"
-                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, arrowStart: 'none', arrowEnd: 'none' } : s))}
-                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.arrowStart === 'none' && activeConn.arrowEnd === 'none' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                                                title="Plain Line (No Arrows)"
-                                            >
-                                                —
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, arrowStart: 'none', arrowEnd: 'arrow' } : s))}
-                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.arrowStart === 'none' && activeConn.arrowEnd === 'arrow' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                                                title="Single Arrow (End)"
-                                            >
-                                                →
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === activeConn.id ? { ...s, arrowStart: 'arrow', arrowEnd: 'arrow' } : s))}
-                                                className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${activeConn.arrowStart === 'arrow' && activeConn.arrowEnd === 'arrow' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                                                title="Double Arrow (Both Ends)"
-                                            >
-                                                ↔
-                                            </button>
-                                        </div>
-                                    </div>
-                                );
-                            })() : (
-                                <div className="relative group flex items-center">
-                                    <input
-                                        type="color"
-                                        value={selectedShapeIds.length === 1 ? (shapeObjects.find(s => s.id === selectedShapeIds[0])?.fillColor || '#ffffff') : '#ffffff'}
-                                        onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: e.target.value } : s))}
-                                        className="w-6 h-6 p-0 border border-slate-700 rounded cursor-pointer bg-slate-800"
-                                        title="Fill Color"
-                                    />
-                                    <button
-                                        onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: 'transparent' } : s))}
-                                        className="text-xs bg-slate-800 px-1 py-1 ml-1 rounded hover:bg-slate-700 border border-slate-600" title="No Fill"><X size={12} />
-                                    </button>
-                                </div>
-                            )}
-                            <div className="flex items-center bg-slate-800 border border-slate-700 rounded h-6 px-1" title="Border Width">
-                                <span className="text-xs text-slate-400 mr-1">px</span>
-                                <input
-                                    type="number"
-                                    min="1" max="50"
-                                    value={selectedShapeIds.length === 1 ? (shapeObjects.find(s => s.id === selectedShapeIds[0])?.strokeWidth || 2) : 2}
-                                    onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, strokeWidth: parseInt(e.target.value) || 2 } : s))}
-                                    className="w-10 text-xs bg-transparent text-white outline-none text-center"
-                                />
-                            </div>
-                        </>
-                    )}
-
-                    {/* Text formatting */}
-                    {(selectedTextIds.length > 0 || selectedShapeIds.length > 0) && (
-                        <>
-                            <div className="w-px h-4 bg-slate-700 mx-1"></div>
-                            {/* Font Family */}
-                            <select
-                                value={selectedTextIds.length > 0 ? (textObjects.find(t => t.id === selectedTextIds[0])?.fontFamily || 'sans-serif') : (shapeObjects.find(s => s.id === selectedShapeIds[0])?.fontFamily || 'sans-serif')}
-                                onChange={(e) => {
-                                    const font = e.target.value;
-                                    setSelectedFontFamily(font);
-                                    if (selectedTextIds.length > 0) {
-                                        setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, fontFamily: font } : t));
-                                    }
-                                    if (selectedShapeIds.length > 0) {
-                                        setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontFamily: font } : s));
-                                    }
-                                }}
-                                className="h-6 text-xs bg-slate-800 text-white border border-slate-700 rounded px-1.5 outline-none cursor-pointer"
-                                title="Font Family"
-                            >
-                                <option value="sans-serif">Sans-serif</option>
-                                <option value="serif">Serif</option>
-                                <option value="monospace">Monospace</option>
-                                <option value="Inter">Inter</option>
-                                <option value="Roboto">Roboto</option>
-                                <option value="Caveat">Caveat</option>
-                                <option value="Comic Sans MS">Comic Marker</option>
-                            </select>
-
-                            <div className="relative w-7 h-7 flex flex-col items-center justify-center rounded hover:bg-slate-700 bg-slate-800 border border-slate-700 cursor-pointer overflow-hidden" title="Text Color">
-                                <span className="font-bold text-[14px] leading-none select-none text-slate-200 mt-0.5">A</span>
-                                <div className="w-4 h-1 mt-[2px] rounded-sm" style={{ backgroundColor: selectedTextIds.length > 0 ? (textObjects.find(t => t.id === selectedTextIds[0])?.color || '#000000') : (shapeObjects.find(s => s.id === selectedShapeIds[0])?.textColor || '#000000') }}></div>
-                                <input
-                                    type="color"
-                                    value={selectedTextIds.length > 0 ? (textObjects.find(t => t.id === selectedTextIds[0])?.color || '#000000') : (shapeObjects.find(s => s.id === selectedShapeIds[0])?.textColor || '#000000')}
-                                    onChange={(e) => {
-                                        if (selectedTextIds.length > 0) {
-                                            setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, color: e.target.value } : t));
-                                        }
-                                        if (selectedShapeIds.length > 0) {
-                                            setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, textColor: e.target.value } : s));
-                                        }
-                                    }}
-                                    className="absolute inset-[-10px] w-12 h-12 opacity-0 cursor-pointer"
-                                />
-                            </div>
-                            <button
-                                onClick={() => {
-                                    if (selectedTextIds.length > 0) {
-                                        setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, fontWeight: t.fontWeight === 'bold' ? 'normal' : 'bold' } : t));
-                                    }
-                                    if (selectedShapeIds.length > 0) {
-                                        setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontWeight: s.fontWeight === 'bold' ? 'normal' : 'bold' } : s));
-                                    }
-                                }}
-                                className="p-1 rounded hover:bg-slate-800 text-sm"
-                                title="Bold"
-                            ><span className="font-bold">B</span></button>
-                            <button
-                                onClick={() => {
-                                    if (selectedTextIds.length > 0) {
-                                        setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, fontStyle: t.fontStyle === 'italic' ? 'normal' : 'italic' } : t));
-                                    }
-                                    if (selectedShapeIds.length > 0) {
-                                        setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontStyle: s.fontStyle === 'italic' ? 'normal' : 'italic' } : s));
-                                    }
-                                }}
-                                className="p-1 rounded hover:bg-slate-800 text-sm"
-                                title="Italic"
-                            ><span className="italic">I</span></button>
-                            <input
-                                type="number"
-                                min="8" max="100"
-                                value={selectedTextIds.length > 0 ? (textObjects.find(t => t.id === selectedTextIds[0])?.fontSize || 20) : (shapeObjects.find(s => s.id === selectedShapeIds[0])?.fontSize || 20)}
-                                onChange={(e) => {
-                                    const size = parseInt(e.target.value);
-                                    if (selectedTextIds.length > 0) {
-                                        setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, fontSize: size } : t));
-                                    }
-                                    if (selectedShapeIds.length > 0) {
-                                        setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontSize: size } : s));
-                                    }
-                                }}
-                                className="h-6 w-12 px-1 text-xs border border-slate-700 rounded bg-slate-800 text-white outline-none"
-                                title="Font Size"
-                            />
-
-                            {/* Text Specific Background & Border Controls */}
-                            {selectedTextIds.length > 0 && (() => {
-                                const activeText = textObjects.find(t => t.id === selectedTextIds[0]);
-                                return (
-                                    <>
-                                        <div className="w-px h-4 bg-slate-700 mx-1"></div>
-                                        {/* Background Fill */}
-                                        <div className="relative group flex items-center" title="Text Box Background">
-                                            <input
-                                                type="color"
-                                                value={activeText?.bgColor && activeText.bgColor !== 'transparent' ? activeText.bgColor : '#ffffff'}
-                                                onChange={(e) => setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, bgColor: e.target.value } : t))}
-                                                className="w-6 h-6 p-0 border border-slate-700 rounded cursor-pointer bg-slate-800"
-                                                title="Background Color"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, bgColor: 'transparent' } : t))}
-                                                className="text-xs bg-slate-800 px-1 py-1 ml-1 rounded hover:bg-slate-700 border border-slate-600 text-slate-300"
-                                                title="No Background Fill"
-                                            >
-                                                <X size={12} />
-                                            </button>
-                                        </div>
-                                        {/* Border Width */}
-                                        <div className="flex items-center bg-slate-800 border border-slate-700 rounded h-6 px-1" title="Border Width">
-                                            <span className="text-xs text-slate-400 mr-1">Border</span>
-                                            <select
-                                                value={activeText?.borderWidth ?? 0}
-                                                onChange={(e) => {
-                                                    const bw = parseInt(e.target.value);
-                                                    setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, borderWidth: bw, borderColor: t.borderColor || '#3b82f6', borderStyle: t.borderStyle || 'solid' } : t));
-                                                }}
-                                                className="text-xs bg-transparent text-white outline-none cursor-pointer"
-                                            >
-                                                <option value="0" className="bg-slate-800">None</option>
-                                                <option value="1" className="bg-slate-800">1px</option>
-                                                <option value="2" className="bg-slate-800">2px</option>
-                                                <option value="4" className="bg-slate-800">4px</option>
-                                                <option value="8" className="bg-slate-800">8px</option>
-                                            </select>
-                                        </div>
-                                        {/* Border Color, Style & Radius */}
-                                        {(activeText?.borderWidth || 0) > 0 && (
-                                            <>
-                                                <input
-                                                    type="color"
-                                                    value={activeText?.borderColor || '#3b82f6'}
-                                                    onChange={(e) => setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, borderColor: e.target.value } : t))}
-                                                    className="w-6 h-6 p-0 border border-slate-700 rounded cursor-pointer bg-slate-800"
-                                                    title="Border Color"
-                                                />
-                                                <select
-                                                    value={activeText?.borderStyle || 'solid'}
-                                                    onChange={(e) => setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, borderStyle: e.target.value } : t))}
-                                                    className="h-6 text-xs bg-slate-800 text-white border border-slate-700 rounded px-1 outline-none cursor-pointer"
-                                                    title="Border Style"
-                                                >
-                                                    <option value="solid">Solid</option>
-                                                    <option value="dashed">Dashed</option>
-                                                    <option value="dotted">Dotted</option>
-                                                    <option value="double">Double</option>
-                                                </select>
-                                                <select
-                                                    value={activeText?.borderRadius ?? 0}
-                                                    onChange={(e) => setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, borderRadius: parseInt(e.target.value) } : t))}
-                                                    className="h-6 text-xs bg-slate-800 text-white border border-slate-700 rounded px-1 outline-none cursor-pointer"
-                                                    title="Corner Radius"
-                                                >
-                                                    <option value="0">Square (0px)</option>
-                                                    <option value="4">Round 4px</option>
-                                                    <option value="8">Round 8px</option>
-                                                    <option value="16">Round 16px</option>
-                                                </select>
-                                            </>
-                                        )}
-                                    </>
-                                );
-                            })()}
-                        </>
-                    )}
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -7634,7 +7532,7 @@ export default function Whiteboard({
                                                 ));
                                             }}
                                             autoFocus
-                                            className="w-full h-full p-2 bg-transparent border-2 border-blue-500 rounded resize-none focus:outline-none"
+                                            className="w-full h-full p-2 bg-transparent border-0 outline-none ring-2 ring-blue-500 ring-inset rounded resize-none m-0 shadow-none"
                                             style={{
                                                 color: txtObj.color,
                                                 fontSize: `${txtObj.fontSize}px`,
@@ -8455,10 +8353,41 @@ export default function Whiteboard({
                             return null;
                         };
 
+                        const isLineLike = ['line', 'arrow', 'double_arrow', 'dashed_line'].includes(shpObj.type);
+                        const localStartX = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+                        const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+                        const localEndX = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+                        const localEndY = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+
+                        const shapeW = isLineLike ? Math.max(20, Math.abs(localEndX - localStartX)) : Math.max(20, Math.abs(shpObj.width || 100));
+                        const shapeH = isLineLike ? Math.max(20, Math.abs(localEndY - localStartY)) : Math.max(20, Math.abs(shpObj.height || 100));
+                        const cx = isLineLike 
+                            ? (shpObj.x || 0) + (localStartX + localEndX) / 2
+                            : (shpObj.x || 0) + (shpObj.width || 100) / 2;
+                        const cy = isLineLike
+                            ? (shpObj.y || 0) + (localStartY + localEndY) / 2
+                            : (shpObj.y || 0) + (shpObj.height || 100) / 2;
+
+                        const rad = ((shpObj.rotation || 0) * Math.PI) / 180;
+                        const cos = Math.cos(rad);
+                        const sin = Math.sin(rad);
+                        const halfW = shapeW / 2;
+                        const halfH = shapeH / 2;
+                        const corners = [
+                            { dx: -halfW, dy: -halfH },
+                            { dx: halfW, dy: -halfH },
+                            { dx: halfW, dy: halfH },
+                            { dx: -halfW, dy: halfH }
+                        ].map(p => ({
+                            x: cx + p.dx * cos - p.dy * sin,
+                            y: cy + p.dx * sin + p.dy * cos
+                        }));
+                        const shapeMinY = Math.min(...corners.map(c => c.y));
+
                         return (
-                            <div
-                                key={shpObj.id}
-                                className="whiteboard-shape-item absolute"
+                            <div key={shpObj.id}>
+                                <div
+                                    className="whiteboard-shape-item absolute"
                                 style={{
                                     left: shpObj.x,
                                     top: shpObj.y,
@@ -8556,57 +8485,142 @@ export default function Whiteboard({
                         )}
 
                                 
-                                {shpObj.text !== undefined && shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && (
-                                    <div 
-                                        className="absolute inset-0 flex items-center justify-center p-2"
-                                        style={{
-                                            pointerEvents: editingShapeTextId === shpObj.id ? 'auto' : 'none'
-                                        }}
-                                    >
-                                        {editingShapeTextId === shpObj.id ? (
-                                            <textarea
-                                                autoFocus
-                                                value={shpObj.text}
-                                                onChange={(e) => {
-                                                    setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, text: e.target.value } : s));
+                                {shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && (
+                                    ['line', 'arrow', 'double_arrow', 'dashed_line'].includes(shpObj.type) ? (() => {
+                                        const localStartX = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+                                        const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+                                        const localEndX = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+                                        const localEndY = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                                        const lineMidX = (localStartX + localEndX) / 2;
+                                        const lineMidY = (localStartY + localEndY) / 2;
+                                        const isEditingLine = editingShapeTextId === shpObj.id;
+                                        const hasText = shpObj.text && String(shpObj.text).trim() !== '';
+
+                                        return (
+                                            <div
+                                                className="absolute z-40"
+                                                style={{
+                                                    left: `${lineMidX}px`,
+                                                    top: `${lineMidY}px`,
+                                                    transform: 'translate(-50%, -50%)',
+                                                    pointerEvents: 'auto'
                                                 }}
-                                                onBlur={() => {
-                                                    setEditingShapeTextId(null);
-                                                    saveToHistory();
-                                                }}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Escape') {
-                                                        setEditingShapeTextId(null);
-                                                    }
-                                                    e.stopPropagation();
-                                                }}
+                                                onClick={e => e.stopPropagation()}
                                                 onMouseDown={e => e.stopPropagation()}
                                                 onPointerDown={e => e.stopPropagation()}
-                                                placeholder="Type text..."
-                                                className="w-full text-center bg-white/60 dark:bg-black/60 backdrop-blur-xs border border-indigo-500 rounded outline-none resize-none overflow-hidden p-1 shadow-inner text-slate-800 dark:text-slate-100"
-                                                style={{ 
-                                                    color: shpObj.textColor || shpObj.color, 
-                                                    fontSize: shpObj.fontSize || 20,
-                                                    fontFamily: shpObj.fontFamily || 'sans-serif',
-                                                    fontWeight: shpObj.fontWeight || 'normal',
-                                                    fontStyle: shpObj.fontStyle || 'normal',
-                                                }}
-                                            />
-                                        ) : (
-                                            <div
-                                                className="w-full text-center select-none whitespace-pre-wrap break-words pointer-events-none"
-                                                style={{ 
-                                                    color: shpObj.textColor || shpObj.color, 
-                                                    fontSize: shpObj.fontSize || 20,
-                                                    fontFamily: shpObj.fontFamily || 'sans-serif',
-                                                    fontWeight: shpObj.fontWeight || 'normal',
-                                                    fontStyle: shpObj.fontStyle || 'normal',
+                                            >
+                                                {isEditingLine ? (
+                                                    <input
+                                                        autoFocus
+                                                        type="text"
+                                                        value={shpObj.text || ''}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, text: val } : s));
+                                                        }}
+                                                        onBlur={() => {
+                                                            setEditingShapeTextId(null);
+                                                            saveToHistory();
+                                                        }}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' || e.key === 'Escape') {
+                                                                setEditingShapeTextId(null);
+                                                                saveToHistory();
+                                                            }
+                                                            e.stopPropagation();
+                                                        }}
+                                                        placeholder="Label..."
+                                                        className="px-2.5 py-0.5 text-xs text-center font-semibold bg-white/95 dark:bg-slate-900/95 border-2 border-blue-500 rounded-full shadow-xl outline-none min-w-[70px] max-w-[200px] text-slate-800 dark:text-slate-100"
+                                                    />
+                                                ) : hasText ? (
+                                                    <div
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setEditingShapeTextId(shpObj.id);
+                                                        }}
+                                                        onDoubleClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setEditingShapeTextId(shpObj.id);
+                                                        }}
+                                                        className="px-2.5 py-0.5 text-xs font-semibold rounded-full shadow-md bg-white/95 dark:bg-slate-900/95 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 hover:border-blue-500 cursor-pointer pointer-events-auto transition select-none flex items-center gap-1"
+                                                        style={{
+                                                            color: shpObj.textColor || shpObj.color,
+                                                            fontSize: Math.min(shpObj.fontSize || 13, 15),
+                                                            fontFamily: shpObj.fontFamily || 'sans-serif'
+                                                        }}
+                                                        title="Click to edit edge label"
+                                                    >
+                                                        {shpObj.text}
+                                                    </div>
+                                                ) : (isSelected || hoveredShapeId === shpObj.id) ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setEditingShapeTextId(shpObj.id);
+                                                        }}
+                                                        className="px-2 py-0.5 text-[11px] font-medium text-slate-500 hover:text-blue-600 bg-white/90 dark:bg-slate-800/90 border border-slate-300 dark:border-slate-600 rounded-full shadow-sm hover:border-blue-500 cursor-pointer pointer-events-auto transition flex items-center gap-1 select-none"
+                                                        title="Add label to line edge"
+                                                    >
+                                                        <span>+ Label</span>
+                                                    </button>
+                                                ) : null}
+                                            </div>
+                                        );
+                                    })() : (
+                                        shpObj.text !== undefined && (
+                                            <div 
+                                                className="absolute inset-0 flex items-center justify-center p-2"
+                                                style={{
+                                                    pointerEvents: editingShapeTextId === shpObj.id ? 'auto' : 'none'
                                                 }}
                                             >
-                                                {shpObj.text || (isSelected ? <span className="text-slate-400 italic text-[11px] block select-none">Double-click to type</span> : '')}
+                                                {editingShapeTextId === shpObj.id ? (
+                                                    <textarea
+                                                        autoFocus
+                                                        value={shpObj.text}
+                                                        onChange={(e) => {
+                                                            setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, text: e.target.value } : s));
+                                                        }}
+                                                        onBlur={() => {
+                                                            setEditingShapeTextId(null);
+                                                            saveToHistory();
+                                                        }}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Escape') {
+                                                                setEditingShapeTextId(null);
+                                                            }
+                                                            e.stopPropagation();
+                                                        }}
+                                                        onMouseDown={e => e.stopPropagation()}
+                                                        onPointerDown={e => e.stopPropagation()}
+                                                        placeholder="Type text..."
+                                                        className="w-full text-center bg-white/60 dark:bg-black/60 backdrop-blur-xs border border-indigo-500 rounded outline-none resize-none overflow-hidden p-1 shadow-inner text-slate-800 dark:text-slate-100"
+                                                        style={{ 
+                                                            color: shpObj.textColor || shpObj.color, 
+                                                            fontSize: shpObj.fontSize || 20,
+                                                            fontFamily: shpObj.fontFamily || 'sans-serif',
+                                                            fontWeight: shpObj.fontWeight || 'normal',
+                                                            fontStyle: shpObj.fontStyle || 'normal',
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <div
+                                                        className="w-full text-center select-none whitespace-pre-wrap break-words pointer-events-none"
+                                                        style={{ 
+                                                            color: shpObj.textColor || shpObj.color, 
+                                                            fontSize: shpObj.fontSize || 20,
+                                                            fontFamily: shpObj.fontFamily || 'sans-serif',
+                                                            fontWeight: shpObj.fontWeight || 'normal',
+                                                            fontStyle: shpObj.fontStyle || 'normal',
+                                                        }}
+                                                    >
+                                                        {shpObj.text || (isSelected ? <span className="text-slate-400 italic text-[11px] block select-none">Double-click to type</span> : '')}
+                                                    </div>
+                                                )}
                                             </div>
-                                        )}
-                                    </div>
+                                        )
+                                    )
                                 )}
 
                                 {/* Magnetic Connection Hooks (N, E, S, W) for linking diagrams & connectors */}
@@ -8903,8 +8917,396 @@ export default function Whiteboard({
                                     </>
                                 )}
                             </div>
+
+                            {/* Static Unrotated Floating Shape Format Bar */}
+                            {isSelected && (selectedShapeIds.length === 1 && selectedShapeIds[0] === shpObj.id) && editingShapeTextId !== shpObj.id && !shapeDragState && shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && (
+                                <div
+                                    className="absolute pointer-events-auto select-none"
+                                    style={{
+                                        left: cx,
+                                        top: shapeMinY - (shpObj.isLocked ? 14 : 44),
+                                        transform: 'translate(-50%, -100%)',
+                                        zIndex: 70,
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                >
+                                    <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl px-2.5 py-1 text-slate-200 animate-in fade-in zoom-in-95 duration-100">
+                                        {isLineLike ? (
+                                            <>
+                                                {/* Line Color */}
+                                                <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Line Color">
+                                                    <div className="w-full h-full" style={{ backgroundColor: shpObj.color || '#000000' }} />
+                                                    <input
+                                                        type="color"
+                                                        value={shpObj.color || '#000000'}
+                                                        onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, color: e.target.value } : s))}
+                                                        className="absolute inset-[-10px] w-10 h-10 opacity-0 cursor-pointer"
+                                                        title="Line Color"
+                                                    />
+                                                </div>
+
+                                                {/* Stroke Width */}
+                                                <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-1 py-0.5" title="Line Width">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeWidth: Math.max(1, (s.strokeWidth || 2) - 1) } : s))}
+                                                        className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                                        title="Decrease Width"
+                                                    >
+                                                        -
+                                                    </button>
+                                                    <span className="text-[10px] font-mono text-white px-1 select-none min-w-[14px] text-center">
+                                                        {shpObj.strokeWidth || 2}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeWidth: Math.min(30, (s.strokeWidth || 2) + 1) } : s))}
+                                                        className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                                        title="Increase Width"
+                                                    >
+                                                        +
+                                                    </button>
+                                                </div>
+
+                                                <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+
+                                                {/* Dash Style */}
+                                                <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60" title="Dash Style">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeStyle: 'solid' } : s))}
+                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${shpObj.strokeStyle === 'solid' || !shpObj.strokeStyle ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        title="Solid"
+                                                    >
+                                                        Solid
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeStyle: 'dashed' } : s))}
+                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${shpObj.strokeStyle === 'dashed' || shpObj.type === 'dashed_line' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        title="Dashed"
+                                                    >
+                                                        Dash
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeStyle: 'dotted' } : s))}
+                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${shpObj.strokeStyle === 'dotted' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        title="Dotted"
+                                                    >
+                                                        Dot
+                                                    </button>
+                                                </div>
+
+                                                <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+
+                                                {/* Arrow Ends */}
+                                                <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60" title="Arrow Ends">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, type: 'line', arrowStart: 'none', arrowEnd: 'none' } : s))}
+                                                        className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition ${shpObj.type === 'line' || shpObj.type === 'dashed_line' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        title="Plain Line"
+                                                    >
+                                                        —
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, type: 'arrow', arrowStart: 'none', arrowEnd: 'arrow' } : s))}
+                                                        className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition ${shpObj.type === 'arrow' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        title="Arrow End"
+                                                    >
+                                                        →
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, type: 'double_arrow', arrowStart: 'arrow', arrowEnd: 'arrow' } : s))}
+                                                        className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition ${shpObj.type === 'double_arrow' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        title="Double Arrow"
+                                                    >
+                                                        ↔
+                                                    </button>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                {/* Stroke / Border Color */}
+                                                <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Border Color">
+                                                    <div className="w-full h-full" style={{ backgroundColor: shpObj.color || '#000000' }} />
+                                                    <input
+                                                        type="color"
+                                                        value={shpObj.color || '#000000'}
+                                                        onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, color: e.target.value } : s))}
+                                                        className="absolute inset-[-10px] w-10 h-10 opacity-0 cursor-pointer"
+                                                        title="Border Color"
+                                                    />
+                                                </div>
+
+                                                {/* Fill Color + Transparent Toggle */}
+                                                <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Fill Color">
+                                                    <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: shpObj.fillColor && shpObj.fillColor !== 'transparent' ? shpObj.fillColor : 'transparent' }}>
+                                                        {(!shpObj.fillColor || shpObj.fillColor === 'transparent') && (
+                                                            <span className="text-[7px] text-slate-400 leading-none">✕</span>
+                                                        )}
+                                                    </div>
+                                                    <input
+                                                        type="color"
+                                                        value={shpObj.fillColor && shpObj.fillColor !== 'transparent' ? shpObj.fillColor : '#ffffff'}
+                                                        onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fillColor: e.target.value } : s))}
+                                                        className="absolute inset-[-10px] w-10 h-10 opacity-0 cursor-pointer"
+                                                        title="Fill Color"
+                                                    />
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fillColor: 'transparent' } : s))}
+                                                    className="w-4 h-4 flex items-center justify-center rounded hover:bg-slate-800 text-[10px] text-slate-400 hover:text-white"
+                                                    title="No Fill"
+                                                >
+                                                    <X size={11} />
+                                                </button>
+
+                                                {/* Stroke Width */}
+                                                <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-1 py-0.5" title="Stroke Width">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeWidth: Math.max(1, (s.strokeWidth || 2) - 1) } : s))}
+                                                        className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                                        title="Decrease Stroke Width"
+                                                    >
+                                                        -
+                                                    </button>
+                                                    <span className="text-[10px] font-mono text-white px-1 select-none min-w-[14px] text-center">
+                                                        {shpObj.strokeWidth || 2}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeWidth: Math.min(30, (s.strokeWidth || 2) + 1) } : s))}
+                                                        className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                                        title="Increase Stroke Width"
+                                                    >
+                                                        +
+                                                    </button>
+                                                </div>
+
+                                                {/* Shape Text Controls */}
+                                                <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+
+                                                <div className="relative w-5 h-5 flex flex-col items-center justify-center rounded hover:bg-slate-800 border border-slate-700 cursor-pointer overflow-hidden" title="Text Color">
+                                                    <span className="font-bold text-[11px] leading-none select-none text-slate-200 mt-0.5">A</span>
+                                                    <div className="w-3 h-0.5 mt-[1px] rounded-xs" style={{ backgroundColor: shpObj.textColor || shpObj.color || '#000000' }} />
+                                                    <input
+                                                        type="color"
+                                                        value={shpObj.textColor || shpObj.color || '#000000'}
+                                                        onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, textColor: e.target.value } : s))}
+                                                        className="absolute inset-[-10px] w-10 h-10 opacity-0 cursor-pointer"
+                                                        title="Text Color"
+                                                    />
+                                                </div>
+
+                                                <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-1 py-0.5" title="Font Size">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontSize: Math.max(10, (s.fontSize || 18) - 2) } : s))}
+                                                        className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                                        title="Decrease Font Size"
+                                                    >
+                                                        -
+                                                    </button>
+                                                    <span className="text-[10px] font-mono text-white px-1 select-none min-w-[14px] text-center">
+                                                        {shpObj.fontSize || 18}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontSize: Math.min(80, (s.fontSize || 18) + 2) } : s))}
+                                                        className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                                        title="Increase Font Size"
+                                                    >
+                                                        +
+                                                    </button>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontWeight: s.fontWeight === 'bold' ? 'normal' : 'bold' } : s))}
+                                                    className={`w-5 h-5 flex items-center justify-center rounded text-xs font-bold transition ${shpObj.fontWeight === 'bold' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                    title="Bold"
+                                                >
+                                                    B
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontStyle: s.fontStyle === 'italic' ? 'normal' : 'italic' } : s))}
+                                                    className={`w-5 h-5 flex items-center justify-center rounded text-xs italic font-serif transition ${shpObj.fontStyle === 'italic' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                    title="Italic"
+                                                >
+                                                    I
+                                                </button>
+                                            </>
+                                        )}
+
+                                        <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+
+                                        {/* Lock */}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleToggleLock()}
+                                            className={`p-1 rounded transition ${shpObj.isLocked ? 'text-amber-400 bg-amber-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                                            title={shpObj.isLocked ? "Unlock Shape" : "Lock Shape"}
+                                        >
+                                            {shpObj.isLocked ? <Lock size={13} /> : <Unlock size={13} />}
+                                        </button>
+
+                                        {/* Delete */}
+                                        <button
+                                            type="button"
+                                            onClick={handleDelete}
+                                            className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded transition"
+                                            title="Delete Shape"
+                                        >
+                                            <Trash2 size={13} />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                         );
                     })}
+
+                    {/* Multi-Shape Selection Inline Format Bar */}
+                    {selectedShapeIds.length > 1 && !shapeDragState && (() => {
+                        const selectedShapes = shapeObjects.filter(s => selectedShapeIds.includes(s.id));
+                        if (selectedShapes.length < 2) return null;
+                        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                        selectedShapes.forEach(s => {
+                            const sx = s.x || 0;
+                            const sy = s.y || 0;
+                            const sw = s.width || 100;
+                            const sh = s.height || 100;
+                            minX = Math.min(minX, sx, sx + sw);
+                            minY = Math.min(minY, sy, sy + sh);
+                            maxX = Math.max(maxX, sx, sx + sw);
+                            maxY = Math.max(maxY, sy, sy + sh);
+                        });
+                        const groupCx = (minX + maxX) / 2;
+                        const groupTop = minY - 44;
+
+                        return (
+                            <div
+                                className="absolute pointer-events-auto select-none"
+                                style={{
+                                    left: groupCx,
+                                    top: groupTop,
+                                    transform: 'translate(-50%, -100%)',
+                                    zIndex: 70,
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                            >
+                                <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl px-2.5 py-1 text-slate-200 animate-in fade-in zoom-in-95 duration-100">
+                                    <span className="text-[11px] font-semibold text-slate-400 px-1 select-none">
+                                        {selectedShapes.length} shapes
+                                    </span>
+
+                                    <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+
+                                    {/* Border Color */}
+                                    <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Border Color (All)">
+                                        <div className="w-full h-full" style={{ backgroundColor: selectedShapes[0]?.color || '#000000' }} />
+                                        <input
+                                            type="color"
+                                            value={selectedShapes[0]?.color || '#000000'}
+                                            onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, color: e.target.value } : s))}
+                                            className="absolute inset-[-10px] w-10 h-10 opacity-0 cursor-pointer"
+                                            title="Border Color (All)"
+                                        />
+                                    </div>
+
+                                    {/* Fill Color */}
+                                    <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Fill Color (All)">
+                                        <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: selectedShapes[0]?.fillColor && selectedShapes[0]?.fillColor !== 'transparent' ? selectedShapes[0].fillColor : 'transparent' }}>
+                                            {(!selectedShapes[0]?.fillColor || selectedShapes[0]?.fillColor === 'transparent') && (
+                                                <span className="text-[7px] text-slate-400 leading-none">✕</span>
+                                            )}
+                                        </div>
+                                        <input
+                                            type="color"
+                                            value={selectedShapes[0]?.fillColor && selectedShapes[0]?.fillColor !== 'transparent' ? selectedShapes[0].fillColor : '#ffffff'}
+                                            onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: e.target.value } : s))}
+                                            className="absolute inset-[-10px] w-10 h-10 opacity-0 cursor-pointer"
+                                            title="Fill Color (All)"
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: 'transparent' } : s))}
+                                        className="w-4 h-4 flex items-center justify-center rounded hover:bg-slate-800 text-[10px] text-slate-400 hover:text-white"
+                                        title="No Fill (All)"
+                                    >
+                                        <X size={11} />
+                                    </button>
+
+                                    {/* Stroke Width */}
+                                    <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-1 py-0.5" title="Stroke Width (All)">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, strokeWidth: Math.max(1, (s.strokeWidth || 2) - 1) } : s))}
+                                            className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                            title="Decrease Stroke Width"
+                                        >
+                                            -
+                                        </button>
+                                        <span className="text-[10px] font-mono text-white px-1 select-none min-w-[14px] text-center">
+                                            {selectedShapes[0]?.strokeWidth || 2}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, strokeWidth: Math.min(30, (s.strokeWidth || 2) + 1) } : s))}
+                                            className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                            title="Increase Stroke Width"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
+
+                                    <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+
+                                    {/* Group */}
+                                    <button
+                                        type="button"
+                                        onClick={handleGroup}
+                                        className="p-1 hover:bg-slate-800 rounded text-slate-300 hover:text-white transition"
+                                        title="Group Selected Shapes"
+                                    >
+                                        <Group size={13} />
+                                    </button>
+
+                                    {/* Lock */}
+                                    <button
+                                        type="button"
+                                        onClick={handleToggleLock}
+                                        className="p-1 hover:bg-slate-800 rounded text-slate-300 hover:text-white transition"
+                                        title="Lock/Unlock Selected Shapes"
+                                    >
+                                        {selectedShapes.some(s => s.isLocked) ? <Lock size={13} className="text-amber-400" /> : <Unlock size={13} />}
+                                    </button>
+
+                                    {/* Delete */}
+                                    <button
+                                        type="button"
+                                        onClick={handleDelete}
+                                        className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded transition"
+                                        title="Delete Selection"
+                                    >
+                                        <Trash2 size={13} />
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })()}
 
                     {/* Top-Left Live Whiteboard Activity Banner */}
                     {recentLiveActions.length > 0 && (
@@ -9161,6 +9563,14 @@ export default function Whiteboard({
                                         ...prev,
                                         [currentPage]: (prev[currentPage] || []).map(s => s.id === id ? { ...s, ...updates } : s)
                                     }));
+                                }}
+                                onDelete={(id) => {
+                                    setPageShapeObjects(prev => ({
+                                        ...prev,
+                                        [currentPage]: (prev[currentPage] || []).filter(s => s.id !== id)
+                                    }));
+                                    setSelectedShapeIds([]);
+                                    saveToHistory();
                                 }}
                             />
                         ))}
