@@ -3,10 +3,122 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
     Box, Rotate3d, Lock, Unlock, Trash2, Copy,
-    Infinity as InfinityIcon, Sliders, RotateCcw,
+    Infinity as InfinityIcon, Sliders, RotateCcw, RotateCw,
     ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
     ChevronsUp, ChevronsDown, Palette, Sun, Eye, X
 } from 'lucide-react';
+
+// Snap angle to nearest 45 degree cardinal/diagonal within 3.5 deg threshold
+const snapRotationAngle = (rawAngle) => {
+    const normalized = ((rawAngle % 360) + 360) % 360;
+    const nearest45 = Math.round(normalized / 45) * 45;
+    const diff = Math.abs(normalized - nearest45);
+    if (diff <= 3.5 || diff >= 356.5) {
+        return (nearest45 % 360);
+    }
+    return Math.round(rawAngle * 10) / 10;
+};
+
+// 360-Degree Circular Radial Rotation Dial UI for 3D Objects
+function RotationDial3D({ cx, cy, radius, rotation }) {
+    const normRot = ((rotation % 360) + 360) % 360;
+    const rad = (normRot - 90) * (Math.PI / 180); // 0 deg is at top (12 o'clock)
+    
+    const pointerX = cx + radius * Math.cos(rad);
+    const pointerY = cy + radius * Math.sin(rad);
+
+    // Generate 24 tick marks (every 15 degrees)
+    const ticks = [];
+    for (let deg = 0; deg < 360; deg += 15) {
+        const tickRad = (deg - 90) * (Math.PI / 180);
+        const isCardinal = deg % 90 === 0;
+        const isDiagonal = deg % 45 === 0 && !isCardinal;
+        const tickLen = isCardinal ? 14 : isDiagonal ? 9 : 5;
+        const isCurrentSnapped = Math.abs(normRot - deg) < 2 || Math.abs(normRot - deg) > 358;
+
+        const x1 = cx + (radius - tickLen) * Math.cos(tickRad);
+        const y1 = cy + (radius - tickLen) * Math.sin(tickRad);
+        const x2 = cx + radius * Math.cos(tickRad);
+        const y2 = cy + radius * Math.sin(tickRad);
+
+        let labelPos = null;
+        if (isCardinal) {
+            const labelDist = radius + 18;
+            labelPos = {
+                x: cx + labelDist * Math.cos(tickRad),
+                y: cy + labelDist * Math.sin(tickRad),
+                text: `${deg}°`
+            };
+        }
+
+        ticks.push({ deg, x1, y1, x2, y2, isCardinal, isDiagonal, isCurrentSnapped, labelPos });
+    }
+
+    return (
+        <div className="absolute inset-0 pointer-events-none z-[80] overflow-visible animate-in fade-in duration-150">
+            <svg width="100%" height="100%" className="overflow-visible pointer-events-none">
+                {/* Outer guide circle */}
+                <circle cx={cx} cy={cy} r={radius} fill="rgba(15, 23, 42, 0.4)" stroke="#6366f1" strokeWidth="1.5" strokeDasharray="3,3" />
+
+                {/* Cardinal & minor tick marks */}
+                {ticks.map((t, idx) => (
+                    <g key={idx}>
+                        <line
+                            x1={t.x1}
+                            y1={t.y1}
+                            x2={t.x2}
+                            y2={t.y2}
+                            stroke={t.isCurrentSnapped ? '#10b981' : t.isCardinal ? '#3b82f6' : t.isDiagonal ? '#38bdf8' : 'rgba(148, 163, 184, 0.5)'}
+                            strokeWidth={t.isCurrentSnapped ? 3 : t.isCardinal ? 2.5 : t.isDiagonal ? 1.75 : 1}
+                        />
+                        {t.labelPos && (
+                            <text
+                                x={t.labelPos.x}
+                                y={t.labelPos.y}
+                                textAnchor="middle"
+                                dominantBaseline="central"
+                                fill={t.isCurrentSnapped ? '#34d399' : '#93c5fd'}
+                                fontSize="11"
+                                fontWeight="bold"
+                                fontFamily="monospace"
+                            >
+                                {t.labelPos.text}
+                            </text>
+                        )}
+                    </g>
+                ))}
+
+                {/* Center Pivot Point */}
+                <circle cx={cx} cy={cy} r="4" fill="#3b82f6" stroke="#ffffff" strokeWidth="2" />
+
+                {/* Active Radial Line */}
+                <line
+                    x1={cx}
+                    y1={cy}
+                    x2={pointerX}
+                    y2={pointerY}
+                    stroke="#6366f1"
+                    strokeWidth="2.5"
+                    strokeDasharray={normRot % 45 === 0 ? "none" : "4,2"}
+                />
+
+                {/* Active Indicator Node */}
+                <circle cx={pointerX} cy={pointerY} r="7" fill="#6366f1" stroke="#ffffff" strokeWidth="2.5" />
+            </svg>
+
+            {/* Floating Angle Tooltip Badge */}
+            <div
+                className="absolute px-3 py-1.5 rounded-full bg-slate-950/95 text-white text-xs font-mono font-bold shadow-2xl border border-indigo-500/60 flex items-center gap-1.5 backdrop-blur-md z-[85] transform -translate-x-1/2 -translate-y-1/2"
+                style={{ left: `${cx}px`, top: `${cy - radius - 36}px` }}
+            >
+                <RotateCw className="w-3.5 h-3.5 text-indigo-400 animate-spin" style={{ animationDuration: '4s' }} />
+                <span className="text-indigo-200">Angle:</span>
+                <span className="text-emerald-400 font-extrabold text-[13px]">{Math.round(normRot)}°</span>
+            </div>
+        </div>
+    );
+}
+
 
 /* ─── Built-in 3D Geometric & Science Mesh Generators ─── */
 export function get3DModelMesh(modelType = 'cube') {
@@ -376,14 +488,16 @@ export default function Whiteboard3DObject({
     const [rotY, setRotY] = useState(obj.rotY || 45);
     const [rotZ, setRotZ] = useState(obj.rotZ || 0);
     const [is3DDragging, setIs3DDragging] = useState(false);
-    const [showFormatMenu, setShowFormatMenu] = useState(false);
+    const [isRotating2D, setIsRotating2D] = useState(false);
+    const [liveRotation, setLiveRotation] = useState(obj.rotation || 0);
     const lastPointerRef = useRef({ x: 0, y: 0 });
 
     useEffect(() => {
         if (typeof obj.rotX === 'number') setRotX(obj.rotX);
         if (typeof obj.rotY === 'number') setRotY(obj.rotY);
         if (typeof obj.rotZ === 'number') setRotZ(obj.rotZ);
-    }, [obj.rotX, obj.rotY, obj.rotZ]);
+        if (typeof obj.rotation === 'number') setLiveRotation(obj.rotation);
+    }, [obj.rotX, obj.rotY, obj.rotZ, obj.rotation]);
 
     // Directional rotation helper
     const rotateBy = useCallback((dx, dy) => {
@@ -496,11 +610,10 @@ export default function Whiteboard3DObject({
             const len = Math.hypot(nx, ny, nz) || 1;
             const nnx = nx / len, nny = ny / len, nnz = nz / len;
 
-            // Backface culling: unless glass/wireframe, discard faces facing away
-            if (!isGlass && !isWireframe && nnz >= 0.1) return null;
-
-            // Diffuse lighting intensity
-            const intensity = isFlat ? 1.0 : Math.max(0.25, Math.min(1.0, nnx * lx + nny * ly + nnz * lz));
+            // Two-sided diffuse lighting intensity: flip normal if facing away so both sides are illuminated
+            const dot = nnx * lx + nny * ly + nnz * lz;
+            const effDot = nnz < 0 ? -dot : dot;
+            const intensity = isFlat ? 1.0 : Math.max(0.25, Math.min(1.0, effDot));
             const avgZ = faceIndices.reduce((sum, idx) => sum + (transformedVertices[idx]?.pz || 0), 0) / faceIndices.length;
 
             const pointsStr = faceIndices
@@ -656,29 +769,53 @@ export default function Whiteboard3DObject({
         window.addEventListener('pointerup', onUp);
     };
 
-    // 2D Rotation
+    // 2D Rotation with radial dial support and 45° snapping
     const handleRotateStart = (e) => {
         if (obj.isLocked) return;
         e.stopPropagation();
         if (e.cancelable) e.preventDefault();
 
+        setIsRotating2D(true);
+        setLiveRotation(obj.rotation || 0);
+
+        const canvasEl = document.getElementById('main-whiteboard-canvas') || document.querySelector('.whiteboard-canvas');
+        const rect = canvasEl?.getBoundingClientRect();
+        const scaleToScreenX = (canvasEl && canvasEl.width > 0 && rect) ? rect.width / canvasEl.width : 1;
+        const scaleToScreenY = (canvasEl && canvasEl.height > 0 && rect) ? rect.height / canvasEl.height : 1;
+
         const centerX = (obj.x || 0) + (obj.width || 220) / 2;
         const centerY = (obj.y || 0) + (obj.height || 220) / 2;
+        const canvasCenterX = rect ? rect.left + centerX * scaleToScreenX : centerX;
+        const canvasCenterY = rect ? rect.top + centerY * scaleToScreenY : centerY;
+
+        const startPointerX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+        const startPointerY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+        const startAngle = Math.atan2(startPointerY - canvasCenterY, startPointerX - canvasCenterX);
+        const startObjRot = obj.rotation || 0;
 
         const onMove = (moveEvt) => {
-            const radians = Math.atan2(moveEvt.clientY - centerY, moveEvt.clientX - centerX);
-            let degrees = radians * (180 / Math.PI) - 90;
-            degrees = (degrees + 360) % 360;
-            onUpdate && onUpdate({ rotation: Math.round(degrees) });
+            const currentX = moveEvt.clientX !== undefined ? moveEvt.clientX : (moveEvt.touches && moveEvt.touches[0] ? moveEvt.touches[0].clientX : startPointerX);
+            const currentY = moveEvt.clientY !== undefined ? moveEvt.clientY : (moveEvt.touches && moveEvt.touches[0] ? moveEvt.touches[0].clientY : startPointerY);
+            const currentAngle = Math.atan2(currentY - canvasCenterY, currentX - canvasCenterX);
+            const angleDiff = (currentAngle - startAngle) * (180 / Math.PI);
+            const newRotation = snapRotationAngle(startObjRot + angleDiff);
+
+            setLiveRotation(newRotation);
+            onUpdate && onUpdate({ rotation: newRotation });
         };
 
         const onUp = () => {
+            setIsRotating2D(false);
             window.removeEventListener('pointermove', onMove);
             window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('touchmove', onMove);
+            window.removeEventListener('touchend', onUp);
         };
 
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
+        window.addEventListener('touchmove', onMove, { passive: false });
+        window.addEventListener('touchend', onUp);
     };
 
     // Stroke Dasharray resolution for edges
@@ -887,38 +1024,129 @@ export default function Whiteboard3DObject({
                 </div>
             )}
 
-            {/* 2D Controls Toolbar (When Selected) */}
+            {/* Sleek Horizontal Floating 3D Format Bar (matches Whiteboard format bar design) */}
             {isSelected && (
                 <div
-                    className="absolute -top-11 left-1/2 -translate-x-1/2 bg-slate-900/95 border border-slate-700/80 shadow-2xl rounded-lg px-2 py-1 flex items-center gap-1.5 z-40 text-slate-200 pointer-events-auto select-none backdrop-blur-md"
+                    className="absolute -top-12 left-1/2 bg-slate-900/95 border border-slate-700/80 shadow-2xl rounded-xl px-2.5 py-1 flex items-center gap-1.5 z-40 text-slate-200 pointer-events-auto select-none backdrop-blur-md whitespace-nowrap"
+                    style={{
+                        transform: `translateX(-50%) rotate(-${obj.rotation || 0}deg)`,
+                        transformOrigin: 'bottom center'
+                    }}
                     onPointerDown={e => e.stopPropagation()}
+                    onClick={e => e.stopPropagation()}
                 >
+                    {/* Model Type Tag */}
                     <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider px-1">
                         {obj.modelType || '3D'}
                     </span>
-                    <div className="w-px h-3.5 bg-slate-700" />
-                    
-                    {/* Format / Styling Popover Toggle */}
-                    <button
-                        type="button"
-                        onClick={() => setShowFormatMenu(prev => !prev)}
-                        className={`p-1 rounded transition ${showFormatMenu ? 'bg-sky-600 text-white' : 'hover:bg-slate-800 text-slate-300 hover:text-white'}`}
-                        title="3D Material, Borders & Shading Format"
-                    >
-                        <Sliders className="w-3.5 h-3.5" />
-                    </button>
 
-                    {/* Reset 3D Rotation */}
+                    <div className="w-px h-3.5 bg-slate-700" />
+
+                    {/* Surface Color */}
+                    <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Surface Base Color">
+                        <div className="w-full h-full" style={{ backgroundColor: obj.color || '#3b82f6' }} />
+                        <input 
+                            type="color" 
+                            value={obj.color || '#3b82f6'} 
+                            onChange={e => onUpdate && onUpdate({ color: e.target.value })}
+                            className="absolute inset-[-10px] w-10 h-10 opacity-0 cursor-pointer"
+                            title="Surface Base Color"
+                        />
+                    </div>
+
+                    {/* Material Shading Pills: Solid, Glass, Wire, Flat */}
+                    <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60" title="Material Shading">
+                        {[
+                            { id: 'shaded', label: 'Solid' },
+                            { id: 'glass', label: 'Glass' },
+                            { id: 'wireframe', label: 'Wire' },
+                            { id: 'flat', label: 'Flat' }
+                        ].map(mat => (
+                            <button
+                                key={mat.id}
+                                type="button"
+                                onClick={() => onUpdate && onUpdate({ materialStyle: mat.id })}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition ${
+                                    (obj.materialStyle || 'shaded') === mat.id ? 'bg-sky-600 text-white font-bold shadow' : 'text-slate-400 hover:text-white'
+                                }`}
+                                title={`${mat.label} Shading`}
+                            >
+                                {mat.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="w-px h-3.5 bg-slate-700" />
+
+                    {/* Edge Border Width Stepper */}
+                    <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-1 py-0.5" title="Edge Border Width">
+                        <button
+                            type="button"
+                            onClick={() => onUpdate && onUpdate({ edgeWidth: Math.max(0, (obj.edgeWidth !== undefined ? obj.edgeWidth : 0.8) - 0.5) })}
+                            className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                            title="Thinner Borders"
+                        >
+                            -
+                        </button>
+                        <span className="text-[10px] font-mono text-white px-1 select-none min-w-[20px] text-center">
+                            {(obj.edgeWidth ?? 0.8) === 0 ? 'Off' : `${(obj.edgeWidth ?? 0.8).toFixed(1)}`}
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => onUpdate && onUpdate({ edgeWidth: Math.min(4, (obj.edgeWidth !== undefined ? obj.edgeWidth : 0.8) + 0.5) })}
+                            className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                            title="Thicker Borders"
+                        >
+                            +
+                        </button>
+                    </div>
+
+                    {/* Edge Border Color */}
+                    <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Border Edge Color">
+                        <div className="w-full h-full" style={{ backgroundColor: obj.edgeColor || '#ffffff' }} />
+                        <input 
+                            type="color" 
+                            value={obj.edgeColor || '#ffffff'} 
+                            onChange={e => onUpdate && onUpdate({ edgeColor: e.target.value })}
+                            className="absolute inset-[-10px] w-10 h-10 opacity-0 cursor-pointer"
+                            title="Border Edge Color"
+                        />
+                    </div>
+
+                    {/* Edge Style: Solid, Dashed, Dotted */}
+                    <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60" title="Edge Dash Style">
+                        {[
+                            { id: 'solid', label: '—', title: 'Solid' },
+                            { id: 'dashed', label: '┄', title: 'Dashed' },
+                            { id: 'dotted', label: '┈', title: 'Dotted' }
+                        ].map(st => (
+                            <button
+                                key={st.id}
+                                type="button"
+                                onClick={() => onUpdate && onUpdate({ edgeStyle: st.id })}
+                                className={`px-1.5 py-0.5 rounded text-[11px] font-mono transition ${
+                                    (obj.edgeStyle || 'solid') === st.id ? 'bg-sky-600 text-white font-bold shadow' : 'text-slate-400 hover:text-white'
+                                }`}
+                                title={st.title}
+                            >
+                                {st.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="w-px h-3.5 bg-slate-700" />
+
+                    {/* Reset 3D View Angle */}
                     <button
                         type="button"
                         onClick={() => onUpdate && onUpdate({ rotX: -25, rotY: 45, rotZ: 0 })}
-                        className="p-1 rounded hover:bg-slate-800 text-slate-300 hover:text-white"
+                        className="p-1 rounded hover:bg-slate-800 text-slate-300 hover:text-white transition"
                         title="Reset 3D View Angle"
                     >
                         <RotateCcw className="w-3.5 h-3.5" />
                     </button>
 
-                    {/* Infinite Cloner Toggle (Toggles ON/OFF so parent does not copy when dragged if OFF) */}
+                    {/* Infinite Cloner Toggle */}
                     <button
                         type="button"
                         onClick={() => onUpdate && onUpdate({ isInfiniteCloner: !obj.isInfiniteCloner })}
@@ -933,7 +1161,7 @@ export default function Whiteboard3DObject({
                         <button
                             type="button"
                             onClick={() => onDuplicate(obj.id)}
-                            className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white"
+                            className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition"
                             title="Duplicate"
                         >
                             <Copy className="w-3.5 h-3.5" />
@@ -945,7 +1173,7 @@ export default function Whiteboard3DObject({
                         <button
                             type="button"
                             onClick={() => onDelete(obj.id)}
-                            className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-red-400"
+                            className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-red-400 transition"
                             title="Delete"
                         >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -954,137 +1182,52 @@ export default function Whiteboard3DObject({
                 </div>
             )}
 
-            {/* 3D Material & Appearance Format Popover */}
-            {showFormatMenu && isSelected && (
-                <div 
-                    className="absolute -top-72 left-1/2 -translate-x-1/2 w-64 bg-slate-900/98 border border-slate-700/90 rounded-xl shadow-2xl p-3 z-50 text-slate-200 text-xs flex flex-col gap-2.5 backdrop-blur-md pointer-events-auto"
-                    onPointerDown={e => e.stopPropagation()}
-                    onClick={e => e.stopPropagation()}
+            {/* Radial Rotation Dial Overlay (Same UI as 2D Shapes) */}
+            {isRotating2D && (
+                <div
+                    className="absolute inset-0 pointer-events-none z-[80] overflow-visible"
+                    style={{
+                        transform: `rotate(-${obj.rotation || 0}deg)`,
+                        transformOrigin: 'center center'
+                    }}
                 >
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
-                        <span className="font-bold text-sky-400 flex items-center gap-1.5 text-xs">
-                            <Sliders size={13} /> 3D Material & Style
-                        </span>
-                        <button onClick={() => setShowFormatMenu(false)} className="text-slate-400 hover:text-white p-0.5">
-                            <X size={12} />
-                        </button>
-                    </div>
-
-                    {/* Surface Color & Transparency Control */}
-                    <div className="flex flex-col gap-1">
-                        <div className="flex items-center justify-between text-[11px] text-slate-400">
-                            <span>Surface Color</span>
-                            <span className="font-mono text-slate-300">{Math.round((obj.opacity ?? 1) * 100)}% Opacity</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <input 
-                                type="color" 
-                                value={obj.color || '#3b82f6'} 
-                                onChange={e => onUpdate && onUpdate({ color: e.target.value })}
-                                className="w-7 h-7 rounded border border-slate-700 bg-transparent cursor-pointer"
-                                title="Surface Base Color"
-                            />
-                            <input 
-                                type="range" 
-                                min="0.1" 
-                                max="1" 
-                                step="0.05"
-                                value={obj.opacity ?? 1} 
-                                onChange={e => onUpdate && onUpdate({ opacity: parseFloat(e.target.value) })}
-                                className="flex-1 accent-sky-500 h-1.5 bg-slate-700 rounded cursor-pointer"
-                                title="Surface Transparency"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Surface Shading Presets */}
-                    <div className="flex flex-col gap-1">
-                        <span className="text-[11px] text-slate-400">Material Shading</span>
-                        <div className="grid grid-cols-4 gap-1 text-[10px] text-center font-medium">
-                            {['shaded', 'flat', 'glass', 'wireframe'].map(mat => (
-                                <button
-                                    key={mat}
-                                    type="button"
-                                    onClick={() => onUpdate && onUpdate({ materialStyle: mat })}
-                                    className={`py-1 px-1 rounded capitalize transition ${
-                                        (obj.materialStyle || 'shaded') === mat ? 'bg-sky-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                                    }`}
-                                >
-                                    {mat}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Border / Edge Properties */}
-                    <div className="flex flex-col gap-1 border-t border-slate-800 pt-1.5">
-                        <div className="flex items-center justify-between text-[11px] text-slate-400">
-                            <span>Edge Borders</span>
-                            <span className="font-mono text-slate-300">{obj.edgeWidth ?? 0.8}px</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <input 
-                                type="color" 
-                                value={obj.edgeColor || '#ffffff'} 
-                                onChange={e => onUpdate && onUpdate({ edgeColor: e.target.value })}
-                                className="w-6 h-6 rounded border border-slate-700 bg-transparent cursor-pointer"
-                                title="Border Edge Color"
-                            />
-                            <div className="flex items-center gap-1 flex-1">
-                                {[0, 0.8, 1.5, 3].map(w => (
-                                    <button
-                                        key={w}
-                                        type="button"
-                                        onClick={() => onUpdate && onUpdate({ edgeWidth: w })}
-                                        className={`flex-1 py-0.5 rounded text-[10px] ${
-                                            (obj.edgeWidth ?? 0.8) === w ? 'bg-sky-600 text-white font-bold' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                                        }`}
-                                    >
-                                        {w === 0 ? 'None' : `${w}px`}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        {/* Border Line Type: Solid, Dashed, Dotted */}
-                        <div className="flex items-center gap-1 mt-1">
-                            {[
-                                { id: 'solid', label: '━ Solid' },
-                                { id: 'dashed', label: '╍ Dash' },
-                                { id: 'dotted', label: '┈ Dot' }
-                            ].map(st => (
-                                <button
-                                    key={st.id}
-                                    type="button"
-                                    onClick={() => onUpdate && onUpdate({ edgeStyle: st.id })}
-                                    className={`flex-1 py-1 rounded text-[10px] font-mono transition ${
-                                        (obj.edgeStyle || 'solid') === st.id ? 'bg-sky-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                                    }`}
-                                >
-                                    {st.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+                    <RotationDial3D
+                        cx={(obj.width || 220) / 2}
+                        cy={(obj.height || 220) / 2}
+                        radius={Math.max(90, Math.min(obj.width || 220, obj.height || 220) * 0.75)}
+                        rotation={liveRotation}
+                    />
                 </div>
             )}
 
             {/* 2D Resize & Rotate Handles (When Selected & Not Locked) */}
             {isSelected && !obj.isLocked && (
                 <>
-                    {/* 2D Rotate Stem */}
+                    {/* Rotate Handle with Angle Badge (Same UI as 2D shapes) */}
                     <div
-                        className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center z-30"
-                        style={{ top: -32, pointerEvents: 'auto' }}
+                        className="absolute left-1/2 -translate-x-1/2 flex flex-col-reverse items-center z-30"
+                        style={{ top: -42, pointerEvents: 'auto' }}
                         onPointerDown={e => e.stopPropagation()}
                     >
-                        <div className="w-px h-4 bg-sky-500" />
+                        <div className="w-px h-5 bg-sky-500" />
                         <div
+                            data-handle="rotate"
                             onPointerDown={handleRotateStart}
-                            className="w-6 h-6 rounded-full bg-sky-600 text-white flex items-center justify-center cursor-grab hover:bg-sky-700 shadow-md transition-transform hover:scale-110 active:cursor-grabbing"
-                            title="2D Rotate Object"
+                            className="w-5 h-5 rounded-full bg-sky-600 flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-sky-500 shadow-md text-white transition-transform hover:scale-110"
+                            style={{ cursor: 'grab' }}
+                            title="Rotate 3D Object (Drag to rotate with radial dial)"
                         >
-                            <RotateCcw className="w-3.5 h-3.5" />
+                            <RotateCw className="w-3 h-3 text-white" />
                         </div>
+                        <input
+                            type="number"
+                            value={Math.round(obj.rotation || 0)}
+                            onChange={(e) => onUpdate && onUpdate({ rotation: parseInt(e.target.value) || 0 })}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            className="mb-1 w-12 text-center text-xs bg-slate-800 text-white px-1 py-0.5 rounded shadow-lg z-50 border border-slate-600 outline-none appearance-none"
+                            title="Planar Rotation Angle"
+                        />
                     </div>
 
                     {/* Corner Resize Handles */}

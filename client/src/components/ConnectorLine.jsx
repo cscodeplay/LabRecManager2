@@ -138,8 +138,14 @@ export const getConnectorMidpoint = (startPt, endPt, pathType = 'curved', waypoi
     }
 
     if (pathType === 'orthogonal') {
-        const stepX = waypoint ? waypoint.x : (startPt.x + endPt.x) / 2;
-        return { x: stepX, y: (startPt.y + endPt.y) / 2 };
+        const isVertical = Math.abs(endPt.y - startPt.y) > Math.abs(endPt.x - startPt.x);
+        if (isVertical) {
+            const stepY = waypoint?.y !== undefined ? waypoint.y : (startPt.y + endPt.y) / 2;
+            return { x: (startPt.x + endPt.x) / 2, y: stepY };
+        } else {
+            const stepX = waypoint?.x !== undefined ? waypoint.x : (startPt.x + endPt.x) / 2;
+            return { x: stepX, y: (startPt.y + endPt.y) / 2 };
+        }
     }
 
     if (pathType === 'curved') {
@@ -166,8 +172,14 @@ export const getConnectorPath = (startPt, endPt, pathType = 'curved', waypoint =
         }
         return `M ${startPt.x} ${startPt.y} L ${endPt.x} ${endPt.y}`;
     } else if (pathType === 'orthogonal') {
-        const stepX = waypoint ? waypoint.x : (startPt.x + endPt.x) / 2;
-        return `M ${startPt.x} ${startPt.y} L ${stepX} ${startPt.y} L ${stepX} ${endPt.y} L ${endPt.x} ${endPt.y}`;
+        const isVertical = Math.abs(endPt.y - startPt.y) > Math.abs(endPt.x - startPt.x);
+        if (isVertical) {
+            const stepY = waypoint?.y !== undefined ? waypoint.y : (startPt.y + endPt.y) / 2;
+            return `M ${startPt.x} ${startPt.y} L ${startPt.x} ${stepY} L ${endPt.x} ${stepY} L ${endPt.x} ${endPt.y}`;
+        } else {
+            const stepX = waypoint?.x !== undefined ? waypoint.x : (startPt.x + endPt.x) / 2;
+            return `M ${startPt.x} ${startPt.y} L ${stepX} ${startPt.y} L ${stepX} ${endPt.y} L ${endPt.x} ${endPt.y}`;
+        }
     } else if (pathType === 'curved') {
         if (waypoint) {
             // Quadratic Bezier passing smoothly through the waypoint
@@ -264,8 +276,8 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
     const sourceShape = useMemo(() => allConnectables.find(s => s.id === sourceId), [allConnectables, sourceId]);
     const targetShape = useMemo(() => allConnectables.find(s => s.id === targetId), [allConnectables, targetId]);
 
-    // If neither shape exists and neither endpoint is currently being dragged, return null
-    if (!sourceShape && !targetShape && !draggingEndpoint) {
+    // If neither shape exists, neither point exists, and neither endpoint is currently being dragged, return null
+    if (!sourceShape && !targetShape && !sourcePoint && !targetPoint && !draggingEndpoint) {
         return null;
     }
 
@@ -320,7 +332,12 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
             };
 
             if (draggingEndpointRef.current === 'waypoint' && pathType === 'orthogonal' && actualSourcePoint && actualTargetPoint) {
-                nextPoint.y = (actualSourcePoint.y + actualTargetPoint.y) / 2;
+                const isVertical = Math.abs(actualTargetPoint.y - actualSourcePoint.y) > Math.abs(actualTargetPoint.x - actualSourcePoint.x);
+                if (isVertical) {
+                    nextPoint.x = (actualSourcePoint.x + actualTargetPoint.x) / 2;
+                } else {
+                    nextPoint.y = (actualSourcePoint.y + actualTargetPoint.y) / 2;
+                }
             }
 
             dragPointRef.current = nextPoint;
@@ -449,55 +466,7 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
             {renderArrowhead(arrowStart, actualSourcePoint, sourceAngle, strokeWidth * 4, color)}
             {renderArrowhead(arrowEnd, actualTargetPoint, targetAngle, strokeWidth * 4, color)}
 
-            {/* Selection Handles */}
-            {isSelected && !draggingEndpoint && (
-                <>
-                    <circle
-                        cx={actualSourcePoint.x}
-                        cy={actualSourcePoint.y}
-                        r={6 / scale}
-                        fill="#fff"
-                        stroke="#2563eb" // tailwind blue-600
-                        strokeWidth={2 / scale}
-                        className="cursor-move hover:scale-125 transition-transform"
-                        style={{ pointerEvents: 'auto' }}
-                        onPointerDown={(e) => handlePointerDown('source', e)}
-                    />
-                    <circle
-                        cx={actualTargetPoint.x}
-                        cy={actualTargetPoint.y}
-                        r={6 / scale}
-                        fill="#fff"
-                        stroke="#2563eb"
-                        strokeWidth={2 / scale}
-                        className="cursor-move hover:scale-125 transition-transform"
-                        style={{ pointerEvents: 'auto' }}
-                        onPointerDown={(e) => handlePointerDown('target', e)}
-                    />
-                    {/* Draggable Midpoint / Waypoint Handle (Lucidchart bend tool to change shape of line) */}
-                    <g 
-                        className="cursor-grab active:cursor-grabbing hover:scale-125 transition-transform"
-                        style={{ pointerEvents: 'auto' }}
-                        onPointerDown={(e) => handlePointerDown('waypoint', e)}
-                        onDoubleClick={(e) => {
-                            e.stopPropagation();
-                            onUpdate(id, { waypoint: null });
-                        }}
-                    >
-                        <circle
-                            cx={actualWaypoint.x}
-                            cy={actualWaypoint.y}
-                            r={7 / scale}
-                            fill="#f59e0b"
-                            stroke="#ffffff"
-                            strokeWidth={2 / scale}
-                            className="shadow-sm"
-                            style={{ pointerEvents: 'auto' }}
-                        />
-                        <title>Drag to reshape line bend (Double-click to reset)</title>
-                    </g>
-                </>
-            )}
+
 
             {/* Snap Indicator */}
             {snapTarget && draggingEndpoint && (
@@ -512,11 +481,11 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                 />
             )}
 
-            {/* Center / Midpoint Text Label & Inline Editor */}
+            {/* Center / Midpoint Text Label & Inline Editor (offset vertically to avoid occluding middle drag handle) */}
             {connectorMidpoint && (
                 <foreignObject
                     x={connectorMidpoint.x - 75}
-                    y={connectorMidpoint.y - 14}
+                    y={isSelected ? connectorMidpoint.y + 14 : connectorMidpoint.y - 32}
                     width={150}
                     height={28}
                     style={{ overflow: 'visible', pointerEvents: 'none' }}
@@ -743,6 +712,116 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                         </div>
                     </div>
                 </foreignObject>
+            )}
+
+            {/* Guide lines while actively dragging waypoint */}
+            {draggingEndpoint === 'waypoint' && actualWaypoint && (
+                <>
+                    <line
+                        x1={actualSourcePoint.x}
+                        y1={actualSourcePoint.y}
+                        x2={actualWaypoint.x}
+                        y2={actualWaypoint.y}
+                        stroke="#f59e0b"
+                        strokeWidth={1.5 / scale}
+                        strokeDasharray="4,4"
+                        strokeOpacity={0.7}
+                        className="pointer-events-none"
+                    />
+                    <line
+                        x1={actualTargetPoint.x}
+                        y1={actualTargetPoint.y}
+                        x2={actualWaypoint.x}
+                        y2={actualWaypoint.y}
+                        stroke="#f59e0b"
+                        strokeWidth={1.5 / scale}
+                        strokeDasharray="4,4"
+                        strokeOpacity={0.7}
+                        className="pointer-events-none"
+                    />
+                </>
+            )}
+
+            {/* Selection Handles & Middle Waypoint Drag Handle (rendered on top of SVG) */}
+            {(isSelected || draggingEndpoint) && (
+                <g className="connector-selection-handles" style={{ pointerEvents: 'auto' }}>
+                    {/* Source Endpoint Handle */}
+                    {(!draggingEndpoint || draggingEndpoint === 'source') && (
+                        <circle
+                            cx={actualSourcePoint.x}
+                            cy={actualSourcePoint.y}
+                            r={6 / scale}
+                            fill="#ffffff"
+                            stroke="#2563eb"
+                            strokeWidth={2 / scale}
+                            className="cursor-move hover:scale-125 transition-transform"
+                            style={{ pointerEvents: 'auto' }}
+                            onPointerDown={(e) => handlePointerDown('source', e)}
+                        />
+                    )}
+
+                    {/* Target Endpoint Handle */}
+                    {(!draggingEndpoint || draggingEndpoint === 'target') && (
+                        <circle
+                            cx={actualTargetPoint.x}
+                            cy={actualTargetPoint.y}
+                            r={6 / scale}
+                            fill="#ffffff"
+                            stroke="#2563eb"
+                            strokeWidth={2 / scale}
+                            className="cursor-move hover:scale-125 transition-transform"
+                            style={{ pointerEvents: 'auto' }}
+                            onPointerDown={(e) => handlePointerDown('target', e)}
+                        />
+                    )}
+
+                    {/* Draggable Midpoint / Waypoint Handle (Lucidchart bend tool to change curve/elbow shape) */}
+                    {(!draggingEndpoint || draggingEndpoint === 'waypoint') && (
+                        <g 
+                            className="cursor-grab active:cursor-grabbing hover:scale-125 transition-transform"
+                            style={{ pointerEvents: 'auto' }}
+                            onPointerDown={(e) => handlePointerDown('waypoint', e)}
+                            onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                onUpdate(id, { waypoint: null });
+                            }}
+                        >
+                            {/* Halo / drag indicator when actively bending */}
+                            {draggingEndpoint === 'waypoint' && (
+                                <circle
+                                    cx={actualWaypoint.x}
+                                    cy={actualWaypoint.y}
+                                    r={14 / scale}
+                                    fill="rgba(245, 158, 11, 0.25)"
+                                    stroke="#f59e0b"
+                                    strokeWidth={1.5 / scale}
+                                    strokeDasharray="3,3"
+                                    className="animate-spin"
+                                    style={{ animationDuration: '5s' }}
+                                />
+                            )}
+                            {/* Outer amber circle with bold white border and shadow */}
+                            <circle
+                                cx={actualWaypoint.x}
+                                cy={actualWaypoint.y}
+                                r={7.5 / scale}
+                                fill="#f59e0b"
+                                stroke="#ffffff"
+                                strokeWidth={2.5 / scale}
+                                style={{ pointerEvents: 'auto', filter: 'drop-shadow(0 2px 5px rgba(0,0,0,0.4))' }}
+                            />
+                            {/* Inner white core dot */}
+                            <circle
+                                cx={actualWaypoint.x}
+                                cy={actualWaypoint.y}
+                                r={2.5 / scale}
+                                fill="#ffffff"
+                                className="pointer-events-none"
+                            />
+                            <title>Drag to bend curved or elbow connector (Double-click to reset bend)</title>
+                        </g>
+                    )}
+                </g>
             )}
         </g>
     );

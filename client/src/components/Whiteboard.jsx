@@ -498,6 +498,7 @@ export default function Whiteboard({
     const [isToolbarCollapsed, setIsToolbarCollapsed] = useState(false);
     const [toolbarPos, setToolbarPos] = useState({ x: 250, y: 650 });
     const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
+    const toolbarRef = useRef(null);
     const [isSelectionInfiniteCloner, setIsSelectionInfiniteCloner] = useState(false);
 
     // AI Whiteboard Tasks State
@@ -2659,7 +2660,7 @@ export default function Whiteboard({
         saveToHistory();
     }, [selectedShapeIds, selectedImageId, selected3DId, saveToHistory]);
 
-    // Floatable Main Toolbar Drag Start
+    // Floatable Main Toolbar Drag Start (Zero-lag, 120fps direct DOM manipulation)
     const handleToolbarDragStart = (e) => {
         e.stopPropagation();
         if (e.cancelable) e.preventDefault();
@@ -2670,6 +2671,11 @@ export default function Whiteboard({
         const startPointerY = e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
         const initialX = toolbarPos.x;
         const initialY = toolbarPos.y;
+        let latestPos = { x: initialX, y: initialY };
+
+        if (toolbarRef.current) {
+            toolbarRef.current.style.transition = 'none';
+        }
 
         const onMove = (moveEvt) => {
             const currentX = moveEvt.clientX ?? (moveEvt.touches && moveEvt.touches[0] ? moveEvt.touches[0].clientX : startPointerX);
@@ -2679,15 +2685,25 @@ export default function Whiteboard({
 
             const clampedX = Math.max(10, Math.min(window.innerWidth - 120, initialX + dx));
             const clampedY = Math.max(10, Math.min(window.innerHeight - 80, initialY + dy));
-            const newPos = { x: clampedX, y: clampedY };
-            setToolbarPos(newPos);
-            try {
-                localStorage.setItem('wb_toolbar_pos', JSON.stringify(newPos));
-            } catch (err) {}
+            latestPos = { x: clampedX, y: clampedY };
+
+            // Direct DOM style update eliminates React 60fps re-render overhead
+            if (toolbarRef.current) {
+                toolbarRef.current.style.left = `${clampedX}px`;
+                toolbarRef.current.style.top = `${clampedY}px`;
+            }
         };
 
         const onUp = () => {
             setIsDraggingToolbar(false);
+            if (toolbarRef.current) {
+                toolbarRef.current.style.transition = '';
+            }
+            setToolbarPos(latestPos);
+            try {
+                localStorage.setItem('wb_toolbar_pos', JSON.stringify(latestPos));
+            } catch (err) {}
+
             window.removeEventListener('pointermove', onMove);
             window.removeEventListener('pointerup', onUp);
             window.removeEventListener('touchmove', onMove);
@@ -6397,8 +6413,9 @@ export default function Whiteboard({
 
                 return (
                 <div 
+                    ref={toolbarRef}
                     style={isFloating ? { left: `${toolbarPos.x}px`, top: `${toolbarPos.y}px`, transform: 'none' } : undefined}
-                    className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 flex z-40 overflow-visible whitespace-nowrap hide-scrollbar transition-all duration-200 ${
+                    className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 flex z-40 overflow-visible whitespace-nowrap hide-scrollbar ${isDraggingToolbar ? '' : 'transition-all duration-200'} ${
                     !isStateLoaded ? 'pointer-events-none opacity-60 filter blur-[0.5px]' : 'pointer-events-auto opacity-100'
                 } ${
                     toolbarDock === 'top'
@@ -11071,6 +11088,7 @@ export default function Whiteboard({
                                 shapes={(pageShapeObjects[currentPage] || []).filter(s => s.type !== 'connector')}
                                 images={pageImageObjects[currentPage] || []}
                                 isSelected={selectedShapeIds.includes(conn.id)}
+                                scale={zoomLevel || 1}
                                 onSelect={(id) => {
                                     setSelectedShapeIds([id]);
                                     setSelectedImageId(null);
