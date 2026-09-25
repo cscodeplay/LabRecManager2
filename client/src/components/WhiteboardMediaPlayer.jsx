@@ -30,6 +30,24 @@ export default function WhiteboardMediaPlayer({
         if (typeof media.isLocked === 'boolean') setIsLocked(media.isLocked);
     }, [media.isMuted, media.isCollapsed, media.isLocked]);
 
+    // Keep DOM video/audio element mute state strictly synchronized
+    useEffect(() => {
+        if (videoRef.current) {
+            videoRef.current.muted = isMuted;
+            if (!isMuted && videoRef.current.volume === 0) {
+                videoRef.current.volume = 1;
+            }
+        }
+    }, [isMuted]);
+
+    // Pointer + Click Debounce refs to prevent double-firing on stylus/pencil taps
+    const lastMuteToggleRef = useRef(0);
+    const lastCollapseToggleRef = useRef(0);
+    const lastLockToggleRef = useRef(0);
+    const lastClonerToggleRef = useRef(0);
+    const lastDupToggleRef = useRef(0);
+    const lastDeleteToggleRef = useRef(0);
+
     const togglePlay = (e) => {
         e?.stopPropagation();
         if (videoRef.current) {
@@ -46,16 +64,27 @@ export default function WhiteboardMediaPlayer({
 
     const toggleMute = (e) => {
         e?.stopPropagation();
+        const now = Date.now();
+        if (now - lastMuteToggleRef.current < 250) return;
+        lastMuteToggleRef.current = now;
+
         const nextMuted = !isMuted;
         setIsMuted(nextMuted);
         if (videoRef.current) {
             videoRef.current.muted = nextMuted;
+            if (!nextMuted && videoRef.current.volume === 0) {
+                videoRef.current.volume = 1;
+            }
         }
         onUpdate && onUpdate({ isMuted: nextMuted });
     };
 
     const toggleCollapse = (e) => {
         e?.stopPropagation();
+        const now = Date.now();
+        if (now - lastCollapseToggleRef.current < 250) return;
+        lastCollapseToggleRef.current = now;
+
         const nextCollapsed = !isCollapsed;
         setIsCollapsed(nextCollapsed);
         onUpdate && onUpdate({ isCollapsed: nextCollapsed });
@@ -63,6 +92,10 @@ export default function WhiteboardMediaPlayer({
 
     const toggleLock = (e) => {
         e?.stopPropagation();
+        const now = Date.now();
+        if (now - lastLockToggleRef.current < 250) return;
+        lastLockToggleRef.current = now;
+
         const nextLocked = !isLocked;
         setIsLocked(nextLocked);
         onUpdate && onUpdate({ isLocked: nextLocked });
@@ -70,6 +103,10 @@ export default function WhiteboardMediaPlayer({
 
     const toggleInfiniteCloner = (e) => {
         e?.stopPropagation();
+        const now = Date.now();
+        if (now - lastClonerToggleRef.current < 250) return;
+        lastClonerToggleRef.current = now;
+
         onUpdate && onUpdate({ isInfiniteCloner: !media.isInfiniteCloner });
     };
 
@@ -208,7 +245,8 @@ export default function WhiteboardMediaPlayer({
                 transformOrigin: 'center center',
                 zIndex: media.zIndex || 20
             }}
-            className={`absolute select-none transition-shadow ${
+            data-interactive="true"
+            className={`whiteboard-media-player absolute select-none transition-shadow ${
                 isSelected ? 'ring-2 ring-indigo-500 shadow-2xl' : 'shadow-lg hover:shadow-xl'
             }`}
         >
@@ -235,16 +273,18 @@ export default function WhiteboardMediaPlayer({
                     </span>
                     <button
                         type="button"
-                        onClick={toggleMute}
-                        className="p-1 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white"
+                        onPointerDown={(e) => { e.stopPropagation(); toggleMute(e); }}
+                        onClick={(e) => { e.stopPropagation(); toggleMute(e); }}
+                        className="p-1 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white cursor-pointer"
                         title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
                     >
                         {isMuted ? <VolumeX className="w-3.5 h-3.5 text-amber-400" /> : <Volume2 className="w-3.5 h-3.5 text-emerald-400" />}
                     </button>
                     <button
                         type="button"
-                        onClick={toggleCollapse}
-                        className="p-1 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white"
+                        onPointerDown={(e) => { e.stopPropagation(); toggleCollapse(e); }}
+                        onClick={(e) => { e.stopPropagation(); toggleCollapse(e); }}
+                        className="p-1 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white cursor-pointer"
                         title="Expand Player"
                     >
                         <Maximize2 className="w-3.5 h-3.5" />
@@ -276,32 +316,36 @@ export default function WhiteboardMediaPlayer({
                         <div className="flex items-center gap-1" onPointerDown={e => e.stopPropagation()}>
                             <button
                                 type="button"
-                                onClick={toggleMute}
-                                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition"
+                                onPointerDown={(e) => { e.stopPropagation(); toggleMute(e); }}
+                                onClick={(e) => { e.stopPropagation(); toggleMute(e); }}
+                                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
                                 title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
                             >
                                 {isMuted ? <VolumeX className="w-3.5 h-3.5 text-amber-400" /> : <Volume2 className="w-3.5 h-3.5 text-emerald-400" />}
                             </button>
                             <button
                                 type="button"
-                                onClick={toggleCollapse}
-                                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition"
+                                onPointerDown={(e) => { e.stopPropagation(); toggleCollapse(e); }}
+                                onClick={(e) => { e.stopPropagation(); toggleCollapse(e); }}
+                                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
                                 title="Collapse to Badge"
                             >
                                 <ChevronUp className="w-3.5 h-3.5" />
                             </button>
                             <button
                                 type="button"
-                                onClick={toggleInfiniteCloner}
-                                className={`p-1 rounded transition ${media.isInfiniteCloner ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+                                onPointerDown={(e) => { e.stopPropagation(); toggleInfiniteCloner(e); }}
+                                onClick={(e) => { e.stopPropagation(); toggleInfiniteCloner(e); }}
+                                className={`p-1 rounded transition cursor-pointer ${media.isInfiniteCloner ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
                                 title={media.isInfiniteCloner ? "Disable Infinite Clone" : "Enable Infinite Clone"}
                             >
                                 <span className="text-[11px] font-bold">∞</span>
                             </button>
                             <button
                                 type="button"
-                                onClick={toggleLock}
-                                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition"
+                                onPointerDown={(e) => { e.stopPropagation(); toggleLock(e); }}
+                                onClick={(e) => { e.stopPropagation(); toggleLock(e); }}
+                                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
                                 title={isLocked ? 'Unlock Element' : 'Lock Element'}
                             >
                                 {isLocked ? <Lock className="w-3.5 h-3.5 text-amber-400" /> : <Unlock className="w-3.5 h-3.5" />}
@@ -309,8 +353,21 @@ export default function WhiteboardMediaPlayer({
                             {onDuplicate && (
                                 <button
                                     type="button"
-                                    onClick={() => onDuplicate(media.id)}
-                                    className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition"
+                                    onPointerDown={(e) => {
+                                        e.stopPropagation();
+                                        const now = Date.now();
+                                        if (now - lastDupToggleRef.current < 250) return;
+                                        lastDupToggleRef.current = now;
+                                        onDuplicate(media.id);
+                                    }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const now = Date.now();
+                                        if (now - lastDupToggleRef.current < 250) return;
+                                        lastDupToggleRef.current = now;
+                                        onDuplicate(media.id);
+                                    }}
+                                    className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
                                     title="Duplicate Media"
                                 >
                                     <Copy className="w-3.5 h-3.5" />
@@ -319,8 +376,21 @@ export default function WhiteboardMediaPlayer({
                             {onDelete && (
                                 <button
                                     type="button"
-                                    onClick={() => onDelete(media.id)}
-                                    className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-red-400 transition"
+                                    onPointerDown={(e) => {
+                                        e.stopPropagation();
+                                        const now = Date.now();
+                                        if (now - lastDeleteToggleRef.current < 250) return;
+                                        lastDeleteToggleRef.current = now;
+                                        onDelete(media.id);
+                                    }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const now = Date.now();
+                                        if (now - lastDeleteToggleRef.current < 250) return;
+                                        lastDeleteToggleRef.current = now;
+                                        onDelete(media.id);
+                                    }}
+                                    className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-red-400 transition cursor-pointer"
                                     title="Delete Media"
                                 >
                                     <Trash2 className="w-3.5 h-3.5" />
@@ -353,8 +423,10 @@ export default function WhiteboardMediaPlayer({
                                     ref={videoRef}
                                     src={media.src}
                                     controls
+                                    playsInline
                                     muted={isMuted}
-                                    className="w-full max-w-sm"
+                                    onPointerDown={e => e.stopPropagation()}
+                                    className="w-full max-w-sm pointer-events-auto"
                                 />
                             </div>
                         ) : (
@@ -362,7 +434,10 @@ export default function WhiteboardMediaPlayer({
                                 ref={videoRef}
                                 src={media.src}
                                 controls
+                                playsInline
+                                webkit-playsinline="true"
                                 muted={isMuted}
+                                onPointerDown={e => e.stopPropagation()}
                                 className="w-full h-full object-contain pointer-events-auto"
                             />
                         )}

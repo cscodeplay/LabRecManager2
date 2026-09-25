@@ -111,12 +111,16 @@ export default function WhiteboardMinimap({
 
         window.addEventListener('mousemove', handleMove);
         window.addEventListener('mouseup', handleUp);
+        window.addEventListener('pointermove', handleMove);
+        window.addEventListener('pointerup', handleUp);
         window.addEventListener('touchmove', handleMove, { passive: false });
         window.addEventListener('touchend', handleUp);
 
         return () => {
             window.removeEventListener('mousemove', handleMove);
             window.removeEventListener('mouseup', handleUp);
+            window.removeEventListener('pointermove', handleMove);
+            window.removeEventListener('pointerup', handleUp);
             window.removeEventListener('touchmove', handleMove);
             window.removeEventListener('touchend', handleUp);
         };
@@ -267,7 +271,8 @@ export default function WhiteboardMinimap({
                 top: `${pos.y}px`,
                 zIndex: 80
             }}
-            className={`select-none transition-shadow ${isDraggingBar ? 'opacity-90' : ''}`}
+            data-interactive="true"
+            className={`whiteboard-minimap select-none transition-shadow ${isDraggingBar ? 'opacity-90' : ''}`}
         >
             {/* Collapsed Pill Button */}
             {isBarCollapsed ? (
@@ -281,6 +286,7 @@ export default function WhiteboardMinimap({
                 >
                     <div
                         onMouseDown={handleDragStart}
+                        onPointerDown={handleDragStart}
                         onTouchStart={handleDragStart}
                         className="cursor-grab p-0.5 text-slate-500 hover:text-indigo-400"
                         title="Drag to move zoom controls"
@@ -317,6 +323,7 @@ export default function WhiteboardMinimap({
                             <div
                                 ref={minimapRef}
                                 onMouseDown={handleMinimapPointer}
+                                onPointerDown={handleMinimapPointer}
                                 className="relative rounded-lg bg-slate-950/80 border border-slate-800 cursor-crosshair overflow-hidden mt-1.5 shadow-inner"
                                 style={{ width: `${MAP_WIDTH}px`, height: `${MAP_HEIGHT}px` }}
                             >
@@ -378,6 +385,7 @@ export default function WhiteboardMinimap({
                         {/* Drag Grip Handle */}
                         <div
                             onMouseDown={handleDragStart}
+                            onPointerDown={handleDragStart}
                             onTouchStart={handleDragStart}
                             className="cursor-grab active:cursor-grabbing p-1 text-slate-500 hover:text-indigo-400 rounded-full"
                             title="Drag to reposition zoom bar"

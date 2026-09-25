@@ -129,7 +129,8 @@ export default function StickyNoteRenderer({
 
     return (
         <div
-            className="absolute select-none"
+            data-interactive="true"
+            className="sticky-note-card absolute select-none"
             style={{
                 left: note.x,
                 top: note.y,

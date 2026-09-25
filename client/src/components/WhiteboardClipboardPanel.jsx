@@ -91,12 +91,16 @@ export default function WhiteboardClipboardPanel({
 
         window.addEventListener('mousemove', handleMove);
         window.addEventListener('mouseup', handleUp);
+        window.addEventListener('pointermove', handleMove);
+        window.addEventListener('pointerup', handleUp);
         window.addEventListener('touchmove', handleMove, { passive: false });
         window.addEventListener('touchend', handleUp);
 
         return () => {
             window.removeEventListener('mousemove', handleMove);
             window.removeEventListener('mouseup', handleUp);
+            window.removeEventListener('pointermove', handleMove);
+            window.removeEventListener('pointerup', handleUp);
             window.removeEventListener('touchmove', handleMove);
             window.removeEventListener('touchend', handleUp);
         };
@@ -204,7 +208,8 @@ export default function WhiteboardClipboardPanel({
                 left: `${position.x}px`,
                 top: `${position.y}px`
             }}
-            className={`fixed z-[85] select-none transition-shadow ${
+            data-interactive="true"
+            className={`whiteboard-clipboard-panel fixed z-[85] select-none transition-shadow ${
                 isDragging ? 'cursor-grabbing opacity-90' : ''
             }`}
         >
@@ -220,6 +225,7 @@ export default function WhiteboardClipboardPanel({
                 >
                     <div 
                         onMouseDown={handleDragStart}
+                        onPointerDown={handleDragStart}
                         onTouchStart={handleDragStart}
                         className="cursor-grab p-0.5 hover:text-indigo-400"
                         title="Drag to reposition"
@@ -239,6 +245,7 @@ export default function WhiteboardClipboardPanel({
                     {/* Header */}
                     <div 
                         onMouseDown={handleDragStart}
+                        onPointerDown={handleDragStart}
                         onTouchStart={handleDragStart}
                         className="px-3.5 py-2.5 bg-slate-950/70 border-b border-slate-800 flex items-center justify-between cursor-grab active:cursor-grabbing"
                     >

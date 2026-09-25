@@ -6,7 +6,7 @@ import {
     Pencil, Eraser, Circle, Square, Minus, Type, Undo2, Redo2, Trash2, Download, Save,
     Palette, ChevronDown, X, Maximize2, Minimize2, Share2, MousePointer2, Sparkles, Wand2,
     Highlighter, MoveRight, Pointer, Image as ImageIcon, ChevronLeft, ChevronRight,
-    Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette, Scan,
+    Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette, Scan, Film,
     Triangle, Star, Hexagon, Scissors, Copy, Files, ClipboardPaste, LineChart, CalendarClock, RectangleHorizontal,
     Diamond, Cloud, Spline, ArrowLeftRight, Waypoints, StickyNote as StickyNoteIcon, PaintBucket,
     BringToFront, SendToBack, AlignLeft, AlignCenterHorizontal, AlignRight,
@@ -4863,24 +4863,28 @@ export default function Whiteboard({
     const handlePointerDown = useCallback((e) => {
         if (!canUserDraw) return;
         
-        // Prevent default touch scrolling / gesture recognition
-        if (e.cancelable) {
-            e.preventDefault();
-        }
-
-        // Ignore clicks on radial toolbar, FAB button, spotlight overlay, screen curtain, connectors, shape hooks, shapes, or text items
+        // Ignore events on interactive canvas elements, controls, tools, overlays, media, 3D, and handles
         if (
-            e.target?.closest?.('.radial-toolbar-container') || 
-            e.target?.closest?.('.radial-fab-button') ||
-            e.target?.closest?.('.whiteboard-spotlight-overlay') ||
-            e.target?.closest?.('.whiteboard-curtain-container') ||
-            e.target?.closest?.('.connector-line-group') ||
-            e.target?.closest?.('.shape-magnetic-hook') ||
-            e.target?.closest?.('.whiteboard-shape-item') ||
-            e.target?.closest?.('.whiteboard-text-item') ||
-            e.target?.closest?.('.connector-hover-popover')
+            e.target?.closest?.(
+                'button, input, textarea, select, video, audio, ' +
+                '[data-interactive="true"], [data-handle], ' +
+                '.whiteboard-media-player, .whiteboard-3d-object, ' +
+                '.whiteboard-clipboard-panel, .whiteboard-minimap, ' +
+                '.whiteboard-tasks-panel, .radial-toolbar-container, ' +
+                '.radial-fab-button, .whiteboard-spotlight-overlay, ' +
+                '.whiteboard-curtain-container, .connector-line-group, ' +
+                '.shape-magnetic-hook, .whiteboard-shape-item, ' +
+                '.whiteboard-text-item, .whiteboard-image-item, ' +
+                '.sticky-note-card, .shape-format-bar, .text-format-bar, ' +
+                '.image-format-bar, .connector-hover-popover'
+            )
         ) {
             return;
+        }
+
+        // Prevent default touch scrolling / gesture recognition ONLY when drawing on canvas surface
+        if (e.cancelable) {
+            e.preventDefault();
         }
 
         // ─── Barrel Button / Stylus Long-Press → Open Radial Toolbar ───
@@ -5035,27 +5039,39 @@ export default function Whiteboard({
         }
     }, [isDrawing, handlePointerUp]);
 
-    // Attach non-passive touch listeners to canvas wrapper to block iOS rubber-band bounce
+    // Prevent iOS/browser rubber-band bounce on canvas touchmove without breaking touch/pencil clicks
     useEffect(() => {
         const wrapper = canvasWrapperRef.current;
         if (!wrapper) return;
 
-        const preventTouchScroll = (e) => {
+        const handleTouchMove = (e) => {
+            // Allow native touch interaction inside interactive UI, panels, modals, and controls
+            if (
+                e.target?.closest?.(
+                    'button, input, textarea, select, video, audio, ' +
+                    '[data-interactive="true"], [data-handle], ' +
+                    '.whiteboard-media-player, .whiteboard-3d-object, ' +
+                    '.whiteboard-clipboard-panel, .whiteboard-minimap, ' +
+                    '.whiteboard-tasks-panel, .radial-toolbar-container, ' +
+                    '.radial-fab-button, .whiteboard-spotlight-overlay, ' +
+                    '.whiteboard-curtain-container, .connector-line-group, ' +
+                    '.shape-magnetic-hook, .whiteboard-shape-item, ' +
+                    '.whiteboard-text-item, .whiteboard-image-item, ' +
+                    '.sticky-note-card, .shape-format-bar, .text-format-bar, ' +
+                    '.image-format-bar, .connector-hover-popover'
+                )
+            ) {
+                return;
+            }
             if (e.cancelable) {
                 e.preventDefault();
             }
         };
 
-        wrapper.addEventListener('touchstart', preventTouchScroll, { passive: false });
-        wrapper.addEventListener('touchmove', preventTouchScroll, { passive: false });
-        wrapper.addEventListener('touchend', preventTouchScroll, { passive: false });
-        wrapper.addEventListener('touchcancel', preventTouchScroll, { passive: false });
+        wrapper.addEventListener('touchmove', handleTouchMove, { passive: false });
 
         return () => {
-            wrapper.removeEventListener('touchstart', preventTouchScroll);
-            wrapper.removeEventListener('touchmove', preventTouchScroll);
-            wrapper.removeEventListener('touchend', preventTouchScroll);
-            wrapper.removeEventListener('touchcancel', preventTouchScroll);
+            wrapper.removeEventListener('touchmove', handleTouchMove);
         };
     }, []);
 
@@ -6020,7 +6036,7 @@ export default function Whiteboard({
                             { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : RectangleHorizontal)), label: 'Shapes' },
                             { id: 'text', icon: Type, label: 'Text' },
                             { id: 'image', icon: ImageIcon, label: 'Image' },
-                            { id: 'media', icon: Video, label: 'Media Player (YouTube, Local, Embed)' },
+                            { id: 'media', icon: Film, label: 'Media Player (YouTube, Local, Embed)' },
                             { id: 'domain_3d', icon: Box, label: '3D Objects & Domain Library' },
                             { id: 'tasks', icon: ListTodo, label: 'Whiteboard Tasks Checklist' },
                             { id: 'templates', icon: LayoutTemplate, label: 'Templates & SmartArt (MS Office)' },
@@ -8079,7 +8095,20 @@ export default function Whiteboard({
                                     {isSelected && (
                                         <>
                                             <div className="absolute inset-0 border-2 border-green-500 pointer-events-none" style={{ borderRadius: txtObj.borderRadius ? `${txtObj.borderRadius}px` : undefined }} />
-                                            <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!canUserDraw) return; e.stopPropagation(); e.preventDefault(); if (txtObj.isLocked) return; setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }} />
+                                            <div
+                                                className="absolute inset-0"
+                                                style={{ pointerEvents: 'auto', cursor: 'move' }}
+                                                onMouseDown={(e) => { if (!canUserDraw) return; e.stopPropagation(); e.preventDefault(); if (txtObj.isLocked) return; setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }}
+                                                onPointerDown={(e) => {
+                                                    if (!canUserDraw) return;
+                                                    e.stopPropagation();
+                                                    if (e.cancelable) e.preventDefault();
+                                                    if (txtObj.isLocked) return;
+                                                    const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                    const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                    setTextDragState({ id: txtObj.id, action: 'move', startX: clientX, startY: clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) });
+                                                }}
+                                            />
 
 
                                             {!txtObj.isLocked && (
@@ -8111,6 +8140,19 @@ export default function Whiteboard({
                                                                 action: `resize-${corner}`,
                                                                 startX: e.clientX,
                                                                 startY: e.clientY,
+                                                                startObj: { ...txtObj }
+                                                            });
+                                                        }}
+                                                        onPointerDown={(e) => {
+                                                            e.stopPropagation();
+                                                            if (e.cancelable) e.preventDefault();
+                                                            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                            const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                            setTextDragState({
+                                                                id: txtObj.id,
+                                                                action: `resize-${corner}`,
+                                                                startX: clientX,
+                                                                startY: clientY,
                                                                 startObj: { ...txtObj }
                                                             });
                                                         }}
@@ -8146,6 +8188,19 @@ export default function Whiteboard({
                                                                 action: `resize-${edge}`,
                                                                 startX: e.clientX,
                                                                 startY: e.clientY,
+                                                                startObj: { ...txtObj }
+                                                            });
+                                                        }}
+                                                        onPointerDown={(e) => {
+                                                            e.stopPropagation();
+                                                            if (e.cancelable) e.preventDefault();
+                                                            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                            const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                            setTextDragState({
+                                                                id: txtObj.id,
+                                                                action: `resize-${edge}`,
+                                                                startX: clientX,
+                                                                startY: clientY,
                                                                 startObj: { ...txtObj }
                                                             });
                                                         }}
@@ -9314,6 +9369,19 @@ export default function Whiteboard({
                                                                         startObj: { ...shpObj }
                                                                     });
                                                                 }}
+                                                                onPointerDown={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (e.cancelable) e.preventDefault();
+                                                                    const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                                    const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                                    setShapeDragState({
+                                                                        id: shpObj.id,
+                                                                        action: 'line-endpoint-start',
+                                                                        startX: clientX,
+                                                                        startY: clientY,
+                                                                        startObj: { ...shpObj }
+                                                                    });
+                                                                }}
                                                             >
                                                                 <div className="w-1.5 h-1.5 rounded-full bg-purple-600 pointer-events-none" />
                                                             </div>
@@ -9332,6 +9400,19 @@ export default function Whiteboard({
                                                                         action: 'line-endpoint-end',
                                                                         startX: e.clientX,
                                                                         startY: e.clientY,
+                                                                        startObj: { ...shpObj }
+                                                                    });
+                                                                }}
+                                                                onPointerDown={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (e.cancelable) e.preventDefault();
+                                                                    const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                                    const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                                    setShapeDragState({
+                                                                        id: shpObj.id,
+                                                                        action: 'line-endpoint-end',
+                                                                        startX: clientX,
+                                                                        startY: clientY,
                                                                         startObj: { ...shpObj }
                                                                     });
                                                                 }}
@@ -9356,6 +9437,19 @@ export default function Whiteboard({
                                                                         action: 'rotate',
                                                                         startX: e.clientX,
                                                                         startY: e.clientY,
+                                                                        startObj: { ...shpObj }
+                                                                    });
+                                                                }}
+                                                                onPointerDown={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (e.cancelable) e.preventDefault();
+                                                                    const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                                    const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                                    setShapeDragState({
+                                                                        id: shpObj.id,
+                                                                        action: 'rotate',
+                                                                        startX: clientX,
+                                                                        startY: clientY,
                                                                         startObj: { ...shpObj }
                                                                     });
                                                                 }}
@@ -9392,6 +9486,19 @@ export default function Whiteboard({
                                                                         startObj: { ...shpObj }
                                                                     });
                                                                 }}
+                                                                onPointerDown={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (e.cancelable) e.preventDefault();
+                                                                    const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                                    const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                                    setShapeDragState({
+                                                                        id: shpObj.id,
+                                                                        action: `resize-${corner}`,
+                                                                        startX: clientX,
+                                                                        startY: clientY,
+                                                                        startObj: { ...shpObj }
+                                                                    });
+                                                                }}
                                                             />
                                                         );
                                                     })}
@@ -9420,6 +9527,19 @@ export default function Whiteboard({
                                                                         startObj: { ...shpObj }
                                                                     });
                                                                 }}
+                                                                onPointerDown={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (e.cancelable) e.preventDefault();
+                                                                    const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                                    const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                                    setShapeDragState({
+                                                                        id: shpObj.id,
+                                                                        action: `resize-${edge}`,
+                                                                        startX: clientX,
+                                                                        startY: clientY,
+                                                                        startObj: { ...shpObj }
+                                                                    });
+                                                                }}
                                                             />
                                                         );
                                                     })}
@@ -9437,6 +9557,19 @@ export default function Whiteboard({
                                                                     action: 'rotate',
                                                                     startX: e.clientX,
                                                                     startY: e.clientY,
+                                                                    startObj: { ...shpObj }
+                                                                });
+                                                            }}
+                                                            onPointerDown={(e) => {
+                                                                e.stopPropagation();
+                                                                if (e.cancelable) e.preventDefault();
+                                                                const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                                const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                                setShapeDragState({
+                                                                    id: shpObj.id,
+                                                                    action: 'rotate',
+                                                                    startX: clientX,
+                                                                    startY: clientY,
                                                                     startObj: { ...shpObj }
                                                                 });
                                                             }}
@@ -10796,7 +10929,7 @@ export default function Whiteboard({
                     >
                         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                             <div className="flex items-center gap-2">
-                                <Video className="w-5 h-5 text-indigo-400" />
+                                <Film className="w-5 h-5 text-indigo-400" />
                                 <h3 className="text-base font-bold text-slate-100">Insert Media to Canvas</h3>
                             </div>
                             <button

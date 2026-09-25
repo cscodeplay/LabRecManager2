@@ -436,9 +436,17 @@ export default function Whiteboard3DObject({
 
         window.addEventListener('mousemove', handleMove);
         window.addEventListener('mouseup', handleUp);
+        window.addEventListener('pointermove', handleMove);
+        window.addEventListener('pointerup', handleUp);
+        window.addEventListener('touchmove', handleMove, { passive: false });
+        window.addEventListener('touchend', handleUp);
         return () => {
             window.removeEventListener('mousemove', handleMove);
             window.removeEventListener('mouseup', handleUp);
+            window.removeEventListener('pointermove', handleMove);
+            window.removeEventListener('pointerup', handleUp);
+            window.removeEventListener('touchmove', handleMove);
+            window.removeEventListener('touchend', handleUp);
         };
     }, [is3DDragging, rotX, rotY, onUpdate]);
 
@@ -563,7 +571,8 @@ export default function Whiteboard3DObject({
                 opacity: obj.opacity ?? 1,
                 zIndex: obj.zIndex || 15
             }}
-            className={`absolute select-none group cursor-move ${
+            data-interactive="true"
+            className={`whiteboard-3d-object absolute select-none group cursor-move ${
                 isSelected ? 'ring-2 ring-sky-500 rounded-xl shadow-2xl' : ''
             }`}
         >
