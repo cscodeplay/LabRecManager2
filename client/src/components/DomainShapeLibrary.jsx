@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
     X, Search, Laptop, Dna, Zap, FlaskConical, 
     Binary, Compass, MessageSquare, Plus, Check,
-    Sparkles, Wand2, Network, Server, Wifi
+    Sparkles, Wand2, Network, Server, Wifi, Box, Upload
 } from 'lucide-react';
+import { parseOBJ, parseSTL, parseJSON3D } from './Whiteboard3DObject';
 
 /**
  * Domain-Specific Shape Library for Education & Technical Diagrams
@@ -1184,6 +1185,148 @@ export const DOMAIN_SHAPES = {
                 <line x1={w*0.5} y1={0} x2={w*0.5} y2={h} strokeWidth={sw*1.2} />
             </g>
         )
+    },
+    // ═══════════════════════════════════════════════════════════════════
+    // 3D OBJECTS & GEOMETRIC MODELS
+    // ═══════════════════════════════════════════════════════════════════
+    cube_3d: {
+        id: 'cube_3d',
+        name: '3D Cube',
+        category: '3d',
+        is3D: true,
+        modelType: 'cube',
+        defaultWidth: 160,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g stroke="#3b82f6" strokeWidth={2} fill="none">
+                <polygon points={`${w*0.25},${h*0.35} ${w*0.65},${h*0.35} ${w*0.65},${h*0.75} ${w*0.25},${h*0.75}`} fill="#3b82f6" fillOpacity={0.2} />
+                <polygon points={`${w*0.4},${h*0.18} ${w*0.8},${h*0.18} ${w*0.8},${h*0.58} ${w*0.4},${h*0.58}`} strokeDasharray="3 3" opacity={0.6} />
+                <line x1={w*0.25} y1={h*0.35} x2={w*0.4} y2={h*0.18} />
+                <line x1={w*0.65} y1={h*0.35} x2={w*0.8} y2={h*0.18} />
+                <line x1={w*0.65} y1={h*0.75} x2={w*0.8} y2={h*0.58} />
+                <line x1={w*0.25} y1={h*0.75} x2={w*0.4} y2={h*0.58} strokeDasharray="3 3" opacity={0.6} />
+            </g>
+        )
+    },
+    pyramid_3d: {
+        id: 'pyramid_3d',
+        name: '3D Pyramid',
+        category: '3d',
+        is3D: true,
+        modelType: 'pyramid',
+        defaultWidth: 160,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g stroke="#f59e0b" strokeWidth={2} fill="none">
+                <polygon points={`${w*0.5},${h*0.15} ${w*0.15},${h*0.75} ${w*0.55},${h*0.85}`} fill="#f59e0b" fillOpacity={0.25} />
+                <polygon points={`${w*0.5},${h*0.15} ${w*0.55},${h*0.85} ${w*0.85},${h*0.7}`} fill="#f59e0b" fillOpacity={0.15} />
+                <line x1={w*0.15} y1={h*0.75} x2={w*0.45} y2={h*0.6} strokeDasharray="2 2" opacity={0.6} />
+                <line x1={w*0.85} y1={h*0.7} x2={w*0.45} y2={h*0.6} strokeDasharray="2 2" opacity={0.6} />
+                <line x1={w*0.5} y1={h*0.15} x2={w*0.45} y2={h*0.6} strokeDasharray="2 2" opacity={0.6} />
+            </g>
+        )
+    },
+    cylinder_3d: {
+        id: 'cylinder_3d',
+        name: '3D Cylinder',
+        category: '3d',
+        is3D: true,
+        modelType: 'cylinder',
+        defaultWidth: 160,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g stroke="#06b6d4" strokeWidth={2} fill="none">
+                <ellipse cx={w/2} cy={h*0.25} rx={w*0.3} ry={h*0.12} fill="#06b6d4" fillOpacity={0.2} />
+                <line x1={w*0.2} y1={h*0.25} x2={w*0.2} y2={h*0.75} />
+                <line x1={w*0.8} y1={h*0.25} x2={w*0.8} y2={h*0.75} />
+                <path d={`M ${w*0.2} ${h*0.75} A ${w*0.3} ${h*0.12} 0 0 0 ${w*0.8} ${h*0.75}`} fill="#06b6d4" fillOpacity={0.15} />
+                <path d={`M ${w*0.2} ${h*0.75} A ${w*0.3} ${h*0.12} 0 0 1 ${w*0.8} ${h*0.75}`} strokeDasharray="2 2" opacity={0.6} />
+            </g>
+        )
+    },
+    cone_3d: {
+        id: 'cone_3d',
+        name: '3D Cone',
+        category: '3d',
+        is3D: true,
+        modelType: 'cone',
+        defaultWidth: 160,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g stroke="#ec4899" strokeWidth={2} fill="none">
+                <polygon points={`${w/2},${h*0.15} ${w*0.2},${h*0.75} ${w*0.8},${h*0.75}`} fill="#ec4899" fillOpacity={0.15} />
+                <path d={`M ${w*0.2} ${h*0.75} A ${w*0.3} ${h*0.1} 0 0 0 ${w*0.8} ${h*0.75}`} fill="#ec4899" fillOpacity={0.2} />
+                <path d={`M ${w*0.2} ${h*0.75} A ${w*0.3} ${h*0.1} 0 0 1 ${w*0.8} ${h*0.75}`} strokeDasharray="2 2" opacity={0.6} />
+            </g>
+        )
+    },
+    sphere_3d: {
+        id: 'sphere_3d',
+        name: '3D Sphere',
+        category: '3d',
+        is3D: true,
+        modelType: 'sphere',
+        defaultWidth: 160,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g stroke="#10b981" strokeWidth={2} fill="none">
+                <circle cx={w/2} cy={h/2} r={w*0.35} fill="#10b981" fillOpacity={0.15} />
+                <ellipse cx={w/2} cy={h/2} rx={w*0.35} ry={h*0.12} />
+                <ellipse cx={w/2} cy={h/2} rx={w*0.12} ry={h*0.35} strokeDasharray="3 3" opacity={0.6} />
+            </g>
+        )
+    },
+    prism_3d: {
+        id: 'prism_3d',
+        name: '3D Triangular Prism',
+        category: '3d',
+        is3D: true,
+        modelType: 'prism',
+        defaultWidth: 160,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g stroke="#8b5cf6" strokeWidth={2} fill="none">
+                <polygon points={`${w*0.2},${h*0.65} ${w*0.45},${h*0.2} ${w*0.65},${h*0.65}`} fill="#8b5cf6" fillOpacity={0.2} />
+                <line x1={w*0.45} y1={h*0.2} x2={w*0.8} y2={h*0.3} />
+                <line x1={w*0.65} y1={h*0.65} x2={w*0.95} y2={h*0.72} />
+                <polygon points={`${w*0.45},${h*0.2} ${w*0.8},${h*0.3} ${w*0.95},${h*0.72} ${w*0.65},${h*0.65}`} fill="#8b5cf6" fillOpacity={0.15} />
+            </g>
+        )
+    },
+    dna_3d: {
+        id: 'dna_3d',
+        name: '3D DNA Double Helix',
+        category: '3d',
+        is3D: true,
+        modelType: 'dna_double_helix',
+        defaultWidth: 160,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g stroke="#6366f1" strokeWidth={2} fill="none">
+                <path d={`M ${w*0.3} ${h*0.15} Q ${w*0.7} ${h*0.35} ${w*0.3} ${h*0.5} T ${w*0.3} ${h*0.85}`} strokeWidth={2.5} />
+                <path d={`M ${w*0.7} ${h*0.15} Q ${w*0.3} ${h*0.35} ${w*0.7} ${h*0.5} T ${w*0.7} ${h*0.85}`} stroke="#ec4899" strokeWidth={2.5} />
+                <line x1={w*0.34} y1={h*0.25} x2={w*0.66} y2={h*0.25} stroke="#38bdf8" strokeWidth={1.5} />
+                <line x1={w*0.34} y1={h*0.6} x2={w*0.66} y2={h*0.6} stroke="#38bdf8" strokeWidth={1.5} />
+                <line x1={w*0.34} y1={h*0.75} x2={w*0.66} y2={h*0.75} stroke="#38bdf8" strokeWidth={1.5} />
+            </g>
+        )
+    },
+    atom_3d: {
+        id: 'atom_3d',
+        name: '3D Atomic Orbital Model',
+        category: '3d',
+        is3D: true,
+        modelType: 'atom',
+        defaultWidth: 160,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g stroke="#0ea5e9" strokeWidth={1.8} fill="none">
+                <circle cx={w/2} cy={h/2} r={6} fill="#0ea5e9" />
+                <ellipse cx={w/2} cy={h/2} rx={w*0.38} ry={h*0.14} />
+                <ellipse cx={w/2} cy={h/2} rx={w*0.38} ry={h*0.14} transform={`rotate(60 ${w/2} ${h/2})`} stroke="#8b5cf6" />
+                <ellipse cx={w/2} cy={h/2} rx={w*0.38} ry={h*0.14} transform={`rotate(120 ${w/2} ${h/2})`} stroke="#10b981" />
+            </g>
+        )
     }
 };
 
@@ -1197,6 +1340,7 @@ Object.values(DOMAIN_SHAPES).forEach(shape => {
 
 export const DOMAIN_CATEGORIES = [
     { id: 'all', label: 'All Shapes', icon: Compass },
+    { id: '3d', label: '3D Objects', icon: Box },
     { id: 'networking', label: 'Networking', icon: Network },
     { id: 'cs', label: 'Computer Science', icon: Laptop },
     { id: 'biology', label: 'Biology', icon: Dna },
@@ -1218,12 +1362,52 @@ export default function DomainShapeLibraryModal({
     const [searchQuery, setSearchQuery] = useState('');
     const [aiPrompt, setAiPrompt] = useState('');
     const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+    const fileInput3DRef = useRef(null);
 
     if (!isOpen) return null;
 
+    const handle3DFileUpload = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const content = event.target.result;
+            const ext = file.name.split('.').pop().toLowerCase();
+            let parsedMesh = null;
+
+            if (ext === 'obj') {
+                parsedMesh = parseOBJ(content);
+            } else if (ext === 'stl') {
+                parsedMesh = parseSTL(content);
+            } else if (ext === 'json') {
+                parsedMesh = parseJSON3D(content);
+            }
+
+            if (parsedMesh) {
+                const new3DObj = {
+                    id: `mesh_3d_${Date.now()}`,
+                    name: file.name.replace(/\.[^/.]+$/, ""),
+                    category: '3d',
+                    is3D: true,
+                    meshData: parsedMesh,
+                    defaultWidth: 200,
+                    defaultHeight: 200
+                };
+                onSelectShape(new3DObj);
+                onClose();
+            } else {
+                alert('Could not parse 3D file. Please ensure it is a valid .obj, .stl, or .json mesh file.');
+            }
+        };
+        reader.readAsText(file);
+    };
+
     const shapesList = Object.values(DOMAIN_SHAPES).filter(s => {
         let matchesCategory = selectedCategory === 'all';
-        if (selectedCategory === 'networking') {
+        if (selectedCategory === '3d') {
+            matchesCategory = s.category === '3d' || s.is3D;
+        } else if (selectedCategory === 'networking') {
             matchesCategory = s.category === 'networking' || s.id.startsWith('net_');
         } else if (selectedCategory === 'cs') {
             matchesCategory = s.category === 'cs' || s.id.startsWith('cs_') || s.id.startsWith('net_');
@@ -1417,6 +1601,40 @@ export default function DomainShapeLibraryModal({
 
                 {/* Shape Grid Content */}
                 <div className="p-6 overflow-y-auto flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                    <input 
+                        ref={fileInput3DRef} 
+                        type="file" 
+                        accept=".obj,.stl,.json" 
+                        className="hidden" 
+                        onChange={handle3DFileUpload} 
+                    />
+
+                    {/* Import 3D Mesh Tile */}
+                    {(selectedCategory === '3d' || selectedCategory === 'all') && (
+                        <div
+                            onClick={() => fileInput3DRef.current?.click()}
+                            className="p-3.5 rounded-xl bg-indigo-950/40 hover:bg-indigo-900/50 border-2 border-dashed border-indigo-500/50 hover:border-indigo-400 flex flex-col items-center justify-between gap-3 text-center transition cursor-pointer group hover:scale-[1.02] shadow-sm relative overflow-hidden"
+                        >
+                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none transform translate-y-1 group-hover:translate-y-0 z-10">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-600/90 text-white shadow-md backdrop-blur-sm border border-indigo-400/40">
+                                    <Plus className="w-2.5 h-2.5" /> Upload 3D File
+                                </span>
+                            </div>
+                            <div className="w-20 h-20 flex flex-col items-center justify-center p-2 rounded-lg bg-indigo-950/60 border border-indigo-800/80 group-hover:border-indigo-400/60 transition text-indigo-400 group-hover:text-indigo-300">
+                                <Upload className="w-8 h-8 mb-1" />
+                                <span className="text-[10px] font-bold">.OBJ / .STL / .JSON</span>
+                            </div>
+                            <div className="w-full">
+                                <span className="text-xs font-semibold text-indigo-200 group-hover:text-indigo-100 transition line-clamp-1">
+                                    Import 3D Mesh
+                                </span>
+                                <span className="text-[10px] text-indigo-400 uppercase tracking-wider block mt-0.5">
+                                    From Computer
+                                </span>
+                            </div>
+                        </div>
+                    )}
+
                     {shapesList.map(shape => (
                         <div
                             key={shape.id}
@@ -1424,15 +1642,22 @@ export default function DomainShapeLibraryModal({
                                 onSelectShape(shape);
                                 onClose();
                             }}
-                            className="p-3.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/80 hover:border-indigo-500/80 flex flex-col items-center justify-between gap-3 text-center transition cursor-pointer group hover:scale-[1.02] shadow-sm"
+                            className="p-3.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/80 hover:border-indigo-500/80 flex flex-col items-center justify-between gap-3 text-center transition cursor-pointer group hover:scale-[1.02] shadow-sm relative overflow-hidden"
                         >
+                            {/* Shape Hover Label Pill */}
+                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none transform translate-y-1 group-hover:translate-y-0 z-10">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-600/90 text-white shadow-md backdrop-blur-sm border border-indigo-400/40">
+                                    <Plus className="w-2.5 h-2.5" /> {shape.name}
+                                </span>
+                            </div>
+
                             {/* Shape Preview SVG */}
                             <div className="w-20 h-20 flex items-center justify-center p-2 rounded-lg bg-slate-950/60 border border-slate-800/80 group-hover:border-indigo-500/30 transition">
                                 <svg 
-                                    viewBox={`0 0 ${shape.defaultWidth} ${shape.defaultHeight}`} 
+                                    viewBox={`0 0 ${shape.defaultWidth || 100} ${shape.defaultHeight || 100}`} 
                                     className="max-w-full max-h-full transition-transform group-hover:scale-105"
                                 >
-                                    {shape.renderSVG(shape.defaultWidth, shape.defaultHeight, '#818cf8', 2, 'rgba(129, 140, 248, 0.15)')}
+                                    {shape.renderSVG(shape.defaultWidth || 100, shape.defaultHeight || 100, '#818cf8', 2, 'rgba(129, 140, 248, 0.15)')}
                                 </svg>
                             </div>
                             
@@ -1441,7 +1666,7 @@ export default function DomainShapeLibraryModal({
                                     {shape.name}
                                 </span>
                                 <span className="text-[10px] text-slate-400 uppercase tracking-wider block mt-0.5">
-                                    {shape.category}
+                                    {shape.category === '3d' ? '3D Object' : shape.category}
                                 </span>
                             </div>
                         </div>

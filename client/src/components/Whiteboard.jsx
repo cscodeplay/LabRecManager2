@@ -13,7 +13,8 @@ import {
     AlignStartVertical, AlignCenterVertical, AlignEndVertical,
     AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween, Group, Ungroup, Lock, Unlock, Users, MessageCircle, User,
     Folder, Upload, Loader2, FlipHorizontal, FlipVertical, Sun, Contrast, Sliders,
-    Clock, GripHorizontal, LayoutTemplate, Flashlight, Library
+    Clock, GripHorizontal, LayoutTemplate, Flashlight, Library,
+    Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
@@ -28,6 +29,10 @@ import WhiteboardImagePickerModal from './WhiteboardImagePickerModal';
 import WhiteboardExportModal from './WhiteboardExportModal';
 import WhiteboardMinimap from './WhiteboardMinimap';
 import DomainShapeLibraryModal, { DOMAIN_SHAPES } from './DomainShapeLibrary';
+import WhiteboardShortcutsModal from './WhiteboardShortcutsModal';
+import WhiteboardClipboardPanel from './WhiteboardClipboardPanel';
+import WhiteboardMediaPlayer from './WhiteboardMediaPlayer';
+import Whiteboard3DObject, { get3DModelMesh, parseOBJ, parseSTL, parseJSON3D } from './Whiteboard3DObject';
 import TorchIcon from './TorchIcon';
 import api from '@/lib/api';
 import { toast } from 'react-hot-toast';
@@ -723,6 +728,31 @@ export default function Whiteboard({
     const [activeConnectorPreset, setActiveConnectorPreset] = useState(CONNECTOR_PRESET_STYLES[0]);
     const hookHoverTimeoutRef = useRef(null);
     const [showDomainLibrary, setShowDomainLibrary] = useState(false);
+
+    // ─── Shortcuts Modal State ───
+    const [showShortcutsModal, setShowShortcutsModal] = useState(false);
+
+    // ─── Image Background Removal State ───
+    const [removingBgImageId, setRemovingBgImageId] = useState(null);
+
+    // ─── Canvas Embedded Media Players State ───
+    const [pageMediaObjects, setPageMediaObjects] = useState({ 0: [] });
+    const mediaObjects = pageMediaObjects[currentPage] || [];
+    const [selectedMediaId, setSelectedMediaId] = useState(null);
+    const [showMediaModal, setShowMediaModal] = useState(false);
+    const [mediaInputTab, setMediaInputTab] = useState('youtube'); // 'local' | 'youtube' | 'embed'
+    const [mediaInputTitle, setMediaInputTitle] = useState('');
+    const [mediaInputUrl, setMediaInputUrl] = useState('');
+
+    // ─── 3D Objects State ───
+    const [page3DObjects, setPage3DObjects] = useState({ 0: [] });
+    const threeDObjects = page3DObjects[currentPage] || [];
+    const [selected3DId, setSelected3DId] = useState(null);
+
+    // ─── Whiteboard Tasks Checklist State ───
+    const [whiteboardTasks, setWhiteboardTasks] = useState([]);
+    const [showTasksPanel, setShowTasksPanel] = useState(false);
+    const [newTaskText, setNewTaskText] = useState('');
     const [selectedFontFamily, setSelectedFontFamily] = useState('sans-serif');
 
     // ─── Smart Panel & Flat Panel Tools State (BenQ EZWrite & ViewSonic) ──
@@ -816,6 +846,89 @@ export default function Whiteboard({
         }));
     }, []);
 
+    const setMediaObjects = useCallback((updater) => {
+        setPageMediaObjects(prev => ({
+            ...prev,
+            [currentPageRef.current]: typeof updater === 'function' ? updater(prev[currentPageRef.current] || []) : updater
+        }));
+    }, []);
+
+    const setThreeDObjects = useCallback((updater) => {
+        setPage3DObjects(prev => ({
+            ...prev,
+            [currentPageRef.current]: typeof updater === 'function' ? updater(prev[currentPageRef.current] || []) : updater
+        }));
+    }, []);
+
+    // ─── Touch & Apple Pencil Gestures (Two-Finger Pinch Zoom & Pan) ───
+    useEffect(() => {
+        const wrapper = canvasWrapperRef.current;
+        if (!wrapper) return;
+
+        let initialDist = 0;
+        let initialZoom = 1;
+        let initialMidpoint = { x: 0, y: 0 };
+        let initialPan = { x: 0, y: 0 };
+        let isPinching = false;
+
+        const handleTouchStart = (e) => {
+            if (e.touches && e.touches.length === 2) {
+                isPinching = true;
+                const t1 = e.touches[0];
+                const t2 = e.touches[1];
+                initialDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+                initialZoom = zoomLevel;
+                initialMidpoint = {
+                    x: (t1.clientX + t2.clientX) / 2,
+                    y: (t1.clientY + t2.clientY) / 2
+                };
+                initialPan = { ...panOffset };
+            }
+        };
+
+        const handleTouchMove = (e) => {
+            if (isPinching && e.touches && e.touches.length === 2) {
+                if (e.cancelable) e.preventDefault();
+                e.stopPropagation();
+
+                const t1 = e.touches[0];
+                const t2 = e.touches[1];
+                const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+                if (initialDist > 0) {
+                    const scaleFactor = currentDist / initialDist;
+                    const newZoom = Math.max(0.2, Math.min(3.5, initialZoom * scaleFactor));
+                    setZoomLevel(Math.round(newZoom * 100) / 100);
+                }
+                const currentMidpoint = {
+                    x: (t1.clientX + t2.clientX) / 2,
+                    y: (t1.clientY + t2.clientY) / 2
+                };
+                const dx = (currentMidpoint.x - initialMidpoint.x) / zoomLevel;
+                const dy = (currentMidpoint.y - initialMidpoint.y) / zoomLevel;
+                setPanOffset({
+                    x: initialPan.x + dx,
+                    y: initialPan.y + dy
+                });
+            }
+        };
+
+        const handleTouchEnd = (e) => {
+            if (!e.touches || e.touches.length < 2) {
+                isPinching = false;
+            }
+        };
+
+        wrapper.addEventListener('touchstart', handleTouchStart, { passive: true });
+        wrapper.addEventListener('touchmove', handleTouchMove, { passive: false });
+        wrapper.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+        return () => {
+            wrapper.removeEventListener('touchstart', handleTouchStart);
+            wrapper.removeEventListener('touchmove', handleTouchMove);
+            wrapper.removeEventListener('touchend', handleTouchEnd);
+        };
+    }, [zoomLevel, panOffset]);
+
     // Canvas dimensions - keep fixed to prevent content loss
     const canvasWidth = width;
     const canvasHeight = height;
@@ -879,6 +992,9 @@ export default function Whiteboard({
                     if (state.pageImageObjects) setPageImageObjects(state.pageImageObjects);
                     if (state.pageTextObjects) setPageTextObjects(state.pageTextObjects);
                     if (state.pageShapeObjects) setPageShapeObjects(state.pageShapeObjects);
+                    if (state.pageMediaObjects) setPageMediaObjects(state.pageMediaObjects);
+                    if (state.page3DObjects) setPage3DObjects(state.page3DObjects);
+                    if (state.whiteboardTasks) setWhiteboardTasks(state.whiteboardTasks);
                     if (state.color) setColor(state.color);
                     if (state.strokeWidth) setStrokeWidth(state.strokeWidth);
                     if (state.eraserSize) setEraserSize(state.eraserSize);
@@ -943,6 +1059,9 @@ export default function Whiteboard({
                     pageImageObjects,
                     pageTextObjects,
                     pageShapeObjects,
+                    pageMediaObjects,
+                    page3DObjects,
+                    whiteboardTasks,
                     color,
                     strokeWidth,
                     eraserSize,
@@ -987,7 +1106,7 @@ export default function Whiteboard({
         return () => {
             if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         };
-    }, [STORAGE_KEY, pages, currentPage, totalPages, pageBackgrounds, pageImageObjects, pageTextObjects, pageShapeObjects, color, strokeWidth, eraserSize, strokeStyle, tool]);
+    }, [STORAGE_KEY, pages, currentPage, totalPages, pageBackgrounds, pageImageObjects, pageTextObjects, pageShapeObjects, pageMediaObjects, page3DObjects, whiteboardTasks, color, strokeWidth, eraserSize, strokeStyle, tool]);
 
     // Initialize canvas - keep transparent to show CSS background patterns
     useEffect(() => {
@@ -1646,132 +1765,145 @@ export default function Whiteboard({
         const imgObj = targetImgObj || (selectedImageId ? imageObjects.find(i => i.id === selectedImageId) : null);
         if (!imgObj || !imgObj.src) return;
 
+        setRemovingBgImageId(imgObj.id);
+
         const img = new Image();
         img.crossOrigin = 'anonymous';
         img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.naturalWidth || img.width;
-            canvas.height = img.naturalHeight || img.height;
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            ctx.drawImage(img, 0, 0);
+            setTimeout(() => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth || img.width;
+                    canvas.height = img.naturalHeight || img.height;
+                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                    ctx.drawImage(img, 0, 0);
 
-            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imgData.data;
-            const w = canvas.width;
-            const h = canvas.height;
+                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const data = imgData.data;
+                    const w = canvas.width;
+                    const h = canvas.height;
 
-            // Sample corner pixels to find dominant background color
-            const corners = [
-                0, // top-left
-                (w - 1) * 4, // top-right
-                ((h - 1) * w) * 4, // bottom-left
-                ((h - 1) * w + (w - 1)) * 4 // bottom-right
-            ];
+                    // Sample corner pixels to find dominant background color
+                    const corners = [
+                        0, // top-left
+                        (w - 1) * 4, // top-right
+                        ((h - 1) * w) * 4, // bottom-left
+                        ((h - 1) * w + (w - 1)) * 4 // bottom-right
+                    ];
 
-            let bgR = 0, bgG = 0, bgB = 0, validSamples = 0;
-            corners.forEach(idx => {
-                if (data[idx + 3] > 10) {
-                    bgR += data[idx];
-                    bgG += data[idx + 1];
-                    bgB += data[idx + 2];
-                    validSamples++;
-                }
-            });
+                    let bgR = 0, bgG = 0, bgB = 0, validSamples = 0;
+                    corners.forEach(idx => {
+                        if (data[idx + 3] > 10) {
+                            bgR += data[idx];
+                            bgG += data[idx + 1];
+                            bgB += data[idx + 2];
+                            validSamples++;
+                        }
+                    });
 
-            if (validSamples === 0) {
-                toast('Image already has transparent background', { icon: 'ℹ️' });
-                return;
-            }
+                    if (validSamples === 0) {
+                        toast('Image already has transparent background', { icon: 'ℹ️' });
+                        setRemovingBgImageId(null);
+                        return;
+                    }
 
-            bgR = Math.round(bgR / validSamples);
-            bgG = Math.round(bgG / validSamples);
-            bgB = Math.round(bgB / validSamples);
+                    bgR = Math.round(bgR / validSamples);
+                    bgG = Math.round(bgG / validSamples);
+                    bgB = Math.round(bgB / validSamples);
 
-            const visited = new Uint8Array(w * h);
-            const queue = [];
+                    const visited = new Uint8Array(w * h);
+                    const queue = [];
 
-            const colorDist = (idx) => {
-                const dr = data[idx] - bgR;
-                const dg = data[idx + 1] - bgG;
-                const db = data[idx + 2] - bgB;
-                return Math.sqrt(dr * dr + dg * dg + db * db);
-            };
+                    const colorDist = (idx) => {
+                        const dr = data[idx] - bgR;
+                        const dg = data[idx + 1] - bgG;
+                        const db = data[idx + 2] - bgB;
+                        return Math.sqrt(dr * dr + dg * dg + db * db);
+                    };
 
-            const threshold = 38;
-            const feather = 18;
+                    const threshold = 38;
+                    const feather = 18;
 
-            for (let x = 0; x < w; x++) {
-                let idxTop = x * 4;
-                if (colorDist(idxTop) < threshold + feather) {
-                    queue.push(x, 0);
-                    visited[x] = 1;
-                }
-                let idxBottom = ((h - 1) * w + x) * 4;
-                if (colorDist(idxBottom) < threshold + feather) {
-                    queue.push(x, h - 1);
-                    visited[(h - 1) * w + x] = 1;
-                }
-            }
-            for (let y = 0; y < h; y++) {
-                let idxLeft = (y * w) * 4;
-                if (colorDist(idxLeft) < threshold + feather && !visited[y * w]) {
-                    queue.push(0, y);
-                    visited[y * w] = 1;
-                }
-                let idxRight = (y * w + (w - 1)) * 4;
-                if (colorDist(idxRight) < threshold + feather && !visited[y * w + (w - 1)]) {
-                    queue.push(w - 1, y);
-                    visited[y * w + (w - 1)] = 1;
-                }
-            }
+                    for (let x = 0; x < w; x++) {
+                        let idxTop = x * 4;
+                        if (colorDist(idxTop) < threshold + feather) {
+                            queue.push(x, 0);
+                            visited[x] = 1;
+                        }
+                        let idxBottom = ((h - 1) * w + x) * 4;
+                        if (colorDist(idxBottom) < threshold + feather) {
+                            queue.push(x, h - 1);
+                            visited[(h - 1) * w + x] = 1;
+                        }
+                    }
+                    for (let y = 0; y < h; y++) {
+                        let idxLeft = (y * w) * 4;
+                        if (colorDist(idxLeft) < threshold + feather && !visited[y * w]) {
+                            queue.push(0, y);
+                            visited[y * w] = 1;
+                        }
+                        let idxRight = (y * w + (w - 1)) * 4;
+                        if (colorDist(idxRight) < threshold + feather && !visited[y * w + (w - 1)]) {
+                            queue.push(w - 1, y);
+                            visited[y * w + (w - 1)] = 1;
+                        }
+                    }
 
-            let head = 0;
-            while (head < queue.length) {
-                const qx = queue[head++];
-                const qy = queue[head++];
-                const pixelIdx = (qy * w + qx) * 4;
-                const dist = colorDist(pixelIdx);
+                    let head = 0;
+                    while (head < queue.length) {
+                        const qx = queue[head++];
+                        const qy = queue[head++];
+                        const pixelIdx = (qy * w + qx) * 4;
+                        const dist = colorDist(pixelIdx);
 
-                if (dist <= threshold) {
-                    data[pixelIdx + 3] = 0;
-                } else if (dist < threshold + feather) {
-                    const alphaRatio = (dist - threshold) / feather;
-                    data[pixelIdx + 3] = Math.round(data[pixelIdx + 3] * alphaRatio);
-                }
+                        if (dist <= threshold) {
+                            data[pixelIdx + 3] = 0;
+                        } else if (dist < threshold + feather) {
+                            const alphaRatio = (dist - threshold) / feather;
+                            data[pixelIdx + 3] = Math.round(data[pixelIdx + 3] * alphaRatio);
+                        }
 
-                const neighbors = [
-                    [qx + 1, qy],
-                    [qx - 1, qy],
-                    [qx, qy + 1],
-                    [qx, qy - 1]
-                ];
+                        const neighbors = [
+                            [qx + 1, qy],
+                            [qx - 1, qy],
+                            [qx, qy + 1],
+                            [qx, qy - 1]
+                        ];
 
-                for (let i = 0; i < 4; i++) {
-                    const nx = neighbors[i][0];
-                    const ny = neighbors[i][1];
-                    if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                        const nPos = ny * w + nx;
-                        if (!visited[nPos]) {
-                            visited[nPos] = 1;
-                            const nIdx = nPos * 4;
-                            if (colorDist(nIdx) < threshold + feather) {
-                                queue.push(nx, ny);
+                        for (let i = 0; i < 4; i++) {
+                            const nx = neighbors[i][0];
+                            const ny = neighbors[i][1];
+                            if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                                const nPos = ny * w + nx;
+                                if (!visited[nPos]) {
+                                    visited[nPos] = 1;
+                                    const nIdx = nPos * 4;
+                                    if (colorDist(nIdx) < threshold + feather) {
+                                        queue.push(nx, ny);
+                                    }
+                                }
                             }
                         }
                     }
+
+                    ctx.putImageData(imgData, 0, 0);
+                    const transparentUrl = canvas.toDataURL('image/png');
+
+                    setImageObjects(prev => prev.map(imgItem =>
+                        imgItem.id === imgObj.id ? { ...imgItem, src: transparentUrl } : imgItem
+                    ));
+                    saveToHistory();
+                    toast.success('Image background removed!', { icon: '🪄' });
+                } catch (err) {
+                    console.error('BG removal error:', err);
+                    toast.error('Failed to process image background removal');
+                } finally {
+                    setRemovingBgImageId(null);
                 }
-            }
-
-            ctx.putImageData(imgData, 0, 0);
-            const transparentUrl = canvas.toDataURL('image/png');
-
-            setImageObjects(prev => prev.map(imgItem =>
-                imgItem.id === imgObj.id ? { ...imgItem, src: transparentUrl } : imgItem
-            ));
-            saveToHistory();
-            toast.success('Image background removed!', { icon: '🪄' });
+            }, 50);
         };
         img.onerror = () => {
+            setRemovingBgImageId(null);
             toast.error('Failed to process image background removal');
         };
         img.src = imgObj.src;
@@ -1939,8 +2071,93 @@ export default function Whiteboard({
 
             setShapeObjects(prev => [...prev, ...newShapes]);
             setTimeout(() => setSelectedShapeIds(newIds), 0);
+        } else if (item.type === 'media' && item.data) {
+            pasteCountRef.current += 1;
+            const stackOffset = ((pasteCountRef.current - 1) % 12 + 1) * 25;
+            const newId = `media_${Date.now()}`;
+            const newMedia = {
+                ...item.data,
+                id: newId,
+                x: (item.data.x || 100) + stackOffset,
+                y: (item.data.y || 100) + stackOffset
+            };
+            setPageMediaObjects(prev => ({
+                ...prev,
+                [currentPage]: [...(prev[currentPage] || []), newMedia]
+            }));
+            setSelectedMediaId(newId);
+            setSelectedShapeIds([]);
+            setSelectedTextIds([]);
+            setSelectedImageIds([]);
+            setSelected3DId(null);
+            saveToHistory();
+        } else if (item.type === '3d_object' && item.data) {
+            pasteCountRef.current += 1;
+            const stackOffset = ((pasteCountRef.current - 1) % 12 + 1) * 25;
+            const newId = `3d_${Date.now()}`;
+            const new3D = {
+                ...item.data,
+                id: newId,
+                x: (item.data.x || 100) + stackOffset,
+                y: (item.data.y || 100) + stackOffset
+            };
+            setPage3DObjects(prev => ({
+                ...prev,
+                [currentPage]: [...(prev[currentPage] || []), new3D]
+            }));
+            setSelected3DId(newId);
+            setSelectedShapeIds([]);
+            setSelectedTextIds([]);
+            setSelectedImageIds([]);
+            setSelectedMediaId(null);
+            saveToHistory();
+        } else if (item.type === 'group' && item.data) {
+            pasteCountRef.current += 1;
+            const stackOffset = ((pasteCountRef.current - 1) % 12 + 1) * 25;
+            const timestamp = Date.now();
+            const { shapes = [], texts = [], images = [], media = [], threeD = [] } = item.data;
+
+            const shapeIdMap = {};
+            const newShapeIds = [];
+            shapes.forEach((s, idx) => {
+                const nid = `shp_${timestamp}_${idx}`;
+                shapeIdMap[s.id] = nid;
+                newShapeIds.push(nid);
+            });
+            const newShapes = shapes.map(s => {
+                const nid = shapeIdMap[s.id];
+                if (s.type === 'connector') {
+                    return {
+                        ...s,
+                        id: nid,
+                        sourceId: shapeIdMap[s.sourceId] || s.sourceId,
+                        targetId: shapeIdMap[s.targetId] || s.targetId,
+                        sourcePoint: s.sourcePoint ? { x: s.sourcePoint.x + stackOffset, y: s.sourcePoint.y + stackOffset } : s.sourcePoint,
+                        targetPoint: s.targetPoint ? { x: s.targetPoint.x + stackOffset, y: s.targetPoint.y + stackOffset } : s.targetPoint,
+                        waypoint: s.waypoint ? { x: s.waypoint.x + stackOffset, y: s.waypoint.y + stackOffset } : null
+                    };
+                }
+                return { ...s, id: nid, x: (s.x || 0) + stackOffset, y: (s.y || 0) + stackOffset };
+            });
+
+            const newTexts = texts.map((t, idx) => ({ ...t, id: `txt_${timestamp}_${idx}`, x: (t.x || 0) + stackOffset, y: (t.y || 0) + stackOffset }));
+            const newImages = images.map((img, idx) => ({ ...img, id: `img_${timestamp}_${idx}`, x: (img.x || 0) + stackOffset, y: (img.y || 0) + stackOffset }));
+            const newMedias = media.map((m, idx) => ({ ...m, id: `media_${timestamp}_${idx}`, x: (m.x || 0) + stackOffset, y: (m.y || 0) + stackOffset }));
+            const new3Ds = threeD.map((o, idx) => ({ ...o, id: `3d_${timestamp}_${idx}`, x: (o.x || 0) + stackOffset, y: (o.y || 0) + stackOffset }));
+
+            if (newShapes.length > 0) setShapeObjects(prev => [...prev, ...newShapes]);
+            if (newTexts.length > 0) setTextObjects(prev => [...prev, ...newTexts]);
+            if (newImages.length > 0) setImageObjects(prev => [...prev, ...newImages]);
+            if (newMedias.length > 0) setPageMediaObjects(prev => ({ ...prev, [currentPage]: [...(prev[currentPage] || []), ...newMedias] }));
+            if (new3Ds.length > 0) setPage3DObjects(prev => ({ ...prev, [currentPage]: [...(prev[currentPage] || []), ...new3Ds] }));
+
+            setSelectedShapeIds(newShapeIds);
+            setSelectedTextIds(newTexts.map(t => t.id));
+            setSelectedImageIds(newImages.map(i => i.id));
+            saveToHistory();
+            toast.success('Pasted group items');
         }
-    }, [saveToHistory]);
+    }, [saveToHistory, currentPage]);
 
     const handlePasteSelection = useCallback(() => {
         if (clipboardHistory.length === 0) return;
@@ -2054,6 +2271,22 @@ export default function Whiteboard({
             setSelectedShapeIds([]);
             hasDeleted = true;
         }
+        if (selectedMediaId) {
+            setPageMediaObjects(prev => ({
+                ...prev,
+                [currentPage]: (prev[currentPage] || []).filter(m => m.id !== selectedMediaId)
+            }));
+            setSelectedMediaId(null);
+            hasDeleted = true;
+        }
+        if (selected3DId) {
+            setPage3DObjects(prev => ({
+                ...prev,
+                [currentPage]: (prev[currentPage] || []).filter(o => o.id !== selected3DId)
+            }));
+            setSelected3DId(null);
+            hasDeleted = true;
+        }
         if (selection) {
             handleDeleteSelection();
             hasDeleted = true;
@@ -2061,47 +2294,83 @@ export default function Whiteboard({
         if (hasDeleted) {
             saveToHistory();
         }
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selection, handleDeleteSelection, saveToHistory]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, selection, handleDeleteSelection, saveToHistory, currentPage]);
 
     // Unified Copy
     const handleCopy = useCallback(() => {
         pasteCountRef.current = 0;
-        if (selectedImageIds.length > 0) {
-            const imgsToCopy = imageObjects.filter(img => selectedImageIds.includes(img.id));
-            if (imgsToCopy.length === 1) {
-                setClipboardHistory(prev => [{ id: Date.now(), type: 'image', data: { ...imgsToCopy[0] }, dataURL: imgsToCopy[0].src }, ...prev].slice(0, 10));
-            } else if (imgsToCopy.length > 1) {
-                setClipboardHistory(prev => [{ id: Date.now(), type: 'images', data: imgsToCopy.map(img => ({ ...img })) }, ...prev].slice(0, 10));
-            }
-            return;
-        }
-        if (selectedTextIds.length > 0) {
-            const textsToCopy = textObjects.filter(t => selectedTextIds.includes(t.id));
-            if (textsToCopy.length === 1) {
-                setClipboardHistory(prev => [{ id: Date.now(), type: 'text', data: { ...textsToCopy[0] } }, ...prev].slice(0, 10));
-            } else if (textsToCopy.length > 1) {
-                setClipboardHistory(prev => [{ id: Date.now(), type: 'texts', data: textsToCopy.map(t => ({ ...t })) }, ...prev].slice(0, 10));
-            }
-            return;
-        }
-        if (selectedShapeIds.length > 0) {
-            const objsToCopy = shapeObjects.filter(s => selectedShapeIds.includes(s.id));
-            const internalConnectors = shapeObjects.filter(s => 
-                s.type === 'connector' && 
-                selectedShapeIds.includes(s.sourceId) && 
-                selectedShapeIds.includes(s.targetId) &&
-                !selectedShapeIds.includes(s.id)
-            );
-            const allToCopy = [...objsToCopy, ...internalConnectors];
-            if (allToCopy.length > 0) {
-                setClipboardHistory(prev => [{ id: Date.now(), type: 'shapes', data: allToCopy.map(o => ({...o})) }, ...prev].slice(0, 10));
-            }
-            return;
-        }
-        if (selection) {
+        const selectedShapes = shapeObjects.filter(s => selectedShapeIds.includes(s.id));
+        const internalConnectors = shapeObjects.filter(s => 
+            s.type === 'connector' && 
+            selectedShapeIds.includes(s.sourceId) && 
+            selectedShapeIds.includes(s.targetId) &&
+            !selectedShapeIds.includes(s.id)
+        );
+        const allSelectedShapes = [...selectedShapes, ...internalConnectors];
+        const selectedTexts = textObjects.filter(t => selectedTextIds.includes(t.id));
+        const selectedImages = imageObjects.filter(img => selectedImageIds.includes(img.id));
+        const selectedMedia = mediaObjects.filter(m => m.id === selectedMediaId);
+        const selected3D = threeDObjects.filter(o => o.id === selected3DId);
+
+        const totalKinds = (allSelectedShapes.length > 0 ? 1 : 0) + 
+                           (selectedTexts.length > 0 ? 1 : 0) + 
+                           (selectedImages.length > 0 ? 1 : 0) + 
+                           (selectedMedia.length > 0 ? 1 : 0) + 
+                           (selected3D.length > 0 ? 1 : 0);
+
+        const totalCount = allSelectedShapes.length + selectedTexts.length + selectedImages.length + selectedMedia.length + selected3D.length;
+
+        if (totalCount === 0 && selection) {
             handleCopySelection();
+            return;
         }
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selection, imageObjects, textObjects, shapeObjects, handleCopySelection]);
+
+        if (totalKinds > 1 || totalCount > 1) {
+            // Mixed Multi-object or multi-item selection -> Package as 'group'
+            const groupPayload = {
+                shapes: allSelectedShapes.map(s => ({ ...s })),
+                texts: selectedTexts.map(t => ({ ...t })),
+                images: selectedImages.map(i => ({ ...i })),
+                media: selectedMedia.map(m => ({ ...m })),
+                threeD: selected3D.map(o => ({ ...o }))
+            };
+            setClipboardHistory(prev => [{
+                id: Date.now(),
+                type: 'group',
+                data: groupPayload,
+                title: `Group (${totalCount} items)`
+            }, ...prev].slice(0, 15));
+            toast.success(`Copied ${totalCount} items to clipboard`, { icon: '📋' });
+            return;
+        }
+
+        // Single object selection
+        if (selectedImages.length === 1) {
+            setClipboardHistory(prev => [{ id: Date.now(), type: 'image', data: { ...selectedImages[0] }, dataURL: selectedImages[0].src }, ...prev].slice(0, 15));
+            toast.success('Copied image to clipboard');
+            return;
+        }
+        if (selectedTexts.length === 1) {
+            setClipboardHistory(prev => [{ id: Date.now(), type: 'text', data: { ...selectedTexts[0] } }, ...prev].slice(0, 15));
+            toast.success('Copied text to clipboard');
+            return;
+        }
+        if (allSelectedShapes.length === 1) {
+            setClipboardHistory(prev => [{ id: Date.now(), type: 'shape', data: { ...allSelectedShapes[0] } }, ...prev].slice(0, 15));
+            toast.success('Copied shape to clipboard');
+            return;
+        }
+        if (selectedMedia.length === 1) {
+            setClipboardHistory(prev => [{ id: Date.now(), type: 'media', data: { ...selectedMedia[0] } }, ...prev].slice(0, 15));
+            toast.success('Copied media player');
+            return;
+        }
+        if (selected3D.length === 1) {
+            setClipboardHistory(prev => [{ id: Date.now(), type: '3d_object', data: { ...selected3D[0] } }, ...prev].slice(0, 15));
+            toast.success('Copied 3D model');
+            return;
+        }
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, imageObjects, textObjects, shapeObjects, mediaObjects, threeDObjects, selection, handleCopySelection]);
 
     // Unified Cut
     const handleCut = useCallback(() => {
@@ -2527,10 +2796,12 @@ export default function Whiteboard({
                 };
             });
 
+            const insertedShapeIds = normalizedShapes.map(s => s.id);
             setPageShapeObjects(prev => ({
                 ...prev,
                 [currentPage]: [...(prev[currentPage] || []), ...normalizedShapes]
             }));
+            setSelectedShapeIds(insertedShapeIds);
         }
         if (texts && texts.length > 0) {
             const normalizedTexts = texts.map(t => ({
@@ -2540,18 +2811,17 @@ export default function Whiteboard({
                 height: t.height || 50,
                 fontSize: t.fontSize || 22
             }));
+            const insertedTextIds = normalizedTexts.map(t => t.id);
             setPageTextObjects(prev => ({
                 ...prev,
                 [currentPage]: [...(prev[currentPage] || []), ...normalizedTexts]
             }));
+            setSelectedTextIds(insertedTextIds);
         }
-        if (background) {
-            const resolvedPattern = background.pattern === 'dots' ? 'dotted' : (background.pattern || 'plain');
-            setPageBackgrounds(prev => ({
-                ...prev,
-                [currentPage]: { pattern: resolvedPattern, color: background.color || '#ffffff' }
-            }));
-        }
+
+        // Keep inserted template elements selected as a group and switch to select tool
+        setSelectedImageIds([]);
+        setTool('select');
         setShowTemplateGallery(false);
         toast.success(`Applied "${title}" template!`, { icon: '📐' });
         saveToHistory();
@@ -2651,6 +2921,95 @@ export default function Whiteboard({
                 }
             }
 
+            // Shortcuts modal trigger (? or Cmd+/)
+            if (e.key === '?' || (modKey && e.key === '/')) {
+                e.preventDefault();
+                setShowShortcutsModal(prev => !prev);
+                return;
+            }
+
+            // Undo / Redo shortcuts
+            if (modKey && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    handleRedo();
+                } else {
+                    handleUndo();
+                }
+                return;
+            } else if (modKey && e.key.toLowerCase() === 'y') {
+                e.preventDefault();
+                handleRedo();
+                return;
+            }
+
+            // Group / Ungroup
+            if (modKey && e.key.toLowerCase() === 'g') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    handleUngroup();
+                } else {
+                    handleGroup();
+                }
+                return;
+            }
+
+            // Lock / Unlock
+            if (modKey && e.key.toLowerCase() === 'l') {
+                e.preventDefault();
+                handleToggleLock();
+                return;
+            }
+
+            // Zoom controls hotkeys
+            if (e.key === '+' || e.key === '=') {
+                e.preventDefault();
+                setZoomLevel(prev => Math.min(3, Math.round((prev + 0.1) * 10) / 10));
+                return;
+            } else if (e.key === '-' || e.key === '_') {
+                e.preventDefault();
+                setZoomLevel(prev => Math.max(0.2, Math.round((prev - 0.1) * 10) / 10));
+                return;
+            } else if (e.key === '0') {
+                e.preventDefault();
+                setZoomLevel(1);
+                setPanOffset({ x: 0, y: 0 });
+                toast('Zoom reset to 100%', { icon: '🎯' });
+                return;
+            } else if (e.key === '9') {
+                e.preventDefault();
+                const container = canvasWrapperRef.current;
+                if (container) {
+                    const padding = 60;
+                    const scaleX = (container.clientWidth - padding) / canvasWidth;
+                    const scaleY = (container.clientHeight - padding) / canvasHeight;
+                    const fitScale = Math.max(0.2, Math.min(2, Math.min(scaleX, scaleY)));
+                    setZoomLevel(Math.round(fitScale * 100) / 100);
+                    setPanOffset({ x: 0, y: 0 });
+                    toast('Fit to Screen', { icon: '📐' });
+                }
+                return;
+            }
+
+            // Single key tool hotkeys (only when not typing in text/input)
+            if (!isInput && !modKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                const k = e.key.toLowerCase();
+                if (k === 'v') { setTool('select'); toast('Select tool (V)', { id: 'tool-hint' }); }
+                else if (k === 'p') { setTool('pencil'); toast('Pen tool (P)', { id: 'tool-hint' }); }
+                else if (k === 'h') { setTool('highlighter'); toast('Highlighter tool (H)', { id: 'tool-hint' }); }
+                else if (k === 'e') { setTool('eraser'); toast('Eraser tool (E)', { id: 'tool-hint' }); }
+                else if (k === 't') { setTool('text'); toast('Text tool (T)', { id: 'tool-hint' }); }
+                else if (k === 'r') { setTool('shape'); setShapeType('rectangle'); toast('Rectangle shape (R)', { id: 'tool-hint' }); }
+                else if (k === 'c') { setTool('shape'); setShapeType('circle'); toast('Circle shape (C)', { id: 'tool-hint' }); }
+                else if (k === 'l') { setTool('line'); setLineType('line'); toast('Line tool (L)', { id: 'tool-hint' }); }
+                else if (k === 'k') { setTool('line'); setLineType('connector'); toast('Connector line (K)', { id: 'tool-hint' }); }
+                else if (k === 'i') { imageInputRef.current?.click(); }
+                else if (k === '3') { setShowDomainLibrary(true); }
+                else if (k === 'm') { setShowMediaModal(true); }
+                else if (k === 'u') { setShowTasksPanel(prev => !prev); }
+                else if (k === 'f') { onToggleFullscreen && onToggleFullscreen(); }
+            }
+
             if (modKey && e.key.toLowerCase() === 'c') {
                 e.preventDefault();
                 handleCopy();
@@ -2658,13 +3017,11 @@ export default function Whiteboard({
                 e.preventDefault();
                 handleCut();
             } else if (modKey && e.key.toLowerCase() === 'v') {
-                // Don't prevent default if focusing an input (they might be pasting real text)
                 if (isInput) return;
                 if (clipboardHistory && clipboardHistory.length > 0) {
                     e.preventDefault();
                     handlePaste();
                 }
-                // If internal clipboard is empty, let native paste event fire so global paste handler captures image blobs from OS/browser
             } else if (modKey && e.key.toLowerCase() === 'd') {
                 e.preventDefault();
                 handleDuplicate();
@@ -2675,25 +3032,23 @@ export default function Whiteboard({
                 e.preventDefault();
                 handleSendToBack();
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (!isInput || selectedImageIds.length > 0 || selection || selectedShapeIds.length > 0 || selectedTextIds.length > 0) {
-                    // Only prevent backspace/delete if not in an input, OR if we have an image/selection active (which can't be typed into)
+                if (!isInput || selectedImageIds.length > 0 || selection || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedMediaId || selected3DId) {
                     e.preventDefault();
                     handleDelete();
                 }
             } else if (e.key === 'Escape') {
-                if (showRadialMenu) {
-                    setShowRadialMenu(false);
-                    return;
-                }
-                if (showTemplateGallery) {
-                    setShowTemplateGallery(false);
-                    return;
-                }
+                if (showShortcutsModal) { setShowShortcutsModal(false); return; }
+                if (showTasksPanel) { setShowTasksPanel(false); return; }
+                if (showMediaModal) { setShowMediaModal(false); return; }
+                if (showDomainLibrary) { setShowDomainLibrary(false); return; }
+                if (showRadialMenu) { setShowRadialMenu(false); return; }
+                if (showTemplateGallery) { setShowTemplateGallery(false); return; }
                 setSelectedImageIds([]);
                 setSelectedTextIds([]);
                 setSelectedShapeIds([]);
+                setSelectedMediaId(null);
+                setSelected3DId(null);
             } else if (e.key === '`' || e.key === '~') {
-                // Tilde key opens the radial toolbar at canvas center
                 e.preventDefault();
                 const wrapper = canvasWrapperRef.current;
                 if (wrapper) {
@@ -2706,85 +3061,181 @@ export default function Whiteboard({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selection, showRadialMenu, showTemplateGallery, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack, saveToHistory, clipboardHistory]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, selection, showRadialMenu, showTemplateGallery, showShortcutsModal, showTasksPanel, showMediaModal, showDomainLibrary, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack, handleUndo, handleRedo, handleGroup, handleUngroup, handleToggleLock, onToggleFullscreen, saveToHistory, clipboardHistory, canvasWidth, canvasHeight]);
 
-    // Global clipboard paste listener for pasting images directly from outside (operating system, browser clipboard, screenshots)
+    // Global clipboard paste listener for pasting images from websites (HTML <img>, URLs, bitmaps) and 3D files
     useEffect(() => {
+        const insertImageFromUrl = (url) => {
+            const img = new window.Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                const canvas = canvasRef.current;
+                const cWidth = canvas ? canvas.width : 1920;
+                const cHeight = canvas ? canvas.height : 1080;
+                let w = img.width || 320;
+                let h = img.height || 240;
+                const maxDim = 460;
+                if (w > maxDim || h > maxDim) {
+                    const ratio = Math.min(maxDim / w, maxDim / h);
+                    w = Math.round(w * ratio);
+                    h = Math.round(h * ratio);
+                }
+                pasteCountRef.current += 1;
+                const offset = ((pasteCountRef.current - 1) % 8 + 1) * 25;
+                const newId = `img_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+                const newImageObj = {
+                    id: newId,
+                    src: url,
+                    x: Math.max(40, Math.round(cWidth / 2 - w / 2) + offset),
+                    y: Math.max(40, Math.round(cHeight / 2 - h / 2) + offset),
+                    width: w,
+                    height: h,
+                    rotation: 0,
+                    opacity: 1,
+                    isLocked: false,
+                    isInfiniteCloner: false,
+                    zIndex: 15
+                };
+                setImageObjects(prev => [...prev, newImageObj]);
+                setSelectedImageIds([newId]);
+                setSelectedImageId(newId);
+                setSelectedShapeIds([]);
+                setSelectedTextIds([]);
+                saveToHistory();
+                toast.success('Pasted web image onto whiteboard', { icon: '🖼️' });
+            };
+            img.onerror = () => {
+                toast.error('Could not load image from clipboard URL');
+            };
+            img.src = url;
+        };
+
         const handleGlobalPaste = (e) => {
             const activeTag = document.activeElement?.tagName?.toLowerCase();
             const isEditingInput = activeTag === 'input' || activeTag === 'textarea';
+            if (isEditingInput) return;
 
+            // 1. Direct Image Files / Blobs (OS clipboard, screenshot bitmaps)
             const items = e.clipboardData?.items;
-            if (!items || items.length === 0) return;
-
             let imageFile = null;
-            for (let i = 0; i < items.length; i++) {
-                if (items[i].type && items[i].type.startsWith('image/')) {
-                    imageFile = items[i].getAsFile();
-                    break;
+            if (items) {
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type && items[i].type.startsWith('image/')) {
+                        imageFile = items[i].getAsFile();
+                        break;
+                    }
                 }
             }
 
             if (imageFile) {
-                // Always prevent default when an image is being pasted
                 e.preventDefault();
                 e.stopPropagation();
 
                 const reader = new FileReader();
                 reader.onload = (event) => {
-                    const dataUrl = event.target.result;
-                    const img = new window.Image();
-                    img.onload = () => {
-                        const canvas = canvasRef.current;
-                        const cWidth = canvas ? canvas.width : 1920;
-                        const cHeight = canvas ? canvas.height : 1080;
-
-                        // Fit image proportionally within reasonable bounds (e.g. max 450x450)
-                        let w = img.width || 320;
-                        let h = img.height || 240;
-                        const maxDim = 460;
-                        if (w > maxDim || h > maxDim) {
-                            const ratio = Math.min(maxDim / w, maxDim / h);
-                            w = Math.round(w * ratio);
-                            h = Math.round(h * ratio);
-                        }
-
-                        pasteCountRef.current += 1;
-                        const offset = ((pasteCountRef.current - 1) % 8 + 1) * 25;
-                        const posX = Math.max(40, Math.round(cWidth / 2 - w / 2) + offset);
-                        const posY = Math.max(40, Math.round(cHeight / 2 - h / 2) + offset);
-
-                        const newId = `img_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-                        const newImageObj = {
-                            id: newId,
-                            src: dataUrl,
-                            x: posX,
-                            y: posY,
-                            width: w,
-                            height: h,
-                            rotation: 0,
-                            opacity: 1,
-                            isLocked: false,
-                            zIndex: 15
-                        };
-
-                        setImageObjects(prev => [...prev, newImageObj]);
-                        setSelectedImageIds([newId]);
-                        setSelectedImageId(newId);
-                        setSelectedShapeIds([]);
-                        setSelectedTextIds([]);
-                        saveToHistory();
-                        toast.success('Image pasted to whiteboard');
-                    };
-                    img.src = dataUrl;
+                    insertImageFromUrl(event.target.result);
                 };
                 reader.readAsDataURL(imageFile);
+                return;
+            }
+
+            // 2. HTML Clipboard containing <img> tags from websites
+            const htmlData = e.clipboardData?.getData('text/html');
+            if (htmlData) {
+                const match = htmlData.match(/<img[^>]+src=["']([^"']+)["']/i);
+                if (match && match[1]) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    insertImageFromUrl(match[1]);
+                    return;
+                }
+            }
+
+            // 3. Plain Text (Direct image URLs or 3D files)
+            const textData = e.clipboardData?.getData('text/plain');
+            if (textData) {
+                const trimmed = textData.trim();
+                // Direct image URL
+                if (/\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(trimmed) || /^https?:\/\/.*\.(png|jpe?g|gif|webp|svg)/i.test(trimmed)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    insertImageFromUrl(trimmed);
+                    return;
+                }
+
+                // 3D Wavefront OBJ
+                if (trimmed.startsWith('v ') && trimmed.includes('\nf ')) {
+                    const parsed = parseOBJ(trimmed);
+                    if (parsed) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const new3DObj = {
+                            id: `3d_${Date.now()}`,
+                            name: 'Pasted 3D Mesh',
+                            modelType: 'custom',
+                            meshData: parsed,
+                            x: 240,
+                            y: 180,
+                            width: 200,
+                            height: 200,
+                            rotX: -25,
+                            rotY: 45,
+                            rotZ: 0,
+                            rotation: 0,
+                            isLocked: false,
+                            isInfiniteCloner: false,
+                            zIndex: 25
+                        };
+                        setPage3DObjects(prev => ({
+                            ...prev,
+                            [currentPage]: [...(prev[currentPage] || []), new3DObj]
+                        }));
+                        setSelected3DId(new3DObj.id);
+                        saveToHistory();
+                        toast.success('Pasted 3D OBJ model onto canvas', { icon: '📦' });
+                        return;
+                    }
+                }
+
+                // 3D JSON Mesh
+                if (trimmed.startsWith('{') && (trimmed.includes('"vertices"') || trimmed.includes('"faces"'))) {
+                    const parsed = parseJSON3D(trimmed);
+                    if (parsed) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const new3DObj = {
+                            id: `3d_${Date.now()}`,
+                            name: 'Pasted 3D Model',
+                            modelType: 'custom',
+                            meshData: parsed,
+                            x: 240,
+                            y: 180,
+                            width: 200,
+                            height: 200,
+                            rotX: -25,
+                            rotY: 45,
+                            rotZ: 0,
+                            rotation: 0,
+                            isLocked: false,
+                            isInfiniteCloner: false,
+                            zIndex: 25
+                        };
+                        setPage3DObjects(prev => ({
+                            ...prev,
+                            [currentPage]: [...(prev[currentPage] || []), new3DObj]
+                        }));
+                        setSelected3DId(new3DObj.id);
+                        saveToHistory();
+                        toast.success('Pasted 3D mesh model onto canvas', { icon: '📦' });
+                        return;
+                    }
+                }
             }
         };
 
         window.addEventListener('paste', handleGlobalPaste);
         return () => window.removeEventListener('paste', handleGlobalPaste);
-    }, [saveToHistory, setImageObjects, setSelectedImageIds, setSelectedImageId, setSelectedShapeIds, setSelectedTextIds]);
+    }, [saveToHistory, setImageObjects, setSelectedImageIds, setSelectedImageId, setSelectedShapeIds, setSelectedTextIds, currentPage]);
 
     // Image manipulation mouse handlers
     useEffect(() => {
@@ -5569,7 +6020,11 @@ export default function Whiteboard({
                             { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : RectangleHorizontal)), label: 'Shapes' },
                             { id: 'text', icon: Type, label: 'Text' },
                             { id: 'image', icon: ImageIcon, label: 'Image' },
+                            { id: 'media', icon: Video, label: 'Media Player (YouTube, Local, Embed)' },
+                            { id: 'domain_3d', icon: Box, label: '3D Objects & Domain Library' },
+                            { id: 'tasks', icon: ListTodo, label: 'Whiteboard Tasks Checklist' },
                             { id: 'templates', icon: LayoutTemplate, label: 'Templates & SmartArt (MS Office)' },
+                            { id: 'shortcuts', icon: Keyboard, label: 'Keyboard Shortcuts (Cmd+/ or ?)' },
                             { id: 'timer', icon: Clock, label: 'Classroom Timer & Stopwatch' },
                             { id: 'spotlight', icon: TorchIcon, label: 'Spotlight Focus (Torch)' },
                             { id: 'curtain', icon: StickyNoteIcon, label: 'Screen Curtain / Shade' },
@@ -5581,6 +6036,22 @@ export default function Whiteboard({
                             <div key={t.id} className="relative">
                                 <button
                                     onClick={() => {
+                                        if (t.id === 'media') {
+                                            setShowMediaModal(true);
+                                            return;
+                                        }
+                                        if (t.id === 'domain_3d') {
+                                            setShowDomainLibrary(true);
+                                            return;
+                                        }
+                                        if (t.id === 'tasks') {
+                                            setShowTasksPanel(prev => !prev);
+                                            return;
+                                        }
+                                        if (t.id === 'shortcuts') {
+                                            setShowShortcutsModal(true);
+                                            return;
+                                        }
                                         if (t.id === 'templates') {
                                             setShowTemplateGallery(true);
                                             return;
@@ -5649,7 +6120,8 @@ export default function Whiteboard({
                                         (t.id === 'recorder' && showRecorder) ||
                                         (t.id === 'timer' && showClassroomTimer) ||
                                         (t.id === 'spotlight' && isSpotlightActive) ||
-                                        (t.id === 'curtain' && isCurtainActive)
+                                        (t.id === 'curtain' && isCurtainActive) ||
+                                        (t.id === 'tasks' && showTasksPanel)
                                             ? 'bg-primary-500 text-white shadow-inner'
                                             : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                                     }`}
@@ -6471,45 +6943,18 @@ export default function Whiteboard({
                 );
             })()}
                 
-                {/* Clipboard Panel */}
-                {showClipboard && clipboardHistory.length > 0 && (
-                    <div className="absolute top-16 left-1/2 transform -translate-x-1/2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-3 z-50 w-72 flex flex-col gap-2">
-                        <div className="flex justify-between items-center pb-2 border-b border-slate-700">
-                            <h3 className="text-slate-200 text-sm font-semibold flex items-center gap-2"><Files className="w-4 h-4"/> Clipboard</h3>
-                            <button onClick={() => setShowClipboard(false)} className="text-slate-400 hover:text-white">✕</button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
-                            {clipboardHistory.map((item, idx) => (
-                                <button 
-                                    key={item.id} 
-                                    onClick={() => { handlePasteItem(item); setShowClipboard(false); }}
-                                    className="bg-slate-900 border border-slate-700 rounded-lg overflow-hidden hover:border-primary-500 hover:ring-1 hover:ring-primary-500 transition relative group h-24 flex items-center justify-center p-1"
-                                    title={`Paste ${item.type}`}
-                                >
-                                    {item.dataURL ? (
-                                        <img src={item.dataURL} className="max-w-full max-h-full object-contain" />
-                                    ) : item.type === 'text' ? (
-                                        <div className="text-slate-300 text-xs truncate px-2">{item.data.text}</div>
-                                    ) : (
-                                        <div className="text-slate-400 text-xs uppercase">{item.type}</div>
-                                    )}
-                                    <div className="absolute inset-0 bg-primary-500/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                        <ClipboardPaste className="w-6 h-6 text-primary-400" />
-                                    </div>
-                                    <div className="absolute top-1 left-1 bg-slate-800/80 px-1 rounded text-[9px] text-slate-300 pointer-events-none">
-                                        {idx + 1}
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                        <button 
-                            onClick={() => { setClipboardHistory([]); setShowClipboard(false); }}
-                            className="w-full mt-1 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-xs font-medium transition"
-                        >
-                            Clear Clipboard
-                        </button>
-                    </div>
-                )}
+                {/* Advanced Movable & Collapsible Multi-Object Clipboard Panel */}
+                <WhiteboardClipboardPanel
+                    isOpen={showClipboard && clipboardHistory.length > 0}
+                    onClose={() => setShowClipboard(false)}
+                    clipboardHistory={clipboardHistory}
+                    onPasteItem={(item) => handlePasteItem(item)}
+                    onDeleteItem={(id) => setClipboardHistory(prev => prev.filter(item => item.id !== id))}
+                    onClearClipboard={() => {
+                        setClipboardHistory([]);
+                        setShowClipboard(false);
+                    }}
+                />
 
             {/* Canvas */}
             <div className={`flex-1 overflow-hidden p-2 sm:p-4 bg-slate-100 flex items-center justify-center relative touch-none select-none overscroll-none whiteboard-canvas-wrapper ${isFullscreen ? 'h-full' : ''}`}>
@@ -6780,9 +7225,31 @@ export default function Whiteboard({
                                 }
                             }
                             if (imgObj.isLocked) return;
+                            if (removingBgImageId === imgObj.id) return; // Action lock during background removal
 
                             const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
                             const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+
+                            // Infinite Cloner drag-to-clone behavior
+                            if (imgObj.isInfiniteCloner) {
+                                const cloneId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+                                const cloneObj = { ...imgObj, id: cloneId, isInfiniteCloner: false };
+                                setImageObjects(prev => [...prev, cloneObj]);
+                                setSelectedImageIds([cloneId]);
+                                setSelectedImageId(cloneId);
+                                setImageDragState({
+                                    id: cloneId,
+                                    action: 'move',
+                                    startX: clientX,
+                                    startY: clientY,
+                                    startObj: { ...cloneObj },
+                                    startImageObjs: [cloneObj],
+                                    startShapeObjs: [],
+                                    startTextObjs: []
+                                });
+                                return;
+                            }
+
                             setImageDragState({
                                 id: imgObj.id,
                                 action: 'move',
@@ -6852,6 +7319,21 @@ export default function Whiteboard({
                                         }}
                                         draggable={false}
                                     />
+
+                                    {/* Loading Progress Spinner during Background Removal */}
+                                    {removingBgImageId === imgObj.id && (
+                                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs rounded flex flex-col items-center justify-center text-white pointer-events-auto z-40 animate-in fade-in duration-150">
+                                            <Loader2 className="w-6 h-6 animate-spin text-primary-400 mb-1" />
+                                            <span className="text-[11px] font-semibold tracking-wide">Removing background...</span>
+                                        </div>
+                                    )}
+
+                                    {/* Infinite Cloner Badge */}
+                                    {imgObj.isInfiniteCloner && (
+                                        <div className="absolute top-1 left-1 bg-indigo-600/90 text-white rounded-full px-1.5 py-0.5 text-[9px] font-extrabold flex items-center gap-0.5 shadow pointer-events-none z-30">
+                                            <span>∞</span>
+                                        </div>
+                                    )}
 
                                     {/* Magnetic Connector Hooks (N, E, S, W, Center) */}
                                     {(isSelected || tool === 'line' || hoveredImageId === imgObj.id) && !imgObj.isLocked && (
@@ -7124,12 +7606,28 @@ export default function Whiteboard({
                                             {/* Remove Background Button */}
                                             <button
                                                 type="button"
+                                                disabled={removingBgImageId === imgObj.id}
                                                 onClick={() => handleRemoveImageBackground(imgObj)}
-                                                className="h-6 px-2 flex items-center gap-1.5 rounded bg-indigo-600/30 hover:bg-indigo-600/60 text-indigo-300 hover:text-white text-[10.5px] font-medium transition shadow-xs"
+                                                className={`h-6 px-2 flex items-center gap-1.5 rounded text-[10.5px] font-medium transition shadow-xs ${removingBgImageId === imgObj.id ? 'opacity-50 cursor-not-allowed bg-slate-800 text-slate-400' : 'bg-indigo-600/30 hover:bg-indigo-600/60 text-indigo-300 hover:text-white'}`}
                                                 title="Remove Image Background (Make Transparent)"
                                             >
                                                 <Wand2 className="w-3 h-3 text-indigo-400" />
-                                                <span>Remove BG</span>
+                                                <span>{removingBgImageId === imgObj.id ? 'Processing...' : 'Remove BG'}</span>
+                                            </button>
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+                                            {/* Infinite Cloner Toggle */}
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const next = !imgObj.isInfiniteCloner;
+                                                    setImageObjects(prev => prev.map(i => i.id === imgObj.id ? { ...i, isInfiniteCloner: next } : i));
+                                                    toast(next ? 'Infinite Cloner enabled: drag to clone' : 'Infinite Cloner disabled', { icon: '∞' });
+                                                }}
+                                                className={`h-6 px-2 flex items-center gap-1 rounded text-[10.5px] font-semibold transition ${imgObj.isInfiniteCloner ? 'bg-indigo-600 text-white shadow' : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'}`}
+                                                title={imgObj.isInfiniteCloner ? "Disable Infinite Copy" : "Enable Infinite Copy (drag to clone)"}
+                                            >
+                                                <InfinityIcon className="w-3 h-3" />
+                                                <span>Infinite</span>
                                             </button>
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
                                             {/* Quick Border Color Picker */}
@@ -8454,6 +8952,24 @@ export default function Whiteboard({
                                     const clientX = e.clientX !== undefined ? e.clientX : (e.touches?.[0]?.clientX ?? 0);
                                     const clientY = e.clientY !== undefined ? e.clientY : (e.touches?.[0]?.clientY ?? 0);
 
+                                    // Infinite Cloner drag-to-clone behavior for shapes
+                                    if (shpObj.isInfiniteCloner) {
+                                        const cloneId = `shape_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+                                        const cloneObj = { ...shpObj, id: cloneId, isInfiniteCloner: false };
+                                        setShapeObjects(prev => [...prev, cloneObj]);
+                                        setSelectedShapeIds([cloneId]);
+                                        setShapeDragState({
+                                            id: cloneId,
+                                            action: 'move',
+                                            startX: clientX,
+                                            startY: clientY,
+                                            startObj: { ...cloneObj },
+                                            startObjs: [cloneObj],
+                                            startTextObjs: []
+                                        });
+                                        return;
+                                    }
+
                                     setShapeDragState({
                                         id: shpObj.id,
                                         action: 'move',
@@ -8468,6 +8984,13 @@ export default function Whiteboard({
                                 <svg width="100%" height="100%" style={{ overflow: 'visible', pointerEvents: 'none' }}>
                                     {renderShapeSVG()}
                                     </svg>
+
+                        {/* Infinite Cloner Badge */}
+                        {shpObj.isInfiniteCloner && (
+                            <div className="absolute top-1 left-1 bg-indigo-600/90 text-white rounded-full px-1.5 py-0.5 text-[9px] font-extrabold flex items-center gap-0.5 shadow pointer-events-none z-30">
+                                <span>∞</span>
+                            </div>
+                        )}
 
                         {tool === 'select' && (
                             <>
@@ -8726,6 +9249,24 @@ export default function Whiteboard({
                                                 if (shpObj.isLocked) return; 
                                                 const clientX = e.clientX !== undefined ? e.clientX : (e.touches?.[0]?.clientX ?? 0);
                                                 const clientY = e.clientY !== undefined ? e.clientY : (e.touches?.[0]?.clientY ?? 0);
+
+                                                if (shpObj.isInfiniteCloner) {
+                                                    const cloneId = `shape_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+                                                    const cloneObj = { ...shpObj, id: cloneId, isInfiniteCloner: false };
+                                                    setShapeObjects(prev => [...prev, cloneObj]);
+                                                    setSelectedShapeIds([cloneId]);
+                                                    setShapeDragState({
+                                                        id: cloneId,
+                                                        action: 'move',
+                                                        startX: clientX,
+                                                        startY: clientY,
+                                                        startObj: { ...cloneObj },
+                                                        startObjs: [cloneObj],
+                                                        startTextObjs: []
+                                                    });
+                                                    return;
+                                                }
+
                                                 setShapeDragState({ 
                                                     id: shpObj.id, 
                                                     action: 'move', 
@@ -9148,6 +9689,16 @@ export default function Whiteboard({
                                         )}
 
                                         <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+
+                                        {/* Infinite Cloner Toggle */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, isInfiniteCloner: !s.isInfiniteCloner } : s))}
+                                            className={`p-1 rounded transition ${shpObj.isInfiniteCloner ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                                            title={shpObj.isInfiniteCloner ? "Disable Infinite Cloner" : "Enable Infinite Cloner (drag creates clones)"}
+                                        >
+                                            <InfinityIcon size={13} />
+                                        </button>
 
                                         {/* Lock */}
                                         <button
@@ -9897,31 +10448,101 @@ export default function Whiteboard({
                             </div>
                         </div>
                     )}
+                    {/* Embedded Canvas Media Players (Local video/audio, YouTube, Web Embeds) */}
+                    {(pageMediaObjects[currentPage] || []).map((mediaObj) => (
+                        <WhiteboardMediaPlayer
+                            key={mediaObj.id}
+                            media={mediaObj}
+                            isSelected={selectedMediaId === mediaObj.id}
+                            scale={zoomLevel}
+                            onSelect={(id) => {
+                                setSelectedMediaId(id);
+                                setSelectedShapeIds([]);
+                                setSelectedTextIds([]);
+                                setSelectedImageId(null);
+                                setSelected3DId(null);
+                            }}
+                            onUpdate={(updates) => {
+                                setMediaObjects(prev => prev.map(m => m.id === mediaObj.id ? { ...m, ...updates } : m));
+                            }}
+                            onDelete={(id) => {
+                                setMediaObjects(prev => prev.filter(m => m.id !== id));
+                                if (selectedMediaId === id) setSelectedMediaId(null);
+                            }}
+                            onDuplicate={(id) => {
+                                const orig = (pageMediaObjects[currentPage] || []).find(m => m.id === id);
+                                if (!orig) return;
+                                const clone = {
+                                    ...orig,
+                                    id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                    x: (orig.x || 0) + 30,
+                                    y: (orig.y || 0) + 30,
+                                    isInfiniteCloner: false
+                                };
+                                setMediaObjects(prev => [...prev, clone]);
+                                setSelectedMediaId(clone.id);
+                            }}
+                        />
+                    ))}
+
+                    {/* 3D Objects Layer (3D perspective mesh projection, 3D trackball rotation, 2D controls) */}
+                    {(page3DObjects[currentPage] || []).map((obj3d) => (
+                        <Whiteboard3DObject
+                            key={obj3d.id}
+                            obj={obj3d}
+                            isSelected={selected3DId === obj3d.id}
+                            onSelect={(id) => {
+                                setSelected3DId(id);
+                                setSelectedShapeIds([]);
+                                setSelectedTextIds([]);
+                                setSelectedImageId(null);
+                                setSelectedMediaId(null);
+                            }}
+                            onUpdate={(updates) => {
+                                setThreeDObjects(prev => prev.map(o => o.id === obj3d.id ? { ...o, ...updates } : o));
+                            }}
+                            onDelete={(id) => {
+                                setThreeDObjects(prev => prev.filter(o => o.id !== id));
+                                if (selected3DId === id) setSelected3DId(null);
+                            }}
+                            onDuplicate={(id) => {
+                                const orig = (page3DObjects[currentPage] || []).find(o => o.id === id);
+                                if (!orig) return;
+                                const clone = {
+                                    ...orig,
+                                    id: `3d_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                    x: (orig.x || 0) + 30,
+                                    y: (orig.y || 0) + 30,
+                                    isInfiniteCloner: false
+                                };
+                                setThreeDObjects(prev => [...prev, clone]);
+                                setSelected3DId(clone.id);
+                            }}
+                        />
+                    ))}
                 </div>
 
                 {/* Interactive 16:9 Canvas Minimap with Zoom & Viewport Navigation */}
-                <div className="absolute bottom-4 right-4 z-40 pointer-events-auto">
-                    <WhiteboardMinimap
-                        canvasWidth={canvasWidth}
-                        canvasHeight={canvasHeight}
-                        shapes={shapeObjects}
-                        shapeObjects={shapeObjects}
-                        texts={textObjects}
-                        textObjects={textObjects}
-                        images={imageObjects}
-                        imageObjects={imageObjects}
-                        connectors={(pageShapeObjects[currentPage] || []).filter(s => s.type === 'connector')}
-                        zoomLevel={zoomLevel}
-                        setZoomLevel={setZoomLevel}
-                        onZoomChange={setZoomLevel}
-                        panOffset={panOffset}
-                        setPanOffset={setPanOffset}
-                        onPanChange={setPanOffset}
-                        containerRef={canvasWrapperRef}
-                        viewportWidth={canvasWrapperRef.current?.clientWidth || canvasWidth}
-                        viewportHeight={canvasWrapperRef.current?.clientHeight || canvasHeight}
-                    />
-                </div>
+                <WhiteboardMinimap
+                    canvasWidth={canvasWidth}
+                    canvasHeight={canvasHeight}
+                    shapes={shapeObjects}
+                    shapeObjects={shapeObjects}
+                    texts={textObjects}
+                    textObjects={textObjects}
+                    images={imageObjects}
+                    imageObjects={imageObjects}
+                    connectors={(pageShapeObjects[currentPage] || []).filter(s => s.type === 'connector')}
+                    zoomLevel={zoomLevel}
+                    setZoomLevel={setZoomLevel}
+                    onZoomChange={setZoomLevel}
+                    panOffset={panOffset}
+                    setPanOffset={setPanOffset}
+                    onPanChange={setPanOffset}
+                    containerRef={canvasWrapperRef}
+                    viewportWidth={canvasWrapperRef.current?.clientWidth || canvasWidth}
+                    viewportHeight={canvasWrapperRef.current?.clientHeight || canvasHeight}
+                />
 
                 {/* Full-surface Loading Overlay & Interaction Lock */}
                 {!isStateLoaded && (
@@ -9967,6 +10588,35 @@ export default function Whiteboard({
                     const wrapper = canvasWrapperRef.current;
                     const cx = wrapper ? (wrapper.clientWidth / 2 - (symbol.defaultWidth || 120) / 2) : 200;
                     const cy = wrapper ? (wrapper.clientHeight / 2 - (symbol.defaultHeight || 120) / 2) : 200;
+
+                    if (symbol.is3D || symbol.category === '3d') {
+                        const new3D = {
+                            id: `3d_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                            modelType: symbol.modelType || symbol.id.replace('_3d', ''),
+                            meshData: symbol.meshData || null,
+                            name: symbol.name,
+                            x: Math.max(20, cx),
+                            y: Math.max(20, cy),
+                            width: symbol.defaultWidth || 220,
+                            height: symbol.defaultHeight || 220,
+                            color: color || '#3b82f6',
+                            rotX: -25,
+                            rotY: 45,
+                            rotZ: 0,
+                            rotation: 0
+                        };
+                        setThreeDObjects(prev => [...prev, new3D]);
+                        setSelected3DId(new3D.id);
+                        setSelectedShapeIds([]);
+                        setSelectedTextIds([]);
+                        setSelectedImageId(null);
+                        setSelectedMediaId(null);
+                        setTool('select');
+                        setShowDomainLibrary(false);
+                        toast.success(`Added 3D ${symbol.name}`, { icon: '📦' });
+                        return;
+                    }
+
                     const newShape = {
                         id: Date.now().toString(),
                         type: symbol.id,
@@ -10127,6 +10777,273 @@ export default function Whiteboard({
                 isOpen={showPermissions} 
                 onClose={() => setShowPermissions(false)} 
             />
+
+            {/* Global Keyboard Shortcuts Semi-Transparent Modal */}
+            <WhiteboardShortcutsModal
+                isOpen={showShortcutsModal}
+                onClose={() => setShowShortcutsModal(false)}
+            />
+
+            {/* Embedded Media Player Insertion Modal */}
+            {showMediaModal && (
+                <div 
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+                    onClick={() => setShowMediaModal(false)}
+                >
+                    <div 
+                        className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-6 max-w-lg w-full flex flex-col gap-4 text-white"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                            <div className="flex items-center gap-2">
+                                <Video className="w-5 h-5 text-indigo-400" />
+                                <h3 className="text-base font-bold text-slate-100">Insert Media to Canvas</h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowMediaModal(false)}
+                                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Tabs: YouTube, Local File, Web Embed */}
+                        <div className="flex bg-slate-800/80 p-1 rounded-xl gap-1">
+                            {[
+                                { id: 'youtube', label: 'YouTube Video' },
+                                { id: 'local', label: 'Local Video/Audio' },
+                                { id: 'embed', label: 'Web Embed Window' }
+                            ].map(tab => (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => setMediaInputTab(tab.id)}
+                                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition ${
+                                        mediaInputTab === tab.id
+                                            ? 'bg-indigo-600 text-white shadow'
+                                            : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                                    }`}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Title input */}
+                        <div>
+                            <label className="block text-xs font-medium text-slate-400 mb-1">Title (Optional)</label>
+                            <input
+                                type="text"
+                                value={mediaInputTitle}
+                                onChange={e => setMediaInputTitle(e.target.value)}
+                                placeholder="e.g. Lecture Video, Lab Simulation, Audio Demo"
+                                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                            />
+                        </div>
+
+                        {/* Content by tab */}
+                        {mediaInputTab === 'youtube' && (
+                            <div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1">YouTube Link or Video ID</label>
+                                <input
+                                    type="text"
+                                    value={mediaInputUrl}
+                                    onChange={e => setMediaInputUrl(e.target.value)}
+                                    placeholder="https://www.youtube.com/watch?v=... or youtu.be/..."
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                                />
+                                <p className="text-[11px] text-slate-400 mt-1">Supports standard YouTube URLs, Shorts, and embed links.</p>
+                            </div>
+                        )}
+
+                        {mediaInputTab === 'local' && (
+                            <div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1">Select Video or Audio File</label>
+                                <input
+                                    type="file"
+                                    accept="video/*,audio/*"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                            const reader = new FileReader();
+                                            reader.onload = (re) => {
+                                                setMediaInputUrl(re.target.result);
+                                                if (!mediaInputTitle) setMediaInputTitle(file.name.replace(/\.[^/.]+$/, ''));
+                                            };
+                                            reader.readAsDataURL(file);
+                                        }
+                                    }}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer"
+                                />
+                                <p className="text-[11px] text-slate-400 mt-1">Loads directly into whiteboard canvas (MP4, WebM, MP3, WAV, etc.).</p>
+                            </div>
+                        )}
+
+                        {mediaInputTab === 'embed' && (
+                            <div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1">Website URL or Embed Code</label>
+                                <input
+                                    type="text"
+                                    value={mediaInputUrl}
+                                    onChange={e => {
+                                        let val = e.target.value;
+                                        const srcMatch = val.match(/src=["']([^"']+)["']/);
+                                        if (srcMatch) val = srcMatch[1];
+                                        setMediaInputUrl(val);
+                                    }}
+                                    placeholder="https://example.com or <iframe src=...>"
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                                />
+                                <p className="text-[11px] text-slate-400 mt-1">Embeds web pages, PhET interactive simulations, documents, or widgets directly on canvas.</p>
+                            </div>
+                        )}
+
+                        {/* Actions */}
+                        <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-800">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowMediaModal(false);
+                                    setMediaInputUrl('');
+                                    setMediaInputTitle('');
+                                }}
+                                className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (!mediaInputUrl.trim()) {
+                                        toast.error('Please provide a media URL or file');
+                                        return;
+                                    }
+                                    const wrapper = canvasWrapperRef.current;
+                                    const cx = wrapper ? (wrapper.clientWidth / 2 - 240) : 200;
+                                    const cy = wrapper ? (wrapper.clientHeight / 2 - 150) : 200;
+
+                                    const newMedia = {
+                                        id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                        mediaType: mediaInputTab,
+                                        src: mediaInputUrl,
+                                        title: mediaInputTitle.trim() || (mediaInputTab === 'youtube' ? 'YouTube Video' : mediaInputTab === 'embed' ? 'Web Embed' : 'Media Player'),
+                                        x: Math.max(20, cx),
+                                        y: Math.max(20, cy),
+                                        width: 480,
+                                        height: 300,
+                                        isMuted: true,
+                                        isCollapsed: false,
+                                        isLocked: false,
+                                        rotation: 0
+                                    };
+
+                                    setMediaObjects(prev => [...prev, newMedia]);
+                                    setSelectedMediaId(newMedia.id);
+                                    setShowMediaModal(false);
+                                    setMediaInputUrl('');
+                                    setMediaInputTitle('');
+                                    toast.success('Media player added to canvas!', { icon: '🎬' });
+                                }}
+                                className="px-5 py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg transition"
+                            >
+                                Insert to Canvas
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Whiteboard Tasks & Action Items Panel */}
+            {showTasksPanel && (
+                <div 
+                    className="fixed top-16 right-6 z-50 w-80 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl p-4 text-white flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-150 select-none pointer-events-auto"
+                >
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                        <div className="flex items-center gap-2">
+                            <ListTodo className="w-4 h-4 text-emerald-400" />
+                            <h3 className="text-xs font-bold text-slate-100">Whiteboard Tasks</h3>
+                            <span className="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded-full font-mono">
+                                {whiteboardTasks.filter(t => t.completed).length}/{whiteboardTasks.length}
+                            </span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowTasksPanel(false)}
+                            className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+
+                    {/* Add new task input */}
+                    <form 
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            if (!newTaskText.trim()) return;
+                            const newTask = {
+                                id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                text: newTaskText.trim(),
+                                completed: false,
+                                createdAt: new Date().toISOString()
+                            };
+                            setWhiteboardTasks(prev => [...prev, newTask]);
+                            setNewTaskText('');
+                        }}
+                        className="flex gap-1.5"
+                    >
+                        <input
+                            type="text"
+                            value={newTaskText}
+                            onChange={(e) => setNewTaskText(e.target.value)}
+                            placeholder="Add action item or task..."
+                            className="flex-1 bg-slate-800/90 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 placeholder-slate-500"
+                        />
+                        <button
+                            type="submit"
+                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition flex items-center justify-center shrink-0"
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                        </button>
+                    </form>
+
+                    {/* Task items list */}
+                    <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
+                        {whiteboardTasks.length === 0 ? (
+                            <p className="text-[11px] text-slate-500 italic text-center py-4">No tasks yet. Add one above to track goals!</p>
+                        ) : (
+                            whiteboardTasks.map((t) => (
+                                <div
+                                    key={t.id}
+                                    className={`flex items-center justify-between p-2 rounded-xl border transition ${
+                                        t.completed ? 'bg-slate-800/40 border-slate-800 text-slate-500 line-through' : 'bg-slate-800/80 border-slate-700/60 text-slate-200'
+                                    }`}
+                                >
+                                    <label className="flex items-center gap-2 flex-1 cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={!!t.completed}
+                                            onChange={() => {
+                                                setWhiteboardTasks(prev => prev.map(item => item.id === t.id ? { ...item, completed: !item.completed } : item));
+                                            }}
+                                            className="accent-emerald-500 rounded cursor-pointer w-3.5 h-3.5"
+                                        />
+                                        <span className="text-xs break-all leading-tight">{t.text}</span>
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setWhiteboardTasks(prev => prev.filter(item => item.id !== t.id))}
+                                        className="p-1 text-slate-500 hover:text-red-400 rounded transition ml-1"
+                                        title="Delete Task"
+                                    >
+                                        <Trash2 className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
 
         </div>
     );
