@@ -55,39 +55,55 @@ export function get3DModelMesh(modelType = 'cube') {
             return { vertices: v, faces: f, color: '#8b5cf6' };
         }
         case 'cylinder': {
-            const segments = 12;
+            const segments = 36;
             const v = [];
             const f = [];
             for (let i = 0; i < segments; i++) {
                 const angle = (i / segments) * Math.PI * 2;
                 const x = Math.cos(angle);
                 const z = Math.sin(angle);
-                v.push([x, -1, z]); // Top circle
-                v.push([x, 1, z]);  // Bottom circle
+                v.push([x, -1, z]); // Top rim (2*i)
+                v.push([x, 1, z]);  // Bottom rim (2*i + 1)
             }
+            const topCenter = v.length;
+            v.push([0, -1, 0]);
+            const bottomCenter = v.length;
+            v.push([0, 1, 0]);
+
             for (let i = 0; i < segments; i++) {
                 const next = (i + 1) % segments;
+                // Side quad
                 f.push([i * 2, next * 2, next * 2 + 1, i * 2 + 1]);
+                // Top cap triangle
+                f.push([topCenter, next * 2, i * 2]);
+                // Bottom cap triangle
+                f.push([bottomCenter, i * 2 + 1, next * 2 + 1]);
             }
             return { vertices: v, faces: f, color: '#06b6d4' };
         }
         case 'cone': {
-            const segments = 12;
-            const v = [[0, -1.2, 0]]; // Apex
+            const segments = 36;
+            const v = [[0, -1.2, 0]]; // Apex (index 0)
             const f = [];
             for (let i = 0; i < segments; i++) {
                 const angle = (i / segments) * Math.PI * 2;
                 v.push([Math.cos(angle), 1, Math.sin(angle)]);
             }
+            const baseCenter = v.length;
+            v.push([0, 1, 0]); // Base center
+
             for (let i = 1; i <= segments; i++) {
                 const next = i === segments ? 1 : i + 1;
+                // Side triangle
                 f.push([0, i, next]);
+                // Base cap triangle
+                f.push([baseCenter, next, i]);
             }
             return { vertices: v, faces: f, color: '#ec4899' };
         }
         case 'sphere': {
-            const latBands = 8;
-            const lonBands = 10;
+            const latBands = 26;
+            const lonBands = 36;
             const v = [];
             const f = [];
             for (let lat = 0; lat <= latBands; lat++) {
@@ -296,6 +312,53 @@ export function parseJSON3D(jsonString) {
     return null;
 }
 
+/* ─── Color Shading & Realistic 3D Lighting ─── */
+function shadeColor(colorStr, intensity, materialStyle) {
+    if (!colorStr) return '#3b82f6';
+    let r = 59, g = 130, b = 246;
+    if (colorStr.startsWith('#')) {
+        let hex = colorStr.slice(1);
+        if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+        if (hex.length >= 6) {
+            r = parseInt(hex.substring(0, 2), 16) || 0;
+            g = parseInt(hex.substring(2, 4), 16) || 0;
+            b = parseInt(hex.substring(4, 6), 16) || 0;
+        }
+    } else if (colorStr.startsWith('rgb')) {
+        const parts = colorStr.match(/\d+/g);
+        if (parts && parts.length >= 3) {
+            r = parseInt(parts[0], 10);
+            g = parseInt(parts[1], 10);
+            b = parseInt(parts[2], 10);
+        }
+    }
+
+    if (materialStyle === 'flat') {
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    // Ambient + diffuse lighting factor: 0.32 ambient to 1.0 full light
+    const diffuse = 0.32 + 0.68 * intensity;
+    let nr = Math.min(255, Math.max(0, Math.round(r * diffuse)));
+    let ng = Math.min(255, Math.max(0, Math.round(g * diffuse)));
+    let nb = Math.min(255, Math.max(0, Math.round(b * diffuse)));
+
+    // Specular highlight for metallic / shiny look
+    if (materialStyle === 'metallic') {
+        const spec = Math.pow(intensity, 4) * 110;
+        nr = Math.min(255, Math.round(nr + spec));
+        ng = Math.min(255, Math.round(ng + spec));
+        nb = Math.min(255, Math.round(nb + spec));
+    } else if (materialStyle === 'clay') {
+        const softDiff = 0.45 + 0.55 * intensity;
+        nr = Math.min(255, Math.round(r * softDiff));
+        ng = Math.min(255, Math.round(g * softDiff));
+        nb = Math.min(255, Math.round(b * softDiff));
+    }
+
+    return `rgb(${nr}, ${ng}, ${nb})`;
+}
+
 /* ─── 3D Perspective Projection Component ─── */
 export default function Whiteboard3DObject({
     obj,
@@ -444,14 +507,14 @@ export default function Whiteboard3DObject({
                 .map(idx => `${transformedVertices[idx].px.toFixed(1)},${transformedVertices[idx].py.toFixed(1)}`)
                 .join(' ');
 
-            let faceFill = baseColor;
-            let faceOpacity = userOpacity * intensity;
+            let faceFill = shadeColor(baseColor, intensity, obj.materialStyle);
+            let faceOpacity = userOpacity;
 
             if (isWireframe) {
                 faceFill = 'transparent';
                 faceOpacity = 0;
             } else if (isGlass) {
-                faceOpacity = (userOpacity * 0.3) + (intensity * 0.25);
+                faceOpacity = Math.max(0.15, Math.min(0.85, (userOpacity * 0.35) + (intensity * 0.35)));
             }
 
             return {
@@ -652,20 +715,50 @@ export default function Whiteboard3DObject({
                 viewBox={`0 0 ${obj.width || 220} ${obj.height || 220}`}
                 className="w-full h-full pointer-events-none drop-shadow-md overflow-visible"
             >
-                {projectedFaces.renderedFaces.map((face, fIdx) => (
-                    <polygon
-                        key={fIdx}
-                        points={face.pointsStr}
-                        fill={face.faceFill}
-                        fillOpacity={face.faceOpacity}
-                        stroke={obj.edgeColor || (obj.materialStyle === 'wireframe' ? projectedFaces.baseColor : '#ffffff')}
-                        strokeWidth={obj.edgeWidth !== undefined ? obj.edgeWidth : 0.8}
-                        strokeOpacity={obj.edgeWidth === 0 ? 0 : (obj.materialStyle === 'glass' ? 0.9 : 0.6)}
+                {projectedFaces.renderedFaces.map((face, fIdx) => {
+                    const isCurved = obj.modelType === 'sphere' || obj.modelType === 'cylinder' || obj.modelType === 'cone';
+                    const isWireframe = obj.materialStyle === 'wireframe' || !!obj.wireframeOnly;
+                    const strokeColor = isWireframe
+                        ? (obj.edgeColor || projectedFaces.baseColor)
+                        : (isCurved
+                            ? face.faceFill
+                            : (obj.edgeColor || (obj.edgeWidth ? '#ffffff' : face.faceFill))
+                          );
+                    const strokeW = isWireframe
+                        ? (obj.edgeWidth !== undefined ? obj.edgeWidth : 1)
+                        : (isCurved ? 0.5 : (obj.edgeWidth !== undefined ? obj.edgeWidth : 0.8));
+                    const strokeOp = isWireframe
+                        ? 1
+                        : (isCurved ? face.faceOpacity : (obj.edgeWidth === 0 ? 0 : (obj.materialStyle === 'glass' ? 0.9 : 0.6)));
+
+                    return (
+                        <polygon
+                            key={fIdx}
+                            points={face.pointsStr}
+                            fill={face.faceFill}
+                            fillOpacity={face.faceOpacity}
+                            stroke={strokeColor}
+                            strokeWidth={strokeW}
+                            strokeOpacity={strokeOp}
+                            strokeDasharray={isWireframe ? strokeDash : (isCurved ? undefined : strokeDash)}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        />
+                    );
+                })}
+
+                {/* Outer silhouette border for sphere when edge border is requested */}
+                {obj.modelType === 'sphere' && (obj.edgeWidth !== undefined ? obj.edgeWidth > 0 : false) && obj.materialStyle !== 'wireframe' && (
+                    <circle
+                        cx={(obj.width || 220) / 2}
+                        cy={(obj.height || 220) / 2}
+                        r={((Math.min(obj.width || 220, obj.height || 220) / 2) * 0.75)}
+                        fill="none"
+                        stroke={obj.edgeColor || projectedFaces.baseColor}
+                        strokeWidth={obj.edgeWidth}
                         strokeDasharray={strokeDash}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
                     />
-                ))}
+                )}
             </svg>
 
             {/* Infinite Cloner Badge on Shape */}

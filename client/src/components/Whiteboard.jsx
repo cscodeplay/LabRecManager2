@@ -774,6 +774,35 @@ export default function Whiteboard({
     const threeDObjects = page3DObjects[currentPage] || [];
     const [selected3DId, setSelected3DId] = useState(null);
 
+    // Global Shift key tracking for geometric aspect-ratio (circles) and straight-line constraints
+    const [isShiftDown, setIsShiftDown] = useState(false);
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Shift') setIsShiftDown(true);
+        };
+        const handleKeyUp = (e) => {
+            if (e.key === 'Shift') setIsShiftDown(false);
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
+    }, []);
+
+    // Outside pointer click/tap listener to deselect 3D object when clicking outside
+    useEffect(() => {
+        if (!selected3DId) return;
+        const handleOutsidePointer = (e) => {
+            if (e.target?.closest?.('.whiteboard-3d-object')) return;
+            if (e.target?.closest?.('[data-color-picker]')) return;
+            setSelected3DId(null);
+        };
+        window.addEventListener('pointerdown', handleOutsidePointer);
+        return () => window.removeEventListener('pointerdown', handleOutsidePointer);
+    }, [selected3DId]);
+
     // ─── Whiteboard Tasks Checklist State ───
     const [whiteboardTasks, setWhiteboardTasks] = useState([]);
     const [showTasksPanel, setShowTasksPanel] = useState(false);
@@ -3859,6 +3888,14 @@ export default function Whiteboard({
                     newHeight = startObj.height - heightChange;
                 }
 
+                if ((e.shiftKey || isShiftDown) && (startObj.type === 'circle' || handle.length === 2)) {
+                    const size = Math.max(newWidth, newHeight);
+                    if (handle.includes('w')) newX = startObj.x + (startObj.width - size);
+                    if (handle.includes('n')) newY = startObj.y + (startObj.height - size);
+                    newWidth = size;
+                    newHeight = size;
+                }
+
                 setShapeObjects(prev => prev.map(shp =>
                     shp.id === shapeDragState.id
                         ? { ...shp, x: newX, y: newY, width: newWidth, height: newHeight }
@@ -3964,8 +4001,9 @@ export default function Whiteboard({
             } : null);
         };
 
-        const handlePointerUp = () => {
+        const handlePointerUp = (e) => {
             if (!activeConnectorDrag) return;
+            const isShift = !!(e?.shiftKey || isShiftDown);
 
             if (activeConnectorDrag.snappedTarget) {
                 // Connected successfully to another shape's hook!
@@ -3981,7 +4019,7 @@ export default function Whiteboard({
                     targetId: targetShape.id,
                     targetAnchor: targetAnchor,
                     targetPoint: activeConnectorDrag.snappedTarget.pt,
-                    pathType: activeConnectorDrag.style.pathType,
+                    pathType: isShift ? 'straight' : activeConnectorDrag.style.pathType,
                     strokeStyle: activeConnectorDrag.style.strokeStyle,
                     arrowEnd: activeConnectorDrag.style.arrowEnd,
                     arrowStart: activeConnectorDrag.style.arrowStart,
@@ -3997,6 +4035,8 @@ export default function Whiteboard({
                 setSelectedShapeIds([newConn.id]);
                 setSelectedTextIds([]);
                 setSelectedImageId(null);
+                setSelected3DId(null);
+                setSelectedMediaId(null);
                 toast.success('Connected elements!', { icon: '🔗' });
             }
             // If released in blank space, clean cancel! No connector created.
@@ -4010,9 +4050,9 @@ export default function Whiteboard({
             window.removeEventListener('pointermove', handlePointerMove);
             window.removeEventListener('pointerup', handlePointerUp);
         };
-    }, [activeConnectorDrag, shapeObjects, imageObjects, color, strokeWidth, socket, sessionId, saveToHistory, setShapeObjects]);
+    }, [activeConnectorDrag, shapeObjects, imageObjects, color, strokeWidth, socket, sessionId, saveToHistory, setShapeObjects, isShiftDown]);
 
-    // Click on canvas to deselect images, text, and shapes
+    // Click on canvas to deselect images, text, shapes, 3D and media objects
     const handleCanvasClick = useCallback(() => {
         if (justCreatedShapeRef.current) {
             justCreatedShapeRef.current = false;
@@ -4030,6 +4070,8 @@ export default function Whiteboard({
         setSelectedShapeIds([]);
         setEditingShapeTextId(null);
         setSelection(null);
+        setSelected3DId(null);
+        setSelectedMediaId(null);
     }, []);
 
     // Get position from event (works for pointer, touch, and mouse)
@@ -4230,11 +4272,16 @@ export default function Whiteboard({
             setSelectedTextIds([]);
             setSelectedImageId(null);
             setSelectedImageIds([]);
+            setSelected3DId(null);
+            setSelectedMediaId(null);
             setEditingTextId(null);
             setEditingShapeTextId(null);
             if (selectMode === 'lasso') {
                 setLassoPath([{ x: pos.x, y: pos.y }]);
             }
+        } else {
+            setSelected3DId(null);
+            setSelectedMediaId(null);
         }
 
         setIsDrawing(true);
@@ -4399,8 +4446,18 @@ export default function Whiteboard({
         } else if (tool === 'pen' || tool === 'eraser') {
             const pts = currentPathPointsRef.current;
 
-            if (tool === 'pen' && e.shiftKey) {
-                currentPathPointsRef.current = [pts[0], pos];
+            if (tool === 'pen' && (e.shiftKey || isShiftDown)) {
+                let snapPos = pos;
+                const dx = pos.x - pts[0].x;
+                const dy = pos.y - pts[0].y;
+                const angle = Math.atan2(dy, dx);
+                const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+                const dist = Math.hypot(dx, dy);
+                snapPos = {
+                    x: pts[0].x + Math.cos(snapAngle) * dist,
+                    y: pts[0].y + Math.sin(snapAngle) * dist
+                };
+                currentPathPointsRef.current = [pts[0], snapPos];
                 if (preStrokeImageDataRef.current) {
                     ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
                 }
@@ -4412,7 +4469,7 @@ export default function Whiteboard({
                 ctx.setLineDash(getDashArray(strokeStyle));
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.moveTo(pts[0].x, pts[0].y);
-                ctx.lineTo(pos.x, pos.y);
+                ctx.lineTo(snapPos.x, snapPos.y);
                 ctx.stroke();
                 wasDraggingRef.current = true;
                 return;
@@ -4543,6 +4600,21 @@ export default function Whiteboard({
                 strokeStyle: tool === 'pen' ? strokeStyle : undefined
             });
         } else if (tool === 'line' || tool === 'arrow') {
+            const isShift = !!(e.shiftKey || isShiftDown);
+            let targetPos = pos;
+            if (isShift) {
+                const dx = pos.x - startPos.x;
+                const dy = pos.y - startPos.y;
+                const angle = Math.atan2(dy, dx);
+                const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+                const dist = Math.hypot(dx, dy);
+                targetPos = {
+                    x: startPos.x + Math.cos(snapAngle) * dist,
+                    y: startPos.y + Math.sin(snapAngle) * dist
+                };
+            }
+            setCurrentPos(targetPos);
+
             const canvas = canvasRef.current;
             if (!canvas) return;
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -4556,7 +4628,7 @@ export default function Whiteboard({
                 ctx.setLineDash(getDashArray(strokeStyle));
                 ctx.beginPath();
                 ctx.moveTo(startPos.x, startPos.y);
-                ctx.lineTo(pos.x, pos.y);
+                ctx.lineTo(targetPos.x, targetPos.y);
                 ctx.stroke();
                 ctx.setLineDash([]);
             } else { // arrow
@@ -4565,25 +4637,39 @@ export default function Whiteboard({
                 ctx.lineCap = 'round';
                 ctx.beginPath();
                 ctx.moveTo(startPos.x, startPos.y);
-                ctx.lineTo(pos.x, pos.y);
+                ctx.lineTo(targetPos.x, targetPos.y);
                 ctx.stroke();
 
                 const headLength = strokeWidth * 4;
-                const angle = Math.atan2(pos.y - startPos.y, pos.x - startPos.x);
+                const angle = Math.atan2(targetPos.y - startPos.y, targetPos.x - startPos.x);
                 ctx.beginPath();
-                ctx.moveTo(pos.x, pos.y);
-                ctx.lineTo(pos.x - headLength * Math.cos(angle - Math.PI / 6), pos.y - headLength * Math.sin(angle - Math.PI / 6));
-                ctx.lineTo(pos.x - headLength * Math.cos(angle + Math.PI / 6), pos.y - headLength * Math.sin(angle + Math.PI / 6));
+                ctx.moveTo(targetPos.x, targetPos.y);
+                ctx.lineTo(targetPos.x - headLength * Math.cos(angle - Math.PI / 6), targetPos.y - headLength * Math.sin(angle - Math.PI / 6));
+                ctx.lineTo(targetPos.x - headLength * Math.cos(angle + Math.PI / 6), targetPos.y - headLength * Math.sin(angle + Math.PI / 6));
                 ctx.closePath();
                 ctx.fillStyle = color;
                 ctx.fill();
             }
         } else if (tool === 'shape') {
+            const isShift = !!(e.shiftKey || isShiftDown);
+            let w = Math.abs(pos.x - startPos.x);
+            let h = Math.abs(pos.y - startPos.y);
+            let x = Math.min(startPos.x, pos.x);
+            let y = Math.min(startPos.y, pos.y);
+
+            if (shapeType === 'circle' && isShift) {
+                const size = Math.max(w, h);
+                w = size;
+                h = size;
+                x = pos.x < startPos.x ? startPos.x - size : startPos.x;
+                y = pos.y < startPos.y ? startPos.y - size : startPos.y;
+            }
+
             setShapePreview({
-                x: Math.min(startPos.x, pos.x),
-                y: Math.min(startPos.y, pos.y),
-                width: Math.abs(pos.x - startPos.x),
-                height: Math.abs(pos.y - startPos.y),
+                x,
+                y,
+                width: w,
+                height: h,
                 type: shapeType,
                 color,
                 strokeWidth
@@ -4801,10 +4887,22 @@ export default function Whiteboard({
                 ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
             }
             
-            const minX = Math.min(startPos.x, pos.x);
-            const minY = Math.min(startPos.y, pos.y);
-            const w = Math.abs(startPos.x - pos.x) || 1;
-            const h = Math.abs(startPos.y - pos.y) || 1;
+            const isShift = !!(e?.shiftKey || isShiftDown);
+            let finalPosX = pos.x;
+            let finalPosY = pos.y;
+            if (isShift) {
+                const dx = pos.x - startPos.x;
+                const dy = pos.y - startPos.y;
+                const angle = Math.atan2(dy, dx);
+                const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+                const dist = Math.hypot(dx, dy);
+                finalPosX = startPos.x + Math.cos(snapAngle) * dist;
+                finalPosY = startPos.y + Math.sin(snapAngle) * dist;
+            }
+            const minX = Math.min(startPos.x, finalPosX);
+            const minY = Math.min(startPos.y, finalPosY);
+            const w = Math.abs(startPos.x - finalPosX) || 1;
+            const h = Math.abs(startPos.y - finalPosY) || 1;
 
             if (lineType.startsWith('connector')) {
                 const nonConnectorShapes = shapeObjects.filter(s => s.type !== 'connector' && !['ruler', 'protractor'].includes(s.type));
@@ -4817,7 +4915,7 @@ export default function Whiteboard({
                     return;
                 }
 
-                const connPathType = lineType === 'connector_elbow' ? 'orthogonal' : (lineType === 'connector_curved' ? 'curved' : 'straight');
+                const connPathType = isShift ? 'straight' : (lineType === 'connector_elbow' ? 'orthogonal' : (lineType === 'connector_curved' ? 'curved' : 'straight'));
 
                 const newShapeObj = {
                     id: Date.now().toString(),
@@ -4842,6 +4940,8 @@ export default function Whiteboard({
                 setSelectedShapeIds([newShapeObj.id]);
                 setSelectedTextIds([]);
                 setSelectedImageId(null);
+                setSelected3DId(null);
+                setSelectedMediaId(null);
                 setTool('select');
                 toast.success('Connected shapes!', { icon: '🔗' });
             } else {
@@ -4858,8 +4958,8 @@ export default function Whiteboard({
                     originalHeight: h,
                     startX: startPos.x - minX,
                     startY: startPos.y - minY,
-                    endX: pos.x - minX,
-                    endY: pos.y - minY,
+                    endX: finalPosX - minX,
+                    endY: finalPosY - minY,
                     rotation: 0,
                     color: color,
                     strokeWidth: strokeWidth
@@ -4870,12 +4970,26 @@ export default function Whiteboard({
                 setSelectedShapeIds([newShapeObj.id]);
                 setSelectedTextIds([]);
                 setSelectedImageId(null);
+                setSelected3DId(null);
+                setSelectedMediaId(null);
                 setTool('select');
             }
         } else if (tool === 'shape') {
             setShapePreview(null);
-            const w = Math.abs(pos.x - startPos.x);
-            const h = Math.abs(pos.y - startPos.y);
+            const isShift = !!(e?.shiftKey || isShiftDown);
+            let w = Math.abs(pos.x - startPos.x);
+            let h = Math.abs(pos.y - startPos.y);
+            let x = Math.min(startPos.x, pos.x);
+            let y = Math.min(startPos.y, pos.y);
+
+            if (shapeType === 'circle' && isShift) {
+                const size = Math.max(w, h);
+                w = size;
+                h = size;
+                x = pos.x < startPos.x ? startPos.x - size : startPos.x;
+                y = pos.y < startPos.y ? startPos.y - size : startPos.y;
+            }
+
             if (w > 5 || h > 5) {
                 let finalW = w;
                 let finalH = h;
@@ -4889,8 +5003,8 @@ export default function Whiteboard({
                 const newShapeObj = {
                     id: Date.now().toString(),
                     type: shapeType,
-                    x: Math.min(startPos.x, pos.x),
-                    y: Math.min(startPos.y, pos.y),
+                    x,
+                    y,
                     width: finalW,
                     height: finalH,
                     rotation: 0,
@@ -4907,6 +5021,8 @@ export default function Whiteboard({
                 setSelectedShapeIds([newShapeObj.id]);
                 setSelectedTextIds([]);
                 setSelectedImageId(null);
+                setSelected3DId(null);
+                setSelectedMediaId(null);
                 setTool('select');
             }
         } else if (tool === 'laser') {
@@ -5060,11 +5176,15 @@ export default function Whiteboard({
                         setSelectedShapeIds([]);
                         setSelectedTextIds([]);
                         setSelectedImageIds([]);
+                        setSelected3DId(null);
+                        setSelectedMediaId(null);
                         setSelection(null);
                     } else {
                         setSelectedShapeIds([]);
                         setSelectedTextIds([]);
                         setSelectedImageIds([]);
+                        setSelected3DId(null);
+                        setSelectedMediaId(null);
                         setSelection(null);
                         setEditingTextId(null);
                     }
@@ -5073,6 +5193,8 @@ export default function Whiteboard({
                     setSelectedShapeIds([]);
                     setSelectedTextIds([]);
                     setSelectedImageIds([]);
+                    setSelected3DId(null);
+                    setSelectedMediaId(null);
                     setSelection(null);
                     setEditingTextId(null);
                 }
@@ -7368,76 +7490,103 @@ export default function Whiteboard({
                             }}
                             viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
                         >
-                            {tool === 'line' && (
-                                lineType === 'connector_curved' ? (
-                                    <g>
-                                        <path
-                                            d={getConnectorPath(startPos, currentPos, 'curved', null)}
-                                            fill="none"
-                                            stroke={color}
-                                            strokeWidth={strokeWidth}
-                                            strokeDasharray="5,5"
-                                            strokeLinecap="round"
-                                        />
-                                        {renderArrowhead('arrow', currentPos, calculateAngle(startPos, currentPos), strokeWidth * 4, color)}
-                                    </g>
-                                ) : lineType === 'connector_elbow' ? (
-                                    <g>
-                                        <path
-                                            d={getConnectorPath(startPos, currentPos, 'orthogonal', null)}
-                                            fill="none"
-                                            stroke={color}
-                                            strokeWidth={strokeWidth}
-                                            strokeDasharray="5,5"
-                                            strokeLinecap="round"
-                                        />
-                                        {renderArrowhead('arrow', currentPos, calculateAngle(startPos, currentPos), strokeWidth * 4, color)}
-                                    </g>
-                                ) : (
+                            {tool === 'line' && (() => {
+                                const isCurvedConn = lineType === 'connector_curved' && !isShiftDown;
+                                const isElbowConn = lineType === 'connector_elbow' && !isShiftDown;
+                                let endPt = currentPos;
+                                if (isShiftDown) {
+                                    const dx = currentPos.x - startPos.x;
+                                    const dy = currentPos.y - startPos.y;
+                                    const angle = Math.atan2(dy, dx);
+                                    const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+                                    const dist = Math.hypot(dx, dy);
+                                    endPt = {
+                                        x: startPos.x + Math.cos(snapAngle) * dist,
+                                        y: startPos.y + Math.sin(snapAngle) * dist
+                                    };
+                                }
+                                if (isCurvedConn) {
+                                    return (
+                                        <g>
+                                            <path
+                                                d={getConnectorPath(startPos, endPt, 'curved', null)}
+                                                fill="none"
+                                                stroke={color}
+                                                strokeWidth={strokeWidth}
+                                                strokeDasharray="5,5"
+                                                strokeLinecap="round"
+                                            />
+                                            {renderArrowhead('arrow', endPt, calculateAngle(startPos, endPt), strokeWidth * 4, color)}
+                                        </g>
+                                    );
+                                }
+                                if (isElbowConn) {
+                                    return (
+                                        <g>
+                                            <path
+                                                d={getConnectorPath(startPos, endPt, 'orthogonal', null)}
+                                                fill="none"
+                                                stroke={color}
+                                                strokeWidth={strokeWidth}
+                                                strokeDasharray="5,5"
+                                                strokeLinecap="round"
+                                            />
+                                            {renderArrowhead('arrow', endPt, calculateAngle(startPos, endPt), strokeWidth * 4, color)}
+                                        </g>
+                                    );
+                                }
+                                return (
                                     <g>
                                         <line
                                             x1={startPos.x}
                                             y1={startPos.y}
-                                            x2={currentPos.x}
-                                            y2={currentPos.y}
+                                            x2={endPt.x}
+                                            y2={endPt.y}
                                             stroke={color}
                                             strokeWidth={strokeWidth}
                                             strokeDasharray="5,5"
                                             strokeLinecap="round"
                                         />
-                                        {(lineType === 'arrow' || lineType === 'connector_straight') && (
-                                            renderArrowhead('arrow', currentPos, calculateAngle(startPos, currentPos), strokeWidth * 4, color)
+                                        {(lineType === 'arrow' || lineType === 'connector_straight' || (isShiftDown && lineType.startsWith('connector'))) && (
+                                            renderArrowhead('arrow', endPt, calculateAngle(startPos, endPt), strokeWidth * 4, color)
                                         )}
                                     </g>
-                                )
-                            )}
-                            {tool === 'arrow' && (
-                                <g>
-                                    <line
-                                        x1={startPos.x}
-                                        y1={startPos.y}
-                                        x2={currentPos.x}
-                                        y2={currentPos.y}
-                                        stroke={color}
-                                        strokeWidth={strokeWidth}
-                                        strokeDasharray="5,5"
-                                        strokeLinecap="round"
-                                    />
-                                    {/* Arrow head preview */}
-                                    <polygon
-                                        points={(() => {
-                                            const headLength = strokeWidth * 4;
-                                            const angle = Math.atan2(currentPos.y - startPos.y, currentPos.x - startPos.x);
-                                            const p1 = `${currentPos.x},${currentPos.y}`;
-                                            const p2 = `${currentPos.x - headLength * Math.cos(angle - Math.PI / 6)},${currentPos.y - headLength * Math.sin(angle - Math.PI / 6)}`;
-                                            const p3 = `${currentPos.x - headLength * Math.cos(angle + Math.PI / 6)},${currentPos.y - headLength * Math.sin(angle + Math.PI / 6)}`;
-                                            return `${p1} ${p2} ${p3}`;
-                                        })()}
-                                        fill={color}
-                                        opacity={0.5}
-                                    />
-                                </g>
-                            )}
+                                );
+                            })()}
+                            {tool === 'arrow' && (() => {
+                                let endPt = currentPos;
+                                if (isShiftDown) {
+                                    const dx = currentPos.x - startPos.x;
+                                    const dy = currentPos.y - startPos.y;
+                                    const angle = Math.atan2(dy, dx);
+                                    const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+                                    const dist = Math.hypot(dx, dy);
+                                    endPt = {
+                                        x: startPos.x + Math.cos(snapAngle) * dist,
+                                        y: startPos.y + Math.sin(snapAngle) * dist
+                                    };
+                                }
+                                const headLength = strokeWidth * 4;
+                                const angle = Math.atan2(endPt.y - startPos.y, endPt.x - startPos.x);
+                                const p1 = `${endPt.x},${endPt.y}`;
+                                const p2 = `${endPt.x - headLength * Math.cos(angle - Math.PI / 6)},${endPt.y - headLength * Math.sin(angle - Math.PI / 6)}`;
+                                const p3 = `${endPt.x - headLength * Math.cos(angle + Math.PI / 6)},${endPt.y - headLength * Math.sin(angle + Math.PI / 6)}`;
+                                return (
+                                    <g>
+                                        <line
+                                            x1={startPos.x}
+                                            y1={startPos.y}
+                                            x2={endPt.x}
+                                            y2={endPt.y}
+                                            stroke={color}
+                                            strokeWidth={strokeWidth}
+                                            strokeDasharray="5,5"
+                                            strokeLinecap="round"
+                                        />
+                                        <polygon points={`${p1} ${p2} ${p3}`} fill={color} opacity={0.5} />
+                                    </g>
+                                );
+                            })()}
                             {tool === 'rectangle' && (
                                 <rect
                                     x={Math.min(startPos.x, currentPos.x)}
@@ -7450,18 +7599,31 @@ export default function Whiteboard({
                                     fill="none"
                                 />
                             )}
-                            {tool === 'circle' && (
-                                <ellipse
-                                    cx={startPos.x + (currentPos.x - startPos.x) / 2}
-                                    cy={startPos.y + (currentPos.y - startPos.y) / 2}
-                                    rx={Math.abs(currentPos.x - startPos.x) / 2}
-                                    ry={Math.abs(currentPos.y - startPos.y) / 2}
-                                    stroke={color}
-                                    strokeWidth={strokeWidth}
-                                    strokeDasharray="5,5"
-                                    fill="none"
-                                />
-                            )}
+                            {tool === 'circle' && (() => {
+                                let w = Math.abs(currentPos.x - startPos.x);
+                                let h = Math.abs(currentPos.y - startPos.y);
+                                if (isShiftDown) {
+                                    const size = Math.max(w, h);
+                                    w = size;
+                                    h = size;
+                                }
+                                const rx = w / 2;
+                                const ry = h / 2;
+                                const cx = currentPos.x < startPos.x ? startPos.x - rx : startPos.x + rx;
+                                const cy = currentPos.y < startPos.y ? startPos.y - ry : startPos.y + ry;
+                                return (
+                                    <ellipse
+                                        cx={cx}
+                                        cy={cy}
+                                        rx={rx}
+                                        ry={ry}
+                                        stroke={color}
+                                        strokeWidth={strokeWidth}
+                                        strokeDasharray="5,5"
+                                        fill="none"
+                                    />
+                                );
+                            })()}
                             {tool === 'select' && (
                                 <rect
                                     x={Math.min(startPos.x, currentPos.x)}
@@ -7535,6 +7697,8 @@ export default function Whiteboard({
                                     setSelectedImageIds(activeImageIds);
                                     setSelectedShapeIds([]);
                                     setSelectedTextIds([]);
+                                    setSelected3DId(null);
+                                    setSelectedMediaId(null);
                                 }
                             }
                             if (imgObj.isLocked) return;
@@ -8376,6 +8540,8 @@ export default function Whiteboard({
                                                 setSelectedTextIds([txtObj.id]);
                                                 setSelectedImageId(null);
                                                 setSelectedShapeIds([]);
+                                                setSelected3DId(null);
+                                                setSelectedMediaId(null);
                                             }
                                         }
                                     }}
@@ -8383,6 +8549,8 @@ export default function Whiteboard({
                                         e.stopPropagation();
                                         setEditingTextId(txtObj.id);
                                         setSelectedTextIds([txtObj.id]);
+                                        setSelected3DId(null);
+                                        setSelectedMediaId(null);
                                     }}
                                     onMouseDown={(e) => {
                                         if (e.target.tagName.toLowerCase() === 'textarea' || e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'select' || e.target.tagName.toLowerCase() === 'button') {
@@ -8396,6 +8564,8 @@ export default function Whiteboard({
                                                 setSelectedTextIds([txtObj.id]);
                                                 setSelectedImageId(null);
                                                 setSelectedShapeIds([]);
+                                                setSelected3DId(null);
+                                                setSelectedMediaId(null);
                                             }
                                             // allow drag state to be set
                                         }
@@ -9500,6 +9670,8 @@ export default function Whiteboard({
                                             setSelectedImageId(null);
                                             setSelectedTextIds([]);
                                             setEditingTextId(null);
+                                            setSelected3DId(null);
+                                            setSelectedMediaId(null);
                                         }
                                     } else if (tool === 'laser') {
                                         setSelectedImageId(null);
@@ -10928,7 +11100,7 @@ export default function Whiteboard({
                                     d={getConnectorPath(
                                         activeConnectorDrag.sourcePt,
                                         activeConnectorDrag.currentPt,
-                                        activeConnectorDrag.style.pathType,
+                                        isShiftDown ? 'straight' : activeConnectorDrag.style.pathType,
                                         null
                                     )}
                                     fill="none"
