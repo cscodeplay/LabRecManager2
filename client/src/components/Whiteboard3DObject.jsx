@@ -3,7 +3,9 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
     Box, Rotate3d, Lock, Unlock, Trash2, Copy,
-    Infinity as InfinityIcon, Sliders, RotateCcw
+    Infinity as InfinityIcon, Sliders, RotateCcw,
+    ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
+    ChevronsUp, ChevronsDown, Palette, Sun, Eye, X
 } from 'lucide-react';
 
 /* ─── Built-in 3D Geometric & Science Mesh Generators ─── */
@@ -301,12 +303,17 @@ export default function Whiteboard3DObject({
     onSelect,
     onUpdate,
     onDelete,
-    onDuplicate
+    onDuplicate,
+    onBringToFront,
+    onBringForward,
+    onSendBackward,
+    onSendToBack
 }) {
     const [rotX, setRotX] = useState(obj.rotX || -25);
     const [rotY, setRotY] = useState(obj.rotY || 45);
     const [rotZ, setRotZ] = useState(obj.rotZ || 0);
     const [is3DDragging, setIs3DDragging] = useState(false);
+    const [showFormatMenu, setShowFormatMenu] = useState(false);
     const lastPointerRef = useRef({ x: 0, y: 0 });
 
     useEffect(() => {
@@ -314,6 +321,40 @@ export default function Whiteboard3DObject({
         if (typeof obj.rotY === 'number') setRotY(obj.rotY);
         if (typeof obj.rotZ === 'number') setRotZ(obj.rotZ);
     }, [obj.rotX, obj.rotY, obj.rotZ]);
+
+    // Directional rotation helper
+    const rotateBy = useCallback((dx, dy) => {
+        setRotY(prevY => {
+            const nextY = (prevY + dx + 360) % 360;
+            setRotX(prevX => {
+                const nextX = Math.max(-85, Math.min(85, prevX + dy));
+                onUpdate && onUpdate({ rotX: nextX, rotY: nextY });
+                return nextX;
+            });
+            return nextY;
+        });
+    }, [onUpdate]);
+
+    // Keyboard Arrow Keys Orbit Control (Left/Right for yaw, Up/Down for pitch tilt)
+    useEffect(() => {
+        if (!isSelected || obj.isLocked) return;
+        const handleKeyDown = (e) => {
+            // Ignore if active typing inside inputs
+            if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                e.preventDefault();
+                e.stopPropagation();
+                const step = e.shiftKey ? 15 : 5;
+                if (e.key === 'ArrowLeft') rotateBy(-step, 0);
+                if (e.key === 'ArrowRight') rotateBy(step, 0);
+                if (e.key === 'ArrowUp') rotateBy(0, -step);
+                if (e.key === 'ArrowDown') rotateBy(0, step);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isSelected, obj.isLocked, rotateBy]);
 
     // Mesh resolution
     const mesh = useMemo(() => {
@@ -333,8 +374,13 @@ export default function Whiteboard3DObject({
         const cosY = Math.cos(radY), sinY = Math.sin(radY);
         const cosZ = Math.cos(radZ), sinZ = Math.sin(radZ);
 
-        // Light direction vector (normalized)
-        const lx = 0.5, ly = -0.7, lz = 0.5;
+        // Light direction vector based on light preset
+        let lx = 0.5, ly = -0.7, lz = 0.5;
+        if (obj.lightPreset === 'top') {
+            lx = 0.1; ly = -0.95; lz = 0.3;
+        } else if (obj.lightPreset === 'flat') {
+            lx = 0; ly = 0; lz = 1;
+        }
 
         // Transform vertices
         const transformedVertices = mesh.vertices.map(([vx, vy, vz]) => {
@@ -366,6 +412,10 @@ export default function Whiteboard3DObject({
 
         // Compute face normals, depth, and shading
         const baseColor = obj.color || mesh.color || '#3b82f6';
+        const isWireframe = obj.materialStyle === 'wireframe' || !!obj.wireframeOnly;
+        const isGlass = obj.materialStyle === 'glass';
+        const isFlat = obj.materialStyle === 'flat';
+        const userOpacity = obj.opacity !== undefined ? obj.opacity : 1;
 
         const renderedFaces = mesh.faces.map((faceIndices) => {
             if (faceIndices.length < 3) return null;
@@ -383,21 +433,33 @@ export default function Whiteboard3DObject({
             const len = Math.hypot(nx, ny, nz) || 1;
             const nnx = nx / len, nny = ny / len, nnz = nz / len;
 
-            // Backface culling: if normal points away from camera, discard
-            if (nnz >= 0.1) return null;
+            // Backface culling: unless glass/wireframe, discard faces facing away
+            if (!isGlass && !isWireframe && nnz >= 0.1) return null;
 
             // Diffuse lighting intensity
-            const intensity = Math.max(0.25, Math.min(1.0, nnx * lx + nny * ly + nnz * lz));
+            const intensity = isFlat ? 1.0 : Math.max(0.25, Math.min(1.0, nnx * lx + nny * ly + nnz * lz));
             const avgZ = faceIndices.reduce((sum, idx) => sum + (transformedVertices[idx]?.pz || 0), 0) / faceIndices.length;
 
             const pointsStr = faceIndices
                 .map(idx => `${transformedVertices[idx].px.toFixed(1)},${transformedVertices[idx].py.toFixed(1)}`)
                 .join(' ');
 
+            let faceFill = baseColor;
+            let faceOpacity = userOpacity * intensity;
+
+            if (isWireframe) {
+                faceFill = 'transparent';
+                faceOpacity = 0;
+            } else if (isGlass) {
+                faceOpacity = (userOpacity * 0.3) + (intensity * 0.25);
+            }
+
             return {
                 pointsStr,
                 avgZ,
-                intensity
+                intensity,
+                faceFill,
+                faceOpacity
             };
         }).filter(Boolean);
 
@@ -405,7 +467,7 @@ export default function Whiteboard3DObject({
         renderedFaces.sort((a, b) => b.avgZ - a.avgZ);
 
         return { renderedFaces, baseColor };
-    }, [rotX, rotY, rotZ, mesh, obj.width, obj.height, obj.color]);
+    }, [rotX, rotY, rotZ, mesh, obj.width, obj.height, obj.color, obj.materialStyle, obj.wireframeOnly, obj.opacity, obj.lightPreset]);
 
     // 3D Trackball Rotation Gestures
     const handle3DPointerDown = (e) => {
@@ -452,14 +514,16 @@ export default function Whiteboard3DObject({
 
     const handleSize = 10;
 
-    // 2D Move Handler
+    // 2D Move Handler (respects infinite clone toggle)
     const handleMoveStart = (e) => {
         if (obj.isLocked) return;
         e.stopPropagation();
         if (e.cancelable) e.preventDefault();
 
+        // Infinite Cloner drag-to-clone: only when switched ON!
+        // When switched OFF, parent object is dragged normally and NOT copied.
         if (obj.isInfiniteCloner && onDuplicate) {
-            onDuplicate(obj.id);
+            onDuplicate(obj.id, { startDrag: true, clientX: e.clientX, clientY: e.clientY });
             return;
         }
 
@@ -554,6 +618,14 @@ export default function Whiteboard3DObject({
         window.addEventListener('pointerup', onUp);
     };
 
+    // Stroke Dasharray resolution for edges
+    const strokeDash = useMemo(() => {
+        const sw = obj.edgeWidth !== undefined ? obj.edgeWidth : 0.8;
+        if (obj.edgeStyle === 'dashed') return `${Math.max(2, sw * 4)},${Math.max(2, sw * 3)}`;
+        if (obj.edgeStyle === 'dotted') return `${Math.max(1, sw)},${Math.max(2, sw * 2)}`;
+        return undefined;
+    }, [obj.edgeStyle, obj.edgeWidth]);
+
     return (
         <div
             onClick={(e) => {
@@ -568,7 +640,6 @@ export default function Whiteboard3DObject({
                 height: `${obj.height || 220}px`,
                 transform: `rotate(${obj.rotation || 0}deg)`,
                 transformOrigin: 'center center',
-                opacity: obj.opacity ?? 1,
                 zIndex: obj.zIndex || 15
             }}
             data-interactive="true"
@@ -585,34 +656,141 @@ export default function Whiteboard3DObject({
                     <polygon
                         key={fIdx}
                         points={face.pointsStr}
-                        fill={projectedFaces.baseColor}
-                        fillOpacity={face.intensity}
-                        stroke="#ffffff"
-                        strokeWidth="0.8"
-                        strokeOpacity="0.4"
+                        fill={face.faceFill}
+                        fillOpacity={face.faceOpacity}
+                        stroke={obj.edgeColor || (obj.materialStyle === 'wireframe' ? projectedFaces.baseColor : '#ffffff')}
+                        strokeWidth={obj.edgeWidth !== undefined ? obj.edgeWidth : 0.8}
+                        strokeOpacity={obj.edgeWidth === 0 ? 0 : (obj.materialStyle === 'glass' ? 0.9 : 0.6)}
+                        strokeDasharray={strokeDash}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
                     />
                 ))}
             </svg>
 
-            {/* Infinite Cloner Badge */}
+            {/* Infinite Cloner Badge on Shape */}
             {obj.isInfiniteCloner && (
                 <div 
-                    className="absolute -top-2.5 -right-2.5 w-6 h-6 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-400 text-slate-950 font-bold flex items-center justify-center shadow-md border-2 border-white pointer-events-none z-30"
-                    title="Infinite Cloner Active: drag to clone"
+                    className="absolute -top-2.5 -left-2.5 w-6 h-6 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-400 text-slate-950 font-bold flex items-center justify-center shadow-md border-2 border-white pointer-events-none z-30"
+                    title="Infinite Cloner ON: dragging spawns a copy"
                 >
                     <InfinityIcon className="w-3.5 h-3.5" />
                 </div>
             )}
 
-            {/* 3D Trackball Rotation Center Handle */}
+            {/* 3D Trackball Gimbal & Virtual 4-Direction Joystick Keys */}
             {isSelected && !obj.isLocked && (
-                <div
-                    onMouseDown={handle3DPointerDown}
-                    onPointerDown={handle3DPointerDown}
-                    className="absolute inset-0 m-auto w-14 h-14 rounded-full border-2 border-dashed border-sky-400/80 bg-sky-500/20 hover:bg-sky-500/30 flex items-center justify-center pointer-events-auto cursor-grab active:cursor-grabbing transition-all backdrop-blur-[1px] shadow-lg z-25"
-                    title="Drag to Rotate in 3D (Pitch/Yaw/Roll)"
+                <div 
+                    className="absolute inset-0 m-auto w-24 h-24 flex items-center justify-center pointer-events-auto z-25"
+                    onClick={e => e.stopPropagation()}
                 >
-                    <Rotate3d className="w-6 h-6 text-sky-300 animate-pulse pointer-events-none" />
+                    {/* Central Orbit Gimbal */}
+                    <div
+                        onMouseDown={handle3DPointerDown}
+                        onPointerDown={handle3DPointerDown}
+                        className="w-11 h-11 rounded-full border-2 border-dashed border-sky-400/90 bg-sky-500/25 hover:bg-sky-500/40 flex items-center justify-center cursor-grab active:cursor-grabbing transition-all backdrop-blur-xs shadow-lg"
+                        title="Click & Drag to Orbit 3D Model freely in any direction"
+                    >
+                        <Rotate3d className="w-5 h-5 text-sky-200 pointer-events-none animate-pulse" />
+                    </div>
+
+                    {/* Virtual Direction Keys (Up, Down, Left, Right) for H/V Rotation */}
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); rotateBy(0, -10); }}
+                        className="absolute -top-1 left-1/2 -translate-x-1/2 w-6 h-5 rounded-t bg-slate-900/80 hover:bg-sky-600 border border-slate-700/60 text-slate-200 hover:text-white flex items-center justify-center shadow-md transition-all hover:scale-110 active:scale-95"
+                        title="Tilt Up (Arrow Up)"
+                    >
+                        <ChevronUp size={13} />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); rotateBy(0, 10); }}
+                        className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-6 h-5 rounded-b bg-slate-900/80 hover:bg-sky-600 border border-slate-700/60 text-slate-200 hover:text-white flex items-center justify-center shadow-md transition-all hover:scale-110 active:scale-95"
+                        title="Tilt Down (Arrow Down)"
+                    >
+                        <ChevronDown size={13} />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); rotateBy(-10, 0); }}
+                        className="absolute -left-1 top-1/2 -translate-y-1/2 h-6 w-5 rounded-l bg-slate-900/80 hover:bg-sky-600 border border-slate-700/60 text-slate-200 hover:text-white flex items-center justify-center shadow-md transition-all hover:scale-110 active:scale-95"
+                        title="Rotate Left (Arrow Left)"
+                    >
+                        <ChevronLeft size={13} />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); rotateBy(10, 0); }}
+                        className="absolute -right-1 top-1/2 -translate-y-1/2 h-6 w-5 rounded-r bg-slate-900/80 hover:bg-sky-600 border border-slate-700/60 text-slate-200 hover:text-white flex items-center justify-center shadow-md transition-all hover:scale-110 active:scale-95"
+                        title="Rotate Right (Arrow Right)"
+                    >
+                        <ChevronRight size={13} />
+                    </button>
+                </div>
+            )}
+
+            {/* Top-Right Corner Lock Hook: Dims by default, lightens on hover, acts on click */}
+            {isSelected && (
+                <div
+                    className="absolute -top-2.5 -right-2.5 z-35"
+                    onPointerDown={e => e.stopPropagation()}
+                    onClick={e => e.stopPropagation()}
+                >
+                    <button
+                        type="button"
+                        onClick={() => onUpdate && onUpdate({ isLocked: !obj.isLocked })}
+                        className={`w-6 h-6 flex items-center justify-center rounded-full transition-all duration-200 hover:scale-115 shadow-md ${
+                            obj.isLocked
+                                ? 'bg-amber-500 text-white opacity-95 hover:opacity-100 ring-2 ring-amber-300'
+                                : 'bg-slate-900/80 hover:bg-slate-900 border border-slate-700 text-slate-300 hover:text-white opacity-35 hover:opacity-100'
+                        }`}
+                        title={obj.isLocked ? "3D Object is Locked. Click to Unlock" : "Click to Lock 3D Object"}
+                    >
+                        {obj.isLocked ? <Lock size={12} /> : <Unlock size={12} />}
+                    </button>
+                </div>
+            )}
+
+            {/* East-Side 4 Layer Hooks (Bring to Front, Forward, Backward, Send to Back) */}
+            {isSelected && (
+                <div 
+                    className="absolute left-full top-1/2 -translate-y-1/2 ml-1.5 flex flex-col gap-1 z-35"
+                    onPointerDown={e => e.stopPropagation()}
+                    onClick={e => e.stopPropagation()}
+                >
+                    <button
+                        type="button"
+                        onClick={() => onBringToFront && onBringToFront(obj.id)}
+                        className="w-5 h-5 flex items-center justify-center rounded bg-slate-900/80 hover:bg-slate-900 border border-slate-700/60 text-slate-300 hover:text-white opacity-35 hover:opacity-100 hover:scale-110 shadow-sm transition-all"
+                        title="Bring to Front"
+                    >
+                        <ChevronsUp size={11} />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onBringForward && onBringForward(obj.id)}
+                        className="w-5 h-5 flex items-center justify-center rounded bg-slate-900/80 hover:bg-slate-900 border border-slate-700/60 text-slate-300 hover:text-white opacity-35 hover:opacity-100 hover:scale-110 shadow-sm transition-all"
+                        title="Bring Forward (+1)"
+                    >
+                        <ChevronUp size={11} />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onSendBackward && onSendBackward(obj.id)}
+                        className="w-5 h-5 flex items-center justify-center rounded bg-slate-900/80 hover:bg-slate-900 border border-slate-700/60 text-slate-300 hover:text-white opacity-35 hover:opacity-100 hover:scale-110 shadow-sm transition-all"
+                        title="Send Backward (-1)"
+                    >
+                        <ChevronDown size={11} />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onSendToBack && onSendToBack(obj.id)}
+                        className="w-5 h-5 flex items-center justify-center rounded bg-slate-900/80 hover:bg-slate-900 border border-slate-700/60 text-slate-300 hover:text-white opacity-35 hover:opacity-100 hover:scale-110 shadow-sm transition-all"
+                        title="Send to Back"
+                    >
+                        <ChevronsDown size={11} />
+                    </button>
                 </div>
             )}
 
@@ -626,6 +804,17 @@ export default function Whiteboard3DObject({
                         {obj.modelType || '3D'}
                     </span>
                     <div className="w-px h-3.5 bg-slate-700" />
+                    
+                    {/* Format / Styling Popover Toggle */}
+                    <button
+                        type="button"
+                        onClick={() => setShowFormatMenu(prev => !prev)}
+                        className={`p-1 rounded transition ${showFormatMenu ? 'bg-sky-600 text-white' : 'hover:bg-slate-800 text-slate-300 hover:text-white'}`}
+                        title="3D Material, Borders & Shading Format"
+                    >
+                        <Sliders className="w-3.5 h-3.5" />
+                    </button>
+
                     {/* Reset 3D Rotation */}
                     <button
                         type="button"
@@ -635,24 +824,17 @@ export default function Whiteboard3DObject({
                     >
                         <RotateCcw className="w-3.5 h-3.5" />
                     </button>
-                    {/* Infinite Cloner Toggle */}
+
+                    {/* Infinite Cloner Toggle (Toggles ON/OFF so parent does not copy when dragged if OFF) */}
                     <button
                         type="button"
                         onClick={() => onUpdate && onUpdate({ isInfiniteCloner: !obj.isInfiniteCloner })}
-                        className={`p-1 rounded transition ${obj.isInfiniteCloner ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-                        title={obj.isInfiniteCloner ? "Disable Infinite Clone" : "Enable Infinite Clone"}
+                        className={`p-1 rounded transition ${obj.isInfiniteCloner ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+                        title={obj.isInfiniteCloner ? "Disable Infinite Copy (Currently ON)" : "Enable Infinite Copy (Currently OFF: Drag moves object)"}
                     >
                         <InfinityIcon className="w-3.5 h-3.5" />
                     </button>
-                    {/* Lock */}
-                    <button
-                        type="button"
-                        onClick={() => onUpdate && onUpdate({ isLocked: !obj.isLocked })}
-                        className={`p-1 rounded transition ${obj.isLocked ? 'text-amber-400 bg-amber-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-                        title={obj.isLocked ? "Unlock" : "Lock"}
-                    >
-                        {obj.isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-                    </button>
+
                     {/* Duplicate */}
                     {onDuplicate && (
                         <button
@@ -664,6 +846,7 @@ export default function Whiteboard3DObject({
                             <Copy className="w-3.5 h-3.5" />
                         </button>
                     )}
+
                     {/* Delete */}
                     {onDelete && (
                         <button
@@ -675,6 +858,120 @@ export default function Whiteboard3DObject({
                             <Trash2 className="w-3.5 h-3.5" />
                         </button>
                     )}
+                </div>
+            )}
+
+            {/* 3D Material & Appearance Format Popover */}
+            {showFormatMenu && isSelected && (
+                <div 
+                    className="absolute -top-72 left-1/2 -translate-x-1/2 w-64 bg-slate-900/98 border border-slate-700/90 rounded-xl shadow-2xl p-3 z-50 text-slate-200 text-xs flex flex-col gap-2.5 backdrop-blur-md pointer-events-auto"
+                    onPointerDown={e => e.stopPropagation()}
+                    onClick={e => e.stopPropagation()}
+                >
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                        <span className="font-bold text-sky-400 flex items-center gap-1.5 text-xs">
+                            <Sliders size={13} /> 3D Material & Style
+                        </span>
+                        <button onClick={() => setShowFormatMenu(false)} className="text-slate-400 hover:text-white p-0.5">
+                            <X size={12} />
+                        </button>
+                    </div>
+
+                    {/* Surface Color & Transparency Control */}
+                    <div className="flex flex-col gap-1">
+                        <div className="flex items-center justify-between text-[11px] text-slate-400">
+                            <span>Surface Color</span>
+                            <span className="font-mono text-slate-300">{Math.round((obj.opacity ?? 1) * 100)}% Opacity</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input 
+                                type="color" 
+                                value={obj.color || '#3b82f6'} 
+                                onChange={e => onUpdate && onUpdate({ color: e.target.value })}
+                                className="w-7 h-7 rounded border border-slate-700 bg-transparent cursor-pointer"
+                                title="Surface Base Color"
+                            />
+                            <input 
+                                type="range" 
+                                min="0.1" 
+                                max="1" 
+                                step="0.05"
+                                value={obj.opacity ?? 1} 
+                                onChange={e => onUpdate && onUpdate({ opacity: parseFloat(e.target.value) })}
+                                className="flex-1 accent-sky-500 h-1.5 bg-slate-700 rounded cursor-pointer"
+                                title="Surface Transparency"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Surface Shading Presets */}
+                    <div className="flex flex-col gap-1">
+                        <span className="text-[11px] text-slate-400">Material Shading</span>
+                        <div className="grid grid-cols-4 gap-1 text-[10px] text-center font-medium">
+                            {['shaded', 'flat', 'glass', 'wireframe'].map(mat => (
+                                <button
+                                    key={mat}
+                                    type="button"
+                                    onClick={() => onUpdate && onUpdate({ materialStyle: mat })}
+                                    className={`py-1 px-1 rounded capitalize transition ${
+                                        (obj.materialStyle || 'shaded') === mat ? 'bg-sky-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                    }`}
+                                >
+                                    {mat}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Border / Edge Properties */}
+                    <div className="flex flex-col gap-1 border-t border-slate-800 pt-1.5">
+                        <div className="flex items-center justify-between text-[11px] text-slate-400">
+                            <span>Edge Borders</span>
+                            <span className="font-mono text-slate-300">{obj.edgeWidth ?? 0.8}px</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input 
+                                type="color" 
+                                value={obj.edgeColor || '#ffffff'} 
+                                onChange={e => onUpdate && onUpdate({ edgeColor: e.target.value })}
+                                className="w-6 h-6 rounded border border-slate-700 bg-transparent cursor-pointer"
+                                title="Border Edge Color"
+                            />
+                            <div className="flex items-center gap-1 flex-1">
+                                {[0, 0.8, 1.5, 3].map(w => (
+                                    <button
+                                        key={w}
+                                        type="button"
+                                        onClick={() => onUpdate && onUpdate({ edgeWidth: w })}
+                                        className={`flex-1 py-0.5 rounded text-[10px] ${
+                                            (obj.edgeWidth ?? 0.8) === w ? 'bg-sky-600 text-white font-bold' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                                        }`}
+                                    >
+                                        {w === 0 ? 'None' : `${w}px`}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        {/* Border Line Type: Solid, Dashed, Dotted */}
+                        <div className="flex items-center gap-1 mt-1">
+                            {[
+                                { id: 'solid', label: '━ Solid' },
+                                { id: 'dashed', label: '╍ Dash' },
+                                { id: 'dotted', label: '┈ Dot' }
+                            ].map(st => (
+                                <button
+                                    key={st.id}
+                                    type="button"
+                                    onClick={() => onUpdate && onUpdate({ edgeStyle: st.id })}
+                                    className={`flex-1 py-1 rounded text-[10px] font-mono transition ${
+                                        (obj.edgeStyle || 'solid') === st.id ? 'bg-sky-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                    }`}
+                                >
+                                    {st.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -731,3 +1028,4 @@ export default function Whiteboard3DObject({
         </div>
     );
 }
+

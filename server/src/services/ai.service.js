@@ -1301,6 +1301,52 @@ Output MUST be ONLY valid JSON matching this schema:
                 });
                 break;
 
+            case 'whiteboard_tasks':
+                systemPrompt = `You are an expert pedagogy and interactive whiteboard assistant for instructors.
+Your goal is to generate structured, actionable, concise, and pedagogically sound whiteboard tasks/checkpoints for a classroom lesson, lecture, or lab demonstration based on the instructor's prompt.
+
+CONTEXT:
+Subject/Domain: ${context.subject || context.subjectName || 'General Academia'}
+Topic: ${context.topic || 'Interactive Lesson'}
+Target Tasks Count: ${context.count || 4}
+Instructor Prompt: "${prompt}"
+
+REQUIREMENTS:
+1. Generate between 3 to 6 concise, actionable, and clear tasks suitable for display on a classroom whiteboard.
+2. Keep each task text concise (under 15 words) but complete and informative.
+3. Include an estimated duration in minutes (e.g. 5, 10, 15).
+4. Provide a category for each task: "checkpoint" | "exercise" | "demonstration" | "discussion" | "summary".
+
+Output MUST be ONLY valid JSON matching this schema:
+{
+  "topic": "Concise Lesson or Whiteboard Topic",
+  "tasks": [
+    {
+      "text": "State the problem statement and draw initial diagram",
+      "duration": 5,
+      "category": "demonstration"
+    },
+    {
+      "text": "Identify base cases and boundary constraints",
+      "duration": 10,
+      "category": "checkpoint"
+    }
+  ]
+}`;
+                fallbackFn = () => {
+                    const baseTopic = prompt ? prompt.trim() : (context.topic || 'Classroom Whiteboard Session');
+                    return {
+                        topic: baseTopic,
+                        tasks: [
+                            { text: `Introduce core concepts of ${baseTopic}`, duration: 5, category: 'demonstration' },
+                            { text: 'Draw and analyze structural diagram on canvas', duration: 10, category: 'checkpoint' },
+                            { text: 'Solve student interactive practice problem', duration: 15, category: 'exercise' },
+                            { text: 'Review key takeaways and action items', duration: 5, category: 'summary' }
+                        ]
+                    };
+                };
+                break;
+
             case 'voice_command':
             default:
                 return this.executeVoiceCommand(prompt, context);

@@ -421,5 +421,38 @@ router.post('/voice-command', authenticate, asyncHandler(async (req, res) => {
     }
 }));
 
+/**
+ * @route   POST /api/ai/whiteboard-tasks
+ * @desc    Generate structured whiteboard tasks from prompt for instructors
+ * @access  Private (Instructor, Admin, Principal)
+ */
+router.post('/whiteboard-tasks', authenticate, asyncHandler(async (req, res) => {
+    const { prompt = '', context = {}, provider = 'groq' } = req.body;
+
+    if (!prompt || !prompt.trim()) {
+        return res.status(400).json({ success: false, message: 'Prompt instruction is required' });
+    }
+
+    try {
+        const result = await aiService.executeCardAssist({
+            type: 'whiteboard_tasks',
+            prompt,
+            context,
+            provider
+        });
+
+        res.json({
+            success: true,
+            data: result
+        });
+    } catch (err) {
+        console.error('[AI Route] Whiteboard tasks error:', err.message);
+        res.status(500).json({
+            success: false,
+            message: err.message || 'AI task generation failed'
+        });
+    }
+}));
+
 module.exports = router;
 

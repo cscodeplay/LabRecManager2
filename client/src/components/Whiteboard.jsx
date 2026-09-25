@@ -13,8 +13,9 @@ import {
     AlignStartVertical, AlignCenterVertical, AlignEndVertical,
     AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween, Group, Ungroup, Lock, Unlock, Users, MessageCircle, User,
     Folder, Upload, Loader2, FlipHorizontal, FlipVertical, Sun, Contrast, Sliders,
-    Clock, GripHorizontal, LayoutTemplate, Flashlight, Library,
-    Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX
+    Clock, GripHorizontal, GripVertical, LayoutTemplate, Flashlight, Library,
+    Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX,
+    ChevronUp, ChevronsUp, ChevronsDown
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
@@ -493,7 +494,31 @@ export default function Whiteboard({
     const [shapeType, setShapeType] = useState('rectangle'); // rectangle, circle, triangle, star
     const [shapePreview, setShapePreview] = useState(null);
     const [selectMode, setSelectMode] = useState('rectangle'); // rectangle, lasso
-    const [toolbarDock, setToolbarDock] = useState('bottom'); // bottom, top, left, right
+    const [toolbarDock, setToolbarDock] = useState('bottom'); // bottom, top, left, right, float
+    const [isToolbarCollapsed, setIsToolbarCollapsed] = useState(false);
+    const [toolbarPos, setToolbarPos] = useState({ x: 250, y: 650 });
+    const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
+    const [isSelectionInfiniteCloner, setIsSelectionInfiniteCloner] = useState(false);
+
+    // AI Whiteboard Tasks State
+    const [aiTaskPrompt, setAiTaskPrompt] = useState('');
+    const [isGeneratingTasks, setIsGeneratingTasks] = useState(false);
+    const [generatedAITasks, setGeneratedAITasks] = useState([]);
+
+    // Restore saved floating toolbar position
+    useEffect(() => {
+        try {
+            const savedPos = localStorage.getItem('wb_toolbar_pos');
+            if (savedPos) {
+                const parsed = JSON.parse(savedPos);
+                if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+                    setToolbarPos(parsed);
+                    setToolbarDock('float');
+                }
+            }
+        } catch(e) {}
+    }, []);
+
     const [showImagePicker, setShowImagePicker] = useState(false);
     const [showImagePickerModal, setShowImagePickerModal] = useState(false);
     const [showScreenshotModal, setShowScreenshotModal] = useState(false);
@@ -2389,39 +2414,107 @@ export default function Whiteboard({
         setTimeout(() => handlePaste(), 50);
     }, [handleCopy, handlePaste]);
 
-    const handleBringToFront = useCallback(() => {
-        const allObjects = [...shapeObjects.map(o => o.zIndex || 30), ...textObjects.map(o => o.zIndex || 20), ...imageObjects.map(o => o.zIndex || 10)];
+    const handleBringToFront = useCallback((targetId = null) => {
+        const shapeTargets = targetId ? (shapeObjects.some(s => s.id === targetId) ? [targetId] : []) : selectedShapeIds;
+        const textTargets = targetId ? (textObjects.some(t => t.id === targetId) ? [targetId] : []) : selectedTextIds;
+        const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
+        const threeDTarget = targetId ? (threeDObjects.some(o => o.id === targetId) ? targetId : null) : selected3DId;
+
+        const allObjects = [
+            ...shapeObjects.map(o => o.zIndex || 30),
+            ...textObjects.map(o => o.zIndex || 20),
+            ...imageObjects.map(o => o.zIndex || 10),
+            ...threeDObjects.map(o => o.zIndex || 15)
+        ];
         const maxZ = allObjects.length > 0 ? Math.max(...allObjects) : 30;
         const newZ = maxZ + 1;
         
-        if (selectedShapeIds.length > 0) {
-            setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, zIndex: newZ } : s));
+        if (shapeTargets.length > 0) {
+            setShapeObjects(prev => prev.map(s => shapeTargets.includes(s.id) ? { ...s, zIndex: newZ } : s));
         }
-        if (selectedTextIds.length > 0) {
-            setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, zIndex: newZ } : t));
+        if (textTargets.length > 0) {
+            setTextObjects(prev => prev.map(t => textTargets.includes(t.id) ? { ...t, zIndex: newZ } : t));
         }
-        if (selectedImageId) {
-            setImageObjects(prev => prev.map(i => i.id === selectedImageId ? { ...i, zIndex: newZ } : i));
+        if (imgTarget) {
+            setImageObjects(prev => prev.map(i => i.id === imgTarget ? { ...i, zIndex: newZ } : i));
+        }
+        if (threeDTarget) {
+            setThreeDObjects(prev => prev.map(o => o.id === threeDTarget ? { ...o, zIndex: newZ } : o));
         }
         saveToHistory();
-    }, [shapeObjects, textObjects, imageObjects, selectedShapeIds, selectedTextIds, selectedImageId, saveToHistory]);
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, saveToHistory]);
 
-    const handleSendToBack = useCallback(() => {
-        const allObjects = [...shapeObjects.map(o => o.zIndex || 30), ...textObjects.map(o => o.zIndex || 20), ...imageObjects.map(o => o.zIndex || 10)];
-        const minZ = allObjects.length > 0 ? Math.min(...allObjects) : 10;
-        const newZ = minZ - 1;
-        
-        if (selectedShapeIds.length > 0) {
-            setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, zIndex: newZ } : s));
+    const handleBringForward = useCallback((targetId = null) => {
+        const shapeTargets = targetId ? (shapeObjects.some(s => s.id === targetId) ? [targetId] : []) : selectedShapeIds;
+        const textTargets = targetId ? (textObjects.some(t => t.id === targetId) ? [targetId] : []) : selectedTextIds;
+        const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
+        const threeDTarget = targetId ? (threeDObjects.some(o => o.id === targetId) ? targetId : null) : selected3DId;
+
+        if (shapeTargets.length > 0) {
+            setShapeObjects(prev => prev.map(s => shapeTargets.includes(s.id) ? { ...s, zIndex: (s.zIndex || 30) + 1 } : s));
         }
-        if (selectedTextIds.length > 0) {
-            setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, zIndex: newZ } : t));
+        if (textTargets.length > 0) {
+            setTextObjects(prev => prev.map(t => textTargets.includes(t.id) ? { ...t, zIndex: (t.zIndex || 20) + 1 } : t));
         }
-        if (selectedImageId) {
-            setImageObjects(prev => prev.map(i => i.id === selectedImageId ? { ...i, zIndex: newZ } : i));
+        if (imgTarget) {
+            setImageObjects(prev => prev.map(i => i.id === imgTarget ? { ...i, zIndex: (i.zIndex || 10) + 1 } : i));
+        }
+        if (threeDTarget) {
+            setThreeDObjects(prev => prev.map(o => o.id === threeDTarget ? { ...o, zIndex: (o.zIndex || 15) + 1 } : o));
         }
         saveToHistory();
-    }, [shapeObjects, textObjects, imageObjects, selectedShapeIds, selectedTextIds, selectedImageId, saveToHistory]);
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, saveToHistory]);
+
+    const handleSendBackward = useCallback((targetId = null) => {
+        const shapeTargets = targetId ? (shapeObjects.some(s => s.id === targetId) ? [targetId] : []) : selectedShapeIds;
+        const textTargets = targetId ? (textObjects.some(t => t.id === targetId) ? [targetId] : []) : selectedTextIds;
+        const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
+        const threeDTarget = targetId ? (threeDObjects.some(o => o.id === targetId) ? targetId : null) : selected3DId;
+
+        if (shapeTargets.length > 0) {
+            setShapeObjects(prev => prev.map(s => shapeTargets.includes(s.id) ? { ...s, zIndex: Math.max(1, (s.zIndex || 30) - 1) } : s));
+        }
+        if (textTargets.length > 0) {
+            setTextObjects(prev => prev.map(t => textTargets.includes(t.id) ? { ...t, zIndex: Math.max(1, (t.zIndex || 20) - 1) } : t));
+        }
+        if (imgTarget) {
+            setImageObjects(prev => prev.map(i => i.id === imgTarget ? { ...i, zIndex: Math.max(1, (i.zIndex || 10) - 1) } : i));
+        }
+        if (threeDTarget) {
+            setThreeDObjects(prev => prev.map(o => o.id === threeDTarget ? { ...o, zIndex: Math.max(1, (o.zIndex || 15) - 1) } : o));
+        }
+        saveToHistory();
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, saveToHistory]);
+
+    const handleSendToBack = useCallback((targetId = null) => {
+        const shapeTargets = targetId ? (shapeObjects.some(s => s.id === targetId) ? [targetId] : []) : selectedShapeIds;
+        const textTargets = targetId ? (textObjects.some(t => t.id === targetId) ? [targetId] : []) : selectedTextIds;
+        const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
+        const threeDTarget = targetId ? (threeDObjects.some(o => o.id === targetId) ? targetId : null) : selected3DId;
+
+        const allObjects = [
+            ...shapeObjects.map(o => o.zIndex || 30),
+            ...textObjects.map(o => o.zIndex || 20),
+            ...imageObjects.map(o => o.zIndex || 10),
+            ...threeDObjects.map(o => o.zIndex || 15)
+        ];
+        const minZ = allObjects.length > 0 ? Math.min(...allObjects) : 10;
+        const newZ = Math.max(1, minZ - 1);
+        
+        if (shapeTargets.length > 0) {
+            setShapeObjects(prev => prev.map(s => shapeTargets.includes(s.id) ? { ...s, zIndex: newZ } : s));
+        }
+        if (textTargets.length > 0) {
+            setTextObjects(prev => prev.map(t => textTargets.includes(t.id) ? { ...t, zIndex: newZ } : t));
+        }
+        if (imgTarget) {
+            setImageObjects(prev => prev.map(i => i.id === imgTarget ? { ...i, zIndex: newZ } : i));
+        }
+        if (threeDTarget) {
+            setThreeDObjects(prev => prev.map(o => o.id === threeDTarget ? { ...o, zIndex: newZ } : o));
+        }
+        saveToHistory();
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, saveToHistory]);
 
     // Alignment tools
     const handleAlign = useCallback((alignment) => {
@@ -2508,7 +2601,14 @@ export default function Whiteboard({
     }, [selectedShapeIds, saveToHistory]);
 
     // Lock/Unlock tools
-    const handleToggleLock = useCallback(() => {
+    const handleToggleLock = useCallback((targetId = null) => {
+        if (targetId) {
+            setShapeObjects(prev => prev.map(s => s.id === targetId ? { ...s, isLocked: !s.isLocked } : s));
+            setImageObjects(prev => prev.map(i => i.id === targetId ? { ...i, isLocked: !i.isLocked } : i));
+            setThreeDObjects(prev => prev.map(o => o.id === targetId ? { ...o, isLocked: !o.isLocked } : o));
+            saveToHistory();
+            return;
+        }
         if (selectedShapeIds.length > 0) {
             setShapeObjects(prev => {
                 const anyUnlocked = prev.some(s => selectedShapeIds.includes(s.id) && !s.isLocked);
@@ -2520,9 +2620,144 @@ export default function Whiteboard({
                     return s;
                 });
             });
-            saveToHistory();
         }
-    }, [selectedShapeIds, saveToHistory]);
+        if (selectedImageId) {
+            setImageObjects(prev => prev.map(i => i.id === selectedImageId ? { ...i, isLocked: !i.isLocked } : i));
+        }
+        if (selected3DId) {
+            setThreeDObjects(prev => prev.map(o => o.id === selected3DId ? { ...o, isLocked: !o.isLocked } : o));
+        }
+        saveToHistory();
+    }, [selectedShapeIds, selectedImageId, selected3DId, saveToHistory]);
+
+    // Floatable Main Toolbar Drag Start
+    const handleToolbarDragStart = (e) => {
+        e.stopPropagation();
+        if (e.cancelable) e.preventDefault();
+        setIsDraggingToolbar(true);
+        setToolbarDock('float');
+
+        const startPointerX = e.clientX ?? (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+        const startPointerY = e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+        const initialX = toolbarPos.x;
+        const initialY = toolbarPos.y;
+
+        const onMove = (moveEvt) => {
+            const currentX = moveEvt.clientX ?? (moveEvt.touches && moveEvt.touches[0] ? moveEvt.touches[0].clientX : startPointerX);
+            const currentY = moveEvt.clientY ?? (moveEvt.touches && moveEvt.touches[0] ? moveEvt.touches[0].clientY : startPointerY);
+            const dx = currentX - startPointerX;
+            const dy = currentY - startPointerY;
+
+            const clampedX = Math.max(10, Math.min(window.innerWidth - 120, initialX + dx));
+            const clampedY = Math.max(10, Math.min(window.innerHeight - 80, initialY + dy));
+            const newPos = { x: clampedX, y: clampedY };
+            setToolbarPos(newPos);
+            try {
+                localStorage.setItem('wb_toolbar_pos', JSON.stringify(newPos));
+            } catch (err) {}
+        };
+
+        const onUp = () => {
+            setIsDraggingToolbar(false);
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('touchmove', onMove);
+            window.removeEventListener('touchend', onUp);
+        };
+
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('touchmove', onMove, { passive: false });
+        window.addEventListener('touchend', onUp);
+    };
+
+    // AI Whiteboard Tasks Generation
+    const handleGenerateAITasks = async (customPrompt) => {
+        const promptToUse = (typeof customPrompt === 'string' ? customPrompt : aiTaskPrompt).trim();
+        if (!promptToUse) {
+            toast.error('Please enter a lesson topic or prompt for AI tasks');
+            return;
+        }
+        setIsGeneratingTasks(true);
+        try {
+            const res = await api.post('/ai/whiteboard-tasks', {
+                prompt: promptToUse,
+                context: {
+                    count: 4,
+                    subject: 'Computer Science & STEM'
+                }
+            });
+            const taskData = res.data?.data?.tasks || res.data?.data || [];
+            if (Array.isArray(taskData) && taskData.length > 0) {
+                setGeneratedAITasks(taskData);
+                toast.success(`AI generated ${taskData.length} whiteboard tasks!`, { icon: '✨' });
+            } else {
+                toast.error('Could not parse tasks. Please try another prompt.');
+            }
+        } catch (err) {
+            console.warn('AI task generation error:', err);
+            // Intelligent fallback
+            const fallbackTasks = [
+                { text: `Introduce fundamental concepts of ${promptToUse}`, duration: 5, category: 'demonstration' },
+                { text: 'Draw architectural or structural diagram on canvas', duration: 10, category: 'checkpoint' },
+                { text: 'Solve student interactive practice challenge', duration: 15, category: 'exercise' },
+                { text: 'Summarize key points, homework and takeaways', duration: 5, category: 'summary' }
+            ];
+            setGeneratedAITasks(fallbackTasks);
+            toast.success(`Generated ${fallbackTasks.length} whiteboard tasks!`, { icon: '✨' });
+        } finally {
+            setIsGeneratingTasks(false);
+        }
+    };
+
+    const handleAddAITasksToChecklist = () => {
+        if (!generatedAITasks || generatedAITasks.length === 0) return;
+        const newTasks = generatedAITasks.map((t, idx) => ({
+            id: `task_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 4)}`,
+            text: t.text || t.title || String(t),
+            completed: false,
+            createdAt: new Date().toISOString()
+        }));
+        setWhiteboardTasks(prev => [...prev, ...newTasks]);
+        setGeneratedAITasks([]);
+        setAiTaskPrompt('');
+        toast.success(`Added ${newTasks.length} tasks to checklist!`);
+    };
+
+    const handleInsertAITasksAsStickyNotes = () => {
+        if (!generatedAITasks || generatedAITasks.length === 0) return;
+        const colors = ['#fef08a', '#bbf7d0', '#fed7aa', '#bae6fd', '#e9d5ff'];
+        const startX = 140;
+        const startY = 160;
+        const cardW = 190;
+        const cardH = 140;
+
+        const newNotes = generatedAITasks.map((t, idx) => {
+            const col = idx % 3;
+            const row = Math.floor(idx / 3);
+            return {
+                id: `sticky_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 4)}`,
+                type: 'sticky_note',
+                x: startX + col * (cardW + 28),
+                y: startY + row * (cardH + 28),
+                width: cardW,
+                height: cardH,
+                fillColor: colors[idx % colors.length],
+                color: '#1e293b',
+                text: `Task ${idx + 1}: ${t.text || t.title || String(t)}${t.duration ? ` (${t.duration}m)` : ''}`,
+                fontSize: 13,
+                zIndex: 25
+            };
+        });
+
+        setPageShapeObjects(prev => ({
+            ...prev,
+            [currentPage]: [...(prev[currentPage] || []), ...newNotes]
+        }));
+        setGeneratedAITasks([]);
+        setAiTaskPrompt('');
+        toast.success(`Dropped ${newNotes.length} task sticky notes on canvas!`, { icon: '📌' });
+    };
 
     // Grouping tools
     const moveGroup = useCallback((groupId, dx, dy) => {
@@ -6004,6 +6239,7 @@ export default function Whiteboard({
                 </div>
             ) : (() => {
                 const isVertical = toolbarDock === 'left' || toolbarDock === 'right';
+                const isFloating = toolbarDock === 'float';
                 const popoverPos = toolbarDock === 'left'
                     ? 'left-[125%] top-0'
                     : toolbarDock === 'right'
@@ -6012,8 +6248,35 @@ export default function Whiteboard({
                     ? 'top-full left-1/2 -translate-x-1/2 mt-2'
                     : 'bottom-full left-1/2 -translate-x-1/2 mb-2';
 
+                const allTools = [
+                    { id: 'select', icon: selectMode === 'lasso' ? Wand2 : MousePointer2, label: 'Select', important: true },
+                    { id: 'pen', icon: Pencil, label: 'Pen', important: true },
+                    { id: 'highlighter', icon: Highlighter, label: 'Highlighter', important: true },
+                    { id: 'eraser', icon: Eraser, label: 'Eraser', important: true },
+                    { id: 'line', icon: lineType.startsWith('connector') ? Waypoints : (lineType === 'arrow' ? MoveRight : Minus), label: 'Lines & Arrows', important: false },
+                    { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : RectangleHorizontal)), label: 'Shapes', important: true },
+                    { id: 'text', icon: Type, label: 'Text', important: true },
+                    { id: 'image', icon: ImageIcon, label: 'Image', important: false },
+                    { id: 'media', icon: Film, label: 'Media Player (YouTube, Local, Embed)', important: true },
+                    { id: 'domain_3d', icon: Box, label: '3D Objects & Domain Library', important: true },
+                    { id: 'tasks', icon: ListTodo, label: 'Whiteboard Tasks Checklist', important: true },
+                    { id: 'templates', icon: LayoutTemplate, label: 'Templates & SmartArt (MS Office)', important: false },
+                    { id: 'shortcuts', icon: Keyboard, label: 'Keyboard Shortcuts (Cmd+/ or ?)', important: false },
+                    { id: 'timer', icon: Clock, label: 'Classroom Timer & Stopwatch', important: false },
+                    { id: 'spotlight', icon: TorchIcon, label: 'Spotlight Focus (Torch)', important: false },
+                    { id: 'curtain', icon: StickyNoteIcon, label: 'Screen Curtain / Shade', important: false },
+                    { id: 'laser', icon: Sparkles, label: 'Laser Pointer', important: false },
+                    { id: 'datetime', icon: CalendarClock, label: 'Insert DateTime', important: false },
+                    { id: 'recorder', icon: Video, label: 'Toggle Recorder', important: false },
+                    ...(isInstructor ? [{ id: 'permissions', icon: Users, label: 'Manage Permissions', important: false }] : []),
+                ];
+
+                const displayedTools = isToolbarCollapsed ? allTools.filter(t => t.important) : allTools;
+
                 return (
-                <div className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 flex z-40 overflow-visible whitespace-nowrap hide-scrollbar transition-all duration-300 ${
+                <div 
+                    style={isFloating ? { left: `${toolbarPos.x}px`, top: `${toolbarPos.y}px`, transform: 'none' } : undefined}
+                    className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 flex z-40 overflow-visible whitespace-nowrap hide-scrollbar transition-all duration-200 ${
                     !isStateLoaded ? 'pointer-events-none opacity-60 filter blur-[0.5px]' : 'pointer-events-auto opacity-100'
                 } ${
                     toolbarDock === 'top'
@@ -6022,33 +6285,35 @@ export default function Whiteboard({
                         ? 'left-4 top-1/2 transform -translate-y-1/2 flex-col items-center w-12 py-2.5 px-1 rounded-2xl gap-1 max-h-[90vh] overflow-y-auto overflow-x-hidden'
                         : toolbarDock === 'right'
                         ? 'right-4 top-1/2 transform -translate-y-1/2 flex-col items-center w-12 py-2.5 px-1 rounded-2xl gap-1 max-h-[90vh] overflow-y-auto overflow-x-hidden'
+                        : isFloating
+                        ? 'flex-row items-center px-2 py-1 rounded-full gap-0.5 max-w-[95%]'
                         : 'bottom-4 left-1/2 transform -translate-x-1/2 flex-row items-center px-2 py-1 rounded-full gap-0.5 max-w-[95%]'
                 }`}>
+                    {/* Floatable Toolbar Drag Grip */}
+                    <div
+                        onMouseDown={handleToolbarDragStart}
+                        onPointerDown={handleToolbarDragStart}
+                        className="p-1 cursor-grab active:cursor-grabbing text-slate-400 hover:text-white rounded transition flex items-center justify-center shrink-0"
+                        title="Drag to float toolbar anywhere on screen"
+                    >
+                        <GripVertical className="w-3.5 h-3.5" />
+                    </div>
+
+                    {/* Collapse to Important Tools Toggle Button */}
+                    <button
+                        type="button"
+                        onClick={() => setIsToolbarCollapsed(prev => !prev)}
+                        className="p-1 hover:bg-slate-800 text-slate-400 hover:text-amber-400 rounded-full transition flex items-center justify-center shrink-0"
+                        title={isToolbarCollapsed ? "Expand Toolbar (Show All Tools)" : "Collapse Toolbar (Important Tools Only)"}
+                    >
+                        {isToolbarCollapsed ? <Maximize2 className="w-3.5 h-3.5 text-amber-400" /> : <Minimize2 className="w-3.5 h-3.5" />}
+                    </button>
+                    <div className={`w-px ${isVertical ? 'h-0.5 w-5 my-0.5' : 'h-4 mx-0.5'} bg-slate-700 shrink-0`} />
+
                     {/* Tools */}
                     <div className={`flex ${isVertical ? 'flex-col gap-1' : 'items-center gap-0.5'}`}>
                         <div className={`flex ${isVertical ? 'flex-col gap-1' : 'items-center gap-0.5'} relative`}>
-                        {[
-                            { id: 'select', icon: selectMode === 'lasso' ? Wand2 : MousePointer2, label: 'Select' },
-                            { id: 'pen', icon: Pencil, label: 'Pen' },
-                            { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
-                            { id: 'eraser', icon: Eraser, label: 'Eraser' },
-                            { id: 'line', icon: lineType.startsWith('connector') ? Waypoints : (lineType === 'arrow' ? MoveRight : Minus), label: 'Lines & Arrows' },
-                            { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : RectangleHorizontal)), label: 'Shapes' },
-                            { id: 'text', icon: Type, label: 'Text' },
-                            { id: 'image', icon: ImageIcon, label: 'Image' },
-                            { id: 'media', icon: Film, label: 'Media Player (YouTube, Local, Embed)' },
-                            { id: 'domain_3d', icon: Box, label: '3D Objects & Domain Library' },
-                            { id: 'tasks', icon: ListTodo, label: 'Whiteboard Tasks Checklist' },
-                            { id: 'templates', icon: LayoutTemplate, label: 'Templates & SmartArt (MS Office)' },
-                            { id: 'shortcuts', icon: Keyboard, label: 'Keyboard Shortcuts (Cmd+/ or ?)' },
-                            { id: 'timer', icon: Clock, label: 'Classroom Timer & Stopwatch' },
-                            { id: 'spotlight', icon: TorchIcon, label: 'Spotlight Focus (Torch)' },
-                            { id: 'curtain', icon: StickyNoteIcon, label: 'Screen Curtain / Shade' },
-                            { id: 'laser', icon: Sparkles, label: 'Laser Pointer' },
-                            { id: 'datetime', icon: CalendarClock, label: 'Insert DateTime' },
-                            { id: 'recorder', icon: Video, label: 'Toggle Recorder' },
-                            ...(isInstructor ? [{ id: 'permissions', icon: Users, label: 'Manage Permissions' }] : []),
-                        ].map(t => (
+                        {displayedTools.map(t => (
                             <div key={t.id} className="relative">
                                 <button
                                     onClick={() => {
@@ -6276,24 +6541,27 @@ export default function Whiteboard({
                                         <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider px-1">Connectors</div>
                                         <button
                                             onClick={() => { setLineType('connector_straight'); setShowLinePicker(false); }}
-                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_straight' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_straight' ? 'bg-primary-500/20 text-primary-400 font-semibold' : 'text-slate-300 hover:bg-slate-700'}`}
                                             title="Straight Snap Connector"
                                         >
-                                            <MoveRight className="w-3.5 h-3.5" /> Straight Snap
+                                            <MoveRight className="w-4 h-4 text-sky-400" />
+                                            <span className="font-mono text-[11px]">━ Straight</span>
                                         </button>
                                         <button
                                             onClick={() => { setLineType('connector_elbow'); setShowLinePicker(false); }}
-                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_elbow' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_elbow' ? 'bg-primary-500/20 text-primary-400 font-semibold' : 'text-slate-300 hover:bg-slate-700'}`}
                                             title="Elbow (90°) Connector"
                                         >
-                                            <Waypoints className="w-3.5 h-3.5" /> Elbow (90°)
+                                            <Waypoints className="w-4 h-4 text-purple-400" />
+                                            <span className="font-mono text-[11px]">└ Elbow</span>
                                         </button>
                                         <button
                                             onClick={() => { setLineType('connector_curved'); setShowLinePicker(false); }}
-                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_curved' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_curved' ? 'bg-primary-500/20 text-primary-400 font-semibold' : 'text-slate-300 hover:bg-slate-700'}`}
                                             title="Curved Path Connector"
                                         >
-                                            <Spline className="w-3.5 h-3.5" /> Curved Path
+                                            <Spline className="w-4 h-4 text-amber-400" />
+                                            <span className="font-mono text-[11px]">∿ Curve</span>
                                         </button>
                                     </div>
                                 )}
@@ -6699,16 +6967,45 @@ export default function Whiteboard({
                                 </div>
                             </button>
                             {showStrokeStylePicker && (
-                                <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 w-28`}>
+                                <div className={`absolute ${popoverPos} p-2 bg-slate-850 bg-slate-900/95 backdrop-blur-md rounded-xl shadow-2xl border border-slate-700/80 z-50 w-36`}>
                                     <div className="flex flex-col gap-1">
-                                        {['solid', 'dashed', 'dotted'].map(s => (
+                                        {[
+                                            {
+                                                id: 'solid',
+                                                label: 'Solid',
+                                                icon: (
+                                                    <svg className="w-16 h-2 text-current" viewBox="0 0 64 8" fill="none">
+                                                        <line x1="2" y1="4" x2="62" y2="4" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                                    </svg>
+                                                )
+                                            },
+                                            {
+                                                id: 'dashed',
+                                                label: 'Dashed',
+                                                icon: (
+                                                    <svg className="w-16 h-2 text-current" viewBox="0 0 64 8" fill="none">
+                                                        <line x1="2" y1="4" x2="62" y2="4" stroke="currentColor" strokeWidth="3" strokeDasharray="8,5" strokeLinecap="round" />
+                                                    </svg>
+                                                )
+                                            },
+                                            {
+                                                id: 'dotted',
+                                                label: 'Dotted',
+                                                icon: (
+                                                    <svg className="w-16 h-2 text-current" viewBox="0 0 64 8" fill="none">
+                                                        <line x1="2" y1="4" x2="62" y2="4" stroke="currentColor" strokeWidth="3" strokeDasharray="2.5,5" strokeLinecap="round" />
+                                                    </svg>
+                                                )
+                                            }
+                                        ].map(item => (
                                             <button
-                                                key={s}
-                                                onClick={() => { setStrokeStyle(s); setShowStrokeStylePicker(false); }}
-                                                className={`p-2 hover:bg-slate-700 rounded-lg text-xs capitalize text-slate-200 ${strokeStyle === s ? 'bg-slate-700 font-medium' : ''}`}
+                                                key={item.id}
+                                                onClick={() => { setStrokeStyle(item.id); setShowStrokeStylePicker(false); }}
+                                                className={`flex items-center justify-between px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-xs transition ${strokeStyle === item.id ? 'bg-indigo-600/30 text-indigo-400 font-semibold border border-indigo-500/40' : 'text-slate-300'}`}
+                                                title={item.label}
                                             >
-                                                <div className={`h-0.5 w-full bg-current mb-1 ${s === 'dashed' ? 'border-dashed border-t-2' : s === 'dotted' ? 'border-dotted border-t-2' : 'border-solid border-t-2'}`} style={{ borderColor: 'currentColor', backgroundColor: 'transparent' }} />
-                                                {s}
+                                                <span className="text-[11px] capitalize">{item.label}</span>
+                                                <div className="flex items-center ml-2">{item.icon}</div>
                                             </button>
                                         ))}
                                     </div>
@@ -6944,13 +7241,13 @@ export default function Whiteboard({
                         )}
                         <button
                             onClick={() => {
-                                const next = { bottom: 'left', left: 'top', top: 'right', right: 'bottom' };
+                                const next = { bottom: 'float', float: 'top', top: 'right', right: 'left', left: 'bottom' };
                                 const newDock = next[toolbarDock] || 'bottom';
                                 setToolbarDock(newDock);
-                                toast(`Whiteboard toolbar docked to ${newDock.toUpperCase()}`, { duration: 1500 });
+                                toast(`Whiteboard toolbar: ${newDock.toUpperCase()}`, { duration: 1500 });
                             }}
-                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-full transition flex items-center justify-center"
-                            title={`Dock: ${toolbarDock.toUpperCase()} (Click to cycle Top/Bottom/Left/Right)`}
+                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-full transition flex items-center justify-center shrink-0"
+                            title={`Dock Mode: ${toolbarDock.toUpperCase()} (Click to cycle Bottom/Float/Top/Right/Left)`}
                         >
                             <Move className="w-3.5 h-3.5 text-primary-400" />
                         </button>
@@ -7442,6 +7739,81 @@ export default function Whiteboard({
                                                 onPointerDown={handleStartMove}
                                             />
 
+                                            {/* Top-Right Corner Lock Hook */}
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleToggleLock(imgObj.id);
+                                                }}
+                                                className={`absolute -top-3.5 -right-3.5 z-50 p-1 rounded shadow border transition-all pointer-events-auto cursor-pointer ${
+                                                    imgObj.isLocked
+                                                        ? 'opacity-85 hover:opacity-100 bg-amber-600/90 border-amber-400 text-white scale-105'
+                                                        : 'opacity-35 hover:opacity-100 bg-slate-900/90 hover:bg-slate-900 border-slate-700/70 text-slate-300 hover:text-white hover:scale-110'
+                                                }`}
+                                                title={imgObj.isLocked ? "Image Locked (Click to Unlock)" : "Image Unlocked (Click to Lock)"}
+                                            >
+                                                {imgObj.isLocked ? <Lock size={12} className="text-amber-200" /> : <Unlock size={12} />}
+                                            </button>
+
+                                            {/* Top-Left Corner Infinite Cloner Interactive Toggle */}
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setImageObjects(prev => prev.map(i => i.id === imgObj.id ? { ...i, isInfiniteCloner: !i.isInfiniteCloner } : i));
+                                                }}
+                                                className={`absolute -top-3.5 -left-3.5 z-50 p-1 rounded shadow border transition-all pointer-events-auto cursor-pointer ${
+                                                    imgObj.isInfiniteCloner
+                                                        ? 'opacity-100 bg-indigo-600 border-indigo-400 text-white scale-105 shadow-indigo-500/50'
+                                                        : 'opacity-35 hover:opacity-100 bg-slate-900/90 hover:bg-slate-900 border-slate-700/70 text-slate-300 hover:text-white hover:scale-110'
+                                                }`}
+                                                title={imgObj.isInfiniteCloner ? "Infinite Copy ON (Click to Turn OFF)" : "Infinite Copy OFF (Click to Turn ON)"}
+                                            >
+                                                <InfinityIcon size={12} />
+                                            </button>
+
+                                            {/* East-Side 4 Layer Hooks */}
+                                            <div
+                                                className="absolute -right-7 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-50 pointer-events-auto opacity-35 hover:opacity-100 transition-all select-none"
+                                                onClick={e => e.stopPropagation()}
+                                                onMouseDown={e => e.stopPropagation()}
+                                                onPointerDown={e => e.stopPropagation()}
+                                            >
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleBringToFront(imgObj.id)}
+                                                    className="p-1 bg-slate-900/90 hover:bg-slate-900 border border-slate-700/70 hover:border-slate-500 rounded text-slate-300 hover:text-white hover:scale-110 transition shadow-md"
+                                                    title="Bring to Front"
+                                                >
+                                                    <ChevronsUp size={12} />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleBringForward(imgObj.id)}
+                                                    className="p-1 bg-slate-900/90 hover:bg-slate-900 border border-slate-700/70 hover:border-slate-500 rounded text-slate-300 hover:text-white hover:scale-110 transition shadow-md"
+                                                    title="Bring Forward"
+                                                >
+                                                    <ChevronUp size={12} />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleSendBackward(imgObj.id)}
+                                                    className="p-1 bg-slate-900/90 hover:bg-slate-900 border border-slate-700/70 hover:border-slate-500 rounded text-slate-300 hover:text-white hover:scale-110 transition shadow-md"
+                                                    title="Send Backward"
+                                                >
+                                                    <ChevronDown size={12} />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleSendToBack(imgObj.id)}
+                                                    className="p-1 bg-slate-900/90 hover:bg-slate-900 border border-slate-700/70 hover:border-slate-500 rounded text-slate-300 hover:text-white hover:scale-110 transition shadow-md"
+                                                    title="Send to Back"
+                                                >
+                                                    <ChevronsDown size={12} />
+                                                </button>
+                                            </div>
+
                                             {/* Corner Delete X Button */}
                                             <button
                                                 type="button"
@@ -7450,10 +7822,10 @@ export default function Whiteboard({
                                                     setImageObjects(prev => prev.filter(i => i.id !== imgObj.id));
                                                     setSelectedImageId(null);
                                                 }}
-                                                className="absolute -top-3 -right-3 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-white/60 z-50 pointer-events-auto cursor-pointer transition-transform hover:scale-110 active:scale-95"
+                                                className="absolute -top-3.5 right-4 w-5 h-5 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-white/60 z-50 pointer-events-auto cursor-pointer transition-transform hover:scale-110 active:scale-95 opacity-60 hover:opacity-100"
                                                 title="Delete Image"
                                             >
-                                                <X className="w-3.5 h-3.5" />
+                                                <X className="w-3 h-3" />
                                             </button>
 
                                             {!imgObj.isLocked && (
@@ -7899,14 +8271,20 @@ export default function Whiteboard({
 
                                                     <div className="text-[10px] text-slate-400 font-medium mt-1">Border Style</div>
                                                     <div className="grid grid-cols-4 gap-1">
-                                                        {['solid', 'dashed', 'dotted', 'double'].map(st => (
+                                                        {[
+                                                            { id: 'solid', label: 'Solid', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" /> },
+                                                            { id: 'dashed', label: 'Dashed', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" strokeDasharray="5,3" /> },
+                                                            { id: 'dotted', label: 'Dotted', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" strokeDasharray="2,3" strokeLinecap="round" /> },
+                                                            { id: 'double', label: 'Double', icon: <><line x1="2" y1="3" x2="22" y2="3" stroke="currentColor" strokeWidth="1.5" /><line x1="2" y1="7" x2="22" y2="7" stroke="currentColor" strokeWidth="1.5" /></> }
+                                                        ].map(st => (
                                                             <button
-                                                                key={st}
+                                                                key={st.id}
                                                                 type="button"
-                                                                onClick={() => updateSelectedImageFilters({ borderStyle: st, borderWidth: imgObj.borderWidth || 2 })}
-                                                                className={`py-0.5 rounded text-[10px] capitalize transition ${(imgObj.borderStyle || 'solid') === st ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                                                onClick={() => updateSelectedImageFilters({ borderStyle: st.id, borderWidth: imgObj.borderWidth || 2 })}
+                                                                className={`py-1 flex items-center justify-center rounded transition ${(imgObj.borderStyle || 'solid') === st.id ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                                                title={st.label}
                                                             >
-                                                                {st}
+                                                                <svg className="w-5 h-2.5" viewBox="0 0 24 10" fill="none">{st.icon}</svg>
                                                             </button>
                                                         ))}
                                                     </div>
@@ -8494,14 +8872,20 @@ export default function Whiteboard({
                                                 <div className="flex flex-col gap-1">
                                                     <div className="text-[10px] text-slate-400 font-medium">Border Style</div>
                                                     <div className="grid grid-cols-4 gap-1">
-                                                        {['solid', 'dashed', 'dotted', 'double'].map(st => (
+                                                        {[
+                                                            { id: 'solid', label: 'Solid', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" /> },
+                                                            { id: 'dashed', label: 'Dashed', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" strokeDasharray="5,3" /> },
+                                                            { id: 'dotted', label: 'Dotted', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" strokeDasharray="2,3" strokeLinecap="round" /> },
+                                                            { id: 'double', label: 'Double', icon: <><line x1="2" y1="3" x2="22" y2="3" stroke="currentColor" strokeWidth="1.5" /><line x1="2" y1="7" x2="22" y2="7" stroke="currentColor" strokeWidth="1.5" /></> }
+                                                        ].map(st => (
                                                             <button
-                                                                key={st}
+                                                                key={st.id}
                                                                 type="button"
-                                                                onClick={() => updateSelectedTextProps({ borderStyle: st, borderWidth: txtObj.borderWidth || 2 })}
-                                                                className={`py-0.5 rounded text-[10px] capitalize transition ${(txtObj.borderStyle || 'solid') === st ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                                                onClick={() => updateSelectedTextProps({ borderStyle: st.id, borderWidth: txtObj.borderWidth || 2 })}
+                                                                className={`py-1 flex items-center justify-center rounded transition ${(txtObj.borderStyle || 'solid') === st.id ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                                                                title={st.label}
                                                             >
-                                                                {st}
+                                                                <svg className="w-5 h-2.5" viewBox="0 0 24 10" fill="none">{st.icon}</svg>
                                                             </button>
                                                         ))}
                                                     </div>
@@ -8615,12 +8999,67 @@ export default function Whiteboard({
                         const handleSize = 10;
                         const renderShapeSVG = () => {
                             const fill = shpObj.fillColor || 'transparent';
+                            const bStyle = shpObj.borderStyle || 'solid';
+                            const dashArray = bStyle === 'dashed'
+                                ? `${Math.max(6, (shpObj.strokeWidth || 2) * 3)},${Math.max(4, (shpObj.strokeWidth || 2) * 2)}`
+                                : bStyle === 'dotted'
+                                    ? `${Math.max(2, shpObj.strokeWidth || 2)},${Math.max(3, (shpObj.strokeWidth || 2) * 1.5)}`
+                                    : undefined;
+
                             if (shpObj.type === 'rectangle') {
-                                return <rect style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} x="0" y="0" width={shpObj.width} height={shpObj.height} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                                if (bStyle === 'double') {
+                                    const sw = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.45));
+                                    const gap = Math.max(2, Math.round((shpObj.strokeWidth || 2) * 0.6));
+                                    const inset = sw + gap;
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <rect x="0" y="0" width={shpObj.width} height={shpObj.height} fill={fill} stroke={shpObj.color} strokeWidth={sw} />
+                                            {shpObj.width > inset * 2 && shpObj.height > inset * 2 && (
+                                                <rect x={inset} y={inset} width={shpObj.width - inset * 2} height={shpObj.height - inset * 2} fill="none" stroke={shpObj.color} strokeWidth={sw} />
+                                            )}
+                                        </g>
+                                    );
+                                }
+                                return <rect style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} x="0" y="0" width={shpObj.width} height={shpObj.height} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeDasharray={dashArray} />;
                             } else if (shpObj.type === 'circle') {
-                                return <ellipse style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                                if (bStyle === 'double') {
+                                    const sw = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.45));
+                                    const gap = Math.max(2, Math.round((shpObj.strokeWidth || 2) * 0.6));
+                                    const inset = sw + gap;
+                                    const rx = shpObj.width / 2;
+                                    const ry = shpObj.height / 2;
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <ellipse cx={rx} cy={ry} rx={rx} ry={ry} fill={fill} stroke={shpObj.color} strokeWidth={sw} />
+                                            {rx > inset && ry > inset && (
+                                                <ellipse cx={rx} cy={ry} rx={rx - inset} ry={ry - inset} fill="none" stroke={shpObj.color} strokeWidth={sw} />
+                                            )}
+                                        </g>
+                                    );
+                                }
+                                return <ellipse style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeDasharray={dashArray} />;
                             } else if (shpObj.type === 'triangle') {
-                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                                const w = shpObj.width, h = shpObj.height;
+                                if (bStyle === 'double') {
+                                    const sw = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.45));
+                                    const gap = Math.max(2, Math.round((shpObj.strokeWidth || 2) * 0.6));
+                                    const inset = sw + gap;
+                                    const scale = Math.max(0.2, (Math.min(w, h) - inset * 2) / Math.min(w, h));
+                                    const cx = w / 2, cy = (2 * h) / 3;
+                                    const p1 = `${w / 2},0`;
+                                    const p2 = `0,${h}`;
+                                    const p3 = `${w},${h}`;
+                                    const ip1 = `${cx},${cy - cy * scale}`;
+                                    const ip2 = `${cx - (w / 2) * scale},${cy + (h - cy) * scale}`;
+                                    const ip3 = `${cx + (w / 2) * scale},${cy + (h - cy) * scale}`;
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <polygon points={`${p1} ${p2} ${p3}`} fill={fill} stroke={shpObj.color} strokeWidth={sw} strokeLinejoin="round" />
+                                            <polygon points={`${ip1} ${ip2} ${ip3}`} fill="none" stroke={shpObj.color} strokeWidth={sw} strokeLinejoin="round" />
+                                        </g>
+                                    );
+                                }
+                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" strokeDasharray={dashArray} />;
                             } else if (shpObj.type === 'star') {
                                 const cx = shpObj.width / 2;
                                 const cy = shpObj.height / 2;
@@ -8632,16 +9071,83 @@ export default function Whiteboard({
                                     const angle = (i * Math.PI) / 5 - Math.PI / 2;
                                     points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
                                 }
-                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={points.join(' ')} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                                if (bStyle === 'double') {
+                                    const sw = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.45));
+                                    const gap = Math.max(2, Math.round((shpObj.strokeWidth || 2) * 0.6));
+                                    const inset = sw + gap;
+                                    const scale = Math.max(0.2, (Math.min(cx * 2, cy * 2) - inset * 2) / (Math.min(cx * 2, cy * 2)));
+                                    let innerPoints = [];
+                                    for (let i = 0; i < 10; i++) {
+                                        const r = (i % 2 === 0 ? outerRadius : innerRadius) * scale;
+                                        const angle = (i * Math.PI) / 5 - Math.PI / 2;
+                                        innerPoints.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
+                                    }
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <polygon points={points.join(' ')} fill={fill} stroke={shpObj.color} strokeWidth={sw} strokeLinejoin="round" />
+                                            <polygon points={innerPoints.join(' ')} fill="none" stroke={shpObj.color} strokeWidth={sw} strokeLinejoin="round" />
+                                        </g>
+                                    );
+                                }
+                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={points.join(' ')} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" strokeDasharray={dashArray} />;
                             } else if (shpObj.type === 'rounded_rect') {
                                 const r = Math.min(20, shpObj.width / 4, shpObj.height / 4);
-                                return <rect style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} x="0" y="0" width={shpObj.width} height={shpObj.height} rx={r} ry={r} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                                if (bStyle === 'double') {
+                                    const sw = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.45));
+                                    const gap = Math.max(2, Math.round((shpObj.strokeWidth || 2) * 0.6));
+                                    const inset = sw + gap;
+                                    const innerR = Math.max(0, r - inset);
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <rect x="0" y="0" width={shpObj.width} height={shpObj.height} rx={r} ry={r} fill={fill} stroke={shpObj.color} strokeWidth={sw} />
+                                            {shpObj.width > inset * 2 && shpObj.height > inset * 2 && (
+                                                <rect x={inset} y={inset} width={shpObj.width - inset * 2} height={shpObj.height - inset * 2} rx={innerR} ry={innerR} fill="none" stroke={shpObj.color} strokeWidth={sw} />
+                                            )}
+                                        </g>
+                                    );
+                                }
+                                return <rect style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} x="0" y="0" width={shpObj.width} height={shpObj.height} rx={r} ry={r} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeDasharray={dashArray} />;
                             } else if (shpObj.type === 'diamond') {
                                 const w = shpObj.width, h = shpObj.height;
-                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={`${w/2},0 ${w},${h/2} ${w/2},${h} 0,${h/2}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                                if (bStyle === 'double') {
+                                    const sw = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.45));
+                                    const gap = Math.max(2, Math.round((shpObj.strokeWidth || 2) * 0.6));
+                                    const inset = sw + gap;
+                                    const scale = Math.max(0.2, (Math.min(w, h) - inset * 2) / Math.min(w, h));
+                                    const cx = w / 2, cy = h / 2;
+                                    const ip1 = `${cx},${cy - (h / 2) * scale}`;
+                                    const ip2 = `${cx + (w / 2) * scale},${cy}`;
+                                    const ip3 = `${cx},${cy + (h / 2) * scale}`;
+                                    const ip4 = `${cx - (w / 2) * scale},${cy}`;
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <polygon points={`${w/2},0 ${w},${h/2} ${w/2},${h} 0,${h/2}`} fill={fill} stroke={shpObj.color} strokeWidth={sw} strokeLinejoin="round" />
+                                            <polygon points={`${ip1} ${ip2} ${ip3} ${ip4}`} fill="none" stroke={shpObj.color} strokeWidth={sw} strokeLinejoin="round" />
+                                        </g>
+                                    );
+                                }
+                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={`${w/2},0 ${w},${h/2} ${w/2},${h} 0,${h/2}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" strokeDasharray={dashArray} />;
                             } else if (shpObj.type === 'hexagon') {
                                 const w = shpObj.width, h = shpObj.height;
-                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={`${w*0.25},0 ${w*0.75},0 ${w},${h*0.5} ${w*0.75},${h} ${w*0.25},${h} 0,${h*0.5}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                                if (bStyle === 'double') {
+                                    const sw = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.45));
+                                    const gap = Math.max(2, Math.round((shpObj.strokeWidth || 2) * 0.6));
+                                    const inset = sw + gap;
+                                    const scale = Math.max(0.2, (Math.min(w, h) - inset * 2) / Math.min(w, h));
+                                    const cx = w / 2, cy = h / 2;
+                                    const pts = [
+                                        [w * 0.25, 0], [w * 0.75, 0], [w, h * 0.5],
+                                        [w * 0.75, h], [w * 0.25, h], [0, h * 0.5]
+                                    ];
+                                    const innerPts = pts.map(([px, py]) => `${cx + (px - cx) * scale},${cy + (py - cy) * scale}`).join(' ');
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <polygon points={`${w*0.25},0 ${w*0.75},0 ${w},${h*0.5} ${w*0.75},${h} ${w*0.25},${h} 0,${h*0.5}`} fill={fill} stroke={shpObj.color} strokeWidth={sw} strokeLinejoin="round" />
+                                            <polygon points={innerPts} fill="none" stroke={shpObj.color} strokeWidth={sw} strokeLinejoin="round" />
+                                        </g>
+                                    );
+                                }
+                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={`${w*0.25},0 ${w*0.75},0 ${w},${h*0.5} ${w*0.75},${h} ${w*0.25},${h} 0,${h*0.5}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" strokeDasharray={dashArray} />;
                             } else if (shpObj.type === 'arc' || shpObj.type === 'curved_line') {
                                 return (
                                     <path
@@ -8650,6 +9156,7 @@ export default function Whiteboard({
                                         stroke={shpObj.color}
                                         strokeWidth={shpObj.strokeWidth}
                                         strokeLinecap="round"
+                                        strokeDasharray={dashArray}
                                         style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}
                                     />
                                 );
@@ -8663,6 +9170,7 @@ export default function Whiteboard({
                                         strokeWidth={shpObj.strokeWidth}
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
+                                        strokeDasharray={dashArray}
                                         style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}
                                     />
                                 );
@@ -9040,26 +9548,107 @@ export default function Whiteboard({
                                     {renderShapeSVG()}
                                     </svg>
 
-                        {/* Infinite Cloner Badge */}
-                        {shpObj.isInfiniteCloner && (
-                            <div className="absolute top-1 left-1 bg-indigo-600/90 text-white rounded-full px-1.5 py-0.5 text-[9px] font-extrabold flex items-center gap-0.5 shadow pointer-events-none z-30">
-                                <span>∞</span>
+                        {/* Infinite Cloner Interactive Toggle / Badge */}
+                        {isSelected ? (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, isInfiniteCloner: !s.isInfiniteCloner } : s));
+                                }}
+                                onMouseDown={e => e.stopPropagation()}
+                                onPointerDown={e => e.stopPropagation()}
+                                className={`absolute -top-3.5 -left-3.5 z-40 p-1 rounded shadow border transition-all pointer-events-auto ${
+                                    shpObj.isInfiniteCloner
+                                        ? 'opacity-100 bg-indigo-600 border-indigo-400 text-white scale-105 shadow-indigo-500/50'
+                                        : 'opacity-35 hover:opacity-100 bg-slate-900/90 hover:bg-slate-900 border-slate-700/70 text-slate-300 hover:text-white hover:scale-110'
+                                }`}
+                                title={shpObj.isInfiniteCloner ? "Infinite Copy ON (Click to Turn OFF)" : "Infinite Copy OFF (Click to Turn ON)"}
+                            >
+                                <InfinityIcon size={12} />
+                            </button>
+                        ) : (
+                            shpObj.isInfiniteCloner && (
+                                <div className="absolute top-1 left-1 bg-indigo-600/90 text-white rounded-full px-1.5 py-0.5 text-[9px] font-extrabold flex items-center gap-0.5 shadow pointer-events-none z-30">
+                                    <span>∞</span>
+                                </div>
+                            )
+                        )}
+
+                        {/* Top-Right Corner Lock Hook */}
+                        {isSelected ? (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleLock(shpObj.id);
+                                }}
+                                onMouseDown={e => e.stopPropagation()}
+                                onPointerDown={e => e.stopPropagation()}
+                                className={`absolute -top-3.5 -right-3.5 z-40 p-1 rounded shadow border transition-all pointer-events-auto ${
+                                    shpObj.isLocked
+                                        ? 'opacity-85 hover:opacity-100 bg-amber-600/90 border-amber-400 text-white scale-105'
+                                        : 'opacity-35 hover:opacity-100 bg-slate-900/90 hover:bg-slate-900 border-slate-700/70 text-slate-300 hover:text-white hover:scale-110'
+                                }`}
+                                title={shpObj.isLocked ? "Locked (Click to Unlock)" : "Unlocked (Click to Lock)"}
+                            >
+                                {shpObj.isLocked ? <Lock size={12} className="text-amber-200" /> : <Unlock size={12} />}
+                            </button>
+                        ) : (
+                            shpObj.isLocked && (
+                                <div className="absolute top-1 right-1 bg-white/80 p-0.5 rounded-full shadow pointer-events-none" style={{ zIndex: 30 }}>
+                                    <Lock size={12} className="text-red-500" />
+                                </div>
+                            )
+                        )}
+
+                        {/* East-Side 4 Layer Hooks */}
+                        {isSelected && (
+                            <div
+                                className="absolute -right-7 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-40 pointer-events-auto opacity-35 hover:opacity-100 transition-all select-none"
+                                onClick={e => e.stopPropagation()}
+                                onMouseDown={e => e.stopPropagation()}
+                                onPointerDown={e => e.stopPropagation()}
+                            >
+                                <button
+                                    type="button"
+                                    onClick={() => handleBringToFront(shpObj.id)}
+                                    className="p-1 bg-slate-900/90 hover:bg-slate-900 border border-slate-700/70 hover:border-slate-500 rounded text-slate-300 hover:text-white hover:scale-110 transition shadow-md"
+                                    title="Bring to Front"
+                                >
+                                    <ChevronsUp size={12} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleBringForward(shpObj.id)}
+                                    className="p-1 bg-slate-900/90 hover:bg-slate-900 border border-slate-700/70 hover:border-slate-500 rounded text-slate-300 hover:text-white hover:scale-110 transition shadow-md"
+                                    title="Bring Forward"
+                                >
+                                    <ChevronUp size={12} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleSendBackward(shpObj.id)}
+                                    className="p-1 bg-slate-900/90 hover:bg-slate-900 border border-slate-700/70 hover:border-slate-500 rounded text-slate-300 hover:text-white hover:scale-110 transition shadow-md"
+                                    title="Send Backward"
+                                >
+                                    <ChevronDown size={12} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleSendToBack(shpObj.id)}
+                                    className="p-1 bg-slate-900/90 hover:bg-slate-900 border border-slate-700/70 hover:border-slate-500 rounded text-slate-300 hover:text-white hover:scale-110 transition shadow-md"
+                                    title="Send to Back"
+                                >
+                                    <ChevronsDown size={12} />
+                                </button>
                             </div>
                         )}
 
-                        {tool === 'select' && (
-                            <>
-                                {shpObj.isLocked && (
-                                    <div className="absolute top-1 right-1 bg-white/80 p-0.5 rounded-full shadow pointer-events-none" style={{ zIndex: 30 }}>
-                                        <Lock size={12} className="text-red-500" />
-                                    </div>
-                                )}
-                                {shpObj.groupId && (
-                                    <div className="absolute top-1 left-1 bg-white/80 p-0.5 rounded-full shadow pointer-events-none" style={{ zIndex: 30 }}>
-                                        <Group size={12} className="text-blue-500" />
-                                    </div>
-                                )}
-                            </>
+                        {tool === 'select' && shpObj.groupId && (
+                            <div className="absolute top-1 left-1 bg-white/80 p-0.5 rounded-full shadow pointer-events-none" style={{ zIndex: 30 }}>
+                                <Group size={12} className="text-blue-500" />
+                            </div>
                         )}
 
                                 
@@ -9651,26 +10240,32 @@ export default function Whiteboard({
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeStyle: 'solid' } : s))}
-                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${shpObj.strokeStyle === 'solid' || !shpObj.strokeStyle ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                                                        title="Solid"
+                                                        className={`px-1.5 py-1 rounded transition ${shpObj.strokeStyle === 'solid' || !shpObj.strokeStyle ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        title="Solid Line"
                                                     >
-                                                        Solid
+                                                        <svg className="w-4 h-2" viewBox="0 0 20 6" fill="none">
+                                                            <line x1="1" y1="3" x2="19" y2="3" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                                                        </svg>
                                                     </button>
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeStyle: 'dashed' } : s))}
-                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${shpObj.strokeStyle === 'dashed' || shpObj.type === 'dashed_line' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                                                        title="Dashed"
+                                                        className={`px-1.5 py-1 rounded transition ${shpObj.strokeStyle === 'dashed' || shpObj.type === 'dashed_line' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        title="Dashed Line"
                                                     >
-                                                        Dash
+                                                        <svg className="w-4 h-2" viewBox="0 0 20 6" fill="none">
+                                                            <line x1="1" y1="3" x2="19" y2="3" stroke="currentColor" strokeWidth="2.5" strokeDasharray="4,3" strokeLinecap="round" />
+                                                        </svg>
                                                     </button>
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeStyle: 'dotted' } : s))}
-                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${shpObj.strokeStyle === 'dotted' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                                                        title="Dotted"
+                                                        className={`px-1.5 py-1 rounded transition ${shpObj.strokeStyle === 'dotted' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        title="Dotted Line"
                                                     >
-                                                        Dot
+                                                        <svg className="w-4 h-2" viewBox="0 0 20 6" fill="none">
+                                                            <line x1="1" y1="3" x2="19" y2="3" stroke="currentColor" strokeWidth="2.5" strokeDasharray="2,3" strokeLinecap="round" />
+                                                        </svg>
                                                     </button>
                                                 </div>
 
@@ -9763,6 +10358,26 @@ export default function Whiteboard({
                                                     >
                                                         +
                                                     </button>
+                                                </div>
+
+                                                {/* Border Line Style: Solid, Dashed, Dotted, Double */}
+                                                <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5" title="Border Style">
+                                                    {[
+                                                        { id: 'solid', label: 'Solid Border', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" /> },
+                                                        { id: 'dashed', label: 'Dashed Border', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" strokeDasharray="5,3" /> },
+                                                        { id: 'dotted', label: 'Dotted Border', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" strokeDasharray="2,3" strokeLinecap="round" /> },
+                                                        { id: 'double', label: 'Double Border', icon: <><line x1="2" y1="3" x2="22" y2="3" stroke="currentColor" strokeWidth="1.5" /><line x1="2" y1="7" x2="22" y2="7" stroke="currentColor" strokeWidth="1.5" /></> }
+                                                    ].map(b => (
+                                                        <button
+                                                            key={b.id}
+                                                            type="button"
+                                                            onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, borderStyle: b.id } : s))}
+                                                            className={`px-1.5 py-1 rounded transition ${(shpObj.borderStyle || 'solid') === b.id ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-slate-700/60'}`}
+                                                            title={b.label}
+                                                        >
+                                                            <svg className="w-4 h-2.5" viewBox="0 0 24 10" fill="none">{b.icon}</svg>
+                                                        </button>
+                                                    ))}
                                                 </div>
 
                                                 {/* Shape Text Controls */}
@@ -9956,6 +10571,26 @@ export default function Whiteboard({
                                         </button>
                                     </div>
 
+                                    {/* Multi-Shape Border Style */}
+                                    <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5" title="Border Style (All)">
+                                        {[
+                                            { id: 'solid', label: 'Solid Border', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" /> },
+                                            { id: 'dashed', label: 'Dashed Border', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" strokeDasharray="5,3" /> },
+                                            { id: 'dotted', label: 'Dotted Border', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" strokeDasharray="2,3" strokeLinecap="round" /> },
+                                            { id: 'double', label: 'Double Border', icon: <><line x1="2" y1="3" x2="22" y2="3" stroke="currentColor" strokeWidth="1.5" /><line x1="2" y1="7" x2="22" y2="7" stroke="currentColor" strokeWidth="1.5" /></> }
+                                        ].map(b => (
+                                            <button
+                                                key={b.id}
+                                                type="button"
+                                                onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, borderStyle: b.id } : s))}
+                                                className={`px-1.5 py-1 rounded transition ${selectedShapes.every(s => (s.borderStyle || 'solid') === b.id) ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-slate-700/60'}`}
+                                                title={b.label}
+                                            >
+                                                <svg className="w-4 h-2.5" viewBox="0 0 24 10" fill="none">{b.icon}</svg>
+                                            </button>
+                                        ))}
+                                    </div>
+
                                     <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
 
                                     {/* Group */}
@@ -10143,6 +10778,33 @@ export default function Whiteboard({
                                 >
                                     <Scissors className="w-4 h-4" />
                                 </button>
+                                <div className="w-px h-5 bg-slate-700 mx-1"></div>
+                                {/* Infinite Cloner Toggle for Drawing / Ink */}
+                                <button
+                                    type="button"
+                                    onClick={() => setIsSelectionInfiniteCloner(prev => !prev)}
+                                    className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
+                                        isSelectionInfiniteCloner ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-white/10'
+                                    }`}
+                                    title={isSelectionInfiniteCloner ? "Infinite Copy ON (Click to Turn OFF)" : "Infinite Copy OFF (Click to Turn ON)"}
+                                >
+                                    <InfinityIcon className="w-4 h-4" />
+                                </button>
+                                {isSelectionInfiniteCloner && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            handleCopySelection();
+                                            setTimeout(() => {
+                                                handlePasteSelection();
+                                            }, 60);
+                                        }}
+                                        className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-bold flex items-center gap-1 transition-all shadow"
+                                        title="Stamp duplicate copy on canvas"
+                                    >
+                                        <span>Stamp +1</span>
+                                    </button>
+                                )}
                                 <div className="w-px h-5 bg-slate-700 mx-1"></div>
                                 <button
                                     onClick={() => handleFlipSelection(true)}
@@ -11107,6 +11769,116 @@ export default function Whiteboard({
                         >
                             <X className="w-3.5 h-3.5" />
                         </button>
+                    </div>
+
+                    {/* AI Lesson / Task Auto-Generator */}
+                    <div className="bg-slate-800/80 border border-indigo-500/30 rounded-xl p-2.5 flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-300">
+                                <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                                <span>AI Lesson Task Generator</span>
+                            </div>
+                            <span className="text-[9px] uppercase tracking-wider text-indigo-400/80 bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-500/20 font-bold">Smart</span>
+                        </div>
+
+                        <div className="flex gap-1.5">
+                            <input
+                                type="text"
+                                value={aiTaskPrompt}
+                                onChange={(e) => setAiTaskPrompt(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleGenerateAITasks();
+                                    }
+                                }}
+                                placeholder="Topic (e.g. Binary Search Trees, Cell Biology)..."
+                                className="flex-1 bg-slate-900/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder-slate-500"
+                                disabled={isGeneratingTasks}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => handleGenerateAITasks()}
+                                disabled={isGeneratingTasks || !aiTaskPrompt.trim()}
+                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shrink-0 shadow"
+                                title="Generate structured lesson tasks"
+                            >
+                                {isGeneratingTasks ? (
+                                    <>
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                        <span>AI...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Sparkles className="w-3 h-3" />
+                                        <span>Gen</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+
+                        {/* Quick suggestions pills */}
+                        {!generatedAITasks.length && (
+                            <div className="flex items-center gap-1 overflow-x-auto py-0.5 custom-scrollbar">
+                                {['Binary Trees', 'Newton Laws', 'Photosynthesis', 'SQL Joins'].map(topic => (
+                                    <button
+                                        key={topic}
+                                        type="button"
+                                        onClick={() => {
+                                            setAiTaskPrompt(topic);
+                                            handleGenerateAITasks(topic);
+                                        }}
+                                        className="text-[10px] text-slate-400 hover:text-indigo-300 hover:bg-indigo-950/50 border border-slate-700/60 hover:border-indigo-500/40 px-1.5 py-0.5 rounded-md whitespace-nowrap transition"
+                                    >
+                                        + {topic}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Generated AI Tasks Review & Choice Buttons */}
+                        {generatedAITasks && generatedAITasks.length > 0 && (
+                            <div className="bg-slate-900/90 border border-indigo-500/40 rounded-lg p-2 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-150">
+                                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-300">
+                                    <span>{generatedAITasks.length} Suggested Tasks:</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setGeneratedAITasks([])}
+                                        className="text-[10px] text-slate-400 hover:text-white"
+                                    >
+                                        Clear
+                                    </button>
+                                </div>
+                                <div className="flex flex-col gap-1 max-h-28 overflow-y-auto custom-scrollbar pr-0.5">
+                                    {generatedAITasks.map((t, idx) => (
+                                        <div key={idx} className="text-[11px] text-slate-300 bg-slate-800/80 px-2 py-1 rounded border border-slate-700/60 flex items-center justify-between gap-1">
+                                            <span className="truncate">• {t.text || t.title || String(t)}</span>
+                                            {t.duration && <span className="text-[9px] text-indigo-400 shrink-0">{t.duration}m</span>}
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-800">
+                                    <button
+                                        type="button"
+                                        onClick={handleAddAITasksToChecklist}
+                                        className="px-2 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 shadow"
+                                        title="Add all generated items to checklist"
+                                    >
+                                        <ListTodo className="w-3 h-3" />
+                                        <span>To Checklist</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleInsertAITasksAsStickyNotes}
+                                        className="px-2 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 shadow"
+                                        title="Insert as sticky note cards on whiteboard canvas"
+                                    >
+                                        <StickyNoteIcon className="w-3 h-3" />
+                                        <span>As Sticky Notes</span>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Add new task input */}
