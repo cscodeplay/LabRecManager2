@@ -655,6 +655,16 @@ export default function Whiteboard({
     }, [permissions, isInstructor, isStudent]);
 
     const [isAutoShape, setIsAutoShape] = useState(false);
+    const strokeHoldTimerRef = useRef(null);
+    const isStrokeSnappedRef = useRef(false);
+    const snappedShapeRef = useRef(null);
+    const lastHoldPtRef = useRef({ x: 0, y: 0 });
+
+    // Recordings library state for media modal
+    const [recordingsList, setRecordingsList] = useState([]);
+    const [loadingRecordings, setLoadingRecordings] = useState(false);
+    const [recordingFilter, setRecordingFilter] = useState('');
+
     const laserTimeoutRef = useRef(null);
     const isRemoteUpdateRef = useRef(false);
     const isDrawingRef = useRef(false);
@@ -766,9 +776,94 @@ export default function Whiteboard({
     const mediaObjects = pageMediaObjects[currentPage] || [];
     const [selectedMediaId, setSelectedMediaId] = useState(null);
     const [showMediaModal, setShowMediaModal] = useState(false);
-    const [mediaInputTab, setMediaInputTab] = useState('youtube'); // 'local' | 'youtube' | 'embed'
+    const [mediaInputTab, setMediaInputTab] = useState('youtube'); // 'local' | 'youtube' | 'embed' | 'recordings'
     const [mediaInputTitle, setMediaInputTitle] = useState('');
     const [mediaInputUrl, setMediaInputUrl] = useState('');
+    const [availableRecordings, setAvailableRecordings] = useState([]);
+    const [isLoadingRecordings, setIsLoadingRecordings] = useState(false);
+    const [recordingsSearch, setRecordingsSearch] = useState('');
+
+    // Fetch user recordings when recordings tab in media modal is opened
+    useEffect(() => {
+        if (showMediaModal && mediaInputTab === 'recordings') {
+            setIsLoadingRecordings(true);
+            api.get('/recordings')
+                .then(res => {
+                    if (res.data?.success) {
+                        setAvailableRecordings(res.data.data || []);
+                    }
+                })
+                .catch(err => {
+                    console.error('Failed to load recordings for media modal:', err);
+                })
+                .finally(() => {
+                    setIsLoadingRecordings(false);
+                });
+        }
+    }, [showMediaModal, mediaInputTab]);
+
+    // Auto-embed recording when navigated via ?embedRecording=<id> or ?embedRecordingUrl=<url>
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const params = new URLSearchParams(window.location.search);
+        const recId = params.get('embedRecording');
+        const recUrl = params.get('embedRecordingUrl');
+        const recTitle = params.get('recordingTitle') || 'Whiteboard Recording';
+
+        if (recId) {
+            api.get(`/recordings/${recId}`)
+                .then(res => {
+                    if (res.data?.success && res.data?.data) {
+                        const rec = res.data.data;
+                        const src = rec.cloudinaryUrl || rec.videoUrl;
+                        if (src) {
+                            const newMedia = {
+                                id: `media_rec_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                mediaType: 'local',
+                                src,
+                                title: rec.title || 'Whiteboard Recording',
+                                x: 220,
+                                y: 160,
+                                width: 520,
+                                height: 330,
+                                isMuted: false,
+                                isCollapsed: false,
+                                isLocked: false,
+                                rotation: 0
+                            };
+                            setPageMediaObjects(prev => ({
+                                ...prev,
+                                [currentPage]: [...(prev[currentPage] || []), newMedia]
+                            }));
+                            toast.success(`Embedded recording "${rec.title}" to whiteboard!`, { icon: '🎥' });
+                        }
+                    }
+                })
+                .catch(err => {
+                    console.warn('Could not auto-embed recording:', err);
+                });
+        } else if (recUrl) {
+            const newMedia = {
+                id: `media_rec_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                mediaType: 'local',
+                src: decodeURIComponent(recUrl),
+                title: recTitle,
+                x: 220,
+                y: 160,
+                width: 520,
+                height: 330,
+                isMuted: false,
+                isCollapsed: false,
+                isLocked: false,
+                rotation: 0
+            };
+            setPageMediaObjects(prev => ({
+                ...prev,
+                [currentPage]: [...(prev[currentPage] || []), newMedia]
+            }));
+            toast.success(`Embedded recording to whiteboard!`, { icon: '🎥' });
+        }
+    }, [currentPage]);
 
     // ─── 3D Objects State ───
     const [page3DObjects, setPage3DObjects] = useState({ 0: [] });
@@ -4227,6 +4322,270 @@ export default function Whiteboard({
         return pos;
     }, []);
 
+    // ─── Douglas-Peucker Point Simplification & Geometric Classifier ───
+    const getPerpendicularDist = (pt, lineStart, lineEnd) => {
+        const dx = lineEnd.x - lineStart.x;
+        const dy = lineEnd.y - lineStart.y;
+        const mag = Math.hypot(dx, dy);
+        if (mag === 0) return Math.hypot(pt.x - lineStart.x, pt.y - lineStart.y);
+        return Math.abs(dy * pt.x - dx * pt.y + lineEnd.x * lineStart.y - lineEnd.y * lineStart.x) / mag;
+    };
+
+    const simplifyPoints = (pts, epsilon) => {
+        if (!pts || pts.length <= 2) return pts || [];
+        let dmax = 0;
+        let index = 0;
+        const end = pts.length - 1;
+        for (let i = 1; i < end; i++) {
+            const d = getPerpendicularDist(pts[i], pts[0], pts[end]);
+            if (d > dmax) {
+                index = i;
+                dmax = d;
+            }
+        }
+        if (dmax > epsilon) {
+            const r1 = simplifyPoints(pts.slice(0, index + 1), epsilon);
+            const r2 = simplifyPoints(pts.slice(index), epsilon);
+            return r1.slice(0, r1.length - 1).concat(r2);
+        } else {
+            return [pts[0], pts[end]];
+        }
+    };
+
+    const classifyAndSnapStroke = (pts, autoShapeEnabled, currentColor, currentStrokeWidth) => {
+        if (!pts || pts.length < 5) return null;
+
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        let pathLength = 0;
+
+        for (let i = 0; i < pts.length; i++) {
+            const p = pts[i];
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+            if (i > 0) {
+                pathLength += Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y);
+            }
+        }
+
+        const w = maxX - minX;
+        const h = maxY - minY;
+        const maxDim = Math.max(w, h);
+        if (maxDim < 15 || pathLength < 25) return null;
+
+        const pStart = pts[0];
+        const pEnd = pts[pts.length - 1];
+        const distClose = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
+        const isClosed = distClose < Math.max(35, 0.25 * maxDim);
+
+        // Calculate enclosed polygon area using Shoelace formula
+        let polygonArea = 0;
+        for (let i = 0; i < pts.length; i++) {
+            const nextPt = pts[(i + 1) % pts.length];
+            polygonArea += pts[i].x * nextPt.y - nextPt.x * pts[i].y;
+        }
+        polygonArea = Math.abs(polygonArea / 2);
+
+        // If Smart Shape is enabled AND stroke is closed: Classify geometric shape (Triangle, Circle, Rectangle, Star)
+        if (autoShapeEnabled && isClosed) {
+            const areaRatio = polygonArea / (w * h || 1);
+            const circularity = (4 * Math.PI * polygonArea) / (pathLength * pathLength || 1);
+            const aspectRatio = w / (h || 1);
+
+            const cx = minX + w / 2;
+            const cy = minY + h / 2;
+            let sumRadius = 0;
+            for (let i = 0; i < pts.length; i++) {
+                sumRadius += Math.hypot(pts[i].x - cx, pts[i].y - cy);
+            }
+            const avgRadius = sumRadius / pts.length;
+            let sumRadiusDiffSq = 0;
+            for (let i = 0; i < pts.length; i++) {
+                const r = Math.hypot(pts[i].x - cx, pts[i].y - cy);
+                sumRadiusDiffSq += (r - avgRadius) * (r - avgRadius);
+            }
+            const stdDevRadius = Math.sqrt(sumRadiusDiffSq / pts.length);
+            const radiusVarianceRatio = stdDevRadius / (avgRadius || 1);
+
+            // 1. Circle / Ellipse
+            if (circularity > 0.70 && radiusVarianceRatio < 0.18) {
+                const isEquilateral = aspectRatio >= 0.75 && aspectRatio <= 1.35;
+                const finalW = isEquilateral ? maxDim : w;
+                const finalH = isEquilateral ? maxDim : h;
+                return {
+                    id: Date.now().toString(),
+                    type: 'circle',
+                    x: cx - finalW / 2,
+                    y: cy - finalH / 2,
+                    width: finalW,
+                    height: finalH,
+                    color: currentColor,
+                    strokeWidth: currentStrokeWidth,
+                    fillColor: 'transparent',
+                    rotation: 0
+                };
+            }
+
+            // Run Douglas-Peucker simplification with adaptive tolerance
+            const simplified = simplifyPoints(pts, Math.max(12, maxDim * 0.11));
+            const cornerCount = simplified.length - 1;
+
+            // 2. Triangle: 3 corners (or 3-4 simplified vertices) AND area ratio in 0.22 - 0.68
+            if ((cornerCount === 3 || cornerCount === 4) && areaRatio >= 0.20 && areaRatio <= 0.68) {
+                return {
+                    id: Date.now().toString(),
+                    type: 'triangle',
+                    x: minX,
+                    y: minY,
+                    width: w,
+                    height: h,
+                    color: currentColor,
+                    strokeWidth: currentStrokeWidth,
+                    fillColor: 'transparent',
+                    rotation: 0
+                };
+            }
+
+            // 3. Rectangle / Square: 4 corners (or 4-5 simplified vertices) OR area ratio > 0.65
+            if (areaRatio > 0.65 || cornerCount === 4) {
+                const isSquare = Math.abs(w - h) / maxDim < 0.2;
+                const finalW = isSquare ? maxDim : w;
+                const finalH = isSquare ? maxDim : h;
+                return {
+                    id: Date.now().toString(),
+                    type: 'rectangle',
+                    x: minX,
+                    y: minY,
+                    width: finalW,
+                    height: finalH,
+                    color: currentColor,
+                    strokeWidth: currentStrokeWidth,
+                    fillColor: 'transparent',
+                    rotation: 0
+                };
+            }
+
+            // 4. Star: 5 or more sharp outer points
+            if (cornerCount >= 8) {
+                return {
+                    id: Date.now().toString(),
+                    type: 'star',
+                    x: minX,
+                    y: minY,
+                    width: w,
+                    height: h,
+                    color: currentColor,
+                    strokeWidth: currentStrokeWidth,
+                    fillColor: 'transparent',
+                    rotation: 0
+                };
+            }
+        }
+
+        // Default Hold-to-Straighten: Snaps any line to a razor-straight Line!
+        return {
+            id: Date.now().toString(),
+            type: 'line',
+            startX: pStart.x,
+            startY: pStart.y,
+            endX: pEnd.x,
+            endY: pEnd.y,
+            x: Math.min(pStart.x, pEnd.x),
+            y: Math.min(pStart.y, pEnd.y),
+            width: Math.max(1, Math.abs(pEnd.x - pStart.x)),
+            height: Math.max(1, Math.abs(pEnd.y - pStart.y)),
+            color: currentColor,
+            strokeWidth: currentStrokeWidth,
+            rotation: 0
+        };
+    };
+
+    const drawSnappedShapePreview = (ctx, shape) => {
+        if (!ctx || !shape) return;
+        ctx.save();
+        ctx.strokeStyle = shape.color;
+        ctx.lineWidth = shape.strokeWidth;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.setLineDash([]);
+        ctx.beginPath();
+
+        if (shape.type === 'line') {
+            ctx.moveTo(shape.startX, shape.startY);
+            ctx.lineTo(shape.endX, shape.endY);
+            ctx.stroke();
+        } else if (shape.type === 'circle') {
+            ctx.ellipse(
+                shape.x + shape.width / 2,
+                shape.y + shape.height / 2,
+                Math.abs(shape.width / 2),
+                Math.abs(shape.height / 2),
+                0, 0, 2 * Math.PI
+            );
+            ctx.stroke();
+        } else if (shape.type === 'triangle') {
+            ctx.moveTo(shape.x + shape.width / 2, shape.y);
+            ctx.lineTo(shape.x, shape.y + shape.height);
+            ctx.lineTo(shape.x + shape.width, shape.y + shape.height);
+            ctx.closePath();
+            ctx.stroke();
+        } else if (shape.type === 'rectangle') {
+            ctx.rect(shape.x, shape.y, shape.width, shape.height);
+            ctx.stroke();
+        } else if (shape.type === 'star') {
+            const cx = shape.x + shape.width / 2;
+            const cy = shape.y + shape.height / 2;
+            const outerR = Math.min(shape.width, shape.height) / 2;
+            const innerR = outerR / 2.5;
+            for (let i = 0; i < 10; i++) {
+                const r = i % 2 === 0 ? outerR : innerR;
+                const angle = (i * Math.PI) / 5 - Math.PI / 2;
+                const x = cx + r * Math.cos(angle);
+                const y = cy + r * Math.sin(angle);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.stroke();
+        }
+        ctx.restore();
+    };
+
+    const triggerHoldSnap = useCallback((pos) => {
+        if (tool !== 'pen') return;
+        const pts = currentPathPointsRef.current;
+        if (!pts || pts.length < 5) return;
+
+        const snapped = classifyAndSnapStroke(pts, isAutoShape, color, strokeWidth);
+        if (!snapped) return;
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        // Restore clean pre-stroke bitmap to erase rough freehand stroke
+        if (preStrokeImageDataRef.current) {
+            ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+        }
+
+        // Draw neat snapped shape preview
+        drawSnappedShapePreview(ctx, snapped);
+
+        isStrokeSnappedRef.current = true;
+        snappedShapeRef.current = snapped;
+
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            try { navigator.vibrate(25); } catch (_) {}
+        }
+
+        toast(`✨ Snapped to ${snapped.type === 'line' ? 'straight line' : snapped.type}!`, {
+            id: 'hold-snap-hint',
+            duration: 1200,
+            icon: '✨'
+        });
+    }, [tool, isAutoShape, color, strokeWidth]);
+
     const startDrawing = useCallback((e) => {
         if (!canUserDraw) return;
         e.preventDefault();
@@ -4317,6 +4676,19 @@ export default function Whiteboard({
             } catch (err) {}
 
             currentPathPointsRef.current = [pos];
+
+            if (tool === 'pen') {
+                isStrokeSnappedRef.current = false;
+                snappedShapeRef.current = null;
+                lastHoldPtRef.current = pos;
+                if (strokeHoldTimerRef.current) {
+                    clearTimeout(strokeHoldTimerRef.current);
+                    strokeHoldTimerRef.current = null;
+                }
+                strokeHoldTimerRef.current = setTimeout(() => {
+                    triggerHoldSnap(pos);
+                }, 420);
+            }
 
             ctx.beginPath();
             ctx.moveTo(pos.x, pos.y);
@@ -4461,6 +4833,46 @@ export default function Whiteboard({
             ctx.globalCompositeOperation = 'source-over';
         } else if (tool === 'pen' || tool === 'eraser') {
             const pts = currentPathPointsRef.current;
+
+            // Live dragging while hold-snapped (rubber-banding straight line or resizing snapped shape)
+            if (tool === 'pen' && isStrokeSnappedRef.current && snappedShapeRef.current) {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                if (preStrokeImageDataRef.current) {
+                    ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+                }
+                const cur = snappedShapeRef.current;
+                if (cur.type === 'line') {
+                    cur.endX = pos.x;
+                    cur.endY = pos.y;
+                    cur.x = Math.min(cur.startX, pos.x);
+                    cur.y = Math.min(cur.startY, pos.y);
+                    cur.width = Math.max(1, Math.abs(pos.x - cur.startX));
+                    cur.height = Math.max(1, Math.abs(pos.y - cur.startY));
+                } else {
+                    cur.width = Math.max(15, Math.abs(pos.x - cur.x));
+                    cur.height = Math.max(15, Math.abs(pos.y - cur.y));
+                }
+                drawSnappedShapePreview(ctx, cur);
+                wasDraggingRef.current = true;
+                return;
+            }
+
+            // Hold-to-straighten movement detection & timer management
+            if (tool === 'pen' && !isStrokeSnappedRef.current) {
+                const dHold = Math.hypot(pos.x - lastHoldPtRef.current.x, pos.y - lastHoldPtRef.current.y);
+                if (dHold > 8) {
+                    if (strokeHoldTimerRef.current) {
+                        clearTimeout(strokeHoldTimerRef.current);
+                        strokeHoldTimerRef.current = null;
+                    }
+                    lastHoldPtRef.current = pos;
+                    strokeHoldTimerRef.current = setTimeout(() => {
+                        triggerHoldSnap(pos);
+                    }, 420);
+                }
+            }
 
             if (tool === 'pen' && (e.shiftKey || isShiftDown)) {
                 let snapPos = pos;
@@ -4710,10 +5122,79 @@ export default function Whiteboard({
         if (!isDrawing) return;
         e.preventDefault();
 
+        // Clear hold-to-straighten timer immediately on pointer up
+        if (strokeHoldTimerRef.current) {
+            clearTimeout(strokeHoldTimerRef.current);
+            strokeHoldTimerRef.current = null;
+        }
+
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         ctx.imageSmoothingEnabled = true;
+
+        // 1. If stroke was snapped via hold gesture, commit the neat snapped shape directly!
+        if (isStrokeSnappedRef.current && snappedShapeRef.current) {
+            if (preStrokeImageDataRef.current) {
+                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+            }
+            const snapped = snappedShapeRef.current;
+            isStrokeSnappedRef.current = false;
+            snappedShapeRef.current = null;
+            currentPathPointsRef.current = [];
+            preStrokeImageDataRef.current = null;
+            setIsDrawing(false);
+
+            let committedShape = null;
+            if (snapped.type === 'line') {
+                const p1 = { x: snapped.startX, y: snapped.startY };
+                const p2 = { x: snapped.endX, y: snapped.endY };
+                const minX = Math.min(p1.x, p2.x);
+                const minY = Math.min(p1.y, p2.y);
+                const w = Math.max(Math.abs(p1.x - p2.x), 2);
+                const h = Math.max(Math.abs(p1.y - p2.y), 2);
+                committedShape = {
+                    id: Date.now().toString(),
+                    type: 'path',
+                    x: minX,
+                    y: minY,
+                    width: w,
+                    height: h,
+                    originalWidth: w,
+                    originalHeight: h,
+                    points: [
+                        { x: p1.x - minX, y: p1.y - minY },
+                        { x: p2.x - minX, y: p2.y - minY }
+                    ],
+                    rotation: 0,
+                    color: color,
+                    strokeWidth: strokeWidth,
+                    smooth: false,
+                    isHighlighter: false
+                };
+            } else if (['circle', 'rectangle', 'triangle', 'star'].includes(snapped.type)) {
+                committedShape = {
+                    id: Date.now().toString(),
+                    type: snapped.type,
+                    x: snapped.x,
+                    y: snapped.y,
+                    width: snapped.width,
+                    height: snapped.height,
+                    rotation: 0,
+                    color: color,
+                    strokeWidth: strokeWidth,
+                    text: '',
+                    fontSize: 20
+                };
+            }
+
+            if (committedShape) {
+                setShapeObjects(prev => [...prev, committedShape]);
+                if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: committedShape });
+                saveToHistory();
+            }
+            return;
+        }
 
         const rawPos = getPosition(e);
         const pos = (rawPos && !isNaN(rawPos.x) && !isNaN(rawPos.y) && rawPos.x !== 0 && rawPos.y !== 0) ? rawPos : currentPos;
@@ -4726,7 +5207,61 @@ export default function Whiteboard({
             
             let shapeCreated = false;
 
-            if (tool === 'pen' && isAutoShape && pts && pts.length >= 8) {
+            if (tool === 'pen' && isAutoShape && pts && pts.length >= 6) {
+                const autoSnapped = classifyAndSnapStroke(pts, true, color, strokeWidth);
+                if (autoSnapped) {
+                    let committedShape = null;
+                    if (autoSnapped.type === 'line') {
+                        const p1 = { x: autoSnapped.startX, y: autoSnapped.startY };
+                        const p2 = { x: autoSnapped.endX, y: autoSnapped.endY };
+                        const minX = Math.min(p1.x, p2.x);
+                        const minY = Math.min(p1.y, p2.y);
+                        const w = Math.max(Math.abs(p1.x - p2.x), 2);
+                        const h = Math.max(Math.abs(p1.y - p2.y), 2);
+                        committedShape = {
+                            id: Date.now().toString(),
+                            type: 'path',
+                            x: minX,
+                            y: minY,
+                            width: w,
+                            height: h,
+                            originalWidth: w,
+                            originalHeight: h,
+                            points: [
+                                { x: p1.x - minX, y: p1.y - minY },
+                                { x: p2.x - minX, y: p2.y - minY }
+                            ],
+                            rotation: 0,
+                            color: color,
+                            strokeWidth: strokeWidth,
+                            smooth: false,
+                            isHighlighter: false
+                        };
+                    } else if (['circle', 'rectangle', 'triangle', 'star'].includes(autoSnapped.type)) {
+                        committedShape = {
+                            id: Date.now().toString(),
+                            type: autoSnapped.type,
+                            x: autoSnapped.x,
+                            y: autoSnapped.y,
+                            width: autoSnapped.width,
+                            height: autoSnapped.height,
+                            rotation: 0,
+                            color: color,
+                            strokeWidth: strokeWidth,
+                            text: '',
+                            fontSize: 20
+                        };
+                    }
+
+                    if (committedShape) {
+                        setShapeObjects(prev => [...prev, committedShape]);
+                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: committedShape });
+                        shapeCreated = true;
+                    }
+                }
+            }
+
+            if (!shapeCreated && tool === 'pen' && isAutoShape && pts && pts.length >= 8) {
                 // Auto shape recognition when user closes or connects a path
                 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
                 let pathLength = 0;
@@ -6389,6 +6924,7 @@ export default function Whiteboard({
                 const allTools = [
                     { id: 'select', icon: selectMode === 'lasso' ? Wand2 : MousePointer2, label: 'Select', important: true },
                     { id: 'pen', icon: Pencil, label: 'Pen', important: true },
+                    { id: 'smart_shape', icon: Wand2, label: `Smart Shapes (${isAutoShape ? 'ON' : 'OFF'}) - Hold or lift to snap straight lines & shapes`, important: true },
                     { id: 'highlighter', icon: Highlighter, label: 'Highlighter', important: true },
                     { id: 'eraser', icon: Eraser, label: 'Eraser', important: true },
                     { id: 'line', icon: lineType.startsWith('connector') ? Waypoints : (lineType === 'arrow' ? MoveRight : Minus), label: 'Lines & Arrows', important: false },
@@ -6456,6 +6992,14 @@ export default function Whiteboard({
                             <div key={t.id} className="relative">
                                 <button
                                     onClick={() => {
+                                        if (t.id === 'smart_shape') {
+                                            setIsAutoShape(prev => {
+                                                const next = !prev;
+                                                toast(next ? '✨ Smart Shape recognition ON: Closed shapes & lines will auto-snap!' : 'Smart Shape recognition OFF', { icon: next ? '✨' : 'ℹ️' });
+                                                return next;
+                                            });
+                                            return;
+                                        }
                                         if (t.id === 'media') {
                                             setShowMediaModal(true);
                                             return;
@@ -6537,6 +7081,7 @@ export default function Whiteboard({
                                     }}
                                     className={`p-1 rounded-full transition-colors flex items-center justify-center ${
                                         tool === t.id ||
+                                        (t.id === 'smart_shape' && isAutoShape) ||
                                         (t.id === 'recorder' && showRecorder) ||
                                         (t.id === 'timer' && showClassroomTimer) ||
                                         (t.id === 'spotlight' && isSpotlightActive) ||
@@ -6562,7 +7107,7 @@ export default function Whiteboard({
                                 
                                 {/* Popovers rendered with dynamic positioning */}
                                 {tool === t.id && t.id === 'pen' && showStrokePicker && (
-                                    <div className={`absolute ${popoverPos} p-3 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-2 min-w-[120px]`}>
+                                    <div className={`absolute ${popoverPos} p-3 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-2 min-w-[130px]`}>
                                         <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1 text-center">Stroke Width</p>
                                         <input
                                             type="range"
@@ -6572,7 +7117,17 @@ export default function Whiteboard({
                                             onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
                                             className="w-full h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer"
                                         />
-                                        <div className="text-xs text-white text-center mt-1">{strokeWidth}px</div>
+                                        <div className="text-xs text-white text-center mt-0.5">{strokeWidth}px</div>
+                                        <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between gap-2">
+                                            <span className="text-[11px] text-slate-300 font-medium">Smart Shape</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsAutoShape(prev => !prev)}
+                                                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition ${isAutoShape ? 'bg-primary-500 text-white shadow-xs' : 'bg-slate-700 text-slate-400'}`}
+                                            >
+                                                {isAutoShape ? 'ON' : 'OFF'}
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
 
@@ -11675,6 +12230,8 @@ export default function Whiteboard({
                     shapeObjects={shapeObjects}
                     textObjects={textObjects}
                     imageObjects={imageObjects}
+                    threeDObjects={threeDObjects}
+                    mediaObjects={mediaObjects}
                     onRecordingComplete={(data) => {
                         console.log('Recording complete:', data);
                     }}
@@ -11794,11 +12351,13 @@ export default function Whiteboard({
                         </div>
 
                         {/* Tabs: YouTube, Local File, Web Embed */}
+                        {/* Tabs: YouTube, Whiteboard Recordings, Local File, Web Embed */}
                         <div className="flex bg-slate-800/80 p-1 rounded-xl gap-1">
                             {[
                                 { id: 'youtube', label: 'YouTube Video' },
-                                { id: 'local', label: 'Local Video/Audio' },
-                                { id: 'embed', label: 'Web Embed Window' }
+                                { id: 'recordings', label: '🎥 Recordings' },
+                                { id: 'local', label: 'Local File' },
+                                { id: 'embed', label: 'Web Embed' }
                             ].map(tab => (
                                 <button
                                     key={tab.id}
@@ -11816,18 +12375,111 @@ export default function Whiteboard({
                         </div>
 
                         {/* Title input */}
-                        <div>
-                            <label className="block text-xs font-medium text-slate-400 mb-1">Title (Optional)</label>
-                            <input
-                                type="text"
-                                value={mediaInputTitle}
-                                onChange={e => setMediaInputTitle(e.target.value)}
-                                placeholder="e.g. Lecture Video, Lab Simulation, Audio Demo"
-                                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
-                            />
-                        </div>
+                        {mediaInputTab !== 'recordings' && (
+                            <div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1">Title (Optional)</label>
+                                <input
+                                    type="text"
+                                    value={mediaInputTitle}
+                                    onChange={e => setMediaInputTitle(e.target.value)}
+                                    placeholder="e.g. Lecture Video, Lab Simulation, Audio Demo"
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                                />
+                            </div>
+                        )}
 
                         {/* Content by tab */}
+                        {mediaInputTab === 'recordings' && (
+                            <div className="flex flex-col gap-2">
+                                <label className="block text-xs font-medium text-slate-400">Select Whiteboard Recording to Embed</label>
+                                <input
+                                    type="text"
+                                    placeholder="Search recordings..."
+                                    value={recordingsSearch}
+                                    onChange={(e) => setRecordingsSearch(e.target.value)}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                                />
+                                {isLoadingRecordings ? (
+                                    <div className="py-8 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                                        <div className="w-3.5 h-3.5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                                        <span>Loading recordings...</span>
+                                    </div>
+                                ) : (
+                                    <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
+                                        {availableRecordings
+                                            .filter(r => !recordingsSearch || r.title?.toLowerCase().includes(recordingsSearch.toLowerCase()))
+                                            .map(rec => {
+                                                const src = rec.cloudinaryUrl || rec.videoUrl;
+                                                const isSelected = mediaInputUrl === src;
+                                                return (
+                                                    <div
+                                                        key={rec.id}
+                                                        onClick={() => {
+                                                            setMediaInputUrl(src);
+                                                            setMediaInputTitle(rec.title || 'Whiteboard Recording');
+                                                        }}
+                                                        className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 cursor-pointer transition ${
+                                                            isSelected
+                                                                ? 'bg-indigo-950/60 border-indigo-500 text-white'
+                                                                : 'bg-slate-800/60 border-slate-700/60 text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center gap-2.5 min-w-0">
+                                                            <div className="w-8 h-8 rounded-lg bg-indigo-900/60 border border-indigo-700/50 flex items-center justify-center shrink-0 text-indigo-400">
+                                                                <Video className="w-4 h-4" />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="text-xs font-semibold truncate">{rec.title}</p>
+                                                                <p className="text-[10px] text-slate-400">
+                                                                    {rec.duration ? `${Math.floor(rec.duration / 60)}m ${rec.duration % 60}s` : 'Recording'} • {new Date(rec.createdAt).toLocaleDateString()}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                const wrapper = canvasWrapperRef.current;
+                                                                const cx = wrapper ? (wrapper.clientWidth / 2 - 260) : 220;
+                                                                const cy = wrapper ? (wrapper.clientHeight / 2 - 165) : 160;
+                                                                const newMedia = {
+                                                                    id: `media_rec_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                                                    mediaType: 'local',
+                                                                    src,
+                                                                    title: rec.title || 'Whiteboard Recording',
+                                                                    x: Math.max(20, cx),
+                                                                    y: Math.max(20, cy),
+                                                                    width: 520,
+                                                                    height: 330,
+                                                                    isMuted: false,
+                                                                    isCollapsed: false,
+                                                                    isLocked: false,
+                                                                    rotation: 0
+                                                                };
+                                                                setPageMediaObjects(prev => ({
+                                                                    ...prev,
+                                                                    [currentPage]: [...(prev[currentPage] || []), newMedia]
+                                                                }));
+                                                                setShowMediaModal(false);
+                                                                setMediaInputUrl('');
+                                                                setMediaInputTitle('');
+                                                                toast.success(`Embedded "${rec.title}" to canvas!`, { icon: '🎥' });
+                                                            }}
+                                                            className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold shrink-0 transition"
+                                                        >
+                                                            Embed
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                        {availableRecordings.length === 0 && (
+                                            <p className="text-center py-6 text-xs text-slate-400">No recordings found. Create a recording first!</p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {mediaInputTab === 'youtube' && (
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-1">YouTube Link or Video ID</label>

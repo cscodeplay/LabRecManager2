@@ -425,7 +425,7 @@ export function parseJSON3D(jsonString) {
 }
 
 /* ─── Color Shading & Realistic 3D Lighting ─── */
-function shadeColor(colorStr, intensity, materialStyle) {
+export function shadeColor(colorStr, intensity, materialStyle) {
     if (!colorStr) return '#3b82f6';
     let r = 59, g = 130, b = 246;
     if (colorStr.startsWith('#')) {

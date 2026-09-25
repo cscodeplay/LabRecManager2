@@ -4,8 +4,20 @@ import { toast } from 'react-hot-toast';
 import api from '@/lib/api';
 import fixWebmDuration from 'fix-webm-duration';
 import { formatDate } from '@/lib/dateUtils';
+import { get3DModelMesh, shadeColor } from './Whiteboard3DObject';
 
-const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], textObjects = [], imageObjects = [], onRecordingComplete, isVisible = false }) => {
+const WhiteboardRecorder = ({
+    canvasRef,
+    sessionId,
+    socket,
+    shapeObjects = [],
+    textObjects = [],
+    imageObjects = [],
+    threeDObjects = [],
+    mediaObjects = [],
+    onRecordingComplete,
+    isVisible = false
+}) => {
     const [isRecording, setIsRecording] = useState(false);
     const [hasCamera, setHasCamera] = useState(false);
     const [hasMic, setHasMic] = useState(false);
@@ -35,6 +47,8 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
     const shapeObjectsRef = useRef(shapeObjects);
     const textObjectsRef = useRef(textObjects);
     const imageObjectsRef = useRef(imageObjects);
+    const threeDObjectsRef = useRef(threeDObjects);
+    const mediaObjectsRef = useRef(mediaObjects);
 
     useEffect(() => {
         shapeObjectsRef.current = shapeObjects;
@@ -47,6 +61,14 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
     useEffect(() => {
         imageObjectsRef.current = imageObjects;
     }, [imageObjects]);
+
+    useEffect(() => {
+        threeDObjectsRef.current = threeDObjects;
+    }, [threeDObjects]);
+
+    useEffect(() => {
+        mediaObjectsRef.current = mediaObjects;
+    }, [mediaObjects]);
 
     // Enumerate connected cameras and microphones
     const refreshDevices = async () => {
@@ -325,29 +347,226 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                     }
                 });
 
-                // Draw shape objects
+                // Helper for text wrapping on canvas
+                const drawWrappedText = (ctx, text, x, y, maxWidth, lineHeight, maxLines = 10) => {
+                    const words = String(text || '').split(' ');
+                    let line = '';
+                    let currentY = y;
+                    let lineCount = 0;
+                    for (let n = 0; n < words.length; n++) {
+                        const testLine = line + words[n] + ' ';
+                        const metrics = ctx.measureText(testLine);
+                        if (metrics.width > maxWidth && n > 0) {
+                            ctx.fillText(line, x, currentY);
+                            line = words[n] + ' ';
+                            currentY += lineHeight;
+                            lineCount++;
+                            if (lineCount >= maxLines) break;
+                        } else {
+                            line = testLine;
+                        }
+                    }
+                    if (lineCount < maxLines && line) {
+                        ctx.fillText(line, x, currentY);
+                    }
+                };
+
+                // Draw shape objects (Rectangles, Circles, Polygons, Connectors, Sticky Notes, Lines, Graphs, Rulers)
                 shapeObjectsRef.current.forEach(shpObj => {
                     compositeCtx.save();
+
+                    // 1. Sticky Note Card rendering
+                    if (shpObj.type === 'sticky_note') {
+                        compositeCtx.translate(shpObj.x, shpObj.y);
+                        if (shpObj.rotation) {
+                            compositeCtx.translate(shpObj.width / 2, shpObj.height / 2);
+                            compositeCtx.rotate(shpObj.rotation * Math.PI / 180);
+                            compositeCtx.translate(-shpObj.width / 2, -shpObj.height / 2);
+                        }
+                        const noteW = shpObj.width || 200;
+                        const noteH = shpObj.height || 200;
+                        const noteColor = shpObj.fillColor || shpObj.color || '#fef08a';
+
+                        // Card Body with rounded corners
+                        compositeCtx.fillStyle = noteColor;
+                        compositeCtx.shadowColor = 'rgba(0,0,0,0.18)';
+                        compositeCtx.shadowBlur = 10;
+                        compositeCtx.shadowOffsetY = 4;
+                        compositeCtx.beginPath();
+                        if (compositeCtx.roundRect) {
+                            compositeCtx.roundRect(0, 0, noteW, noteH, 12);
+                        } else {
+                            compositeCtx.rect(0, 0, noteW, noteH);
+                        }
+                        compositeCtx.fill();
+                        compositeCtx.shadowColor = 'transparent';
+
+                        // Subtle border
+                        compositeCtx.strokeStyle = 'rgba(0,0,0,0.12)';
+                        compositeCtx.lineWidth = 1;
+                        compositeCtx.stroke();
+
+                        // Header strip
+                        compositeCtx.fillStyle = 'rgba(0,0,0,0.06)';
+                        compositeCtx.fillRect(0, 0, noteW, 26);
+
+                        // Pin Indicator
+                        compositeCtx.fillStyle = '#ef4444';
+                        compositeCtx.beginPath();
+                        compositeCtx.arc(noteW / 2, 13, 4, 0, 2 * Math.PI);
+                        compositeCtx.fill();
+
+                        // Title & Text
+                        compositeCtx.fillStyle = '#1e293b';
+                        compositeCtx.textAlign = 'left';
+                        compositeCtx.textBaseline = 'top';
+                        let textOffsetY = 34;
+
+                        if (shpObj.title) {
+                            compositeCtx.font = "bold 13px 'Inter', sans-serif";
+                            compositeCtx.fillText(shpObj.title, 12, textOffsetY);
+                            textOffsetY += 20;
+                        }
+
+                        if (shpObj.text) {
+                            compositeCtx.font = "12px 'Inter', sans-serif";
+                            drawWrappedText(compositeCtx, shpObj.text, 12, textOffsetY, noteW - 24, 16, 8);
+                        }
+                        compositeCtx.restore();
+                        return;
+                    }
+
+                    // 2. Smart Connector Line rendering
+                    if (shpObj.type === 'connector') {
+                        let startX = shpObj.startX || 0;
+                        let startY = shpObj.startY || 0;
+                        let endX = shpObj.endX || 0;
+                        let endY = shpObj.endY || 0;
+
+                        // Resolve shape anchors if bound to shapes
+                        if (shpObj.sourceId) {
+                            const srcShape = shapeObjectsRef.current.find(s => s.id === shpObj.sourceId);
+                            if (srcShape) {
+                                startX = srcShape.x + (srcShape.width || 100) / 2;
+                                startY = srcShape.y + (srcShape.height || 100) / 2;
+                            }
+                        }
+                        if (shpObj.targetId) {
+                            const tgtShape = shapeObjectsRef.current.find(s => s.id === shpObj.targetId);
+                            if (tgtShape) {
+                                endX = tgtShape.x + (tgtShape.width || 100) / 2;
+                                endY = tgtShape.y + (tgtShape.height || 100) / 2;
+                            }
+                        }
+
+                        compositeCtx.strokeStyle = shpObj.color || '#3b82f6';
+                        compositeCtx.lineWidth = shpObj.strokeWidth || 2;
+                        compositeCtx.lineCap = 'round';
+                        compositeCtx.lineJoin = 'round';
+
+                        if (shpObj.borderStyle === 'dashed' || shpObj.lineStyle === 'dashed') {
+                            compositeCtx.setLineDash([6, 6]);
+                        } else if (shpObj.borderStyle === 'dotted' || shpObj.lineStyle === 'dotted') {
+                            compositeCtx.setLineDash([2, 4]);
+                        } else {
+                            compositeCtx.setLineDash([]);
+                        }
+
+                        compositeCtx.beginPath();
+                        compositeCtx.moveTo(startX, startY);
+
+                        const connType = shpObj.connectorType || 'orthogonal';
+                        if (connType === 'orthogonal') {
+                            // Elbow stepped path
+                            const midX = (startX + endX) / 2;
+                            compositeCtx.lineTo(midX, startY);
+                            compositeCtx.lineTo(midX, endY);
+                            compositeCtx.lineTo(endX, endY);
+                        } else if (connType === 'curved') {
+                            const dx = endX - startX;
+                            const dy = endY - startY;
+                            const cp1X = startX + dx * 0.2;
+                            const cp1Y = startY + dy * 0.8;
+                            compositeCtx.quadraticCurveTo(cp1X, cp1Y, endX, endY);
+                        } else {
+                            compositeCtx.lineTo(endX, endY);
+                        }
+                        compositeCtx.stroke();
+
+                        // Arrowheads
+                        const drawArrowHead = (fromX, fromY, toX, toY) => {
+                            const angle = Math.atan2(toY - fromY, toX - fromX);
+                            const headLen = Math.max(10, (shpObj.strokeWidth || 2) * 4);
+                            compositeCtx.beginPath();
+                            compositeCtx.moveTo(toX, toY);
+                            compositeCtx.lineTo(toX - headLen * Math.cos(angle - Math.PI / 6), toY - headLen * Math.sin(angle - Math.PI / 6));
+                            compositeCtx.lineTo(toX - headLen * Math.cos(angle + Math.PI / 6), toY - headLen * Math.sin(angle + Math.PI / 6));
+                            compositeCtx.closePath();
+                            compositeCtx.fillStyle = shpObj.color || '#3b82f6';
+                            compositeCtx.fill();
+                        };
+
+                        if (shpObj.arrowEnd === 'arrow') {
+                            drawArrowHead(startX, startY, endX, endY);
+                        }
+                        if (shpObj.arrowStart === 'arrow') {
+                            drawArrowHead(endX, endY, startX, startY);
+                        }
+
+                        compositeCtx.restore();
+                        return;
+                    }
+
+                    // 3. Standard Geometric Shapes (Rectangle, Circle, Triangle, Diamond, Hexagon, Star, Cloud, Arc, Lines, Graphs, Rulers)
                     compositeCtx.translate(shpObj.x, shpObj.y);
-                    // Handle rotation if any (Whiteboard doesn't support shape rotation yet but just in case)
                     if (shpObj.rotation) {
-                        compositeCtx.translate(shpObj.width/2, shpObj.height/2);
+                        compositeCtx.translate(shpObj.width / 2, shpObj.height / 2);
                         compositeCtx.rotate(shpObj.rotation * Math.PI / 180);
-                        compositeCtx.translate(-shpObj.width/2, -shpObj.height/2);
+                        compositeCtx.translate(-shpObj.width / 2, -shpObj.height / 2);
                     }
                     compositeCtx.strokeStyle = shpObj.color;
-                    compositeCtx.lineWidth = shpObj.strokeWidth;
+                    compositeCtx.lineWidth = shpObj.strokeWidth || 2;
                     compositeCtx.fillStyle = shpObj.fillColor || 'transparent';
+
+                    // Apply Border Styles: solid, dashed, dotted
+                    const bStyle = shpObj.borderStyle || 'solid';
+                    if (bStyle === 'dashed') {
+                        compositeCtx.setLineDash([Math.max(6, (shpObj.strokeWidth || 2) * 3), Math.max(4, (shpObj.strokeWidth || 2) * 2)]);
+                    } else if (bStyle === 'dotted') {
+                        compositeCtx.setLineDash([Math.max(2, shpObj.strokeWidth || 2), Math.max(3, (shpObj.strokeWidth || 2) * 1.5)]);
+                    } else {
+                        compositeCtx.setLineDash([]);
+                    }
 
                     compositeCtx.beginPath();
                     if (shpObj.type === 'rectangle') {
                         compositeCtx.rect(0, 0, shpObj.width, shpObj.height);
+                    } else if (shpObj.type === 'rounded_rect') {
+                        const r = Math.min(20, shpObj.width / 4, shpObj.height / 4);
+                        if (compositeCtx.roundRect) compositeCtx.roundRect(0, 0, shpObj.width, shpObj.height, r);
+                        else compositeCtx.rect(0, 0, shpObj.width, shpObj.height);
                     } else if (shpObj.type === 'circle') {
-                        compositeCtx.ellipse(shpObj.width / 2, shpObj.height / 2, shpObj.width / 2, shpObj.height / 2, 0, 0, 2 * Math.PI);
+                        compositeCtx.ellipse(shpObj.width / 2, shpObj.height / 2, Math.abs(shpObj.width / 2), Math.abs(shpObj.height / 2), 0, 0, 2 * Math.PI);
                     } else if (shpObj.type === 'triangle') {
                         compositeCtx.moveTo(shpObj.width / 2, 0);
                         compositeCtx.lineTo(0, shpObj.height);
                         compositeCtx.lineTo(shpObj.width, shpObj.height);
+                        compositeCtx.closePath();
+                    } else if (shpObj.type === 'diamond') {
+                        const w = shpObj.width, h = shpObj.height;
+                        compositeCtx.moveTo(w / 2, 0);
+                        compositeCtx.lineTo(w, h / 2);
+                        compositeCtx.lineTo(w / 2, h);
+                        compositeCtx.lineTo(0, h / 2);
+                        compositeCtx.closePath();
+                    } else if (shpObj.type === 'hexagon') {
+                        const w = shpObj.width, h = shpObj.height;
+                        compositeCtx.moveTo(w * 0.25, 0);
+                        compositeCtx.lineTo(w * 0.75, 0);
+                        compositeCtx.lineTo(w, h * 0.5);
+                        compositeCtx.lineTo(w * 0.75, h);
+                        compositeCtx.lineTo(w * 0.25, h);
+                        compositeCtx.lineTo(0, h * 0.5);
                         compositeCtx.closePath();
                     } else if (shpObj.type === 'star') {
                         const cx = shpObj.width / 2;
@@ -363,6 +582,17 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                             else compositeCtx.lineTo(x, y);
                         }
                         compositeCtx.closePath();
+                    } else if (shpObj.type === 'cloud') {
+                        const w = shpObj.width, h = shpObj.height;
+                        compositeCtx.moveTo(w * 0.2, h * 0.7);
+                        compositeCtx.bezierCurveTo(w * 0.05, h * 0.7, w * 0.05, h * 0.4, w * 0.2, h * 0.4);
+                        compositeCtx.bezierCurveTo(w * 0.2, h * 0.15, w * 0.45, h * 0.15, w * 0.5, h * 0.35);
+                        compositeCtx.bezierCurveTo(w * 0.6, h * 0.2, w * 0.85, h * 0.2, w * 0.85, h * 0.45);
+                        compositeCtx.bezierCurveTo(w * 0.98, h * 0.5, w * 0.98, h * 0.7, w * 0.85, h * 0.7);
+                        compositeCtx.closePath();
+                    } else if (shpObj.type === 'arc' || shpObj.type === 'curved_line') {
+                        compositeCtx.moveTo(0, shpObj.height);
+                        compositeCtx.quadraticCurveTo(shpObj.width / 2, 0, shpObj.width, shpObj.height);
                     } else if (shpObj.type === 'path') {
                         if (shpObj.points && shpObj.points.length > 0) {
                             const pts = shpObj.points;
@@ -386,25 +616,39 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                             compositeCtx.lineJoin = 'round';
                         }
                     } else if (shpObj.type === 'line') {
-                        compositeCtx.moveTo(shpObj.startX, shpObj.startY);
-                        compositeCtx.lineTo(shpObj.endX, shpObj.endY);
+                        compositeCtx.moveTo(shpObj.startX ?? 0, shpObj.startY ?? 0);
+                        compositeCtx.lineTo(shpObj.endX ?? shpObj.width, shpObj.endY ?? shpObj.height);
                         compositeCtx.lineCap = 'round';
-                    } else if (shpObj.type === 'arrow') {
-                        compositeCtx.moveTo(shpObj.startX, shpObj.startY);
-                        compositeCtx.lineTo(shpObj.endX, shpObj.endY);
-                        const angle = Math.atan2(shpObj.endY - shpObj.startY, shpObj.endX - shpObj.startX);
-                        const headLength = shpObj.strokeWidth * 4;
-                        const p1 = { x: shpObj.endX, y: shpObj.endY };
-                        const p2 = { x: shpObj.endX - headLength * Math.cos(angle - Math.PI / 6), y: shpObj.endY - headLength * Math.sin(angle - Math.PI / 6) };
-                        const p3 = { x: shpObj.endX - headLength * Math.cos(angle + Math.PI / 6), y: shpObj.endY - headLength * Math.sin(angle + Math.PI / 6) };
+                    } else if (shpObj.type === 'dashed_line') {
+                        compositeCtx.setLineDash([6, 6]);
+                        compositeCtx.moveTo(shpObj.startX ?? 0, shpObj.startY ?? 0);
+                        compositeCtx.lineTo(shpObj.endX ?? shpObj.width, shpObj.endY ?? shpObj.height);
+                        compositeCtx.lineCap = 'round';
+                    } else if (shpObj.type === 'arrow' || shpObj.type === 'double_arrow') {
+                        const sx = shpObj.startX ?? 0;
+                        const sy = shpObj.startY ?? 0;
+                        const ex = shpObj.endX ?? shpObj.width;
+                        const ey = shpObj.endY ?? shpObj.height;
+                        compositeCtx.moveTo(sx, sy);
+                        compositeCtx.lineTo(ex, ey);
                         compositeCtx.stroke();
-                        compositeCtx.beginPath();
-                        compositeCtx.moveTo(p1.x, p1.y);
-                        compositeCtx.lineTo(p2.x, p2.y);
-                        compositeCtx.lineTo(p3.x, p3.y);
-                        compositeCtx.closePath();
-                        compositeCtx.fillStyle = shpObj.color;
-                        compositeCtx.fill();
+
+                        // Arrowhead helper
+                        const drawHead = (fromX, fromY, toX, toY) => {
+                            const angle = Math.atan2(toY - fromY, toX - fromX);
+                            const headLength = Math.max(10, (shpObj.strokeWidth || 2) * 4);
+                            compositeCtx.beginPath();
+                            compositeCtx.moveTo(toX, toY);
+                            compositeCtx.lineTo(toX - headLength * Math.cos(angle - Math.PI / 6), toY - headLength * Math.sin(angle - Math.PI / 6));
+                            compositeCtx.lineTo(toX - headLength * Math.cos(angle + Math.PI / 6), toY - headLength * Math.sin(angle + Math.PI / 6));
+                            compositeCtx.closePath();
+                            compositeCtx.fillStyle = shpObj.color;
+                            compositeCtx.fill();
+                        };
+                        drawHead(sx, sy, ex, ey);
+                        if (shpObj.type === 'double_arrow') {
+                            drawHead(ex, ey, sx, sy);
+                        }
                         compositeCtx.beginPath();
                     } else if (shpObj.type === 'graph') {
                         // Background
@@ -414,14 +658,11 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                         // Grid lines
                         compositeCtx.beginPath();
                         compositeCtx.lineWidth = Math.max(0.5, shpObj.strokeWidth * 0.3);
-                        // setDash takes an array
                         compositeCtx.setLineDash([4, 4]);
                         compositeCtx.globalAlpha = 0.4;
                         for(let i=0; i<9; i++) {
-                            // H
                             compositeCtx.moveTo(shpObj.width/10, shpObj.height/10 + (shpObj.height*0.8) * (i/8));
                             compositeCtx.lineTo(shpObj.width*0.9, shpObj.height/10 + (shpObj.height*0.8) * (i/8));
-                            // V
                             compositeCtx.moveTo(shpObj.width/10 + (shpObj.width*0.8) * (i/8), shpObj.height/10);
                             compositeCtx.lineTo(shpObj.width/10 + (shpObj.width*0.8) * (i/8), shpObj.height*0.9);
                         }
@@ -437,23 +678,34 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                         // X axis
                         compositeCtx.moveTo(shpObj.width/10, shpObj.height/2);
                         compositeCtx.lineTo(shpObj.width*0.9, shpObj.height/2);
-                        
-                        // Y arrow
-                        compositeCtx.moveTo(shpObj.width/10, shpObj.height/10);
-                        compositeCtx.lineTo(shpObj.width/10 - 4, shpObj.height/10 + 8);
-                        compositeCtx.moveTo(shpObj.width/10, shpObj.height/10);
-                        compositeCtx.lineTo(shpObj.width/10 + 4, shpObj.height/10 + 8);
-                        // X arrow
-                        compositeCtx.moveTo(shpObj.width*0.9, shpObj.height/2);
-                        compositeCtx.lineTo(shpObj.width*0.9 - 8, shpObj.height/2 - 4);
-                        compositeCtx.moveTo(shpObj.width*0.9, shpObj.height/2);
-                        compositeCtx.lineTo(shpObj.width*0.9 - 8, shpObj.height/2 + 4);
+                        compositeCtx.stroke();
                     }
-                    
-                    if (shpObj.type !== 'graph') {
-                        if (shpObj.fillColor) compositeCtx.fill();
+
+                    if (shpObj.type !== 'graph' && !['line', 'dashed_line', 'arrow', 'double_arrow'].includes(shpObj.type)) {
+                        if (shpObj.fillColor && shpObj.fillColor !== 'transparent') compositeCtx.fill();
                     }
                     compositeCtx.stroke();
+
+                    // Double border style support
+                    if (bStyle === 'double' && ['rectangle', 'circle', 'rounded_rect', 'diamond', 'triangle'].includes(shpObj.type)) {
+                        compositeCtx.save();
+                        const inset = Math.max(3, (shpObj.strokeWidth || 2) * 1.5);
+                        compositeCtx.lineWidth = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.5));
+                        compositeCtx.beginPath();
+                        if (shpObj.type === 'rectangle') {
+                            if (shpObj.width > inset * 2 && shpObj.height > inset * 2) {
+                                compositeCtx.rect(inset, inset, shpObj.width - inset * 2, shpObj.height - inset * 2);
+                            }
+                        } else if (shpObj.type === 'circle') {
+                            const rx = shpObj.width / 2 - inset;
+                            const ry = shpObj.height / 2 - inset;
+                            if (rx > 0 && ry > 0) {
+                                compositeCtx.ellipse(shpObj.width / 2, shpObj.height / 2, rx, ry, 0, 0, 2 * Math.PI);
+                            }
+                        }
+                        compositeCtx.stroke();
+                        compositeCtx.restore();
+                    }
                     
                     // Draw text inside shape if any
                     if (shpObj.text !== undefined && shpObj.text !== '') {
@@ -473,6 +725,168 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                     }
 
                     compositeCtx.restore();
+                });
+
+                // Draw 3D Objects Layer (3D perspective mesh projection, normals, lighting, shading, wireframe)
+                threeDObjectsRef.current.forEach(obj3d => {
+                    try {
+                        const mesh = (obj3d.meshData && obj3d.meshData.vertices && obj3d.meshData.faces)
+                            ? obj3d.meshData
+                            : get3DModelMesh(obj3d.modelType || 'cube');
+                        if (!mesh || !mesh.vertices || !mesh.faces) return;
+
+                        const rotX = obj3d.rotX ?? -25;
+                        const rotY = obj3d.rotY ?? 45;
+                        const rotZ = obj3d.rotZ ?? 0;
+                        const radX = (rotX * Math.PI) / 180;
+                        const radY = (rotY * Math.PI) / 180;
+                        const radZ = (rotZ * Math.PI) / 180;
+                        const cosX = Math.cos(radX), sinX = Math.sin(radX);
+                        const cosY = Math.cos(radY), sinY = Math.sin(radY);
+                        const cosZ = Math.cos(radZ), sinZ = Math.sin(radZ);
+
+                        let lx = 0.5, ly = -0.7, lz = 0.5;
+                        if (obj3d.lightPreset === 'top') { lx = 0.1; ly = -0.95; lz = 0.3; }
+                        else if (obj3d.lightPreset === 'flat') { lx = 0; ly = 0; lz = 1; }
+
+                        const w = obj3d.width || 220;
+                        const h = obj3d.height || 220;
+
+                        const transformedVertices = mesh.vertices.map(([vx, vy, vz]) => {
+                            let x1 = vx * cosY + vz * sinY;
+                            let y1 = vy;
+                            let z1 = -vx * sinY + vz * cosY;
+
+                            let x2 = x1;
+                            let y2 = y1 * cosX - z1 * sinX;
+                            let z2 = y1 * sinX + z1 * cosX;
+
+                            let x3 = x2 * cosZ - y2 * sinZ;
+                            let y3 = x2 * sinZ + y2 * cosZ;
+                            let z3 = z2;
+
+                            const distance = 4;
+                            const factor = distance / (distance + z3);
+                            const scale = (Math.min(w, h) / 2) * 0.75;
+                            const px = w / 2 + x3 * factor * scale;
+                            const py = h / 2 + y3 * factor * scale;
+                            return { px, py, pz: z3, x3, y3, z3 };
+                        });
+
+                        const baseColor = obj3d.color || mesh.color || '#3b82f6';
+                        const isWireframe = obj3d.materialStyle === 'wireframe' || !!obj3d.wireframeOnly;
+                        const isFlat = obj3d.materialStyle === 'flat';
+                        const userOpacity = obj3d.opacity !== undefined ? obj3d.opacity : 1;
+
+                        const renderedFaces = mesh.faces.map(faceIndices => {
+                            if (faceIndices.length < 3) return null;
+                            const v0 = transformedVertices[faceIndices[0]];
+                            const v1 = transformedVertices[faceIndices[1]];
+                            const v2 = transformedVertices[faceIndices[2]];
+                            if (!v0 || !v1 || !v2) return null;
+
+                            const ax = v1.x3 - v0.x3, ay = v1.y3 - v0.y3, az = v1.z3 - v0.z3;
+                            const bx = v2.x3 - v0.x3, by = v2.y3 - v0.y3, bz = v2.z3 - v0.z3;
+                            const nx = ay * bz - az * by;
+                            const ny = az * bx - ax * bz;
+                            const nz = ax * by - ay * bx;
+                            const len = Math.hypot(nx, ny, nz) || 1;
+                            const nnx = nx / len, nny = ny / len, nnz = nz / len;
+
+                            const dot = nnx * lx + nny * ly + nnz * lz;
+                            const effDot = nnz < 0 ? -dot : dot;
+                            const intensity = isFlat ? 1.0 : Math.max(0.25, Math.min(1.0, effDot));
+                            const avgZ = faceIndices.reduce((sum, idx) => sum + (transformedVertices[idx]?.pz || 0), 0) / faceIndices.length;
+
+                            let faceFill = shadeColor(baseColor, intensity, obj3d.materialStyle);
+                            return { faceIndices, avgZ, faceFill, userOpacity };
+                        }).filter(Boolean);
+
+                        renderedFaces.sort((a, b) => b.avgZ - a.avgZ);
+
+                        compositeCtx.save();
+                        compositeCtx.translate(obj3d.x || 0, obj3d.y || 0);
+                        if (obj3d.rotation) {
+                            compositeCtx.translate(w / 2, h / 2);
+                            compositeCtx.rotate((obj3d.rotation * Math.PI) / 180);
+                            compositeCtx.translate(-w / 2, -h / 2);
+                        }
+
+                        renderedFaces.forEach(f => {
+                            compositeCtx.beginPath();
+                            f.faceIndices.forEach((idx, i) => {
+                                const pt = transformedVertices[idx];
+                                if (i === 0) compositeCtx.moveTo(pt.px, pt.py);
+                                else compositeCtx.lineTo(pt.px, pt.py);
+                            });
+                            compositeCtx.closePath();
+
+                            if (!isWireframe) {
+                                compositeCtx.fillStyle = f.faceFill;
+                                compositeCtx.globalAlpha = f.userOpacity;
+                                compositeCtx.fill();
+                            }
+                            compositeCtx.strokeStyle = baseColor;
+                            compositeCtx.lineWidth = 1;
+                            compositeCtx.globalAlpha = isWireframe ? 0.9 : 0.4;
+                            compositeCtx.stroke();
+                        });
+
+                        compositeCtx.restore();
+                    } catch (e) {
+                        console.error("Failed to render 3D object to composite recording", e);
+                    }
+                });
+
+                // Draw Embedded Media Players Layer (Videos, Audio, Embeds)
+                mediaObjectsRef.current.forEach(mObj => {
+                    try {
+                        compositeCtx.save();
+                        compositeCtx.translate(mObj.x || 0, mObj.y || 0);
+                        const mW = mObj.width || 480;
+                        const mH = mObj.height || 300;
+
+                        // Check if an active HTML <video> tag is present in the document
+                        const videoElement = document.querySelector(`.whiteboard-media-player video`);
+                        if (videoElement && videoElement.readyState >= 2 && !videoElement.paused) {
+                            compositeCtx.drawImage(videoElement, 0, 0, mW, mH);
+                        } else {
+                            // Render sleek media player frame
+                            compositeCtx.fillStyle = '#090d16';
+                            compositeCtx.beginPath();
+                            if (compositeCtx.roundRect) compositeCtx.roundRect(0, 0, mW, mH, 12);
+                            else compositeCtx.rect(0, 0, mW, mH);
+                            compositeCtx.fill();
+                            compositeCtx.strokeStyle = '#334155';
+                            compositeCtx.lineWidth = 2;
+                            compositeCtx.stroke();
+
+                            // Player Header
+                            compositeCtx.fillStyle = '#1e293b';
+                            compositeCtx.fillRect(0, 0, mW, 32);
+                            compositeCtx.fillStyle = '#f8fafc';
+                            compositeCtx.font = "bold 12px 'Inter', sans-serif";
+                            compositeCtx.textAlign = 'left';
+                            compositeCtx.textBaseline = 'middle';
+                            compositeCtx.fillText(mObj.title || 'Embedded Media Player', 12, 16);
+
+                            // Center Play Icon
+                            compositeCtx.fillStyle = '#6366f1';
+                            compositeCtx.beginPath();
+                            compositeCtx.arc(mW / 2, mH / 2, 22, 0, 2 * Math.PI);
+                            compositeCtx.fill();
+                            compositeCtx.fillStyle = '#ffffff';
+                            compositeCtx.beginPath();
+                            compositeCtx.moveTo(mW / 2 - 5, mH / 2 - 9);
+                            compositeCtx.lineTo(mW / 2 + 9, mH / 2);
+                            compositeCtx.lineTo(mW / 2 - 5, mH / 2 + 9);
+                            compositeCtx.closePath();
+                            compositeCtx.fill();
+                        }
+                        compositeCtx.restore();
+                    } catch (e) {
+                        console.error("Failed to render media player to composite recording", e);
+                    }
                 });
 
                 // Draw text objects

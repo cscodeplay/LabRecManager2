@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive, Bot } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive, Bot, Film, Video, Play, RefreshCw, Pencil, Grid } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { useAuthStore } from '@/lib/store';
@@ -17,6 +17,7 @@ import HtmlPreview from '@/components/HtmlPreview';
 import GoogleDriveBrowser from '@/components/GoogleDriveBrowser';
 import MediaPreviewModal from '@/components/MediaPreviewModal';
 import MoveCopyToDriveModal from '@/components/MoveCopyToDriveModal';
+import RecordingShareModal from '@/components/RecordingShareModal';
 import QRCode from 'qrcode';
 
 const CATEGORIES = [
@@ -62,7 +63,29 @@ export default function DocumentsPage() {
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
     const [viewMode, setViewMode] = useState('list'); // 'grid' or 'list' - default to list
-    const [activeTab, setActiveTab] = useState('my'); // 'my', 'shared', or 'trash'
+    const [activeTab, setActiveTab] = useState('my'); // 'my', 'shared', 'trash', 'drive', or 'recordings'
+    const searchParams = useSearchParams();
+
+    // Whiteboard Recordings State (merged into Documents page)
+    const [recordings, setRecordings] = useState([]);
+    const [recordingsLoading, setRecordingsLoading] = useState(false);
+    const [recordingsSearch, setRecordingsSearch] = useState('');
+    const [recordingsViewMode, setRecordingsViewMode] = useState('list');
+    const [previewRecording, setPreviewRecording] = useState(null);
+    const [recordingShareModalOpen, setRecordingShareModalOpen] = useState(false);
+    const [selectedRecordingId, setSelectedRecordingId] = useState(null);
+    const [copiedRecordingId, setCopiedRecordingId] = useState(null);
+    const [deleteRecordingConfirm, setDeleteRecordingConfirm] = useState(null);
+
+    // Sync active tab with URL query parameter ?tab=recordings
+    useEffect(() => {
+        if (!searchParams) return;
+        const tab = searchParams.get('tab');
+        if (['recordings', 'drive', 'trash', 'shared', 'my'].includes(tab)) {
+            setActiveTab(tab);
+        }
+    }, [searchParams]);
+
     const [sortField, setSortField] = useState('createdAt'); // 'name', 'fileType', 'fileSize', 'createdAt'
     const [sortDirection, setSortDirection] = useState('desc'); // 'asc' or 'desc'
     const [expandedMobileDocId, setExpandedMobileDocId] = useState(null); // Tracks open action tray on mobile
@@ -234,6 +257,67 @@ export default function DocumentsPage() {
         } catch (err) {
             console.error('Failed to load folders:', err);
         }
+    };
+
+    const loadRecordings = async () => {
+        try {
+            setRecordingsLoading(true);
+            const res = await api.get('/recordings');
+            if (res.data?.success) {
+                setRecordings(res.data.data || []);
+            }
+        } catch (err) {
+            console.error('Failed to load recordings:', err);
+        } finally {
+            setRecordingsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (_hasHydrated && isAuthenticated) {
+            loadRecordings();
+        }
+    }, [_hasHydrated, isAuthenticated]);
+
+    const handleCopyRecordingLink = async (recording) => {
+        try {
+            const shareUrl = `${(process.env.NEXT_PUBLIC_BASE_URL || window.location.origin)}/recordings/watch/${recording.shareToken}`;
+            await navigator.clipboard.writeText(shareUrl);
+            setCopiedRecordingId(recording.id);
+            toast.success('Share link copied!');
+            setTimeout(() => setCopiedRecordingId(null), 2000);
+        } catch (e) {
+            toast.error('Failed to copy link');
+        }
+    };
+
+    const handleDeleteRecording = async (id) => {
+        try {
+            await api.delete(`/recordings/${id}`);
+            setRecordings(prev => prev.filter(r => r.id !== id));
+            setDeleteRecordingConfirm(null);
+            toast.success('Recording deleted');
+        } catch (error) {
+            toast.error('Failed to delete recording');
+        }
+    };
+
+    const handleShareRecording = async (targetsPayload) => {
+        try {
+            const res = await api.post(`/recordings/${selectedRecordingId}/share`, { targets: targetsPayload });
+            if (res.data.success) {
+                toast.success('Recording shared successfully!');
+                setRecordingShareModalOpen(false);
+                setSelectedRecordingId(null);
+            }
+        } catch (error) {
+            console.error('Failed to share recording:', error);
+            toast.error('Failed to share recording');
+        }
+    };
+
+    const handleEmbedInWhiteboard = (recording) => {
+        router.push(`/whiteboard?embedRecording=${recording.id}&recordingTitle=${encodeURIComponent(recording.title || 'Recording')}`);
     };
 
     const handleCreateFolder = async (e) => {
@@ -1388,10 +1472,24 @@ export default function DocumentsPage() {
                 >
                     <HardDrive className="w-5 h-5" />
                 </button>
+                <button
+                    onClick={() => setActiveTab('recordings')}
+                    className={`h-10 w-10 rounded-xl relative flex items-center justify-center transition shadow-2xs ${activeTab === 'recordings'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
+                    title={`Whiteboard Recordings${recordings.length > 0 ? ` (${recordings.length})` : ''}`}
+                >
+                    <Film className="w-5 h-5" />
+                    {recordings.length > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-indigo-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full ring-2 ring-white dark:ring-slate-900">
+                            {recordings.length}
+                        </span>
+                    )}
+                </button>
             </div>
 
             {/* Filters */}
-            {activeTab !== 'drive' && (
+            {activeTab !== 'drive' && activeTab !== 'recordings' && (
                 <div className="flex flex-col gap-3 mb-6">
                     <div className="flex flex-col sm:flex-row gap-3">
                         <div className="relative flex-1">
@@ -1666,6 +1764,308 @@ export default function DocumentsPage() {
                             </div>
                         </div>
                     )
+                ) : activeTab === 'recordings' ? (
+                    /* Whiteboard Recordings Management View */
+                    <div className="space-y-4">
+                        {/* Recordings Header & Toolbar */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-850 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs">
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <Film className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                                    <h2 className="text-base font-bold text-slate-900 dark:text-white">Whiteboard Recordings</h2>
+                                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                        {recordings.length}
+                                    </span>
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                    Browse, preview, share, and embed canvas recording sessions directly into Whiteboard.
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="relative">
+                                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search recordings..."
+                                        value={recordingsSearch}
+                                        onChange={(e) => setRecordingsSearch(e.target.value)}
+                                        className="pl-9 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-48 sm:w-60"
+                                    />
+                                </div>
+                                <div className="flex bg-slate-100 dark:bg-slate-800 rounded-xl p-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setRecordingsViewMode('grid')}
+                                        className={`p-1.5 rounded-lg transition ${recordingsViewMode === 'grid' ? 'bg-white dark:bg-slate-700 shadow-2xs text-indigo-600 dark:text-white' : 'text-slate-400 hover:text-slate-600'}`}
+                                        title="Grid View"
+                                    >
+                                        <Grid3X3 className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setRecordingsViewMode('list')}
+                                        className={`p-1.5 rounded-lg transition ${recordingsViewMode === 'list' ? 'bg-white dark:bg-slate-700 shadow-2xs text-indigo-600 dark:text-white' : 'text-slate-400 hover:text-slate-600'}`}
+                                        title="List View"
+                                    >
+                                        <List className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={loadRecordings}
+                                    className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
+                                    title="Refresh Recordings"
+                                >
+                                    <RefreshCw className={`w-4 h-4 ${recordingsLoading ? 'animate-spin' : ''}`} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => router.push('/whiteboard')}
+                                    className="btn btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3 rounded-xl"
+                                >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                    <span>New Recording</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Content Area */}
+                        {recordingsLoading ? (
+                            <div className="py-20 text-center text-slate-500 flex flex-col items-center justify-center gap-3">
+                                <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                                <span className="text-sm">Loading recordings...</span>
+                            </div>
+                        ) : recordings.filter(r => !recordingsSearch || r.title?.toLowerCase().includes(recordingsSearch.toLowerCase())).length === 0 ? (
+                            <div className="text-center py-20 bg-white dark:bg-slate-850 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+                                <Video className="w-12 h-12 mx-auto text-slate-300 dark:text-slate-600 mb-3" />
+                                <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300">
+                                    {recordingsSearch ? 'No matching recordings found' : 'No whiteboard recordings yet'}
+                                </h3>
+                                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                                    Record your whiteboard sessions using the recorder button on the whiteboard toolbar to save lectures, solutions, and demonstrations.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={() => router.push('/whiteboard')}
+                                    className="btn btn-primary mt-4 text-xs"
+                                >
+                                    Open Whiteboard to Record
+                                </button>
+                            </div>
+                        ) : recordingsViewMode === 'grid' ? (
+                            /* Grid View */
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {recordings
+                                    .filter(r => !recordingsSearch || r.title?.toLowerCase().includes(recordingsSearch.toLowerCase()))
+                                    .map(rec => (
+                                        <div
+                                            key={rec.id}
+                                            className="card overflow-hidden bg-white dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 rounded-2xl hover:shadow-lg transition-all duration-200 flex flex-col group"
+                                        >
+                                            {/* Video Thumbnail / Preview Poster */}
+                                            <div
+                                                onClick={() => setPreviewRecording(rec)}
+                                                className="relative aspect-video bg-slate-900 overflow-hidden cursor-pointer flex items-center justify-center group-hover:brightness-105"
+                                            >
+                                                {rec.thumbnailUrl ? (
+                                                    <img src={rec.thumbnailUrl} alt={rec.title} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <div className="w-full h-full bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 flex items-center justify-center">
+                                                        <Film className="w-12 h-12 text-indigo-500/40" />
+                                                    </div>
+                                                )}
+                                                <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                                                    <div className="w-12 h-12 rounded-full bg-indigo-600/90 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                                        <Play className="w-5 h-5 ml-0.5 fill-white" />
+                                                    </div>
+                                                </div>
+                                                {rec.duration && (
+                                                    <span className="absolute bottom-2 right-2 bg-black/80 backdrop-blur-xs text-white text-[10px] font-mono px-2 py-0.5 rounded-md font-semibold">
+                                                        {Math.floor(rec.duration / 60)}:{(rec.duration % 60).toString().padStart(2, '0')}
+                                                    </span>
+                                                )}
+                                                {rec.isPublic && (
+                                                    <span className="absolute top-2 left-2 bg-emerald-500/90 text-white text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                                        Public
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Details & Meta */}
+                                            <div className="p-4 flex-1 flex flex-col justify-between">
+                                                <div>
+                                                    <h3 className="font-semibold text-slate-800 dark:text-white truncate text-sm" title={rec.title}>
+                                                        {rec.title}
+                                                    </h3>
+                                                    {rec.description && (
+                                                        <p className="text-xs text-slate-400 mt-1 line-clamp-2">{rec.description}</p>
+                                                    )}
+                                                    <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 mt-2">
+                                                        <span className="flex items-center gap-1">
+                                                            <Calendar className="w-3.5 h-3.5" />
+                                                            {new Date(rec.createdAt).toLocaleDateString()}
+                                                        </span>
+                                                        {rec.fileSize && (
+                                                            <span>• {(rec.fileSize / (1024 * 1024)).toFixed(1)} MB</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Actions */}
+                                                <div className="flex items-center justify-between gap-1.5 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleEmbedInWhiteboard(rec)}
+                                                        className="flex-1 py-1.5 px-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                                                        title="Embed and play directly in Whiteboard canvas"
+                                                    >
+                                                        <Pencil className="w-3.5 h-3.5" />
+                                                        <span>Embed</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setSelectedRecordingId(rec.id); setRecordingShareModalOpen(true); }}
+                                                        className="p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                                        title="Share Recording"
+                                                    >
+                                                        <Share2 className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleCopyRecordingLink(rec)}
+                                                        className="p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                                        title="Copy Share Link"
+                                                    >
+                                                        {copiedRecordingId === rec.id ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                                                    </button>
+                                                    {(rec.cloudinaryUrl || rec.videoUrl) && (
+                                                        <a
+                                                            href={rec.cloudinaryUrl || rec.videoUrl}
+                                                            download={`recording-${rec.id}.mp4`}
+                                                            className="p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                                            title="Download MP4"
+                                                        >
+                                                            <Download className="w-4 h-4" />
+                                                        </a>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setDeleteRecordingConfirm(rec.id)}
+                                                        className="p-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                                        title="Delete Recording"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                            </div>
+                        ) : (
+                            /* List View */
+                            <div className="card overflow-hidden bg-white dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 rounded-2xl">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full min-w-[700px]">
+                                        <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+                                            <tr>
+                                                <th className="text-left p-3.5 text-xs font-semibold text-slate-600 dark:text-slate-400">Recording</th>
+                                                <th className="text-left p-3.5 text-xs font-semibold text-slate-600 dark:text-slate-400">Duration</th>
+                                                <th className="text-left p-3.5 text-xs font-semibold text-slate-600 dark:text-slate-400">Date</th>
+                                                <th className="text-left p-3.5 text-xs font-semibold text-slate-600 dark:text-slate-400">Size</th>
+                                                <th className="text-left p-3.5 text-xs font-semibold text-slate-600 dark:text-slate-400">Status</th>
+                                                <th className="text-right p-3.5 text-xs font-semibold text-slate-600 dark:text-slate-400">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                            {recordings
+                                                .filter(r => !recordingsSearch || r.title?.toLowerCase().includes(recordingsSearch.toLowerCase()))
+                                                .map(rec => (
+                                                    <tr key={rec.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition">
+                                                        <td className="p-3.5">
+                                                            <div className="flex items-center gap-3">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setPreviewRecording(rec)}
+                                                                    className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 hover:scale-105 transition-transform"
+                                                                    title="Play Preview"
+                                                                >
+                                                                    <Play className="w-4 h-4 ml-0.5 fill-current" />
+                                                                </button>
+                                                                <div className="min-w-0">
+                                                                    <p className="font-semibold text-slate-900 dark:text-white text-sm truncate max-w-xs">{rec.title}</p>
+                                                                    {rec.description && <p className="text-xs text-slate-400 truncate max-w-xs">{rec.description}</p>}
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-3.5 text-xs text-slate-600 dark:text-slate-300 font-mono">
+                                                            {rec.duration ? `${Math.floor(rec.duration / 60)}m ${rec.duration % 60}s` : '--'}
+                                                        </td>
+                                                        <td className="p-3.5 text-xs text-slate-600 dark:text-slate-300">
+                                                            {new Date(rec.createdAt).toLocaleDateString()}
+                                                        </td>
+                                                        <td className="p-3.5 text-xs text-slate-600 dark:text-slate-300">
+                                                            {rec.fileSize ? `${(rec.fileSize / (1024 * 1024)).toFixed(1)} MB` : '--'}
+                                                        </td>
+                                                        <td className="p-3.5">
+                                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${rec.isPublic ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                                                                {rec.isPublic ? 'Public' : 'Private'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-3.5 text-right">
+                                                            <div className="flex items-center justify-end gap-1.5">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleEmbedInWhiteboard(rec)}
+                                                                    className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 flex items-center gap-1 transition"
+                                                                    title="Embed into Whiteboard canvas"
+                                                                >
+                                                                    <Pencil className="w-3 h-3" />
+                                                                    <span>Embed</span>
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => { setSelectedRecordingId(rec.id); setRecordingShareModalOpen(true); }}
+                                                                    className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                                                                    title="Share"
+                                                                >
+                                                                    <Share2 className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleCopyRecordingLink(rec)}
+                                                                    className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                                                                    title="Copy Link"
+                                                                >
+                                                                    {copiedRecordingId === rec.id ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                                                                </button>
+                                                                {(rec.cloudinaryUrl || rec.videoUrl) && (
+                                                                    <a
+                                                                        href={rec.cloudinaryUrl || rec.videoUrl}
+                                                                        download={`recording-${rec.id}.mp4`}
+                                                                        className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                                                                        title="Download MP4"
+                                                                    >
+                                                                        <Download className="w-4 h-4" />
+                                                                    </a>
+                                                                )}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setDeleteRecordingConfirm(rec.id)}
+                                                                    className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition"
+                                                                    title="Delete"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 ) : filteredDocuments.length === 0 && (activeTab !== 'my' || folders.length === 0) ? (
                     <div className="text-center py-12">
                         <FileText className="w-12 h-12 mx-auto text-slate-300 mb-3" />
@@ -1697,6 +2097,35 @@ export default function DocumentsPage() {
                                 </button>
                             )}
                         </div>
+
+                        {/* System Folder: Whiteboard Recordings (Grid) */}
+                        {activeTab === 'my' && !currentFolder && (
+                            <div
+                                onClick={() => setActiveTab('recordings')}
+                                className="card p-4 hover:shadow-md transition-all border border-indigo-100 bg-indigo-50/40 hover:bg-indigo-50/70 relative cursor-pointer group"
+                            >
+                                <div className="flex items-start justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+                                            <Film className="w-6 h-6" />
+                                        </div>
+                                        <div className="overflow-hidden">
+                                            <div className="flex items-center gap-1.5">
+                                                <h3 className="font-semibold text-slate-800 truncate">🎥 Whiteboard Recordings</h3>
+                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">System Folder</span>
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                {recordings.length} {recordings.length === 1 ? 'recording' : 'recordings'} • Canvas video sessions
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-between mt-3 pt-3 border-t border-indigo-100/60 text-xs text-indigo-600 font-medium">
+                                    <span>Browse & Embed</span>
+                                    <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                                </div>
+                            </div>
+                        )}
 
                         {/* Folders (Grid) */}
                         {activeTab === 'my' && folders.map(folder => (
@@ -1940,6 +2369,45 @@ export default function DocumentsPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
+                                    {/* System Folder: Whiteboard Recordings (List) */}
+                                    {activeTab === 'my' && !currentFolder && (
+                                        <tr
+                                            onClick={() => setActiveTab('recordings')}
+                                            className="border-b border-indigo-50 bg-indigo-50/20 hover:bg-indigo-50/60 cursor-pointer group transition"
+                                        >
+                                            <td className="p-3">
+                                                <div className="w-4 h-4 rounded border border-indigo-300 bg-indigo-100/50 flex items-center justify-center text-[10px] text-indigo-700">★</div>
+                                            </td>
+                                            <td className="p-3">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 shadow-2xs">
+                                                        <Film className="w-4 h-4" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <p className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">🎥 Whiteboard Recordings</p>
+                                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">System Folder</span>
+                                                        </div>
+                                                        <span className="text-xs text-slate-500">{recordings.length} recordings • Recorded canvas sessions</span>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="p-3 text-sm text-slate-600 hidden md:table-cell">Video Sessions</td>
+                                            <td className="p-3 text-sm text-slate-600 hidden md:table-cell">{recordings.length} items</td>
+                                            {activeTab === 'my' && <td className="p-3 text-sm text-slate-500 hidden sm:table-cell">System</td>}
+                                            <td className="p-3 text-sm text-slate-500 hidden lg:table-cell">--</td>
+                                            <td className="p-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); setActiveTab('recordings'); }}
+                                                    className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
+                                                >
+                                                    Open Recordings
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    )}
+
                                     {/* Folders (List) */}
                                     {activeTab === 'my' && folders.map(folder => (
                                         <tr key={folder.id}
@@ -2135,6 +2603,32 @@ export default function DocumentsPage() {
 
                         {/* Mobile Collapsible Records View */}
                         <div className="md:hidden divide-y divide-slate-100">
+                            {/* System Folder: Whiteboard Recordings (Mobile) */}
+                            {activeTab === 'my' && !currentFolder && (
+                                <div
+                                    onClick={() => setActiveTab('recordings')}
+                                    className="p-4 bg-indigo-50/30 hover:bg-indigo-50/60 transition cursor-pointer"
+                                >
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                                            <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                                                <Film className="w-4 h-4" />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-1.5">
+                                                    <p className="font-semibold text-slate-900 truncate">🎥 Whiteboard Recordings</p>
+                                                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-700">System</span>
+                                                </div>
+                                                <p className="text-xs text-slate-500 mt-0.5">
+                                                    {recordings.length} recordings • Video sessions
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <ChevronRight className="w-4 h-4 text-indigo-500 shrink-0" />
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Folders (Mobile Collapsible Records) */}
                             {activeTab === 'my' && folders.map(folder => {
                                 const isExpanded = expandedMobileDocId === `folder-${folder.id}`;
@@ -3365,6 +3859,125 @@ export default function DocumentsPage() {
                     setSelectedDocs(new Set());
                 }}
             />
+
+            {/* Whiteboard Recording Share Modal */}
+            <RecordingShareModal
+                isOpen={recordingShareModalOpen}
+                onClose={() => {
+                    setRecordingShareModalOpen(false);
+                    setSelectedRecordingId(null);
+                }}
+                onShare={handleShareRecording}
+                recordingId={selectedRecordingId}
+            />
+
+            {/* Whiteboard Recording Preview Player Modal */}
+            {previewRecording && (
+                <div 
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+                    onClick={() => setPreviewRecording(null)}
+                >
+                    <div 
+                        className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden max-w-3xl w-full flex flex-col"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-4 border-b border-slate-800 text-white">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <Film className="w-5 h-5 text-indigo-400 shrink-0" />
+                                <h3 className="font-bold text-sm truncate">{previewRecording.title}</h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPreviewRecording(null)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Player */}
+                        <div className="bg-black flex items-center justify-center max-h-[65vh]">
+                            <video
+                                src={previewRecording.cloudinaryUrl || previewRecording.videoUrl}
+                                controls
+                                autoPlay
+                                className="w-full max-h-[65vh] object-contain"
+                            />
+                        </div>
+
+                        {/* Footer Actions */}
+                        <div className="p-3.5 bg-slate-850 flex items-center justify-between border-t border-slate-800 gap-2">
+                            <div className="text-xs text-slate-400">
+                                {previewRecording.duration ? `${Math.floor(previewRecording.duration / 60)}m ${previewRecording.duration % 60}s` : ''} • {new Date(previewRecording.createdAt).toLocaleDateString()}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const rec = previewRecording;
+                                        setPreviewRecording(null);
+                                        handleEmbedInWhiteboard(rec);
+                                    }}
+                                    className="btn btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3 rounded-xl"
+                                >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                    <span>Embed in Whiteboard</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleCopyRecordingLink(previewRecording)}
+                                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs flex items-center gap-1.5 transition"
+                                >
+                                    <Copy className="w-3.5 h-3.5" />
+                                    <span>Copy Link</span>
+                                </button>
+                                {(previewRecording.cloudinaryUrl || previewRecording.videoUrl) && (
+                                    <a
+                                        href={previewRecording.cloudinaryUrl || previewRecording.videoUrl}
+                                        download={`recording-${previewRecording.id}.mp4`}
+                                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs flex items-center gap-1.5 transition"
+                                    >
+                                        <Download className="w-3.5 h-3.5" />
+                                        <span>Download</span>
+                                    </a>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Recording Confirmation Modal */}
+            {deleteRecordingConfirm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-850 p-6 rounded-2xl max-w-sm w-full border border-slate-200 dark:border-slate-800 shadow-2xl">
+                        <div className="flex items-center gap-3 text-rose-600 mb-3">
+                            <Trash2 className="w-6 h-6" />
+                            <h3 className="text-base font-bold text-slate-900 dark:text-white">Delete Recording?</h3>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
+                            Are you sure you want to permanently delete this whiteboard recording? This action cannot be undone.
+                        </p>
+                        <div className="flex justify-end gap-2.5">
+                            <button
+                                type="button"
+                                onClick={() => setDeleteRecordingConfirm(null)}
+                                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleDeleteRecording(deleteRecordingConfirm)}
+                                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white transition shadow-xs"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
         </div>
     );
