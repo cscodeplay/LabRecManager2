@@ -105,6 +105,70 @@ const U = {
 // Instructor123!: $2b$10$Nj1cC.7GrSBxROxUD3AJ5eA5L/nI0VXtJLvAbXk5Wu3TYpK.BulQq
 // student123: $2b$10$MYGc0dD.qTR.q2jk8.vgNecKebRnLacNVTu//wJkKBUK3xPOtPxfa
 
+
+const girlsList = [
+  { first: 'Ananya', hindiFirst: 'अनन्या', last: 'Sharma', hindiLast: 'शर्मा' },
+  { first: 'Diya', hindiFirst: 'दिया', last: 'Patel', hindiLast: 'पटेल' },
+  { first: 'Ishita', hindiFirst: 'इशिता', last: 'Gupta', hindiLast: 'गुप्ता' },
+  { first: 'Riya', hindiFirst: 'रिया', last: 'Singh', hindiLast: 'सिंह' },
+  { first: 'Sneha', hindiFirst: 'स्नेहा', last: 'Reddy', hindiLast: 'रेड्डी' },
+  { first: 'Pooja', hindiFirst: 'पूजा', last: 'Verma', hindiLast: 'वर्मा' },
+  { first: 'Simran', hindiFirst: 'सिमरन', last: 'Kaur', hindiLast: 'कौर' },
+  { first: 'Tanvi', hindiFirst: 'तन्वी', last: 'Joshi', hindiLast: 'जोशी' },
+  { first: 'Kavya', hindiFirst: 'काव्या', last: 'Nair', hindiLast: 'नायर' },
+  { first: 'Meera', hindiFirst: 'मीरा', last: 'Iyer', hindiLast: 'अय्यर' },
+  { first: 'Shreya', hindiFirst: 'श्रेया', last: 'Sen', hindiLast: 'सेन' },
+  { first: 'Neha', hindiFirst: 'नेहा', last: 'Bhatia', hindiLast: 'भाटिया' },
+  { first: 'Aditi', hindiFirst: 'अदिति', last: 'Rao', hindiLast: 'राव' },
+  { first: 'Priyanka', hindiFirst: 'प्रियंका', last: 'Das', hindiLast: 'दास' },
+  { first: 'Khushi', hindiFirst: 'खुशी', last: 'Mehta', hindiLast: 'मेहता' },
+  { first: 'Roshni', hindiFirst: 'रोशनी', last: 'Saxena', hindiLast: 'सक्सेना' },
+  { first: 'Navya', hindiFirst: 'नव्या', last: 'Choudhary', hindiLast: 'चौधरी' },
+  { first: 'Mansi', hindiFirst: 'मानसी', last: 'Agarwal', hindiLast: 'अग्रवाल' },
+  { first: 'Jaspreet', hindiFirst: 'जसप्रीत', last: 'Kaur', hindiLast: 'कौर' },
+  { first: 'Harleen', hindiFirst: 'हरलीन', last: 'Kaur', hindiLast: 'कौर' },
+  { first: 'Avani', hindiFirst: 'अवनी', last: 'Deshmukh', hindiLast: 'देशमुख' },
+  { first: 'Bhavya', hindiFirst: 'भव्या', last: 'Trivedi', hindiLast: 'त्रिवेदी' },
+  { first: 'Chhavi', hindiFirst: 'छवि', last: 'Singhania', hindiLast: 'सिंघानिया' },
+  { first: 'Drishti', hindiFirst: 'दृष्टि', last: 'Malhotra', hindiLast: 'मल्होत्रा' },
+  { first: 'Esha', hindiFirst: 'ईशा', last: 'Pillai', hindiLast: 'पिल्लई' },
+  { first: 'Gargi', hindiFirst: 'गार्गी', last: 'Mukherjee', hindiLast: 'मुखर्जी' },
+  { first: 'Ishani', hindiFirst: 'ईशानी', last: 'Banerjee', hindiLast: 'बनर्जी' },
+  { first: 'Jiya', hindiFirst: 'जिया', last: 'Kulkarni', hindiLast: 'कुलकर्णी' },
+  { first: 'Kriti', hindiFirst: 'कृति', last: 'Menon', hindiLast: 'मेनन' },
+  { first: 'Lavanya', hindiFirst: 'लावण्या', last: 'Jain', hindiLast: 'जैन' },
+  { first: 'Nandini', hindiFirst: 'नंदिनी', last: 'Mittal', hindiLast: 'मित्तल' },
+  { first: 'Pallavi', hindiFirst: 'पल्लवी', last: 'Sethi', hindiLast: 'सेठी' }
+];
+
+const boysList = [
+  { first: 'Aarav', hindiFirst: 'आरव', last: 'Sharma', hindiLast: 'शर्मा' },
+  { first: 'Rohan', hindiFirst: 'रोहन', last: 'Verma', hindiLast: 'वर्मा' },
+  { first: 'Kabir', hindiFirst: 'कबीर', last: 'Mehta', hindiLast: 'मेहता' },
+  { first: 'Vikram', hindiFirst: 'विक्रम', last: 'Malhotra', hindiLast: 'मल्होत्रा' },
+  { first: 'Aditya', hindiFirst: 'आदित्य', last: 'Singh', hindiLast: 'सिंह' },
+  { first: 'Manpreet', hindiFirst: 'मनप्रीत', last: 'Singh', hindiLast: 'सिंह' },
+  { first: 'Gurpreet', hindiFirst: 'गुरप्रीत', last: 'Singh', hindiLast: 'सिंह' },
+  { first: 'Aryan', hindiFirst: 'आर्यन', last: 'Kapoor', hindiLast: 'कपूर' },
+  { first: 'Karan', hindiFirst: 'करण', last: 'Johar', hindiLast: 'जौहर' },
+  { first: 'Yash', hindiFirst: 'यश', last: 'Khanna', hindiLast: 'खन्ना' },
+  { first: 'Rahul', hindiFirst: 'राहुल', last: 'Gupta', hindiLast: 'गुप्ता' },
+  { first: 'Arjun', hindiFirst: 'अर्जुन', last: 'Nair', hindiLast: 'नायर' },
+  { first: 'Dev', hindiFirst: 'देव', last: 'Patel', hindiLast: 'पटेल' },
+  { first: 'Kunal', hindiFirst: 'कुणाल', last: 'Bhatia', hindiLast: 'भाटिया' },
+  { first: 'Sahil', hindiFirst: 'साहिल', last: 'Sethi', hindiLast: 'सेठी' },
+  { first: 'Pranav', hindiFirst: 'प्रणव', last: 'Joshi', hindiLast: 'जोशी' },
+  { first: 'Varun', hindiFirst: 'वरुण', last: 'Dhawan', hindiLast: 'धवन' },
+  { first: 'Siddharth', hindiFirst: 'सिद्धार्थ', last: 'Roy', hindiLast: 'रॉय' },
+  { first: 'Harshit', hindiFirst: 'हर्षित', last: 'Bansal', hindiLast: 'बंसल' },
+  { first: 'Ritvik', hindiFirst: 'ऋत्विक', last: 'Soni', hindiLast: 'सोनी' }
+];
+
+const studentSeedList = [
+  ...girlsList.map((g, idx) => ({ ...g, gender: 'female', idx: idx + 1 })),
+  ...boysList.map((b, idx) => ({ ...b, gender: 'male', idx: idx + 1 + girlsList.length }))
+];
+
 const sqlParts = [];
 
 sqlParts.push(`-- =============================================================================
@@ -172,19 +236,29 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 `);
 
-// 3. users (9 users across roles)
+// 3. users (61 users: 9 staff/admins + 52 students: 32 girls, 20 boys)
+const studentUserRows = studentSeedList.map(s => {
+  const numStr = s.idx.toString().padStart(3, '0');
+  const email = `${s.first.toLowerCase()}.${s.last.toLowerCase()}${s.idx}@dps.edu`;
+  const admNo = `ADM-2025-${numStr}`;
+  const stuId = `STU-2025-${numStr}`;
+  const userId = uuid(U.user, 9 + s.idx);
+  return `  ('${userId}', '${uuid(U.school, 1)}', '${email}', '$2b$10$MYGc0dD.qTR.q2jk8.vgNecKebRnLacNVTu//wJkKBUK3xPOtPxfa', 'student', '${s.first}', '${s.hindiFirst}', '${s.last}', '${s.hindiLast}', NULL, '${admNo}', '${stuId}', '${s.gender}', true, NOW(), NOW())`;
+}).join(',\n');
+
 sqlParts.push(`-- 3. users
-INSERT INTO users (id, school_id, email, password_hash, role, first_name, first_name_hindi, last_name, last_name_hindi, employee_id, admission_number, student_id, is_active, created_at, updated_at)
+INSERT INTO users (id, school_id, email, password_hash, role, first_name, first_name_hindi, last_name, last_name_hindi, employee_id, admission_number, student_id, gender, is_active, created_at, updated_at)
 VALUES 
-  ('${uuid(U.user, 1)}', '${uuid(U.school, 1)}', 'admin@dps.edu', '$2b$10$1qU0Hx9rCMyvrpOPpPPyzOab9p5PspOc6K4lGhdb6QB.N406LY13G', 'admin', 'Ramesh', 'रमेश', 'Sharma', 'शर्मा', 'EMP-ADM-01', NULL, NULL, true, NOW(), NOW()),
-  ('${uuid(U.user, 2)}', '${uuid(U.school, 1)}', 'principal@dps.edu', '$2b$10$1qU0Hx9rCMyvrpOPpPPyzOab9p5PspOc6K4lGhdb6QB.N406LY13G', 'principal', 'Sunita', 'सुनीता', 'Verma', 'वर्मा', 'EMP-PRN-01', NULL, NULL, true, NOW(), NOW()),
-  ('${uuid(U.user, 3)}', '${uuid(U.school, 1)}', 'instructor1@dps.edu', '$2b$10$Nj1cC.7GrSBxROxUD3AJ5eA5L/nI0VXtJLvAbXk5Wu3TYpK.BulQq', 'instructor', 'Rajesh', 'राजेश', 'Kumar', 'कुमार', 'EMP-INS-01', NULL, NULL, true, NOW(), NOW()),
-  ('${uuid(U.user, 4)}', '${uuid(U.school, 1)}', 'instructor2@dps.edu', '$2b$10$Nj1cC.7GrSBxROxUD3AJ5eA5L/nI0VXtJLvAbXk5Wu3TYpK.BulQq', 'instructor', 'Priya', 'प्रिया', 'Singh', 'सिंह', 'EMP-INS-02', NULL, NULL, true, NOW(), NOW()),
-  ('${uuid(U.user, 5)}', '${uuid(U.school, 1)}', 'student1@dps.edu', '$2b$10$MYGc0dD.qTR.q2jk8.vgNecKebRnLacNVTu//wJkKBUK3xPOtPxfa', 'student', 'Aarav', 'आरव', 'Patel', 'पटेल', NULL, 'ADM-2025-001', 'STU-001', true, NOW(), NOW()),
-  ('${uuid(U.user, 6)}', '${uuid(U.school, 1)}', 'student2@dps.edu', '$2b$10$MYGc0dD.qTR.q2jk8.vgNecKebRnLacNVTu//wJkKBUK3xPOtPxfa', 'student', 'Sneha', 'स्नेहा', 'Reddy', 'रेड्डी', NULL, 'ADM-2025-002', 'STU-002', true, NOW(), NOW()),
-  ('${uuid(U.user, 7)}', '${uuid(U.school, 1)}', 'accountant@dps.edu', '$2b$10$1qU0Hx9rCMyvrpOPpPPyzOab9p5PspOc6K4lGhdb6QB.N406LY13G', 'accountant', 'Manoj', 'मनोज', 'Gupta', 'गुप्ता', 'EMP-ACC-01', NULL, NULL, true, NOW(), NOW()),
-  ('${uuid(U.user, 8)}', '${uuid(U.school, 1)}', 'labasst@dps.edu', '$2b$10$1qU0Hx9rCMyvrpOPpPPyzOab9p5PspOc6K4lGhdb6QB.N406LY13G', 'lab_assistant', 'Vikas', 'विकास', 'Yadav', 'यादव', 'EMP-LAB-01', NULL, NULL, true, NOW(), NOW()),
-  ('${uuid(U.user, 9)}', '${uuid(U.school, 2)}', 'admin@stx.edu', '$2b$10$1qU0Hx9rCMyvrpOPpPPyzOab9p5PspOc6K4lGhdb6QB.N406LY13G', 'admin', 'Father', 'फादर', 'Joseph', 'जोसेफ', 'EMP-STX-01', NULL, NULL, true, NOW(), NOW())
+  ('${uuid(U.user, 1)}', '${uuid(U.school, 1)}', 'admin@dps.edu', '$2b$10$1qU0Hx9rCMyvrpOPpPPyzOab9p5PspOc6K4lGhdb6QB.N406LY13G', 'admin', 'Ramesh', 'रमेश', 'Sharma', 'शर्मा', 'EMP-ADM-01', NULL, NULL, 'male', true, NOW(), NOW()),
+  ('${uuid(U.user, 2)}', '${uuid(U.school, 1)}', 'principal@dps.edu', '$2b$10$1qU0Hx9rCMyvrpOPpPPyzOab9p5PspOc6K4lGhdb6QB.N406LY13G', 'principal', 'Sunita', 'सुनीता', 'Verma', 'वर्मा', 'EMP-PRN-01', NULL, NULL, 'female', true, NOW(), NOW()),
+  ('${uuid(U.user, 3)}', '${uuid(U.school, 1)}', 'instructor1@dps.edu', '$2b$10$Nj1cC.7GrSBxROxUD3AJ5eA5L/nI0VXtJLvAbXk5Wu3TYpK.BulQq', 'instructor', 'Rajesh', 'राजेश', 'Kumar', 'कुमार', 'EMP-INS-01', NULL, NULL, 'male', true, NOW(), NOW()),
+  ('${uuid(U.user, 4)}', '${uuid(U.school, 1)}', 'instructor2@dps.edu', '$2b$10$Nj1cC.7GrSBxROxUD3AJ5eA5L/nI0VXtJLvAbXk5Wu3TYpK.BulQq', 'instructor', 'Priya', 'प्रिया', 'Singh', 'सिंह', 'EMP-INS-02', NULL, NULL, 'female', true, NOW(), NOW()),
+  ('${uuid(U.user, 5)}', '${uuid(U.school, 1)}', 'student1@dps.edu', '$2b$10$MYGc0dD.qTR.q2jk8.vgNecKebRnLacNVTu//wJkKBUK3xPOtPxfa', 'student', 'Aarav', 'आरव', 'Patel', 'पटेल', NULL, 'ADM-2025-001', 'STU-001', 'male', true, NOW(), NOW()),
+  ('${uuid(U.user, 6)}', '${uuid(U.school, 1)}', 'student2@dps.edu', '$2b$10$MYGc0dD.qTR.q2jk8.vgNecKebRnLacNVTu//wJkKBUK3xPOtPxfa', 'student', 'Sneha', 'स्नेहा', 'Reddy', 'रेड्डी', NULL, 'ADM-2025-002', 'STU-002', 'female', true, NOW(), NOW()),
+  ('${uuid(U.user, 7)}', '${uuid(U.school, 1)}', 'accountant@dps.edu', '$2b$10$1qU0Hx9rCMyvrpOPpPPyzOab9p5PspOc6K4lGhdb6QB.N406LY13G', 'accountant', 'Manoj', 'मनोज', 'Gupta', 'गुप्ता', 'EMP-ACC-01', NULL, NULL, 'male', true, NOW(), NOW()),
+  ('${uuid(U.user, 8)}', '${uuid(U.school, 1)}', 'labasst@dps.edu', '$2b$10$1qU0Hx9rCMyvrpOPpPPyzOab9p5PspOc6K4lGhdb6QB.N406LY13G', 'lab_assistant', 'Vikas', 'विकास', 'Yadav', 'यादव', 'EMP-LAB-01', NULL, NULL, 'male', true, NOW(), NOW()),
+  ('${uuid(U.user, 9)}', '${uuid(U.school, 2)}', 'admin@stx.edu', '$2b$10$1qU0Hx9rCMyvrpOPpPPyzOab9p5PspOc6K4lGhdb6QB.N406LY13G', 'admin', 'Father', 'फादर', 'Joseph', 'जोसेफ', 'EMP-STX-01', NULL, NULL, 'male', true, NOW(), NOW()),
+${studentUserRows}
 ON CONFLICT (id) DO NOTHING;
 `);
 
@@ -219,22 +293,39 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 `);
 
-// 7. classes (3 rows)
+// 7. classes (9 rows: 11-A, 11-B, 12-A, 11 NM A, 11 NM B, 11 Med A, 12 NM A, 12 NM B, 12 Med A)
 sqlParts.push(`-- 7. classes
 INSERT INTO classes (id, school_id, academic_year_id, name, name_hindi, grade_level, section, stream, class_teacher_id, max_students, created_at)
 VALUES 
   ('${uuid(U.class, 1)}', '${uuid(U.school, 1)}', '${uuid(U.year, 2)}', 'Class 11-A (Science)', 'कक्षा 11-ए (विज्ञान)', 11, 'A', 'Science', '${uuid(U.user, 3)}', 45, NOW()),
   ('${uuid(U.class, 2)}', '${uuid(U.school, 1)}', '${uuid(U.year, 2)}', 'Class 11-B (Science)', 'कक्षा 11-बी (विज्ञान)', 11, 'B', 'Science', '${uuid(U.user, 4)}', 45, NOW()),
-  ('${uuid(U.class, 3)}', '${uuid(U.school, 1)}', '${uuid(U.year, 2)}', 'Class 12-A (Science)', 'कक्षा 12-ए (विज्ञान)', 12, 'A', 'Science', '${uuid(U.user, 3)}', 40, NOW())
+  ('${uuid(U.class, 3)}', '${uuid(U.school, 1)}', '${uuid(U.year, 2)}', 'Class 12-A (Science)', 'कक्षा 12-ए (विज्ञान)', 12, 'A', 'Science', '${uuid(U.user, 3)}', 40, NOW()),
+  ('${uuid(U.class, 4)}', '${uuid(U.school, 1)}', '${uuid(U.year, 2)}', '11 NM A', '11 नॉन-मेडिकल ए', 11, 'A', 'Non-Medical', '${uuid(U.user, 3)}', 50, NOW()),
+  ('${uuid(U.class, 5)}', '${uuid(U.school, 1)}', '${uuid(U.year, 2)}', '11 NM B', '11 नॉन-मेडिकल बी', 11, 'B', 'Non-Medical', '${uuid(U.user, 4)}', 50, NOW()),
+  ('${uuid(U.class, 6)}', '${uuid(U.school, 1)}', '${uuid(U.year, 2)}', '11 Med A', '11 मेडिकल ए', 11, 'A', 'Medical', '${uuid(U.user, 3)}', 50, NOW()),
+  ('${uuid(U.class, 7)}', '${uuid(U.school, 1)}', '${uuid(U.year, 2)}', '12 NM A', '12 नॉन-मेडिकल ए', 12, 'A', 'Non-Medical', '${uuid(U.user, 3)}', 50, NOW()),
+  ('${uuid(U.class, 8)}', '${uuid(U.school, 1)}', '${uuid(U.year, 2)}', '12 NM B', '12 नॉन-मेडिकल बी', 12, 'B', 'Non-Medical', '${uuid(U.user, 4)}', 50, NOW()),
+  ('${uuid(U.class, 9)}', '${uuid(U.school, 1)}', '${uuid(U.year, 2)}', '12 Med A', '12 मेडिकल ए', 12, 'A', 'Medical', '${uuid(U.user, 4)}', 50, NOW())
 ON CONFLICT (id) DO NOTHING;
 `);
 
-// 8. class_enrollments (2 rows)
+// 8. class_enrollments (54 rows: 2 initial + 52 students enrolled across 11 NM A, 11 NM B, 11 Med A, 12 NM A, 12 NM B, 12 Med A)
+const targetClasses = [4, 5, 7, 8, 6, 9]; // 11 NM A, 11 NM B, 12 NM A, 12 NM B, 11 Med A, 12 Med A
+const studentEnrollmentRows = studentSeedList.map((s, idx) => {
+  const classNum = targetClasses[idx % targetClasses.length];
+  const enrollId = uuid(U.enrollment, 2 + s.idx);
+  const userId = uuid(U.user, 9 + s.idx);
+  const classId = uuid(U.class, classNum);
+  const rollNo = Math.floor(idx / targetClasses.length) + 1;
+  return `  ('${enrollId}', '${userId}', '${classId}', ${rollNo}, CURRENT_DATE, 'active')`;
+}).join(',\n');
+
 sqlParts.push(`-- 8. class_enrollments
 INSERT INTO class_enrollments (id, student_id, class_id, roll_number, enrollment_date, status)
 VALUES 
   ('${uuid(U.enrollment, 1)}', '${uuid(U.user, 5)}', '${uuid(U.class, 1)}', 101, CURRENT_DATE, 'active'),
-  ('${uuid(U.enrollment, 2)}', '${uuid(U.user, 6)}', '${uuid(U.class, 1)}', 102, CURRENT_DATE, 'active')
+  ('${uuid(U.enrollment, 2)}', '${uuid(U.user, 6)}', '${uuid(U.class, 1)}', 102, CURRENT_DATE, 'active'),
+${studentEnrollmentRows}
 ON CONFLICT (id) DO NOTHING;
 `);
 
@@ -247,21 +338,56 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 `);
 
-// 10. student_groups (2 rows)
+// 10. student_groups (10 rows: 2 initial + 8 python groups across 11 NM A, 11 NM B, 12 NM A, 12 NM B)
 sqlParts.push(`-- 10. student_groups
 INSERT INTO student_groups (id, class_id, name, description, created_by, created_at)
 VALUES 
   ('${uuid(U.group, 1)}', '${uuid(U.class, 1)}', 'Alpha Coders', 'Computer Science Project Team Alpha', '${uuid(U.user, 3)}', NOW()),
-  ('${uuid(U.group, 2)}', '${uuid(U.class, 1)}', 'Beta Quantum', 'Physics Lab Group Beta', '${uuid(U.user, 4)}', NOW())
+  ('${uuid(U.group, 2)}', '${uuid(U.class, 1)}', 'Beta Quantum', 'Physics Lab Group Beta', '${uuid(U.user, 4)}', NOW()),
+  ('${uuid(U.group, 3)}', '${uuid(U.class, 4)}', '11 NM A - Python Group Alpha', 'Core Python syntax and algorithmic problem solving', '${uuid(U.user, 3)}', NOW()),
+  ('${uuid(U.group, 4)}', '${uuid(U.class, 4)}', '11 NM A - Python Group Beta', 'Data operations and procedural logic', '${uuid(U.user, 3)}', NOW()),
+  ('${uuid(U.group, 5)}', '${uuid(U.class, 5)}', '11 NM B - Byte Knights', 'Python control flow and looping challenges', '${uuid(U.user, 4)}', NOW()),
+  ('${uuid(U.group, 6)}', '${uuid(U.class, 5)}', '11 NM B - CodeCrafters', 'Mathematical modeling and logic builders', '${uuid(U.user, 4)}', NOW()),
+  ('${uuid(U.group, 7)}', '${uuid(U.class, 7)}', '12 NM A - Turing Titans', 'Advanced Python collections and dictionary structures', '${uuid(U.user, 3)}', NOW()),
+  ('${uuid(U.group, 8)}', '${uuid(U.class, 7)}', '12 NM A - Binary Beasts', 'Data structures, list comprehensions, and nested mapping', '${uuid(U.user, 3)}', NOW()),
+  ('${uuid(U.group, 9)}', '${uuid(U.class, 8)}', '12 NM B - Logic Legends', 'Set theory and tuple serialization in Python', '${uuid(U.user, 4)}', NOW()),
+  ('${uuid(U.group, 10)}', '${uuid(U.class, 8)}', '12 NM B - Syntax Stars', 'Practical lab assessments and viva preparation', '${uuid(U.user, 4)}', NOW())
 ON CONFLICT (id) DO NOTHING;
 `);
 
-// 11. group_members (2 rows)
+// 11. group_members (34 rows: 2 initial + 32 members: 4 per python group)
+// Groups 3 & 4: Class 4 students (indices 0, 6, 12, 18, 24, 30, 36, 42)
+// Groups 5 & 6: Class 5 students (indices 1, 7, 13, 19, 25, 31, 37, 43)
+// Groups 7 & 8: Class 7 students (indices 2, 8, 14, 20, 26, 32, 38, 44)
+// Groups 9 & 10: Class 8 students (indices 3, 9, 15, 21, 27, 33, 39, 45)
+const pythonGroupMembers = [];
+let gmId = 3;
+
+const groupAssignments = [
+  { groupNum: 3, studentIndices: [0, 6, 12, 18] },
+  { groupNum: 4, studentIndices: [24, 30, 36, 42] },
+  { groupNum: 5, studentIndices: [1, 7, 13, 19] },
+  { groupNum: 6, studentIndices: [25, 31, 37, 43] },
+  { groupNum: 7, studentIndices: [2, 8, 14, 20] },
+  { groupNum: 8, studentIndices: [26, 32, 38, 44] },
+  { groupNum: 9, studentIndices: [3, 9, 15, 21] },
+  { groupNum: 10, studentIndices: [27, 33, 39, 45] }
+];
+
+groupAssignments.forEach(ga => {
+  ga.studentIndices.forEach((sIdx, mIdx) => {
+    const student = studentSeedList[sIdx];
+    const role = mIdx === 0 ? 'leader' : 'member';
+    pythonGroupMembers.push(`  ('${uuid(U.groupMember, gmId++)}', '${uuid(U.group, ga.groupNum)}', '${uuid(U.user, 9 + student.idx)}', '${role}', NOW())`);
+  });
+});
+
 sqlParts.push(`-- 11. group_members
 INSERT INTO group_members (id, group_id, student_id, role, joined_at)
 VALUES 
   ('${uuid(U.groupMember, 1)}', '${uuid(U.group, 1)}', '${uuid(U.user, 5)}', 'leader', NOW()),
-  ('${uuid(U.groupMember, 2)}', '${uuid(U.group, 2)}', '${uuid(U.user, 6)}', 'member', NOW())
+  ('${uuid(U.groupMember, 2)}', '${uuid(U.group, 2)}', '${uuid(U.user, 6)}', 'member', NOW()),
+${pythonGroupMembers.join(',\n')}
 ON CONFLICT (id) DO NOTHING;
 `);
 
@@ -367,30 +493,46 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 `);
 
-// 23. training_modules (2 rows)
+// 23. training_modules (4 rows: Python Basics, Python Control Structures, Python Collections, JS Web Lab)
 sqlParts.push(`-- 23. training_modules
 INSERT INTO training_modules (id, school_id, title, title_hindi, description, language, board_aligned, class_level, total_units, total_exercises, is_published, academic_year_id, created_at, updated_at)
 VALUES 
-  ('${uuid(U.trainingModule, 1)}', '${uuid(U.school, 1)}', 'Python Foundations for CBSE Class 11', 'सीबीएसई कक्षा 11 के लिए पायथन मूल बातें', 'Interactive mastery module covering variables, loops, and data structures', 'python', 'CBSE', 11, 2, 4, true, '${uuid(U.year, 2)}', NOW(), NOW()),
-  ('${uuid(U.trainingModule, 2)}', '${uuid(U.school, 1)}', 'JavaScript Interactive Web Lab', 'जावास्क्रिप्ट इंटरएक्टिव वेब लैब', 'Front-end development and DOM manipulation fundamentals', 'javascript', 'CBSE', 12, 2, 4, true, '${uuid(U.year, 2)}', NOW(), NOW())
+  ('${uuid(U.trainingModule, 1)}', '${uuid(U.school, 1)}', 'Python Basics & Fundamentals', 'पायथन मूल बातें और बुनियादी सिद्धांत', 'Master Python syntax, primitive types (int, float, str, bool), standard input/output, type casting, and arithmetic expressions.', 'python', 'CBSE', 11, 2, 4, true, '${uuid(U.year, 2)}', NOW(), NOW()),
+  ('${uuid(U.trainingModule, 2)}', '${uuid(U.school, 1)}', 'Python Control Structures: Conditionals & Loops', 'पायथन नियंत्रण संरचनाएं: स्थितियां और लूप', 'Master boolean logic, conditional branching (if-elif-else), while loops, for loops with range(), and loop control statements.', 'python', 'CBSE', 11, 2, 4, true, '${uuid(U.year, 2)}', NOW(), NOW()),
+  ('${uuid(U.trainingModule, 3)}', '${uuid(U.school, 1)}', 'Python Collections: Lists, Tuples, Dictionaries & Sets', 'पायथन संग्रह: सूचियाँ, टुपल्स, शब्दकोश और सेट', 'Master core composite data structures: sequence indexing, slicing, list comprehensions, immutability, key-value mappings, and set operations.', 'python', 'CBSE', 12, 2, 4, true, '${uuid(U.year, 2)}', NOW(), NOW()),
+  ('${uuid(U.trainingModule, 4)}', '${uuid(U.school, 1)}', 'JavaScript Interactive Web Lab', 'जावास्क्रिप्ट इंटरएक्टिव वेब लैब', 'Front-end development and DOM manipulation fundamentals', 'javascript', 'CBSE', 12, 2, 4, true, '${uuid(U.year, 2)}', NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 `);
 
-// 24. training_units (2 rows)
+// 24. training_units (8 rows: 2 per module)
 sqlParts.push(`-- 24. training_units
 INSERT INTO training_units (id, module_id, unit_number, title, description, expected_hours, unlock_threshold, sequence_order)
 VALUES 
-  ('${uuid(U.trainingUnit, 1)}', '${uuid(U.trainingModule, 1)}', 1, 'Unit 1: Variables, Types and Operators', 'Variables, memory allocation, arithmetic & boolean logic', 4, 80, 1),
-  ('${uuid(U.trainingUnit, 2)}', '${uuid(U.trainingModule, 1)}', 2, 'Unit 2: Control Flow & Iteration', 'If-else branching, while loops, and for loops with range', 6, 80, 2)
+  -- Module 1 (Basics)
+  ('${uuid(U.trainingUnit, 1)}', '${uuid(U.trainingModule, 1)}', 1, 'Unit 1: Variables, Memory & Built-in Types', 'Understanding Python variables, dynamic typing, type conversion, and boolean evaluations.', 4, 80, 1),
+  ('${uuid(U.trainingUnit, 2)}', '${uuid(U.trainingModule, 1)}', 2, 'Unit 2: Standard I/O, Arithmetic & Comparison Operators', 'Interactive input with input(), formatted output with f-strings, arithmetic precedence, and relational operators.', 4, 80, 2),
+  -- Module 2 (Control Structures)
+  ('${uuid(U.trainingUnit, 3)}', '${uuid(U.trainingModule, 2)}', 1, 'Unit 1: Decision Making & Branching (if-elif-else)', 'Nested condition evaluations, truthiness, short-circuit boolean logic, and ternary operator.', 4, 80, 1),
+  ('${uuid(U.trainingUnit, 4)}', '${uuid(U.trainingModule, 2)}', 2, 'Unit 2: Iteration with for & while Loops', 'Counted loops with range(), while loops, break, continue, pass, and loop else clauses.', 5, 80, 2),
+  -- Module 3 (Collections)
+  ('${uuid(U.trainingUnit, 5)}', '${uuid(U.trainingModule, 3)}', 1, 'Unit 1: Lists & Tuples in Python', 'Indexing, slicing, appending, inserting, list comprehensions, tuple unpacking, and immutability.', 5, 80, 1),
+  ('${uuid(U.trainingUnit, 6)}', '${uuid(U.trainingModule, 3)}', 2, 'Unit 2: Dictionaries & Sets', 'Key-value mapping, dict methods, membership testing, set operations (union, intersection, difference).', 5, 80, 2),
+  -- Module 4 (JS Web Lab)
+  ('${uuid(U.trainingUnit, 7)}', '${uuid(U.trainingModule, 4)}', 1, 'Unit 1: DOM Elements', 'Selecting elements, querySelector, and updating DOM tree nodes.', 4, 80, 1),
+  ('${uuid(U.trainingUnit, 8)}', '${uuid(U.trainingModule, 4)}', 2, 'Unit 2: Event Listeners & Async', 'Handling click events, bubbling, callbacks, and Promises.', 6, 80, 2)
 ON CONFLICT (id) DO NOTHING;
 `);
 
-// 25. training_exercises (2 rows)
+// 25. training_exercises (6 interactive coding exercises)
 sqlParts.push(`-- 25. training_exercises
 INSERT INTO training_exercises (id, unit_id, title, description, difficulty, scaffold_level, exercise_type, blooms_level, learning_objective, starter_code, solution_code, test_cases, hints, time_limit, sequence_order, xp_reward)
 VALUES 
-  ('${uuid(U.trainingExercise, 1)}', '${uuid(U.trainingUnit, 1)}', 'Calculate Circle Area', 'Write a function get_circle_area(radius) that returns area using pi = 3.14159', 'easy', 'guided', 'coding', 'Apply', 'Master basic math expressions and function returns', 'def get_circle_area(radius):\n    # Write code here\n    pass', 'def get_circle_area(radius):\n    return 3.14159 * radius * radius', '[{"input": "5", "expected": "78.53975"}]'::jsonb, '["Remember area = pi * r^2", "Multiply 3.14159 by radius twice"]'::jsonb, 5, 1, 20),
-  ('${uuid(U.trainingExercise, 2)}', '${uuid(U.trainingUnit, 2)}', 'Sum of Evens in Range', 'Write a function sum_even(n) that sums all even numbers from 2 up to n inclusive', 'medium', 'independent', 'coding', 'Analyze', 'Apply loop traversal and modulus filtering', 'def sum_even(n):\n    # Write code here\n    pass', 'def sum_even(n):\n    return sum(x for x in range(2, n + 1, 2))', '[{"input": "10", "expected": "30"}]'::jsonb, '["Use range with step 2 or check if x % 2 == 0"]'::jsonb, 10, 1, 30)
+  ('${uuid(U.trainingExercise, 1)}', '${uuid(U.trainingUnit, 1)}', 'Calculate Circle Area', 'Write a function get_circle_area(radius) that computes and returns the area of a circle with pi = 3.14159.', 'easy', 'guided', 'coding', 'Apply', 'Master basic math expressions and function returns', 'def get_circle_area(radius):\n    # Write code here\n    pass', 'def get_circle_area(radius):\n    return 3.14159 * radius * radius', '[{"input": "5", "expected": "78.53975"}, {"input": "10", "expected": "314.159"}]'::jsonb, '["Use formula Area = pi * r * r", "Return float value"]'::jsonb, 5, 1, 20),
+  ('${uuid(U.trainingExercise, 2)}', '${uuid(U.trainingUnit, 2)}', 'Celsius to Fahrenheit Converter', 'Write a function c_to_f(celsius) that returns Fahrenheit using F = (C * 9/5) + 32.', 'easy', 'independent', 'coding', 'Apply', 'Formula translation and numeric type operators', 'def c_to_f(celsius):\n    pass', 'def c_to_f(celsius):\n    return (celsius * 9/5) + 32', '[{"input": "0", "expected": "32.0"}, {"input": "100", "expected": "212.0"}]'::jsonb, '["Multiply by 9/5 first then add 32"]'::jsonb, 5, 1, 25),
+  ('${uuid(U.trainingExercise, 3)}', '${uuid(U.trainingUnit, 3)}', 'Leap Year Checker', 'Write a function is_leap_year(year) returning True if leap year (divisible by 4 and not 100, or divisible by 400).', 'medium', 'guided', 'coding', 'Analyze', 'Compound boolean logic and calendar math', 'def is_leap_year(year):\n    pass', 'def is_leap_year(year):\n    return (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)', '[{"input": "2024", "expected": "True"}, {"input": "1900", "expected": "False"}, {"input": "2000", "expected": "True"}]'::jsonb, '["Check % 400 first or (year % 4 == 0 and year % 100 != 0)"]'::jsonb, 10, 1, 30),
+  ('${uuid(U.trainingExercise, 4)}', '${uuid(U.trainingUnit, 4)}', 'Sum of Even Numbers in Range', 'Write a function sum_even(n) returning sum of all even integers from 1 up to n inclusive.', 'medium', 'independent', 'coding', 'Analyze', 'For loops with range or modulo accumulator', 'def sum_even(n):\n    pass', 'def sum_even(n):\n    return sum(x for x in range(2, n + 1, 2))', '[{"input": "10", "expected": "30"}, {"input": "20", "expected": "110"}]'::jsonb, '["Use range(2, n + 1, 2) or loop with if x % 2 == 0"]'::jsonb, 10, 1, 30),
+  ('${uuid(U.trainingExercise, 5)}', '${uuid(U.trainingUnit, 5)}', 'Remove Duplicates Preserving Order', 'Write a function unique_elements(nums) returning a new list with duplicates removed preserving order.', 'medium', 'independent', 'coding', 'Synthesize', 'List traversal and linear search/visited tracking', 'def unique_elements(nums):\n    pass', 'def unique_elements(nums):\n    seen = set()\n    res = []\n    for x in nums:\n        if x not in seen:\n            seen.add(x)\n            res.append(x)\n    return res', '[{"input": "[1, 2, 2, 3, 4, 3, 5]", "expected": "[1, 2, 3, 4, 5]"}]'::jsonb, '["Use a set for seen elements and list to keep order"]'::jsonb, 10, 1, 35),
+  ('${uuid(U.trainingExercise, 6)}', '${uuid(U.trainingUnit, 6)}', 'Word Frequency Counter', 'Write a function count_words(text) returning a dictionary mapping each lowercase word to frequency.', 'medium', 'guided', 'coding', 'Synthesize', 'String splitting and dictionary frequency mapping', 'def count_words(text):\n    pass', 'def count_words(text):\n    words = text.lower().split()\n    counts = {}\n    for w in words:\n        counts[w] = counts.get(w, 0) + 1\n    return counts', '[{"input": "\"apple banana apple orange banana apple\"", "expected": "{\"apple\": 3, \"banana\": 2, \"orange\": 1}"}]'::jsonb, '["Use text.lower().split() then dict.get(w, 0) + 1"]'::jsonb, 10, 1, 35)
 ON CONFLICT (id) DO NOTHING;
 `);
 
@@ -421,13 +563,17 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 `);
 
-// 29. assignments (3 rows)
+// 29. assignments (6 rows: 3 classic experiments + 3 Python training module assignments)
 sqlParts.push(`-- 29. assignments
-INSERT INTO assignments (id, school_id, subject_id, lab_id, created_by, title, title_hindi, description, experiment_number, assignment_type, programming_language, aim, max_marks, passing_marks, viva_marks, practical_marks, output_marks, status, publish_date, due_date, created_at, updated_at, academic_year_id)
+INSERT INTO assignments (id, school_id, subject_id, lab_id, created_by, title, title_hindi, description, experiment_number, assignment_type, programming_language, aim, max_marks, passing_marks, viva_marks, practical_marks, output_marks, status, publish_date, due_date, created_at, updated_at, academic_year_id, training_module_id)
 VALUES 
-  ('${uuid(U.assignment, 1)}', '${uuid(U.school, 1)}', '${uuid(U.subject, 1)}', '${uuid(U.lab, 1)}', '${uuid(U.user, 3)}', 'Exp 1: Matrix Multiplication in Python', 'प्रयोग 1: पायथन में मैट्रिक्स गुणन', 'Implement 2D array multiplication and calculate time complexity', 'EXP-CS-01', 'program', 'Python', 'To learn multidimensional lists and nested loops in Python', 100, 40, 20, 50, 30, 'published', NOW() - INTERVAL '5 days', NOW() + INTERVAL '10 days', NOW(), NOW(), '${uuid(U.year, 2)}'),
-  ('${uuid(U.assignment, 2)}', '${uuid(U.school, 1)}', '${uuid(U.subject, 2)}', '${uuid(U.lab, 2)}', '${uuid(U.user, 4)}', 'Exp 2: Verification of Ohm Law', 'प्रयोग 2: ओम के नियम का सत्यापन', 'Record voltage vs current values across standard resistance and plot I-V curve', 'EXP-PHY-01', 'experiment', NULL, 'To experimentally verify Ohm Law and determine wire resistivity', 100, 40, 25, 50, 25, 'published', NOW() - INTERVAL '4 days', NOW() + INTERVAL '12 days', NOW(), NOW(), '${uuid(U.year, 2)}'),
-  ('${uuid(U.assignment, 3)}', '${uuid(U.school, 1)}', '${uuid(U.subject, 3)}', '${uuid(U.lab, 3)}', '${uuid(U.user, 4)}', 'Exp 3: Acid-Base Titration (HCl vs NaOH)', 'प्रयोग 3: अम्ल-क्षार अनुमापन', 'Determine the molarity of supplied HCl solution using 0.1M standard NaOH', 'EXP-CHM-01', 'experiment', NULL, 'To master burette titration and phenolphthalein end-point detection', 100, 40, 20, 60, 20, 'published', NOW() - INTERVAL '3 days', NOW() + INTERVAL '15 days', NOW(), NOW(), '${uuid(U.year, 2)}')
+  ('${uuid(U.assignment, 1)}', '${uuid(U.school, 1)}', '${uuid(U.subject, 1)}', '${uuid(U.lab, 1)}', '${uuid(U.user, 3)}', 'Exp 1: Matrix Multiplication in Python', 'प्रयोग 1: पायथन में मैट्रिक्स गुणन', 'Implement 2D array multiplication and calculate time complexity', 'EXP-CS-01', 'program', 'Python', 'To learn multidimensional lists and nested loops in Python', 100, 40, 20, 50, 30, 'published', NOW() - INTERVAL '5 days', NOW() + INTERVAL '10 days', NOW(), NOW(), '${uuid(U.year, 2)}', NULL),
+  ('${uuid(U.assignment, 2)}', '${uuid(U.school, 1)}', '${uuid(U.subject, 2)}', '${uuid(U.lab, 2)}', '${uuid(U.user, 4)}', 'Exp 2: Verification of Ohm Law', 'प्रयोग 2: ओम के नियम का सत्यापन', 'Record voltage vs current values across standard resistance and plot I-V curve', 'EXP-PHY-01', 'experiment', NULL, 'To experimentally verify Ohm Law and determine wire resistivity', 100, 40, 25, 50, 25, 'published', NOW() - INTERVAL '4 days', NOW() + INTERVAL '12 days', NOW(), NOW(), '${uuid(U.year, 2)}', NULL),
+  ('${uuid(U.assignment, 3)}', '${uuid(U.school, 1)}', '${uuid(U.subject, 3)}', '${uuid(U.lab, 3)}', '${uuid(U.user, 4)}', 'Exp 3: Acid-Base Titration (HCl vs NaOH)', 'प्रयोग 3: अम्ल-क्षार अनुमापन', 'Determine the molarity of supplied HCl solution using 0.1M standard NaOH', 'EXP-CHM-01', 'experiment', NULL, 'To master burette titration and phenolphthalein end-point detection', 100, 40, 20, 60, 20, 'published', NOW() - INTERVAL '3 days', NOW() + INTERVAL '15 days', NOW(), NOW(), '${uuid(U.year, 2)}', NULL),
+  -- Python Training Module Assignments
+  ('${uuid(U.assignment, 4)}', '${uuid(U.school, 1)}', '${uuid(U.subject, 1)}', '${uuid(U.lab, 1)}', '${uuid(U.user, 3)}', 'Training: Python Basics & Fundamentals', 'प्रशिक्षण: पायथन मूल बातें और बुनियादी सिद्धांत', 'Complete all interactive exercises in Python Basics & Fundamentals', NULL, 'training_module', 'Python', 'To master Python basic syntax, types, expressions, and standard IO', 100, 40, 20, 60, 20, 'published', NOW() - INTERVAL '2 days', NOW() + INTERVAL '30 days', NOW(), NOW(), '${uuid(U.year, 2)}', '${uuid(U.trainingModule, 1)}'),
+  ('${uuid(U.assignment, 5)}', '${uuid(U.school, 1)}', '${uuid(U.subject, 1)}', '${uuid(U.lab, 1)}', '${uuid(U.user, 3)}', 'Training: Python Control Structures: Conditionals & Loops', 'प्रशिक्षण: पायथन नियंत्रण संरचनाएं: स्थितियां और लूप', 'Complete all interactive exercises in Python Control Structures', NULL, 'training_module', 'Python', 'To master branching logic, iteration, range, and loops', 100, 40, 20, 60, 20, 'published', NOW() - INTERVAL '2 days', NOW() + INTERVAL '30 days', NOW(), NOW(), '${uuid(U.year, 2)}', '${uuid(U.trainingModule, 2)}'),
+  ('${uuid(U.assignment, 6)}', '${uuid(U.school, 1)}', '${uuid(U.subject, 1)}', '${uuid(U.lab, 1)}', '${uuid(U.user, 3)}', 'Training: Python Collections: Lists, Tuples, Dictionaries & Sets', 'प्रशिक्षण: पायथन संग्रह: सूचियाँ, टुपल्स, शब्दकोश और सेट', 'Complete all interactive exercises in Python Collections', NULL, 'training_module', 'Python', 'To master list operations, comprehensions, dictionaries, and sets', 100, 40, 20, 60, 20, 'published', NOW() - INTERVAL '2 days', NOW() + INTERVAL '30 days', NOW(), NOW(), '${uuid(U.year, 2)}', '${uuid(U.trainingModule, 3)}')
 ON CONFLICT (id) DO NOTHING;
 `);
 
@@ -440,12 +586,30 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 `);
 
-// 31. assignment_targets (2 rows)
+// 31. assignment_targets (targets for experiments + python training modules)
 sqlParts.push(`-- 31. assignment_targets
-INSERT INTO assignment_targets (id, assignment_id, target_type, target_class_id, assigned_by, assigned_at, is_locked)
+INSERT INTO assignment_targets (id, assignment_id, target_type, target_class_id, target_group_id, assigned_by, assigned_at, is_locked)
 VALUES 
-  ('${uuid(U.assignmentTarget, 1)}', '${uuid(U.assignment, 1)}', 'class', '${uuid(U.class, 1)}', '${uuid(U.user, 3)}', NOW(), false),
-  ('${uuid(U.assignmentTarget, 2)}', '${uuid(U.assignment, 2)}', 'class', '${uuid(U.class, 1)}', '${uuid(U.user, 4)}', NOW(), false)
+  ('${uuid(U.assignmentTarget, 1)}', '${uuid(U.assignment, 1)}', 'class', '${uuid(U.class, 1)}', NULL, '${uuid(U.user, 3)}', NOW(), false),
+  ('${uuid(U.assignmentTarget, 2)}', '${uuid(U.assignment, 2)}', 'class', '${uuid(U.class, 1)}', NULL, '${uuid(U.user, 4)}', NOW(), false),
+  -- Python Basics assigned to 11 NM A, 11 NM B, 11 Med A + groups
+  ('${uuid(U.assignmentTarget, 3)}', '${uuid(U.assignment, 4)}', 'class', '${uuid(U.class, 4)}', NULL, '${uuid(U.user, 3)}', NOW(), false),
+  ('${uuid(U.assignmentTarget, 4)}', '${uuid(U.assignment, 4)}', 'class', '${uuid(U.class, 5)}', NULL, '${uuid(U.user, 3)}', NOW(), false),
+  ('${uuid(U.assignmentTarget, 5)}', '${uuid(U.assignment, 4)}', 'class', '${uuid(U.class, 6)}', NULL, '${uuid(U.user, 3)}', NOW(), false),
+  ('${uuid(U.assignmentTarget, 6)}', '${uuid(U.assignment, 4)}', 'group', NULL, '${uuid(U.group, 3)}', '${uuid(U.user, 3)}', NOW(), false),
+  ('${uuid(U.assignmentTarget, 7)}', '${uuid(U.assignment, 4)}', 'group', NULL, '${uuid(U.group, 4)}', '${uuid(U.user, 3)}', NOW(), false),
+  -- Python Control Structures assigned to 11 NM A, 11 NM B, 12 NM A + groups
+  ('${uuid(U.assignmentTarget, 8)}', '${uuid(U.assignment, 5)}', 'class', '${uuid(U.class, 4)}', NULL, '${uuid(U.user, 3)}', NOW(), false),
+  ('${uuid(U.assignmentTarget, 9)}', '${uuid(U.assignment, 5)}', 'class', '${uuid(U.class, 5)}', NULL, '${uuid(U.user, 3)}', NOW(), false),
+  ('${uuid(U.assignmentTarget, 10)}', '${uuid(U.assignment, 5)}', 'class', '${uuid(U.class, 7)}', NULL, '${uuid(U.user, 3)}', NOW(), false),
+  ('${uuid(U.assignmentTarget, 11)}', '${uuid(U.assignment, 5)}', 'group', NULL, '${uuid(U.group, 5)}', '${uuid(U.user, 3)}', NOW(), false),
+  ('${uuid(U.assignmentTarget, 12)}', '${uuid(U.assignment, 5)}', 'group', NULL, '${uuid(U.group, 6)}', '${uuid(U.user, 3)}', NOW(), false),
+  -- Python Collections assigned to 12 NM A, 12 NM B, 12 Med A + groups
+  ('${uuid(U.assignmentTarget, 13)}', '${uuid(U.assignment, 6)}', 'class', '${uuid(U.class, 7)}', NULL, '${uuid(U.user, 3)}', NOW(), false),
+  ('${uuid(U.assignmentTarget, 14)}', '${uuid(U.assignment, 6)}', 'class', '${uuid(U.class, 8)}', NULL, '${uuid(U.user, 3)}', NOW(), false),
+  ('${uuid(U.assignmentTarget, 15)}', '${uuid(U.assignment, 6)}', 'class', '${uuid(U.class, 9)}', NULL, '${uuid(U.user, 3)}', NOW(), false),
+  ('${uuid(U.assignmentTarget, 16)}', '${uuid(U.assignment, 6)}', 'group', NULL, '${uuid(U.group, 7)}', '${uuid(U.user, 3)}', NOW(), false),
+  ('${uuid(U.assignmentTarget, 17)}', '${uuid(U.assignment, 6)}', 'group', NULL, '${uuid(U.group, 8)}', '${uuid(U.user, 3)}', NOW(), false)
 ON CONFLICT (id) DO NOTHING;
 `);
 

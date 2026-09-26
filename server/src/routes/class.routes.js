@@ -18,7 +18,37 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 
     let where = { ...(req.user.schoolId && { schoolId: req.user.schoolId }) };
 
-    if (sessionId) where.academicYearId = sessionId;
+    if (sessionId) {
+        // Check if classes exist for this session
+        const count = await prisma.class.count({
+            where: {
+                ...(req.user.schoolId && { schoolId: req.user.schoolId }),
+                academicYearId: sessionId
+            }
+        });
+        if (count > 0) {
+            where.academicYearId = sessionId;
+        } else {
+            // Check if current session has classes
+            const currentYear = await prisma.academicYear.findFirst({
+                where: {
+                    ...(req.user.schoolId && { schoolId: req.user.schoolId }),
+                    isCurrent: true
+                }
+            });
+            if (currentYear) {
+                const currentCount = await prisma.class.count({
+                    where: {
+                        ...(req.user.schoolId && { schoolId: req.user.schoolId }),
+                        academicYearId: currentYear.id
+                    }
+                });
+                if (currentCount > 0) {
+                    where.academicYearId = currentYear.id;
+                }
+            }
+        }
+    }
     if (gradeLevel) where.gradeLevel = parseInt(gradeLevel);
 
     const classes = await prisma.class.findMany({

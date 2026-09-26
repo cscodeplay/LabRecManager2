@@ -46,7 +46,7 @@ export default function ModuleAssignmentModal({
         try {
             const [assignRes, classRes, userRes] = await Promise.all([
                 trainingAPI.getModuleAssignments(module.id),
-                classesAPI.getAll().catch(() => ({ data: { data: { classes: [] } } })),
+                classesAPI.getAll({ all: 'true' }).catch(() => ({ data: { data: { classes: [] } } })),
                 usersAPI.getAll({ role: 'student', limit: 300 }).catch(() => ({ data: { data: { users: [] } } }))
             ]);
 

@@ -45,8 +45,9 @@ export default function SessionSelector() {
             const sessions = response.data.data.academicYears || [];
             setAvailableSessions(sessions);
 
-            // Auto-select current session if none selected
-            if (!selectedSession && sessions.length > 0) {
+            // Auto-select current session if none selected or if selected session does not exist in available sessions
+            const isValidSelected = selectedSession && sessions.some(s => s.id === selectedSession.id);
+            if (!isValidSelected && sessions.length > 0) {
                 // Prefer session marked isCurrent, then latest by startDate
                 const current = sessions.find(s => s.isCurrent)
                     || sessions.sort((a, b) => new Date(b.startDate) - new Date(a.startDate))[0];
