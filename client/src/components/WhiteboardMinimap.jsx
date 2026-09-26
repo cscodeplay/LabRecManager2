@@ -73,6 +73,34 @@ export default function WhiteboardMinimap({
         } catch (e) {}
     }, []);
 
+    // Auto-hide timer: automatically collapses the zoom tool after usage/inactivity
+    const autoHideTimerRef = useRef(null);
+
+    const scheduleAutoHide = useCallback((delay = 3500) => {
+        if (autoHideTimerRef.current) {
+            clearTimeout(autoHideTimerRef.current);
+        }
+        autoHideTimerRef.current = setTimeout(() => {
+            setIsBarCollapsed(true);
+            setIsMinimapExpanded(false);
+            saveBarState(pos, true);
+        }, delay);
+    }, [pos, saveBarState]);
+
+    const cancelAutoHide = useCallback(() => {
+        if (autoHideTimerRef.current) {
+            clearTimeout(autoHideTimerRef.current);
+            autoHideTimerRef.current = null;
+        }
+    }, []);
+
+    // Clean up on unmount
+    useEffect(() => {
+        return () => {
+            if (autoHideTimerRef.current) clearTimeout(autoHideTimerRef.current);
+        };
+    }, []);
+
     // Dragging bar handler
     const handleDragStart = (e) => {
         const clientX = e.clientX ?? (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
@@ -207,18 +235,21 @@ export default function WhiteboardMinimap({
     const zoomIn = useCallback((e) => {
         e?.stopPropagation();
         changeZoom(prev => Math.min(3, +(prev + 0.25).toFixed(2)));
-    }, [changeZoom]);
+        scheduleAutoHide(3000);
+    }, [changeZoom, scheduleAutoHide]);
 
     const zoomOut = useCallback((e) => {
         e?.stopPropagation();
         changeZoom(prev => Math.max(0.25, +(prev - 0.25).toFixed(2)));
-    }, [changeZoom]);
+        scheduleAutoHide(3000);
+    }, [changeZoom, scheduleAutoHide]);
 
     const resetZoom = useCallback((e) => {
         e?.stopPropagation();
         changeZoom(1);
         changePan({ x: 0, y: 0 });
-    }, [changeZoom, changePan]);
+        scheduleAutoHide(2500);
+    }, [changeZoom, changePan, scheduleAutoHide]);
 
     // Fit Canvas content to Screen
     const fitToScreen = useCallback((e) => {
@@ -256,11 +287,13 @@ export default function WhiteboardMinimap({
         const newPanX = (containerW / 2) - (targetCenterX * fitZoom);
         const newPanY = (containerH / 2) - (targetCenterY * fitZoom);
         changePan({ x: Math.round(newPanX), y: Math.round(newPanY) });
-    }, [resolvedShapes, resolvedTexts, resolvedImages, canvasWidth, canvasHeight, containerRef, changeZoom, changePan]);
+        scheduleAutoHide(2500);
+    }, [resolvedShapes, resolvedTexts, resolvedImages, canvasWidth, canvasHeight, containerRef, changeZoom, changePan, scheduleAutoHide]);
 
     const handleSliderChange = (e) => {
         const val = parseFloat(e.target.value);
         changeZoom(+(val / 100).toFixed(2));
+        scheduleAutoHide(3000);
     };
 
     return (
@@ -272,6 +305,10 @@ export default function WhiteboardMinimap({
                 zIndex: 80
             }}
             data-interactive="true"
+            onMouseEnter={cancelAutoHide}
+            onMouseLeave={() => {
+                if (!isBarCollapsed) scheduleAutoHide(2500);
+            }}
             className={`whiteboard-minimap select-none transition-shadow ${isDraggingBar ? 'opacity-90' : ''}`}
         >
             {/* Collapsed Pill Button */}
@@ -280,6 +317,7 @@ export default function WhiteboardMinimap({
                     onClick={() => {
                         setIsBarCollapsed(false);
                         saveBarState(pos, false);
+                        scheduleAutoHide(4000);
                     }}
                     className="bg-slate-900/95 border border-slate-700/80 text-white rounded-full px-3 py-1.5 shadow-2xl flex items-center gap-2 cursor-pointer hover:bg-slate-800 transition group hover:scale-105"
                     title="Expand Zoom & Minimap Controls"

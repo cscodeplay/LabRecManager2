@@ -1,21 +1,18 @@
 const { PrismaClient } = require('@prisma/client');
 
-const HEALTHY_FALLBACK_URL = process.env.DATABASE_URL_OLD || "postgresql://neondb_owner:npg_AqdEieg3QG0C@ep-icy-glade-ahfbz57u.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require";
+let dbUrl = process.env.DATABASE_URL;
 
-let dbUrl = process.env.DATABASE_URL || HEALTHY_FALLBACK_URL;
-
-// If configured URL is the known quota-exceeded endpoint (ep-dawn-math-aznkmg6c)
-// or if ACTIVE_DB is explicitly set to 'old', immediately route to the healthy cluster.
-const isQuotaExceededEndpoint = dbUrl && dbUrl.includes('ep-dawn-math-aznkmg6c');
-
-if (process.env.ACTIVE_DB === 'old' || isQuotaExceededEndpoint) {
-    dbUrl = HEALTHY_FALLBACK_URL;
-    console.log('[DB Config] Using healthy database cluster (ep-icy-glade-ahfbz57u)');
-} else if (process.env.ACTIVE_DB === 'new' && process.env.DATABASE_URL_NEW && !process.env.DATABASE_URL_NEW.includes('ep-dawn-math-aznkmg6c')) {
+if (process.env.ACTIVE_DB === 'new' && process.env.DATABASE_URL_NEW) {
     dbUrl = process.env.DATABASE_URL_NEW;
     console.log('[DB Config] Using DATABASE_URL_NEW');
-} else {
+} else if (process.env.ACTIVE_DB === 'old' && process.env.DATABASE_URL_OLD) {
+    dbUrl = process.env.DATABASE_URL_OLD;
+    console.log('[DB Config] Using DATABASE_URL_OLD');
+} else if (dbUrl) {
     console.log('[DB Config] Using configured DATABASE_URL');
+} else {
+    dbUrl = process.env.DATABASE_URL_NEW || process.env.DATABASE_URL_OLD;
+    console.log('[DB Config] Using fallback database URL');
 }
 
 // Create a single instance of Prisma Client with query logging

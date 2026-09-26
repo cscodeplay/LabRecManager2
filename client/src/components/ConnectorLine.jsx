@@ -230,6 +230,83 @@ export const renderArrowhead = (type, point, angle, size = 12, color) => {
     return null;
 };
 
+// Calculates terminal angle in degrees for the arrowhead to ensure it stays upright
+// (e.g. entering top/bottom anchors strictly vertically at 90° or -90°,
+// even if connected shapes are not in line with each other)
+export const getConnectorArrowAngle = (
+    endpoint, // 'target' | 'source'
+    startPt,
+    endPt,
+    pathType = 'orthogonal',
+    waypoint = null,
+    sourceAnchor = 'auto',
+    targetAnchor = 'auto'
+) => {
+    if (!startPt || !endPt) return 0;
+    const isTarget = endpoint === 'target';
+    const anchor = isTarget ? targetAnchor : sourceAnchor;
+
+    // 1. Explicit Anchor Overrides: Anchors define perpendicular face entry
+    // Entering top anchor -> points straight DOWN into shape (90°, strictly upright)
+    if (anchor === 'top') return 90;
+    // Entering bottom anchor -> points straight UP into shape (-90°, strictly upright)
+    if (anchor === 'bottom') return -90;
+    // Entering left anchor -> points straight RIGHT (0°)
+    if (anchor === 'left') return 0;
+    // Entering right anchor -> points straight LEFT (180°)
+    if (anchor === 'right') return 180;
+
+    // 2. Orthogonal (Elbow) Path Terminal Segment Direction
+    if (pathType === 'orthogonal') {
+        const isVertical = Math.abs(endPt.y - startPt.y) > Math.abs(endPt.x - startPt.x);
+        if (isVertical) {
+            const stepY = waypoint?.y !== undefined ? waypoint.y : (startPt.y + endPt.y) / 2;
+            if (isTarget) {
+                return endPt.y >= stepY ? 90 : -90; // Strictly vertical (upright)
+            } else {
+                return startPt.y <= stepY ? -90 : 90; // Strictly vertical (upright)
+            }
+        } else {
+            const stepX = waypoint?.x !== undefined ? waypoint.x : (startPt.x + endPt.x) / 2;
+            if (isTarget) {
+                return endPt.x >= stepX ? 0 : 180; // Strictly horizontal
+            } else {
+                return startPt.x <= stepX ? 180 : 0;
+            }
+        }
+    }
+
+    // 3. Curved Bezier Terminal Tangent
+    if (pathType === 'curved') {
+        if (waypoint) {
+            const cpX = 2 * waypoint.x - 0.5 * (startPt.x + endPt.x);
+            const cpY = 2 * waypoint.y - 0.5 * (startPt.y + endPt.y);
+            if (isTarget) {
+                return (Math.atan2(endPt.y - cpY, endPt.x - cpX) * 180) / Math.PI;
+            } else {
+                return (Math.atan2(startPt.y - cpY, startPt.x - cpX) * 180) / Math.PI;
+            }
+        }
+        const { cp1, cp2 } = getCurvedControlPoints(startPt, endPt, sourceAnchor, targetAnchor);
+        if (isTarget) {
+            const dx = endPt.x - cp2.x;
+            const dy = endPt.y - cp2.y;
+            return (Math.atan2(dy, dx) * 180) / Math.PI;
+        } else {
+            const dx = startPt.x - cp1.x;
+            const dy = startPt.y - cp1.y;
+            return (Math.atan2(dy, dx) * 180) / Math.PI;
+        }
+    }
+
+    // 4. Straight Path Fallback
+    if (isTarget) {
+        return (Math.atan2(endPt.y - startPt.y, endPt.x - startPt.x) * 180) / Math.PI;
+    } else {
+        return (Math.atan2(startPt.y - endPt.y, startPt.x - endPt.x) * 180) / Math.PI;
+    }
+};
+
 // Calculates angle in degrees for the arrowhead
 export const calculateAngle = (p1, p2) => {
     return (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI;
@@ -408,9 +485,25 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
         setSnapTarget(null);
     };
 
-    // Calculate angles for arrows
-    const sourceAngle = calculateAngle(actualTargetPoint, actualSourcePoint); // reverse
-    const targetAngle = calculateAngle(actualSourcePoint, actualTargetPoint);
+    // Calculate angles for arrows ensuring upright orientation at vertical anchors
+    const sourceAngle = getConnectorArrowAngle(
+        'source',
+        actualSourcePoint,
+        actualTargetPoint,
+        pathType,
+        (waypoint || draggingEndpoint === 'waypoint') ? actualWaypoint : null,
+        sourceAnchor,
+        targetAnchor
+    );
+    const targetAngle = getConnectorArrowAngle(
+        'target',
+        actualSourcePoint,
+        actualTargetPoint,
+        pathType,
+        (waypoint || draggingEndpoint === 'waypoint') ? actualWaypoint : null,
+        sourceAnchor,
+        targetAnchor
+    );
 
     // Stroke dasharray
     let strokeDasharray = 'none';

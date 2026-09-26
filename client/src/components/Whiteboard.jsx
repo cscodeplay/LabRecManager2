@@ -15,7 +15,7 @@ import {
     Folder, Upload, Loader2, FlipHorizontal, FlipVertical, Sun, Contrast, Sliders,
     Clock, GripHorizontal, GripVertical, LayoutTemplate, Flashlight, Library,
     Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX,
-    ChevronUp, ChevronsUp, ChevronsDown
+    ChevronUp, ChevronsUp, ChevronsDown, FileText
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
@@ -23,7 +23,7 @@ import AdminPermissionsPanel from './AdminPermissionsPanel';
 import RadialToolbar from './RadialToolbar';
 import { BRUSH_TYPES, renderCalligraphy, renderCrayon, renderWatercolor, renderFountainPen, floodFill, sampleColor } from './WhiteboardBrushEngine';
 import StickyNoteRenderer, { createStickyNoteObject, STICKY_COLORS } from './StickyNote';
-import ConnectorLine, { findNearestShape, getAnchorPoint, getConnectorPath, renderArrowhead, calculateAngle } from './ConnectorLine';
+import ConnectorLine, { findNearestShape, getAnchorPoint, getConnectorPath, renderArrowhead, calculateAngle, getConnectorArrowAngle, getCurvedControlPoints, getConnectorMidpoint } from './ConnectorLine';
 import TemplateGallery from './TemplateGallery';
 import ClassroomTimerModal from './ClassroomTimerModal';
 import WhiteboardImagePickerModal from './WhiteboardImagePickerModal';
@@ -33,7 +33,8 @@ import DomainShapeLibraryModal, { DOMAIN_SHAPES } from './DomainShapeLibrary';
 import WhiteboardShortcutsModal from './WhiteboardShortcutsModal';
 import WhiteboardClipboardPanel from './WhiteboardClipboardPanel';
 import WhiteboardMediaPlayer from './WhiteboardMediaPlayer';
-import Whiteboard3DObject, { get3DModelMesh, parseOBJ, parseSTL, parseJSON3D } from './Whiteboard3DObject';
+import WhiteboardPdfViewer from './WhiteboardPdfViewer';
+import Whiteboard3DObject, { get3DModelMesh, parseOBJ, parseSTL, parseJSON3D, shadeColor } from './Whiteboard3DObject';
 import TorchIcon from './TorchIcon';
 import api from '@/lib/api';
 import { toast } from 'react-hot-toast';
@@ -776,25 +777,52 @@ export default function Whiteboard({
     const mediaObjects = pageMediaObjects[currentPage] || [];
     const [selectedMediaId, setSelectedMediaId] = useState(null);
     const [showMediaModal, setShowMediaModal] = useState(false);
-    const [mediaInputTab, setMediaInputTab] = useState('youtube'); // 'local' | 'youtube' | 'embed' | 'recordings'
+    const [mediaInputTab, setMediaInputTab] = useState('youtube'); // 'local' | 'youtube' | 'embed' | 'recordings' | 'pdf'
     const [mediaInputTitle, setMediaInputTitle] = useState('');
     const [mediaInputUrl, setMediaInputUrl] = useState('');
     const [availableRecordings, setAvailableRecordings] = useState([]);
     const [isLoadingRecordings, setIsLoadingRecordings] = useState(false);
     const [recordingsSearch, setRecordingsSearch] = useState('');
 
-    // Fetch user recordings when recordings tab in media modal is opened
+    // ─── Canvas Embedded Resizable PDF Viewers State ───
+    const [pagePdfObjects, setPagePdfObjects] = useState({ 0: [] });
+    const pdfObjects = pagePdfObjects[currentPage] || [];
+    const [selectedPdfId, setSelectedPdfId] = useState(null);
+    const [pdfInputUrl, setPdfInputUrl] = useState('');
+    const [pdfInputTitle, setPdfInputTitle] = useState('');
+
+    // Fetch user recordings when recordings tab in media modal is opened (both local cache and server)
     useEffect(() => {
         if (showMediaModal && mediaInputTab === 'recordings') {
             setIsLoadingRecordings(true);
+
+            // 1. Immediately read any local recordings stored during current or previous browser sessions
+            let localRecs = [];
+            try {
+                localRecs = JSON.parse(localStorage.getItem('whiteboard_local_recordings') || '[]');
+                if (localRecs.length > 0) {
+                    setAvailableRecordings(localRecs);
+                }
+            } catch (e) {}
+
+            // 2. Fetch authenticated recordings from backend database
             api.get('/recordings')
                 .then(res => {
-                    if (res.data?.success) {
-                        setAvailableRecordings(res.data.data || []);
-                    }
+                    const serverRecs = res.data?.data || res.data?.recordings || (Array.isArray(res.data) ? res.data : []);
+                    const merged = [...serverRecs];
+                    // Append any local recordings not yet synced or created locally
+                    localRecs.forEach(lr => {
+                        if (!merged.some(mr => mr.id === lr.id || (mr.title === lr.title && mr.duration === lr.duration))) {
+                            merged.push(lr);
+                        }
+                    });
+                    setAvailableRecordings(merged);
                 })
                 .catch(err => {
-                    console.error('Failed to load recordings for media modal:', err);
+                    console.warn('Backend recordings fetch notice, using local cache:', err);
+                    if (localRecs.length > 0) {
+                        setAvailableRecordings(localRecs);
+                    }
                 })
                 .finally(() => {
                     setIsLoadingRecordings(false);
@@ -1143,6 +1171,7 @@ export default function Whiteboard({
                     if (state.pageTextObjects) setPageTextObjects(state.pageTextObjects);
                     if (state.pageShapeObjects) setPageShapeObjects(state.pageShapeObjects);
                     if (state.pageMediaObjects) setPageMediaObjects(state.pageMediaObjects);
+                    if (state.pagePdfObjects) setPagePdfObjects(state.pagePdfObjects);
                     if (state.page3DObjects) setPage3DObjects(state.page3DObjects);
                     if (state.whiteboardTasks) setWhiteboardTasks(state.whiteboardTasks);
                     if (state.color) setColor(state.color);
@@ -1210,6 +1239,7 @@ export default function Whiteboard({
                     pageTextObjects,
                     pageShapeObjects,
                     pageMediaObjects,
+                    pagePdfObjects,
                     page3DObjects,
                     whiteboardTasks,
                     color,
@@ -1256,7 +1286,7 @@ export default function Whiteboard({
         return () => {
             if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         };
-    }, [STORAGE_KEY, pages, currentPage, totalPages, pageBackgrounds, pageImageObjects, pageTextObjects, pageShapeObjects, pageMediaObjects, page3DObjects, whiteboardTasks, color, strokeWidth, eraserSize, strokeStyle, tool]);
+    }, [STORAGE_KEY, pages, currentPage, totalPages, pageBackgrounds, pageImageObjects, pageTextObjects, pageShapeObjects, pageMediaObjects, pagePdfObjects, page3DObjects, whiteboardTasks, color, strokeWidth, eraserSize, strokeStyle, tool]);
 
     // Initialize canvas - keep transparent to show CSS background patterns
     useEffect(() => {
@@ -2437,6 +2467,14 @@ export default function Whiteboard({
             setSelected3DId(null);
             hasDeleted = true;
         }
+        if (selectedPdfId) {
+            setPagePdfObjects(prev => ({
+                ...prev,
+                [currentPage]: (prev[currentPage] || []).filter(p => p.id !== selectedPdfId)
+            }));
+            setSelectedPdfId(null);
+            hasDeleted = true;
+        }
         if (selection) {
             handleDeleteSelection();
             hasDeleted = true;
@@ -2444,7 +2482,7 @@ export default function Whiteboard({
         if (hasDeleted) {
             saveToHistory();
         }
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, selection, handleDeleteSelection, saveToHistory, currentPage]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, selectedPdfId, selection, handleDeleteSelection, saveToHistory, currentPage]);
 
     // Unified Copy
     const handleCopy = useCallback(() => {
@@ -4148,6 +4186,7 @@ export default function Whiteboard({
                 setSelectedImageId(null);
                 setSelected3DId(null);
                 setSelectedMediaId(null);
+                setSelectedPdfId(null);
                 toast.success('Connected elements!', { icon: '🔗' });
             }
             // If released in blank space, clean cancel! No connector created.
@@ -4163,7 +4202,7 @@ export default function Whiteboard({
         };
     }, [activeConnectorDrag, shapeObjects, imageObjects, color, strokeWidth, socket, sessionId, saveToHistory, setShapeObjects, isShiftDown]);
 
-    // Click on canvas to deselect images, text, shapes, 3D and media objects
+    // Click on canvas to deselect images, text, shapes, 3D, media and PDF objects
     const handleCanvasClick = useCallback(() => {
         if (justCreatedShapeRef.current) {
             justCreatedShapeRef.current = false;
@@ -4183,6 +4222,7 @@ export default function Whiteboard({
         setSelection(null);
         setSelected3DId(null);
         setSelectedMediaId(null);
+        setSelectedPdfId(null);
     }, []);
 
     // Get position from event (works for pointer, touch, and mouse)
@@ -4352,7 +4392,52 @@ export default function Whiteboard({
         }
     };
 
-    const classifyAndSnapStroke = (pts, autoShapeEnabled, currentColor, currentStrokeWidth) => {
+    // ─── AI Handwriting & Ink Recognition Engine ───
+    const recognizeHandwriting = async (strokePoints) => {
+        if (!strokePoints || strokePoints.length < 5) return null;
+        try {
+            const xs = strokePoints.map(p => Math.round(p.x));
+            const ys = strokePoints.map(p => Math.round(p.y));
+            const ts = strokePoints.map((p, i) => p.timestamp ? (p.timestamp - strokePoints[0].timestamp) : i * 20);
+
+            const payload = {
+                app_version: 0.4,
+                api_level: '533.0.30',
+                device: '5',
+                input_type: '0',
+                options: 'enable_pre_space',
+                requests: [
+                    {
+                        writing_guide: {
+                            writing_area_width: 1920,
+                            writing_area_height: 1080
+                        },
+                        ink: [
+                            [xs, ys, ts]
+                        ],
+                        language: 'en'
+                    }
+                ]
+            };
+
+            const res = await fetch('https://inputtools.google.com/request?itc=en-t-i0-handwrit&app=translate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) return null;
+            const json = await res.json();
+            if (json[0] === 'SUCCESS' && json[1]?.[0]?.[1]?.[0]) {
+                return json[1][0][1][0];
+            }
+        } catch (err) {
+            console.warn('Handwriting recognition API notice:', err);
+        }
+        return null;
+    };
+
+    const classifyAndSnapStroke = (pts, autoShapeEnabled, currentColor, currentStrokeWidth, isShiftPressed = false) => {
         if (!pts || pts.length < 5) return null;
 
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -4387,7 +4472,7 @@ export default function Whiteboard({
         }
         polygonArea = Math.abs(polygonArea / 2);
 
-        // If Smart Shape is enabled AND stroke is closed: Classify geometric shape (Triangle, Circle, Rectangle, Star)
+        // If Smart Shape is enabled AND stroke is closed: Classify geometric shape (Triangle, Circle, Rectangle, Star, Polygons)
         if (autoShapeEnabled && isClosed) {
             const areaRatio = polygonArea / (w * h || 1);
             const circularity = (4 * Math.PI * polygonArea) / (pathLength * pathLength || 1);
@@ -4408,9 +4493,9 @@ export default function Whiteboard({
             const stdDevRadius = Math.sqrt(sumRadiusDiffSq / pts.length);
             const radiusVarianceRatio = stdDevRadius / (avgRadius || 1);
 
-            // 1. Circle / Ellipse
+            // 1. Circle / Ellipse (Holding Shift forces a mathematically perfect uniform Circle)
             if (circularity > 0.70 && radiusVarianceRatio < 0.18) {
-                const isEquilateral = aspectRatio >= 0.75 && aspectRatio <= 1.35;
+                const isEquilateral = isShiftPressed || (aspectRatio >= 0.75 && aspectRatio <= 1.35);
                 const finalW = isEquilateral ? maxDim : w;
                 const finalH = isEquilateral ? maxDim : h;
                 return {
@@ -4428,11 +4513,32 @@ export default function Whiteboard({
             }
 
             // Run Douglas-Peucker simplification with adaptive tolerance
-            const simplified = simplifyPoints(pts, Math.max(12, maxDim * 0.11));
+            const simplified = simplifyPoints(pts, Math.max(10, maxDim * 0.10));
             const cornerCount = simplified.length - 1;
 
-            // 2. Triangle: 3 corners (or 3-4 simplified vertices) AND area ratio in 0.22 - 0.68
-            if ((cornerCount === 3 || cornerCount === 4) && areaRatio >= 0.20 && areaRatio <= 0.68) {
+            // 2. Triangle: 3 corners (or 3-4 simplified vertices) AND area ratio in 0.18 - 0.70
+            // Holding Shift forces a mathematically perfect Equilateral Triangle
+            if ((cornerCount === 3 || cornerCount === 4) && areaRatio >= 0.18 && areaRatio <= 0.70) {
+                if (isShiftPressed) {
+                    const side = maxDim;
+                    const triH = side * (Math.sqrt(3) / 2);
+                    const topPt = { x: cx, y: cy - (triH * 2) / 3 };
+                    const leftPt = { x: cx - side / 2, y: cy + triH / 3 };
+                    const rightPt = { x: cx + side / 2, y: cy + triH / 3 };
+                    return {
+                        id: Date.now().toString(),
+                        type: 'polygon',
+                        x: cx - side / 2,
+                        y: cy - (triH * 2) / 3,
+                        width: side,
+                        height: triH,
+                        points: [topPt, leftPt, rightPt],
+                        color: currentColor,
+                        strokeWidth: currentStrokeWidth,
+                        fillColor: 'transparent',
+                        rotation: 0
+                    };
+                }
                 return {
                     id: Date.now().toString(),
                     type: 'triangle',
@@ -4448,15 +4554,16 @@ export default function Whiteboard({
             }
 
             // 3. Rectangle / Square: 4 corners (or 4-5 simplified vertices) OR area ratio > 0.65
+            // Holding Shift forces a mathematically perfect Square
             if (areaRatio > 0.65 || cornerCount === 4) {
-                const isSquare = Math.abs(w - h) / maxDim < 0.2;
+                const isSquare = isShiftPressed || (Math.abs(w - h) / maxDim < 0.2);
                 const finalW = isSquare ? maxDim : w;
                 const finalH = isSquare ? maxDim : h;
                 return {
                     id: Date.now().toString(),
                     type: 'rectangle',
-                    x: minX,
-                    y: minY,
+                    x: isSquare ? cx - maxDim / 2 : minX,
+                    y: isSquare ? cy - maxDim / 2 : minY,
                     width: finalW,
                     height: finalH,
                     color: currentColor,
@@ -4466,15 +4573,34 @@ export default function Whiteboard({
                 };
             }
 
-            // 4. Star: 5 or more sharp outer points
-            if (cornerCount >= 8) {
+            // 4. Any Polygon (Pentagon, Hexagon, Heptagon, Octagon, or any N-sided polygon, N >= 5)
+            // Holding Shift forces a mathematically uniform, equal-sided regular polygon!
+            if (cornerCount >= 5) {
+                const N = cornerCount;
+                let polyPoints = [];
+
+                if (isShiftPressed) {
+                    const R = maxDim / 2;
+                    const theta0 = (N % 2 === 1) ? -Math.PI / 2 : -Math.PI / 2 + Math.PI / N;
+                    for (let i = 0; i < N; i++) {
+                        const angle = theta0 + (2 * Math.PI * i) / N;
+                        polyPoints.push({
+                            x: Math.round(cx + R * Math.cos(angle)),
+                            y: Math.round(cy + R * Math.sin(angle))
+                        });
+                    }
+                } else {
+                    polyPoints = simplified.slice(0, N);
+                }
+
                 return {
                     id: Date.now().toString(),
-                    type: 'star',
-                    x: minX,
-                    y: minY,
-                    width: w,
-                    height: h,
+                    type: 'polygon',
+                    x: isShiftPressed ? cx - maxDim / 2 : minX,
+                    y: isShiftPressed ? cy - maxDim / 2 : minY,
+                    width: isShiftPressed ? maxDim : w,
+                    height: isShiftPressed ? maxDim : h,
+                    points: polyPoints,
                     color: currentColor,
                     strokeWidth: currentStrokeWidth,
                     fillColor: 'transparent',
@@ -4484,17 +4610,31 @@ export default function Whiteboard({
         }
 
         // Default Hold-to-Straighten: Snaps any line to a razor-straight Line!
+        // If Shift is pressed, snap angle to standard 45-degree increments
+        let endPt = pEnd;
+        if (isShiftPressed) {
+            const dx = pEnd.x - pStart.x;
+            const dy = pEnd.y - pStart.y;
+            const angle = Math.atan2(dy, dx);
+            const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+            const dist = Math.hypot(dx, dy);
+            endPt = {
+                x: pStart.x + Math.cos(snapAngle) * dist,
+                y: pStart.y + Math.sin(snapAngle) * dist
+            };
+        }
+
         return {
             id: Date.now().toString(),
             type: 'line',
             startX: pStart.x,
             startY: pStart.y,
-            endX: pEnd.x,
-            endY: pEnd.y,
-            x: Math.min(pStart.x, pEnd.x),
-            y: Math.min(pStart.y, pEnd.y),
-            width: Math.max(1, Math.abs(pEnd.x - pStart.x)),
-            height: Math.max(1, Math.abs(pEnd.y - pStart.y)),
+            endX: endPt.x,
+            endY: endPt.y,
+            x: Math.min(pStart.x, endPt.x),
+            y: Math.min(pStart.y, endPt.y),
+            width: Math.max(1, Math.abs(endPt.x - pStart.x)),
+            height: Math.max(1, Math.abs(endPt.y - pStart.y)),
             color: currentColor,
             strokeWidth: currentStrokeWidth,
             rotation: 0
@@ -4548,6 +4688,13 @@ export default function Whiteboard({
             }
             ctx.closePath();
             ctx.stroke();
+        } else if (shape.type === 'polygon' && shape.points && shape.points.length >= 3) {
+            ctx.moveTo(shape.points[0].x, shape.points[0].y);
+            for (let i = 1; i < shape.points.length; i++) {
+                ctx.lineTo(shape.points[i].x, shape.points[i].y);
+            }
+            ctx.closePath();
+            ctx.stroke();
         }
         ctx.restore();
     };
@@ -4557,7 +4704,8 @@ export default function Whiteboard({
         const pts = currentPathPointsRef.current;
         if (!pts || pts.length < 5) return;
 
-        const snapped = classifyAndSnapStroke(pts, isAutoShape, color, strokeWidth);
+        const isShift = !!(isShiftDown);
+        const snapped = classifyAndSnapStroke(pts, isAutoShape, color, strokeWidth, isShift);
         if (!snapped) return;
 
         const canvas = canvasRef.current;
@@ -4576,15 +4724,19 @@ export default function Whiteboard({
         snappedShapeRef.current = snapped;
 
         if (typeof navigator !== 'undefined' && navigator.vibrate) {
-            try { navigator.vibrate(25); } catch (_) {}
+            try { navigator.vibrate(30); } catch (_) {}
         }
 
-        toast(`✨ Snapped to ${snapped.type === 'line' ? 'straight line' : snapped.type}!`, {
+        const label = snapped.type === 'line' 
+            ? 'straight line' 
+            : (snapped.type === 'polygon' ? `${snapped.points?.length || ''}-sided polygon` : snapped.type);
+
+        toast(`✨ Snapped to ${label}!`, {
             id: 'hold-snap-hint',
-            duration: 1200,
+            duration: 1500,
             icon: '✨'
         });
-    }, [tool, isAutoShape, color, strokeWidth]);
+    }, [tool, isAutoShape, color, strokeWidth, isShiftDown]);
 
     const startDrawing = useCallback((e) => {
         if (!canUserDraw) return;
@@ -4687,7 +4839,7 @@ export default function Whiteboard({
                 }
                 strokeHoldTimerRef.current = setTimeout(() => {
                     triggerHoldSnap(pos);
-                }, 420);
+                }, 2000);
             }
 
             ctx.beginPath();
@@ -4859,10 +5011,10 @@ export default function Whiteboard({
                 return;
             }
 
-            // Hold-to-straighten movement detection & timer management
+            // Hold-to-straighten movement detection & timer management (hold stationary for 2 seconds)
             if (tool === 'pen' && !isStrokeSnappedRef.current) {
                 const dHold = Math.hypot(pos.x - lastHoldPtRef.current.x, pos.y - lastHoldPtRef.current.y);
-                if (dHold > 8) {
+                if (dHold > 12) {
                     if (strokeHoldTimerRef.current) {
                         clearTimeout(strokeHoldTimerRef.current);
                         strokeHoldTimerRef.current = null;
@@ -4870,7 +5022,7 @@ export default function Whiteboard({
                     lastHoldPtRef.current = pos;
                     strokeHoldTimerRef.current = setTimeout(() => {
                         triggerHoldSnap(pos);
-                    }, 420);
+                    }, 2000);
                 }
             }
 
@@ -5172,7 +5324,7 @@ export default function Whiteboard({
                     smooth: false,
                     isHighlighter: false
                 };
-            } else if (['circle', 'rectangle', 'triangle', 'star'].includes(snapped.type)) {
+            } else if (['circle', 'rectangle', 'triangle', 'star', 'polygon'].includes(snapped.type)) {
                 committedShape = {
                     id: Date.now().toString(),
                     type: snapped.type,
@@ -5180,6 +5332,7 @@ export default function Whiteboard({
                     y: snapped.y,
                     width: snapped.width,
                     height: snapped.height,
+                    points: snapped.points || null,
                     rotation: 0,
                     color: color,
                     strokeWidth: strokeWidth,
@@ -5237,7 +5390,7 @@ export default function Whiteboard({
                             smooth: false,
                             isHighlighter: false
                         };
-                    } else if (['circle', 'rectangle', 'triangle', 'star'].includes(autoSnapped.type)) {
+                    } else if (['circle', 'rectangle', 'triangle', 'star', 'polygon'].includes(autoSnapped.type)) {
                         committedShape = {
                             id: Date.now().toString(),
                             type: autoSnapped.type,
@@ -5245,6 +5398,7 @@ export default function Whiteboard({
                             y: autoSnapped.y,
                             width: autoSnapped.width,
                             height: autoSnapped.height,
+                            points: autoSnapped.points || null,
                             rotation: 0,
                             color: color,
                             strokeWidth: strokeWidth,
@@ -5430,6 +5584,37 @@ export default function Whiteboard({
                 };
                 setShapeObjects(prev => [...prev, newShapeObj]);
                 if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+
+                // If OCR/Handwriting Recognition is active, convert ink to typed text automatically
+                if (tool === 'pen' && isOcrActive && pts && pts.length >= 6) {
+                    recognizeHandwriting(pts).then(recognizedText => {
+                        if (recognizedText && recognizedText.trim()) {
+                            setShapeObjects(prev => prev.filter(s => s.id !== newShapeObj.id));
+                            if (socket && sessionId) socket.emit('whiteboard:shape-delete', { sessionId, shapeId: newShapeObj.id });
+
+                            const strokeH = Math.max(32, maxY - minY);
+                            const textW = Math.max(maxX - minX, 90);
+                            const newTextObj = {
+                                id: Date.now(),
+                                text: recognizedText,
+                                x: minX,
+                                y: minY,
+                                width: textW,
+                                height: strokeH,
+                                rotation: 0,
+                                color: color,
+                                fontSize: Math.max(16, Math.min(52, Math.round(strokeH * 0.75))),
+                                fontWeight: 'normal',
+                                fontStyle: 'normal',
+                                textAlign: 'left'
+                            };
+                            setTextObjects(prev => [...prev, newTextObj]);
+                            if (socket && sessionId) socket.emit('whiteboard:text-add', { sessionId, textObj: newTextObj });
+                            saveToHistory();
+                            toast.success(`✍️ Recognized handwriting: "${recognizedText}"`, { id: 'handwriting-ocr' });
+                        }
+                    }).catch(() => {});
+                }
             }
         } else if (tool === 'eraser') {
             // Eraser already modified the canvas directly during handleMouseMove.
@@ -6109,21 +6294,166 @@ export default function Whiteboard({
         // 3. Draw the main canvas (live strokes and drawings)
         ctx.drawImage(canvas, 0, 0);
 
-        // 4. Draw shapes to screenshot
+        // 4. Draw shapes to screenshot (Geometric shapes, Connectors, Sticky Notes, Domain Shapes, Rulers, Graphs)
         const currentShapeObjects = pageShapeObjects[currentPage] || [];
-        currentShapeObjects.forEach(shpObj => {
+        const currentImageObjects = pageImageObjects[currentPage] || [];
+
+        // 4A. Standard Shapes, Domain Shapes, and Sticky Notes
+        for (const shpObj of currentShapeObjects) {
+            // Smart Connectors are handled in step 4B after shapes
+            if (shpObj.type === 'connector') continue;
+
+            if (shpObj.type === 'sticky_note') {
+                ctx.save();
+                const noteW = shpObj.width || 200;
+                const noteH = shpObj.height || 200;
+                const centerX = shpObj.x + noteW / 2;
+                const centerY = shpObj.y + noteH / 2;
+                ctx.translate(centerX, centerY);
+                ctx.rotate(((shpObj.rotation || 0) * Math.PI) / 180);
+                ctx.translate(-centerX, -centerY);
+
+                const noteColor = shpObj.fillColor || shpObj.color || '#fef08a';
+                const borderColor = shpObj.color || '#eab308';
+                const textColor = shpObj.textColor || '#713f12';
+
+                // Shadow
+                ctx.shadowColor = 'rgba(0,0,0,0.18)';
+                ctx.shadowBlur = 10;
+                ctx.shadowOffsetY = 4;
+
+                // Card body
+                ctx.fillStyle = noteColor;
+                ctx.beginPath();
+                if (ctx.roundRect) ctx.roundRect(shpObj.x, shpObj.y, noteW, noteH, 10);
+                else ctx.rect(shpObj.x, shpObj.y, noteW, noteH);
+                ctx.fill();
+
+                ctx.shadowColor = 'transparent';
+                ctx.strokeStyle = borderColor;
+                ctx.lineWidth = shpObj.strokeWidth || 1;
+                ctx.stroke();
+
+                // Top header bar
+                ctx.fillStyle = 'rgba(0,0,0,0.06)';
+                ctx.fillRect(shpObj.x, shpObj.y, noteW, 26);
+
+                // Pin dot
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath();
+                ctx.arc(shpObj.x + noteW / 2, shpObj.y + 13, 3.5, 0, 2 * Math.PI);
+                ctx.fill();
+
+                // Text content
+                const noteText = shpObj.text || shpObj.title || '';
+                if (noteText) {
+                    ctx.fillStyle = textColor;
+                    ctx.font = `${shpObj.fontStyle || 'normal'} ${shpObj.fontWeight || 'normal'} ${shpObj.fontSize || 13}px 'Inter', system-ui, sans-serif`;
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'top';
+                    const padX = 10;
+                    const maxW = noteW - padX * 2;
+                    const lHeight = (shpObj.fontSize || 13) * 1.35;
+                    let textY = shpObj.y + 34;
+                    const maxY = shpObj.y + noteH - 8;
+
+                    const paragraphs = noteText.split('\n');
+                    for (const para of paragraphs) {
+                        if (textY > maxY) break;
+                        if (!para) {
+                            textY += lHeight * 0.7;
+                            continue;
+                        }
+                        const words = para.split(' ');
+                        let curLine = '';
+                        for (const w of words) {
+                            const test = curLine ? `${curLine} ${w}` : w;
+                            if (ctx.measureText(test).width > maxW && curLine) {
+                                ctx.fillText(curLine, shpObj.x + padX, textY);
+                                textY += lHeight;
+                                if (textY > maxY) break;
+                                curLine = w;
+                            } else {
+                                curLine = test;
+                            }
+                        }
+                        if (curLine && textY <= maxY) {
+                            ctx.fillText(curLine, shpObj.x + padX, textY);
+                            textY += lHeight;
+                        }
+                    }
+                }
+                ctx.restore();
+                continue;
+            }
+
+            // Domain Shapes (Check if DOM SVG is present and serialize it for 100% precision)
+            if (DOMAIN_SHAPES && DOMAIN_SHAPES[shpObj.type]) {
+                const shapeEl = document.querySelector(`[data-shape-id="${shpObj.id}"] svg`);
+                if (shapeEl) {
+                    try {
+                        const serializer = new XMLSerializer();
+                        let svgStr = serializer.serializeToString(shapeEl);
+                        if (!svgStr.includes('xmlns=')) {
+                            svgStr = svgStr.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+                        }
+                        const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+                        const blobUrl = URL.createObjectURL(svgBlob);
+                        const img = new Image();
+                        await new Promise((resolve) => {
+                            img.onload = () => {
+                                ctx.save();
+                                const centerX = shpObj.x + (shpObj.width || 100) / 2;
+                                const centerY = shpObj.y + (shpObj.height || 100) / 2;
+                                ctx.translate(centerX, centerY);
+                                ctx.rotate(((shpObj.rotation || 0) * Math.PI) / 180);
+                                if (shpObj.flipX || shpObj.flipY) {
+                                    ctx.scale(shpObj.flipX ? -1 : 1, shpObj.flipY ? -1 : 1);
+                                }
+                                ctx.drawImage(img, -(shpObj.width || 100) / 2, -(shpObj.height || 100) / 2, shpObj.width || 100, shpObj.height || 100);
+                                ctx.restore();
+                                URL.revokeObjectURL(blobUrl);
+                                resolve();
+                            };
+                            img.onerror = () => {
+                                URL.revokeObjectURL(blobUrl);
+                                resolve();
+                            };
+                            img.src = blobUrl;
+                        });
+                        continue;
+                    } catch (e) {
+                        console.warn('Failed to serialize domain shape SVG:', e);
+                    }
+                }
+            }
+
+            // Standard shapes
             ctx.save();
-            const centerX = shpObj.x + shpObj.width / 2;
-            const centerY = shpObj.y + shpObj.height / 2;
-            
+            const centerX = shpObj.x + (shpObj.width || 100) / 2;
+            const centerY = shpObj.y + (shpObj.height || 100) / 2;
+
             ctx.translate(centerX, centerY);
-            ctx.rotate((shpObj.rotation || 0) * Math.PI / 180);
+            ctx.rotate(((shpObj.rotation || 0) * Math.PI) / 180);
+            if (shpObj.flipX || shpObj.flipY) {
+                ctx.scale(shpObj.flipX ? -1 : 1, shpObj.flipY ? -1 : 1);
+            }
             ctx.translate(-centerX, -centerY);
-            
+
             ctx.strokeStyle = shpObj.color;
-            ctx.lineWidth = shpObj.strokeWidth;
+            ctx.lineWidth = shpObj.strokeWidth || 2;
             const fill = shpObj.fillColor || 'transparent';
             ctx.fillStyle = fill;
+
+            // Border style: dashed, dotted, solid
+            const bStyle = shpObj.borderStyle || 'solid';
+            if (bStyle === 'dashed') {
+                ctx.setLineDash([Math.max(6, (shpObj.strokeWidth || 2) * 3), Math.max(4, (shpObj.strokeWidth || 2) * 2)]);
+            } else if (bStyle === 'dotted') {
+                ctx.setLineDash([Math.max(2, shpObj.strokeWidth || 2), Math.max(3, (shpObj.strokeWidth || 2) * 1.5)]);
+            } else {
+                ctx.setLineDash([]);
+            }
 
             ctx.beginPath();
             if (shpObj.type === 'path') {
@@ -6132,7 +6462,7 @@ export default function Whiteboard({
                     ctx.translate(shpObj.x || 0, shpObj.y || 0);
                     const pts = shpObj.points;
                     ctx.moveTo(pts[0].x, pts[0].y);
-                    if (shpObj.isSmoothed) {
+                    if (shpObj.isSmoothed || shpObj.smooth) {
                         for (let i = 1; i < pts.length - 1; i++) {
                             const xc = (pts[i].x + pts[i + 1].x) / 2;
                             const yc = (pts[i].y + pts[i + 1].y) / 2;
@@ -6159,83 +6489,126 @@ export default function Whiteboard({
                 ctx.lineTo(shpObj.x + ex, shpObj.y + ey);
                 ctx.lineCap = 'round';
                 ctx.stroke();
-            } else if (shpObj.type === 'arrow') {
+            } else if (shpObj.type === 'dashed_line') {
+                ctx.setLineDash([6, 6]);
                 const sx = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
                 const sy = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
                 const ex = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
                 const ey = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
                 ctx.moveTo(shpObj.x + sx, shpObj.y + sy);
                 ctx.lineTo(shpObj.x + ex, shpObj.y + ey);
-                const angle = Math.atan2(ey - sy, ex - sx);
-                const headLength = shpObj.strokeWidth * 4;
-                const p1 = { x: shpObj.x + ex, y: shpObj.y + ey };
-                const p2 = { x: shpObj.x + ex - headLength * Math.cos(angle - Math.PI / 6), y: shpObj.y + ey - headLength * Math.sin(angle - Math.PI / 6) };
-                const p3 = { x: shpObj.x + ex - headLength * Math.cos(angle + Math.PI / 6), y: shpObj.y + ey - headLength * Math.sin(angle + Math.PI / 6) };
+                ctx.lineCap = 'round';
                 ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.lineTo(p3.x, p3.y);
-                ctx.closePath();
-                ctx.fillStyle = shpObj.color;
-                ctx.fill();
-                ctx.beginPath();
-            } else if (shpObj.type === 'graph') {
-                ctx.rect(shpObj.x, shpObj.y, shpObj.width, shpObj.height);
-                if (shpObj.fillColor) ctx.fill();
-                ctx.beginPath();
-                ctx.lineWidth = Math.max(0.5, shpObj.strokeWidth * 0.3);
-                ctx.setLineDash([4, 4]);
-                ctx.globalAlpha = 0.4;
-                for(let i=0; i<9; i++) {
-                    ctx.moveTo(shpObj.x + shpObj.width/10, shpObj.y + shpObj.height/10 + (shpObj.height*0.8) * (i/8));
-                    ctx.lineTo(shpObj.x + shpObj.width*0.9, shpObj.y + shpObj.height/10 + (shpObj.height*0.8) * (i/8));
-                    ctx.moveTo(shpObj.x + shpObj.width/10 + (shpObj.width*0.8) * (i/8), shpObj.y + shpObj.height/10);
-                    ctx.lineTo(shpObj.x + shpObj.width/10 + (shpObj.width*0.8) * (i/8), shpObj.y + shpObj.height*0.9);
+            } else if (shpObj.type === 'arrow' || shpObj.type === 'double_arrow') {
+                const sx = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+                const sy = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+                const ex = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+                const ey = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                ctx.moveTo(shpObj.x + sx, shpObj.y + sy);
+                ctx.lineTo(shpObj.x + ex, shpObj.y + ey);
+                ctx.stroke();
+
+                const drawArrowEnd = (fromX, fromY, toX, toY) => {
+                    const angle = Math.atan2(toY - fromY, toX - fromX);
+                    const headLength = Math.max(10, (shpObj.strokeWidth || 2) * 4);
+                    ctx.beginPath();
+                    ctx.moveTo(toX, toY);
+                    ctx.lineTo(toX - headLength * Math.cos(angle - Math.PI / 6), toY - headLength * Math.sin(angle - Math.PI / 6));
+                    ctx.lineTo(toX - headLength * Math.cos(angle + Math.PI / 6), toY - headLength * Math.sin(angle + Math.PI / 6));
+                    ctx.closePath();
+                    ctx.fillStyle = shpObj.color;
+                    ctx.fill();
+                };
+                drawArrowEnd(shpObj.x + sx, shpObj.y + sy, shpObj.x + ex, shpObj.y + ey);
+                if (shpObj.type === 'double_arrow') {
+                    drawArrowEnd(shpObj.x + ex, shpObj.y + ey, shpObj.x + sx, shpObj.y + sy);
                 }
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.globalAlpha = 1.0;
-                ctx.setLineDash([]);
-                ctx.lineWidth = shpObj.strokeWidth;
-                // Y-axis
-                ctx.moveTo(shpObj.x + shpObj.width/10, shpObj.y + shpObj.height/10);
-                ctx.lineTo(shpObj.x + shpObj.width/10, shpObj.y + shpObj.height*0.9);
-                // X-axis
-                ctx.moveTo(shpObj.x + shpObj.width/10, shpObj.y + shpObj.height/2);
-                ctx.lineTo(shpObj.x + shpObj.width*0.9, shpObj.y + shpObj.height/2);
-                ctx.stroke();
-                ctx.beginPath();
-                // Y-axis arrow
-                ctx.moveTo(shpObj.x + shpObj.width/10, shpObj.y + shpObj.height/10);
-                ctx.lineTo(shpObj.x + shpObj.width/10 - 4, shpObj.y + shpObj.height/10 + 8);
-                ctx.moveTo(shpObj.x + shpObj.width/10, shpObj.y + shpObj.height/10);
-                ctx.lineTo(shpObj.x + shpObj.width/10 + 4, shpObj.y + shpObj.height/10 + 8);
-                // X-axis arrow
-                ctx.moveTo(shpObj.x + shpObj.width*0.9, shpObj.y + shpObj.height/2);
-                ctx.lineTo(shpObj.x + shpObj.width*0.9 - 8, shpObj.y + shpObj.height/2 - 4);
-                ctx.moveTo(shpObj.x + shpObj.width*0.9, shpObj.y + shpObj.height/2);
-                ctx.lineTo(shpObj.x + shpObj.width*0.9 - 8, shpObj.y + shpObj.height/2 + 4);
-                ctx.fill();
-            } else if (shpObj.type === 'rect') {
+            } else if (shpObj.type === 'rectangle' || shpObj.type === 'rect') {
                 ctx.rect(shpObj.x, shpObj.y, shpObj.width, shpObj.height);
-                if (shpObj.fillColor) ctx.fill();
+                if (fill && fill !== 'transparent') ctx.fill();
                 ctx.stroke();
+
+                if (bStyle === 'double') {
+                    const inset = Math.max(3, (shpObj.strokeWidth || 2) * 1.5);
+                    if (shpObj.width > inset * 2 && shpObj.height > inset * 2) {
+                        ctx.beginPath();
+                        ctx.lineWidth = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.5));
+                        ctx.rect(shpObj.x + inset, shpObj.y + inset, shpObj.width - inset * 2, shpObj.height - inset * 2);
+                        ctx.stroke();
+                    }
+                }
+            } else if (shpObj.type === 'rounded_rect') {
+                const r = Math.min(20, shpObj.width / 4, shpObj.height / 4);
+                if (ctx.roundRect) ctx.roundRect(shpObj.x, shpObj.y, shpObj.width, shpObj.height, r);
+                else ctx.rect(shpObj.x, shpObj.y, shpObj.width, shpObj.height);
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+
+                if (bStyle === 'double') {
+                    const inset = Math.max(3, (shpObj.strokeWidth || 2) * 1.5);
+                    const innerR = Math.max(0, r - inset);
+                    if (shpObj.width > inset * 2 && shpObj.height > inset * 2) {
+                        ctx.beginPath();
+                        ctx.lineWidth = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.5));
+                        if (ctx.roundRect) ctx.roundRect(shpObj.x + inset, shpObj.y + inset, shpObj.width - inset * 2, shpObj.height - inset * 2, innerR);
+                        else ctx.rect(shpObj.x + inset, shpObj.y + inset, shpObj.width - inset * 2, shpObj.height - inset * 2);
+                        ctx.stroke();
+                    }
+                }
             } else if (shpObj.type === 'circle') {
-                ctx.ellipse(shpObj.x + shpObj.width/2, shpObj.y + shpObj.height/2, shpObj.width/2, shpObj.height/2, 0, 0, Math.PI * 2);
-                if (shpObj.fillColor) ctx.fill();
+                ctx.ellipse(shpObj.x + shpObj.width / 2, shpObj.y + shpObj.height / 2, Math.abs(shpObj.width / 2), Math.abs(shpObj.height / 2), 0, 0, Math.PI * 2);
+                if (fill && fill !== 'transparent') ctx.fill();
                 ctx.stroke();
+
+                if (bStyle === 'double') {
+                    const inset = Math.max(3, (shpObj.strokeWidth || 2) * 1.5);
+                    const rx = Math.abs(shpObj.width / 2) - inset;
+                    const ry = Math.abs(shpObj.height / 2) - inset;
+                    if (rx > 0 && ry > 0) {
+                        ctx.beginPath();
+                        ctx.lineWidth = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.5));
+                        ctx.ellipse(shpObj.x + shpObj.width / 2, shpObj.y + shpObj.height / 2, rx, ry, 0, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                }
             } else if (shpObj.type === 'triangle') {
-                ctx.moveTo(shpObj.x + shpObj.width/2, shpObj.y);
+                ctx.moveTo(shpObj.x + shpObj.width / 2, shpObj.y);
                 ctx.lineTo(shpObj.x, shpObj.y + shpObj.height);
                 ctx.lineTo(shpObj.x + shpObj.width, shpObj.y + shpObj.height);
                 ctx.closePath();
-                if (shpObj.fillColor) ctx.fill();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'diamond') {
+                const w = shpObj.width, h = shpObj.height, sx = shpObj.x, sy = shpObj.y;
+                ctx.moveTo(sx + w / 2, sy);
+                ctx.lineTo(sx + w, sy + h / 2);
+                ctx.lineTo(sx + w / 2, sy + h);
+                ctx.lineTo(sx, sy + h / 2);
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'hexagon') {
+                const w = shpObj.width, h = shpObj.height, sx = shpObj.x, sy = shpObj.y;
+                ctx.moveTo(sx + w * 0.25, sy);
+                ctx.lineTo(sx + w * 0.75, sy);
+                ctx.lineTo(sx + w, sy + h * 0.5);
+                ctx.lineTo(sx + w * 0.75, sy + h);
+                ctx.lineTo(sx + w * 0.25, sy + h);
+                ctx.lineTo(sx, sy + h * 0.5);
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'polygon' && shpObj.points && shpObj.points.length >= 3) {
+                const pts = shpObj.points;
+                ctx.moveTo(pts[0].x, pts[0].y);
+                for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
                 ctx.stroke();
             } else if (shpObj.type === 'star') {
                 const cx = shpObj.x + shpObj.width / 2;
                 const cy = shpObj.y + shpObj.height / 2;
-                const outerRadius = Math.min(shpObj.width/2, shpObj.height/2);
+                const outerRadius = Math.min(shpObj.width / 2, shpObj.height / 2);
                 const innerRadius = outerRadius / 2.5;
                 for (let i = 0; i < 10; i++) {
                     const r = i % 2 === 0 ? outerRadius : innerRadius;
@@ -6244,10 +6617,94 @@ export default function Whiteboard({
                     else ctx.lineTo(cx + r * Math.cos(angle), cy + r * Math.sin(angle));
                 }
                 ctx.closePath();
-                if (shpObj.fillColor) ctx.fill();
+                if (fill && fill !== 'transparent') ctx.fill();
                 ctx.stroke();
+            } else if (shpObj.type === 'cloud') {
+                const w = shpObj.width, h = shpObj.height, sx = shpObj.x, sy = shpObj.y;
+                ctx.moveTo(sx + w * 0.2, sy + h * 0.7);
+                ctx.bezierCurveTo(sx + w * 0.05, sy + h * 0.7, sx + w * 0.05, sy + h * 0.45, sx + w * 0.2, sy + h * 0.4);
+                ctx.bezierCurveTo(sx + w * 0.15, sy + h * 0.15, sx + w * 0.45, sy + h * 0.1, sx + w * 0.5, sy + h * 0.3);
+                ctx.bezierCurveTo(sx + w * 0.6, sy + h * 0.15, sx + w * 0.85, sy + h * 0.2, sx + w * 0.85, sy + h * 0.4);
+                ctx.bezierCurveTo(sx + w * 0.98, sy + h * 0.45, sx + w * 0.98, sy + h * 0.7, sx + w * 0.8, sy + h * 0.7);
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'arc' || shpObj.type === 'curved_line') {
+                ctx.moveTo(shpObj.x, shpObj.y + shpObj.height);
+                ctx.quadraticCurveTo(shpObj.x + shpObj.width / 2, shpObj.y, shpObj.x + shpObj.width, shpObj.y + shpObj.height);
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'graph') {
+                ctx.rect(shpObj.x, shpObj.y, shpObj.width, shpObj.height);
+                if (shpObj.fillColor) ctx.fill();
+                ctx.beginPath();
+                ctx.lineWidth = Math.max(0.5, shpObj.strokeWidth * 0.3);
+                ctx.setLineDash([4, 4]);
+                ctx.globalAlpha = 0.4;
+                for (let i = 0; i < 9; i++) {
+                    ctx.moveTo(shpObj.x + shpObj.width / 10, shpObj.y + shpObj.height / 10 + (shpObj.height * 0.8) * (i / 8));
+                    ctx.lineTo(shpObj.x + shpObj.width * 0.9, shpObj.y + shpObj.height / 10 + (shpObj.height * 0.8) * (i / 8));
+                    ctx.moveTo(shpObj.x + shpObj.width / 10 + (shpObj.width * 0.8) * (i / 8), shpObj.y + shpObj.height / 10);
+                    ctx.lineTo(shpObj.x + shpObj.width / 10 + (shpObj.width * 0.8) * (i / 8), shpObj.y + shpObj.height * 0.9);
+                }
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.globalAlpha = 1.0;
+                ctx.setLineDash([]);
+                ctx.lineWidth = shpObj.strokeWidth;
+                // Y-axis
+                ctx.moveTo(shpObj.x + shpObj.width / 10, shpObj.y + shpObj.height / 10);
+                ctx.lineTo(shpObj.x + shpObj.width / 10, shpObj.y + shpObj.height * 0.9);
+                // X-axis
+                ctx.moveTo(shpObj.x + shpObj.width / 10, shpObj.y + shpObj.height / 2);
+                ctx.lineTo(shpObj.x + shpObj.width * 0.9, shpObj.y + shpObj.height / 2);
+                ctx.stroke();
+            } else if (shpObj.type === 'ruler') {
+                ctx.rect(shpObj.x, shpObj.y, shpObj.width, shpObj.height);
+                ctx.fillStyle = fill && fill !== 'transparent' ? fill : 'rgba(255, 255, 255, 0.7)';
+                ctx.fill();
+                ctx.stroke();
+                // Ruler tick marks
+                const cmPx = 38;
+                const numCm = Math.floor(shpObj.width / cmPx);
+                ctx.beginPath();
+                for (let i = 0; i <= numCm * 10; i++) {
+                    const tx = shpObj.x + i * (cmPx / 10);
+                    if (tx > shpObj.x + shpObj.width - 2) break;
+                    const isCm = i % 10 === 0;
+                    const isHalf = i % 5 === 0 && !isCm;
+                    const th = isCm ? 15 : (isHalf ? 10 : 5);
+                    ctx.moveTo(tx, shpObj.y);
+                    ctx.lineTo(tx, shpObj.y + th);
+                    if (isCm) {
+                        ctx.save();
+                        ctx.font = "9px 'Inter', sans-serif";
+                        ctx.fillStyle = shpObj.color;
+                        ctx.textAlign = 'center';
+                        ctx.fillText(`${i / 10}`, tx, shpObj.y + th + 10);
+                        ctx.restore();
+                    }
+                }
+                ctx.stroke();
+            } else if (shpObj.type === 'protractor') {
+                const r = Math.min(shpObj.width, shpObj.height) / 2;
+                const pcx = shpObj.x + shpObj.width / 2;
+                const pcy = shpObj.y + shpObj.height / 2;
+                ctx.beginPath();
+                ctx.arc(pcx, pcy, r, Math.PI, 0);
+                ctx.closePath();
+                ctx.fillStyle = fill && fill !== 'transparent' ? fill : 'rgba(255, 255, 255, 0.7)';
+                ctx.fill();
+                ctx.stroke();
+                // Inner arc
+                if (r > 30) {
+                    ctx.beginPath();
+                    ctx.arc(pcx, pcy, r - 30, Math.PI, 0);
+                    ctx.stroke();
+                }
             }
 
+            // Embedded text inside shape
             if (shpObj.text !== undefined && shpObj.text !== '' && shpObj.type !== 'ruler' && shpObj.type !== 'protractor') {
                 ctx.font = `${shpObj.fontSize || 20}px 'Inter', system-ui, sans-serif`;
                 ctx.fillStyle = shpObj.textColor || shpObj.color;
@@ -6262,10 +6719,401 @@ export default function Whiteboard({
                 });
             }
             ctx.restore();
+        }
+
+        // 4B. Smart Connectors Layer (Curved, Elbow/Orthogonal, Straight, with Upright Arrowheads)
+        const connectorObjects = currentShapeObjects.filter(s => s.type === 'connector');
+        connectorObjects.forEach(conn => {
+            ctx.save();
+            let startPt = { x: conn.startX || 0, y: conn.startY || 0 };
+            let endPt = { x: conn.endX || 0, y: conn.endY || 0 };
+
+            if (conn.sourceId) {
+                const srcShape = currentShapeObjects.find(s => s.id === conn.sourceId) || currentImageObjects.find(i => i.id === conn.sourceId);
+                if (srcShape) {
+                    startPt = getAnchorPoint(srcShape, conn.sourceAnchor || 'auto', endPt);
+                }
+            }
+            if (conn.targetId) {
+                const tgtShape = currentShapeObjects.find(s => s.id === conn.targetId) || currentImageObjects.find(i => i.id === conn.targetId);
+                if (tgtShape) {
+                    endPt = getAnchorPoint(tgtShape, conn.targetAnchor || 'auto', startPt);
+                }
+            }
+
+            ctx.strokeStyle = conn.color || '#3b82f6';
+            ctx.lineWidth = conn.strokeWidth || 2;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            const bStyle = conn.borderStyle || conn.lineStyle || 'solid';
+            if (bStyle === 'dashed') ctx.setLineDash([6, 6]);
+            else if (bStyle === 'dotted') ctx.setLineDash([2, 4]);
+            else ctx.setLineDash([]);
+
+            const pathType = conn.connectorType || conn.pathType || 'orthogonal';
+
+            ctx.beginPath();
+            ctx.moveTo(startPt.x, startPt.y);
+
+            if (pathType === 'orthogonal') {
+                const isVertical = Math.abs(endPt.y - startPt.y) > Math.abs(endPt.x - startPt.x);
+                if (isVertical) {
+                    const stepY = conn.waypoint?.y !== undefined ? conn.waypoint.y : (startPt.y + endPt.y) / 2;
+                    ctx.lineTo(startPt.x, stepY);
+                    ctx.lineTo(endPt.x, stepY);
+                    ctx.lineTo(endPt.x, endPt.y);
+                } else {
+                    const stepX = conn.waypoint?.x !== undefined ? conn.waypoint.x : (startPt.x + endPt.x) / 2;
+                    ctx.lineTo(stepX, startPt.y);
+                    ctx.lineTo(stepX, endPt.y);
+                    ctx.lineTo(endPt.x, endPt.y);
+                }
+            } else if (pathType === 'curved') {
+                if (conn.waypoint) {
+                    const cpX = 2 * conn.waypoint.x - 0.5 * (startPt.x + endPt.x);
+                    const cpY = 2 * conn.waypoint.y - 0.5 * (startPt.y + endPt.y);
+                    ctx.quadraticCurveTo(cpX, cpY, endPt.x, endPt.y);
+                } else {
+                    const { cp1, cp2 } = getCurvedControlPoints(startPt, endPt, conn.sourceAnchor, conn.targetAnchor);
+                    ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, endPt.x, endPt.y);
+                }
+            } else {
+                if (conn.waypoint) {
+                    ctx.lineTo(conn.waypoint.x, conn.waypoint.y);
+                }
+                ctx.lineTo(endPt.x, endPt.y);
+            }
+            ctx.stroke();
+
+            // Arrowheads drawing helper with getConnectorArrowAngle
+            const drawArrowHeadAtPoint = (headType, pt, angleDeg, color, size) => {
+                if (!headType || headType === 'none') return;
+                const rad = (angleDeg * Math.PI) / 180;
+                ctx.save();
+                ctx.translate(pt.x, pt.y);
+                ctx.rotate(rad);
+                ctx.fillStyle = color;
+                ctx.strokeStyle = color;
+
+                if (headType === 'arrow') {
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(-size, size / 2);
+                    ctx.lineTo(-size, -size / 2);
+                    ctx.closePath();
+                    ctx.fill();
+                } else if (headType === 'diamond') {
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(-size / 2, size / 2);
+                    ctx.lineTo(-size, 0);
+                    ctx.lineTo(-size / 2, -size / 2);
+                    ctx.closePath();
+                    ctx.fill();
+                } else if (headType === 'circle') {
+                    ctx.beginPath();
+                    ctx.arc(-size / 2, 0, size / 2, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+                ctx.restore();
+            };
+
+            const headSize = Math.max(10, (conn.strokeWidth || 2) * 4);
+            const connColor = conn.color || '#3b82f6';
+
+            if (conn.arrowEnd && conn.arrowEnd !== 'none') {
+                const tgtAngle = getConnectorArrowAngle(
+                    'target',
+                    startPt,
+                    endPt,
+                    pathType,
+                    conn.waypoint,
+                    conn.sourceAnchor,
+                    conn.targetAnchor
+                );
+                drawArrowHeadAtPoint(conn.arrowEnd, endPt, tgtAngle, connColor, headSize);
+            }
+
+            if (conn.arrowStart && conn.arrowStart !== 'none') {
+                const srcAngle = getConnectorArrowAngle(
+                    'source',
+                    startPt,
+                    endPt,
+                    pathType,
+                    conn.waypoint,
+                    conn.sourceAnchor,
+                    conn.targetAnchor
+                );
+                drawArrowHeadAtPoint(conn.arrowStart, startPt, srcAngle, connColor, headSize);
+            }
+
+            // Connector midpoint label
+            if (conn.label) {
+                const mid = getConnectorMidpoint(startPt, endPt, pathType, conn.waypoint, conn.sourceAnchor, conn.targetAnchor);
+                ctx.save();
+                ctx.font = `${conn.fontSize || 12}px 'Inter', sans-serif`;
+                const metrics = ctx.measureText(conn.label);
+                const textW = metrics.width;
+                const textH = conn.fontSize || 12;
+                const padX = 6, padY = 3;
+
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowColor = 'rgba(0,0,0,0.15)';
+                ctx.shadowBlur = 4;
+                ctx.fillRect(mid.x - textW / 2 - padX, mid.y - textH / 2 - padY, textW + padX * 2, textH + padY * 2);
+                ctx.shadowColor = 'transparent';
+
+                ctx.strokeStyle = connColor;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(mid.x - textW / 2 - padX, mid.y - textH / 2 - padY, textW + padX * 2, textH + padY * 2);
+
+                ctx.fillStyle = connColor;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(conn.label, mid.x, mid.y);
+                ctx.restore();
+            }
+
+            ctx.restore();
         });
 
-        // 5. Draw image objects (asynchronously preloaded to guarantee capture)
-        const currentImageObjects = pageImageObjects[currentPage] || [];
+        // 4C. 3D Objects Layer (3D perspective mesh projection, lighting, depth sorting, shading, wireframe)
+        const current3DObjects = page3DObjects[currentPage] || [];
+        current3DObjects.forEach(obj3d => {
+            try {
+                const mesh = (obj3d.meshData && obj3d.meshData.vertices && obj3d.meshData.faces)
+                    ? obj3d.meshData
+                    : get3DModelMesh(obj3d.modelType || 'cube');
+                if (!mesh || !mesh.vertices || !mesh.faces) return;
+
+                const rotX = obj3d.rotX ?? -25;
+                const rotY = obj3d.rotY ?? 45;
+                const rotZ = obj3d.rotZ ?? 0;
+                const radX = (rotX * Math.PI) / 180;
+                const radY = (rotY * Math.PI) / 180;
+                const radZ = (rotZ * Math.PI) / 180;
+                const cosX = Math.cos(radX), sinX = Math.sin(radX);
+                const cosY = Math.cos(radY), sinY = Math.sin(radY);
+                const cosZ = Math.cos(radZ), sinZ = Math.sin(radZ);
+
+                let lx = 0.5, ly = -0.7, lz = 0.5;
+                if (obj3d.lightPreset === 'top') { lx = 0.1; ly = -0.95; lz = 0.3; }
+                else if (obj3d.lightPreset === 'flat') { lx = 0; ly = 0; lz = 1; }
+
+                const w = obj3d.width || 220;
+                const h = obj3d.height || 220;
+
+                const transformedVertices = mesh.vertices.map(([vx, vy, vz]) => {
+                    let x1 = vx * cosY + vz * sinY;
+                    let y1 = vy;
+                    let z1 = -vx * sinY + vz * cosY;
+
+                    let x2 = x1;
+                    let y2 = y1 * cosX - z1 * sinX;
+                    let z2 = y1 * sinX + z1 * cosX;
+
+                    let x3 = x2 * cosZ - y2 * sinZ;
+                    let y3 = x2 * sinZ + y2 * cosZ;
+                    let z3 = z2;
+
+                    const distance = 4;
+                    const factor = distance / (distance + z3);
+                    const scale = (Math.min(w, h) / 2) * 0.75;
+                    const px = w / 2 + x3 * factor * scale;
+                    const py = h / 2 + y3 * factor * scale;
+                    return { px, py, pz: z3, x3, y3, z3 };
+                });
+
+                const baseColor = obj3d.color || mesh.color || '#3b82f6';
+                const isWireframe = obj3d.materialStyle === 'wireframe' || !!obj3d.wireframeOnly;
+                const isFlat = obj3d.materialStyle === 'flat';
+                const userOpacity = obj3d.opacity !== undefined ? obj3d.opacity : 1;
+
+                const renderedFaces = mesh.faces.map(faceIndices => {
+                    if (faceIndices.length < 3) return null;
+                    const v0 = transformedVertices[faceIndices[0]];
+                    const v1 = transformedVertices[faceIndices[1]];
+                    const v2 = transformedVertices[faceIndices[2]];
+                    if (!v0 || !v1 || !v2) return null;
+
+                    const ax = v1.x3 - v0.x3, ay = v1.y3 - v0.y3, az = v1.z3 - v0.z3;
+                    const bx = v2.x3 - v0.x3, by = v2.y3 - v0.y3, bz = v2.z3 - v0.z3;
+                    const nx = ay * bz - az * by;
+                    const ny = az * bx - ax * bz;
+                    const nz = ax * by - ay * bx;
+                    const len = Math.hypot(nx, ny, nz) || 1;
+                    const nnx = nx / len, nny = ny / len, nnz = nz / len;
+
+                    const dot = nnx * lx + nny * ly + nnz * lz;
+                    const effDot = nnz < 0 ? -dot : dot;
+                    const intensity = isFlat ? 1.0 : Math.max(0.25, Math.min(1.0, effDot));
+                    const avgZ = faceIndices.reduce((sum, idx) => sum + (transformedVertices[idx]?.pz || 0), 0) / faceIndices.length;
+
+                    let faceFill = shadeColor(baseColor, intensity, obj3d.materialStyle);
+                    return { faceIndices, avgZ, faceFill, userOpacity };
+                }).filter(Boolean);
+
+                renderedFaces.sort((a, b) => b.avgZ - a.avgZ);
+
+                ctx.save();
+                ctx.translate(obj3d.x || 0, obj3d.y || 0);
+                if (obj3d.rotation) {
+                    ctx.translate(w / 2, h / 2);
+                    ctx.rotate((obj3d.rotation * Math.PI) / 180);
+                    ctx.translate(-w / 2, -h / 2);
+                }
+
+                renderedFaces.forEach(f => {
+                    ctx.beginPath();
+                    f.faceIndices.forEach((idx, i) => {
+                        const pt = transformedVertices[idx];
+                        if (i === 0) ctx.moveTo(pt.px, pt.py);
+                        else ctx.lineTo(pt.px, pt.py);
+                    });
+                    ctx.closePath();
+
+                    if (!isWireframe) {
+                        ctx.fillStyle = f.faceFill;
+                        ctx.globalAlpha = f.userOpacity;
+                        ctx.fill();
+                    }
+                    ctx.strokeStyle = baseColor;
+                    ctx.lineWidth = 1;
+                    ctx.globalAlpha = isWireframe ? 0.9 : 0.4;
+                    ctx.stroke();
+                });
+
+                ctx.restore();
+            } catch (e) {
+                console.error("Failed to render 3D object to screenshot:", e);
+            }
+        });
+
+        // 4D. PDF Objects Layer (Document frame, header, title, page indicator, paper body preview)
+        const currentPdfObjects = pagePdfObjects[currentPage] || [];
+        currentPdfObjects.forEach(pdfObj => {
+            try {
+                ctx.save();
+                ctx.translate(pdfObj.x || 0, pdfObj.y || 0);
+                const pW = pdfObj.width || 480;
+                const pH = pdfObj.height || 640;
+
+                // Card body
+                ctx.fillStyle = '#0f172a';
+                ctx.shadowColor = 'rgba(0,0,0,0.25)';
+                ctx.shadowBlur = 12;
+                ctx.shadowOffsetY = 6;
+                ctx.beginPath();
+                if (ctx.roundRect) ctx.roundRect(0, 0, pW, pH, 12);
+                else ctx.rect(0, 0, pW, pH);
+                ctx.fill();
+                ctx.shadowColor = 'transparent';
+
+                ctx.strokeStyle = '#334155';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                // Header strip
+                ctx.fillStyle = '#1e293b';
+                ctx.fillRect(0, 0, pW, 36);
+
+                // Red PDF icon badge
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath();
+                if (ctx.roundRect) ctx.roundRect(10, 8, 28, 20, 4);
+                else ctx.rect(10, 8, 28, 20);
+                ctx.fill();
+                ctx.fillStyle = '#ffffff';
+                ctx.font = "bold 9px 'Inter', sans-serif";
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('PDF', 24, 18);
+
+                // Title
+                ctx.fillStyle = '#f8fafc';
+                ctx.font = "bold 12px 'Inter', sans-serif";
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(pdfObj.title || 'PDF Document', 46, 18);
+
+                // Page badge
+                const pageText = `Page ${pdfObj.page || 1} of ${pdfObj.totalPages || 1}`;
+                ctx.font = "11px 'Inter', sans-serif";
+                ctx.textAlign = 'right';
+                ctx.fillStyle = '#94a3b8';
+                ctx.fillText(pageText, pW - 14, 18);
+
+                // Document Body Paper Preview
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(16, 48, pW - 32, pH - 64);
+                ctx.strokeStyle = '#e2e8f0';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(16, 48, pW - 32, pH - 64);
+
+                // Document lines simulation
+                ctx.fillStyle = '#cbd5e1';
+                for (let ly = 70; ly < pH - 40; ly += 16) {
+                    ctx.fillRect(32, ly, pW - 64, 6);
+                }
+
+                ctx.restore();
+            } catch (e) {
+                console.error("Failed to render PDF object to screenshot:", e);
+            }
+        });
+
+        // 4E. Media Objects Layer (Embedded Videos, Audio, Web Embeds)
+        const currentMediaObjects = pageMediaObjects[currentPage] || [];
+        currentMediaObjects.forEach(mObj => {
+            try {
+                ctx.save();
+                ctx.translate(mObj.x || 0, mObj.y || 0);
+                const mW = mObj.width || 480;
+                const mH = mObj.height || 300;
+
+                const videoElement = document.querySelector(`.whiteboard-media-player video`);
+                if (videoElement && videoElement.readyState >= 2 && !videoElement.paused) {
+                    ctx.drawImage(videoElement, 0, 0, mW, mH);
+                } else {
+                    ctx.fillStyle = '#090d16';
+                    ctx.beginPath();
+                    if (ctx.roundRect) ctx.roundRect(0, 0, mW, mH, 12);
+                    else ctx.rect(0, 0, mW, mH);
+                    ctx.fill();
+                    ctx.strokeStyle = '#334155';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // Header
+                    ctx.fillStyle = '#1e293b';
+                    ctx.fillRect(0, 0, mW, 32);
+                    ctx.fillStyle = '#f8fafc';
+                    ctx.font = "bold 12px 'Inter', sans-serif";
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(mObj.title || 'Embedded Media Player', 12, 16);
+
+                    // Center Play Button
+                    ctx.fillStyle = '#6366f1';
+                    ctx.beginPath();
+                    ctx.arc(mW / 2, mH / 2, 22, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.moveTo(mW / 2 - 5, mH / 2 - 9);
+                    ctx.lineTo(mW / 2 + 9, mH / 2);
+                    ctx.lineTo(mW / 2 - 5, mH / 2 + 9);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                ctx.restore();
+            } catch (e) {
+                console.error("Failed to render media player to screenshot:", e);
+            }
+        });
+
+        // 5. Draw image objects (asynchronously preloaded to guarantee capture, with rotation, flips, opacity, borders)
         if (currentImageObjects.length > 0) {
             await Promise.all(currentImageObjects.map(imgObj => new Promise((resolve) => {
                 const img = new Image();
@@ -6279,7 +7127,28 @@ export default function Whiteboard({
                         const centerY = imgObj.y + imgObj.height / 2;
                         ctx.translate(centerX, centerY);
                         ctx.rotate((imgObj.rotation || 0) * Math.PI / 180);
+                        if (imgObj.flipX || imgObj.flipY) {
+                            ctx.scale(imgObj.flipX ? -1 : 1, imgObj.flipY ? -1 : 1);
+                        }
+                        if (imgObj.opacity !== undefined) {
+                            ctx.globalAlpha = imgObj.opacity / 100;
+                        }
+                        if (imgObj.borderRadius) {
+                            ctx.beginPath();
+                            if (ctx.roundRect) ctx.roundRect(-imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height, imgObj.borderRadius);
+                            else ctx.rect(-imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
+                            ctx.clip();
+                        }
                         ctx.drawImage(img, -imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
+
+                        if (imgObj.borderWidth) {
+                            ctx.lineWidth = imgObj.borderWidth;
+                            ctx.strokeStyle = imgObj.borderColor || '#3b82f6';
+                            if (imgObj.borderStyle === 'dashed') ctx.setLineDash([6, 6]);
+                            else if (imgObj.borderStyle === 'dotted') ctx.setLineDash([2, 4]);
+                            else ctx.setLineDash([]);
+                            ctx.strokeRect(-imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
+                        }
                         ctx.restore();
                     } catch (e) {
                         console.error("Error rendering image in screenshot", e);
@@ -6297,6 +7166,9 @@ export default function Whiteboard({
                                 const centerY = imgObj.y + imgObj.height / 2;
                                 ctx.translate(centerX, centerY);
                                 ctx.rotate((imgObj.rotation || 0) * Math.PI / 180);
+                                if (imgObj.flipX || imgObj.flipY) {
+                                    ctx.scale(imgObj.flipX ? -1 : 1, imgObj.flipY ? -1 : 1);
+                                }
                                 ctx.drawImage(fallbackImg, -imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
                                 ctx.restore();
                             } catch (e) {}
@@ -6425,7 +7297,7 @@ export default function Whiteboard({
                 toast.error('Could not capture screenshot');
             }
         }
-    }, [currentPage, pageBackgrounds, pageImageObjects, pageShapeObjects, pageTextObjects, selection]);
+    }, [currentPage, pageBackgrounds, pageImageObjects, pageShapeObjects, pageTextObjects, page3DObjects, pagePdfObjects, pageMediaObjects, selection, bgColor, bgPattern]);
 
     // Save and return data
     const handleSave = useCallback(() => {
@@ -6779,6 +7651,73 @@ export default function Whiteboard({
                         <Trash2 size={15} />
                     </button>
 
+                    {/* Convert Ink to Text (Handwriting Recognition) */}
+                    {selectedShapeIds.some(id => shapeObjects.find(s => s.id === id)?.type === 'path') && (
+                        <>
+                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+                            <button
+                                onClick={async () => {
+                                    const targetShapes = shapeObjects.filter(s => selectedShapeIds.includes(s.id) && s.type === 'path');
+                                    if (targetShapes.length === 0) return;
+
+                                    toast('Analyzing handwriting...', { icon: '✍️', id: 'ink-conv' });
+                                    let allPts = [];
+                                    targetShapes.forEach(ts => {
+                                        if (ts.points) {
+                                            ts.points.forEach(p => {
+                                                allPts.push({ x: (ts.x || 0) + p.x, y: (ts.y || 0) + p.y });
+                                            });
+                                        }
+                                    });
+
+                                    const text = await recognizeHandwriting(allPts);
+                                    if (text && text.trim()) {
+                                        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                                        targetShapes.forEach(ts => {
+                                            minX = Math.min(minX, ts.x);
+                                            minY = Math.min(minY, ts.y);
+                                            maxX = Math.max(maxX, ts.x + (ts.width || 0));
+                                            maxY = Math.max(maxY, ts.y + (ts.height || 0));
+                                        });
+
+                                        const targetIds = targetShapes.map(s => s.id);
+                                        setShapeObjects(prev => prev.filter(s => !targetIds.includes(s.id)));
+                                        setSelectedShapeIds([]);
+                                        targetIds.forEach(id => {
+                                            if (socket && sessionId) socket.emit('whiteboard:shape-delete', { sessionId, shapeId: id });
+                                        });
+
+                                        const newTextObj = {
+                                            id: Date.now(),
+                                            text,
+                                            x: minX,
+                                            y: minY,
+                                            width: Math.max(maxX - minX, 100),
+                                            height: Math.max(maxY - minY, 36),
+                                            rotation: 0,
+                                            color: targetShapes[0]?.color || color,
+                                            fontSize: Math.max(16, Math.min(54, Math.round((maxY - minY) * 0.75))),
+                                            fontWeight: 'normal',
+                                            fontStyle: 'normal',
+                                            textAlign: 'left'
+                                        };
+                                        setTextObjects(prev => [...prev, newTextObj]);
+                                        if (socket && sessionId) socket.emit('whiteboard:text-add', { sessionId, textObj: newTextObj });
+                                        saveToHistory();
+                                        toast.success(`✨ Converted to text: "${text}"`, { icon: '✍️', id: 'ink-conv' });
+                                    } else {
+                                        toast.error('Could not recognize handwriting. Try writing more clearly.', { id: 'ink-conv' });
+                                    }
+                                }}
+                                className="px-2 py-1 text-xs text-indigo-300 hover:text-white hover:bg-indigo-600/30 rounded-lg flex items-center gap-1.5 transition font-semibold"
+                                title="Convert Selected Ink Strokes to Typed Text (Handwriting Recognition)"
+                            >
+                                <Scan size={14} className="text-indigo-400" />
+                                <span className="text-[11px]">Convert to Text</span>
+                            </button>
+                        </>
+                    )}
+
                     <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                     {/* Edit / Clipboard Hover Group */}
@@ -6931,6 +7870,7 @@ export default function Whiteboard({
                     { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : RectangleHorizontal)), label: 'Shapes', important: true },
                     { id: 'text', icon: Type, label: 'Text', important: true },
                     { id: 'image', icon: ImageIcon, label: 'Image', important: false },
+                    { id: 'pdf', icon: FileText, label: 'Insert PDF Document (Multi-Page Viewer)', important: true },
                     { id: 'media', icon: Film, label: 'Media Player (YouTube, Local, Embed)', important: true },
                     { id: 'domain_3d', icon: Box, label: '3D Objects & Domain Library', important: true },
                     { id: 'tasks', icon: ListTodo, label: 'Whiteboard Tasks Checklist', important: true },
@@ -6998,6 +7938,11 @@ export default function Whiteboard({
                                                 toast(next ? '✨ Smart Shape recognition ON: Closed shapes & lines will auto-snap!' : 'Smart Shape recognition OFF', { icon: next ? '✨' : 'ℹ️' });
                                                 return next;
                                             });
+                                            return;
+                                        }
+                                        if (t.id === 'pdf') {
+                                            setMediaInputTab('pdf');
+                                            setShowMediaModal(true);
                                             return;
                                         }
                                         if (t.id === 'media') {
@@ -7803,11 +8748,22 @@ export default function Whiteboard({
                         )}
                     </div>
 
-                    {/* OCR Toggle */}
+                    {/* OCR & Handwriting Recognition Toggle */}
                     <button
-                        onClick={() => setIsOcrActive(!isOcrActive)}
-                        className={`p-1 rounded-full transition-colors flex items-center justify-center ${isOcrActive ? 'bg-indigo-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
-                        title={isOcrActive ? 'Text Recognition (OCR) Active' : 'Enable Text Recognition (OCR)'}
+                        onClick={() => {
+                            const next = !isOcrActive;
+                            setIsOcrActive(next);
+                            if (next) {
+                                toast('✍️ Handwriting Recognition & OCR Active! Write on board to convert ink to text.', {
+                                    icon: '✍️',
+                                    duration: 3000
+                                });
+                            } else {
+                                toast('Handwriting Recognition turned off', { icon: 'ℹ️' });
+                            }
+                        }}
+                        className={`p-1 rounded-full transition-colors flex items-center justify-center ${isOcrActive ? 'bg-indigo-500 text-white shadow-inner animate-pulse' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                        title={isOcrActive ? 'Handwriting Recognition & OCR Active (Click to turn OFF)' : 'Enable Handwriting Recognition & OCR'}
                     >
                         <Scan className="w-3.5 h-3.5" />
                     </button>
@@ -8088,7 +9044,7 @@ export default function Whiteboard({
                                                 strokeDasharray="5,5"
                                                 strokeLinecap="round"
                                             />
-                                            {renderArrowhead('arrow', endPt, calculateAngle(startPos, endPt), strokeWidth * 4, color)}
+                                            {renderArrowhead('arrow', endPt, getConnectorArrowAngle('target', startPos, endPt, 'curved', null), strokeWidth * 4, color)}
                                         </g>
                                     );
                                 }
@@ -8103,7 +9059,7 @@ export default function Whiteboard({
                                                 strokeDasharray="5,5"
                                                 strokeLinecap="round"
                                             />
-                                            {renderArrowhead('arrow', endPt, calculateAngle(startPos, endPt), strokeWidth * 4, color)}
+                                            {renderArrowhead('arrow', endPt, getConnectorArrowAngle('target', startPos, endPt, 'orthogonal', null), strokeWidth * 4, color)}
                                         </g>
                                     );
                                 }
@@ -8120,7 +9076,7 @@ export default function Whiteboard({
                                             strokeLinecap="round"
                                         />
                                         {(lineType === 'arrow' || lineType === 'connector_straight' || (isShiftDown && lineType.startsWith('connector'))) && (
-                                            renderArrowhead('arrow', endPt, calculateAngle(startPos, endPt), strokeWidth * 4, color)
+                                            renderArrowhead('arrow', endPt, getConnectorArrowAngle('target', startPos, endPt, 'straight', null), strokeWidth * 4, color)
                                         )}
                                     </g>
                                 );
@@ -9890,6 +10846,19 @@ export default function Whiteboard({
                                     );
                                 }
                                 return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={`${w*0.25},0 ${w*0.75},0 ${w},${h*0.5} ${w*0.75},${h} ${w*0.25},${h} 0,${h*0.5}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" strokeDasharray={dashArray} />;
+                            } else if (shpObj.type === 'polygon' && shpObj.points && shpObj.points.length >= 3) {
+                                const ptsStr = shpObj.points.map(p => `${p.x - (shpObj.x || 0)},${p.y - (shpObj.y || 0)}`).join(' ');
+                                return (
+                                    <polygon
+                                        style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}
+                                        points={ptsStr}
+                                        fill={fill}
+                                        stroke={shpObj.color}
+                                        strokeWidth={shpObj.strokeWidth}
+                                        strokeLinejoin="round"
+                                        strokeDasharray={dashArray}
+                                    />
+                                );
                             } else if (shpObj.type === 'arc' || shpObj.type === 'curved_line') {
                                 return (
                                     <path
@@ -10190,6 +11159,7 @@ export default function Whiteboard({
                         return (
                             <div key={shpObj.id}>
                                 <div
+                                    data-shape-id={shpObj.id}
                                     className="whiteboard-shape-item absolute"
                                 style={{
                                     left: shpObj.x,
@@ -11689,14 +12659,30 @@ export default function Whiteboard({
                                 {renderArrowhead(
                                     activeConnectorDrag.style.arrowStart,
                                     activeConnectorDrag.sourcePt,
-                                    calculateAngle(activeConnectorDrag.currentPt, activeConnectorDrag.sourcePt),
+                                    getConnectorArrowAngle(
+                                        'source',
+                                        activeConnectorDrag.sourcePt,
+                                        activeConnectorDrag.currentPt,
+                                        isShiftDown ? 'straight' : activeConnectorDrag.style.pathType,
+                                        null,
+                                        activeConnectorDrag.sourceAnchor,
+                                        activeConnectorDrag.snappedTarget?.anchor || 'auto'
+                                    ),
                                     (strokeWidth || 2) * 4,
                                     activeConnectorDrag.snappedTarget ? '#10b981' : (color || '#2563eb')
                                 )}
                                 {renderArrowhead(
                                     activeConnectorDrag.style.arrowEnd,
                                     activeConnectorDrag.currentPt,
-                                    calculateAngle(activeConnectorDrag.sourcePt, activeConnectorDrag.currentPt),
+                                    getConnectorArrowAngle(
+                                        'target',
+                                        activeConnectorDrag.sourcePt,
+                                        activeConnectorDrag.currentPt,
+                                        isShiftDown ? 'straight' : activeConnectorDrag.style.pathType,
+                                        null,
+                                        activeConnectorDrag.sourceAnchor,
+                                        activeConnectorDrag.snappedTarget?.anchor || 'auto'
+                                    ),
                                     (strokeWidth || 2) * 4,
                                     activeConnectorDrag.snappedTarget ? '#10b981' : (color || '#2563eb')
                                 )}
@@ -12060,6 +13046,53 @@ export default function Whiteboard({
                             }}
                         />
                     ))}
+
+                    {/* Resizable, Multi-Page Document Viewers (PDF) */}
+                    {(pagePdfObjects[currentPage] || []).map((pdfObj) => (
+                        <WhiteboardPdfViewer
+                            key={pdfObj.id}
+                            pdf={pdfObj}
+                            isSelected={selectedPdfId === pdfObj.id}
+                            scale={zoomLevel}
+                            onSelect={(id) => {
+                                setSelectedPdfId(id);
+                                setSelected3DId(null);
+                                setSelectedShapeIds([]);
+                                setSelectedTextIds([]);
+                                setSelectedImageId(null);
+                                setSelectedMediaId(null);
+                            }}
+                            onUpdate={(updates) => {
+                                setPagePdfObjects(prev => ({
+                                    ...prev,
+                                    [currentPage]: (prev[currentPage] || []).map(p => p.id === pdfObj.id ? { ...p, ...updates } : p)
+                                }));
+                            }}
+                            onDelete={(id) => {
+                                setPagePdfObjects(prev => ({
+                                    ...prev,
+                                    [currentPage]: (prev[currentPage] || []).filter(p => p.id !== id)
+                                }));
+                                if (selectedPdfId === id) setSelectedPdfId(null);
+                            }}
+                            onDuplicate={(id) => {
+                                const orig = (pagePdfObjects[currentPage] || []).find(p => p.id === id);
+                                if (!orig) return;
+                                const clone = {
+                                    ...orig,
+                                    id: `pdf_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                    x: (orig.x || 0) + 30,
+                                    y: (orig.y || 0) + 30,
+                                    isInfiniteCloner: false
+                                };
+                                setPagePdfObjects(prev => ({
+                                    ...prev,
+                                    [currentPage]: [...(prev[currentPage] || []), clone]
+                                }));
+                                setSelectedPdfId(clone.id);
+                            }}
+                        />
+                    ))}
                 </div>
 
                 {/* Interactive 16:9 Canvas Minimap with Zoom & Viewport Navigation */}
@@ -12356,6 +13389,7 @@ export default function Whiteboard({
                             {[
                                 { id: 'youtube', label: 'YouTube Video' },
                                 { id: 'recordings', label: '🎥 Recordings' },
+                                { id: 'pdf', label: '📄 PDF Document' },
                                 { id: 'local', label: 'Local File' },
                                 { id: 'embed', label: 'Web Embed' }
                             ].map(tab => (
@@ -12480,6 +13514,47 @@ export default function Whiteboard({
                             </div>
                         )}
 
+                        {mediaInputTab === 'pdf' && (
+                            <div className="flex flex-col gap-3">
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-400 mb-1">Select PDF File from Device</label>
+                                    <input
+                                        type="file"
+                                        accept="application/pdf"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                const reader = new FileReader();
+                                                reader.onload = (re) => {
+                                                    setMediaInputUrl(re.target.result);
+                                                    if (!mediaInputTitle) setMediaInputTitle(file.name.replace(/\.[^/.]+$/, ''));
+                                                };
+                                                reader.readAsDataURL(file);
+                                            }
+                                        }}
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer"
+                                    />
+                                    <p className="text-[11px] text-slate-400 mt-1">Loads the PDF directly into an interactive canvas viewer.</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="h-px bg-slate-800 flex-1" />
+                                    <span className="text-[10px] uppercase font-bold text-slate-500">OR</span>
+                                    <div className="h-px bg-slate-800 flex-1" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-400 mb-1">Online PDF Web URL</label>
+                                    <input
+                                        type="url"
+                                        value={mediaInputUrl}
+                                        onChange={e => setMediaInputUrl(e.target.value)}
+                                        placeholder="https://example.com/document.pdf"
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                                    />
+                                    <p className="text-[11px] text-slate-400 mt-1">Paste any direct public link to a PDF document or slide deck.</p>
+                                </div>
+                            </div>
+                        )}
+
                         {mediaInputTab === 'youtube' && (
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-1">YouTube Link or Video ID</label>
@@ -12553,10 +13628,39 @@ export default function Whiteboard({
                                 type="button"
                                 onClick={() => {
                                     if (!mediaInputUrl.trim()) {
-                                        toast.error('Please provide a media URL or file');
+                                        toast.error(mediaInputTab === 'pdf' ? 'Please provide a PDF URL or file' : 'Please provide a media URL or file');
                                         return;
                                     }
                                     const wrapper = canvasWrapperRef.current;
+
+                                    if (mediaInputTab === 'pdf') {
+                                        const cx = wrapper ? (wrapper.clientWidth / 2 - 250) : 150;
+                                        const cy = wrapper ? (wrapper.clientHeight / 2 - 320) : 100;
+                                        const newPdf = {
+                                            id: `pdf_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                            title: mediaInputTitle.trim() || 'Document.pdf',
+                                            url: mediaInputUrl,
+                                            page: 1,
+                                            totalPages: 1,
+                                            x: Math.max(20, cx),
+                                            y: Math.max(20, cy),
+                                            width: 500,
+                                            height: 640,
+                                            isLocked: false,
+                                            isCollapsed: false
+                                        };
+                                        setPagePdfObjects(prev => ({
+                                            ...prev,
+                                            [currentPage]: [...(prev[currentPage] || []), newPdf]
+                                        }));
+                                        setSelectedPdfId(newPdf.id);
+                                        setShowMediaModal(false);
+                                        setMediaInputUrl('');
+                                        setMediaInputTitle('');
+                                        toast.success(`PDF "${newPdf.title}" added to canvas!`, { icon: '📄' });
+                                        return;
+                                    }
+
                                     const cx = wrapper ? (wrapper.clientWidth / 2 - 240) : 200;
                                     const cy = wrapper ? (wrapper.clientHeight / 2 - 150) : 200;
 

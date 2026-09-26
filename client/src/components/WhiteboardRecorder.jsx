@@ -5,6 +5,7 @@ import api from '@/lib/api';
 import fixWebmDuration from 'fix-webm-duration';
 import { formatDate } from '@/lib/dateUtils';
 import { get3DModelMesh, shadeColor } from './Whiteboard3DObject';
+import { getConnectorArrowAngle } from './ConnectorLine';
 
 const WhiteboardRecorder = ({
     canvasRef,
@@ -493,24 +494,43 @@ const WhiteboardRecorder = ({
                         }
                         compositeCtx.stroke();
 
-                        // Arrowheads
-                        const drawArrowHead = (fromX, fromY, toX, toY) => {
-                            const angle = Math.atan2(toY - fromY, toX - fromX);
+                        // Arrowheads ensuring upright orientation at vertical anchors
+                        const drawArrowHeadAtEndpoint = (x, y, angleDeg) => {
+                            const rad = (angleDeg * Math.PI) / 180;
                             const headLen = Math.max(10, (shpObj.strokeWidth || 2) * 4);
                             compositeCtx.beginPath();
-                            compositeCtx.moveTo(toX, toY);
-                            compositeCtx.lineTo(toX - headLen * Math.cos(angle - Math.PI / 6), toY - headLen * Math.sin(angle - Math.PI / 6));
-                            compositeCtx.lineTo(toX - headLen * Math.cos(angle + Math.PI / 6), toY - headLen * Math.sin(angle + Math.PI / 6));
+                            compositeCtx.moveTo(x, y);
+                            compositeCtx.lineTo(x - headLen * Math.cos(rad - Math.PI / 6), y - headLen * Math.sin(rad - Math.PI / 6));
+                            compositeCtx.lineTo(x - headLen * Math.cos(rad + Math.PI / 6), y - headLen * Math.sin(rad + Math.PI / 6));
                             compositeCtx.closePath();
                             compositeCtx.fillStyle = shpObj.color || '#3b82f6';
                             compositeCtx.fill();
                         };
 
+                        const connPathStyle = shpObj.connectorType || shpObj.pathType || 'orthogonal';
                         if (shpObj.arrowEnd === 'arrow') {
-                            drawArrowHead(startX, startY, endX, endY);
+                            const tgtAngle = getConnectorArrowAngle(
+                                'target',
+                                { x: startX, y: startY },
+                                { x: endX, y: endY },
+                                connPathStyle,
+                                shpObj.waypoint,
+                                shpObj.sourceAnchor,
+                                shpObj.targetAnchor
+                            );
+                            drawArrowHeadAtEndpoint(endX, endY, tgtAngle);
                         }
                         if (shpObj.arrowStart === 'arrow') {
-                            drawArrowHead(endX, endY, startX, startY);
+                            const srcAngle = getConnectorArrowAngle(
+                                'source',
+                                { x: startX, y: startY },
+                                { x: endX, y: endY },
+                                connPathStyle,
+                                shpObj.waypoint,
+                                shpObj.sourceAnchor,
+                                shpObj.targetAnchor
+                            );
+                            drawArrowHeadAtEndpoint(startX, startY, srcAngle);
                         }
 
                         compositeCtx.restore();
@@ -567,6 +587,15 @@ const WhiteboardRecorder = ({
                         compositeCtx.lineTo(w * 0.75, h);
                         compositeCtx.lineTo(w * 0.25, h);
                         compositeCtx.lineTo(0, h * 0.5);
+                        compositeCtx.closePath();
+                    } else if (shpObj.type === 'polygon' && shpObj.points && shpObj.points.length >= 3) {
+                        const pts = shpObj.points;
+                        const ox = shpObj.x || 0;
+                        const oy = shpObj.y || 0;
+                        compositeCtx.moveTo(pts[0].x - ox, pts[0].y - oy);
+                        for (let i = 1; i < pts.length; i++) {
+                            compositeCtx.lineTo(pts[i].x - ox, pts[i].y - oy);
+                        }
                         compositeCtx.closePath();
                     } else if (shpObj.type === 'star') {
                         const cx = shpObj.width / 2;
@@ -1089,29 +1118,63 @@ const WhiteboardRecorder = ({
             }
             formData.append('duration', recordingTimeRef.current);
 
-            const res = await api.post('/recordings/upload', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-                onUploadProgress: (progressEvent) => {
-                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-                    setUploadProgress(percentCompleted);
-                }
-            });
-            setUploadProgress(null);
+            const localBlobUrl = URL.createObjectURL(blob);
+            const localRec = {
+                id: `local_rec_${Date.now()}`,
+                title: `Whiteboard Lecture - ${formatDate(new Date())}`,
+                duration: recordingTimeRef.current,
+                videoUrl: localBlobUrl,
+                createdAt: new Date().toISOString(),
+                isLocal: true
+            };
 
-            
-            if (res.data.success) {
-                toast.success('Recording saved successfully!', { id: 'recording-upload' });
-                
-                if (onRecordingComplete) {
-                    onRecordingComplete(res.data.data);
+            // Save to localStorage cache so recordings show in Insert Media modal immediately
+            try {
+                const existing = JSON.parse(localStorage.getItem('whiteboard_local_recordings') || '[]');
+                localStorage.setItem('whiteboard_local_recordings', JSON.stringify([
+                    { id: localRec.id, title: localRec.title, duration: localRec.duration, videoUrl: localBlobUrl, createdAt: localRec.createdAt, isLocal: true },
+                    ...existing.filter(e => e.id !== localRec.id)
+                ].slice(0, 30)));
+            } catch (e) {}
+
+            try {
+                const res = await api.post('/recordings/upload', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                    onUploadProgress: (progressEvent) => {
+                        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                        setUploadProgress(percentCompleted);
+                    }
+                });
+                setUploadProgress(null);
+
+                if (res.data?.success) {
+                    toast.success('Recording saved successfully!', { id: 'recording-upload' });
+                    const savedData = res.data.data || res.data;
+                    if (onRecordingComplete) {
+                        onRecordingComplete(savedData);
+                    }
+                    try {
+                        const existing = JSON.parse(localStorage.getItem('whiteboard_local_recordings') || '[]');
+                        localStorage.setItem('whiteboard_local_recordings', JSON.stringify([
+                            { id: savedData.id, title: savedData.title, duration: savedData.duration, videoUrl: savedData.cloudinaryUrl || savedData.videoUrl || localBlobUrl, createdAt: savedData.createdAt },
+                            ...existing.filter(e => e.id !== savedData.id && e.id !== localRec.id)
+                        ].slice(0, 30)));
+                    } catch (e) {}
+                } else {
+                    throw new Error(res.data?.error || 'Upload failed');
                 }
-            } else {
-                throw new Error(res.data.error || 'Upload failed');
+            } catch (uploadErr) {
+                setUploadProgress(null);
+                console.warn('Server upload not available, saved recording locally:', uploadErr);
+                toast.success('Recording saved to local whiteboard session!', { id: 'recording-upload', icon: '🎥' });
+                if (onRecordingComplete) {
+                    onRecordingComplete(localRec);
+                }
             }
         } catch (err) {
             setUploadProgress(null);
-            console.error('Error uploading recording:', err);
-            toast.error('Failed to upload recording');
+            console.error('Error handling recording:', err);
+            toast.error('Failed to save recording');
         }
     };
 
