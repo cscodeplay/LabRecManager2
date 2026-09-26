@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
     Play, Pause, Volume2, VolumeX, Maximize2, Minimize2,
-    Lock, Unlock, Trash2, Copy, Video, Music, Globe,
+    Lock, Unlock, Trash2, Video, Music, Globe,
     ChevronDown, ChevronUp, GripHorizontal, RotateCcw
 } from 'lucide-react';
 
@@ -334,15 +334,6 @@ export default function WhiteboardMediaPlayer({
                             </button>
                             <button
                                 type="button"
-                                onPointerDown={(e) => { e.stopPropagation(); toggleInfiniteCloner(e); }}
-                                onClick={(e) => { e.stopPropagation(); toggleInfiniteCloner(e); }}
-                                className={`p-1 rounded transition cursor-pointer ${media.isInfiniteCloner ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-                                title={media.isInfiniteCloner ? "Disable Infinite Clone" : "Enable Infinite Clone"}
-                            >
-                                <span className="text-[11px] font-bold">∞</span>
-                            </button>
-                            <button
-                                type="button"
                                 onPointerDown={(e) => { e.stopPropagation(); toggleLock(e); }}
                                 onClick={(e) => { e.stopPropagation(); toggleLock(e); }}
                                 className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
@@ -350,29 +341,6 @@ export default function WhiteboardMediaPlayer({
                             >
                                 {isLocked ? <Lock className="w-3.5 h-3.5 text-amber-400" /> : <Unlock className="w-3.5 h-3.5" />}
                             </button>
-                            {onDuplicate && (
-                                <button
-                                    type="button"
-                                    onPointerDown={(e) => {
-                                        e.stopPropagation();
-                                        const now = Date.now();
-                                        if (now - lastDupToggleRef.current < 250) return;
-                                        lastDupToggleRef.current = now;
-                                        onDuplicate(media.id);
-                                    }}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        const now = Date.now();
-                                        if (now - lastDupToggleRef.current < 250) return;
-                                        lastDupToggleRef.current = now;
-                                        onDuplicate(media.id);
-                                    }}
-                                    className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
-                                    title="Duplicate Media"
-                                >
-                                    <Copy className="w-3.5 h-3.5" />
-                                </button>
-                            )}
                             {onDelete && (
                                 <button
                                     type="button"

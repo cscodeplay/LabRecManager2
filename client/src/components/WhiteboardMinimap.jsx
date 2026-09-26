@@ -175,11 +175,9 @@ export default function WhiteboardMinimap({
 
     const MAP_WIDTH = 200;
     const MAP_HEIGHT = 112; // 16:9 ratio
-    const scaleX = MAP_WIDTH / canvasWidth;
-    const scaleY = MAP_HEIGHT / canvasHeight;
 
-    // Viewport calculation
-    const viewportRect = useMemo(() => {
+    // Dynamic Content & Viewport Envelope
+    const bounds = useMemo(() => {
         let containerW = 1200;
         let containerH = 700;
         if (containerRef?.current) {
@@ -190,19 +188,73 @@ export default function WhiteboardMinimap({
             containerH = window.innerHeight;
         }
 
-        const visibleWidth = Math.min(canvasWidth, (containerW / zoomLevel));
-        const visibleHeight = Math.min(canvasHeight, (containerH / zoomLevel));
+        const vpCanvasX = -panOffset.x / zoomLevel;
+        const vpCanvasY = -panOffset.y / zoomLevel;
+        const vpCanvasW = containerW / zoomLevel;
+        const vpCanvasH = containerH / zoomLevel;
 
-        const leftCanvas = -panOffset.x / zoomLevel;
-        const topCanvas = -panOffset.y / zoomLevel;
+        let minX = Math.min(0, vpCanvasX);
+        let minY = Math.min(0, vpCanvasY);
+        let maxX = Math.max(canvasWidth, vpCanvasX + vpCanvasW);
+        let maxY = Math.max(canvasHeight, vpCanvasY + vpCanvasH);
 
-        const vpX = Math.max(0, Math.min(MAP_WIDTH - 10, leftCanvas * scaleX));
-        const vpY = Math.max(0, Math.min(MAP_HEIGHT - 10, topCanvas * scaleY));
-        const vpW = Math.max(15, Math.min(MAP_WIDTH, visibleWidth * scaleX));
-        const vpH = Math.max(12, Math.min(MAP_HEIGHT, visibleHeight * scaleY));
+        const allObjects = [...resolvedShapes, ...resolvedTexts, ...resolvedImages];
+        allObjects.forEach(obj => {
+            const ox = obj.x ?? 0;
+            const oy = obj.y ?? 0;
+            const ow = obj.width ?? 60;
+            const oh = obj.height ?? 40;
+            if (ox < minX) minX = ox;
+            if (oy < minY) minY = oy;
+            if (ox + ow > maxX) maxX = ox + ow;
+            if (oy + oh > maxY) maxY = oy + oh;
+        });
 
-        return { x: vpX, y: vpY, width: vpW, height: vpH };
-    }, [containerRef, zoomLevel, panOffset, canvasWidth, canvasHeight, scaleX, scaleY]);
+        // 80px margin around content
+        minX -= 80;
+        minY -= 80;
+        maxX += 80;
+        maxY += 80;
+
+        const totalW = Math.max(200, maxX - minX);
+        const totalH = Math.max(120, maxY - minY);
+
+        return {
+            minX,
+            minY,
+            maxX,
+            maxY,
+            totalW,
+            totalH,
+            containerW,
+            containerH,
+            vpCanvasX,
+            vpCanvasY,
+            vpCanvasW,
+            vpCanvasH
+        };
+    }, [containerRef, panOffset, zoomLevel, canvasWidth, canvasHeight, resolvedShapes, resolvedTexts, resolvedImages]);
+
+    // Viewport calculation
+    const viewportRect = useMemo(() => {
+        const vpX = ((bounds.vpCanvasX - bounds.minX) / bounds.totalW) * MAP_WIDTH;
+        const vpY = ((bounds.vpCanvasY - bounds.minY) / bounds.totalH) * MAP_HEIGHT;
+        const vpW = (bounds.vpCanvasW / bounds.totalW) * MAP_WIDTH;
+        const vpH = (bounds.vpCanvasH / bounds.totalH) * MAP_HEIGHT;
+
+        return {
+            x: Math.max(0, Math.min(MAP_WIDTH - 8, vpX)),
+            y: Math.max(0, Math.min(MAP_HEIGHT - 8, vpY)),
+            width: Math.max(8, Math.min(MAP_WIDTH, vpW)),
+            height: Math.max(8, Math.min(MAP_HEIGHT, vpH))
+        };
+    }, [bounds]);
+
+    // Helpers to project canvas coordinates to minimap SVG
+    const toMapX = useCallback((x) => ((x - bounds.minX) / bounds.totalW) * MAP_WIDTH, [bounds]);
+    const toMapY = useCallback((y) => ((y - bounds.minY) / bounds.totalH) * MAP_HEIGHT, [bounds]);
+    const toMapW = useCallback((w) => (w / bounds.totalW) * MAP_WIDTH, [bounds]);
+    const toMapH = useCallback((h) => (h / bounds.totalH) * MAP_HEIGHT, [bounds]);
 
     // Handle clicking or dragging on the minimap to pan
     const handleMinimapPointer = useCallback((e) => {
@@ -211,36 +263,26 @@ export default function WhiteboardMinimap({
         const clickX = Math.max(0, Math.min(MAP_WIDTH, e.clientX - rect.left));
         const clickY = Math.max(0, Math.min(MAP_HEIGHT, e.clientY - rect.top));
 
-        // Convert minimap click to canvas coordinates
-        const targetCanvasX = (clickX / MAP_WIDTH) * canvasWidth;
-        const targetCanvasY = (clickY / MAP_HEIGHT) * canvasHeight;
+        // Convert minimap click to canvas coordinates using dynamic envelope
+        const targetCanvasX = bounds.minX + (clickX / MAP_WIDTH) * bounds.totalW;
+        const targetCanvasY = bounds.minY + (clickY / MAP_HEIGHT) * bounds.totalH;
 
-        let containerW = 1200;
-        let containerH = 700;
-        if (containerRef?.current) {
-            containerW = containerRef.current.clientWidth || 1200;
-            containerH = containerRef.current.clientHeight || 700;
-        } else if (typeof window !== 'undefined') {
-            containerW = window.innerWidth;
-            containerH = window.innerHeight;
-        }
-
-        const newPanX = (containerW / 2) - (targetCanvasX * zoomLevel);
-        const newPanY = (containerH / 2) - (targetCanvasY * zoomLevel);
+        const newPanX = (bounds.containerW / 2) - (targetCanvasX * zoomLevel);
+        const newPanY = (bounds.containerH / 2) - (targetCanvasY * zoomLevel);
 
         changePan({ x: Math.round(newPanX), y: Math.round(newPanY) });
-    }, [canvasWidth, canvasHeight, containerRef, zoomLevel, changePan]);
+    }, [bounds, zoomLevel, changePan]);
 
-    // Zoom Controls
+    // Zoom Controls (0.1x to 5.0x)
     const zoomIn = useCallback((e) => {
         e?.stopPropagation();
-        changeZoom(prev => Math.min(3, +(prev + 0.25).toFixed(2)));
+        changeZoom(prev => Math.min(5, +(prev + 0.25).toFixed(2)));
         scheduleAutoHide(3000);
     }, [changeZoom, scheduleAutoHide]);
 
     const zoomOut = useCallback((e) => {
         e?.stopPropagation();
-        changeZoom(prev => Math.max(0.25, +(prev - 0.25).toFixed(2)));
+        changeZoom(prev => Math.max(0.1, +(prev - 0.25).toFixed(2)));
         scheduleAutoHide(3000);
     }, [changeZoom, scheduleAutoHide]);
 
@@ -369,10 +411,10 @@ export default function WhiteboardMinimap({
                                     {resolvedShapes.map(s => (
                                         <rect
                                             key={s.id}
-                                            x={(s.x || 0) * scaleX}
-                                            y={(s.y || 0) * scaleY}
-                                            width={Math.max(2, (s.width || 40) * scaleX)}
-                                            height={Math.max(2, (s.height || 40) * scaleY)}
+                                            x={toMapX(s.x || 0)}
+                                            y={toMapY(s.y || 0)}
+                                            width={Math.max(2, toMapW(s.width || 40))}
+                                            height={Math.max(2, toMapH(s.height || 40))}
                                             fill={s.fill || 'rgba(99, 102, 241, 0.4)'}
                                             stroke={s.color || '#818cf8'}
                                             strokeWidth="0.8"
@@ -381,10 +423,10 @@ export default function WhiteboardMinimap({
                                     {resolvedImages.map(img => (
                                         <rect
                                             key={img.id}
-                                            x={(img.x || 0) * scaleX}
-                                            y={(img.y || 0) * scaleY}
-                                            width={Math.max(2, (img.width || 40) * scaleX)}
-                                            height={Math.max(2, (img.height || 40) * scaleY)}
+                                            x={toMapX(img.x || 0)}
+                                            y={toMapY(img.y || 0)}
+                                            width={Math.max(2, toMapW(img.width || 40))}
+                                            height={Math.max(2, toMapH(img.height || 40))}
                                             fill="rgba(16, 185, 129, 0.4)"
                                             stroke="#34d399"
                                             strokeWidth="0.8"
@@ -393,10 +435,10 @@ export default function WhiteboardMinimap({
                                     {resolvedTexts.map(t => (
                                         <rect
                                             key={t.id}
-                                            x={(t.x || 0) * scaleX}
-                                            y={(t.y || 0) * scaleY}
-                                            width={Math.max(4, (t.width || 60) * scaleX)}
-                                            height={Math.max(2, (t.height || 20) * scaleY)}
+                                            x={toMapX(t.x || 0)}
+                                            y={toMapY(t.y || 0)}
+                                            width={Math.max(4, toMapW(t.width || 60))}
+                                            height={Math.max(2, toMapH(t.height || 20))}
                                             fill="rgba(244, 63, 94, 0.4)"
                                             stroke="#fb7185"
                                             strokeWidth="0.8"
@@ -458,8 +500,8 @@ export default function WhiteboardMinimap({
                         {/* Interactive Zoom Slider */}
                         <input
                             type="range"
-                            min="25"
-                            max="300"
+                            min="10"
+                            max="500"
                             step="5"
                             value={Math.round(zoomLevel * 100)}
                             onChange={handleSliderChange}

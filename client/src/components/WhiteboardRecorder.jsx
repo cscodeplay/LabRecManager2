@@ -1207,128 +1207,131 @@ const WhiteboardRecorder = ({
                 </div>
             )}
             {/* Recording Controls */}
-            <div className="bg-slate-800/95 backdrop-blur-md px-2 py-1 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-1">
-                <div className="px-1 text-slate-500 hover:text-slate-300 cursor-grab active:cursor-grabbing">
-                    <GripVertical className="w-4 h-4" />
-                </div>
-                {/* Microphone Controls with Dropdown */}
-                <div className="relative flex items-center bg-slate-700/50 rounded-full">
-                    <button 
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={toggleMic}
-                        className={`p-1.5 rounded-l-full transition-all ${hasMic ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
-                        title={hasMic ? 'Mute Microphone' : 'Unmute Microphone'}
-                    >
-                        <div className="relative flex items-center justify-center">
-                            {hasMic ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-                            {hasMic && (
-                                <div className="absolute inset-0 text-green-400 overflow-hidden" style={{ clipPath: `inset(${100 - (micLevel * 100)}% 0 0 0)` }}>
-                                    <Mic className="w-4 h-4 fill-current" />
+            {(() => {
+                const isNearTop = position.y < 220;
+                return (
+                    <div className="bg-slate-900 border-2 border-slate-700 px-2.5 py-1.5 rounded-full shadow-2xl flex items-center gap-1.5">
+                        <div className="px-1 text-slate-400 hover:text-slate-200 cursor-grab active:cursor-grabbing">
+                            <GripVertical className="w-4 h-4" />
+                        </div>
+                        {/* Microphone Controls with Dropdown */}
+                        <div className="relative flex items-center bg-slate-800 border border-slate-700/80 rounded-full">
+                            <button 
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={toggleMic}
+                                className={`p-1.5 rounded-l-full transition-all ${hasMic ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
+                                title={hasMic ? 'Mute Microphone' : 'Unmute Microphone'}
+                            >
+                                <div className="relative flex items-center justify-center">
+                                    {hasMic ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4 text-red-400" />}
+                                    {hasMic && (
+                                        <div className="absolute inset-0 text-green-400 overflow-hidden" style={{ clipPath: `inset(${100 - (micLevel * 100)}% 0 0 0)` }}>
+                                            <Mic className="w-4 h-4 fill-current text-green-400" />
+                                        </div>
+                                    )}
+                                </div>
+                            </button>
+                            <button 
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); setShowMicMenu(!showMicMenu); setShowCamMenu(false); }}
+                                className="px-1 py-1.5 rounded-r-full text-slate-300 hover:text-white border-l border-slate-700 hover:bg-slate-700 transition"
+                                title="Select Microphone"
+                            >
+                                <ChevronUp className={`w-3 h-3 transition-transform ${showMicMenu ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {/* Microphone Device Menu Dropdown */}
+                            {showMicMenu && (
+                                <div 
+                                    className={`absolute ${isNearTop ? 'top-[125%]' : 'bottom-[125%]'} left-0 w-60 bg-slate-900 border-2 border-slate-700 rounded-xl p-2.5 shadow-2xl z-[120] animate-in fade-in zoom-in-95 pointer-events-auto`}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                >
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-2 flex items-center justify-between">
+                                        <span className="text-slate-300 font-semibold">Microphones</span>
+                                        <span className="text-[9px] text-slate-400">{availableDevices.microphones.length} found</span>
+                                    </div>
+                                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                                        {availableDevices.microphones.length === 0 ? (
+                                            <div className="px-2 py-1.5 text-xs text-slate-400 italic">No microphones found</div>
+                                        ) : (
+                                            availableDevices.microphones.map((m, idx) => {
+                                                const isSelected = selectedMicrophone === m.deviceId;
+                                                return (
+                                                    <button
+                                                        key={m.deviceId || idx}
+                                                        onClick={() => { switchMicrophone(m.deviceId); setShowMicMenu(false); }}
+                                                        className={`w-full text-left px-2.5 py-1.5 text-xs rounded-lg transition truncate flex items-center justify-between gap-1.5 ${isSelected ? 'bg-indigo-600 text-white font-medium shadow-sm' : 'text-slate-200 hover:bg-slate-800 hover:text-white'}`}
+                                                    >
+                                                        <div className="flex items-center gap-2 min-w-0 truncate">
+                                                            <Mic className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                                                            <span className="truncate">{m.label || `Microphone ${idx + 1}`}</span>
+                                                        </div>
+                                                        {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-white" />}
+                                                    </button>
+                                                );
+                                            })
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>
-                    </button>
-                    <button 
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); setShowMicMenu(!showMicMenu); setShowCamMenu(false); }}
-                        className="px-1 py-1.5 rounded-r-full text-slate-400 hover:text-white border-l border-slate-600/40 hover:bg-slate-700 transition"
-                        title="Select Microphone"
-                    >
-                        <ChevronUp className={`w-3 h-3 transition-transform ${showMicMenu ? 'rotate-180' : ''}`} />
-                    </button>
 
-                    {/* Microphone Device Menu Dropdown */}
-                    {showMicMenu && (
-                        <div 
-                            className="absolute bottom-[125%] left-0 w-56 bg-slate-900/98 backdrop-blur-md border border-slate-700 rounded-xl p-2 shadow-2xl z-[120] animate-in fade-in zoom-in-95 pointer-events-auto"
-                            onPointerDown={(e) => e.stopPropagation()}
-                        >
-                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 px-2 flex items-center justify-between">
-                                <span>Microphones</span>
-                                <span className="text-[9px] text-slate-500">{availableDevices.microphones.length} available</span>
-                            </div>
-                            <div className="space-y-1 max-h-44 overflow-y-auto">
-                                {availableDevices.microphones.length === 0 ? (
-                                    <div className="px-2 py-1.5 text-xs text-slate-400 italic">No microphones found</div>
-                                ) : (
-                                    availableDevices.microphones.map((m, idx) => {
-                                        const isSelected = selectedMicrophone === m.deviceId;
-                                        return (
-                                            <button
-                                                key={m.deviceId || idx}
-                                                onClick={() => { switchMicrophone(m.deviceId); setShowMicMenu(false); }}
-                                                className={`w-full text-left px-2.5 py-1.5 text-xs rounded-lg transition truncate flex items-center justify-between gap-1.5 ${isSelected ? 'bg-indigo-600 text-white font-medium shadow-sm' : 'text-slate-300 hover:bg-slate-800'}`}
-                                            >
-                                                <div className="flex items-center gap-2 min-w-0 truncate">
-                                                    <Mic className="w-3.5 h-3.5 shrink-0 opacity-70" />
-                                                    <span className="truncate">{m.label || `Microphone ${idx + 1}`}</span>
-                                                </div>
-                                                {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-white" />}
-                                            </button>
-                                        );
-                                    })
-                                )}
-                            </div>
+                        {/* Camera Controls with Dropdown */}
+                        <div className="relative flex items-center bg-slate-800 border border-slate-700/80 rounded-full">
+                            <button 
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={toggleCamera}
+                                className={`p-1.5 rounded-l-full transition-all ${hasCamera ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
+                                title={hasCamera ? 'Turn Camera Off' : 'Turn Camera On'}
+                            >
+                                {hasCamera ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4 text-red-400" />}
+                            </button>
+                            <button 
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); setShowCamMenu(!showCamMenu); setShowMicMenu(false); }}
+                                className="px-1 py-1.5 rounded-r-full text-slate-300 hover:text-white border-l border-slate-700 hover:bg-slate-700 transition"
+                                title="Select Camera"
+                            >
+                                <ChevronUp className={`w-3 h-3 transition-transform ${showCamMenu ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {/* Camera Device Menu Dropdown */}
+                            {showCamMenu && (
+                                <div 
+                                    className={`absolute ${isNearTop ? 'top-[125%]' : 'bottom-[125%]'} left-0 w-60 bg-slate-900 border-2 border-slate-700 rounded-xl p-2.5 shadow-2xl z-[120] animate-in fade-in zoom-in-95 pointer-events-auto`}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                >
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-2 flex items-center justify-between">
+                                        <span className="text-slate-300 font-semibold">Cameras</span>
+                                        <span className="text-[9px] text-slate-400">{availableDevices.cameras.length} found</span>
+                                    </div>
+                                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                                        {availableDevices.cameras.length === 0 ? (
+                                            <div className="px-2 py-1.5 text-xs text-slate-400 italic">No cameras found</div>
+                                        ) : (
+                                            availableDevices.cameras.map((c, idx) => {
+                                                const isSelected = selectedCamera === c.deviceId;
+                                                return (
+                                                    <button
+                                                        key={c.deviceId || idx}
+                                                        onClick={() => { switchCamera(c.deviceId); setShowCamMenu(false); }}
+                                                        className={`w-full text-left px-2.5 py-1.5 text-xs rounded-lg transition truncate flex items-center justify-between gap-1.5 ${isSelected ? 'bg-indigo-600 text-white font-medium shadow-sm' : 'text-slate-200 hover:bg-slate-800 hover:text-white'}`}
+                                                    >
+                                                        <div className="flex items-center gap-2 min-w-0 truncate">
+                                                            <Camera className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                                                            <span className="truncate">{c.label || `Camera ${idx + 1}`}</span>
+                                                        </div>
+                                                        {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-white" />}
+                                                    </button>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                    )}
-                </div>
-
-                {/* Camera Controls with Dropdown */}
-                <div className="relative flex items-center bg-slate-700/50 rounded-full">
-                    <button 
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={toggleCamera}
-                        className={`p-1.5 rounded-l-full transition-all ${hasCamera ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
-                        title={hasCamera ? 'Turn Camera Off' : 'Turn Camera On'}
-                    >
-                        {hasCamera ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
-                    </button>
-                    <button 
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); setShowCamMenu(!showCamMenu); setShowMicMenu(false); }}
-                        className="px-1 py-1.5 rounded-r-full text-slate-400 hover:text-white border-l border-slate-600/40 hover:bg-slate-700 transition"
-                        title="Select Camera"
-                    >
-                        <ChevronUp className={`w-3 h-3 transition-transform ${showCamMenu ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {/* Camera Device Menu Dropdown */}
-                    {showCamMenu && (
-                        <div 
-                            className="absolute bottom-[125%] left-0 w-56 bg-slate-900/98 backdrop-blur-md border border-slate-700 rounded-xl p-2 shadow-2xl z-[120] animate-in fade-in zoom-in-95 pointer-events-auto"
-                            onPointerDown={(e) => e.stopPropagation()}
-                        >
-                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 px-2 flex items-center justify-between">
-                                <span>Cameras</span>
-                                <span className="text-[9px] text-slate-500">{availableDevices.cameras.length} available</span>
-                            </div>
-                            <div className="space-y-1 max-h-44 overflow-y-auto">
-                                {availableDevices.cameras.length === 0 ? (
-                                    <div className="px-2 py-1.5 text-xs text-slate-400 italic">No cameras found</div>
-                                ) : (
-                                    availableDevices.cameras.map((c, idx) => {
-                                        const isSelected = selectedCamera === c.deviceId;
-                                        return (
-                                            <button
-                                                key={c.deviceId || idx}
-                                                onClick={() => { switchCamera(c.deviceId); setShowCamMenu(false); }}
-                                                className={`w-full text-left px-2.5 py-1.5 text-xs rounded-lg transition truncate flex items-center justify-between gap-1.5 ${isSelected ? 'bg-indigo-600 text-white font-medium shadow-sm' : 'text-slate-300 hover:bg-slate-800'}`}
-                                            >
-                                                <div className="flex items-center gap-2 min-w-0 truncate">
-                                                    <Camera className="w-3.5 h-3.5 shrink-0 opacity-70" />
-                                                    <span className="truncate">{c.label || `Camera ${idx + 1}`}</span>
-                                                </div>
-                                                {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-white" />}
-                                            </button>
-                                        );
-                                    })
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </div>
-                
-                <div className="w-px h-5 bg-slate-700 mx-1"></div>
+                        
+                        <div className="w-px h-5 bg-slate-700 mx-1"></div>
                 
                 {isRecording ? (
                     <>
@@ -1361,6 +1364,8 @@ const WhiteboardRecorder = ({
                     </button>
                 )}
             </div>
+            );
+        })()}
 
             {/* Movable Video Preview Picture-in-Picture */}
             {hasCamera && (

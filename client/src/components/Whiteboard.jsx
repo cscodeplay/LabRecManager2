@@ -15,8 +15,17 @@ import {
     Folder, Upload, Loader2, FlipHorizontal, FlipVertical, Sun, Contrast, Sliders,
     Clock, GripHorizontal, GripVertical, LayoutTemplate, Flashlight, Library,
     Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX,
-    ChevronUp, ChevronsUp, ChevronsDown, FileText
+    ChevronUp, ChevronsUp, ChevronsDown, FileText, Check, Pause, Play, RotateCcw, Globe, Music,
+    Underline, Bold, Italic, Shapes, Database, MessageSquare
 } from 'lucide-react';
+import fixWebmDuration from 'fix-webm-duration';
+
+const YoutubeIcon = (props) => (
+    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z" />
+        <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02" />
+    </svg>
+);
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
 import AdminPermissionsPanel from './AdminPermissionsPanel';
@@ -216,10 +225,10 @@ const hsbToRgb = (h, s, b) => {
 };
 
 // Helper: Get dash array based on stroke style
-const getDashArray = (style) => {
+const getDashArray = (style, strokeW = 2) => {
     switch (style) {
-        case 'dashed': return [10, 6];
-        case 'dotted': return [3, 3];
+        case 'dashed': return [Math.max(10, (strokeW || 2) * 3), Math.max(6, (strokeW || 2) * 2)];
+        case 'dotted': return [Math.max(2, (strokeW || 2)), Math.max(4, (strokeW || 2) * 2)];
         default: return [];
     }
 };
@@ -578,11 +587,27 @@ export default function Whiteboard({
     // Background options - per page
     const [pageBackgrounds, setPageBackgrounds] = useState({ 0: { pattern: 'plain', color: '#ffffff' } });
     const [showBgPicker, setShowBgPicker] = useState(false);
+    const [recentBgColors, setRecentBgColors] = useState(() => {
+        try {
+            const saved = localStorage.getItem('whiteboard_recent_bg_colors');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed.slice(0, 5);
+            }
+        } catch (e) {}
+        return ['#ffffff', '#0f172a', '#1e293b', '#f8fafc', '#fef08a'];
+    });
 
     // Get current page background
     const currentBg = pageBackgrounds[currentPage] || { pattern: 'plain', color: '#ffffff' };
     const bgPattern = currentBg.pattern;
     const bgColor = currentBg.color;
+
+    const [bgHexInput, setBgHexInput] = useState(bgColor || '#ffffff');
+
+    useEffect(() => {
+        if (bgColor) setBgHexInput(bgColor);
+    }, [bgColor]);
 
     const setBgPattern = useCallback((pattern) => {
         setPageBackgrounds(prev => ({
@@ -599,17 +624,27 @@ export default function Whiteboard({
     }, [currentPage, isSharing, socket, sessionId, bgColor]);
 
     const setBgColor = useCallback((color) => {
+        if (!color) return;
+        let formatted = color.trim().toLowerCase();
+        if (!formatted.startsWith('#')) formatted = `#${formatted}`;
         setPageBackgrounds(prev => ({
             ...prev,
-            [currentPage]: { ...prev[currentPage], color }
+            [currentPage]: { ...prev[currentPage], color: formatted }
         }));
         if (socket && sessionId) {
             socket.emit('whiteboard:background-change', {
                 sessionId,
-                bgColor: color,
+                bgColor: formatted,
                 bgPattern
             });
         }
+        setRecentBgColors(prev => {
+            const updated = [formatted, ...prev.filter(c => c.toLowerCase() !== formatted)].slice(0, 5);
+            try {
+                localStorage.setItem('whiteboard_recent_bg_colors', JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
+        });
     }, [currentPage, isSharing, socket, sessionId, bgPattern]);
 
     // Undo/Redo page-specific history
@@ -731,6 +766,13 @@ export default function Whiteboard({
     const [pageShapeObjects, setPageShapeObjects] = useState({ 0: [] });
     const [shapeDragState, setShapeDragState] = useState(null);
     const [editingShapeTextId, setEditingShapeTextId] = useState(null);
+    const [replaceShapePopoverId, setReplaceShapePopoverId] = useState(null);
+
+    // Eraser Mode: 'rub' (partial stroke trimmer) vs 'object' (entire object remover)
+    const [eraserMode, setEraserMode] = useState('rub');
+
+    // Live sparkle particles reference while drawing with sparkle tool
+    const currentSparkleParticlesRef = useRef([]);
 
     // OCR toggle
     const [isOcrActive, setIsOcrActive] = useState(false);
@@ -777,7 +819,7 @@ export default function Whiteboard({
     const mediaObjects = pageMediaObjects[currentPage] || [];
     const [selectedMediaId, setSelectedMediaId] = useState(null);
     const [showMediaModal, setShowMediaModal] = useState(false);
-    const [mediaInputTab, setMediaInputTab] = useState('youtube'); // 'local' | 'youtube' | 'embed' | 'recordings' | 'pdf'
+    const [mediaInputTab, setMediaInputTab] = useState('record'); // 'record' | 'local' | 'youtube' | 'embed' | 'recordings' | 'pdf'
     const [mediaInputTitle, setMediaInputTitle] = useState('');
     const [mediaInputUrl, setMediaInputUrl] = useState('');
     const [availableRecordings, setAvailableRecordings] = useState([]);
@@ -790,6 +832,203 @@ export default function Whiteboard({
     const [selectedPdfId, setSelectedPdfId] = useState(null);
     const [pdfInputUrl, setPdfInputUrl] = useState('');
     const [pdfInputTitle, setPdfInputTitle] = useState('');
+
+    // ─── Direct Audio / Video Capture to Canvas State ───
+    const [captureMode, setCaptureMode] = useState('video'); // 'video' | 'audio'
+    const [isCapturing, setIsCapturing] = useState(false);
+    const [isCapturePaused, setIsCapturePaused] = useState(false);
+    const [captureTime, setCaptureTime] = useState(0);
+    const [hasCaptureStream, setHasCaptureStream] = useState(false);
+
+    const captureStreamRef = useRef(null);
+    const captureRecorderRef = useRef(null);
+    const captureChunksRef = useRef([]);
+    const captureTimerRef = useRef(null);
+    const captureTimeRef = useRef(0);
+    const captureVideoPreviewRef = useRef(null);
+
+    const stopCaptureStream = useCallback(() => {
+        if (captureStreamRef.current) {
+            captureStreamRef.current.getTracks().forEach(t => t.stop());
+            captureStreamRef.current = null;
+        }
+        if (captureVideoPreviewRef.current) {
+            captureVideoPreviewRef.current.srcObject = null;
+        }
+        setHasCaptureStream(false);
+    }, []);
+
+    const startCapturePreview = useCallback(async (mode = captureMode) => {
+        try {
+            stopCaptureStream();
+            const constraints = mode === 'video'
+                ? { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true }
+                : { audio: true, video: false };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            captureStreamRef.current = stream;
+            if (mode === 'video' && captureVideoPreviewRef.current) {
+                captureVideoPreviewRef.current.srcObject = stream;
+            }
+            setHasCaptureStream(true);
+        } catch (err) {
+            console.error("Capture device access error:", err);
+            toast.error(`Unable to access ${mode === 'video' ? 'camera/microphone' : 'microphone'}`);
+            setHasCaptureStream(false);
+        }
+    }, [captureMode, stopCaptureStream]);
+
+    // Discard capture recording
+    const handleDiscardCapture = useCallback(() => {
+        if (captureTimerRef.current) clearInterval(captureTimerRef.current);
+        if (captureRecorderRef.current && captureRecorderRef.current.state !== 'inactive') {
+            try { captureRecorderRef.current.stop(); } catch (e) {}
+        }
+        captureChunksRef.current = [];
+        captureTimeRef.current = 0;
+        setCaptureTime(0);
+        setIsCapturing(false);
+        setIsCapturePaused(false);
+    }, []);
+
+    // Manage capture stream lifecycle with media modal & tab
+    useEffect(() => {
+        if (showMediaModal && mediaInputTab === 'record') {
+            startCapturePreview(captureMode);
+        } else {
+            if (isCapturing) {
+                handleDiscardCapture();
+            }
+            stopCaptureStream();
+        }
+        return () => {
+            stopCaptureStream();
+        };
+    }, [showMediaModal, mediaInputTab, captureMode, startCapturePreview, stopCaptureStream, isCapturing, handleDiscardCapture]);
+
+    const handleStartCapture = async () => {
+        try {
+            if (!captureStreamRef.current || !hasCaptureStream) {
+                await startCapturePreview(captureMode);
+            }
+            if (!captureStreamRef.current) {
+                toast.error('No capture stream available');
+                return;
+            }
+
+            captureChunksRef.current = [];
+            captureTimeRef.current = 0;
+            setCaptureTime(0);
+            setIsCapturePaused(false);
+
+            const mimeType = captureMode === 'video'
+                ? (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+                    ? 'video/webm;codecs=vp9,opus'
+                    : (MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : ''))
+                : (MediaRecorder.isTypeSupported('audio/webm')
+                    ? 'audio/webm'
+                    : (MediaRecorder.isTypeSupported('audio/ogg') ? 'audio/ogg' : ''));
+
+            const recorder = new MediaRecorder(captureStreamRef.current, mimeType ? { mimeType } : undefined);
+            recorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) {
+                    captureChunksRef.current.push(e.data);
+                }
+            };
+
+            captureRecorderRef.current = recorder;
+            recorder.start(250);
+            setIsCapturing(true);
+
+            if (captureTimerRef.current) clearInterval(captureTimerRef.current);
+            captureTimerRef.current = setInterval(() => {
+                captureTimeRef.current += 1;
+                setCaptureTime(captureTimeRef.current);
+            }, 1000);
+        } catch (err) {
+            console.error('Failed to start recording:', err);
+            toast.error('Failed to start recording');
+        }
+    };
+
+    const handlePauseResumeCapture = () => {
+        if (!captureRecorderRef.current) return;
+        if (isCapturePaused) {
+            captureRecorderRef.current.resume();
+            setIsCapturePaused(false);
+            captureTimerRef.current = setInterval(() => {
+                captureTimeRef.current += 1;
+                setCaptureTime(captureTimeRef.current);
+            }, 1000);
+        } else {
+            captureRecorderRef.current.pause();
+            setIsCapturePaused(true);
+            if (captureTimerRef.current) clearInterval(captureTimerRef.current);
+        }
+    };
+
+    const handleStopAndInsertCapture = () => {
+        if (!captureRecorderRef.current) return;
+        if (captureTimerRef.current) clearInterval(captureTimerRef.current);
+
+        const durationSec = captureTimeRef.current;
+        const currentMode = captureMode;
+        const title = mediaInputTitle.trim() || `${currentMode === 'audio' ? 'Audio' : 'Video'} Clip (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
+
+        captureRecorderRef.current.onstop = async () => {
+            try {
+                const rawBlob = new Blob(captureChunksRef.current, {
+                    type: currentMode === 'video' ? 'video/webm' : 'audio/webm'
+                });
+
+                let finalBlob = rawBlob;
+                if (durationSec > 0 && currentMode === 'video') {
+                    try {
+                        finalBlob = await new Promise((resolve) => {
+                            fixWebmDuration(rawBlob, durationSec * 1000, (fixed) => resolve(fixed || rawBlob));
+                        });
+                    } catch (e) {
+                        finalBlob = rawBlob;
+                    }
+                }
+
+                const blobUrl = URL.createObjectURL(finalBlob);
+                const wrapper = canvasWrapperRef.current;
+                const cx = wrapper ? (wrapper.clientWidth / 2 - (currentMode === 'audio' ? 180 : 240)) : 150;
+                const cy = wrapper ? (wrapper.clientHeight / 2 - (currentMode === 'audio' ? 70 : 150)) : 150;
+
+                const newMedia = {
+                    id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                    mediaType: currentMode === 'audio' ? 'audio' : 'local',
+                    src: blobUrl,
+                    title: title,
+                    x: Math.max(20, cx),
+                    y: Math.max(20, cy),
+                    width: currentMode === 'audio' ? 360 : 480,
+                    height: currentMode === 'audio' ? 140 : 300,
+                    isMuted: false,
+                    isCollapsed: false,
+                    isLocked: false,
+                    rotation: 0
+                };
+
+                setMediaObjects(prev => [...prev, newMedia]);
+                setSelectedMediaId(newMedia.id);
+                stopCaptureStream();
+                setShowMediaModal(false);
+                setMediaInputTitle('');
+                setIsCapturing(false);
+                setIsCapturePaused(false);
+                toast.success(`${currentMode === 'audio' ? 'Audio' : 'Video'} clip inserted to canvas!`, { icon: '🎬' });
+            } catch (err) {
+                console.error('Error finalizing capture:', err);
+                toast.error('Failed to create media clip');
+            }
+        };
+
+        if (captureRecorderRef.current.state !== 'inactive') {
+            captureRecorderRef.current.stop();
+        }
+    };
 
     // Fetch user recordings when recordings tab in media modal is opened (both local cache and server)
     useEffect(() => {
@@ -4050,6 +4289,20 @@ export default function Whiteboard({
                         ? { ...shp, x: newX, y: newY, width: newWidth, height: newHeight }
                         : shp
                 ));
+            } else if (shapeDragState.action === 'skew') {
+                const currentSkew = startObj.skew !== undefined ? startObj.skew : (startObj.width * 0.25);
+                const rot = ((startObj.rotation || 0) * Math.PI) / 180;
+                const cosR = Math.cos(-rot);
+                const sinR = Math.sin(-rot);
+                const localDx = canvasDx * cosR - canvasDy * sinR;
+                const maxSkew = startObj.width - 5;
+                const minSkew = 5;
+                const newSkew = Math.max(minSkew, Math.min(maxSkew, currentSkew + localDx));
+                setShapeObjects(prev => prev.map(shp =>
+                    shp.id === shapeDragState.id
+                        ? { ...shp, skew: newSkew }
+                        : shp
+                ));
             }
         };
 
@@ -4816,7 +5069,7 @@ export default function Whiteboard({
         setCurrentPos(pos);
         lastPointRef.current = pos;
 
-        if (tool === 'pen' || tool === 'eraser' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
+        if (tool === 'pen' || tool === 'sparkle' || tool === 'eraser' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
             const canvas = canvasRef.current;
             if (!canvas) return;
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -4828,6 +5081,9 @@ export default function Whiteboard({
             } catch (err) {}
 
             currentPathPointsRef.current = [pos];
+            if (tool === 'sparkle') {
+                currentSparkleParticlesRef.current = [];
+            }
 
             if (tool === 'pen') {
                 isStrokeSnappedRef.current = false;
@@ -4846,7 +5102,7 @@ export default function Whiteboard({
             ctx.moveTo(pos.x, pos.y);
 
             // Emit start event with action description
-            const currentAction = tool === 'eraser' ? 'erasing' : (tool === 'highlighter' ? 'highlighting' : (tool === 'line' || tool === 'arrow' ? `drawing ${tool}` : 'drawing with pen'));
+            const currentAction = tool === 'eraser' ? 'erasing' : (tool === 'highlighter' ? 'highlighting' : (tool === 'sparkle' ? 'sparkle drawing' : (tool === 'line' || tool === 'arrow' ? `drawing ${tool}` : 'drawing with pen')));
             broadcastAction(currentAction, pos.x, pos.y);
             emitDrawEvent({
                 type: 'path',
@@ -4983,7 +5239,7 @@ export default function Whiteboard({
             }
             ctx.stroke();
             ctx.globalCompositeOperation = 'source-over';
-        } else if (tool === 'pen' || tool === 'eraser') {
+        } else if (tool === 'pen' || tool === 'eraser' || tool === 'sparkle') {
             const pts = currentPathPointsRef.current;
 
             // Live dragging while hold-snapped (rubber-banding straight line or resizing snapped shape)
@@ -5090,39 +5346,104 @@ export default function Whiteboard({
                 return;
             }
 
-            ctx.beginPath();
-            if (tool === 'eraser') {
-                ctx.globalCompositeOperation = 'destination-out';
-                ctx.strokeStyle = 'rgba(0,0,0,1)';
-                ctx.lineWidth = eraserSize;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-            } else { // pen
+            if (tool === 'pen' && strokeStyle !== 'solid') {
+                if (preStrokeImageDataRef.current) {
+                    ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+                }
+                ctx.beginPath();
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.strokeStyle = color;
                 ctx.lineWidth = strokeWidth;
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
-                ctx.setLineDash(getDashArray(strokeStyle));
-            }
-
-            if (pts.length < 3) {
-                const b = pts[0];
-                ctx.moveTo(b.x, b.y);
-                ctx.lineTo(pos.x, pos.y);
-                ctx.stroke();
+                ctx.setLineDash(getDashArray(strokeStyle, strokeWidth));
+                if (pts.length > 0) {
+                    ctx.moveTo(pts[0].x, pts[0].y);
+                    if (pts.length < 3) {
+                        ctx.lineTo(pos.x, pos.y);
+                    } else {
+                        for (let i = 1; i < pts.length - 1; i++) {
+                            const xc = (pts[i].x + pts[i + 1].x) / 2;
+                            const yc = (pts[i].y + pts[i + 1].y) / 2;
+                            ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+                        }
+                        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+                    }
+                    ctx.stroke();
+                }
             } else {
-                // Smooth quadratic curve for smooth antialiased writing
-                const lastTwo = pts.slice(-3);
-                const p0 = lastTwo[0];
-                const p1 = lastTwo[1];
-                const p2 = lastTwo[2];
-                const mid1 = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
-                const mid2 = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+                ctx.beginPath();
+                if (tool === 'eraser') {
+                    ctx.globalCompositeOperation = 'destination-out';
+                    ctx.strokeStyle = 'rgba(0,0,0,1)';
+                    ctx.lineWidth = eraserSize;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.setLineDash([]);
+                } else if (tool === 'sparkle') {
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.strokeStyle = color || '#f59e0b';
+                    ctx.lineWidth = strokeWidth || 3;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.setLineDash([]);
+                } else { // pen solid
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = strokeWidth;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.setLineDash([]);
+                }
 
-                ctx.moveTo(mid1.x, mid1.y);
-                ctx.quadraticCurveTo(p1.x, p1.y, mid2.x, mid2.y);
-                ctx.stroke();
+                if (pts.length < 3) {
+                    const b = pts[0];
+                    ctx.moveTo(b.x, b.y);
+                    ctx.lineTo(pos.x, pos.y);
+                    ctx.stroke();
+                } else {
+                    // Smooth quadratic curve for smooth antialiased writing
+                    const lastTwo = pts.slice(-3);
+                    const p0 = lastTwo[0];
+                    const p1 = lastTwo[1];
+                    const p2 = lastTwo[2];
+                    const mid1 = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
+                    const mid2 = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+
+                    ctx.moveTo(mid1.x, mid1.y);
+                    ctx.quadraticCurveTo(p1.x, p1.y, mid2.x, mid2.y);
+                    ctx.stroke();
+                }
+
+                if (tool === 'sparkle') {
+                    if (!currentSparkleParticlesRef.current) currentSparkleParticlesRef.current = [];
+                    const particles = currentSparkleParticlesRef.current;
+                    const lastP = particles[particles.length - 1];
+                    if (!lastP || Math.hypot(pos.x - lastP.x, pos.y - lastP.y) > 18) {
+                        const pSize = 5 + Math.random() * 7;
+                        const pRot = Math.random() * 360;
+                        const pX = pos.x + (Math.random() - 0.5) * 14;
+                        const pY = pos.y + (Math.random() - 0.5) * 14;
+                        const newP = { x: pX, y: pY, size: pSize, rotation: pRot, opacity: 0.9 };
+                        particles.push(newP);
+                        ctx.save();
+                        ctx.translate(pX, pY);
+                        ctx.rotate((pRot * Math.PI) / 180);
+                        ctx.beginPath();
+                        ctx.moveTo(0, -pSize);
+                        ctx.quadraticCurveTo(0, 0, pSize, 0);
+                        ctx.quadraticCurveTo(0, 0, 0, pSize);
+                        ctx.quadraticCurveTo(0, 0, -pSize, 0);
+                        ctx.quadraticCurveTo(0, 0, 0, -pSize);
+                        ctx.closePath();
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fill();
+                        ctx.strokeStyle = color || '#f59e0b';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                }
             }
 
             if (tool === 'eraser') {
@@ -5131,41 +5452,125 @@ export default function Whiteboard({
                 const eraserRadius = eraserSize / 2;
                 const eraserX = pos.x;
                 const eraserY = pos.y;
+                const rSq = eraserRadius * eraserRadius;
                 
-                setShapeObjects(prev => prev.filter(shape => {
-                    // Check if eraser circle overlaps with shape bounding box
-                    const closestX = Math.max(shape.x, Math.min(eraserX, shape.x + shape.width));
-                    const closestY = Math.max(shape.y, Math.min(eraserY, shape.y + shape.height));
-                    const distX = eraserX - closestX;
-                    const distY = eraserY - closestY;
-                    const distSq = distX * distX + distY * distY;
-                    const intersects = distSq <= eraserRadius * eraserRadius;
+                if (eraserMode === 'rub') {
+                    // Rub / Partial Stroke Eraser: Trims freehand and sparkle paths into sub-strokes
+                    setShapeObjects(prev => {
+                        let hasChanges = false;
+                        const nextShapes = [];
+
+                        for (const shp of prev) {
+                            if (shp.type !== 'path' && shp.type !== 'sparkle_path') {
+                                nextShapes.push(shp);
+                                continue;
+                            }
+
+                            if (
+                                eraserX + eraserRadius < shp.x ||
+                                eraserX - eraserRadius > shp.x + shp.width ||
+                                eraserY + eraserRadius < shp.y ||
+                                eraserY - eraserRadius > shp.y + shp.height
+                            ) {
+                                nextShapes.push(shp);
+                                continue;
+                            }
+
+                            const pathPts = shp.points || [];
+                            let anyPointErased = false;
+                            const segments = [];
+                            let currentSegment = [];
+
+                            for (const pt of pathPts) {
+                                const dx = pt.x - eraserX;
+                                const dy = pt.y - eraserY;
+                                if (dx * dx + dy * dy <= rSq) {
+                                    anyPointErased = true;
+                                    if (currentSegment.length > 0) {
+                                        segments.push(currentSegment);
+                                        currentSegment = [];
+                                    }
+                                } else {
+                                    currentSegment.push(pt);
+                                }
+                            }
+                            if (currentSegment.length > 0) {
+                                segments.push(currentSegment);
+                            }
+
+                            if (!anyPointErased) {
+                                nextShapes.push(shp);
+                            } else {
+                                hasChanges = true;
+                                for (let i = 0; i < segments.length; i++) {
+                                    const segPts = segments[i];
+                                    if (segPts.length === 0) continue;
+                                    const minPx = Math.min(...segPts.map(p => p.x));
+                                    const maxPx = Math.max(...segPts.map(p => p.x));
+                                    const minPy = Math.min(...segPts.map(p => p.y));
+                                    const maxPy = Math.max(...segPts.map(p => p.y));
+                                    const w = Math.max(maxPx - minPx, 1);
+                                    const h = Math.max(maxPy - minPy, 1);
+
+                                    let survivingParticles = shp.particles;
+                                    if (shp.type === 'sparkle_path' && shp.particles) {
+                                        survivingParticles = shp.particles.filter(p => {
+                                            const pdx = p.x - eraserX;
+                                            const pdy = p.y - eraserY;
+                                            return pdx * pdx + pdy * pdy > rSq;
+                                        });
+                                    }
+
+                                    nextShapes.push({
+                                        ...shp,
+                                        id: i === 0 ? shp.id : `${shp.id}-sub-${Date.now()}-${i}`,
+                                        x: minPx,
+                                        y: minPy,
+                                        width: w,
+                                        height: h,
+                                        originalWidth: w,
+                                        originalHeight: h,
+                                        points: segPts,
+                                        particles: survivingParticles
+                                    });
+                                }
+                            }
+                        }
+
+                        return hasChanges ? nextShapes : prev;
+                    });
+                } else {
+                    // Object Eraser: Delete entire shapes, texts, images under eraser
+                    setShapeObjects(prev => prev.filter(shape => {
+                        const closestX = Math.max(shape.x, Math.min(eraserX, shape.x + shape.width));
+                        const closestY = Math.max(shape.y, Math.min(eraserY, shape.y + shape.height));
+                        const distX = eraserX - closestX;
+                        const distY = eraserY - closestY;
+                        const distSq = distX * distX + distY * distY;
+                        const intersects = distSq <= eraserRadius * eraserRadius;
+                        
+                        if (intersects && socket && sessionId) {
+                            socket.emit('whiteboard:shape-delete', { sessionId, shapeId: shape.id });
+                        }
+                        return !intersects;
+                    }));
                     
-                    if (intersects && socket && sessionId) {
-                        socket.emit('whiteboard:shape-delete', { sessionId, shapeId: shape.id });
-                    }
-                    return !intersects;
-                }));
-                
-                // Also remove text objects under eraser
-                setTextObjects(prev => prev.filter(txt => {
-                    const closestX = Math.max(txt.x, Math.min(eraserX, txt.x + txt.width));
-                    const closestY = Math.max(txt.y, Math.min(eraserY, txt.y + txt.height));
-                    const distX = eraserX - closestX;
-                    const distY = eraserY - closestY;
-                    const distSq = distX * distX + distY * distY;
-                    return distSq > eraserRadius * eraserRadius;
-                }));
-                
-                // Also remove image objects under eraser
-                setImageObjects(prev => prev.filter(img => {
-                    const closestX = Math.max(img.x, Math.min(eraserX, img.x + img.width));
-                    const closestY = Math.max(img.y, Math.min(eraserY, img.y + img.height));
-                    const distX = eraserX - closestX;
-                    const distY = eraserY - closestY;
-                    const distSq = distX * distX + distY * distY;
-                    return distSq > eraserRadius * eraserRadius;
-                }));
+                    setTextObjects(prev => prev.filter(txt => {
+                        const closestX = Math.max(txt.x, Math.min(eraserX, txt.x + txt.width));
+                        const closestY = Math.max(txt.y, Math.min(eraserY, txt.y + txt.height));
+                        const distX = eraserX - closestX;
+                        const distY = eraserY - closestY;
+                        return (distX * distX + distY * distY) > eraserRadius * eraserRadius;
+                    }));
+                    
+                    setImageObjects(prev => prev.filter(img => {
+                        const closestX = Math.max(img.x, Math.min(eraserX, img.x + img.width));
+                        const closestY = Math.max(img.y, Math.min(eraserY, img.y + img.height));
+                        const distX = eraserX - closestX;
+                        const distY = eraserY - closestY;
+                        return (distX * distX + distY * distY) > eraserRadius * eraserRadius;
+                    }));
+                }
             }
 
             emitDrawEvent({
@@ -5321,6 +5726,8 @@ export default function Whiteboard({
                     rotation: 0,
                     color: color,
                     strokeWidth: strokeWidth,
+                    borderStyle: strokeStyle,
+                    strokeStyle: strokeStyle,
                     smooth: false,
                     isHighlighter: false
                 };
@@ -5336,6 +5743,8 @@ export default function Whiteboard({
                     rotation: 0,
                     color: color,
                     strokeWidth: strokeWidth,
+                    borderStyle: strokeStyle,
+                    strokeStyle: strokeStyle,
                     text: '',
                     fontSize: 20
                 };
@@ -5387,6 +5796,8 @@ export default function Whiteboard({
                             rotation: 0,
                             color: color,
                             strokeWidth: strokeWidth,
+                            borderStyle: strokeStyle,
+                            strokeStyle: strokeStyle,
                             smooth: false,
                             isHighlighter: false
                         };
@@ -5402,6 +5813,8 @@ export default function Whiteboard({
                             rotation: 0,
                             color: color,
                             strokeWidth: strokeWidth,
+                            borderStyle: strokeStyle,
+                            strokeStyle: strokeStyle,
                             text: '',
                             fontSize: 20
                         };
@@ -5476,11 +5889,13 @@ export default function Whiteboard({
                             rotation: 0,
                             color: color,
                             strokeWidth: strokeWidth,
+                            borderStyle: strokeStyle,
+                            strokeStyle: strokeStyle,
                             text: '',
                             fontSize: 20,
-                    stepSize: shapeType === 'graph' ? 5 : undefined
-                };
-                setShapeObjects(prev => [...prev, newShapeObj]);
+                            stepSize: shapeType === 'graph' ? 5 : undefined
+                        };
+                        setShapeObjects(prev => [...prev, newShapeObj]);
                         if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
                         shapeCreated = true;
                     }
@@ -5493,6 +5908,8 @@ export default function Whiteboard({
                             rotation: 0,
                             color: color,
                             strokeWidth: strokeWidth,
+                            borderStyle: strokeStyle,
+                            strokeStyle: strokeStyle,
                             text: '',
                             fontSize: 20
                         };
@@ -5509,6 +5926,8 @@ export default function Whiteboard({
                             rotation: 0,
                             color: color,
                             strokeWidth: strokeWidth,
+                            borderStyle: strokeStyle,
+                            strokeStyle: strokeStyle,
                             text: '',
                             fontSize: 20
                         };
@@ -5539,6 +5958,8 @@ export default function Whiteboard({
                             rotation: 0,
                             color: color,
                             strokeWidth: strokeWidth,
+                            borderStyle: strokeStyle,
+                            strokeStyle: strokeStyle,
                             smooth: false,
                             isHighlighter: false
                         };
@@ -5578,6 +5999,8 @@ export default function Whiteboard({
                     rotation: 0,
                     color: tool === 'highlighter' ? highlighterColor : color,
                     strokeWidth: tool === 'highlighter' ? strokeWidth * 4 : strokeWidth,
+                    borderStyle: strokeStyle,
+                    strokeStyle: strokeStyle,
                     smooth: true,
                     isHighlighter: tool === 'highlighter',
                     brushType: (tool === 'pen' ? brushType : 'normal') || 'normal'
@@ -5617,7 +6040,47 @@ export default function Whiteboard({
                 }
             }
         } else if (tool === 'eraser') {
-            // Eraser already modified the canvas directly during handleMouseMove.
+            saveToHistory();
+        } else if (tool === 'sparkle') {
+            const pts = currentPathPointsRef.current;
+            if (pts && pts.length > 1) {
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                pts.forEach(p => {
+                    if (p.x < minX) minX = p.x;
+                    if (p.x > maxX) maxX = p.x;
+                    if (p.y < minY) minY = p.y;
+                    if (p.y > maxY) maxY = p.y;
+                });
+                const relPoints = pts.map(p => ({
+                    x: p.x - minX,
+                    y: p.y - minY
+                }));
+                const relParticles = (currentSparkleParticlesRef.current || []).map(p => ({
+                    ...p,
+                    x: p.x - minX,
+                    y: p.y - minY
+                }));
+                const newSparkleObj = {
+                    id: `sparkle-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+                    type: 'sparkle_path',
+                    x: minX,
+                    y: minY,
+                    width: Math.max(maxX - minX, 1),
+                    height: Math.max(maxY - minY, 1),
+                    originalWidth: Math.max(maxX - minX, 1),
+                    originalHeight: Math.max(maxY - minY, 1),
+                    points: relPoints,
+                    particles: relParticles,
+                    rotation: 0,
+                    color: color || '#f59e0b',
+                    strokeWidth: strokeWidth || 3,
+                    smooth: true
+                };
+                setShapeObjects(prev => [...prev, newSparkleObj]);
+                if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newSparkleObj });
+                saveToHistory();
+            }
+            currentSparkleParticlesRef.current = [];
         } else if (tool === 'line') {
             if (preStrokeImageDataRef.current) {
                 ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
@@ -5747,12 +6210,14 @@ export default function Whiteboard({
                     color: color,
                     strokeWidth: strokeWidth,
                     text: '',
-                    fontSize: 20
+                    fontSize: 20,
+                    skew: shapeType === 'parallelogram' ? (finalW * 0.25) : undefined
                 };
                 setShapeObjects(prev => [...prev, newShapeObj]);
                 if (socket && sessionId) {
                     socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
                 }
+                saveToHistory();
                 justCreatedShapeRef.current = true;
                 setSelectedShapeIds([newShapeObj.id]);
                 setSelectedTextIds([]);
@@ -5785,29 +6250,46 @@ export default function Whiteboard({
                     const selWidth = maxX - minX;
                     const selHeight = maxY - minY;
                     
+                    const isPtInPoly = (pt, poly) => {
+                        let inside = false;
+                        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                            const xi = poly[i].x, yi = poly[i].y;
+                            const xj = poly[j].x, yj = poly[j].y;
+                            const intersect = ((yi > pt.y) !== (yj > pt.y)) &&
+                                (pt.x < (xj - xi) * (pt.y - yi) / (yj - yi + 1e-9) + xi);
+                            if (intersect) inside = !inside;
+                        }
+                        return inside;
+                    };
+
+                    const isObjInLasso = (item) => {
+                        const ix = item.x || 0;
+                        const iy = item.y || 0;
+                        const iw = item.width || 0;
+                        const ih = item.height || 0;
+                        const cx = ix + iw / 2;
+                        const cy = iy + ih / 2;
+                        if (isPtInPoly({ x: cx, y: cy }, lassoPath)) return true;
+                        const corners = [
+                            { x: ix, y: iy },
+                            { x: ix + iw, y: iy },
+                            { x: ix + iw, y: iy + ih },
+                            { x: ix, y: iy + ih }
+                        ];
+                        return corners.some(c => isPtInPoly(c, lassoPath));
+                    };
+
                     if (selWidth > 5 && selHeight > 5) {
                         let selectedShapes = shapeObjects.filter(shape => 
-                            !shape.isLocked &&
-                            shape.x < minX + selWidth && 
-                            shape.x + shape.width > minX && 
-                            shape.y < minY + selHeight && 
-                            shape.y + shape.height > minY
+                            !shape.isLocked && isObjInLasso(shape)
                         ).map(s => s.id);
                         
                         let selectedTexts = textObjects.filter(txt => 
-                            !txt.isLocked &&
-                            txt.x < minX + selWidth && 
-                            txt.x + txt.width > minX && 
-                            txt.y < minY + selHeight && 
-                            txt.y + txt.height > minY
+                            !txt.isLocked && isObjInLasso(txt)
                         ).map(s => s.id);
 
                         let selectedImages = imageObjects.filter(img => 
-                            !img.isLocked &&
-                            img.x < minX + selWidth && 
-                            img.x + img.width > minX && 
-                            img.y < minY + selHeight && 
-                            img.y + img.height > minY
+                            !img.isLocked && isObjInLasso(img)
                         ).map(s => s.id);
 
                         const groupIdsToSelect = new Set([
@@ -5938,13 +6420,32 @@ export default function Whiteboard({
         } else if (tool === 'text') {
             const x = Math.min(startPos.x, pos.x);
             const y = Math.min(startPos.y, pos.y);
-            const textWidth = Math.max(100, Math.abs(pos.x - startPos.x));
-            const textHeight = Math.max(30, Math.abs(pos.y - startPos.y));
+            const textWidth = Math.max(160, Math.abs(pos.x - startPos.x));
+            const textHeight = Math.max(44, Math.abs(pos.y - startPos.y));
 
-            setTextBoundary({ x, y, width: textWidth, height: textHeight });
-            setTextPos({ x, y });
-            setTextValue('');
-            setShowTextInput(true);
+            const newTextId = `txt_${Date.now()}`;
+            const newTextObj = {
+                id: newTextId,
+                text: '',
+                x,
+                y,
+                width: textWidth,
+                height: textHeight,
+                rotation: 0,
+                color: color || '#1e293b',
+                fontSize: Math.max(16, strokeWidth * 2 + 16),
+                fontFamily: selectedFontFamily || 'sans-serif',
+                fontWeight: isBold ? 'bold' : 'normal',
+                fontStyle: isItalic ? 'italic' : 'normal',
+                textDecoration: 'none',
+                textAlign: 'left',
+                bgColor: 'transparent'
+            };
+            setTextObjects(prev => [...prev, newTextObj]);
+            setSelectedTextIds([newTextId]);
+            setEditingTextId(newTextId);
+            setTool('select');
+            saveToHistory();
         }
         setIsDrawing(false);
         if (tool !== 'select' && tool !== 'laser' && tool !== 'text' && tool !== 'shape') {
@@ -6446,7 +6947,7 @@ export default function Whiteboard({
             ctx.fillStyle = fill;
 
             // Border style: dashed, dotted, solid
-            const bStyle = shpObj.borderStyle || 'solid';
+            const bStyle = shpObj.borderStyle || shpObj.strokeStyle || 'solid';
             if (bStyle === 'dashed') {
                 ctx.setLineDash([Math.max(6, (shpObj.strokeWidth || 2) * 3), Math.max(4, (shpObj.strokeWidth || 2) * 2)]);
             } else if (bStyle === 'dotted') {
@@ -6701,6 +7202,129 @@ export default function Whiteboard({
                     ctx.beginPath();
                     ctx.arc(pcx, pcy, r - 30, Math.PI, 0);
                     ctx.stroke();
+                }
+            } else if (shpObj.type === 'parallelogram') {
+                const w = shpObj.width, h = shpObj.height, sx = shpObj.x, sy = shpObj.y;
+                const sk = Math.max(5, Math.min(w - 5, shpObj.skew !== undefined ? shpObj.skew : w * 0.25));
+                ctx.moveTo(sx + sk, sy);
+                ctx.lineTo(sx + w, sy);
+                ctx.lineTo(sx + w - sk, sy + h);
+                ctx.lineTo(sx, sy + h);
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'terminator') {
+                const r = Math.min(shpObj.width / 2, shpObj.height / 2);
+                if (ctx.roundRect) ctx.roundRect(shpObj.x, shpObj.y, shpObj.width, shpObj.height, r);
+                else ctx.rect(shpObj.x, shpObj.y, shpObj.width, shpObj.height);
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'cylinder') {
+                const w = shpObj.width, h = shpObj.height, sx = shpObj.x, sy = shpObj.y;
+                const ry = Math.min(24, Math.max(8, h * 0.18));
+                const rx = w / 2;
+                ctx.moveTo(sx, sy + ry);
+                ctx.lineTo(sx, sy + h - ry);
+                ctx.ellipse(sx + rx, sy + h - ry, rx, ry, 0, Math.PI, 0, true);
+                ctx.lineTo(sx + w, sy + ry);
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.ellipse(sx + rx, sy + ry, rx, ry, 0, 0, Math.PI * 2);
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'document') {
+                const w = shpObj.width, h = shpObj.height, sx = shpObj.x, sy = shpObj.y;
+                const wave = Math.min(24, Math.max(8, h * 0.14));
+                ctx.moveTo(sx, sy);
+                ctx.lineTo(sx + w, sy);
+                ctx.lineTo(sx + w, sy + h - wave);
+                ctx.quadraticCurveTo(sx + w * 0.75, sy + h, sx + w * 0.5, sy + h - wave);
+                ctx.quadraticCurveTo(sx + w * 0.25, sy + h - 2 * wave, sx, sy + h - wave);
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'callout') {
+                const w = shpObj.width, h = shpObj.height, sx = shpObj.x, sy = shpObj.y;
+                const tailH = Math.min(24, Math.max(12, h * 0.22));
+                const bodyH = h - tailH;
+                const r = Math.min(14, w * 0.1, bodyH * 0.2);
+                ctx.moveTo(sx + r, sy);
+                ctx.lineTo(sx + w - r, sy);
+                ctx.quadraticCurveTo(sx + w, sy, sx + w, sy + r);
+                ctx.lineTo(sx + w, sy + bodyH - r);
+                ctx.quadraticCurveTo(sx + w, sy + bodyH, sx + w - r, sy + bodyH);
+                ctx.lineTo(sx + w * 0.42, sy + bodyH);
+                ctx.lineTo(sx + w * 0.22, sy + h);
+                ctx.lineTo(sx + w * 0.26, sy + bodyH);
+                ctx.lineTo(sx + r, sy + bodyH);
+                ctx.quadraticCurveTo(sx, sy + bodyH, sx, sy + bodyH - r);
+                ctx.lineTo(sx, sy + r);
+                ctx.quadraticCurveTo(sx, sy, sx + r, sy);
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'cube') {
+                const w = shpObj.width, h = shpObj.height, sx = shpObj.x, sy = shpObj.y;
+                const cx = sx + w / 2;
+                const cy = sy + h * 0.45;
+                ctx.moveTo(cx, sy);
+                ctx.lineTo(sx + w, sy + h * 0.25);
+                ctx.lineTo(cx, cy);
+                ctx.lineTo(sx, sy + h * 0.25);
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(sx, sy + h * 0.25);
+                ctx.lineTo(cx, cy);
+                ctx.lineTo(cx, sy + h);
+                ctx.lineTo(sx, sy + h * 0.8);
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.lineTo(sx + w, sy + h * 0.25);
+                ctx.lineTo(sx + w, sy + h * 0.8);
+                ctx.lineTo(cx, sy + h);
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'sparkle_path') {
+                if (shpObj.points && shpObj.points.length > 0) {
+                    const pts = shpObj.points;
+                    ctx.beginPath();
+                    ctx.strokeStyle = shpObj.color;
+                    ctx.lineWidth = shpObj.strokeWidth || 3;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.moveTo(shpObj.x + pts[0].x, shpObj.y + pts[0].y);
+                    for (let i = 1; i < pts.length; i++) {
+                        ctx.lineTo(shpObj.x + pts[i].x, shpObj.y + pts[i].y);
+                    }
+                    ctx.stroke();
+                    const particles = shpObj.particles || [];
+                    particles.forEach(p => {
+                        const s = p.size || 8;
+                        ctx.save();
+                        ctx.translate(shpObj.x + p.x, shpObj.y + p.y);
+                        ctx.rotate(((p.rotation || 0) * Math.PI) / 180);
+                        ctx.beginPath();
+                        ctx.moveTo(0, -s);
+                        ctx.quadraticCurveTo(0, 0, s, 0);
+                        ctx.quadraticCurveTo(0, 0, 0, s);
+                        ctx.quadraticCurveTo(0, 0, -s, 0);
+                        ctx.quadraticCurveTo(0, 0, 0, -s);
+                        ctx.closePath();
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fill();
+                        ctx.strokeStyle = shpObj.color;
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                        ctx.restore();
+                    });
                 }
             }
 
@@ -7861,27 +8485,26 @@ export default function Whiteboard({
                     : 'bottom-full left-1/2 -translate-x-1/2 mb-2';
 
                 const allTools = [
-                    { id: 'select', icon: selectMode === 'lasso' ? Wand2 : MousePointer2, label: 'Select', important: true },
-                    { id: 'pen', icon: Pencil, label: 'Pen', important: true },
-                    { id: 'smart_shape', icon: Wand2, label: `Smart Shapes (${isAutoShape ? 'ON' : 'OFF'}) - Hold or lift to snap straight lines & shapes`, important: true },
-                    { id: 'highlighter', icon: Highlighter, label: 'Highlighter', important: true },
-                    { id: 'eraser', icon: Eraser, label: 'Eraser', important: true },
+                    { id: 'select', icon: selectMode === 'lasso' ? Wand2 : MousePointer2, label: 'Select (V)', important: true },
+                    { id: 'pen', icon: Pencil, label: 'Pen & Smart Draw (P)', important: true },
+                    { id: 'sparkle', icon: Sparkles, label: 'Sparkle Pen (S)', important: true },
+                    { id: 'highlighter', icon: Highlighter, label: 'Highlighter (H)', important: true },
+                    { id: 'eraser', icon: Eraser, label: 'Eraser (E)', important: true },
                     { id: 'line', icon: lineType.startsWith('connector') ? Waypoints : (lineType === 'arrow' ? MoveRight : Minus), label: 'Lines & Arrows', important: false },
                     { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : RectangleHorizontal)), label: 'Shapes', important: true },
-                    { id: 'text', icon: Type, label: 'Text', important: true },
-                    { id: 'image', icon: ImageIcon, label: 'Image', important: false },
-                    { id: 'pdf', icon: FileText, label: 'Insert PDF Document (Multi-Page Viewer)', important: true },
-                    { id: 'media', icon: Film, label: 'Media Player (YouTube, Local, Embed)', important: true },
+                    { id: 'text', icon: Type, label: 'Text (T)', important: true },
+                    { id: 'image', icon: ImageIcon, label: 'Insert Image', important: false },
+                    { id: 'media', icon: Film, label: 'Media & Documents (PDF, Video, Audio, Record, Web)', important: true },
                     { id: 'domain_3d', icon: Box, label: '3D Objects & Domain Library', important: true },
                     { id: 'tasks', icon: ListTodo, label: 'Whiteboard Tasks Checklist', important: true },
-                    { id: 'templates', icon: LayoutTemplate, label: 'Templates & SmartArt (MS Office)', important: false },
+                    { id: 'templates', icon: LayoutTemplate, label: 'Templates & SmartArt', important: false },
                     { id: 'shortcuts', icon: Keyboard, label: 'Keyboard Shortcuts (Cmd+/ or ?)', important: false },
                     { id: 'timer', icon: Clock, label: 'Classroom Timer & Stopwatch', important: false },
-                    { id: 'spotlight', icon: TorchIcon, label: 'Spotlight Focus (Torch)', important: false },
-                    { id: 'curtain', icon: StickyNoteIcon, label: 'Screen Curtain / Shade', important: false },
-                    { id: 'laser', icon: Sparkles, label: 'Laser Pointer', important: false },
+                    { id: 'spotlight', icon: TorchIcon, label: 'Spotlight Focus', important: false },
+                    { id: 'curtain', icon: StickyNoteIcon, label: 'Screen Curtain', important: false },
+                    { id: 'laser', icon: Sparkles, label: 'Laser Pointer (L)', important: false },
                     { id: 'datetime', icon: CalendarClock, label: 'Insert DateTime', important: false },
-                    { id: 'recorder', icon: Video, label: 'Toggle Recorder', important: false },
+                    { id: 'recorder', icon: Video, label: 'Screen/Board Recorder', important: false },
                     ...(isInstructor ? [{ id: 'permissions', icon: Users, label: 'Manage Permissions', important: false }] : []),
                 ];
 
@@ -7932,19 +8555,6 @@ export default function Whiteboard({
                             <div key={t.id} className="relative">
                                 <button
                                     onClick={() => {
-                                        if (t.id === 'smart_shape') {
-                                            setIsAutoShape(prev => {
-                                                const next = !prev;
-                                                toast(next ? '✨ Smart Shape recognition ON: Closed shapes & lines will auto-snap!' : 'Smart Shape recognition OFF', { icon: next ? '✨' : 'ℹ️' });
-                                                return next;
-                                            });
-                                            return;
-                                        }
-                                        if (t.id === 'pdf') {
-                                            setMediaInputTab('pdf');
-                                            setShowMediaModal(true);
-                                            return;
-                                        }
                                         if (t.id === 'media') {
                                             setShowMediaModal(true);
                                             return;
@@ -8010,7 +8620,6 @@ export default function Whiteboard({
                                             if (t.id === 'shape') setShowShapePicker(!showShapePicker);
                                             if (t.id === 'highlighter') setShowHighlighterPicker(!showHighlighterPicker);
                                             if (t.id === 'line') setShowLinePicker(!showLinePicker);
-                                            if (t.id === 'text') setShowTextBgPicker(!showTextBgPicker);
                                             if (t.id === 'image') setShowImagePicker(!showImagePicker);
                                         } else {
                                             setTool(t.id);
@@ -8020,13 +8629,11 @@ export default function Whiteboard({
                                             setShowShapePicker(false);
                                             setShowHighlighterPicker(false);
                                             setShowLinePicker(false);
-                                            setShowTextBgPicker(false);
                                             setShowImagePicker(t.id === 'image');
                                         }
                                     }}
                                     className={`p-1 rounded-full transition-colors flex items-center justify-center ${
                                         tool === t.id ||
-                                        (t.id === 'smart_shape' && isAutoShape) ||
                                         (t.id === 'recorder' && showRecorder) ||
                                         (t.id === 'timer' && showClassroomTimer) ||
                                         (t.id === 'spotlight' && isSpotlightActive) ||
@@ -8205,122 +8812,7 @@ export default function Whiteboard({
                                     </div>
                                 )}
                                 
-                                {tool === t.id && t.id === 'text' && showTextBgPicker && (
-                                    <div className={`absolute ${popoverPos} p-2.5 bg-slate-800 rounded-xl shadow-2xl border border-slate-700 z-50 flex items-center gap-2 text-slate-200 select-none animate-in fade-in zoom-in-95 duration-150`}>
-                                        {/* Font Family Selector */}
-                                        <select
-                                            value={selectedFontFamily || 'sans-serif'}
-                                            onChange={(e) => {
-                                                const font = e.target.value;
-                                                setSelectedFontFamily(font);
-                                                const targets = editingTextId ? [editingTextId] : selectedTextIds;
-                                                if (targets.length > 0) {
-                                                    setTextObjects(prev => prev.map(t => targets.includes(t.id) ? { ...t, fontFamily: font } : t));
-                                                }
-                                                if (selectedShapeIds.length > 0) {
-                                                    setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontFamily: font } : s));
-                                                }
-                                            }}
-                                            className="bg-slate-700 text-xs text-white rounded px-2 py-1 focus:outline-none border border-slate-600 cursor-pointer"
-                                            title="Font Family"
-                                        >
-                                            <option value="sans-serif">Sans-serif</option>
-                                            <option value="serif">Serif</option>
-                                            <option value="monospace">Monospace</option>
-                                            <option value="Inter">Inter</option>
-                                            <option value="Roboto">Roboto</option>
-                                            <option value="Caveat">Caveat (Handwritten)</option>
-                                            <option value="Comic Sans MS">Comic Marker</option>
-                                        </select>
 
-                                        <div className="w-px h-5 bg-slate-700" />
-
-                                        {/* Bold */}
-                                        <button
-                                            onClick={() => {
-                                                const newVal = !isBold;
-                                                setIsBold(newVal);
-                                                const targets = editingTextId ? [editingTextId] : selectedTextIds;
-                                                if (targets.length > 0) {
-                                                    setTextObjects(prev => prev.map(t => targets.includes(t.id) ? { ...t, fontWeight: newVal ? 'bold' : 'normal' } : t));
-                                                } else {
-                                                    setTextObjects(prev => prev.map(t => ({ ...t, fontWeight: newVal ? 'bold' : 'normal' })));
-                                                }
-                                                if (selectedShapeIds.length > 0) {
-                                                    setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontWeight: newVal ? 'bold' : 'normal' } : s));
-                                                }
-                                            }}
-                                            className={`w-7 h-7 flex items-center justify-center rounded font-bold text-xs transition ${isBold ? 'bg-primary-600 text-white' : 'hover:bg-slate-700 text-slate-300'}`}
-                                            title="Bold"
-                                        >B</button>
-
-                                        {/* Italic */}
-                                        <button
-                                            onClick={() => {
-                                                const newVal = !isItalic;
-                                                setIsItalic(newVal);
-                                                const targets = editingTextId ? [editingTextId] : selectedTextIds;
-                                                if (targets.length > 0) {
-                                                    setTextObjects(prev => prev.map(t => targets.includes(t.id) ? { ...t, fontStyle: newVal ? 'italic' : 'normal' } : t));
-                                                } else {
-                                                    setTextObjects(prev => prev.map(t => ({ ...t, fontStyle: newVal ? 'italic' : 'normal' })));
-                                                }
-                                                if (selectedShapeIds.length > 0) {
-                                                    setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontStyle: newVal ? 'italic' : 'normal' } : s));
-                                                }
-                                            }}
-                                            className={`w-7 h-7 flex items-center justify-center rounded italic text-xs transition ${isItalic ? 'bg-primary-600 text-white' : 'hover:bg-slate-700 text-slate-300'}`}
-                                            title="Italic"
-                                        >I</button>
-
-                                        <div className="w-px h-5 bg-slate-700" />
-
-                                        {/* Background / Fill Colors */}
-                                        <div className="flex items-center gap-1">
-                                            {['transparent', '#fef08a', '#bbf7d0', '#bfdbfe', '#fecaca', '#e9d5ff', '#fed7aa', '#cbd5e1'].map(bg => (
-                                                <button
-                                                    key={bg}
-                                                    onClick={() => {
-                                                        setTextBgColor(bg);
-                                                        const targets = editingTextId ? [editingTextId] : selectedTextIds;
-                                                        if (targets.length > 0) {
-                                                            setTextObjects(prev => prev.map(t => targets.includes(t.id) ? { ...t, bgColor: bg } : t));
-                                                        }
-                                                        if (selectedShapeIds.length > 0) {
-                                                            setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: bg } : s));
-                                                        }
-                                                    }}
-                                                    className={`w-5 h-5 rounded-full border-2 transition ${textBgColor === bg ? 'border-primary-500 scale-110' : 'border-slate-600 hover:border-slate-400'}`}
-                                                    style={{ backgroundColor: bg === 'transparent' ? '#334155' : bg }}
-                                                    title={bg === 'transparent' ? 'No Background' : `Set Background (${bg})`}
-                                                >
-                                                    {bg === 'transparent' && <span className="text-[8px] text-slate-400 block -mt-0.5">🚫</span>}
-                                                </button>
-                                            ))}
-                                        </div>
-
-                                        <div className="w-px h-5 bg-slate-700" />
-                                        <div className="flex items-center gap-1 text-[11px] text-slate-300">
-                                            <span className="text-[10px] text-slate-400">Border:</span>
-                                            {[0, 1, 2, 4].map(bw => (
-                                                <button
-                                                    key={bw}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        const targets = editingTextId ? [editingTextId] : selectedTextIds;
-                                                        if (targets.length > 0) {
-                                                            setTextObjects(prev => prev.map(t => targets.includes(t.id) ? { ...t, borderWidth: bw, borderColor: t.borderColor || '#3b82f6', borderStyle: t.borderStyle || 'solid' } : t));
-                                                        }
-                                                    }}
-                                                    className="px-1.5 py-0.5 rounded text-[10px] bg-slate-700 hover:bg-slate-600 text-slate-200"
-                                                    title={`Border ${bw === 0 ? 'None' : bw + 'px'}`}
-                                                >
-                                                    {bw === 0 ? 'None' : `${bw}px`}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
 
                                 {tool === t.id && t.id === 'shape' && showShapePicker && (
                                     <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 grid grid-cols-3 gap-1 w-[180px]`}>
@@ -8332,6 +8824,12 @@ export default function Whiteboard({
                                             { id: 'diamond', icon: Diamond, label: 'Diamond' },
                                             { id: 'star', icon: Star, label: 'Star' },
                                             { id: 'hexagon', icon: Hexagon, label: 'Hexagon' },
+                                            { id: 'parallelogram', icon: Spline, label: 'Parallelogram' },
+                                            { id: 'terminator', icon: RectangleHorizontal, label: 'Terminator' },
+                                            { id: 'cylinder', icon: Database, label: 'Cylinder' },
+                                            { id: 'document', icon: FileText, label: 'Document' },
+                                            { id: 'callout', icon: MessageSquare, label: 'Callout' },
+                                            { id: 'cube', icon: Box, label: 'Cube' },
                                             { id: 'arc', icon: Spline, label: 'Curved Arc' },
                                             { id: 'cloud', icon: Cloud, label: 'Cloud' },
                                             { id: 'sticky_note', icon: StickyNoteIcon, label: 'Sticky Note' },
@@ -8710,39 +9208,110 @@ export default function Whiteboard({
                                         </button>
                                     ))}
                                 </div>
-                                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Color</p>
-                                <div className="grid grid-cols-5 gap-1 mb-2">
-                                    {[
-                                        '#ffffff', '#f5f5f5', '#e0e0e0', '#9e9e9e', '#424242',
-                                        '#fff9c4', '#fff176', '#ffeb3b', '#ffc107', '#ff9800',
-                                        '#c8e6c9', '#81c784', '#4caf50', '#2e7d32', '#1b5e20',
-                                        '#bbdefb', '#64b5f6', '#2196f3', '#1565c0', '#0d47a1',
-                                        '#f8bbd0', '#f06292', '#e91e63', '#ad1457', '#880e4f',
-                                    ].map((c, idx) => (
-                                        <button
-                                            key={c + idx}
-                                            onClick={() => setBgColor(c)}
-                                            className={`w-6 h-6 rounded-full border-2 ${bgColor === c ? 'border-white ring-2 ring-primary-400' : 'border-slate-600 hover:scale-110'} transition-transform shadow-sm`}
-                                            style={{ backgroundColor: c }}
-                                            title={c}
-                                        />
-                                    ))}
-                                </div>
-                                <div className="flex items-center gap-2 mt-3">
-                                    <input
-                                        type="color"
-                                        value={bgColor}
-                                        onChange={(e) => setBgColor(e.target.value)}
-                                        className="w-6 h-6 rounded cursor-pointer bg-transparent"
-                                        title="Pick custom color"
-                                    />
-                                    <input
-                                        type="text"
-                                        value={bgColor}
-                                        onChange={(e) => setBgColor(e.target.value)}
-                                        className="flex-1 text-xs px-2 py-1 bg-slate-700 border border-slate-600 rounded text-slate-200 uppercase"
-                                        placeholder="#ffffff"
-                                    />
+                                <div className="mt-2 pt-2 border-t border-slate-700/80">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                                            <Palette className="w-3 h-3 text-primary-400" />
+                                            Background Color
+                                        </span>
+                                    </div>
+
+                                    {/* Color Picker Swatch & Hex Code Input */}
+                                    <div className="flex items-center gap-1.5 mb-2.5">
+                                        <label
+                                            className="relative w-8 h-8 rounded-lg border-2 border-slate-600 hover:border-primary-400 overflow-hidden cursor-pointer shadow-sm shrink-0 flex items-center justify-center transition"
+                                            style={{ backgroundColor: bgColor }}
+                                            title="Pick any custom color"
+                                        >
+                                            <input
+                                                type="color"
+                                                value={bgColor.startsWith('#') && (bgColor.length === 7) ? bgColor : '#ffffff'}
+                                                onChange={(e) => {
+                                                    const c = e.target.value;
+                                                    setBgHexInput(c);
+                                                    setBgColor(c);
+                                                }}
+                                                className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+                                            />
+                                            <Pipette className="w-3.5 h-3.5 text-white drop-shadow pointer-events-none" />
+                                        </label>
+                                        <div className="relative flex-1 flex items-center">
+                                            <input
+                                                type="text"
+                                                value={bgHexInput}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    setBgHexInput(val);
+                                                    if (/^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(val.trim())) {
+                                                        setBgColor(val.trim());
+                                                    }
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        e.preventDefault();
+                                                        if (/^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(bgHexInput.trim())) {
+                                                            setBgColor(bgHexInput.trim());
+                                                        }
+                                                    }
+                                                }}
+                                                onBlur={() => {
+                                                    if (/^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(bgHexInput.trim())) {
+                                                        setBgColor(bgHexInput.trim());
+                                                    } else {
+                                                        setBgHexInput(bgColor);
+                                                    }
+                                                }}
+                                                className="w-full text-xs font-mono px-2 py-1.5 bg-slate-700/80 border border-slate-600 rounded-lg text-slate-100 uppercase focus:outline-none focus:border-primary-500 pr-7"
+                                                placeholder="#FFFFFF"
+                                                maxLength={7}
+                                                title="Enter Hex Color Code (e.g. #3b82f6)"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (/^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(bgHexInput.trim())) {
+                                                        setBgColor(bgHexInput.trim());
+                                                    }
+                                                }}
+                                                className="absolute right-1 p-1 text-slate-400 hover:text-emerald-400 transition"
+                                                title="Apply Hex Color"
+                                            >
+                                                <Check className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Recent 5 Colors across boards */}
+                                    <div className="pt-2 border-t border-slate-700/50">
+                                        <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium mb-1.5">
+                                            <span className="flex items-center gap-1">
+                                                <Clock className="w-3 h-3 text-slate-400" />
+                                                Recent Colors
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            {recentBgColors.slice(0, 5).map((c, idx) => {
+                                                const isSelected = bgColor.toLowerCase() === c.toLowerCase();
+                                                return (
+                                                    <button
+                                                        key={c + idx}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setBgHexInput(c);
+                                                            setBgColor(c);
+                                                        }}
+                                                        className={`w-6 h-6 rounded-full border-2 transition-transform shadow-xs flex items-center justify-center ${
+                                                            isSelected ? 'border-primary-400 ring-2 ring-primary-400/50 scale-110' : 'border-slate-600/80 hover:scale-110 hover:border-slate-400'
+                                                        }`}
+                                                        style={{ backgroundColor: c }}
+                                                        title={`Select recent color ${c}`}
+                                                    >
+                                                        {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-primary-400 shadow-xs" />}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -8924,7 +9493,7 @@ export default function Whiteboard({
 
                 <div 
                     ref={canvasWrapperRef}
-                    className={`relative rounded-lg shadow-lg overflow-hidden touch-none select-none overscroll-none transition-all duration-300 ${
+                    className={`relative rounded-lg shadow-lg overflow-visible touch-none select-none overscroll-none transition-all duration-300 ${
                         !isStateLoaded ? 'filter blur-sm pointer-events-none select-none opacity-80' : 'filter-none opacity-100'
                     }`}
                     style={{
@@ -9333,13 +9902,6 @@ export default function Whiteboard({
                                         </div>
                                     )}
 
-                                    {/* Infinite Cloner Badge */}
-                                    {imgObj.isInfiniteCloner && (
-                                        <div className="absolute top-1 left-1 bg-indigo-600/90 text-white rounded-full px-1.5 py-0.5 text-[9px] font-extrabold flex items-center gap-0.5 shadow pointer-events-none z-30">
-                                            <span>∞</span>
-                                        </div>
-                                    )}
-
                                     {/* Magnetic Connector Hooks (N, E, S, W, Center) */}
                                     {(isSelected || tool === 'line' || hoveredImageId === imgObj.id) && !imgObj.isLocked && (
                                         <>
@@ -9448,22 +10010,6 @@ export default function Whiteboard({
                                                 {imgObj.isLocked ? <Lock size={12} className="text-amber-200" /> : <Unlock size={12} />}
                                             </button>
 
-                                            {/* Top-Left Corner Infinite Cloner Interactive Toggle */}
-                                            <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setImageObjects(prev => prev.map(i => i.id === imgObj.id ? { ...i, isInfiniteCloner: !i.isInfiniteCloner } : i));
-                                                }}
-                                                className={`absolute -top-3.5 -left-3.5 z-50 p-1 rounded shadow border transition-all pointer-events-auto cursor-pointer ${
-                                                    imgObj.isInfiniteCloner
-                                                        ? 'opacity-100 bg-indigo-600 border-indigo-400 text-white scale-105 shadow-indigo-500/50'
-                                                        : 'opacity-35 hover:opacity-100 bg-slate-900/90 hover:bg-slate-900 border-slate-700/70 text-slate-300 hover:text-white hover:scale-110'
-                                                }`}
-                                                title={imgObj.isInfiniteCloner ? "Infinite Copy ON (Click to Turn OFF)" : "Infinite Copy OFF (Click to Turn ON)"}
-                                            >
-                                                <InfinityIcon size={12} />
-                                            </button>
 
                                             {/* East-Side 4 Layer Hooks */}
                                             <div
@@ -9688,26 +10234,10 @@ export default function Whiteboard({
                                                 type="button"
                                                 disabled={removingBgImageId === imgObj.id}
                                                 onClick={() => handleRemoveImageBackground(imgObj)}
-                                                className={`h-6 px-2 flex items-center gap-1.5 rounded text-[10.5px] font-medium transition shadow-xs ${removingBgImageId === imgObj.id ? 'opacity-50 cursor-not-allowed bg-slate-800 text-slate-400' : 'bg-indigo-600/30 hover:bg-indigo-600/60 text-indigo-300 hover:text-white'}`}
-                                                title="Remove Image Background (Make Transparent)"
+                                                className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${removingBgImageId === imgObj.id ? 'opacity-50 cursor-not-allowed bg-slate-800 text-slate-400' : 'text-indigo-400 hover:text-white hover:bg-white/10'}`}
+                                                title={removingBgImageId === imgObj.id ? 'Processing background removal...' : 'Remove Image Background (Make Transparent)'}
                                             >
-                                                <Wand2 className="w-3 h-3 text-indigo-400" />
-                                                <span>{removingBgImageId === imgObj.id ? 'Processing...' : 'Remove BG'}</span>
-                                            </button>
-                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
-                                            {/* Infinite Cloner Toggle */}
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    const next = !imgObj.isInfiniteCloner;
-                                                    setImageObjects(prev => prev.map(i => i.id === imgObj.id ? { ...i, isInfiniteCloner: next } : i));
-                                                    toast(next ? 'Infinite Cloner enabled: drag to clone' : 'Infinite Cloner disabled', { icon: '∞' });
-                                                }}
-                                                className={`h-6 px-2 flex items-center gap-1 rounded text-[10.5px] font-semibold transition ${imgObj.isInfiniteCloner ? 'bg-indigo-600 text-white shadow' : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'}`}
-                                                title={imgObj.isInfiniteCloner ? "Disable Infinite Copy" : "Enable Infinite Copy (drag to clone)"}
-                                            >
-                                                <InfinityIcon className="w-3 h-3" />
-                                                <span>Infinite</span>
+                                                <Wand2 className={`w-3.5 h-3.5 ${removingBgImageId === imgObj.id ? 'animate-spin' : ''}`} />
                                             </button>
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
                                             {/* Quick Border Color Picker */}
@@ -10129,17 +10659,29 @@ export default function Whiteboard({
                                                 fontWeight: txtObj.fontWeight || 'normal',
                                                 fontStyle: txtObj.fontStyle || 'normal',
                                                 fontFamily: txtObj.fontFamily || 'sans-serif',
+                                                textDecoration: txtObj.textDecoration || 'none',
                                                 textAlign: txtObj.textAlign || 'left',
                                                 lineHeight: 1.3,
                                                 minHeight: txtObj.height,
                                                 borderRadius: txtObj.borderRadius ? `${txtObj.borderRadius}px` : undefined,
                                             }}
-                                            onBlur={(e) => {
+                                            onBlur={() => {
+                                                if (!txtObj.text || txtObj.text.trim() === '') {
+                                                    setTextObjects(prev => prev.filter(t => t.id !== txtObj.id));
+                                                    setSelectedTextIds([]);
+                                                } else {
+                                                    saveToHistory();
+                                                }
                                                 setEditingTextId(null);
-                                                saveToHistory();
                                             }}
                                             onKeyDown={(e) => {
                                                 if (e.key === 'Escape') {
+                                                    if (!txtObj.text || txtObj.text.trim() === '') {
+                                                        setTextObjects(prev => prev.filter(t => t.id !== txtObj.id));
+                                                        setSelectedTextIds([]);
+                                                    } else {
+                                                        saveToHistory();
+                                                    }
                                                     setEditingTextId(null);
                                                 }
                                                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -10159,6 +10701,7 @@ export default function Whiteboard({
                                                 fontWeight: txtObj.fontWeight || 'normal',
                                                 fontStyle: txtObj.fontStyle || 'normal',
                                                 fontFamily: txtObj.fontFamily || 'sans-serif',
+                                                textDecoration: txtObj.textDecoration || 'none',
                                                 textAlign: txtObj.textAlign || 'left',
                                                 lineHeight: 1.3,
                                             }}
@@ -10344,7 +10887,7 @@ export default function Whiteboard({
                                 </div>
 
                                 {/* Static Unrotated Floating Text Format Bar */}
-                                {isSelected && (selectedTextIds.length === 1 && selectedTextIds[0] === txtObj.id) && !isEditing && (
+                                {(isSelected || isEditing) && (selectedTextIds.length <= 1) && (
                                     <div
                                         className="absolute pointer-events-auto select-none"
                                         style={{
@@ -10358,7 +10901,7 @@ export default function Whiteboard({
                                         onPointerDown={(e) => e.stopPropagation()}
                                     >
                                         {/* Floating Toolbar Pill */}
-                                        <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-lg shadow-xl px-2 py-1 text-slate-200">
+                                        <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl px-2 py-1 text-slate-200">
                                             {/* Font Family */}
                                             <select
                                                 value={txtObj.fontFamily || 'sans-serif'}
@@ -10400,14 +10943,14 @@ export default function Whiteboard({
 
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
-                                            {/* Bold & Italic */}
+                                            {/* Bold, Italic & Underline */}
                                             <button
                                                 type="button"
                                                 onClick={() => updateSelectedTextProps({ fontWeight: txtObj.fontWeight === 'bold' ? 'normal' : 'bold' })}
                                                 className={`w-6 h-6 flex items-center justify-center rounded text-xs font-bold transition ${txtObj.fontWeight === 'bold' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                                                 title="Bold"
                                             >
-                                                B
+                                                <Bold className="w-3.5 h-3.5" />
                                             </button>
                                             <button
                                                 type="button"
@@ -10415,7 +10958,15 @@ export default function Whiteboard({
                                                 className={`w-6 h-6 flex items-center justify-center rounded text-xs italic font-serif transition ${txtObj.fontStyle === 'italic' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                                                 title="Italic"
                                             >
-                                                I
+                                                <Italic className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => updateSelectedTextProps({ textDecoration: txtObj.textDecoration === 'underline' ? 'none' : 'underline' })}
+                                                className={`w-6 h-6 flex items-center justify-center rounded text-xs transition ${txtObj.textDecoration === 'underline' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                title="Underline"
+                                            >
+                                                <Underline className="w-3.5 h-3.5" />
                                             </button>
 
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
@@ -10491,15 +11042,14 @@ export default function Whiteboard({
 
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
-                                            {/* Border & Frame Popover Toggle */}
+                                            {/* Border & Frame Popover Toggle (Icon Only) */}
                                             <button
                                                 type="button"
                                                 onClick={() => setActiveTextBorderPopoverId(prev => prev === txtObj.id ? null : txtObj.id)}
-                                                className={`h-6 px-2 flex items-center gap-1 rounded text-[11px] font-medium transition ${activeTextBorderPopoverId === txtObj.id || (txtObj.borderWidth || 0) > 0 ? 'bg-indigo-600 text-white font-bold' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}
-                                                title="Border & Frame Settings"
+                                                className={`w-6 h-6 flex items-center justify-center rounded transition ${activeTextBorderPopoverId === txtObj.id || (txtObj.borderWidth || 0) > 0 ? 'bg-indigo-600 text-white font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                                                title={`Border & Frame Settings${(txtObj.borderWidth || 0) > 0 ? ` (${txtObj.borderWidth}px)` : ''}`}
                                             >
-                                                <Square className="w-3 h-3" />
-                                                <span>Border{(txtObj.borderWidth || 0) > 0 ? ` (${txtObj.borderWidth}px)` : ''}</span>
+                                                <Square className="w-3.5 h-3.5" />
                                             </button>
 
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
@@ -11105,6 +11655,177 @@ export default function Whiteboard({
                                                 <g key={`deg-${i}`}>
                                                     <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={shpObj.color} strokeWidth={isTen ? Math.max(1, shpObj.strokeWidth) : Math.max(0.5, shpObj.strokeWidth * 0.5)} />
                                                     {isTen && <text x={tx} y={ty} fill={shpObj.color} stroke="none" fontSize="8" textAnchor="middle" dominantBaseline="middle" transform={`rotate(${i - 90} ${tx} ${ty})`}>{i}</text>}
+                                                </g>
+                                            );
+                                        })}
+                                    </g>
+                                );
+                            } else if (shpObj.type === 'parallelogram') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const sk = Math.max(5, Math.min(w - 5, shpObj.skew !== undefined ? shpObj.skew : w * 0.25));
+                                const pts = `${sk},0 ${w},0 ${w - sk},${h} 0,${h}`;
+                                return (
+                                    <polygon
+                                        style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}
+                                        points={pts}
+                                        fill={fill}
+                                        stroke={shpObj.color}
+                                        strokeWidth={shpObj.strokeWidth}
+                                        strokeLinejoin="round"
+                                        strokeDasharray={dashArray}
+                                    />
+                                );
+                            } else if (shpObj.type === 'terminator') {
+                                const r = Math.min(shpObj.width / 2, shpObj.height / 2);
+                                return (
+                                    <rect
+                                        style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}
+                                        x="0"
+                                        y="0"
+                                        width={shpObj.width}
+                                        height={shpObj.height}
+                                        rx={r}
+                                        ry={r}
+                                        fill={fill}
+                                        stroke={shpObj.color}
+                                        strokeWidth={shpObj.strokeWidth}
+                                        strokeDasharray={dashArray}
+                                    />
+                                );
+                            } else if (shpObj.type === 'cylinder') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const ry = Math.min(24, Math.max(8, h * 0.18));
+                                const rx = w / 2;
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        <path
+                                            d={`M 0 ${ry} L 0 ${h - ry} A ${rx} ${ry} 0 0 0 ${w} ${h - ry} L ${w} ${ry} Z`}
+                                            fill={fill}
+                                            stroke={shpObj.color}
+                                            strokeWidth={shpObj.strokeWidth}
+                                            strokeDasharray={dashArray}
+                                        />
+                                        <ellipse
+                                            cx={rx}
+                                            cy={ry}
+                                            rx={rx}
+                                            ry={ry}
+                                            fill={fill}
+                                            stroke={shpObj.color}
+                                            strokeWidth={shpObj.strokeWidth}
+                                            strokeDasharray={dashArray}
+                                        />
+                                    </g>
+                                );
+                            } else if (shpObj.type === 'document') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const wave = Math.min(24, Math.max(8, h * 0.14));
+                                const d = `M 0 0 L ${w} 0 L ${w} ${h - wave} Q ${w * 0.75} ${h} ${w * 0.5} ${h - wave} Q ${w * 0.25} ${h - 2 * wave} 0 ${h - wave} Z`;
+                                return (
+                                    <path
+                                        style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}
+                                        d={d}
+                                        fill={fill}
+                                        stroke={shpObj.color}
+                                        strokeWidth={shpObj.strokeWidth}
+                                        strokeLinejoin="round"
+                                        strokeDasharray={dashArray}
+                                    />
+                                );
+                            } else if (shpObj.type === 'callout') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const tailH = Math.min(24, Math.max(12, h * 0.22));
+                                const bodyH = h - tailH;
+                                const r = Math.min(14, w * 0.1, bodyH * 0.2);
+                                const d = `M ${r} 0 L ${w - r} 0 Q ${w} 0 ${w} ${r} L ${w} ${bodyH - r} Q ${w} ${bodyH} ${w - r} ${bodyH} L ${w * 0.42} ${bodyH} L ${w * 0.22} ${h} L ${w * 0.26} ${bodyH} L ${r} ${bodyH} Q 0 ${bodyH} 0 ${bodyH - r} L 0 ${r} Q 0 0 ${r} 0 Z`;
+                                return (
+                                    <path
+                                        style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}
+                                        d={d}
+                                        fill={fill}
+                                        stroke={shpObj.color}
+                                        strokeWidth={shpObj.strokeWidth}
+                                        strokeLinejoin="round"
+                                        strokeDasharray={dashArray}
+                                    />
+                                );
+                            } else if (shpObj.type === 'cube') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const cx = w / 2;
+                                const cy = h * 0.45;
+                                const topP = `${cx},0 ${w},${h * 0.25} ${cx},${cy} 0,${h * 0.25}`;
+                                const leftP = `0,${h * 0.25} ${cx},${cy} ${cx},${h} 0,${h * 0.8}`;
+                                const rightP = `${cx},${cy} ${w},${h * 0.25} ${w},${h * 0.8} ${cx},${h}`;
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        <polygon points={topP} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />
+                                        <polygon points={leftP} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" opacity="0.85" />
+                                        <polygon points={rightP} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" opacity="0.7" />
+                                    </g>
+                                );
+                            } else if (shpObj.type === 'sparkle_path') {
+                                if (!shpObj.points || shpObj.points.length === 0) return null;
+                                const pts = shpObj.points;
+                                let d = `M ${pts[0].x} ${pts[0].y}`;
+                                if (pts.length > 2) {
+                                    for (let i = 1; i < pts.length - 1; i++) {
+                                        const xc = (pts[i].x + pts[i + 1].x) / 2;
+                                        const yc = (pts[i].y + pts[i + 1].y) / 2;
+                                        d += ` Q ${pts[i].x} ${pts[i].y}, ${xc} ${yc}`;
+                                    }
+                                    d += ` L ${pts[pts.length - 1].x} ${pts[pts.length - 1].y}`;
+                                } else {
+                                    for (let i = 1; i < pts.length; i++) {
+                                        d += ` L ${pts[i].x} ${pts[i].y}`;
+                                    }
+                                }
+                                const maxPx = Math.max(...pts.map(p => p.x));
+                                const minPx = Math.min(...pts.map(p => p.x));
+                                const maxPy = Math.max(...pts.map(p => p.y));
+                                const minPy = Math.min(...pts.map(p => p.y));
+                                const origW = shpObj.originalWidth || (maxPx - minPx) || 1;
+                                const origH = shpObj.originalHeight || (maxPy - minPy) || 1;
+                                const scaleX = shpObj.width / origW;
+                                const scaleY = shpObj.height / origH;
+                                const particles = shpObj.particles || [];
+
+                                return (
+                                    <g transform={`scale(${scaleX}, ${scaleY})`}>
+                                        <path
+                                            d={d}
+                                            fill="none"
+                                            stroke="transparent"
+                                            strokeWidth={Math.max(shpObj.strokeWidth + 18, 24)}
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            style={{ pointerEvents: (tool === 'select') ? 'stroke' : 'none' }}
+                                        />
+                                        <path
+                                            d={d}
+                                            fill="none"
+                                            stroke={shpObj.color}
+                                            strokeWidth={shpObj.strokeWidth * 1.5}
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            opacity="0.35"
+                                            filter="blur(2px)"
+                                            style={{ pointerEvents: 'none' }}
+                                        />
+                                        <path
+                                            d={d}
+                                            fill="none"
+                                            stroke={shpObj.color}
+                                            strokeWidth={shpObj.strokeWidth}
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            style={{ pointerEvents: 'none' }}
+                                        />
+                                        {particles.map((p, idx) => {
+                                            const s = p.size || 8;
+                                            const starD = `M ${p.x} ${p.y - s} Q ${p.x} ${p.y} ${p.x + s} ${p.y} Q ${p.x} ${p.y} ${p.x} ${p.y + s} Q ${p.x} ${p.y} ${p.x - s} ${p.y} Q ${p.x} ${p.y} ${p.x} ${p.y - s}`;
+                                            return (
+                                                <g key={idx} transform={`rotate(${p.rotation || 0}, ${p.x}, ${p.y})`} style={{ pointerEvents: 'none' }}>
+                                                    <path d={starD} fill="#ffffff" stroke={shpObj.color} strokeWidth="1" opacity={p.opacity || 0.9} />
                                                 </g>
                                             );
                                         })}
@@ -11888,6 +12609,45 @@ export default function Whiteboard({
                                                             className="mb-1 w-12 text-center text-xs bg-slate-800 text-white px-1 py-0.5 rounded shadow-lg z-50 border border-slate-600 outline-none appearance-none"
                                                         />
                                                     </div>
+
+                                                    {/* Parallelogram Skew Handle */}
+                                                    {shpObj.type === 'parallelogram' && (
+                                                        <div
+                                                            data-handle="skew"
+                                                            title="Adjust Skew Offset"
+                                                            className="absolute w-4 h-4 rounded-full bg-amber-500 border-2 border-white shadow-lg cursor-ew-resize z-40 hover:scale-125 transition-transform flex items-center justify-center -translate-x-1/2 -translate-y-1/2"
+                                                            style={{
+                                                                left: `${Math.max(5, Math.min(shpObj.width - 5, shpObj.skew !== undefined ? shpObj.skew : shpObj.width * 0.25))}px`,
+                                                                top: 0
+                                                            }}
+                                                            onMouseDown={(e) => {
+                                                                e.stopPropagation();
+                                                                e.preventDefault();
+                                                                setShapeDragState({
+                                                                    id: shpObj.id,
+                                                                    action: 'skew',
+                                                                    startX: e.clientX,
+                                                                    startY: e.clientY,
+                                                                    startObj: { ...shpObj }
+                                                                });
+                                                            }}
+                                                            onPointerDown={(e) => {
+                                                                e.stopPropagation();
+                                                                if (e.cancelable) e.preventDefault();
+                                                                const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                                const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                                setShapeDragState({
+                                                                    id: shpObj.id,
+                                                                    action: 'skew',
+                                                                    startX: clientX,
+                                                                    startY: clientY,
+                                                                    startObj: { ...shpObj }
+                                                                });
+                                                            }}
+                                                        >
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-white pointer-events-none" />
+                                                        </div>
+                                                    )}
                                                 </>
                                             )
                                         )}
@@ -12152,6 +12912,62 @@ export default function Whiteboard({
 
                                         <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
 
+                                        {/* Replace Shape Control */}
+                                        <div className="relative">
+                                            <button
+                                                type="button"
+                                                onClick={() => setReplaceShapePopoverId(prev => prev === shpObj.id ? null : shpObj.id)}
+                                                className={`p-1 rounded transition ${replaceShapePopoverId === shpObj.id ? 'bg-primary-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                title="Replace Shape"
+                                            >
+                                                <Shapes size={13} />
+                                            </button>
+                                            {replaceShapePopoverId === shpObj.id && (
+                                                <div
+                                                    className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl grid grid-cols-4 gap-1 z-80 animate-in fade-in zoom-in-95 duration-100 min-w-[170px]"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                >
+                                                    {[
+                                                        { id: 'rectangle', icon: RectangleHorizontal, label: 'Rectangle' },
+                                                        { id: 'rounded_rect', icon: RectangleHorizontal, label: 'Rounded Rect' },
+                                                        { id: 'circle', icon: Circle, label: 'Circle' },
+                                                        { id: 'triangle', icon: Triangle, label: 'Triangle' },
+                                                        { id: 'diamond', icon: Diamond, label: 'Diamond' },
+                                                        { id: 'star', icon: Star, label: 'Star' },
+                                                        { id: 'hexagon', icon: Hexagon, label: 'Hexagon' },
+                                                        { id: 'parallelogram', icon: Spline, label: 'Parallelogram' },
+                                                        { id: 'terminator', icon: RectangleHorizontal, label: 'Terminator' },
+                                                        { id: 'cylinder', icon: Database, label: 'Cylinder' },
+                                                        { id: 'document', icon: FileText, label: 'Document' },
+                                                        { id: 'callout', icon: MessageSquare, label: 'Callout' },
+                                                        { id: 'cube', icon: Box, label: 'Cube' }
+                                                    ].map(sItem => (
+                                                        <button
+                                                            key={sItem.id}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setShapeObjects(prev => prev.map(s => {
+                                                                    if (s.id !== shpObj.id) return s;
+                                                                    return {
+                                                                        ...s,
+                                                                        type: sItem.id,
+                                                                        skew: sItem.id === 'parallelogram' ? (s.skew ?? (s.width * 0.25)) : s.skew
+                                                                    };
+                                                                }));
+                                                                setReplaceShapePopoverId(null);
+                                                                saveToHistory();
+                                                            }}
+                                                            className={`p-1.5 rounded-lg flex items-center justify-center transition ${shpObj.type === sItem.id ? 'bg-primary-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                            title={sItem.label}
+                                                        >
+                                                            <sItem.icon size={13} />
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
                                         {/* Infinite Cloner Toggle */}
                                         <button
                                             type="button"
@@ -12220,9 +13036,10 @@ export default function Whiteboard({
                                 onPointerDown={(e) => e.stopPropagation()}
                             >
                                 <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl px-2.5 py-1 text-slate-200 animate-in fade-in zoom-in-95 duration-100">
-                                    <span className="text-[11px] font-semibold text-slate-400 px-1 select-none">
-                                        {selectedShapes.length} shapes
-                                    </span>
+                                    <div className="flex items-center gap-1 px-1 text-slate-400" title={`${selectedShapes.length} shapes selected`}>
+                                        <Shapes size={13} className="text-primary-400" />
+                                        <span className="text-[10px] font-mono text-slate-300 font-bold">{selectedShapes.length}</span>
+                                    </div>
 
                                     <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
 
@@ -13117,6 +13934,70 @@ export default function Whiteboard({
                     viewportHeight={canvasWrapperRef.current?.clientHeight || canvasHeight}
                 />
 
+                {/* Contextual Eraser Floating Toolbar */}
+                {tool === 'eraser' && (
+                    <div
+                        className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-3 py-1.5 flex items-center gap-1.5 text-slate-200 animate-in fade-in slide-in-from-bottom-2 duration-150 select-none pointer-events-auto"
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                    >
+                        {/* Eraser Mode Toggle: Rub Eraser vs Object Eraser */}
+                        <button
+                            type="button"
+                            onClick={() => setEraserMode('rub')}
+                            className={`p-1.5 rounded-xl transition ${eraserMode === 'rub' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                            title="Rub Eraser (Partial stroke erasing)"
+                        >
+                            <Scissors size={15} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setEraserMode('object')}
+                            className={`p-1.5 rounded-xl transition ${eraserMode === 'object' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                            title="Object Eraser (Removes entire object)"
+                        >
+                            <Trash2 size={15} />
+                        </button>
+
+                        <div className="w-px h-4 bg-slate-700 mx-1" />
+
+                        {/* Size Presets: Small 10px, Medium 24px, Large 48px, XL 72px */}
+                        {[
+                            { size: 10, label: 'Small (10px)', dotSize: 'w-2 h-2' },
+                            { size: 24, label: 'Medium (24px)', dotSize: 'w-3 h-3' },
+                            { size: 48, label: 'Large (48px)', dotSize: 'w-4 h-4' },
+                            { size: 72, label: 'Extra Large (72px)', dotSize: 'w-5 h-5' }
+                        ].map(p => (
+                            <button
+                                key={p.size}
+                                type="button"
+                                onClick={() => setEraserSize(p.size)}
+                                className={`w-7 h-7 rounded-xl flex items-center justify-center transition ${eraserSize === p.size ? 'bg-primary-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                                title={`Eraser Size: ${p.label}`}
+                            >
+                                <div className={`${p.dotSize} rounded-full bg-current`} />
+                            </button>
+                        ))}
+
+                        <div className="w-px h-4 bg-slate-700 mx-1" />
+
+                        {/* Clear Page Canvas Button */}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (window.confirm('Clear all drawings and shapes on this page?')) {
+                                    handleClear();
+                                    toast.success('Page cleared', { icon: '🧹' });
+                                }
+                            }}
+                            className="p-1.5 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/20 transition"
+                            title="Clear Page"
+                        >
+                            <Trash2 size={15} />
+                        </button>
+                    </div>
+                )}
+
                 {/* Full-surface Loading Overlay & Interaction Lock */}
                 {!isStateLoaded && (
                     <div className="absolute inset-0 z-50 bg-slate-900/30 backdrop-blur-xs flex flex-col items-center justify-center select-none pointer-events-auto transition-all duration-300">
@@ -13383,29 +14264,33 @@ export default function Whiteboard({
                             </button>
                         </div>
 
-                        {/* Tabs: YouTube, Local File, Web Embed */}
-                        {/* Tabs: YouTube, Whiteboard Recordings, Local File, Web Embed */}
+                        {/* Tabs: Record Clip, YouTube, Whiteboard Recordings, PDF, Local File, Web Embed */}
                         <div className="flex bg-slate-800/80 p-1 rounded-xl gap-1">
                             {[
-                                { id: 'youtube', label: 'YouTube Video' },
-                                { id: 'recordings', label: '🎥 Recordings' },
-                                { id: 'pdf', label: '📄 PDF Document' },
-                                { id: 'local', label: 'Local File' },
-                                { id: 'embed', label: 'Web Embed' }
-                            ].map(tab => (
-                                <button
-                                    key={tab.id}
-                                    type="button"
-                                    onClick={() => setMediaInputTab(tab.id)}
-                                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition ${
-                                        mediaInputTab === tab.id
-                                            ? 'bg-indigo-600 text-white shadow'
-                                            : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-                                    }`}
-                                >
-                                    {tab.label}
-                                </button>
-                            ))}
+                                { id: 'record', icon: Camera, tooltip: 'Record Video / Audio Clip (Webcam & Mic)' },
+                                { id: 'youtube', icon: YoutubeIcon, tooltip: 'YouTube Video' },
+                                { id: 'recordings', icon: Film, tooltip: 'Saved Whiteboard Recordings' },
+                                { id: 'pdf', icon: FileText, tooltip: 'Interactive PDF Document' },
+                                { id: 'local', icon: Upload, tooltip: 'Upload Video or Audio File' },
+                                { id: 'embed', icon: Globe, tooltip: 'Web Embed / Simulation' }
+                            ].map(tab => {
+                                const IconComponent = tab.icon;
+                                return (
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => setMediaInputTab(tab.id)}
+                                        title={tab.tooltip}
+                                        className={`flex-1 py-2 flex items-center justify-center rounded-lg transition ${
+                                            mediaInputTab === tab.id
+                                                ? 'bg-indigo-600 text-white shadow'
+                                                : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                                        }`}
+                                    >
+                                        <IconComponent className="w-4 h-4" />
+                                    </button>
+                                );
+                            })}
                         </div>
 
                         {/* Title input */}
@@ -13416,13 +14301,138 @@ export default function Whiteboard({
                                     type="text"
                                     value={mediaInputTitle}
                                     onChange={e => setMediaInputTitle(e.target.value)}
-                                    placeholder="e.g. Lecture Video, Lab Simulation, Audio Demo"
+                                    placeholder={mediaInputTab === 'record' ? 'e.g. My Presentation, Voice Memo' : 'e.g. Lecture Video, Lab Simulation, Audio Demo'}
                                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                                 />
                             </div>
                         )}
 
                         {/* Content by tab */}
+                        {mediaInputTab === 'record' && (
+                            <div className="flex flex-col gap-3">
+                                {/* Mode Selector (Video / Audio) - Icons only with tooltips */}
+                                <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-lg border border-slate-700/60">
+                                    <div className="flex items-center gap-1.5">
+                                        <button
+                                            type="button"
+                                            disabled={isCapturing}
+                                            onClick={() => {
+                                                setCaptureMode('video');
+                                                startCapturePreview('video');
+                                            }}
+                                            title="Video Recording (Camera & Microphone)"
+                                            className={`p-2 rounded-md transition ${
+                                                captureMode === 'video'
+                                                    ? 'bg-indigo-600 text-white shadow'
+                                                    : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                                            } ${isCapturing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        >
+                                            <Video className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={isCapturing}
+                                            onClick={() => {
+                                                setCaptureMode('audio');
+                                                startCapturePreview('audio');
+                                            }}
+                                            title="Audio Recording (Microphone Only)"
+                                            className={`p-2 rounded-md transition ${
+                                                captureMode === 'audio'
+                                                    ? 'bg-indigo-600 text-white shadow'
+                                                    : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                                            } ${isCapturing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        >
+                                            <Mic className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                    
+                                    {/* Timer display */}
+                                    <div className="flex items-center gap-2 pr-1.5">
+                                        {isCapturing && (
+                                            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                                        )}
+                                        <span className="font-mono text-xs font-bold text-slate-200">
+                                            {Math.floor(captureTime / 60).toString().padStart(2, '0')}:{(captureTime % 60).toString().padStart(2, '0')}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Preview Viewport */}
+                                <div className="relative w-full h-52 bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center">
+                                    {captureMode === 'video' ? (
+                                        <video
+                                            ref={captureVideoPreviewRef}
+                                            autoPlay
+                                            playsInline
+                                            muted
+                                            className="w-full h-full object-cover"
+                                        />
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center gap-3 text-slate-400">
+                                            <div className={`p-4 rounded-full ${isCapturing && !isCapturePaused ? 'bg-red-500/20 text-red-400 animate-pulse' : 'bg-slate-800/80 text-indigo-400'}`}>
+                                                <Mic className="w-10 h-10" />
+                                            </div>
+                                            <span className="text-xs font-medium text-slate-400">
+                                                {isCapturing ? (isCapturePaused ? 'Recording Paused' : 'Listening & Recording...') : 'Microphone Ready'}
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    {/* Connecting state */}
+                                    {!hasCaptureStream && (
+                                        <div className="absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center gap-2 text-slate-400 text-xs">
+                                            <Camera className="w-8 h-8 opacity-40 text-slate-500" />
+                                            <span>Connecting camera / microphone...</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Capture Controls Bar - Icons only with tooltips */}
+                                <div className="flex items-center justify-center gap-3 py-1">
+                                    {!isCapturing ? (
+                                        <button
+                                            type="button"
+                                            onClick={handleStartCapture}
+                                            title="Start Recording"
+                                            className="w-11 h-11 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition"
+                                        >
+                                            <Circle className="w-5 h-5 fill-white text-white" />
+                                        </button>
+                                    ) : (
+                                        <div className="flex items-center gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={handlePauseResumeCapture}
+                                                title={isCapturePaused ? "Resume Recording" : "Pause Recording"}
+                                                className="w-10 h-10 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white flex items-center justify-center border border-slate-700 shadow transition"
+                                            >
+                                                {isCapturePaused ? <Play className="w-4 h-4 fill-white" /> : <Pause className="w-4 h-4" />}
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={handleStopAndInsertCapture}
+                                                title="Stop & Insert to Canvas"
+                                                className="w-11 h-11 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition"
+                                            >
+                                                <Square className="w-4 h-4 fill-white text-white" />
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={handleDiscardCapture}
+                                                title="Discard Recording"
+                                                className="w-10 h-10 rounded-full bg-slate-800 hover:bg-slate-700 text-red-400 hover:text-red-300 flex items-center justify-center border border-slate-700 shadow transition"
+                                            >
+                                                <RotateCcw className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         {mediaInputTab === 'recordings' && (
                             <div className="flex flex-col gap-2">
                                 <label className="block text-xs font-medium text-slate-400">Select Whiteboard Recording to Embed</label>
@@ -13499,9 +14509,10 @@ export default function Whiteboard({
                                                                 setMediaInputTitle('');
                                                                 toast.success(`Embedded "${rec.title}" to canvas!`, { icon: '🎥' });
                                                             }}
-                                                            className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold shrink-0 transition"
+                                                            title="Embed to Canvas"
+                                                            className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shrink-0 transition"
                                                         >
-                                                            Embed
+                                                            <Film className="w-3.5 h-3.5" />
                                                         </button>
                                                     </div>
                                                 );
@@ -13524,12 +14535,9 @@ export default function Whiteboard({
                                         onChange={(e) => {
                                             const file = e.target.files?.[0];
                                             if (file) {
-                                                const reader = new FileReader();
-                                                reader.onload = (re) => {
-                                                    setMediaInputUrl(re.target.result);
-                                                    if (!mediaInputTitle) setMediaInputTitle(file.name.replace(/\.[^/.]+$/, ''));
-                                                };
-                                                reader.readAsDataURL(file);
+                                                const blobUrl = URL.createObjectURL(file);
+                                                setMediaInputUrl(blobUrl);
+                                                if (!mediaInputTitle) setMediaInputTitle(file.name.replace(/\.[^/.]+$/, ''));
                                             }
                                         }}
                                         className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer"
@@ -13578,12 +14586,9 @@ export default function Whiteboard({
                                     onChange={(e) => {
                                         const file = e.target.files?.[0];
                                         if (file) {
-                                            const reader = new FileReader();
-                                            reader.onload = (re) => {
-                                                setMediaInputUrl(re.target.result);
-                                                if (!mediaInputTitle) setMediaInputTitle(file.name.replace(/\.[^/.]+$/, ''));
-                                            };
-                                            reader.readAsDataURL(file);
+                                            const blobUrl = URL.createObjectURL(file);
+                                            setMediaInputUrl(blobUrl);
+                                            if (!mediaInputTitle) setMediaInputTitle(file.name.replace(/\.[^/.]+$/, ''));
                                         }
                                     }}
                                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer"
@@ -13612,7 +14617,7 @@ export default function Whiteboard({
                         )}
 
                         {/* Actions */}
-                        <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-800">
+                        <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
                             <button
                                 type="button"
                                 onClick={() => {
@@ -13620,76 +14625,81 @@ export default function Whiteboard({
                                     setMediaInputUrl('');
                                     setMediaInputTitle('');
                                 }}
-                                className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                                title="Cancel"
+                                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
                             >
-                                Cancel
+                                <X className="w-4 h-4" />
                             </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (!mediaInputUrl.trim()) {
-                                        toast.error(mediaInputTab === 'pdf' ? 'Please provide a PDF URL or file' : 'Please provide a media URL or file');
-                                        return;
-                                    }
-                                    const wrapper = canvasWrapperRef.current;
+                            {mediaInputTab !== 'record' && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (!mediaInputUrl.trim()) {
+                                            toast.error(mediaInputTab === 'pdf' ? 'Please provide a PDF URL or file' : 'Please provide a media URL or file');
+                                            return;
+                                        }
+                                        const wrapper = canvasWrapperRef.current;
 
-                                    if (mediaInputTab === 'pdf') {
-                                        const cx = wrapper ? (wrapper.clientWidth / 2 - 250) : 150;
-                                        const cy = wrapper ? (wrapper.clientHeight / 2 - 320) : 100;
-                                        const newPdf = {
-                                            id: `pdf_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-                                            title: mediaInputTitle.trim() || 'Document.pdf',
-                                            url: mediaInputUrl,
-                                            page: 1,
-                                            totalPages: 1,
+                                        if (mediaInputTab === 'pdf') {
+                                            const cx = wrapper ? (wrapper.clientWidth / 2 - 250) : 150;
+                                            const cy = wrapper ? (wrapper.clientHeight / 2 - 320) : 100;
+                                            const newPdf = {
+                                                id: `pdf_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                                title: mediaInputTitle.trim() || 'Document.pdf',
+                                                src: mediaInputUrl,
+                                                url: mediaInputUrl,
+                                                page: 1,
+                                                totalPages: 1,
+                                                x: Math.max(20, cx),
+                                                y: Math.max(20, cy),
+                                                width: 500,
+                                                height: 640,
+                                                isLocked: false,
+                                                isCollapsed: false
+                                            };
+                                            setPagePdfObjects(prev => ({
+                                                ...prev,
+                                                [currentPage]: [...(prev[currentPage] || []), newPdf]
+                                            }));
+                                            setSelectedPdfId(newPdf.id);
+                                            setShowMediaModal(false);
+                                            setMediaInputUrl('');
+                                            setMediaInputTitle('');
+                                            toast.success(`PDF "${newPdf.title}" added to canvas!`, { icon: '📄' });
+                                            return;
+                                        }
+
+                                        const cx = wrapper ? (wrapper.clientWidth / 2 - 240) : 200;
+                                        const cy = wrapper ? (wrapper.clientHeight / 2 - 150) : 200;
+
+                                        const newMedia = {
+                                            id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                            mediaType: mediaInputTab,
+                                            src: mediaInputUrl,
+                                            title: mediaInputTitle.trim() || (mediaInputTab === 'youtube' ? 'YouTube Video' : mediaInputTab === 'embed' ? 'Web Embed' : 'Media Player'),
                                             x: Math.max(20, cx),
                                             y: Math.max(20, cy),
-                                            width: 500,
-                                            height: 640,
+                                            width: 480,
+                                            height: 300,
+                                            isMuted: true,
+                                            isCollapsed: false,
                                             isLocked: false,
-                                            isCollapsed: false
+                                            rotation: 0
                                         };
-                                        setPagePdfObjects(prev => ({
-                                            ...prev,
-                                            [currentPage]: [...(prev[currentPage] || []), newPdf]
-                                        }));
-                                        setSelectedPdfId(newPdf.id);
+
+                                        setMediaObjects(prev => [...prev, newMedia]);
+                                        setSelectedMediaId(newMedia.id);
                                         setShowMediaModal(false);
                                         setMediaInputUrl('');
                                         setMediaInputTitle('');
-                                        toast.success(`PDF "${newPdf.title}" added to canvas!`, { icon: '📄' });
-                                        return;
-                                    }
-
-                                    const cx = wrapper ? (wrapper.clientWidth / 2 - 240) : 200;
-                                    const cy = wrapper ? (wrapper.clientHeight / 2 - 150) : 200;
-
-                                    const newMedia = {
-                                        id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-                                        mediaType: mediaInputTab,
-                                        src: mediaInputUrl,
-                                        title: mediaInputTitle.trim() || (mediaInputTab === 'youtube' ? 'YouTube Video' : mediaInputTab === 'embed' ? 'Web Embed' : 'Media Player'),
-                                        x: Math.max(20, cx),
-                                        y: Math.max(20, cy),
-                                        width: 480,
-                                        height: 300,
-                                        isMuted: true,
-                                        isCollapsed: false,
-                                        isLocked: false,
-                                        rotation: 0
-                                    };
-
-                                    setMediaObjects(prev => [...prev, newMedia]);
-                                    setSelectedMediaId(newMedia.id);
-                                    setShowMediaModal(false);
-                                    setMediaInputUrl('');
-                                    setMediaInputTitle('');
-                                    toast.success('Media player added to canvas!', { icon: '🎬' });
-                                }}
-                                className="px-5 py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg transition"
-                            >
-                                Insert to Canvas
-                            </button>
+                                        toast.success('Media player added to canvas!', { icon: '🎬' });
+                                    }}
+                                    title="Insert to Canvas"
+                                    className="p-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg transition"
+                                >
+                                    <Check className="w-4 h-4" />
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

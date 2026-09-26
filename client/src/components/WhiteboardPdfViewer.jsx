@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     FileText, ChevronLeft, ChevronRight, Maximize2, Minimize2,
-    Lock, Unlock, Trash2, Copy, ExternalLink, GripHorizontal, RotateCcw
+    Lock, Unlock, Trash2, ExternalLink, GripHorizontal, RotateCcw
 } from 'lucide-react';
 
 export default function WhiteboardPdfViewer({
@@ -159,7 +159,8 @@ export default function WhiteboardPdfViewer({
         };
     }, [isDragging, isResizing, activeHandle, scale, onUpdate]);
 
-    const pdfSrc = pdf.src ? `${pdf.src}#page=${currentPage}&toolbar=0&navpanes=0` : '';
+    const rawPdfUrl = pdf.src || pdf.url || '';
+    const pdfSrc = rawPdfUrl ? `${rawPdfUrl}#page=${currentPage}&toolbar=0&navpanes=0` : '';
 
     return (
         <div
@@ -226,9 +227,9 @@ export default function WhiteboardPdfViewer({
                         )}
 
                         {/* Open in new tab */}
-                        {pdf.src && (
+                        {rawPdfUrl && (
                             <a
-                                href={pdf.src}
+                                href={rawPdfUrl}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="p-1 hover:bg-slate-700/60 text-slate-400 hover:text-slate-200 rounded transition"
@@ -246,16 +247,6 @@ export default function WhiteboardPdfViewer({
                             title={isLocked ? 'Unlock PDF' : 'Lock PDF'}
                         >
                             {isLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-                        </button>
-
-                        {/* Duplicate */}
-                        <button
-                            type="button"
-                            onClick={() => onDuplicate?.(pdf.id)}
-                            className="p-1 hover:bg-slate-700/60 text-slate-400 hover:text-slate-200 rounded transition"
-                            title="Duplicate PDF"
-                        >
-                            <Copy className="w-3 h-3" />
                         </button>
 
                         {/* Collapse / Expand */}
@@ -283,12 +274,18 @@ export default function WhiteboardPdfViewer({
                 {/* PDF Viewer Body */}
                 {!isCollapsed && (
                     <div className="relative flex-1 w-full bg-slate-950 overflow-hidden">
-                        {pdf.src ? (
-                            <iframe
-                                src={pdfSrc}
-                                title={pdf.title || 'PDF Preview'}
+                        {rawPdfUrl ? (
+                            <object
+                                data={pdfSrc}
+                                type="application/pdf"
                                 className="w-full h-full border-0 pointer-events-auto bg-white"
-                            />
+                            >
+                                <iframe
+                                    src={pdfSrc}
+                                    title={pdf.title || 'PDF Preview'}
+                                    className="w-full h-full border-0 pointer-events-auto bg-white"
+                                />
+                            </object>
                         ) : (
                             <div className="flex flex-col items-center justify-center h-full p-6 text-center text-slate-400 text-xs">
                                 <FileText className="w-8 h-8 text-red-400 mb-2 opacity-60" />
