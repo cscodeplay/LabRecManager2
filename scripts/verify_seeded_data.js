@@ -1,83 +1,92 @@
 const prisma = require('../server/src/config/database');
 
 async function verify() {
-  console.log('=== VERIFYING SEEDED DATABASE ===\n');
+  console.log('=== VERIFYING DATABASE FOR PCS, CLASSES, AND GENDER DISTRIBUTIONS ===\n');
 
-  // 1. Classes & Enrollments
-  const classes = await prisma.class.findMany({
+  // 1. Labs and 25 PCs per Lab
+  console.log('--- 1. LABS & PC INVENTORY ---');
+  const labs = await prisma.lab.findMany({
     where: { school: { code: 'DPS001' } },
-    include: { enrollments: true, groups: { include: { members: true } } },
-    orderBy: { name: 'asc' }
+    include: {
+      items: {
+        where: { itemType: 'pc' },
+        orderBy: { itemNumber: 'asc' }
+      }
+    }
   });
 
-  console.log('--- CLASSES ---');
-  for (const c of classes) {
-    console.log(`Class: ${c.name.padEnd(12)} | Grade: ${c.gradeLevel} | Sec: ${c.section} | Enrolled Students: ${c.enrollments.length} | Groups: ${c.groups.length}`);
-    for (const g of c.groups) {
-      console.log(`   Group: "${g.name}" (${g.members.length} members)`);
+  let allPcsCount = 0;
+  for (const lab of labs) {
+    allPcsCount += lab.items.length;
+    console.log(`Lab: "${lab.name}" (${lab.roomNumber}) | PCs Count: ${lab.items.length}`);
+    const samplePcs = lab.items.slice(0, 3).map(p => p.itemNumber).join(', ');
+    const lastPcs = lab.items.slice(-2).map(p => p.itemNumber).join(', ');
+    console.log(`   Sample PCs: [${samplePcs}, ... , ${lastPcs}] | Status: ${lab.items[0]?.status}`);
+  }
+  console.log(`Total active PCs across all labs: ${allPcsCount}\n`);
+
+  // 2. Classes and Students per Class (30 Girls + 20 Boys)
+  console.log('--- 2. CLASSES & GENDER BREAKDOWN PER CLASS ---');
+  const academicYears = await prisma.academicYear.findMany({
+    where: { school: { code: 'DPS001' } },
+    orderBy: { startDate: 'desc' }
+  });
+  const currentYear = academicYears.find(y => y.isCurrent) || academicYears[0];
+  console.log(`Session: ${currentYear.yearLabel} (${currentYear.id})`);
+
+  const targetClassNames = ['11 NM A', '11 NM B', '11 Med A', '12 NM A', '12 NM B', '12 Med A'];
+
+  for (const className of targetClassNames) {
+    const cls = await prisma.class.findFirst({
+      where: {
+        school: { code: 'DPS001' },
+        name: className,
+        academicYearId: currentYear.id
+      },
+      include: {
+        enrollments: {
+          include: { student: true }
+        },
+        groups: {
+          include: {
+            assignedPc: true,
+            members: { include: { student: true } }
+          }
+        }
+      }
+    });
+
+    if (!cls) {
+      console.log(`❌ Class not found: ${className}`);
+      continue;
     }
+
+    const girls = cls.enrollments.filter(e => e.student.gender === 'female');
+    const boys = cls.enrollments.filter(e => e.student.gender === 'male');
+    const total = cls.enrollments.length;
+
+    console.log(`Class: ${cls.name.padEnd(10)} | Total Students: ${total} | Girls: ${girls.length} | Boys: ${boys.length} | Groups: ${cls.groups.length}`);
+
+    // Show groups and assigned PCs
+    cls.groups.forEach(g => {
+      const pcInfo = g.assignedPc ? `${g.assignedPc.itemNumber} (${g.assignedPc.brand})` : 'No PC';
+      console.log(`   Group: "${g.name}" -> Assigned PC: ${pcInfo} (${g.members.length} members)`);
+    });
   }
 
-  // 2. Students & Gender Ratio
-  const studentsByGender = await prisma.user.groupBy({
-    by: ['gender'],
-    where: { role: 'student', school: { code: 'DPS001' } },
-    _count: { id: true }
-  });
-
+  // 3. Total Student Count across school
   const totalStudents = await prisma.user.count({
     where: { role: 'student', school: { code: 'DPS001' } }
   });
-
-  console.log('\n--- STUDENTS GENDER BREAKDOWN ---');
-  console.log(`Total Students: ${totalStudents}`);
-  studentsByGender.forEach(g => {
-    console.log(`- ${g.gender || 'unspecified'}: ${g._count.id}`);
+  const girlsCount = await prisma.user.count({
+    where: { role: 'student', gender: 'female', school: { code: 'DPS001' } }
+  });
+  const boysCount = await prisma.user.count({
+    where: { role: 'student', gender: 'male', school: { code: 'DPS001' } }
   });
 
-  // 3. Sample 5 students
-  const sampleStudents = await prisma.user.findMany({
-    where: { role: 'student', school: { code: 'DPS001' } },
-    take: 5,
-    orderBy: { admissionNumber: 'asc' },
-    select: { id: true, firstName: true, lastName: true, email: true, gender: true, admissionNumber: true, studentId: true }
-  });
-  console.log('\n--- SAMPLE STUDENTS ---');
-  sampleStudents.forEach(s => {
-    console.log(`[${s.admissionNumber}] ${s.firstName} ${s.lastName} (${s.gender}) - ${s.email}`);
-  });
-
-  // 4. Training Modules & Exercises
-  const modules = await prisma.trainingModule.findMany({
-    include: {
-      units: {
-        include: { exercises: true },
-        orderBy: { unitNumber: 'asc' }
-      },
-      assignments: {
-        include: { targets: true }
-      }
-    },
-    orderBy: { createdAt: 'asc' }
-  });
-
-  console.log('\n--- TRAINING MODULES ---');
-  for (const m of modules) {
-    const totalEx = m.units.reduce((acc, u) => acc + u.exercises.length, 0);
-    const totalTargets = m.assignments.reduce((acc, a) => acc + a.targets.length, 0);
-    console.log(`Module: "${m.title}" (Lang: ${m.language}, Level: ${m.classLevel})`);
-    console.log(`  Units: ${m.units.length} | Exercises: ${totalEx} | Assignments: ${m.assignments.length} | Target Classes/Groups: ${totalTargets}`);
-    for (const u of m.units) {
-      console.log(`    ${u.title} (${u.exercises.length} exercises: ${u.exercises.map(e => e.title).join(', ')})`);
-    }
-  }
-
-  // 5. Progress & Mastery
-  const progressCount = await prisma.studentTrainingProgress.count();
-  const masteryCount = await prisma.studentUnitMastery.count();
-  console.log('\n--- PROGRESS & MASTERY METRICS ---');
-  console.log(`Student Training Progress records: ${progressCount}`);
-  console.log(`Student Unit Mastery records: ${masteryCount}`);
+  console.log('\n--- 3. OVERALL SCHOOL TOTALS ---');
+  console.log(`Total Students: ${totalStudents} (Girls: ${girlsCount}, Boys: ${boysCount})`);
 
   await prisma.$disconnect();
 }

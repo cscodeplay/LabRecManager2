@@ -647,7 +647,7 @@ router.post('/:id/groups/auto-assign-pcs', authenticate, authorize('admin', 'pri
         where: {
             schoolId: req.user.schoolId,
             itemType: 'pc',
-            status: 'active'
+            status: { in: ['active', 'available'] }
         },
         include: {
             lab: { select: { id: true, name: true } }

@@ -106,7 +106,17 @@ const U = {
 // student123: $2b$10$MYGc0dD.qTR.q2jk8.vgNecKebRnLacNVTu//wJkKBUK3xPOtPxfa
 
 
-const girlsList = [
+
+const targetClasses = [
+  { name: '11 NM A', classNum: 4, tag: '11nma' },
+  { name: '11 NM B', classNum: 5, tag: '11nmb' },
+  { name: '11 Med A', classNum: 6, tag: '11meda' },
+  { name: '12 NM A', classNum: 7, tag: '12nma' },
+  { name: '12 NM B', classNum: 8, tag: '12nmb' },
+  { name: '12 Med A', classNum: 9, tag: '12meda' }
+];
+
+const femaleNames = [
   { first: 'Ananya', hindiFirst: 'अनन्या', last: 'Sharma', hindiLast: 'शर्मा' },
   { first: 'Diya', hindiFirst: 'दिया', last: 'Patel', hindiLast: 'पटेल' },
   { first: 'Ishita', hindiFirst: 'इशिता', last: 'Gupta', hindiLast: 'गुप्ता' },
@@ -136,12 +146,10 @@ const girlsList = [
   { first: 'Ishani', hindiFirst: 'ईशानी', last: 'Banerjee', hindiLast: 'बनर्जी' },
   { first: 'Jiya', hindiFirst: 'जिया', last: 'Kulkarni', hindiLast: 'कुलकर्णी' },
   { first: 'Kriti', hindiFirst: 'कृति', last: 'Menon', hindiLast: 'मेनन' },
-  { first: 'Lavanya', hindiFirst: 'लावण्या', last: 'Jain', hindiLast: 'जैन' },
-  { first: 'Nandini', hindiFirst: 'नंदिनी', last: 'Mittal', hindiLast: 'मित्तल' },
-  { first: 'Pallavi', hindiFirst: 'पल्लवी', last: 'Sethi', hindiLast: 'सेठी' }
+  { first: 'Lavanya', hindiFirst: 'लावण्या', last: 'Jain', hindiLast: 'जैन' }
 ];
 
-const boysList = [
+const maleNames = [
   { first: 'Aarav', hindiFirst: 'आरव', last: 'Sharma', hindiLast: 'शर्मा' },
   { first: 'Rohan', hindiFirst: 'रोहन', last: 'Verma', hindiLast: 'वर्मा' },
   { first: 'Kabir', hindiFirst: 'कबीर', last: 'Mehta', hindiLast: 'मेहता' },
@@ -164,10 +172,54 @@ const boysList = [
   { first: 'Ritvik', hindiFirst: 'ऋत्विक', last: 'Soni', hindiLast: 'सोनी' }
 ];
 
-const studentSeedList = [
-  ...girlsList.map((g, idx) => ({ ...g, gender: 'female', idx: idx + 1 })),
-  ...boysList.map((b, idx) => ({ ...b, gender: 'male', idx: idx + 1 + girlsList.length }))
-];
+// Generate 300 students: 30 girls + 20 boys for each of the 6 classes
+const generatedStudents = [];
+let globalStudentNum = 1;
+
+targetClasses.forEach((cls) => {
+  // 30 Girls (Roll 1-30)
+  for (let i = 0; i < 30; i++) {
+    const t = femaleNames[i % femaleNames.length];
+    const roll = i + 1;
+    const rollStr = roll.toString().padStart(3, '0');
+    generatedStudents.push({
+      num: globalStudentNum++,
+      classNum: cls.classNum,
+      className: cls.name,
+      tag: cls.tag,
+      first: t.first,
+      hindiFirst: t.hindiFirst,
+      last: t.last,
+      hindiLast: t.hindiLast,
+      gender: 'female',
+      roll: roll,
+      email: `${t.first.toLowerCase()}.${t.last.toLowerCase()}.${cls.tag}.${rollStr}@dps.edu`,
+      admNo: `ADM-2025-${cls.tag.toUpperCase()}-${rollStr}`,
+      stuId: `STU-2025-${cls.tag.toUpperCase()}-${rollStr}`
+    });
+  }
+  // 20 Boys (Roll 31-50)
+  for (let i = 0; i < 20; i++) {
+    const t = maleNames[i % maleNames.length];
+    const roll = 31 + i;
+    const rollStr = roll.toString().padStart(3, '0');
+    generatedStudents.push({
+      num: globalStudentNum++,
+      classNum: cls.classNum,
+      className: cls.name,
+      tag: cls.tag,
+      first: t.first,
+      hindiFirst: t.hindiFirst,
+      last: t.last,
+      hindiLast: t.hindiLast,
+      gender: 'male',
+      roll: roll,
+      email: `${t.first.toLowerCase()}.${t.last.toLowerCase()}.${cls.tag}.${rollStr}@dps.edu`,
+      admNo: `ADM-2025-${cls.tag.toUpperCase()}-${rollStr}`,
+      stuId: `STU-2025-${cls.tag.toUpperCase()}-${rollStr}`
+    });
+  }
+});
 
 const sqlParts = [];
 
@@ -236,14 +288,10 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 `);
 
-// 3. users (61 users: 9 staff/admins + 52 students: 32 girls, 20 boys)
-const studentUserRows = studentSeedList.map(s => {
-  const numStr = s.idx.toString().padStart(3, '0');
-  const email = `${s.first.toLowerCase()}.${s.last.toLowerCase()}${s.idx}@dps.edu`;
-  const admNo = `ADM-2025-${numStr}`;
-  const stuId = `STU-2025-${numStr}`;
-  const userId = uuid(U.user, 9 + s.idx);
-  return `  ('${userId}', '${uuid(U.school, 1)}', '${email}', '$2b$10$MYGc0dD.qTR.q2jk8.vgNecKebRnLacNVTu//wJkKBUK3xPOtPxfa', 'student', '${s.first}', '${s.hindiFirst}', '${s.last}', '${s.hindiLast}', NULL, '${admNo}', '${stuId}', '${s.gender}', true, NOW(), NOW())`;
+// 3. users (311 users: 9 staff/admin + 2 initial students + 300 students [30 girls & 20 boys in each of the 6 classes])
+const studentUserRows = generatedStudents.map(s => {
+  const userId = uuid(U.user, 9 + s.num);
+  return `  ('${userId}', '${uuid(U.school, 1)}', '${s.email}', '$2b$10$MYGc0dD.qTR.q2jk8.vgNecKebRnLacNVTu//wJkKBUK3xPOtPxfa', 'student', '${s.first}', '${s.hindiFirst}', '${s.last}', '${s.hindiLast}', NULL, '${s.admNo}', '${s.stuId}', '${s.gender}', true, NOW(), NOW())`;
 }).join(',\n');
 
 sqlParts.push(`-- 3. users
@@ -309,15 +357,12 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 `);
 
-// 8. class_enrollments (54 rows: 2 initial + 52 students enrolled across 11 NM A, 11 NM B, 11 Med A, 12 NM A, 12 NM B, 12 Med A)
-const targetClasses = [4, 5, 7, 8, 6, 9]; // 11 NM A, 11 NM B, 12 NM A, 12 NM B, 11 Med A, 12 Med A
-const studentEnrollmentRows = studentSeedList.map((s, idx) => {
-  const classNum = targetClasses[idx % targetClasses.length];
-  const enrollId = uuid(U.enrollment, 2 + s.idx);
-  const userId = uuid(U.user, 9 + s.idx);
-  const classId = uuid(U.class, classNum);
-  const rollNo = Math.floor(idx / targetClasses.length) + 1;
-  return `  ('${enrollId}', '${userId}', '${classId}', ${rollNo}, CURRENT_DATE, 'active')`;
+// 8. class_enrollments (302 rows: 2 initial + 300 students enrolled: 50 per class)
+const studentEnrollmentRows = generatedStudents.map((s, idx) => {
+  const enrollId = uuid(U.enrollment, 2 + s.num);
+  const userId = uuid(U.user, 9 + s.num);
+  const classId = uuid(U.class, s.classNum);
+  return `  ('${enrollId}', '${userId}', '${classId}', ${s.roll}, CURRENT_DATE, 'active')`;
 }).join(',\n');
 
 sqlParts.push(`-- 8. class_enrollments
@@ -338,20 +383,20 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 `);
 
-// 10. student_groups (10 rows: 2 initial + 8 python groups across 11 NM A, 11 NM B, 12 NM A, 12 NM B)
+// 10. student_groups (10 rows: 2 initial + 8 python groups across 11 NM A, 11 NM B, 12 NM A, 12 NM B with assigned PCs)
 sqlParts.push(`-- 10. student_groups
-INSERT INTO student_groups (id, class_id, name, description, created_by, created_at)
+INSERT INTO student_groups (id, class_id, name, description, created_by, created_at, assigned_pc_id)
 VALUES 
-  ('${uuid(U.group, 1)}', '${uuid(U.class, 1)}', 'Alpha Coders', 'Computer Science Project Team Alpha', '${uuid(U.user, 3)}', NOW()),
-  ('${uuid(U.group, 2)}', '${uuid(U.class, 1)}', 'Beta Quantum', 'Physics Lab Group Beta', '${uuid(U.user, 4)}', NOW()),
-  ('${uuid(U.group, 3)}', '${uuid(U.class, 4)}', '11 NM A - Python Group Alpha', 'Core Python syntax and algorithmic problem solving', '${uuid(U.user, 3)}', NOW()),
-  ('${uuid(U.group, 4)}', '${uuid(U.class, 4)}', '11 NM A - Python Group Beta', 'Data operations and procedural logic', '${uuid(U.user, 3)}', NOW()),
-  ('${uuid(U.group, 5)}', '${uuid(U.class, 5)}', '11 NM B - Byte Knights', 'Python control flow and looping challenges', '${uuid(U.user, 4)}', NOW()),
-  ('${uuid(U.group, 6)}', '${uuid(U.class, 5)}', '11 NM B - CodeCrafters', 'Mathematical modeling and logic builders', '${uuid(U.user, 4)}', NOW()),
-  ('${uuid(U.group, 7)}', '${uuid(U.class, 7)}', '12 NM A - Turing Titans', 'Advanced Python collections and dictionary structures', '${uuid(U.user, 3)}', NOW()),
-  ('${uuid(U.group, 8)}', '${uuid(U.class, 7)}', '12 NM A - Binary Beasts', 'Data structures, list comprehensions, and nested mapping', '${uuid(U.user, 3)}', NOW()),
-  ('${uuid(U.group, 9)}', '${uuid(U.class, 8)}', '12 NM B - Logic Legends', 'Set theory and tuple serialization in Python', '${uuid(U.user, 4)}', NOW()),
-  ('${uuid(U.group, 10)}', '${uuid(U.class, 8)}', '12 NM B - Syntax Stars', 'Practical lab assessments and viva preparation', '${uuid(U.user, 4)}', NOW())
+  ('${uuid(U.group, 1)}', '${uuid(U.class, 1)}', 'Alpha Coders', 'Computer Science Project Team Alpha', '${uuid(U.user, 3)}', NOW(), '${uuid(U.item, 5)}'),
+  ('${uuid(U.group, 2)}', '${uuid(U.class, 1)}', 'Beta Quantum', 'Physics Lab Group Beta', '${uuid(U.user, 4)}', NOW(), '${uuid(U.item, 6)}'),
+  ('${uuid(U.group, 3)}', '${uuid(U.class, 4)}', '11 NM A - Python Group Alpha', 'Core Python syntax and algorithmic problem solving', '${uuid(U.user, 3)}', NOW(), '${uuid(U.item, 7)}'),
+  ('${uuid(U.group, 4)}', '${uuid(U.class, 4)}', '11 NM A - Python Group Beta', 'Data operations and procedural logic', '${uuid(U.user, 3)}', NOW(), '${uuid(U.item, 8)}'),
+  ('${uuid(U.group, 5)}', '${uuid(U.class, 5)}', '11 NM B - Byte Knights', 'Python control flow and looping challenges', '${uuid(U.user, 4)}', NOW(), '${uuid(U.item, 9)}'),
+  ('${uuid(U.group, 6)}', '${uuid(U.class, 5)}', '11 NM B - CodeCrafters', 'Mathematical modeling and logic builders', '${uuid(U.user, 4)}', NOW(), '${uuid(U.item, 10)}'),
+  ('${uuid(U.group, 7)}', '${uuid(U.class, 7)}', '12 NM A - Turing Titans', 'Advanced Python collections and dictionary structures', '${uuid(U.user, 3)}', NOW(), '${uuid(U.item, 11)}'),
+  ('${uuid(U.group, 8)}', '${uuid(U.class, 7)}', '12 NM A - Binary Beasts', 'Data structures, list comprehensions, and nested mapping', '${uuid(U.user, 3)}', NOW(), '${uuid(U.item, 12)}'),
+  ('${uuid(U.group, 9)}', '${uuid(U.class, 8)}', '12 NM B - Logic Legends', 'Set theory and tuple serialization in Python', '${uuid(U.user, 4)}', NOW(), '${uuid(U.item, 13)}'),
+  ('${uuid(U.group, 10)}', '${uuid(U.class, 8)}', '12 NM B - Syntax Stars', 'Practical lab assessments and viva preparation', '${uuid(U.user, 4)}', NOW(), '${uuid(U.item, 14)}')
 ON CONFLICT (id) DO NOTHING;
 `);
 
@@ -376,9 +421,9 @@ const groupAssignments = [
 
 groupAssignments.forEach(ga => {
   ga.studentIndices.forEach((sIdx, mIdx) => {
-    const student = studentSeedList[sIdx];
+    const student = generatedStudents[sIdx];
     const role = mIdx === 0 ? 'leader' : 'member';
-    pythonGroupMembers.push(`  ('${uuid(U.groupMember, gmId++)}', '${uuid(U.group, ga.groupNum)}', '${uuid(U.user, 9 + student.idx)}', '${role}', NOW())`);
+    pythonGroupMembers.push(`  ('${uuid(U.groupMember, gmId++)}', '${uuid(U.group, ga.groupNum)}', '${uuid(U.user, 9 + student.num)}', '${role}', NOW())`);
   });
 });
 
@@ -401,14 +446,40 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 `);
 
-// 13. lab_items (4 rows)
+// 13. lab_items (79 rows: 4 classic items + 25 PCs in Computer Lab 1 + 25 PCs in Physics Lab + 25 PCs in Chemistry Lab)
+const labPcRows = [];
+let pcItemCounter = 5;
+
+// Lab 1: Computer Lab 1 -> 25 PCs (CL1-PC-01 to CL1-PC-25)
+for (let i = 1; i <= 25; i++) {
+  const numStr = i.toString().padStart(2, '0');
+  const brand = i % 3 === 0 ? 'Lenovo' : (i % 2 === 0 ? 'HP' : 'Dell');
+  const model = brand === 'Dell' ? 'OptiPlex 7090' : (brand === 'HP' ? 'ProDesk 400 G7' : 'ThinkCentre M70q');
+  labPcRows.push(`  ('${uuid(U.item, pcItemCounter++)}', '${uuid(U.lab, 1)}', '${uuid(U.school, 1)}', 'pc', 'CL1-PC-${numStr}', '${brand}', '${model}', 'SN-CL1-${numStr}', '{"processor": "Intel Core i7-11700", "ram": "16GB DDR4", "storage": "512GB SSD", "os": "Ubuntu 22.04 LTS / Windows 11 Pro", "monitor": "24 inch FHD IPS"}'::jsonb, 'active', 'Primary student coding workstation', NOW() - INTERVAL '3 months', NOW() + INTERVAL '21 months', NOW(), NOW(), 1, NULL)`);
+}
+
+// Lab 2: Physics Lab -> 25 PCs (PHY-PC-01 to PHY-PC-25)
+for (let i = 1; i <= 25; i++) {
+  const numStr = i.toString().padStart(2, '0');
+  const brand = i % 2 === 0 ? 'HP' : 'Dell';
+  labPcRows.push(`  ('${uuid(U.item, pcItemCounter++)}', '${uuid(U.lab, 2)}', '${uuid(U.school, 1)}', 'pc', 'PHY-PC-${numStr}', '${brand}', 'ProDesk 400 G7', 'SN-PHY-${numStr}', '{"processor": "Intel Core i5-11400", "ram": "16GB DDR4", "storage": "512GB SSD", "os": "Windows 11 Pro", "monitor": "24 inch FHD IPS"}'::jsonb, 'active', 'Physics simulation and instrument interfacing PC', NOW() - INTERVAL '4 months', NOW() + INTERVAL '20 months', NOW(), NOW(), 1, NULL)`);
+}
+
+// Lab 3: Chemistry Lab -> 25 PCs (CHM-PC-01 to CHM-PC-25)
+for (let i = 1; i <= 25; i++) {
+  const numStr = i.toString().padStart(2, '0');
+  const brand = i % 2 === 0 ? 'Dell' : 'Lenovo';
+  labPcRows.push(`  ('${uuid(U.item, pcItemCounter++)}', '${uuid(U.lab, 3)}', '${uuid(U.school, 1)}', 'pc', 'CHM-PC-${numStr}', '${brand}', 'OptiPlex 7090', 'SN-CHM-${numStr}', '{"processor": "Intel Core i5-11400", "ram": "16GB DDR4", "storage": "512GB SSD", "os": "Windows 11 Pro", "monitor": "24 inch FHD IPS"}'::jsonb, 'active', 'Chemistry lab analytical and data modeling terminal', NOW() - INTERVAL '5 months', NOW() + INTERVAL '19 months', NOW(), NOW(), 1, NULL)`);
+}
+
 sqlParts.push(`-- 13. lab_items
 INSERT INTO lab_items (id, lab_id, school_id, item_type, item_number, brand, model_no, serial_no, specs, status, notes, purchase_date, warranty_end, created_at, updated_at, quantity, image_url)
 VALUES 
   ('${uuid(U.item, 1)}', '${uuid(U.lab, 1)}', '${uuid(U.school, 1)}', 'laptop', 'LAP-001', 'Dell', 'Latitude 3520', 'SN-DELL-001', '{"ram": "16GB", "cpu": "Intel i5 11th Gen", "storage": "512GB SSD"}'::jsonb, 'available', 'Primary student coding laptop', NOW() - INTERVAL '6 months', NOW() + INTERVAL '18 months', NOW(), NOW(), 1, 'https://images.unsplash.com/photo-1496181133206-80ce9b88a853'),
   ('${uuid(U.item, 2)}', '${uuid(U.lab, 1)}', '${uuid(U.school, 1)}', 'laptop', 'LAP-002', 'Lenovo', 'ThinkPad E14', 'SN-LEN-002', '{"ram": "16GB", "cpu": "AMD Ryzen 5", "storage": "512GB SSD"}'::jsonb, 'issued', 'Issued to Instructor Rajesh', NOW() - INTERVAL '6 months', NOW() + INTERVAL '18 months', NOW(), NOW(), 1, 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed'),
   ('${uuid(U.item, 3)}', '${uuid(U.lab, 2)}', '${uuid(U.school, 1)}', 'multimeter', 'PHY-MM-01', 'Fluke', '115 Digital', 'SN-FLK-11501', '{"range": "600V", "accuracy": "0.5%"}'::jsonb, 'available', 'Physics digital multimeter', NOW() - INTERVAL '1 year', NOW() + INTERVAL '1 year', NOW(), NOW(), 1, NULL),
-  ('${uuid(U.item, 4)}', '${uuid(U.lab, 3)}', '${uuid(U.school, 1)}', 'spectrophotometer', 'CHM-SPEC-01', 'Shimadzu', 'UV-1900', 'SN-SHM-19001', '{"range": "190-1100nm"}'::jsonb, 'maintenance', 'Periodic optical calibration underway', NOW() - INTERVAL '2 years', NOW() + INTERVAL '1 year', NOW(), NOW(), 1, NULL)
+  ('${uuid(U.item, 4)}', '${uuid(U.lab, 3)}', '${uuid(U.school, 1)}', 'spectrophotometer', 'CHM-SPEC-01', 'Shimadzu', 'UV-1900', 'SN-SHM-19001', '{"range": "190-1100nm"}'::jsonb, 'maintenance', 'Periodic optical calibration underway', NOW() - INTERVAL '2 years', NOW() + INTERVAL '1 year', NOW(), NOW(), 1, NULL),
+${labPcRows.join(',\n')}
 ON CONFLICT (id) DO NOTHING;
 `);
 

@@ -421,7 +421,7 @@ router.get('/items/pcs', authenticate, asyncHandler(async (req, res) => {
             where: {
                 schoolId: req.user.schoolId,
                 itemType: 'pc',
-                status: 'active'
+                status: { in: ['active', 'available'] }
             },
             include: {
                 lab: { select: { id: true, name: true, roomNumber: true } }
