@@ -412,6 +412,13 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
         return targetPoint || (sourceShape ? getAnchorPoint(sourceShape, sourceAnchor) : null);
     }, [targetShape, targetAnchor, draggingEndpoint, dragPoint, targetPoint, sourceShape, sourcePoint, sourceAnchor]);
 
+    const actualWaypoint = useMemo(() => {
+        if (draggingEndpoint === 'waypoint' && dragPoint) return dragPoint;
+        if (waypoint) return waypoint;
+        if (!actualSourcePoint || !actualTargetPoint) return { x: 0, y: 0 };
+        return getConnectorMidpoint(actualSourcePoint, actualTargetPoint, pathType, null, sourceAnchor, targetAnchor, sourceShape, targetShape);
+    }, [draggingEndpoint, dragPoint, waypoint, actualSourcePoint, actualTargetPoint, pathType, sourceAnchor, targetAnchor, sourceShape, targetShape]);
+
     const arrowSize = strokeWidth * 4;
 
     // Calculate angles for arrows ensuring proper orientation relative to shape rotation
@@ -463,13 +470,6 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
         const wp = (waypoint || draggingEndpoint === 'waypoint') ? actualWaypoint : null;
         return getConnectorPath(effectiveStartPoint, effectiveEndPoint, pathType, wp, sourceAnchor, targetAnchor, sourceShape, targetShape);
     }, [effectiveStartPoint, effectiveEndPoint, pathType, waypoint, draggingEndpoint, actualWaypoint, sourceAnchor, targetAnchor, sourceShape, targetShape]);
-
-    const actualWaypoint = useMemo(() => {
-        if (draggingEndpoint === 'waypoint' && dragPoint) return dragPoint;
-        if (waypoint) return waypoint;
-        if (!actualSourcePoint || !actualTargetPoint) return { x: 0, y: 0 };
-        return getConnectorMidpoint(actualSourcePoint, actualTargetPoint, pathType, null, sourceAnchor, targetAnchor, sourceShape, targetShape);
-    }, [draggingEndpoint, dragPoint, waypoint, actualSourcePoint, actualTargetPoint, pathType, sourceAnchor, targetAnchor, sourceShape, targetShape]);
 
     const connectorMidpoint = useMemo(() => {
         if (!actualSourcePoint || !actualTargetPoint) return { x: 0, y: 0 };
