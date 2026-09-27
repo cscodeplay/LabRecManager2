@@ -471,6 +471,123 @@ export function shadeColor(colorStr, intensity, materialStyle) {
     return `rgb(${nr}, ${ng}, ${nb})`;
 }
 
+/* ─── Render 3D Object to Standalone SVG Element ─── */
+export function render3DObjectSVG(obj) {
+    if (!obj) return '';
+    const mesh = (obj.meshData && obj.meshData.vertices && obj.meshData.faces)
+        ? obj.meshData
+        : get3DModelMesh(obj.modelType || 'cube');
+    if (!mesh || !mesh.vertices || !mesh.faces) return '';
+
+    const rotX = obj.rotX ?? -25;
+    const rotY = obj.rotY ?? 45;
+    const rotZ = obj.rotZ ?? 0;
+    const radX = (rotX * Math.PI) / 180;
+    const radY = (rotY * Math.PI) / 180;
+    const radZ = (rotZ * Math.PI) / 180;
+
+    const cosX = Math.cos(radX), sinX = Math.sin(radX);
+    const cosY = Math.cos(radY), sinY = Math.sin(radY);
+    const cosZ = Math.cos(radZ), sinZ = Math.sin(radZ);
+
+    let lx = 0.5, ly = -0.7, lz = 0.5;
+    if (obj.lightPreset === 'top') { lx = 0.1; ly = -0.95; lz = 0.3; }
+    else if (obj.lightPreset === 'flat') { lx = 0; ly = 0; lz = 1; }
+
+    const w = obj.width || 220;
+    const h = obj.height || 220;
+
+    const transformedVertices = mesh.vertices.map(([vx, vy, vz]) => {
+        let x1 = vx * cosY + vz * sinY;
+        let y1 = vy;
+        let z1 = -vx * sinY + vz * cosY;
+
+        let x2 = x1;
+        let y2 = y1 * cosX - z1 * sinX;
+        let z2 = y1 * sinX + z1 * cosX;
+
+        let x3 = x2 * cosZ - y2 * sinZ;
+        let y3 = x2 * sinZ + y2 * cosZ;
+        let z3 = z2;
+
+        const distance = 4;
+        const factor = distance / (distance + z3);
+        const scale = (Math.min(w, h) / 2) * 0.75;
+        const px = w / 2 + x3 * factor * scale;
+        const py = h / 2 + y3 * factor * scale;
+        return { px, py, pz: z3, x3, y3, z3 };
+    });
+
+    const baseColor = obj.color || mesh.color || '#3b82f6';
+    const isWireframe = obj.materialStyle === 'wireframe' || !!obj.wireframeOnly;
+    const isGlass = obj.materialStyle === 'glass';
+    const isFlat = obj.materialStyle === 'flat';
+    const userOpacity = obj.opacity !== undefined ? obj.opacity : 1;
+
+    const renderedFaces = mesh.faces.map((faceIndices) => {
+        if (faceIndices.length < 3) return null;
+        const v0 = transformedVertices[faceIndices[0]];
+        const v1 = transformedVertices[faceIndices[1]];
+        const v2 = transformedVertices[faceIndices[2]];
+        if (!v0 || !v1 || !v2) return null;
+
+        const ax = v1.x3 - v0.x3, ay = v1.y3 - v0.y3, az = v1.z3 - v0.z3;
+        const bx = v2.x3 - v0.x3, by = v2.y3 - v0.y3, bz = v2.z3 - v0.z3;
+        const nx = ay * bz - az * by;
+        const ny = az * bx - ax * bz;
+        const nz = ax * by - ay * bx;
+        const len = Math.hypot(nx, ny, nz) || 1;
+        const nnx = nx / len, nny = ny / len, nnz = nz / len;
+
+        const dot = nnx * lx + nny * ly + nnz * lz;
+        const effDot = nnz < 0 ? -dot : dot;
+        const intensity = isFlat ? 1.0 : Math.max(0.25, Math.min(1.0, effDot));
+        const avgZ = faceIndices.reduce((sum, idx) => sum + (transformedVertices[idx]?.pz || 0), 0) / faceIndices.length;
+
+        const pointsStr = faceIndices
+            .map(idx => `${transformedVertices[idx].px.toFixed(1)},${transformedVertices[idx].py.toFixed(1)}`)
+            .join(' ');
+
+        let faceFill = shadeColor(baseColor, intensity, obj.materialStyle);
+        let faceOpacity = userOpacity;
+        if (isWireframe) {
+            faceFill = 'transparent';
+            faceOpacity = 0;
+        } else if (isGlass) {
+            faceOpacity = Math.max(0.15, Math.min(0.85, (userOpacity * 0.35) + (intensity * 0.35)));
+        }
+
+        return { pointsStr, avgZ, faceFill, faceOpacity };
+    }).filter(Boolean);
+
+    renderedFaces.sort((a, b) => b.avgZ - a.avgZ);
+
+    const isCurved = obj.modelType === 'sphere' || obj.modelType === 'cylinder' || obj.modelType === 'cone';
+    const strokeDash = obj.edgeStyle === 'dashed' ? '4,3' : (obj.edgeStyle === 'dotted' ? '2,2' : undefined);
+    const rot = obj.rotation ? `transform="rotate(${obj.rotation} ${w / 2} ${h / 2})"` : '';
+
+    const polygons = renderedFaces.map(face => {
+        const strokeColor = isWireframe
+            ? (obj.edgeColor || baseColor)
+            : (isCurved ? face.faceFill : (obj.edgeColor || (obj.edgeWidth ? '#ffffff' : face.faceFill)));
+        const strokeW = isWireframe
+            ? (obj.edgeWidth !== undefined ? obj.edgeWidth : 1)
+            : (isCurved ? 0.5 : (obj.edgeWidth !== undefined ? obj.edgeWidth : 0.8));
+        const strokeOp = isWireframe
+            ? 1
+            : (isCurved ? face.faceOpacity : (obj.edgeWidth === 0 ? 0 : (obj.materialStyle === 'glass' ? 0.9 : 0.6)));
+        const dashAttr = strokeDash ? `stroke-dasharray="${strokeDash}"` : '';
+
+        return `<polygon points="${face.pointsStr}" fill="${face.faceFill}" fill-opacity="${face.faceOpacity}" stroke="${strokeColor}" stroke-width="${strokeW}" stroke-opacity="${strokeOp}" ${dashAttr} stroke-linecap="round" stroke-linejoin="round" />`;
+    }).join('\n        ');
+
+    return `<g transform="translate(${obj.x || 0}, ${obj.y || 0}) ${rot}">
+    <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+        ${polygons}
+    </svg>
+</g>`;
+}
+
 /* ─── 3D Perspective Projection Component ─── */
 export default function Whiteboard3DObject({
     obj,
@@ -843,6 +960,7 @@ export default function Whiteboard3DObject({
                 zIndex: obj.zIndex || 15
             }}
             data-interactive="true"
+            data-3d-id={obj.id}
             className={`whiteboard-3d-object absolute select-none group cursor-move ${
                 isSelected ? 'ring-2 ring-sky-500 rounded-xl shadow-2xl' : ''
             }`}
@@ -1024,10 +1142,10 @@ export default function Whiteboard3DObject({
                 </div>
             )}
 
-            {/* Sleek Horizontal Floating 3D Format Bar (matches Whiteboard format bar design) */}
+            {/* Sleek Horizontal Floating 3D Format Bar (matches Whiteboard main toolbar design) */}
             {isSelected && (
                 <div
-                    className="absolute -top-12 left-1/2 bg-slate-900/95 border border-slate-700/80 shadow-2xl rounded-xl px-2.5 py-1 flex items-center gap-1.5 z-40 text-slate-200 pointer-events-auto select-none backdrop-blur-md whitespace-nowrap"
+                    className="absolute -top-12 left-1/2 bg-slate-900/95 border border-slate-700/80 shadow-2xl rounded-2xl px-2 py-1 flex items-center gap-1 z-40 text-slate-200 pointer-events-auto select-none backdrop-blur-md whitespace-nowrap"
                     style={{
                         transform: `translateX(-50%) rotate(-${obj.rotation || 0}deg)`,
                         transformOrigin: 'bottom center'
@@ -1036,14 +1154,14 @@ export default function Whiteboard3DObject({
                     onClick={e => e.stopPropagation()}
                 >
                     {/* Model Type Tag */}
-                    <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider px-1">
+                    <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider px-1.5 py-0.5 rounded bg-sky-950/60 border border-sky-800/60">
                         {obj.modelType || '3D'}
                     </span>
 
-                    <div className="w-px h-3.5 bg-slate-700" />
+                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                     {/* Surface Color */}
-                    <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Surface Base Color">
+                    <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Surface Base Color">
                         <div className="w-full h-full" style={{ backgroundColor: obj.color || '#3b82f6' }} />
                         <input 
                             type="color" 
@@ -1076,10 +1194,10 @@ export default function Whiteboard3DObject({
                         ))}
                     </div>
 
-                    <div className="w-px h-3.5 bg-slate-700" />
+                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                     {/* Edge Border Width Stepper */}
-                    <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-1 py-0.5" title="Edge Border Width">
+                    <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 px-1 py-0.5 h-6" title="Edge Border Width">
                         <button
                             type="button"
                             onClick={() => onUpdate && onUpdate({ edgeWidth: Math.max(0, (obj.edgeWidth !== undefined ? obj.edgeWidth : 0.8) - 0.5) })}
@@ -1102,7 +1220,7 @@ export default function Whiteboard3DObject({
                     </div>
 
                     {/* Edge Border Color */}
-                    <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Border Edge Color">
+                    <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Border Edge Color">
                         <div className="w-full h-full" style={{ backgroundColor: obj.edgeColor || '#ffffff' }} />
                         <input 
                             type="color" 
@@ -1124,7 +1242,7 @@ export default function Whiteboard3DObject({
                                 key={st.id}
                                 type="button"
                                 onClick={() => onUpdate && onUpdate({ edgeStyle: st.id })}
-                                className={`px-1.5 py-0.5 rounded text-[11px] font-mono transition ${
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${
                                     (obj.edgeStyle || 'solid') === st.id ? 'bg-sky-600 text-white font-bold shadow' : 'text-slate-400 hover:text-white'
                                 }`}
                                 title={st.title}
@@ -1134,13 +1252,13 @@ export default function Whiteboard3DObject({
                         ))}
                     </div>
 
-                    <div className="w-px h-3.5 bg-slate-700" />
+                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                     {/* Reset 3D View Angle */}
                     <button
                         type="button"
                         onClick={() => onUpdate && onUpdate({ rotX: -25, rotY: 45, rotZ: 0 })}
-                        className="p-1 rounded hover:bg-slate-800 text-slate-300 hover:text-white transition"
+                        className="p-1 rounded-full hover:bg-slate-800 text-slate-300 hover:text-white transition flex items-center justify-center"
                         title="Reset 3D View Angle"
                     >
                         <RotateCcw className="w-3.5 h-3.5" />
@@ -1150,7 +1268,7 @@ export default function Whiteboard3DObject({
                     <button
                         type="button"
                         onClick={() => onUpdate && onUpdate({ isInfiniteCloner: !obj.isInfiniteCloner })}
-                        className={`p-1 rounded transition ${obj.isInfiniteCloner ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+                        className={`p-1 rounded-full transition flex items-center justify-center ${obj.isInfiniteCloner ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
                         title={obj.isInfiniteCloner ? "Disable Infinite Copy (Currently ON)" : "Enable Infinite Copy (Currently OFF: Drag moves object)"}
                     >
                         <InfinityIcon className="w-3.5 h-3.5" />
@@ -1161,7 +1279,7 @@ export default function Whiteboard3DObject({
                         <button
                             type="button"
                             onClick={() => onDuplicate(obj.id)}
-                            className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition"
+                            className="p-1 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white transition flex items-center justify-center"
                             title="Duplicate"
                         >
                             <Copy className="w-3.5 h-3.5" />
@@ -1173,7 +1291,7 @@ export default function Whiteboard3DObject({
                         <button
                             type="button"
                             onClick={() => onDelete(obj.id)}
-                            className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-red-400 transition"
+                            className="p-1 rounded-full hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition flex items-center justify-center"
                             title="Delete"
                         >
                             <Trash2 className="w-3.5 h-3.5" />

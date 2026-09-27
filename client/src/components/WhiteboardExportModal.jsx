@@ -11,6 +11,9 @@ import JSZip from 'jszip';
 import toast from 'react-hot-toast';
 import { DOMAIN_SHAPES } from './DomainShapeLibrary';
 import { getAnchorPoint, getConnectorPath } from './ConnectorLine';
+import katex from 'katex';
+import html2canvas from 'html2canvas';
+import { render3DObjectSVG } from './Whiteboard3DObject';
 
 export default function WhiteboardExportModal({
     isOpen,
@@ -169,6 +172,17 @@ export default function WhiteboardExportModal({
             } else if (s.type === 'line' || s.type === 'arrow' || s.type === 'double_arrow' || s.type === 'dashed_line') {
                 const dash = s.type === 'dashed_line' ? 'stroke-dasharray="6,6"' : '';
                 return `<line x1="${s.x}" y1="${s.y}" x2="${s.x + s.width}" y2="${s.y + s.height}" stroke="${stroke}" stroke-width="${sw}" ${dash} ${rot} />`;
+            } else if (s.type === 'equation') {
+                const mathHtml = katex.renderToString(s.latex || '', { displayMode: true, throwOnError: false });
+                return `
+    <g transform="translate(${s.x}, ${s.y}) ${rot}">
+        <rect width="${s.width || 200}" height="${s.height || 80}" fill="${s.bgColor || 'transparent'}" rx="6" />
+        <foreignObject width="${s.width || 200}" height="${s.height || 80}">
+            <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:${s.color || '#1e293b'};font-size:${s.fontSize || 22}px;">
+                ${mathHtml}
+            </div>
+        </foreignObject>
+    </g>`;
             } else if (s.type === 'sticky_note') {
                 return `
     <g transform="translate(${s.x}, ${s.y}) ${rot}">
@@ -189,6 +203,19 @@ export default function WhiteboardExportModal({
             const dash = conn.strokeStyle === 'dashed' ? 'stroke-dasharray="6,6"' : conn.strokeStyle === 'dotted' ? 'stroke-dasharray="2,4"' : '';
             return `<path d="${pathD}" fill="none" stroke="${conn.color || '#2563eb'}" stroke-width="${conn.strokeWidth || 2}" ${dash} marker-end="url(#arrowhead)" />`;
         }).join('\n    ');
+
+        // Serialized 3D Objects
+        const current3DObjects = whiteboardData.page3DObjects?.[currentPage] || [];
+        const objects3DSVG = current3DObjects.map(obj => {
+            const rot = obj.rotation ? `transform="rotate(${obj.rotation} ${obj.x + (obj.width || 220)/2} ${obj.y + (obj.height || 220)/2})"` : '';
+            const svgContent = render3DObjectSVG(obj);
+            if (!svgContent) return '';
+            const innerSvg = svgContent.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
+            return `
+    <g transform="translate(${obj.x || 0}, ${obj.y || 0})" ${rot}>
+        ${innerSvg}
+    </g>`;
+        }).join('\n');
 
         // Serialized Text Elements
         const textsSVG = currentTexts.map(t => {
@@ -223,6 +250,9 @@ export default function WhiteboardExportModal({
         <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
             <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb" />
         </marker>
+        <style>
+            @import url('https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css');
+        </style>
     </defs>
     <!-- Background Canvas -->
     <rect width="${w}" height="${h}" fill="${bgColor}" />
@@ -232,6 +262,8 @@ export default function WhiteboardExportModal({
     ${shapesSVG}
     <!-- Connectors Layer -->
     ${connectorsSVG}
+    <!-- 3D Objects Layer -->
+    ${objects3DSVG}
     <!-- Images Layer -->
     ${imagesSVG}
     <!-- Text Elements Layer -->
@@ -240,7 +272,7 @@ export default function WhiteboardExportModal({
     };
 
     // ─────────────────────────────────────────────────────────────────
-    // Composite Canvas Generator for High-Res PNG / JPEG / PDF
+    // Direct Composite Canvas Generator for High-Res PNG / JPEG / PDF / IWB
     // ─────────────────────────────────────────────────────────────────
     const generateCompositeCanvas = async () => {
         const canvas = canvasRef?.current;
@@ -252,35 +284,486 @@ export default function WhiteboardExportModal({
         exportCanvas.height = h;
         const ctx = exportCanvas.getContext('2d', { willReadFrequently: true });
 
-        // 1. Draw page background
-        const pageBg = whiteboardData.pageBackgrounds?.[currentPage] || { color: '#ffffff' };
-        ctx.fillStyle = pageBg.color || '#ffffff';
+        // 1. Draw page background color & pattern
+        const pageBg = whiteboardData.pageBackgrounds?.[currentPage] || { color: '#ffffff', pattern: 'plain' };
+        const bgColor = pageBg.color || '#ffffff';
+        ctx.fillStyle = bgColor;
         ctx.fillRect(0, 0, w, h);
 
-        // 2. Draw freehand drawing canvas strokes
+        const pattern = pageBg.pattern || 'plain';
+        if (pattern && pattern !== 'plain' && pattern !== 'none') {
+            ctx.save();
+            ctx.strokeStyle = '#94a3b8';
+            ctx.fillStyle = '#94a3b8';
+            ctx.lineWidth = 1;
+            ctx.globalAlpha = 0.25;
+
+            if (pattern === 'grid') {
+                const step = 25;
+                for (let x = 0; x <= w; x += step) {
+                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+                }
+                for (let y = 0; y <= h; y += step) {
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+                }
+            } else if (pattern === 'dotted') {
+                const step = 20;
+                for (let x = 0; x <= w; x += step) {
+                    for (let y = 0; y <= h; y += step) {
+                        ctx.beginPath(); ctx.arc(x, y, 1.5, 0, Math.PI * 2); ctx.fill();
+                    }
+                }
+            } else if (pattern === 'lined') {
+                const step = 25;
+                for (let y = 0; y <= h; y += step) {
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+                }
+            } else if (pattern === 'graph') {
+                for (let x = 0; x <= w; x += 20) {
+                    ctx.beginPath();
+                    ctx.lineWidth = x % 100 === 0 ? 1.5 : 0.5;
+                    ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+                }
+                for (let y = 0; y <= h; y += 20) {
+                    ctx.beginPath();
+                    ctx.lineWidth = y % 100 === 0 ? 1.5 : 0.5;
+                    ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+                }
+            }
+            ctx.restore();
+        }
+
+        // 2. Draw live freehand drawing canvas strokes
         if (canvas) {
             ctx.drawImage(canvas, 0, 0);
         }
 
-        // 3. Render SVG content overlay onto canvas via image for full graphic parity
-        const svgString = buildWhiteboardSVG();
-        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(svgBlob);
+        // 3. Draw Shapes Layer (standard, domain, sticky notes, and KaTeX equations)
+        const currentShapes = whiteboardData.pageShapeObjects?.[currentPage] || [];
+        for (const shpObj of currentShapes) {
+            if (shpObj.type === 'connector') continue;
 
-        return new Promise((resolve) => {
-            const img = new Image();
-            img.onload = () => {
-                ctx.drawImage(img, 0, 0);
-                URL.revokeObjectURL(url);
-                resolve(exportCanvas);
-            };
-            img.onerror = () => {
-                URL.revokeObjectURL(url);
-                // Return canvas with at least background and freehand strokes
-                resolve(exportCanvas);
-            };
-            img.src = url;
-        });
+            if (shpObj.type === 'sticky_note') {
+                ctx.save();
+                const noteW = shpObj.width || 200;
+                const noteH = shpObj.height || 200;
+                const centerX = shpObj.x + noteW / 2;
+                const centerY = shpObj.y + noteH / 2;
+                ctx.translate(centerX, centerY);
+                ctx.rotate(((shpObj.rotation || 0) * Math.PI) / 180);
+                ctx.translate(-centerX, -centerY);
+
+                const noteColor = shpObj.fillColor || shpObj.color || '#fef08a';
+                const borderColor = shpObj.color || '#eab308';
+                const textColor = shpObj.textColor || '#713f12';
+
+                ctx.shadowColor = 'rgba(0,0,0,0.18)';
+                ctx.shadowBlur = 10;
+                ctx.shadowOffsetY = 4;
+                ctx.fillStyle = noteColor;
+                ctx.beginPath();
+                if (ctx.roundRect) ctx.roundRect(shpObj.x, shpObj.y, noteW, noteH, 10);
+                else ctx.rect(shpObj.x, shpObj.y, noteW, noteH);
+                ctx.fill();
+
+                ctx.shadowColor = 'transparent';
+                ctx.strokeStyle = borderColor;
+                ctx.lineWidth = shpObj.strokeWidth || 1;
+                ctx.stroke();
+
+                ctx.fillStyle = 'rgba(0,0,0,0.06)';
+                ctx.fillRect(shpObj.x, shpObj.y, noteW, 26);
+
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath();
+                ctx.arc(shpObj.x + noteW / 2, shpObj.y + 13, 3.5, 0, 2 * Math.PI);
+                ctx.fill();
+
+                const noteText = shpObj.text || shpObj.title || '';
+                if (noteText) {
+                    ctx.fillStyle = textColor;
+                    ctx.font = `${shpObj.fontSize || 13}px 'Inter', sans-serif`;
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'top';
+                    const lines = noteText.split('\n');
+                    let curY = shpObj.y + 34;
+                    for (const line of lines) {
+                        ctx.fillText(line, shpObj.x + 10, curY);
+                        curY += (shpObj.fontSize || 13) * 1.35;
+                    }
+                }
+                ctx.restore();
+                continue;
+            }
+
+            if (shpObj.type === 'equation') {
+                try {
+                    let renderedEq = false;
+                    const domEq = document.querySelector(`[data-shape-id="${shpObj.id}"]`);
+                    if (domEq) {
+                        const eqCanvas = await html2canvas(domEq, {
+                            backgroundColor: null,
+                            scale: 2,
+                            logging: false,
+                            useCORS: true
+                        });
+                        if (eqCanvas) {
+                            ctx.save();
+                            const eqW = shpObj.width || 200;
+                            const eqH = shpObj.height || 80;
+                            ctx.translate(shpObj.x + eqW / 2, shpObj.y + eqH / 2);
+                            if (shpObj.rotation) ctx.rotate((shpObj.rotation * Math.PI) / 180);
+                            ctx.drawImage(eqCanvas, -eqW / 2, -eqH / 2, eqW, eqH);
+                            ctx.restore();
+                            renderedEq = true;
+                        }
+                    }
+
+                    if (!renderedEq && shpObj.latex) {
+                        const offDiv = document.createElement('div');
+                        offDiv.style.position = 'fixed';
+                        offDiv.style.left = '-9999px';
+                        offDiv.style.top = '-9999px';
+                        offDiv.style.width = `${shpObj.width || 200}px`;
+                        offDiv.style.height = `${shpObj.height || 80}px`;
+                        offDiv.style.display = 'flex';
+                        offDiv.style.alignItems = 'center';
+                        offDiv.style.justifyContent = 'center';
+                        offDiv.style.color = shpObj.color || '#1e293b';
+                        offDiv.style.fontSize = `${shpObj.fontSize || 22}px`;
+                        offDiv.innerHTML = katex.renderToString(shpObj.latex || '', { displayMode: true, throwOnError: false });
+                        document.body.appendChild(offDiv);
+                        const offCanvas = await html2canvas(offDiv, { backgroundColor: null, scale: 2, logging: false });
+                        document.body.removeChild(offDiv);
+                        if (offCanvas) {
+                            ctx.save();
+                            const eqW = shpObj.width || 200;
+                            const eqH = shpObj.height || 80;
+                            ctx.translate(shpObj.x + eqW / 2, shpObj.y + eqH / 2);
+                            if (shpObj.rotation) ctx.rotate((shpObj.rotation * Math.PI) / 180);
+                            ctx.drawImage(offCanvas, -eqW / 2, -eqH / 2, eqW, eqH);
+                            ctx.restore();
+                            renderedEq = true;
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Export composite equation error:", e);
+                }
+                continue;
+            }
+
+            // Check DOM SVG serialization for domain / custom shapes
+            const domShapeSvg = document.querySelector(`[data-shape-id="${shpObj.id}"] svg`);
+            if (domShapeSvg) {
+                try {
+                    const serializer = new XMLSerializer();
+                    let svgStr = serializer.serializeToString(domShapeSvg);
+                    if (!svgStr.includes('xmlns=')) {
+                        svgStr = svgStr.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+                    }
+                    const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+                    const blobUrl = URL.createObjectURL(svgBlob);
+                    const img = new Image();
+                    await new Promise((resolve) => {
+                        img.onload = () => {
+                            ctx.save();
+                            const shapeW = Math.abs(shpObj.width || 100);
+                            const shapeH = Math.abs(shpObj.height || 100);
+                            ctx.translate(shpObj.x + shapeW / 2, shpObj.y + shapeH / 2);
+                            if (shpObj.rotation) ctx.rotate((shpObj.rotation * Math.PI) / 180);
+                            ctx.drawImage(img, -shapeW / 2, -shapeH / 2, shapeW, shapeH);
+                            ctx.restore();
+                            URL.revokeObjectURL(blobUrl);
+                            resolve();
+                        };
+                        img.onerror = () => {
+                            URL.revokeObjectURL(blobUrl);
+                            resolve();
+                        };
+                        img.src = blobUrl;
+                    });
+                    continue;
+                } catch (svgErr) {
+                    console.warn("DOM shape SVG draw error:", svgErr);
+                }
+            }
+
+            // Standard basic geometric shapes
+            ctx.save();
+            const centerX = shpObj.x + (shpObj.width || 100) / 2;
+            const centerY = shpObj.y + (shpObj.height || 100) / 2;
+            ctx.translate(centerX, centerY);
+            if (shpObj.rotation) ctx.rotate((shpObj.rotation * Math.PI) / 180);
+            ctx.translate(-centerX, -centerY);
+
+            ctx.strokeStyle = shpObj.color || '#000000';
+            ctx.lineWidth = shpObj.strokeWidth || 2;
+            const fill = shpObj.fillColor && shpObj.fillColor !== 'transparent' ? shpObj.fillColor : null;
+            if (fill) ctx.fillStyle = fill;
+
+            if (shpObj.type === 'rectangle') {
+                if (fill) ctx.fillRect(shpObj.x, shpObj.y, shpObj.width, shpObj.height);
+                ctx.strokeRect(shpObj.x, shpObj.y, shpObj.width, shpObj.height);
+            } else if (shpObj.type === 'rounded_rect') {
+                const r = Math.min(20, Math.abs(shpObj.width)/4, Math.abs(shpObj.height)/4);
+                ctx.beginPath();
+                if (ctx.roundRect) ctx.roundRect(shpObj.x, shpObj.y, shpObj.width, shpObj.height, r);
+                else ctx.rect(shpObj.x, shpObj.y, shpObj.width, shpObj.height);
+                if (fill) ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'circle') {
+                ctx.beginPath();
+                ctx.ellipse(shpObj.x + shpObj.width/2, shpObj.y + shpObj.height/2, Math.abs(shpObj.width)/2, Math.abs(shpObj.height)/2, 0, 0, Math.PI * 2);
+                if (fill) ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'triangle') {
+                ctx.beginPath();
+                ctx.moveTo(shpObj.x + shpObj.width / 2, shpObj.y);
+                ctx.lineTo(shpObj.x, shpObj.y + shpObj.height);
+                ctx.lineTo(shpObj.x + shpObj.width, shpObj.y + shpObj.height);
+                ctx.closePath();
+                if (fill) ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'diamond') {
+                ctx.beginPath();
+                ctx.moveTo(shpObj.x + shpObj.width / 2, shpObj.y);
+                ctx.lineTo(shpObj.x + shpObj.width, shpObj.y + shpObj.height / 2);
+                ctx.lineTo(shpObj.x + shpObj.width / 2, shpObj.y + shpObj.height);
+                ctx.lineTo(shpObj.x, shpObj.y + shpObj.height / 2);
+                ctx.closePath();
+                if (fill) ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'line' || shpObj.type === 'arrow' || shpObj.type === 'double_arrow' || shpObj.type === 'dashed_line') {
+                if (shpObj.type === 'dashed_line') ctx.setLineDash([6, 6]);
+                ctx.beginPath();
+                ctx.moveTo(shpObj.x, shpObj.y);
+                ctx.lineTo(shpObj.x + shpObj.width, shpObj.y + shpObj.height);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+            ctx.restore();
+        }
+
+        // 4. Draw Connectors Layer
+        const currentConnectors = currentShapes.filter(s => s.type === 'connector');
+        const currentImages = whiteboardData.pageImageObjects?.[currentPage] || [];
+        for (const conn of currentConnectors) {
+            ctx.save();
+            let startPt = { x: conn.startX || 0, y: conn.startY || 0 };
+            let endPt = { x: conn.endX || 0, y: conn.endY || 0 };
+            if (conn.sourceId) {
+                const srcShape = currentShapes.find(s => s.id === conn.sourceId) || currentImages.find(i => i.id === conn.sourceId);
+                if (srcShape) startPt = getAnchorPoint(srcShape, conn.sourceAnchor || 'auto', endPt);
+            }
+            if (conn.targetId) {
+                const tgtShape = currentShapes.find(s => s.id === conn.targetId) || currentImages.find(i => i.id === conn.targetId);
+                if (tgtShape) endPt = getAnchorPoint(tgtShape, conn.targetAnchor || 'auto', startPt);
+            }
+            ctx.strokeStyle = conn.color || '#3b82f6';
+            ctx.lineWidth = conn.strokeWidth || 2;
+            const pathType = conn.connectorType || conn.pathType || 'curved';
+            const pathD = getConnectorPath(startPt, endPt, pathType, conn.waypoint, conn.sourceAnchor, conn.targetAnchor);
+            const path2D = new Path2D(pathD);
+            if (conn.borderStyle === 'dashed') ctx.setLineDash([6, 6]);
+            else if (conn.borderStyle === 'dotted') ctx.setLineDash([2, 4]);
+            ctx.stroke(path2D);
+            ctx.restore();
+        }
+
+        // 5. Draw 3D Objects Layer
+        const current3DObjects = whiteboardData.page3DObjects?.[currentPage] || [];
+        for (const obj3d of current3DObjects) {
+            try {
+                let rendered3D = false;
+                const dom3dSvg = document.querySelector(`[data-3d-id="${obj3d.id}"] svg`);
+                let svgStr = '';
+                if (dom3dSvg) {
+                    const serializer = new XMLSerializer();
+                    svgStr = serializer.serializeToString(dom3dSvg);
+                    if (!svgStr.includes('xmlns=')) {
+                        svgStr = svgStr.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+                    }
+                }
+                if (!svgStr && typeof render3DObjectSVG === 'function') {
+                    svgStr = render3DObjectSVG(obj3d);
+                }
+
+                if (svgStr) {
+                    const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+                    const blobUrl = URL.createObjectURL(svgBlob);
+                    const img = new Image();
+                    await new Promise((resolve) => {
+                        img.onload = () => {
+                            ctx.save();
+                            const w3 = obj3d.width || 220;
+                            const h3 = obj3d.height || 220;
+                            ctx.translate(obj3d.x || 0, obj3d.y || 0);
+                            if (obj3d.rotation) {
+                                ctx.translate(w3 / 2, h3 / 2);
+                                ctx.rotate((obj3d.rotation * Math.PI) / 180);
+                                ctx.translate(-w3 / 2, -h3 / 2);
+                            }
+                            ctx.drawImage(img, 0, 0, w3, h3);
+                            ctx.restore();
+                            URL.revokeObjectURL(blobUrl);
+                            rendered3D = true;
+                            resolve();
+                        };
+                        img.onerror = () => {
+                            URL.revokeObjectURL(blobUrl);
+                            resolve();
+                        };
+                        img.src = blobUrl;
+                    });
+                }
+            } catch (e) {
+                console.warn("Export 3D object rendering error:", e);
+            }
+        }
+
+        // 6. Draw Images Layer (DOM direct draw first, then async preload fallback)
+        if (currentImages.length > 0) {
+            await Promise.all(currentImages.map(imgObj => new Promise((resolve) => {
+                const domImg = document.querySelector(`[data-image-id="${imgObj.id}"] img`);
+                const renderImageToCtx = (imgSource) => {
+                    try {
+                        ctx.save();
+                        const centerX = imgObj.x + imgObj.width / 2;
+                        const centerY = imgObj.y + imgObj.height / 2;
+                        ctx.translate(centerX, centerY);
+                        ctx.rotate((imgObj.rotation || 0) * Math.PI / 180);
+                        if (imgObj.flipX || imgObj.flipY) {
+                            ctx.scale(imgObj.flipX ? -1 : 1, imgObj.flipY ? -1 : 1);
+                        }
+                        if (imgObj.opacity !== undefined) {
+                            ctx.globalAlpha = imgObj.opacity / 100;
+                        }
+                        if (imgObj.borderRadius) {
+                            ctx.beginPath();
+                            if (ctx.roundRect) ctx.roundRect(-imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height, imgObj.borderRadius);
+                            else ctx.rect(-imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
+                            ctx.clip();
+                        }
+                        ctx.drawImage(imgSource, -imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
+
+                        if (imgObj.borderWidth) {
+                            ctx.lineWidth = imgObj.borderWidth;
+                            ctx.strokeStyle = imgObj.borderColor || '#3b82f6';
+                            if (imgObj.borderStyle === 'dashed') ctx.setLineDash([6, 6]);
+                            else if (imgObj.borderStyle === 'dotted') ctx.setLineDash([2, 4]);
+                            else ctx.setLineDash([]);
+                            ctx.strokeRect(-imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
+                        }
+                        ctx.restore();
+                    } catch (e) {
+                        console.error("Error rendering image in export composite", e);
+                    }
+                    resolve();
+                };
+
+                if (domImg && domImg.complete && domImg.naturalWidth > 0) {
+                    renderImageToCtx(domImg);
+                    return;
+                }
+
+                const img = new Image();
+                if (imgObj.src && (imgObj.src.startsWith('http://') || imgObj.src.startsWith('https://'))) {
+                    img.crossOrigin = 'anonymous';
+                }
+                img.onload = () => renderImageToCtx(img);
+                img.onerror = () => {
+                    if (img.crossOrigin) {
+                        const fallbackImg = new Image();
+                        fallbackImg.onload = () => renderImageToCtx(fallbackImg);
+                        fallbackImg.onerror = resolve;
+                        fallbackImg.src = imgObj.src;
+                    } else {
+                        resolve();
+                    }
+                };
+                img.src = imgObj.src;
+                if (img.complete) {
+                    renderImageToCtx(img);
+                }
+            })));
+        }
+
+        // 7. Draw Text Layer (with KaTeX math typesetting support via html2canvas)
+        const currentTexts = whiteboardData.pageTextObjects?.[currentPage] || [];
+        for (const txtObj of currentTexts) {
+            ctx.save();
+            const centerX = txtObj.x + txtObj.width / 2;
+            const centerY = txtObj.y + txtObj.height / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate((txtObj.rotation || 0) * Math.PI / 180);
+
+            let renderedViaCanvas = false;
+            const hasMath = (txtObj.text?.includes('$') || /\\(frac|sqrt|int|sum|prod|lim|alpha|beta|theta|pi|times|div|pm|log|sin|cos|tan)\b|[\^_]/.test(txtObj.text || ''));
+            const domTxt = document.querySelector(`[data-text-id="${txtObj.id}"]`);
+
+            if (hasMath && domTxt) {
+                try {
+                    const textCanvas = await html2canvas(domTxt, {
+                        backgroundColor: null,
+                        scale: 2,
+                        logging: false,
+                        useCORS: true
+                    });
+                    if (textCanvas) {
+                        ctx.drawImage(textCanvas, -txtObj.width / 2, -txtObj.height / 2, txtObj.width, txtObj.height);
+                        renderedViaCanvas = true;
+                    }
+                } catch (tErr) {
+                    console.warn("Failed html2canvas for text math in export:", tErr);
+                }
+            }
+
+            if (!renderedViaCanvas) {
+                const hasBg = txtObj.bgColor && txtObj.bgColor !== 'transparent';
+                const bw = txtObj.borderWidth || 0;
+                if (hasBg || bw > 0) {
+                    const rx = -txtObj.width / 2;
+                    const ry = -txtObj.height / 2;
+                    const rw = txtObj.width;
+                    const rh = txtObj.height;
+                    const cr = txtObj.borderRadius || 0;
+                    ctx.beginPath();
+                    if (ctx.roundRect) ctx.roundRect(rx, ry, rw, rh, cr);
+                    else ctx.rect(rx, ry, rw, rh);
+                    if (hasBg) {
+                        ctx.fillStyle = txtObj.bgColor;
+                        ctx.fill();
+                    }
+                    if (bw > 0) {
+                        ctx.lineWidth = bw;
+                        ctx.strokeStyle = txtObj.borderColor || '#3b82f6';
+                        if (txtObj.borderStyle === 'dashed') ctx.setLineDash([6, 6]);
+                        else if (txtObj.borderStyle === 'dotted') ctx.setLineDash([3, 3]);
+                        else ctx.setLineDash([]);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+                }
+
+                ctx.font = `${txtObj.fontStyle || 'normal'} ${txtObj.fontWeight || 'normal'} ${txtObj.fontSize || 20}px ${txtObj.fontFamily || 'sans-serif'}`;
+                ctx.fillStyle = txtObj.color || '#000000';
+                ctx.textAlign = txtObj.textAlign || 'left';
+                ctx.textBaseline = 'top';
+
+                const lines = (txtObj.text || '').split('\n');
+                const lineHeight = (txtObj.fontSize || 20) * 1.3;
+                const startX = -txtObj.width / 2 + 8;
+                let startY = -txtObj.height / 2 + 8;
+
+                lines.forEach(line => {
+                    ctx.fillText(line, startX, startY);
+                    startY += lineHeight;
+                });
+            }
+            ctx.restore();
+        }
+
+        return exportCanvas;
     };
 
     // 1. Export WBF (Native Whiteboard File)
@@ -297,6 +780,9 @@ export default function WhiteboardExportModal({
                 pageImageObjects: whiteboardData.pageImageObjects || {},
                 pageTextObjects: whiteboardData.pageTextObjects || {},
                 pageShapeObjects: whiteboardData.pageShapeObjects || {},
+                page3DObjects: whiteboardData.page3DObjects || {},
+                pagePdfObjects: whiteboardData.pagePdfObjects || {},
+                pageMediaObjects: whiteboardData.pageMediaObjects || {},
                 pages: whiteboardData.pages || []
             };
 

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import fixWebmDuration from 'fix-webm-duration';
 import katex from 'katex';
+import html2canvas from 'html2canvas';
 import WhiteboardEquationEditor, { MathVirtualKeyboard, SYMBOL_CATEGORIES } from './WhiteboardEquationEditor';
 import WhiteboardMathTablet from './WhiteboardMathTablet';
 
@@ -52,7 +53,7 @@ import WhiteboardShortcutsModal from './WhiteboardShortcutsModal';
 import WhiteboardClipboardPanel from './WhiteboardClipboardPanel';
 import WhiteboardMediaPlayer from './WhiteboardMediaPlayer';
 import WhiteboardPdfViewer from './WhiteboardPdfViewer';
-import Whiteboard3DObject, { get3DModelMesh, parseOBJ, parseSTL, parseJSON3D, shadeColor } from './Whiteboard3DObject';
+import Whiteboard3DObject, { get3DModelMesh, parseOBJ, parseSTL, parseJSON3D, shadeColor, render3DObjectSVG } from './Whiteboard3DObject';
 import TorchIcon from './TorchIcon';
 import api from '@/lib/api';
 import { toast } from 'react-hot-toast';
@@ -2465,6 +2466,9 @@ export default function Whiteboard({
             if (data.pageTextObjects) setPageTextObjects(data.pageTextObjects);
             if (data.pageImageObjects) setPageImageObjects(data.pageImageObjects);
             if (data.pageBackgrounds) setPageBackgrounds(data.pageBackgrounds);
+            if (data.page3DObjects) setPage3DObjects(data.page3DObjects);
+            if (data.pagePdfObjects) setPagePdfObjects(data.pagePdfObjects);
+            if (data.pageMediaObjects) setPageMediaObjects(data.pageMediaObjects);
             if (data.totalPages) setTotalPages(data.totalPages);
             if (data.currentPage !== undefined) setCurrentPage(data.currentPage);
             saveToHistory();
@@ -7904,13 +7908,91 @@ export default function Whiteboard({
                     ctx.restore();
                 }
             } else if (shpObj.type === 'equation') {
-                ctx.save();
-                ctx.font = `italic ${shpObj.fontSize || 22}px 'KaTeX_Math', 'Times New Roman', serif`;
-                ctx.fillStyle = shpObj.color || '#1e293b';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(shpObj.latex || '', shpObj.x + shpObj.width / 2, shpObj.y + shpObj.height / 2);
-                ctx.restore();
+                try {
+                    let renderedEquation = false;
+                    const domEq = document.querySelector(`[data-shape-id="${shpObj.id}"]`);
+                    if (domEq) {
+                        const eqCanvas = await html2canvas(domEq, {
+                            backgroundColor: null,
+                            scale: 2,
+                            logging: false,
+                            useCORS: true
+                        });
+                        if (eqCanvas) {
+                            ctx.save();
+                            const w = shpObj.width || 200;
+                            const h = shpObj.height || 80;
+                            const centerX = shpObj.x + w / 2;
+                            const centerY = shpObj.y + h / 2;
+                            ctx.translate(centerX, centerY);
+                            if (shpObj.rotation) {
+                                ctx.rotate((shpObj.rotation * Math.PI) / 180);
+                            }
+                            ctx.drawImage(eqCanvas, -w / 2, -h / 2, w, h);
+                            ctx.restore();
+                            renderedEquation = true;
+                        }
+                    }
+
+                    if (!renderedEquation && shpObj.latex) {
+                        // Offscreen render fallback with KaTeX
+                        const offDiv = document.createElement('div');
+                        offDiv.style.position = 'fixed';
+                        offDiv.style.left = '-9999px';
+                        offDiv.style.top = '-9999px';
+                        offDiv.style.width = `${shpObj.width || 200}px`;
+                        offDiv.style.height = `${shpObj.height || 80}px`;
+                        offDiv.style.display = 'flex';
+                        offDiv.style.alignItems = 'center';
+                        offDiv.style.justifyContent = 'center';
+                        offDiv.style.color = shpObj.color || '#1e293b';
+                        offDiv.style.fontSize = `${shpObj.fontSize || 22}px`;
+                        offDiv.innerHTML = katex.renderToString(shpObj.latex || '', {
+                            displayMode: true,
+                            throwOnError: false
+                        });
+                        document.body.appendChild(offDiv);
+                        const offCanvas = await html2canvas(offDiv, {
+                            backgroundColor: null,
+                            scale: 2,
+                            logging: false
+                        });
+                        document.body.removeChild(offDiv);
+                        if (offCanvas) {
+                            ctx.save();
+                            const w = shpObj.width || 200;
+                            const h = shpObj.height || 80;
+                            const centerX = shpObj.x + w / 2;
+                            const centerY = shpObj.y + h / 2;
+                            ctx.translate(centerX, centerY);
+                            if (shpObj.rotation) {
+                                ctx.rotate((shpObj.rotation * Math.PI) / 180);
+                            }
+                            ctx.drawImage(offCanvas, -w / 2, -h / 2, w, h);
+                            ctx.restore();
+                            renderedEquation = true;
+                        }
+                    }
+
+                    if (!renderedEquation) {
+                        ctx.save();
+                        ctx.font = `italic ${shpObj.fontSize || 22}px 'KaTeX_Math', 'Times New Roman', serif`;
+                        ctx.fillStyle = shpObj.color || '#1e293b';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(shpObj.latex || '', shpObj.x + shpObj.width / 2, shpObj.y + shpObj.height / 2);
+                        ctx.restore();
+                    }
+                } catch (eqErr) {
+                    console.warn("Failed html2canvas for equation shape in screenshot:", eqErr);
+                    ctx.save();
+                    ctx.font = `italic ${shpObj.fontSize || 22}px 'KaTeX_Math', 'Times New Roman', serif`;
+                    ctx.fillStyle = shpObj.color || '#1e293b';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(shpObj.latex || '', shpObj.x + shpObj.width / 2, shpObj.y + shpObj.height / 2);
+                    ctx.restore();
+                }
             }
 
             // Embedded text inside shape
@@ -8087,117 +8169,166 @@ export default function Whiteboard({
             ctx.restore();
         });
 
-        // 4C. 3D Objects Layer (3D perspective mesh projection, lighting, depth sorting, shading, wireframe)
+        // 4C. 3D Objects Layer (DOM SVG serialization, render3DObjectSVG, and mesh projection fallback)
         const current3DObjects = page3DObjects[currentPage] || [];
-        current3DObjects.forEach(obj3d => {
+        for (const obj3d of current3DObjects) {
             try {
-                const mesh = (obj3d.meshData && obj3d.meshData.vertices && obj3d.meshData.faces)
-                    ? obj3d.meshData
-                    : get3DModelMesh(obj3d.modelType || 'cube');
-                if (!mesh || !mesh.vertices || !mesh.faces) return;
-
-                const rotX = obj3d.rotX ?? -25;
-                const rotY = obj3d.rotY ?? 45;
-                const rotZ = obj3d.rotZ ?? 0;
-                const radX = (rotX * Math.PI) / 180;
-                const radY = (rotY * Math.PI) / 180;
-                const radZ = (rotZ * Math.PI) / 180;
-                const cosX = Math.cos(radX), sinX = Math.sin(radX);
-                const cosY = Math.cos(radY), sinY = Math.sin(radY);
-                const cosZ = Math.cos(radZ), sinZ = Math.sin(radZ);
-
-                let lx = 0.5, ly = -0.7, lz = 0.5;
-                if (obj3d.lightPreset === 'top') { lx = 0.1; ly = -0.95; lz = 0.3; }
-                else if (obj3d.lightPreset === 'flat') { lx = 0; ly = 0; lz = 1; }
-
-                const w = obj3d.width || 220;
-                const h = obj3d.height || 220;
-
-                const transformedVertices = mesh.vertices.map(([vx, vy, vz]) => {
-                    let x1 = vx * cosY + vz * sinY;
-                    let y1 = vy;
-                    let z1 = -vx * sinY + vz * cosY;
-
-                    let x2 = x1;
-                    let y2 = y1 * cosX - z1 * sinX;
-                    let z2 = y1 * sinX + z1 * cosX;
-
-                    let x3 = x2 * cosZ - y2 * sinZ;
-                    let y3 = x2 * sinZ + y2 * cosZ;
-                    let z3 = z2;
-
-                    const distance = 4;
-                    const factor = distance / (distance + z3);
-                    const scale = (Math.min(w, h) / 2) * 0.75;
-                    const px = w / 2 + x3 * factor * scale;
-                    const py = h / 2 + y3 * factor * scale;
-                    return { px, py, pz: z3, x3, y3, z3 };
-                });
-
-                const baseColor = obj3d.color || mesh.color || '#3b82f6';
-                const isWireframe = obj3d.materialStyle === 'wireframe' || !!obj3d.wireframeOnly;
-                const isFlat = obj3d.materialStyle === 'flat';
-                const userOpacity = obj3d.opacity !== undefined ? obj3d.opacity : 1;
-
-                const renderedFaces = mesh.faces.map(faceIndices => {
-                    if (faceIndices.length < 3) return null;
-                    const v0 = transformedVertices[faceIndices[0]];
-                    const v1 = transformedVertices[faceIndices[1]];
-                    const v2 = transformedVertices[faceIndices[2]];
-                    if (!v0 || !v1 || !v2) return null;
-
-                    const ax = v1.x3 - v0.x3, ay = v1.y3 - v0.y3, az = v1.z3 - v0.z3;
-                    const bx = v2.x3 - v0.x3, by = v2.y3 - v0.y3, bz = v2.z3 - v0.z3;
-                    const nx = ay * bz - az * by;
-                    const ny = az * bx - ax * bz;
-                    const nz = ax * by - ay * bx;
-                    const len = Math.hypot(nx, ny, nz) || 1;
-                    const nnx = nx / len, nny = ny / len, nnz = nz / len;
-
-                    const dot = nnx * lx + nny * ly + nnz * lz;
-                    const effDot = nnz < 0 ? -dot : dot;
-                    const intensity = isFlat ? 1.0 : Math.max(0.25, Math.min(1.0, effDot));
-                    const avgZ = faceIndices.reduce((sum, idx) => sum + (transformedVertices[idx]?.pz || 0), 0) / faceIndices.length;
-
-                    let faceFill = shadeColor(baseColor, intensity, obj3d.materialStyle);
-                    return { faceIndices, avgZ, faceFill, userOpacity };
-                }).filter(Boolean);
-
-                renderedFaces.sort((a, b) => b.avgZ - a.avgZ);
-
-                ctx.save();
-                ctx.translate(obj3d.x || 0, obj3d.y || 0);
-                if (obj3d.rotation) {
-                    ctx.translate(w / 2, h / 2);
-                    ctx.rotate((obj3d.rotation * Math.PI) / 180);
-                    ctx.translate(-w / 2, -h / 2);
+                let rendered3D = false;
+                const dom3dSvg = document.querySelector(`[data-3d-id="${obj3d.id}"] svg`);
+                let svgStr = '';
+                if (dom3dSvg) {
+                    try {
+                        const serializer = new XMLSerializer();
+                        svgStr = serializer.serializeToString(dom3dSvg);
+                        if (!svgStr.includes('xmlns=')) {
+                            svgStr = svgStr.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+                        }
+                    } catch (serErr) {
+                        console.warn("DOM 3D SVG serialization error:", serErr);
+                    }
+                }
+                if (!svgStr && typeof render3DObjectSVG === 'function') {
+                    svgStr = render3DObjectSVG(obj3d);
                 }
 
-                renderedFaces.forEach(f => {
-                    ctx.beginPath();
-                    f.faceIndices.forEach((idx, i) => {
-                        const pt = transformedVertices[idx];
-                        if (i === 0) ctx.moveTo(pt.px, pt.py);
-                        else ctx.lineTo(pt.px, pt.py);
+                if (svgStr) {
+                    const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+                    const blobUrl = URL.createObjectURL(svgBlob);
+                    const img = new Image();
+                    await new Promise((resolve) => {
+                        img.onload = () => {
+                            ctx.save();
+                            const w = obj3d.width || 220;
+                            const h = obj3d.height || 220;
+                            ctx.translate(obj3d.x || 0, obj3d.y || 0);
+                            if (obj3d.rotation) {
+                                ctx.translate(w / 2, h / 2);
+                                ctx.rotate((obj3d.rotation * Math.PI) / 180);
+                                ctx.translate(-w / 2, -h / 2);
+                            }
+                            ctx.drawImage(img, 0, 0, w, h);
+                            ctx.restore();
+                            URL.revokeObjectURL(blobUrl);
+                            rendered3D = true;
+                            resolve();
+                        };
+                        img.onerror = () => {
+                            URL.revokeObjectURL(blobUrl);
+                            resolve();
+                        };
+                        img.src = blobUrl;
                     });
-                    ctx.closePath();
+                }
 
-                    if (!isWireframe) {
-                        ctx.fillStyle = f.faceFill;
-                        ctx.globalAlpha = f.userOpacity;
-                        ctx.fill();
+                if (!rendered3D) {
+                    const mesh = (obj3d.meshData && obj3d.meshData.vertices && obj3d.meshData.faces)
+                        ? obj3d.meshData
+                        : get3DModelMesh(obj3d.modelType || 'cube');
+                    if (!mesh || !mesh.vertices || !mesh.faces) continue;
+
+                    const rotX = obj3d.rotX ?? -25;
+                    const rotY = obj3d.rotY ?? 45;
+                    const rotZ = obj3d.rotZ ?? 0;
+                    const radX = (rotX * Math.PI) / 180;
+                    const radY = (rotY * Math.PI) / 180;
+                    const radZ = (rotZ * Math.PI) / 180;
+                    const cosX = Math.cos(radX), sinX = Math.sin(radX);
+                    const cosY = Math.cos(radY), sinY = Math.sin(radY);
+                    const cosZ = Math.cos(radZ), sinZ = Math.sin(radZ);
+
+                    let lx = 0.5, ly = -0.7, lz = 0.5;
+                    if (obj3d.lightPreset === 'top') { lx = 0.1; ly = -0.95; lz = 0.3; }
+                    else if (obj3d.lightPreset === 'flat') { lx = 0; ly = 0; lz = 1; }
+
+                    const w = obj3d.width || 220;
+                    const h = obj3d.height || 220;
+
+                    const transformedVertices = mesh.vertices.map(([vx, vy, vz]) => {
+                        let x1 = vx * cosY + vz * sinY;
+                        let y1 = vy;
+                        let z1 = -vx * sinY + vz * cosY;
+
+                        let x2 = x1;
+                        let y2 = y1 * cosX - z1 * sinX;
+                        let z2 = y1 * sinX + z1 * cosX;
+
+                        let x3 = x2 * cosZ - y2 * sinZ;
+                        let y3 = x2 * sinZ + y2 * cosZ;
+                        let z3 = z2;
+
+                        const distance = 4;
+                        const factor = distance / (distance + z3);
+                        const scale = (Math.min(w, h) / 2) * 0.75;
+                        const px = w / 2 + x3 * factor * scale;
+                        const py = h / 2 + y3 * factor * scale;
+                        return { px, py, pz: z3, x3, y3, z3 };
+                    });
+
+                    const baseColor = obj3d.color || mesh.color || '#3b82f6';
+                    const isWireframe = obj3d.materialStyle === 'wireframe' || !!obj3d.wireframeOnly;
+                    const isFlat = obj3d.materialStyle === 'flat';
+                    const userOpacity = obj3d.opacity !== undefined ? obj3d.opacity : 1;
+
+                    const renderedFaces = mesh.faces.map(faceIndices => {
+                        if (faceIndices.length < 3) return null;
+                        const v0 = transformedVertices[faceIndices[0]];
+                        const v1 = transformedVertices[faceIndices[1]];
+                        const v2 = transformedVertices[faceIndices[2]];
+                        if (!v0 || !v1 || !v2) return null;
+
+                        const ax = v1.x3 - v0.x3, ay = v1.y3 - v0.y3, az = v1.z3 - v0.z3;
+                        const bx = v2.x3 - v0.x3, by = v2.y3 - v0.y3, bz = v2.z3 - v0.z3;
+                        const nx = ay * bz - az * by;
+                        const ny = az * bx - ax * bz;
+                        const nz = ax * by - ay * bx;
+                        const len = Math.hypot(nx, ny, nz) || 1;
+                        const nnx = nx / len, nny = ny / len, nnz = nz / len;
+
+                        const dot = nnx * lx + nny * ly + nnz * lz;
+                        const effDot = nnz < 0 ? -dot : dot;
+                        const intensity = isFlat ? 1.0 : Math.max(0.25, Math.min(1.0, effDot));
+                        const avgZ = faceIndices.reduce((sum, idx) => sum + (transformedVertices[idx]?.pz || 0), 0) / faceIndices.length;
+
+                        let faceFill = shadeColor(baseColor, intensity, obj3d.materialStyle);
+                        return { faceIndices, avgZ, faceFill, userOpacity };
+                    }).filter(Boolean);
+
+                    renderedFaces.sort((a, b) => b.avgZ - a.avgZ);
+
+                    ctx.save();
+                    ctx.translate(obj3d.x || 0, obj3d.y || 0);
+                    if (obj3d.rotation) {
+                        ctx.translate(w / 2, h / 2);
+                        ctx.rotate((obj3d.rotation * Math.PI) / 180);
+                        ctx.translate(-w / 2, -h / 2);
                     }
-                    ctx.strokeStyle = baseColor;
-                    ctx.lineWidth = 1;
-                    ctx.globalAlpha = isWireframe ? 0.9 : 0.4;
-                    ctx.stroke();
-                });
 
-                ctx.restore();
+                    renderedFaces.forEach(f => {
+                        ctx.beginPath();
+                        f.faceIndices.forEach((idx, i) => {
+                            const pt = transformedVertices[idx];
+                            if (i === 0) ctx.moveTo(pt.px, pt.py);
+                            else ctx.lineTo(pt.px, pt.py);
+                        });
+                        ctx.closePath();
+
+                        if (!isWireframe) {
+                            ctx.fillStyle = f.faceFill;
+                            ctx.globalAlpha = f.userOpacity;
+                            ctx.fill();
+                        }
+                        ctx.strokeStyle = baseColor;
+                        ctx.lineWidth = 1;
+                        ctx.globalAlpha = isWireframe ? 0.9 : 0.4;
+                        ctx.stroke();
+                    });
+
+                    ctx.restore();
+                }
             } catch (e) {
                 console.error("Failed to render 3D object to screenshot:", e);
             }
-        });
+        }
 
         // 4D. PDF Objects Layer (Document frame, header, title, page indicator, paper body preview)
         const currentPdfObjects = pagePdfObjects[currentPage] || [];
@@ -8322,14 +8453,11 @@ export default function Whiteboard({
             }
         });
 
-        // 5. Draw image objects (asynchronously preloaded to guarantee capture, with rotation, flips, opacity, borders)
+        // 5. Draw image objects (query DOM rendered img first to avoid CORS reload drops, with async fallback)
         if (currentImageObjects.length > 0) {
             await Promise.all(currentImageObjects.map(imgObj => new Promise((resolve) => {
-                const img = new Image();
-                if (imgObj.src && (imgObj.src.startsWith('http://') || imgObj.src.startsWith('https://'))) {
-                    img.crossOrigin = 'anonymous';
-                }
-                const drawImg = () => {
+                const domImg = document.querySelector(`[data-image-id="${imgObj.id}"] img`);
+                const renderImageToCtx = (imgSource) => {
                     try {
                         ctx.save();
                         const centerX = imgObj.x + imgObj.width / 2;
@@ -8348,7 +8476,7 @@ export default function Whiteboard({
                             else ctx.rect(-imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
                             ctx.clip();
                         }
-                        ctx.drawImage(img, -imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
+                        ctx.drawImage(imgSource, -imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
 
                         if (imgObj.borderWidth) {
                             ctx.lineWidth = imgObj.borderWidth;
@@ -8364,25 +8492,21 @@ export default function Whiteboard({
                     }
                     resolve();
                 };
-                img.onload = drawImg;
+
+                if (domImg && domImg.complete && domImg.naturalWidth > 0) {
+                    renderImageToCtx(domImg);
+                    return;
+                }
+
+                const img = new Image();
+                if (imgObj.src && (imgObj.src.startsWith('http://') || imgObj.src.startsWith('https://'))) {
+                    img.crossOrigin = 'anonymous';
+                }
+                img.onload = () => renderImageToCtx(img);
                 img.onerror = () => {
                     if (img.crossOrigin) {
                         const fallbackImg = new Image();
-                        fallbackImg.onload = () => {
-                            try {
-                                ctx.save();
-                                const centerX = imgObj.x + imgObj.width / 2;
-                                const centerY = imgObj.y + imgObj.height / 2;
-                                ctx.translate(centerX, centerY);
-                                ctx.rotate((imgObj.rotation || 0) * Math.PI / 180);
-                                if (imgObj.flipX || imgObj.flipY) {
-                                    ctx.scale(imgObj.flipX ? -1 : 1, imgObj.flipY ? -1 : 1);
-                                }
-                                ctx.drawImage(fallbackImg, -imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
-                                ctx.restore();
-                            } catch (e) {}
-                            resolve();
-                        };
+                        fallbackImg.onload = () => renderImageToCtx(fallbackImg);
                         fallbackImg.onerror = resolve;
                         fallbackImg.src = imgObj.src;
                     } else {
@@ -8391,67 +8515,90 @@ export default function Whiteboard({
                 };
                 img.src = imgObj.src;
                 if (img.complete) {
-                    drawImg();
+                    renderImageToCtx(img);
                 }
             })));
         }
 
-        // 6. Draw text objects
+        // 6. Draw text objects (render with html2canvas for full KaTeX math typesetting support)
         const currentTextObjects = pageTextObjects[currentPage] || [];
-        currentTextObjects.forEach(txtObj => {
+        for (const txtObj of currentTextObjects) {
             ctx.save();
             const centerX = txtObj.x + txtObj.width / 2;
             const centerY = txtObj.y + txtObj.height / 2;
             ctx.translate(centerX, centerY);
             ctx.rotate((txtObj.rotation || 0) * Math.PI / 180);
 
-            // Draw background and border if present
-            const hasBg = txtObj.bgColor && txtObj.bgColor !== 'transparent';
-            const bw = txtObj.borderWidth || 0;
-            if (hasBg || bw > 0) {
-                const rx = -txtObj.width / 2;
-                const ry = -txtObj.height / 2;
-                const rw = txtObj.width;
-                const rh = txtObj.height;
-                const cr = txtObj.borderRadius || 0;
-                ctx.beginPath();
-                if (ctx.roundRect) {
-                    ctx.roundRect(rx, ry, rw, rh, cr);
-                } else {
-                    ctx.rect(rx, ry, rw, rh);
-                }
-                if (hasBg) {
-                    ctx.fillStyle = txtObj.bgColor;
-                    ctx.fill();
-                }
-                if (bw > 0) {
-                    ctx.lineWidth = bw;
-                    ctx.strokeStyle = txtObj.borderColor || '#3b82f6';
-                    if (txtObj.borderStyle === 'dashed') ctx.setLineDash([6, 6]);
-                    else if (txtObj.borderStyle === 'dotted') ctx.setLineDash([3, 3]);
-                    else ctx.setLineDash([]);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
+            let renderedViaCanvas = false;
+            const hasMath = (txtObj.text?.includes('$') || /\\(frac|sqrt|int|sum|prod|lim|alpha|beta|theta|pi|times|div|pm|log|sin|cos|tan)\b|[\^_]/.test(txtObj.text || ''));
+            const domTxt = document.querySelector(`[data-text-id="${txtObj.id}"]`);
+
+            if (hasMath && domTxt) {
+                try {
+                    const textCanvas = await html2canvas(domTxt, {
+                        backgroundColor: null,
+                        scale: 2,
+                        logging: false,
+                        useCORS: true
+                    });
+                    if (textCanvas) {
+                        ctx.drawImage(textCanvas, -txtObj.width / 2, -txtObj.height / 2, txtObj.width, txtObj.height);
+                        renderedViaCanvas = true;
+                    }
+                } catch (tErr) {
+                    console.warn("Failed html2canvas for text math in screenshot:", tErr);
                 }
             }
 
-            ctx.font = `${txtObj.fontStyle || 'normal'} ${txtObj.fontWeight || 'normal'} ${txtObj.fontSize}px ${txtObj.fontFamily || 'sans-serif'}`;
-            ctx.fillStyle = txtObj.color;
-            ctx.textAlign = txtObj.textAlign || 'left';
-            ctx.textBaseline = 'top';
+            if (!renderedViaCanvas) {
+                // Draw background and border if present
+                const hasBg = txtObj.bgColor && txtObj.bgColor !== 'transparent';
+                const bw = txtObj.borderWidth || 0;
+                if (hasBg || bw > 0) {
+                    const rx = -txtObj.width / 2;
+                    const ry = -txtObj.height / 2;
+                    const rw = txtObj.width;
+                    const rh = txtObj.height;
+                    const cr = txtObj.borderRadius || 0;
+                    ctx.beginPath();
+                    if (ctx.roundRect) {
+                        ctx.roundRect(rx, ry, rw, rh, cr);
+                    } else {
+                        ctx.rect(rx, ry, rw, rh);
+                    }
+                    if (hasBg) {
+                        ctx.fillStyle = txtObj.bgColor;
+                        ctx.fill();
+                    }
+                    if (bw > 0) {
+                        ctx.lineWidth = bw;
+                        ctx.strokeStyle = txtObj.borderColor || '#3b82f6';
+                        if (txtObj.borderStyle === 'dashed') ctx.setLineDash([6, 6]);
+                        else if (txtObj.borderStyle === 'dotted') ctx.setLineDash([3, 3]);
+                        else ctx.setLineDash([]);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+                }
 
-            // Handle multi-line text
-            const lines = txtObj.text.split('\n');
-            const lineHeight = txtObj.fontSize * 1.3;
-            const startX = -txtObj.width / 2 + 8; // padding
-            let startY = -txtObj.height / 2 + 8;
+                ctx.font = `${txtObj.fontStyle || 'normal'} ${txtObj.fontWeight || 'normal'} ${txtObj.fontSize}px ${txtObj.fontFamily || 'sans-serif'}`;
+                ctx.fillStyle = txtObj.color;
+                ctx.textAlign = txtObj.textAlign || 'left';
+                ctx.textBaseline = 'top';
 
-            lines.forEach(line => {
-                ctx.fillText(line, startX, startY);
-                startY += lineHeight;
-            });
+                // Handle multi-line text
+                const lines = txtObj.text.split('\n');
+                const lineHeight = txtObj.fontSize * 1.3;
+                const startX = -txtObj.width / 2 + 8; // padding
+                let startY = -txtObj.height / 2 + 8;
+
+                lines.forEach(line => {
+                    ctx.fillText(line, startX, startY);
+                    startY += lineHeight;
+                });
+            }
             ctx.restore();
-        });
+        }
 
         let finalCanvas = exportCanvas;
 
@@ -10494,6 +10641,7 @@ export default function Whiteboard({
                         return (
                             <div key={imgObj.id}>
                                 <div
+                                    data-image-id={imgObj.id}
                                     className="whiteboard-image-item absolute select-none"
                                     style={{
                                         left: imgObj.x,
@@ -10887,11 +11035,11 @@ export default function Whiteboard({
                                         onPointerDown={(e) => e.stopPropagation()}
                                     >
                                         {/* Image Quick Actions Toolbar */}
-                                        <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2.5 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity">
+                                        <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity">
                                             <button
                                                 type="button"
                                                 onClick={() => updateSelectedImageFilters({ flipX: !imgObj.flipX })}
-                                                className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${imgObj.flipX ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}
+                                                className={`p-1 rounded-full flex items-center justify-center transition ${imgObj.flipX ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
                                                 title="Flip Horizontally"
                                             >
                                                 <FlipHorizontal className="w-3.5 h-3.5" />
@@ -10899,7 +11047,7 @@ export default function Whiteboard({
                                             <button
                                                 type="button"
                                                 onClick={() => updateSelectedImageFilters({ flipY: !imgObj.flipY })}
-                                                className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${imgObj.flipY ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}
+                                                className={`p-1 rounded-full flex items-center justify-center transition ${imgObj.flipY ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
                                                 title="Flip Vertically"
                                             >
                                                 <FlipVertical className="w-3.5 h-3.5" />
@@ -10910,14 +11058,15 @@ export default function Whiteboard({
                                                 type="button"
                                                 disabled={removingBgImageId === imgObj.id}
                                                 onClick={() => handleRemoveImageBackground(imgObj)}
-                                                className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${removingBgImageId === imgObj.id ? 'opacity-50 cursor-not-allowed bg-slate-800 text-slate-400' : 'text-indigo-400 hover:text-white hover:bg-white/10'}`}
+                                                className={`p-1 rounded-full flex items-center justify-center transition ${removingBgImageId === imgObj.id ? 'opacity-50 cursor-not-allowed bg-slate-800 text-slate-400' : 'text-indigo-400 hover:text-white hover:bg-slate-800'}`}
                                                 title={removingBgImageId === imgObj.id ? 'Processing background removal...' : 'Remove Image Background (Make Transparent)'}
                                             >
                                                 <Wand2 className={`w-3.5 h-3.5 ${removingBgImageId === imgObj.id ? 'animate-spin' : ''}`} />
                                             </button>
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
                                             {/* Quick Border Color Picker */}
-                                            <div className="flex items-center gap-1" title="Border Color (sets 2px border if none)">
+                                            <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Border Color (sets 2px border if none)">
+                                                <div className="w-full h-full" style={{ backgroundColor: imgObj.borderColor || '#3b82f6' }} />
                                                 <input
                                                     type="color"
                                                     value={imgObj.borderColor || '#3b82f6'}
@@ -10928,7 +11077,7 @@ export default function Whiteboard({
                                                             borderWidth: imgObj.borderWidth ? imgObj.borderWidth : 2
                                                         });
                                                     }}
-                                                    className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
+                                                    className="absolute inset-[-10px] w-10 h-10 opacity-0 cursor-pointer"
                                                     title="Border Color (sets 2px border if none)"
                                                 />
                                             </div>
@@ -10936,7 +11085,7 @@ export default function Whiteboard({
                                             <button
                                                 type="button"
                                                 onClick={() => setShowImageAdjustModal(prev => !prev)}
-                                                className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showImageAdjustModal || (imgObj.brightness && imgObj.brightness !== 100) || (imgObj.contrast && imgObj.contrast !== 100) || (imgObj.sharpness && imgObj.sharpness > 0) || imgObj.borderWidth ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}
+                                                className={`p-1 rounded-full flex items-center justify-center transition ${showImageAdjustModal || (imgObj.brightness && imgObj.brightness !== 100) || (imgObj.contrast && imgObj.contrast !== 100) || (imgObj.sharpness && imgObj.sharpness > 0) || imgObj.borderWidth ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
                                                 title="Adjust Image Quality, Borders & Filters"
                                             >
                                                 <Sliders className="w-3.5 h-3.5" />
@@ -11246,6 +11395,7 @@ export default function Whiteboard({
                         return (
                             <div key={txtObj.id}>
                                 <div
+                                    data-text-id={txtObj.id}
                                     className="whiteboard-text-item absolute"
                                     style={{
                                         left: txtObj.x,
@@ -11629,12 +11779,12 @@ export default function Whiteboard({
                                         onPointerDown={(e) => e.stopPropagation()}
                                     >
                                         {/* Floating Toolbar Pill */}
-                                        <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2.5 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity">
+                                        <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity">
                                             {/* Font Family */}
                                             <select
                                                 value={txtObj.fontFamily || 'sans-serif'}
                                                 onChange={(e) => updateSelectedTextProps({ fontFamily: e.target.value })}
-                                                className="bg-slate-800 text-[11px] text-white rounded px-1.5 py-1 border border-slate-700 outline-none cursor-pointer hover:bg-slate-750 transition"
+                                                className="h-6 bg-slate-800 text-[10px] text-white rounded-lg px-1.5 py-0.5 border border-slate-700 outline-none cursor-pointer hover:bg-slate-750 transition"
                                                 title="Font Family"
                                             >
                                                 <option value="sans-serif">Sans-serif</option>
@@ -11647,22 +11797,22 @@ export default function Whiteboard({
                                             </select>
 
                                             {/* Font Size +/- */}
-                                            <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-1 py-0.5">
+                                            <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 px-1 py-0.5 h-6">
                                                 <button
                                                     type="button"
                                                     onClick={() => updateSelectedTextProps({ fontSize: Math.max(8, (txtObj.fontSize || 20) - 2) })}
-                                                    className="w-4 h-5 flex items-center justify-center text-xs text-slate-300 hover:text-white hover:bg-slate-700 rounded transition font-bold"
+                                                    className="w-4 h-4 flex items-center justify-center text-xs text-slate-300 hover:text-white hover:bg-slate-700 rounded transition font-bold"
                                                     title="Decrease Font Size"
                                                 >
                                                     -
                                                 </button>
-                                                <span className="text-[11px] font-mono text-white px-1 select-none min-w-[20px] text-center">
+                                                <span className="text-[10px] font-mono text-white px-1 select-none min-w-[18px] text-center">
                                                     {txtObj.fontSize || 20}
                                                 </span>
                                                 <button
                                                     type="button"
                                                     onClick={() => updateSelectedTextProps({ fontSize: Math.min(120, (txtObj.fontSize || 20) + 2) })}
-                                                    className="w-4 h-5 flex items-center justify-center text-xs text-slate-300 hover:text-white hover:bg-slate-700 rounded transition font-bold"
+                                                    className="w-4 h-4 flex items-center justify-center text-xs text-slate-300 hover:text-white hover:bg-slate-700 rounded transition font-bold"
                                                     title="Increase Font Size"
                                                 >
                                                     +
@@ -11675,7 +11825,7 @@ export default function Whiteboard({
                                             <button
                                                 type="button"
                                                 onClick={() => updateSelectedTextProps({ fontWeight: txtObj.fontWeight === 'bold' ? 'normal' : 'bold' })}
-                                                className={`w-6 h-6 flex items-center justify-center rounded text-xs font-bold transition ${txtObj.fontWeight === 'bold' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                className={`p-1 rounded-full flex items-center justify-center transition ${txtObj.fontWeight === 'bold' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                                                 title="Bold"
                                             >
                                                 <Bold className="w-3.5 h-3.5" />
@@ -11683,7 +11833,7 @@ export default function Whiteboard({
                                             <button
                                                 type="button"
                                                 onClick={() => updateSelectedTextProps({ fontStyle: txtObj.fontStyle === 'italic' ? 'normal' : 'italic' })}
-                                                className={`w-6 h-6 flex items-center justify-center rounded text-xs italic font-serif transition ${txtObj.fontStyle === 'italic' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                className={`p-1 rounded-full flex items-center justify-center transition ${txtObj.fontStyle === 'italic' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                                                 title="Italic"
                                             >
                                                 <Italic className="w-3.5 h-3.5" />
@@ -11691,7 +11841,7 @@ export default function Whiteboard({
                                             <button
                                                 type="button"
                                                 onClick={() => updateSelectedTextProps({ textDecoration: txtObj.textDecoration === 'underline' ? 'none' : 'underline' })}
-                                                className={`w-6 h-6 flex items-center justify-center rounded text-xs transition ${txtObj.textDecoration === 'underline' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                className={`p-1 rounded-full flex items-center justify-center transition ${txtObj.textDecoration === 'underline' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                                                 title="Underline"
                                             >
                                                 <Underline className="w-3.5 h-3.5" />
@@ -11700,11 +11850,11 @@ export default function Whiteboard({
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                                             {/* Alignment */}
-                                            <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5">
+                                            <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 p-0.5 h-6">
                                                 <button
                                                     type="button"
                                                     onClick={() => updateSelectedTextProps({ textAlign: 'left' })}
-                                                    className={`w-5 h-5 flex items-center justify-center rounded transition ${(txtObj.textAlign || 'left') === 'left' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                    className={`w-5 h-5 flex items-center justify-center rounded-full transition ${(txtObj.textAlign || 'left') === 'left' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                                     title="Align Left"
                                                 >
                                                     <AlignLeft className="w-3 h-3" />
@@ -11712,7 +11862,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => updateSelectedTextProps({ textAlign: 'center' })}
-                                                    className={`w-5 h-5 flex items-center justify-center rounded transition ${txtObj.textAlign === 'center' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                    className={`w-5 h-5 flex items-center justify-center rounded-full transition ${txtObj.textAlign === 'center' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                                     title="Align Center"
                                                 >
                                                     <AlignCenterHorizontal className="w-3 h-3" />
@@ -11720,7 +11870,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => updateSelectedTextProps({ textAlign: 'right' })}
-                                                    className={`w-5 h-5 flex items-center justify-center rounded transition ${txtObj.textAlign === 'right' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                    className={`w-5 h-5 flex items-center justify-center rounded-full transition ${txtObj.textAlign === 'right' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                                     title="Align Right"
                                                 >
                                                     <AlignRight className="w-3 h-3" />
@@ -11730,21 +11880,21 @@ export default function Whiteboard({
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                                             {/* Text Color */}
-                                            <div className="relative w-6 h-6 flex flex-col items-center justify-center rounded hover:bg-slate-800 border border-slate-700 cursor-pointer overflow-hidden" title="Text Color">
-                                                <span className="font-bold text-[12px] leading-none select-none text-slate-200 mt-0.5">A</span>
-                                                <div className="w-3.5 h-1 mt-[1px] rounded-xs" style={{ backgroundColor: txtObj.color || '#000000' }} />
+                                            <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex flex-col items-center justify-center hover:scale-105 transition" title="Text Color">
+                                                <span className="font-bold text-[11px] leading-none select-none text-slate-200">A</span>
+                                                <div className="w-3 h-0.5 mt-[0.5px] rounded-xs" style={{ backgroundColor: txtObj.color || '#000000' }} />
                                                 <input
                                                     type="color"
                                                     value={txtObj.color || '#000000'}
                                                     onChange={(e) => updateSelectedTextProps({ color: e.target.value })}
-                                                    className="absolute inset-[-10px] w-12 h-12 opacity-0 cursor-pointer"
+                                                    className="absolute inset-[-10px] w-10 h-10 opacity-0 cursor-pointer"
                                                     title="Change Text Color"
                                                 />
                                             </div>
 
                                             {/* Background Color */}
-                                            <div className="relative w-6 h-6 flex items-center justify-center rounded hover:bg-slate-800 border border-slate-700 cursor-pointer overflow-hidden" title="Background Fill">
-                                                <div className="w-3.5 h-3.5 rounded-xs border border-slate-500 flex items-center justify-center" style={{ backgroundColor: txtObj.bgColor || 'transparent' }}>
+                                            <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Background Fill">
+                                                <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: txtObj.bgColor && txtObj.bgColor !== 'transparent' ? txtObj.bgColor : 'transparent' }}>
                                                     {(!txtObj.bgColor || txtObj.bgColor === 'transparent') && (
                                                         <span className="text-[7px] text-slate-400 leading-none">✕</span>
                                                     )}
@@ -11753,7 +11903,7 @@ export default function Whiteboard({
                                                     type="color"
                                                     value={txtObj.bgColor && txtObj.bgColor !== 'transparent' ? txtObj.bgColor : '#ffffff'}
                                                     onChange={(e) => updateSelectedTextProps({ bgColor: e.target.value })}
-                                                    className="absolute inset-[-10px] w-12 h-12 opacity-0 cursor-pointer"
+                                                    className="absolute inset-[-10px] w-10 h-10 opacity-0 cursor-pointer"
                                                     title="Change Background Color"
                                                 />
                                             </div>
@@ -11761,7 +11911,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => updateSelectedTextProps({ bgColor: 'transparent' })}
-                                                    className="w-4 h-5 flex items-center justify-center text-[10px] text-slate-400 hover:text-white rounded hover:bg-slate-800"
+                                                    className="w-4 h-4 flex items-center justify-center text-[10px] text-slate-400 hover:text-white rounded-full hover:bg-slate-800"
                                                     title="Clear Background"
                                                 >
                                                     ✕
@@ -11770,11 +11920,11 @@ export default function Whiteboard({
 
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
-                                            {/* Border & Frame Popover Toggle (Icon Only) */}
+                                            {/* Border & Frame Popover Toggle */}
                                             <button
                                                 type="button"
                                                 onClick={() => setActiveTextBorderPopoverId(prev => prev === txtObj.id ? null : txtObj.id)}
-                                                className={`w-6 h-6 flex items-center justify-center rounded transition ${activeTextBorderPopoverId === txtObj.id || (txtObj.borderWidth || 0) > 0 ? 'bg-indigo-600 text-white font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                                                className={`p-1 rounded-full flex items-center justify-center transition ${activeTextBorderPopoverId === txtObj.id || (txtObj.borderWidth || 0) > 0 ? 'bg-indigo-600 text-white font-bold shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
                                                 title={`Border & Frame Settings${(txtObj.borderWidth || 0) > 0 ? ` (${txtObj.borderWidth}px)` : ''}`}
                                             >
                                                 <Square className="w-3.5 h-3.5" />
@@ -11790,7 +11940,7 @@ export default function Whiteboard({
                                                     setEquationInitialLatex('\\int_{0}^{\\infty} x^2 e^{-x}\\,dx = 2');
                                                     setShowEquationModal(true);
                                                 }}
-                                                className="w-6 h-6 flex items-center justify-center rounded transition text-slate-300 hover:text-white hover:bg-slate-800"
+                                                className="p-1 rounded-full flex items-center justify-center transition text-slate-300 hover:text-white hover:bg-slate-800"
                                                 title="Insert Math Equation (LaTeX Editor)"
                                             >
                                                 <Calculator className="w-3.5 h-3.5" />
@@ -11807,17 +11957,17 @@ export default function Whiteboard({
                                                     });
                                                     setShowMathKeyboard(prev => !prev);
                                                 }}
-                                                className={`w-6 h-6 flex items-center justify-center rounded text-xs font-serif font-bold transition ${showMathKeyboard ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                                                className={`p-1 rounded-full flex items-center justify-center text-xs font-serif font-bold transition ${showMathKeyboard ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
                                                 title="Math Symbols & Greek Letters (Virtual Keyboard)"
                                             >
-                                                Σ
+                                                <span className="w-3.5 h-3.5 flex items-center justify-center leading-none">Σ</span>
                                             </button>
 
                                             {/* Windows Math Input Tablet */}
                                             <button
                                                 type="button"
                                                 onClick={() => setShowMathTablet(true)}
-                                                className={`w-6 h-6 flex items-center justify-center rounded transition ${showMathTablet ? 'bg-amber-600 text-white shadow-sm ring-1 ring-amber-400' : 'text-amber-400 hover:text-amber-300 hover:bg-slate-800'}`}
+                                                className={`p-1 rounded-full flex items-center justify-center transition ${showMathTablet ? 'bg-amber-600 text-white shadow ring-1 ring-amber-400' : 'text-amber-400 hover:text-amber-300 hover:bg-slate-800'}`}
                                                 title="Math Input Tablet (Handwrite Math with Pencil/Stylus)"
                                             >
                                                 <Pencil className="w-3.5 h-3.5" />
@@ -11828,7 +11978,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => setShowTextLayersPopover(prev => prev === txtObj.id ? null : txtObj.id)}
-                                                    className={`w-6 h-6 flex items-center justify-center rounded transition ${showTextLayersPopover === txtObj.id ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                                                    className={`p-1 rounded-full flex items-center justify-center transition ${showTextLayersPopover === txtObj.id ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
                                                     title="Layer Order"
                                                 >
                                                     <Layers className="w-3.5 h-3.5" />
@@ -11877,10 +12027,10 @@ export default function Whiteboard({
                                             <button
                                                 type="button"
                                                 onClick={() => updateSelectedTextProps({ isLocked: !txtObj.isLocked })}
-                                                className={`w-6 h-6 flex items-center justify-center rounded transition ${txtObj.isLocked ? 'text-amber-400 bg-amber-500/20' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
+                                                className={`p-1 rounded-full flex items-center justify-center transition ${txtObj.isLocked ? 'text-amber-400 bg-amber-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
                                                 title={txtObj.isLocked ? 'Unlock Text' : 'Lock Text'}
                                             >
-                                                {txtObj.isLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                                                {txtObj.isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
                                             </button>
 
                                             {/* Delete */}
@@ -11891,10 +12041,10 @@ export default function Whiteboard({
                                                     setSelectedTextIds([]);
                                                     saveToHistory();
                                                 }}
-                                                className="w-6 h-6 flex items-center justify-center rounded text-red-400 hover:text-red-300 hover:bg-red-500/20 transition"
+                                                className="p-1 rounded-full flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-red-500/20 transition"
                                                 title="Delete Text"
                                             >
-                                                <Trash2 className="w-3 h-3" />
+                                                <Trash2 className="w-3.5 h-3.5" />
                                             </button>
                                         </div>
 
@@ -13558,11 +13708,11 @@ export default function Whiteboard({
                                     onMouseDown={(e) => e.stopPropagation()}
                                     onPointerDown={(e) => e.stopPropagation()}
                                 >
-                                    <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2.5 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity animate-in fade-in zoom-in-95 duration-100">
+                                    <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity animate-in fade-in zoom-in-95 duration-100">
                                         {isLineLike ? (
                                             <>
                                                 {/* Line Color */}
-                                                <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Line Color">
+                                                <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Line Color">
                                                     <div className="w-full h-full" style={{ backgroundColor: shpObj.color || '#000000' }} />
                                                     <input
                                                         type="color"
@@ -13574,11 +13724,11 @@ export default function Whiteboard({
                                                 </div>
 
                                                 {/* Stroke Width */}
-                                                <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-1 py-0.5" title="Line Width">
+                                                <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 px-1 py-0.5 h-6" title="Line Width">
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeWidth: Math.max(1, (s.strokeWidth || 2) - 1) } : s))}
-                                                        className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                                        className="w-4 h-4 flex items-center justify-center text-xs text-slate-300 hover:text-white font-bold"
                                                         title="Decrease Width"
                                                     >
                                                         -
@@ -13589,57 +13739,57 @@ export default function Whiteboard({
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeWidth: Math.min(30, (s.strokeWidth || 2) + 1) } : s))}
-                                                        className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                                        className="w-4 h-4 flex items-center justify-center text-xs text-slate-300 hover:text-white font-bold"
                                                         title="Increase Width"
                                                     >
                                                         +
                                                     </button>
                                                 </div>
 
-                                                <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                                                <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                                                 {/* Dash Style */}
-                                                <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60" title="Dash Style">
+                                                <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60 h-6" title="Dash Style">
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeStyle: 'solid' } : s))}
-                                                        className={`px-1.5 py-1 rounded transition ${shpObj.strokeStyle === 'solid' || !shpObj.strokeStyle ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        className={`px-1.5 py-0.5 rounded text-[10px] transition ${shpObj.strokeStyle === 'solid' || !shpObj.strokeStyle ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                                         title="Solid Line"
                                                     >
-                                                        <svg className="w-4 h-2" viewBox="0 0 20 6" fill="none">
+                                                        <svg className="w-3.5 h-2" viewBox="0 0 20 6" fill="none">
                                                             <line x1="1" y1="3" x2="19" y2="3" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
                                                         </svg>
                                                     </button>
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeStyle: 'dashed' } : s))}
-                                                        className={`px-1.5 py-1 rounded transition ${shpObj.strokeStyle === 'dashed' || shpObj.type === 'dashed_line' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        className={`px-1.5 py-0.5 rounded text-[10px] transition ${shpObj.strokeStyle === 'dashed' || shpObj.type === 'dashed_line' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                                         title="Dashed Line"
                                                     >
-                                                        <svg className="w-4 h-2" viewBox="0 0 20 6" fill="none">
+                                                        <svg className="w-3.5 h-2" viewBox="0 0 20 6" fill="none">
                                                             <line x1="1" y1="3" x2="19" y2="3" stroke="currentColor" strokeWidth="2.5" strokeDasharray="4,3" strokeLinecap="round" />
                                                         </svg>
                                                     </button>
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeStyle: 'dotted' } : s))}
-                                                        className={`px-1.5 py-1 rounded transition ${shpObj.strokeStyle === 'dotted' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        className={`px-1.5 py-0.5 rounded text-[10px] transition ${shpObj.strokeStyle === 'dotted' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                                         title="Dotted Line"
                                                     >
-                                                        <svg className="w-4 h-2" viewBox="0 0 20 6" fill="none">
+                                                        <svg className="w-3.5 h-2" viewBox="0 0 20 6" fill="none">
                                                             <line x1="1" y1="3" x2="19" y2="3" stroke="currentColor" strokeWidth="2.5" strokeDasharray="2,3" strokeLinecap="round" />
                                                         </svg>
                                                     </button>
                                                 </div>
 
-                                                <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                                                <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                                                 {/* Arrow Ends */}
-                                                <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60" title="Arrow Ends">
+                                                <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60 h-6" title="Arrow Ends">
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, type: 'line', arrowStart: 'none', arrowEnd: 'none' } : s))}
-                                                        className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition ${shpObj.type === 'line' || shpObj.type === 'dashed_line' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${shpObj.type === 'line' || shpObj.type === 'dashed_line' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                                         title="Plain Line"
                                                     >
                                                         —
@@ -13647,7 +13797,7 @@ export default function Whiteboard({
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, type: 'arrow', arrowStart: 'none', arrowEnd: 'arrow' } : s))}
-                                                        className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition ${shpObj.type === 'arrow' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${shpObj.type === 'arrow' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                                         title="Arrow End"
                                                     >
                                                         →
@@ -13655,7 +13805,7 @@ export default function Whiteboard({
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, type: 'double_arrow', arrowStart: 'arrow', arrowEnd: 'arrow' } : s))}
-                                                        className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition ${shpObj.type === 'double_arrow' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${shpObj.type === 'double_arrow' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                                         title="Double Arrow"
                                                     >
                                                         ↔
@@ -13665,7 +13815,7 @@ export default function Whiteboard({
                                         ) : (
                                             <>
                                                 {/* Stroke / Border Color */}
-                                                <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Border Color">
+                                                <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Border Color">
                                                     <div className="w-full h-full" style={{ backgroundColor: shpObj.color || '#000000' }} />
                                                     <input
                                                         type="color"
@@ -13677,7 +13827,7 @@ export default function Whiteboard({
                                                 </div>
 
                                                 {/* Fill Color + Transparent Toggle */}
-                                                <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Fill Color">
+                                                <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Fill Color">
                                                     <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: shpObj.fillColor && shpObj.fillColor !== 'transparent' ? shpObj.fillColor : 'transparent' }}>
                                                         {(!shpObj.fillColor || shpObj.fillColor === 'transparent') && (
                                                             <span className="text-[7px] text-slate-400 leading-none">✕</span>
@@ -13694,18 +13844,18 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fillColor: 'transparent' } : s))}
-                                                    className="w-4 h-4 flex items-center justify-center rounded hover:bg-slate-800 text-[10px] text-slate-400 hover:text-white"
+                                                    className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-slate-800 text-[10px] text-slate-400 hover:text-white"
                                                     title="No Fill"
                                                 >
                                                     <X size={11} />
                                                 </button>
 
                                                 {/* Stroke Width */}
-                                                <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-1 py-0.5" title="Stroke Width">
+                                                <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 px-1 py-0.5 h-6" title="Stroke Width">
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeWidth: Math.max(1, (s.strokeWidth || 2) - 1) } : s))}
-                                                        className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                                        className="w-4 h-4 flex items-center justify-center text-xs text-slate-300 hover:text-white font-bold"
                                                         title="Decrease Stroke Width"
                                                     >
                                                         -
@@ -13716,7 +13866,7 @@ export default function Whiteboard({
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeWidth: Math.min(30, (s.strokeWidth || 2) + 1) } : s))}
-                                                        className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                                        className="w-4 h-4 flex items-center justify-center text-xs text-slate-300 hover:text-white font-bold"
                                                         title="Increase Stroke Width"
                                                     >
                                                         +
@@ -13724,7 +13874,7 @@ export default function Whiteboard({
                                                 </div>
 
                                                 {/* Border Line Style: Solid, Dashed, Dotted, Double */}
-                                                <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5" title="Border Style">
+                                                <div className="flex items-center bg-slate-800/90 rounded-lg border border-slate-700/60 p-0.5 h-6" title="Border Style">
                                                     {[
                                                         { id: 'solid', label: 'Solid Border', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" /> },
                                                         { id: 'dashed', label: 'Dashed Border', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" strokeDasharray="5,3" /> },
@@ -13735,20 +13885,20 @@ export default function Whiteboard({
                                                             key={b.id}
                                                             type="button"
                                                             onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, borderStyle: b.id } : s))}
-                                                            className={`px-1.5 py-1 rounded transition ${(shpObj.borderStyle || 'solid') === b.id ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-slate-700/60'}`}
+                                                            className={`px-1 py-0.5 rounded text-[10px] transition ${(shpObj.borderStyle || 'solid') === b.id ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-slate-700/60'}`}
                                                             title={b.label}
                                                         >
-                                                            <svg className="w-4 h-2.5" viewBox="0 0 24 10" fill="none">{b.icon}</svg>
+                                                            <svg className="w-3.5 h-2" viewBox="0 0 24 10" fill="none">{b.icon}</svg>
                                                         </button>
                                                     ))}
                                                 </div>
 
                                                 {/* Shape Text Controls */}
-                                                <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                                                <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
-                                                <div className="relative w-5 h-5 flex flex-col items-center justify-center rounded hover:bg-slate-800 border border-slate-700 cursor-pointer overflow-hidden" title="Text Color">
-                                                    <span className="font-bold text-[11px] leading-none select-none text-slate-200 mt-0.5">A</span>
-                                                    <div className="w-3 h-0.5 mt-[1px] rounded-xs" style={{ backgroundColor: shpObj.textColor || shpObj.color || '#000000' }} />
+                                                <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex flex-col items-center justify-center hover:scale-105 transition" title="Text Color">
+                                                    <span className="font-bold text-[11px] leading-none select-none text-slate-200">A</span>
+                                                    <div className="w-3 h-0.5 mt-[0.5px] rounded-xs" style={{ backgroundColor: shpObj.textColor || shpObj.color || '#000000' }} />
                                                     <input
                                                         type="color"
                                                         value={shpObj.textColor || shpObj.color || '#000000'}
@@ -13758,11 +13908,11 @@ export default function Whiteboard({
                                                     />
                                                 </div>
 
-                                                <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-1 py-0.5" title="Font Size">
+                                                <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 px-1 py-0.5 h-6" title="Font Size">
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontSize: Math.max(10, (s.fontSize || 18) - 2) } : s))}
-                                                        className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                                        className="w-4 h-4 flex items-center justify-center text-xs text-slate-300 hover:text-white font-bold"
                                                         title="Decrease Font Size"
                                                     >
                                                         -
@@ -13773,7 +13923,7 @@ export default function Whiteboard({
                                                     <button
                                                         type="button"
                                                         onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontSize: Math.min(80, (s.fontSize || 18) + 2) } : s))}
-                                                        className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                                        className="w-4 h-4 flex items-center justify-center text-xs text-slate-300 hover:text-white font-bold"
                                                         title="Increase Font Size"
                                                     >
                                                         +
@@ -13783,7 +13933,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontWeight: s.fontWeight === 'bold' ? 'normal' : 'bold' } : s))}
-                                                    className={`w-5 h-5 flex items-center justify-center rounded text-xs font-bold transition ${shpObj.fontWeight === 'bold' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                    className={`w-5 h-5 flex items-center justify-center rounded-full text-xs font-bold transition ${shpObj.fontWeight === 'bold' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                                                     title="Bold"
                                                 >
                                                     B
@@ -13791,7 +13941,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontStyle: s.fontStyle === 'italic' ? 'normal' : 'italic' } : s))}
-                                                    className={`w-5 h-5 flex items-center justify-center rounded text-xs italic font-serif transition ${shpObj.fontStyle === 'italic' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                    className={`w-5 h-5 flex items-center justify-center rounded-full text-xs italic font-serif transition ${shpObj.fontStyle === 'italic' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                                                     title="Italic"
                                                 >
                                                     I
@@ -13799,7 +13949,7 @@ export default function Whiteboard({
                                             </>
                                         )}
 
-                                        <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                                        <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                                         {/* If equation shape, show equation editor button and math virtual keyboard button */}
                                         {shpObj.type === 'equation' && (
@@ -13811,7 +13961,7 @@ export default function Whiteboard({
                                                         setEquationInitialLatex(shpObj.latex || '');
                                                         setShowEquationModal(true);
                                                     }}
-                                                    className="px-2 py-0.5 rounded text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1 transition shadow-sm"
+                                                    className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1 transition shadow-sm h-6"
                                                     title="Open Full Equation Editor"
                                                 >
                                                     <Calculator size={12} />
@@ -13827,15 +13977,15 @@ export default function Whiteboard({
                                                         });
                                                         setShowMathKeyboard(prev => !prev);
                                                     }}
-                                                    className={`w-6 h-6 flex items-center justify-center rounded text-xs font-serif font-bold transition ${showMathKeyboard ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                                                    className={`p-1 rounded-full flex items-center justify-center text-xs font-serif font-bold transition ${showMathKeyboard ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
                                                     title="Math Virtual Keyboard"
                                                 >
-                                                    Σ
+                                                    <span className="w-3.5 h-3.5 flex items-center justify-center leading-none">Σ</span>
                                                 </button>
                                                 <button
                                                     type="button"
                                                     onClick={() => setShowMathTablet(true)}
-                                                    className={`px-2 py-0.5 rounded text-xs font-semibold flex items-center gap-1 transition shadow-sm ${
+                                                    className={`px-2 py-0.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition shadow-sm h-6 ${
                                                         showMathTablet 
                                                             ? 'bg-amber-600 text-white ring-1 ring-amber-400' 
                                                             : 'bg-amber-600/80 hover:bg-amber-600 text-white'
@@ -13854,13 +14004,13 @@ export default function Whiteboard({
                                                 type="button"
                                                 onClick={() => handleConvertSelectedInkToText([shpObj.id])}
                                                 disabled={isConvertingInk}
-                                                className="px-2 py-0.5 rounded text-xs font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center gap-1.5 transition shadow-sm"
+                                                className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center gap-1.5 transition shadow-sm h-6"
                                                 title="Convert handwritten ink stroke(s) to typed text or rendered math equation"
                                             >
                                                 {isConvertingInk ? (
-                                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                                 ) : (
-                                                    <Sparkles className="w-3 h-3 text-amber-300" />
+                                                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                                                 )}
                                                 <span>{isConvertingInk ? 'Converting...' : 'Convert to Text / Math'}</span>
                                             </button>
@@ -13872,10 +14022,10 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => setReplaceShapePopoverId(prev => prev === shpObj.id ? null : shpObj.id)}
-                                                    className={`p-1 rounded transition ${replaceShapePopoverId === shpObj.id ? 'bg-primary-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                    className={`p-1 rounded-full transition flex items-center justify-center ${replaceShapePopoverId === shpObj.id ? 'bg-primary-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                                                     title="Replace Shape"
                                                 >
-                                                    <Shapes size={13} />
+                                                    <Shapes className="w-3.5 h-3.5" />
                                                 </button>
                                                 {replaceShapePopoverId === shpObj.id && (
                                                     <div
@@ -13928,20 +14078,20 @@ export default function Whiteboard({
                                         <button
                                             type="button"
                                             onClick={() => handleToggleLock()}
-                                            className={`p-1 rounded transition ${shpObj.isLocked ? 'text-amber-400 bg-amber-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                                            className={`p-1 rounded-full transition flex items-center justify-center ${shpObj.isLocked ? 'text-amber-400 bg-amber-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
                                             title={shpObj.isLocked ? "Unlock Shape" : "Lock Shape"}
                                         >
-                                            {shpObj.isLocked ? <Lock size={13} /> : <Unlock size={13} />}
+                                            {shpObj.isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
                                         </button>
 
                                         {/* Delete */}
                                         <button
                                             type="button"
                                             onClick={handleDelete}
-                                            className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded transition"
+                                            className="p-1 rounded-full text-slate-400 hover:text-red-400 hover:bg-red-500/20 transition flex items-center justify-center"
                                             title="Delete Shape"
                                         >
-                                            <Trash2 size={13} />
+                                            <Trash2 className="w-3.5 h-3.5" />
                                         </button>
                                     </div>
                                 </div>
@@ -13981,16 +14131,16 @@ export default function Whiteboard({
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onPointerDown={(e) => e.stopPropagation()}
                             >
-                                <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2.5 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity animate-in fade-in zoom-in-95 duration-100">
-                                    <div className="flex items-center gap-1 px-1 text-slate-400" title={`${selectedShapes.length} shapes selected`}>
-                                        <Shapes size={13} className="text-primary-400" />
-                                        <span className="text-[10px] font-mono text-slate-300 font-bold">{selectedShapes.length}</span>
+                                <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity animate-in fade-in zoom-in-95 duration-100">
+                                    <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-950/60 border border-sky-800/60 text-sky-400 font-mono text-[10px] font-bold" title={`${selectedShapes.length} shapes selected`}>
+                                        <Shapes className="w-3 h-3 text-sky-400" />
+                                        <span>{selectedShapes.length}</span>
                                     </div>
 
-                                    <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                                     {/* Border Color */}
-                                    <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Border Color (All)">
+                                    <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Border Color (All)">
                                         <div className="w-full h-full" style={{ backgroundColor: selectedShapes[0]?.color || '#000000' }} />
                                         <input
                                             type="color"
@@ -14002,7 +14152,7 @@ export default function Whiteboard({
                                     </div>
 
                                     {/* Fill Color */}
-                                    <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Fill Color (All)">
+                                    <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Fill Color (All)">
                                         <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: selectedShapes[0]?.fillColor && selectedShapes[0]?.fillColor !== 'transparent' ? selectedShapes[0].fillColor : 'transparent' }}>
                                             {(!selectedShapes[0]?.fillColor || selectedShapes[0]?.fillColor === 'transparent') && (
                                                 <span className="text-[7px] text-slate-400 leading-none">✕</span>
@@ -14019,18 +14169,18 @@ export default function Whiteboard({
                                     <button
                                         type="button"
                                         onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: 'transparent' } : s))}
-                                        className="w-4 h-4 flex items-center justify-center rounded hover:bg-slate-800 text-[10px] text-slate-400 hover:text-white"
+                                        className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-slate-800 text-[10px] text-slate-400 hover:text-white"
                                         title="No Fill (All)"
                                     >
                                         <X size={11} />
                                     </button>
 
                                     {/* Stroke Width */}
-                                    <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-1 py-0.5" title="Stroke Width (All)">
+                                    <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 px-1 py-0.5 h-6" title="Stroke Width (All)">
                                         <button
                                             type="button"
                                             onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, strokeWidth: Math.max(1, (s.strokeWidth || 2) - 1) } : s))}
-                                            className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                            className="w-4 h-4 flex items-center justify-center text-xs text-slate-300 hover:text-white font-bold"
                                             title="Decrease Stroke Width"
                                         >
                                             -
@@ -14041,7 +14191,7 @@ export default function Whiteboard({
                                         <button
                                             type="button"
                                             onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, strokeWidth: Math.min(30, (s.strokeWidth || 2) + 1) } : s))}
-                                            className="w-3.5 h-4 flex items-center justify-center text-[11px] text-slate-300 hover:text-white font-bold"
+                                            className="w-4 h-4 flex items-center justify-center text-xs text-slate-300 hover:text-white font-bold"
                                             title="Increase Stroke Width"
                                         >
                                             +
@@ -14049,7 +14199,7 @@ export default function Whiteboard({
                                     </div>
 
                                     {/* Multi-Shape Border Style */}
-                                    <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5" title="Border Style (All)">
+                                    <div className="flex items-center bg-slate-800/90 rounded-lg border border-slate-700/60 p-0.5 h-6" title="Border Style (All)">
                                         {[
                                             { id: 'solid', label: 'Solid Border', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" /> },
                                             { id: 'dashed', label: 'Dashed Border', icon: <line x1="2" y1="5" x2="22" y2="5" stroke="currentColor" strokeWidth="2.5" strokeDasharray="5,3" /> },
@@ -14060,22 +14210,22 @@ export default function Whiteboard({
                                                 key={b.id}
                                                 type="button"
                                                 onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, borderStyle: b.id } : s))}
-                                                className={`px-1.5 py-1 rounded transition ${selectedShapes.every(s => (s.borderStyle || 'solid') === b.id) ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-slate-700/60'}`}
+                                                className={`px-1 py-0.5 rounded text-[10px] transition ${selectedShapes.every(s => (s.borderStyle || 'solid') === b.id) ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-slate-700/60'}`}
                                                 title={b.label}
                                             >
-                                                <svg className="w-4 h-2.5" viewBox="0 0 24 10" fill="none">{b.icon}</svg>
+                                                <svg className="w-3.5 h-2" viewBox="0 0 24 10" fill="none">{b.icon}</svg>
                                             </button>
                                         ))}
                                     </div>
 
-                                    <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                                     {/* Alignment Controls */}
-                                    <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5" title="Align Shapes">
+                                    <div className="flex items-center bg-slate-800/90 rounded-lg border border-slate-700/60 p-0.5 h-6" title="Align Shapes">
                                         <button
                                             type="button"
                                             onClick={() => handleAlign('left')}
-                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            className="w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition"
                                             title="Align Left"
                                         >
                                             <AlignLeft className="w-3 h-3" />
@@ -14083,7 +14233,7 @@ export default function Whiteboard({
                                         <button
                                             type="button"
                                             onClick={() => handleAlign('center')}
-                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            className="w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition"
                                             title="Align Center"
                                         >
                                             <AlignCenterHorizontal className="w-3 h-3" />
@@ -14091,7 +14241,7 @@ export default function Whiteboard({
                                         <button
                                             type="button"
                                             onClick={() => handleAlign('right')}
-                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            className="w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition"
                                             title="Align Right"
                                         >
                                             <AlignRight className="w-3 h-3" />
@@ -14099,7 +14249,7 @@ export default function Whiteboard({
                                         <button
                                             type="button"
                                             onClick={() => handleAlign('top')}
-                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            className="w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition"
                                             title="Align Top"
                                         >
                                             <AlignStartVertical className="w-3 h-3" />
@@ -14107,7 +14257,7 @@ export default function Whiteboard({
                                         <button
                                             type="button"
                                             onClick={() => handleAlign('middle')}
-                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            className="w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition"
                                             title="Align Middle"
                                         >
                                             <AlignCenterVertical className="w-3 h-3" />
@@ -14115,21 +14265,21 @@ export default function Whiteboard({
                                         <button
                                             type="button"
                                             onClick={() => handleAlign('bottom')}
-                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            className="w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition"
                                             title="Align Bottom"
                                         >
                                             <AlignEndVertical className="w-3 h-3" />
                                         </button>
                                     </div>
 
-                                    <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                                     {/* Layer Ordering (Front/Back) */}
-                                    <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5" title="Layer Ordering">
+                                    <div className="flex items-center bg-slate-800/90 rounded-lg border border-slate-700/60 p-0.5 h-6" title="Layer Ordering">
                                         <button
                                             type="button"
                                             onClick={() => handleBringToFront()}
-                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            className="w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition"
                                             title="Bring Selection to Front"
                                         >
                                             <BringToFront className="w-3 h-3" />
@@ -14137,7 +14287,7 @@ export default function Whiteboard({
                                         <button
                                             type="button"
                                             onClick={() => handleSendToBack()}
-                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            className="w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition"
                                             title="Send Selection to Back"
                                         >
                                             <SendToBack className="w-3 h-3" />
@@ -14147,54 +14297,54 @@ export default function Whiteboard({
                                     {/* Convert Multi-Stroke Ink to Text / Math */}
                                     {selectedShapes.some(s => s.type === 'path' || s.type === 'sparkle_path') && (
                                         <>
-                                            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
                                             <button
                                                 type="button"
                                                 onClick={() => handleConvertSelectedInkToText()}
                                                 disabled={isConvertingInk}
-                                                className="px-2 py-0.5 rounded text-xs font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center gap-1.5 transition shadow-sm"
+                                                className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center gap-1.5 transition shadow-sm h-6"
                                                 title="Convert all selected handwritten ink strokes to typed text or rendered math equation"
                                             >
                                                 {isConvertingInk ? (
-                                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                                 ) : (
-                                                    <Sparkles className="w-3 h-3 text-amber-300" />
+                                                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                                                 )}
-                                                <span>{isConvertingInk ? 'Converting...' : 'Convert Ink to Text / Math'}</span>
+                                                <span>{isConvertingInk ? 'Converting...' : 'Convert Ink'}</span>
                                             </button>
                                         </>
                                     )}
 
-                                    <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                                     {/* Group */}
                                     <button
                                         type="button"
                                         onClick={handleGroup}
-                                        className="p-1 hover:bg-slate-800 rounded text-slate-300 hover:text-white transition"
+                                        className="p-1 rounded-full hover:bg-slate-800 text-slate-300 hover:text-white transition flex items-center justify-center"
                                         title="Group Selected Shapes"
                                     >
-                                        <Group size={13} />
+                                        <Group className="w-3.5 h-3.5" />
                                     </button>
 
                                     {/* Lock */}
                                     <button
                                         type="button"
                                         onClick={handleToggleLock}
-                                        className="p-1 hover:bg-slate-800 rounded text-slate-300 hover:text-white transition"
+                                        className="p-1 rounded-full hover:bg-slate-800 text-slate-300 hover:text-white transition flex items-center justify-center"
                                         title="Lock/Unlock Selected Shapes"
                                     >
-                                        {selectedShapes.some(s => s.isLocked) ? <Lock size={13} className="text-amber-400" /> : <Unlock size={13} />}
+                                        {selectedShapes.some(s => s.isLocked) ? <Lock className="w-3.5 h-3.5 text-amber-400" /> : <Unlock className="w-3.5 h-3.5" />}
                                     </button>
 
                                     {/* Delete */}
                                     <button
                                         type="button"
                                         onClick={handleDelete}
-                                        className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded transition"
+                                        className="p-1 rounded-full text-slate-400 hover:text-red-400 hover:bg-red-500/20 transition flex items-center justify-center"
                                         title="Delete Selection"
                                     >
-                                        <Trash2 size={13} />
+                                        <Trash2 className="w-3.5 h-3.5" />
                                     </button>
                                 </div>
                             </div>
@@ -14334,35 +14484,35 @@ export default function Whiteboard({
                             )}
                             {/* Selection action buttons */}
                             <div
-                                className="absolute -top-14 left-0 flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-lg shadow-xl p-1.5 pointer-events-auto text-slate-200"
+                                className="absolute -top-12 left-0 flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 pointer-events-auto text-slate-200"
                                 onClick={e => e.stopPropagation()}
                                 onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
                             >
                                 <button
                                     onClick={handleCopySelection}
-                                    className="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+                                    className="p-1 rounded-full text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
                                     title="Copy"
                                 >
-                                    <Copy className="w-4 h-4" />
+                                    <Copy className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                     onClick={handleCutSelection}
-                                    className="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+                                    className="p-1 rounded-full text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
                                     title="Cut"
                                 >
-                                    <Scissors className="w-4 h-4" />
+                                    <Scissors className="w-3.5 h-3.5" />
                                 </button>
-                                <div className="w-px h-5 bg-slate-700 mx-1"></div>
+                                <div className="w-px h-4 bg-slate-700/80 mx-0.5"></div>
                                 {/* Infinite Cloner Toggle for Drawing / Ink */}
                                 <button
                                     type="button"
                                     onClick={() => setIsSelectionInfiniteCloner(prev => !prev)}
-                                    className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
+                                    className={`p-1 rounded-full transition-colors ${
                                         isSelectionInfiniteCloner ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-white/10'
                                     }`}
                                     title={isSelectionInfiniteCloner ? "Infinite Copy ON (Click to Turn OFF)" : "Infinite Copy OFF (Click to Turn ON)"}
                                 >
-                                    <InfinityIcon className="w-4 h-4" />
+                                    <InfinityIcon className="w-3.5 h-3.5" />
                                 </button>
                                 {isSelectionInfiniteCloner && (
                                     <button
@@ -14373,42 +14523,42 @@ export default function Whiteboard({
                                                 handlePasteSelection();
                                             }, 60);
                                         }}
-                                        className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-bold flex items-center gap-1 transition-all shadow"
+                                        className="h-6 px-2 rounded-full text-[10px] font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1 transition-all shadow"
                                         title="Stamp duplicate copy on canvas"
                                     >
                                         <span>Stamp +1</span>
                                     </button>
                                 )}
-                                <div className="w-px h-5 bg-slate-700 mx-1"></div>
+                                <div className="w-px h-4 bg-slate-700/80 mx-0.5"></div>
                                 <button
                                     onClick={() => handleFlipSelection(true)}
-                                    className="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+                                    className="p-1 rounded-full text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
                                     title="Flip Horizontally"
                                 >
-                                    <FlipHorizontal className="w-4 h-4" />
+                                    <FlipHorizontal className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                     onClick={() => handleFlipSelection(false)}
-                                    className="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+                                    className="p-1 rounded-full text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
                                     title="Flip Vertically"
                                 >
-                                    <FlipVertical className="w-4 h-4" />
+                                    <FlipVertical className="w-3.5 h-3.5" />
                                 </button>
-                                <div className="w-px h-5 bg-slate-700 mx-1"></div>
+                                <div className="w-px h-4 bg-slate-700/80 mx-0.5"></div>
                                 <button
                                     onClick={handleDeleteSelection}
-                                    className="w-7 h-7 flex items-center justify-center rounded text-red-400 hover:text-red-300 hover:bg-red-400/20 transition-colors"
+                                    className="p-1 rounded-full text-red-400 hover:text-red-300 hover:bg-red-400/20 transition-colors"
                                     title="Delete"
                                 >
-                                    <Trash2 className="w-4 h-4" />
+                                    <Trash2 className="w-3.5 h-3.5" />
                                 </button>
-                                <div className="w-px h-5 bg-slate-700 mx-1"></div>
+                                <div className="w-px h-4 bg-slate-700/80 mx-0.5"></div>
                                 <button
                                     onClick={() => setSelection(null)}
-                                    className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                                    className="p-1 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
                                     title="Cancel Selection"
                                 >
-                                    <X className="w-4 h-4" />
+                                    <X className="w-3.5 h-3.5" />
                                 </button>
                             </div>
                         </div>
@@ -15244,6 +15394,9 @@ export default function Whiteboard({
                     pageImageObjects,
                     pageTextObjects,
                     pageShapeObjects,
+                    page3DObjects,
+                    pagePdfObjects,
+                    pageMediaObjects,
                     pages
                 }}
                 sessionId={sessionId}

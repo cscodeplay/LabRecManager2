@@ -722,7 +722,7 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                         style={{ pointerEvents: 'none' }}
                     >
                         <div
-                            className="flex items-center gap-1.5 bg-slate-900 border-2 border-slate-700 rounded-xl shadow-2xl px-2 py-1 text-slate-200 pointer-events-auto select-none"
+                            className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 text-slate-200 pointer-events-auto select-none"
                             onClick={(e) => e.stopPropagation()}
                             onMouseDown={(e) => e.stopPropagation()}
                             onPointerDown={(e) => e.stopPropagation()}
@@ -732,39 +732,39 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                                 <button
                                     type="button"
                                     onClick={() => onUpdate(id, { pathType: 'straight', waypoint: null })}
-                                    className={`p-1 rounded transition ${pathType === 'straight' || !pathType ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    className={`p-1 rounded-md transition ${pathType === 'straight' || !pathType ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                     title="Straight Line"
                                 >
-                                    <Minus size={13} strokeWidth={2.5} />
+                                    <Minus size={14} strokeWidth={2.5} />
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => onUpdate(id, { pathType: 'orthogonal', waypoint: null })}
-                                    className={`p-1 rounded transition ${pathType === 'orthogonal' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    className={`p-1 rounded-md transition ${pathType === 'orthogonal' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                     title="Elbow / Orthogonal Line"
                                 >
-                                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                         <path d="M3 13V5h10" />
                                     </svg>
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => onUpdate(id, { pathType: 'curved', waypoint: null })}
-                                    className={`p-1 rounded transition ${pathType === 'curved' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    className={`p-1 rounded-md transition ${pathType === 'curved' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                     title="Curved Line"
                                 >
-                                    <Spline size={13} strokeWidth={2.2} />
+                                    <Spline size={14} strokeWidth={2.2} />
                                 </button>
                             </div>
 
-                            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                             {/* Dash Style */}
                             <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60" title="Dash Style">
                                 <button
                                     type="button"
                                     onClick={() => onUpdate(id, { strokeStyle: 'solid' })}
-                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${strokeStyle === 'solid' || !strokeStyle ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold transition ${strokeStyle === 'solid' || !strokeStyle ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                     title="Solid Line"
                                 >
                                     Solid
@@ -772,7 +772,7 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                                 <button
                                     type="button"
                                     onClick={() => onUpdate(id, { strokeStyle: 'dashed' })}
-                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${strokeStyle === 'dashed' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold transition ${strokeStyle === 'dashed' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                     title="Dashed Line"
                                 >
                                     Dash
@@ -780,21 +780,21 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                                 <button
                                     type="button"
                                     onClick={() => onUpdate(id, { strokeStyle: 'dotted' })}
-                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${strokeStyle === 'dotted' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold transition ${strokeStyle === 'dotted' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                     title="Dotted Line"
                                 >
                                     Dot
                                 </button>
                             </div>
 
-                            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                             {/* Arrow Ends */}
                             <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60" title="Arrow Ends">
                                 <button
                                     type="button"
                                     onClick={() => onUpdate(id, { arrowStart: 'none', arrowEnd: 'none' })}
-                                    className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition ${arrowStart === 'none' && arrowEnd === 'none' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    className={`px-1.5 py-0.5 rounded-md text-[11px] font-semibold transition ${arrowStart === 'none' && arrowEnd === 'none' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                     title="Plain (No Arrows)"
                                 >
                                     —
@@ -802,7 +802,7 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                                 <button
                                     type="button"
                                     onClick={() => onUpdate(id, { arrowStart: 'none', arrowEnd: 'arrow' })}
-                                    className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition ${arrowStart === 'none' && arrowEnd === 'arrow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    className={`px-1.5 py-0.5 rounded-md text-[11px] font-semibold transition ${arrowStart === 'none' && arrowEnd === 'arrow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                     title="Single Arrow (End)"
                                 >
                                     →
@@ -810,17 +810,17 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                                 <button
                                     type="button"
                                     onClick={() => onUpdate(id, { arrowStart: 'arrow', arrowEnd: 'arrow' })}
-                                    className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition ${arrowStart === 'arrow' && arrowEnd === 'arrow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    className={`px-1.5 py-0.5 rounded-md text-[11px] font-semibold transition ${arrowStart === 'arrow' && arrowEnd === 'arrow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                     title="Double Arrow (Both Ends)"
                                 >
                                     ↔
                                 </button>
                             </div>
 
-                            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                             {/* Color */}
-                            <div className="relative w-5 h-5 rounded border border-slate-700 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Connector Color">
+                            <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Connector Color">
                                 <div className="w-full h-full" style={{ backgroundColor: color || '#2563eb' }} />
                                 <input
                                     type="color"
@@ -832,7 +832,7 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                             </div>
 
                             {/* Stroke Width */}
-                            <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-1 py-0.5" title="Stroke Width">
+                            <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 px-1 py-0.5 h-6" title="Stroke Width">
                                 <button
                                     type="button"
                                     onClick={() => onUpdate(id, { strokeWidth: Math.max(1, (strokeWidth || 2) - 1) })}
@@ -856,17 +856,17 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
 
                             {onDelete && (
                                 <>
-                                    <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
                                     <button
                                         type="button"
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             onDelete(id);
                                         }}
-                                        className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded transition"
+                                        className="p-1 rounded-full text-slate-400 hover:text-red-400 hover:bg-red-500/20 transition flex items-center justify-center"
                                         title="Delete Connector"
                                     >
-                                        <Trash2 size={13} />
+                                        <Trash2 size={14} />
                                     </button>
                                 </>
                             )}
