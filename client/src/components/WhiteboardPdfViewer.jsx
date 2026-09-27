@@ -160,7 +160,7 @@ export default function WhiteboardPdfViewer({
     }, [isDragging, isResizing, activeHandle, scale, onUpdate]);
 
     const rawPdfUrl = pdf.src || pdf.url || '';
-    const pdfSrc = rawPdfUrl ? `${rawPdfUrl}#page=${currentPage}&toolbar=0&navpanes=0` : '';
+    const pdfSrc = rawPdfUrl ? `${rawPdfUrl}#page=${currentPage}&view=Fit&toolbar=0&navpanes=0` : '';
 
     return (
         <div
@@ -194,7 +194,7 @@ export default function WhiteboardPdfViewer({
                         <div className="p-1 rounded-md bg-red-600/20 text-red-400 border border-red-500/30">
                             <FileText className="w-3.5 h-3.5" />
                         </div>
-                        <span className="text-xs font-semibold truncate max-w-[160px] sm:max-w-[220px]" title={pdf.title || 'PDF Document'}>
+                        <span className="text-xs font-semibold truncate max-w-[150px] sm:max-w-[200px]" title={pdf.title || 'PDF Document'}>
                             {pdf.title || 'PDF Document'}
                         </span>
                     </div>
@@ -202,26 +202,27 @@ export default function WhiteboardPdfViewer({
                     {/* PDF Page Navigation & Actions */}
                     <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                         {!isCollapsed && (
-                            <div className="flex items-center bg-slate-900/80 rounded-lg px-1.5 py-0.5 border border-slate-700/60 mr-1 text-[11px] font-mono text-slate-300">
+                            <div className="flex items-center bg-slate-900/90 rounded-lg px-2 py-0.5 border border-slate-700/70 mr-1 text-[11px] font-mono text-slate-300 shadow-inner">
                                 <button
                                     type="button"
                                     onClick={handlePrevPage}
                                     disabled={currentPage <= 1}
-                                    className="p-0.5 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                                    className="p-0.5 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
                                     title="Previous Page"
                                 >
-                                    <ChevronLeft className="w-3 h-3" />
+                                    <ChevronLeft className="w-3.5 h-3.5" />
                                 </button>
-                                <span className="px-1 text-[10px]">
-                                    {currentPage}
+                                <span className="px-1.5 text-[10.5px] font-semibold tracking-tight text-slate-200 select-none">
+                                    {currentPage} / {totalPages || 1}
                                 </span>
                                 <button
                                     type="button"
                                     onClick={handleNextPage}
-                                    className="p-0.5 hover:text-white"
+                                    disabled={totalPages > 1 && currentPage >= totalPages}
+                                    className="p-0.5 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
                                     title="Next Page"
                                 >
-                                    <ChevronRight className="w-3 h-3" />
+                                    <ChevronRight className="w-3.5 h-3.5" />
                                 </button>
                             </div>
                         )}
@@ -271,16 +272,18 @@ export default function WhiteboardPdfViewer({
                     </div>
                 </div>
 
-                {/* PDF Viewer Body */}
+                {/* PDF Viewer Body with Keyed Embed to force re-render on page update */}
                 {!isCollapsed && (
                     <div className="relative flex-1 w-full bg-slate-950 overflow-hidden">
                         {rawPdfUrl ? (
                             <object
+                                key={`pdf-obj-${pdf.id}-p${currentPage}-${isResizing ? 'resizing' : 'settled'}`}
                                 data={pdfSrc}
                                 type="application/pdf"
                                 className="w-full h-full border-0 pointer-events-auto bg-white"
                             >
                                 <iframe
+                                    key={`pdf-frame-${pdf.id}-p${currentPage}-${isResizing ? 'resizing' : 'settled'}`}
                                     src={pdfSrc}
                                     title={pdf.title || 'PDF Preview'}
                                     className="w-full h-full border-0 pointer-events-auto bg-white"

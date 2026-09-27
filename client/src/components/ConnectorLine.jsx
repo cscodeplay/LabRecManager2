@@ -1,15 +1,19 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Minus, Spline } from 'lucide-react';
 
-// Returns { x, y } for the anchor of a shape, synchronized with rotation and flips
+// Returns { x, y } for the anchor of a shape, synchronized with actual geometric edges, rotation, and flips
 export const getAnchorPoint = (shape, anchor, otherPoint = null) => {
     if (!shape) return { x: 0, y: 0 };
     
+    const w = shape.width || 100;
+    const h = shape.height || 100;
+    const sx = shape.x || 0;
+    const sy = shape.y || 0;
     const center = { 
-        x: (shape.x || 0) + (shape.width || 100) / 2, 
-        y: (shape.y || 0) + (shape.height || 100) / 2 
+        x: sx + w / 2, 
+        y: sy + h / 2 
     };
     
     let resolvedAnchor = anchor;
@@ -28,13 +32,47 @@ export const getAnchorPoint = (shape, anchor, otherPoint = null) => {
     }
 
     let unrotatedPt;
-    switch (resolvedAnchor) {
-        case 'top': unrotatedPt = { x: center.x, y: shape.y || 0 }; break;
-        case 'right': unrotatedPt = { x: (shape.x || 0) + (shape.width || 100), y: center.y }; break;
-        case 'bottom': unrotatedPt = { x: center.x, y: (shape.y || 0) + (shape.height || 100) }; break;
-        case 'left': unrotatedPt = { x: shape.x || 0, y: center.y }; break;
-        case 'center': unrotatedPt = center; break;
-        default: return center;
+    const sType = shape.type;
+    const skew = shape.skew ?? (w * 0.25);
+
+    // Precise geometric edge alignment (eliminates gap on slanted edges)
+    if (sType === 'triangle') {
+        switch (resolvedAnchor) {
+            case 'top': unrotatedPt = { x: center.x, y: sy }; break; // Top apex
+            case 'bottom': unrotatedPt = { x: center.x, y: sy + h }; break; // Bottom edge center
+            case 'left': unrotatedPt = { x: sx + w * 0.25, y: center.y }; break; // Slanted left edge midpoint
+            case 'right': unrotatedPt = { x: sx + w * 0.75, y: center.y }; break; // Slanted right edge midpoint
+            case 'center': unrotatedPt = center; break;
+            default: return center;
+        }
+    } else if (sType === 'parallelogram') {
+        switch (resolvedAnchor) {
+            case 'top': unrotatedPt = { x: sx + skew + (w - skew) / 2, y: sy }; break;
+            case 'bottom': unrotatedPt = { x: sx + (w - skew) / 2, y: sy + h }; break;
+            case 'left': unrotatedPt = { x: sx + skew / 2, y: center.y }; break;
+            case 'right': unrotatedPt = { x: sx + w - skew / 2, y: center.y }; break;
+            case 'center': unrotatedPt = center; break;
+            default: return center;
+        }
+    } else if (sType === 'diamond') {
+        switch (resolvedAnchor) {
+            case 'top': unrotatedPt = { x: center.x, y: sy }; break;
+            case 'bottom': unrotatedPt = { x: center.x, y: sy + h }; break;
+            case 'left': unrotatedPt = { x: sx, y: center.y }; break;
+            case 'right': unrotatedPt = { x: sx + w, y: center.y }; break;
+            case 'center': unrotatedPt = center; break;
+            default: return center;
+        }
+    } else {
+        // Standard rectangle, rounded_rect, circle, cylinder, etc.
+        switch (resolvedAnchor) {
+            case 'top': unrotatedPt = { x: center.x, y: sy }; break;
+            case 'right': unrotatedPt = { x: sx + w, y: center.y }; break;
+            case 'bottom': unrotatedPt = { x: center.x, y: sy + h }; break;
+            case 'left': unrotatedPt = { x: sx, y: center.y }; break;
+            case 'center': unrotatedPt = center; break;
+            default: return center;
+        }
     }
 
     let dx = unrotatedPt.x - center.x;
@@ -87,8 +125,28 @@ export const findNearestShape = (point, shapes, threshold = 30) => {
     return null;
 };
 
-// Helper to compute cubic control points for curved paths
-export const getCurvedControlPoints = (startPt, endPt, sourceAnchor = null, targetAnchor = null) => {
+// Calculates outward normal vector from an anchor considering parent shape rotation
+export const getAnchorNormal = (shape, anchor, fallbackDx = 1, fallbackDy = 0) => {
+    let baseAngle = 0;
+    switch (anchor) {
+        case 'top': baseAngle = -90; break;
+        case 'bottom': baseAngle = 90; break;
+        case 'left': baseAngle = 180; break;
+        case 'right': baseAngle = 0; break;
+        default:
+            baseAngle = (Math.atan2(fallbackDy, fallbackDx) * 180) / Math.PI;
+    }
+    const totalAngle = baseAngle + (shape?.rotation || 0);
+    const rad = (totalAngle * Math.PI) / 180;
+    return {
+        x: Math.cos(rad),
+        y: Math.sin(rad),
+        angleDeg: totalAngle
+    };
+};
+
+// Helper to compute cubic control points for curved paths aligned with anchor normal vectors
+export const getCurvedControlPoints = (startPt, endPt, sourceAnchor = null, targetAnchor = null, sourceShape = null, targetShape = null) => {
     const dx = endPt.x - startPt.x;
     const dy = endPt.y - startPt.y;
     const dist = Math.hypot(dx, dy);
@@ -97,24 +155,14 @@ export const getCurvedControlPoints = (startPt, endPt, sourceAnchor = null, targ
     const curveOffset = Math.max(25, Math.min(dist * 0.45, 120));
 
     if (sourceAnchor || targetAnchor) {
-        const getAnchorVector = (anc, fallbackDx, fallbackDy) => {
-            if (anc === 'top') return { x: 0, y: -1 };
-            if (anc === 'bottom') return { x: 0, y: 1 };
-            if (anc === 'left') return { x: -1, y: 0 };
-            if (anc === 'right') return { x: 1, y: 0 };
-            return Math.abs(fallbackDx) >= Math.abs(fallbackDy)
-                ? { x: Math.sign(fallbackDx) || 1, y: 0 }
-                : { x: 0, y: Math.sign(fallbackDy) || 1 };
-        };
-
-        const v1 = getAnchorVector(sourceAnchor, dx, dy);
-        const v2 = getAnchorVector(targetAnchor, -dx, -dy);
+        const v1 = sourceAnchor ? getAnchorNormal(sourceShape, sourceAnchor, dx, dy) : { x: Math.sign(dx) || 1, y: 0 };
+        const v2 = targetAnchor ? getAnchorNormal(targetShape, targetAnchor, -dx, -dy) : { x: -Math.sign(dx) || -1, y: 0 };
 
         cp1 = { x: startPt.x + v1.x * curveOffset, y: startPt.y + v1.y * curveOffset };
         cp2 = { x: endPt.x + v2.x * curveOffset, y: endPt.y + v2.y * curveOffset };
     } else {
         if (Math.abs(dy) > Math.abs(dx)) {
-            // Vertical connection (e.g. flowchart step 1 -> step 2)
+            // Vertical connection
             const lateralBow = Math.abs(dx) > 10 ? 0 : Math.min(35, dist * 0.2);
             cp1 = { x: startPt.x + dx * 0.1 + lateralBow, y: startPt.y + dy * 0.5 };
             cp2 = { x: endPt.x - dx * 0.1 + lateralBow, y: endPt.y - dy * 0.5 };
@@ -129,7 +177,7 @@ export const getCurvedControlPoints = (startPt, endPt, sourceAnchor = null, targ
 };
 
 // Returns exact midpoint coordinates for any connector path type
-export const getConnectorMidpoint = (startPt, endPt, pathType = 'curved', waypoint = null, sourceAnchor = null, targetAnchor = null) => {
+export const getConnectorMidpoint = (startPt, endPt, pathType = 'curved', waypoint = null, sourceAnchor = null, targetAnchor = null, sourceShape = null, targetShape = null) => {
     if (!startPt || !endPt) return { x: 0, y: 0 };
 
     if (pathType === 'straight') {
@@ -150,11 +198,9 @@ export const getConnectorMidpoint = (startPt, endPt, pathType = 'curved', waypoi
 
     if (pathType === 'curved') {
         if (waypoint) {
-            // Point at t = 0.5 on quadratic curve with control point cp is precisely waypoint
             return waypoint;
         }
-        const { cp1, cp2 } = getCurvedControlPoints(startPt, endPt, sourceAnchor, targetAnchor);
-        // Point on cubic Bezier at t = 0.5: B(0.5) = 1/8 P0 + 3/8 P1 + 3/8 P2 + 1/8 P3
+        const { cp1, cp2 } = getCurvedControlPoints(startPt, endPt, sourceAnchor, targetAnchor, sourceShape, targetShape);
         return {
             x: 0.125 * startPt.x + 0.375 * cp1.x + 0.375 * cp2.x + 0.125 * endPt.x,
             y: 0.125 * startPt.y + 0.375 * cp1.y + 0.375 * cp2.y + 0.125 * endPt.y
@@ -165,7 +211,7 @@ export const getConnectorMidpoint = (startPt, endPt, pathType = 'curved', waypoi
 };
 
 // Returns an SVG path string (d attribute) for the connector
-export const getConnectorPath = (startPt, endPt, pathType = 'curved', waypoint = null, sourceAnchor = null, targetAnchor = null) => {
+export const getConnectorPath = (startPt, endPt, pathType = 'curved', waypoint = null, sourceAnchor = null, targetAnchor = null, sourceShape = null, targetShape = null) => {
     if (pathType === 'straight') {
         if (waypoint) {
             return `M ${startPt.x} ${startPt.y} L ${waypoint.x} ${waypoint.y} L ${endPt.x} ${endPt.y}`;
@@ -182,13 +228,12 @@ export const getConnectorPath = (startPt, endPt, pathType = 'curved', waypoint =
         }
     } else if (pathType === 'curved') {
         if (waypoint) {
-            // Quadratic Bezier passing smoothly through the waypoint
             const cpX = 2 * waypoint.x - 0.5 * (startPt.x + endPt.x);
             const cpY = 2 * waypoint.y - 0.5 * (startPt.y + endPt.y);
             return `M ${startPt.x} ${startPt.y} Q ${cpX} ${cpY} ${endPt.x} ${endPt.y}`;
         }
 
-        const { cp1, cp2 } = getCurvedControlPoints(startPt, endPt, sourceAnchor, targetAnchor);
+        const { cp1, cp2 } = getCurvedControlPoints(startPt, endPt, sourceAnchor, targetAnchor, sourceShape, targetShape);
         return `M ${startPt.x} ${startPt.y} C ${cp1.x} ${cp1.y}, ${cp2.x} ${cp2.y}, ${endPt.x} ${endPt.y}`;
     }
     return `M ${startPt.x} ${startPt.y} L ${endPt.x} ${endPt.y}`;
@@ -196,7 +241,7 @@ export const getConnectorPath = (startPt, endPt, pathType = 'curved', waypoint =
 
 // Returns SVG elements for arrowhead at the given point
 export const renderArrowhead = (type, point, angle, size = 12, color) => {
-    if (type === 'none') return null;
+    if (type === 'none' || !point) return null;
 
     const transform = `translate(${point.x}, ${point.y}) rotate(${angle})`;
 
@@ -230,9 +275,7 @@ export const renderArrowhead = (type, point, angle, size = 12, color) => {
     return null;
 };
 
-// Calculates terminal angle in degrees for the arrowhead to ensure it stays upright
-// (e.g. entering top/bottom anchors strictly vertically at 90° or -90°,
-// even if connected shapes are not in line with each other)
+// Calculates terminal angle in degrees for the arrowhead ensuring it points perpendicularly into the shape face
 export const getConnectorArrowAngle = (
     endpoint, // 'target' | 'source'
     startPt,
@@ -240,21 +283,20 @@ export const getConnectorArrowAngle = (
     pathType = 'orthogonal',
     waypoint = null,
     sourceAnchor = 'auto',
-    targetAnchor = 'auto'
+    targetAnchor = 'auto',
+    sourceShape = null,
+    targetShape = null
 ) => {
     if (!startPt || !endPt) return 0;
     const isTarget = endpoint === 'target';
     const anchor = isTarget ? targetAnchor : sourceAnchor;
+    const shape = isTarget ? targetShape : sourceShape;
 
-    // 1. Explicit Anchor Overrides: Anchors define perpendicular face entry
-    // Entering top anchor -> points straight DOWN into shape (90°, strictly upright)
-    if (anchor === 'top') return 90;
-    // Entering bottom anchor -> points straight UP into shape (-90°, strictly upright)
-    if (anchor === 'bottom') return -90;
-    // Entering left anchor -> points straight RIGHT (0°)
-    if (anchor === 'left') return 0;
-    // Entering right anchor -> points straight LEFT (180°)
-    if (anchor === 'right') return 180;
+    // 1. Explicit Anchor Overrides: Arrow points INTO the shape face (opposite to outward normal)
+    if (anchor && anchor !== 'auto') {
+        const normal = getAnchorNormal(shape, anchor, isTarget ? endPt.x - startPt.x : startPt.x - endPt.x, isTarget ? endPt.y - startPt.y : startPt.y - endPt.y);
+        return (normal.angleDeg + 180) % 360;
+    }
 
     // 2. Orthogonal (Elbow) Path Terminal Segment Direction
     if (pathType === 'orthogonal') {
@@ -262,14 +304,14 @@ export const getConnectorArrowAngle = (
         if (isVertical) {
             const stepY = waypoint?.y !== undefined ? waypoint.y : (startPt.y + endPt.y) / 2;
             if (isTarget) {
-                return endPt.y >= stepY ? 90 : -90; // Strictly vertical (upright)
+                return endPt.y >= stepY ? 90 : -90;
             } else {
-                return startPt.y <= stepY ? -90 : 90; // Strictly vertical (upright)
+                return startPt.y <= stepY ? -90 : 90;
             }
         } else {
             const stepX = waypoint?.x !== undefined ? waypoint.x : (startPt.x + endPt.x) / 2;
             if (isTarget) {
-                return endPt.x >= stepX ? 0 : 180; // Strictly horizontal
+                return endPt.x >= stepX ? 0 : 180;
             } else {
                 return startPt.x <= stepX ? 180 : 0;
             }
@@ -287,7 +329,7 @@ export const getConnectorArrowAngle = (
                 return (Math.atan2(startPt.y - cpY, startPt.x - cpX) * 180) / Math.PI;
             }
         }
-        const { cp1, cp2 } = getCurvedControlPoints(startPt, endPt, sourceAnchor, targetAnchor);
+        const { cp1, cp2 } = getCurvedControlPoints(startPt, endPt, sourceAnchor, targetAnchor, sourceShape, targetShape);
         if (isTarget) {
             const dx = endPt.x - cp2.x;
             const dy = endPt.y - cp2.y;
@@ -370,23 +412,69 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
         return targetPoint || (sourceShape ? getAnchorPoint(sourceShape, sourceAnchor) : null);
     }, [targetShape, targetAnchor, draggingEndpoint, dragPoint, targetPoint, sourceShape, sourcePoint, sourceAnchor]);
 
+    const arrowSize = strokeWidth * 4;
+
+    // Calculate angles for arrows ensuring proper orientation relative to shape rotation
+    const sourceAngle = useMemo(() => getConnectorArrowAngle(
+        'source',
+        actualSourcePoint,
+        actualTargetPoint,
+        pathType,
+        (waypoint || draggingEndpoint === 'waypoint') ? actualWaypoint : null,
+        sourceAnchor,
+        targetAnchor,
+        sourceShape,
+        targetShape
+    ), [actualSourcePoint, actualTargetPoint, pathType, waypoint, draggingEndpoint, actualWaypoint, sourceAnchor, targetAnchor, sourceShape, targetShape]);
+
+    const targetAngle = useMemo(() => getConnectorArrowAngle(
+        'target',
+        actualSourcePoint,
+        actualTargetPoint,
+        pathType,
+        (waypoint || draggingEndpoint === 'waypoint') ? actualWaypoint : null,
+        sourceAnchor,
+        targetAnchor,
+        sourceShape,
+        targetShape
+    ), [actualSourcePoint, actualTargetPoint, pathType, waypoint, draggingEndpoint, actualWaypoint, sourceAnchor, targetAnchor, sourceShape, targetShape]);
+
+    // Compute effective line start and end points retracted by arrowhead size so line enters base of pointer
+    const effectiveStartPoint = useMemo(() => {
+        if (!actualSourcePoint || arrowStart === 'none') return actualSourcePoint;
+        const rad = (sourceAngle * Math.PI) / 180;
+        return {
+            x: actualSourcePoint.x - Math.cos(rad) * arrowSize,
+            y: actualSourcePoint.y - Math.sin(rad) * arrowSize
+        };
+    }, [actualSourcePoint, arrowStart, sourceAngle, arrowSize]);
+
+    const effectiveEndPoint = useMemo(() => {
+        if (!actualTargetPoint || arrowEnd === 'none') return actualTargetPoint;
+        const rad = (targetAngle * Math.PI) / 180;
+        return {
+            x: actualTargetPoint.x - Math.cos(rad) * arrowSize,
+            y: actualTargetPoint.y - Math.sin(rad) * arrowSize
+        };
+    }, [actualTargetPoint, arrowEnd, targetAngle, arrowSize]);
+
+    const pathData = useMemo(() => {
+        if (!effectiveStartPoint || !effectiveEndPoint) return '';
+        const wp = (waypoint || draggingEndpoint === 'waypoint') ? actualWaypoint : null;
+        return getConnectorPath(effectiveStartPoint, effectiveEndPoint, pathType, wp, sourceAnchor, targetAnchor, sourceShape, targetShape);
+    }, [effectiveStartPoint, effectiveEndPoint, pathType, waypoint, draggingEndpoint, actualWaypoint, sourceAnchor, targetAnchor, sourceShape, targetShape]);
+
     const actualWaypoint = useMemo(() => {
         if (draggingEndpoint === 'waypoint' && dragPoint) return dragPoint;
         if (waypoint) return waypoint;
         if (!actualSourcePoint || !actualTargetPoint) return { x: 0, y: 0 };
-        return getConnectorMidpoint(actualSourcePoint, actualTargetPoint, pathType, null, sourceAnchor, targetAnchor);
-    }, [draggingEndpoint, dragPoint, waypoint, actualSourcePoint, actualTargetPoint, pathType, sourceAnchor, targetAnchor]);
+        return getConnectorMidpoint(actualSourcePoint, actualTargetPoint, pathType, null, sourceAnchor, targetAnchor, sourceShape, targetShape);
+    }, [draggingEndpoint, dragPoint, waypoint, actualSourcePoint, actualTargetPoint, pathType, sourceAnchor, targetAnchor, sourceShape, targetShape]);
 
     const connectorMidpoint = useMemo(() => {
         if (!actualSourcePoint || !actualTargetPoint) return { x: 0, y: 0 };
-        return getConnectorMidpoint(actualSourcePoint, actualTargetPoint, pathType, waypoint || (draggingEndpoint === 'waypoint' ? actualWaypoint : null), sourceAnchor, targetAnchor);
-    }, [actualSourcePoint, actualTargetPoint, pathType, waypoint, draggingEndpoint, actualWaypoint, sourceAnchor, targetAnchor]);
-
-    const pathData = useMemo(() => {
-        if (!actualSourcePoint || !actualTargetPoint) return '';
-        const wp = (waypoint || draggingEndpoint === 'waypoint') ? actualWaypoint : null;
-        return getConnectorPath(actualSourcePoint, actualTargetPoint, pathType, wp, sourceAnchor, targetAnchor);
-    }, [actualSourcePoint, actualTargetPoint, pathType, waypoint, draggingEndpoint, actualWaypoint, sourceAnchor, targetAnchor]);
+        return getConnectorMidpoint(actualSourcePoint, actualTargetPoint, pathType, waypoint || (draggingEndpoint === 'waypoint' ? actualWaypoint : null), sourceAnchor, targetAnchor, sourceShape, targetShape);
+    }, [actualSourcePoint, actualTargetPoint, pathType, waypoint, draggingEndpoint, actualWaypoint, sourceAnchor, targetAnchor, sourceShape, targetShape]);
 
     if (!actualSourcePoint || !actualTargetPoint || !pathData) {
         return null;
@@ -485,26 +573,6 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
         setSnapTarget(null);
     };
 
-    // Calculate angles for arrows ensuring upright orientation at vertical anchors
-    const sourceAngle = getConnectorArrowAngle(
-        'source',
-        actualSourcePoint,
-        actualTargetPoint,
-        pathType,
-        (waypoint || draggingEndpoint === 'waypoint') ? actualWaypoint : null,
-        sourceAnchor,
-        targetAnchor
-    );
-    const targetAngle = getConnectorArrowAngle(
-        'target',
-        actualSourcePoint,
-        actualTargetPoint,
-        pathType,
-        (waypoint || draggingEndpoint === 'waypoint') ? actualWaypoint : null,
-        sourceAnchor,
-        targetAnchor
-    );
-
     // Stroke dasharray
     let strokeDasharray = 'none';
     if (strokeStyle === 'dashed') strokeDasharray = `${strokeWidth * 3}, ${strokeWidth * 3}`;
@@ -555,11 +623,9 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                 className="pointer-events-none"
             />
 
-            {/* Arrowheads */}
-            {renderArrowhead(arrowStart, actualSourcePoint, sourceAngle, strokeWidth * 4, color)}
-            {renderArrowhead(arrowEnd, actualTargetPoint, targetAngle, strokeWidth * 4, color)}
-
-
+            {/* Arrowheads rendered at exact anchor locations */}
+            {renderArrowhead(arrowStart, actualSourcePoint, sourceAngle, arrowSize, color)}
+            {renderArrowhead(arrowEnd, actualTargetPoint, targetAngle, arrowSize, color)}
 
             {/* Snap Indicator */}
             {snapTarget && draggingEndpoint && (
@@ -567,21 +633,21 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                     cx={getAnchorPoint(snapTarget.shape, snapTarget.anchor).x}
                     cy={getAnchorPoint(snapTarget.shape, snapTarget.anchor).y}
                     r={9 / scale}
-                    fill="rgba(37, 99, 235, 0.45)" // blue-600 with opacity
+                    fill="rgba(37, 99, 235, 0.45)"
                     stroke="#2563eb"
                     strokeWidth={2.5 / scale}
                     className="animate-pulse pointer-events-none"
                 />
             )}
 
-            {/* Center / Midpoint Text Label & Inline Editor (offset vertically to avoid occluding middle drag handle) */}
+            {/* Center / Midpoint Text Label & Inline Editor */}
             {connectorMidpoint && (
                 <foreignObject
                     x={connectorMidpoint.x - 75}
                     y={isSelected ? connectorMidpoint.y + 14 : connectorMidpoint.y - 32}
                     width={150}
                     height={28}
-                    style={{ overflow: 'visible', pointerEvents: 'none' }}
+                    style={{ overflow: 'visible', pointerEvents: 'none', zIndex: 60 }}
                 >
                     <div 
                         className="w-full h-full flex items-center justify-center"
@@ -642,50 +708,52 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                 </foreignObject>
             )}
 
-            {/* Inline Floating Connector Format Bar */}
+            {/* Inline Floating Connector Format Bar with Line Shape Icons */}
             {isSelected && !isEditingLabel && !draggingEndpoint && connectorMidpoint && (
                 <foreignObject
                     x={connectorMidpoint.x - 170}
                     y={connectorMidpoint.y - 54}
                     width={340}
                     height={46}
-                    style={{ overflow: 'visible', pointerEvents: 'none' }}
+                    style={{ overflow: 'visible', pointerEvents: 'none', zIndex: 70 }}
                 >
                     <div 
                         className="w-full h-full flex items-center justify-center"
                         style={{ pointerEvents: 'none' }}
                     >
                         <div
-                            className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl px-2.5 py-1 text-slate-200 pointer-events-auto select-none"
+                            className="flex items-center gap-1.5 bg-slate-900 border-2 border-slate-700 rounded-xl shadow-2xl px-2 py-1 text-slate-200 pointer-events-auto select-none"
                             onClick={(e) => e.stopPropagation()}
                             onMouseDown={(e) => e.stopPropagation()}
                             onPointerDown={(e) => e.stopPropagation()}
                         >
-                            {/* Path Geometry */}
+                            {/* Path Geometry: Line Shape Icons */}
                             <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60" title="Path Geometry">
                                 <button
                                     type="button"
                                     onClick={() => onUpdate(id, { pathType: 'straight', waypoint: null })}
-                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${pathType === 'straight' || !pathType ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    className={`p-1 rounded transition ${pathType === 'straight' || !pathType ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                     title="Straight Line"
                                 >
-                                    Straight
+                                    <Minus size={13} strokeWidth={2.5} />
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => onUpdate(id, { pathType: 'orthogonal', waypoint: null })}
-                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${pathType === 'orthogonal' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                                    title="Elbow / Orthogonal"
+                                    className={`p-1 rounded transition ${pathType === 'orthogonal' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    title="Elbow / Orthogonal Line"
                                 >
-                                    Elbow
+                                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M3 13V5h10" />
+                                    </svg>
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => onUpdate(id, { pathType: 'curved', waypoint: null })}
-                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition ${pathType === 'curved' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                    className={`p-1 rounded transition ${pathType === 'curved' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                     title="Curved Line"
                                 >
-                                    Curved
+                                    <Spline size={13} strokeWidth={2.2} />
                                 </button>
                             </div>
 

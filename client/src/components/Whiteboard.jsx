@@ -16,9 +16,17 @@ import {
     Clock, GripHorizontal, GripVertical, LayoutTemplate, Flashlight, Library,
     Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX,
     ChevronUp, ChevronsUp, ChevronsDown, FileText, Check, Pause, Play, RotateCcw, Globe, Music,
-    Underline, Bold, Italic, Shapes, Database, MessageSquare
+    Underline, Bold, Italic, Shapes, Database, MessageSquare, Sigma, Calculator
 } from 'lucide-react';
 import fixWebmDuration from 'fix-webm-duration';
+import katex from 'katex';
+import WhiteboardEquationEditor from './WhiteboardEquationEditor';
+
+const ParallelogramIcon = (props) => (
+    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <polygon points="6 4 22 4 18 20 2 20" />
+    </svg>
+);
 
 const YoutubeIcon = (props) => (
     <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -491,6 +499,29 @@ export default function Whiteboard({
     const [strokeStyle, setStrokeStyle] = useState('solid'); // solid, dashed, dotted
     const [showColorPicker, setShowColorPicker] = useState(false);
     
+    // Pen & Sparkle Mode & Recent Pens
+    const [penMode, setPenMode] = useState('normal'); // 'normal' | 'sparkle'
+    const [recentPens, setRecentPens] = useState([
+        { type: 'normal', color: '#000000', strokeWidth: 3 },
+        { type: 'normal', color: '#ef4444', strokeWidth: 3 },
+        { type: 'normal', color: '#3b82f6', strokeWidth: 3 },
+        { type: 'sparkle', color: '#f59e0b', strokeWidth: 3 },
+        { type: 'sparkle', color: '#8b5cf6', strokeWidth: 3 },
+        { type: 'sparkle', color: '#ec4899', strokeWidth: 3 },
+    ]);
+    const updateRecentPens = useCallback((type, penColor, penWidth) => {
+        setRecentPens(prev => {
+            const filtered = prev.filter(p => !(p.type === type && p.color === penColor && p.strokeWidth === penWidth));
+            return [{ type, color: penColor, strokeWidth: penWidth }, ...filtered].slice(0, 8);
+        });
+    }, []);
+
+    // Text & Math Equation Modal states
+    const justCreatedTextRef = useRef(false);
+    const [showEquationModal, setShowEquationModal] = useState(false);
+    const [editingEquationId, setEditingEquationId] = useState(null);
+    const [equationInitialLatex, setEquationInitialLatex] = useState('\\int_{0}^{\\infty} x^2 e^{-x}\\,dx = 2');
+
     // Pop-over UI states
     const [showStrokePicker, setShowStrokePicker] = useState(false);
     const [showStrokeStylePicker, setShowStrokeStylePicker] = useState(false);
@@ -3238,6 +3269,12 @@ export default function Whiteboard({
     const handleRadialToolSelect = useCallback((toolId, options = {}, hasSubTools = false) => {
         if (toolId === 'pen') {
             setTool('pen');
+            if (options.isSparkle) {
+                setPenMode('sparkle');
+                toast.success('Sparkle Pen activated ✨');
+            } else {
+                setPenMode('normal');
+            }
             if (options.brushType) {
                 setBrushType(options.brushType);
                 toast.success(`Brush: ${options.brushType}`, { icon: '🖌️' });
@@ -4461,6 +4498,10 @@ export default function Whiteboard({
             justCreatedShapeRef.current = false;
             return;
         }
+        if (justCreatedTextRef.current) {
+            justCreatedTextRef.current = false;
+            return;
+        }
         if (wasDraggingRef.current) {
             wasDraggingRef.current = false;
             return;
@@ -4771,7 +4812,7 @@ export default function Whiteboard({
 
             // 2. Triangle: 3 corners (or 3-4 simplified vertices) AND area ratio in 0.18 - 0.70
             // Holding Shift forces a mathematically perfect Equilateral Triangle
-            if ((cornerCount === 3 || cornerCount === 4) && areaRatio >= 0.18 && areaRatio <= 0.70) {
+            if ((cornerCount === 3 || cornerCount === 4) && areaRatio >= 0.18 && areaRatio <= 0.65) {
                 if (isShiftPressed) {
                     const side = maxDim;
                     const triH = side * (Math.sqrt(3) / 2);
@@ -4806,9 +4847,81 @@ export default function Whiteboard({
                 };
             }
 
-            // 3. Rectangle / Square: 4 corners (or 4-5 simplified vertices) OR area ratio > 0.65
-            // Holding Shift forces a mathematically perfect Square
-            if (areaRatio > 0.65 || cornerCount === 4) {
+            // 3. Four-corner shapes: Diamond / Rhombus, Parallelogram, or Rectangle / Square
+            if (cornerCount === 4 || (cornerCount === 5 && Math.hypot(simplified[0].x - simplified[4].x, simplified[0].y - simplified[4].y) < 25)) {
+                const verts = simplified.slice(0, 4);
+
+                // A. Diamond / Rhombus check:
+                // Area ratio ~0.50 (between 0.35 and 0.64) AND vertices near the 4 diamond midpoints:
+                const isDiamond = areaRatio >= 0.35 && areaRatio <= 0.64 && verts.every(v => {
+                    const dTop = Math.hypot(v.x - cx, v.y - minY);
+                    const dBottom = Math.hypot(v.x - cx, v.y - maxY);
+                    const dLeft = Math.hypot(v.x - minX, v.y - cy);
+                    const dRight = Math.hypot(v.x - maxX, v.y - cy);
+                    return Math.min(dTop, dBottom, dLeft, dRight) < Math.max(30, 0.35 * maxDim);
+                });
+
+                if (isDiamond) {
+                    return {
+                        id: Date.now().toString(),
+                        type: 'diamond',
+                        x: minX,
+                        y: minY,
+                        width: w,
+                        height: h,
+                        color: currentColor,
+                        strokeWidth: currentStrokeWidth,
+                        fillColor: 'transparent',
+                        rotation: 0
+                    };
+                }
+
+                // B. Parallelogram check:
+                // Check if vertices have significant horizontal slant (skew)
+                const topVerts = verts.filter(v => v.y < cy).sort((a, b) => a.x - b.x);
+                const bottomVerts = verts.filter(v => v.y >= cy).sort((a, b) => a.x - b.x);
+                if (topVerts.length === 2 && bottomVerts.length === 2) {
+                    const topSlant = topVerts[0].x - bottomVerts[0].x;
+                    const bottomSlant = topVerts[1].x - bottomVerts[1].x;
+                    if (Math.abs(topSlant) > 0.10 * w && Math.abs(bottomSlant) > 0.10 * w && Math.sign(topSlant) === Math.sign(bottomSlant)) {
+                        const calculatedSkew = Math.abs(topSlant);
+                        const finalSkew = Math.max(8, Math.min(w - 8, calculatedSkew));
+                        return {
+                            id: Date.now().toString(),
+                            type: 'parallelogram',
+                            x: minX,
+                            y: minY,
+                            width: w,
+                            height: h,
+                            skew: finalSkew,
+                            color: currentColor,
+                            strokeWidth: currentStrokeWidth,
+                            fillColor: 'transparent',
+                            rotation: 0
+                        };
+                    }
+                }
+
+                // C. Rectangle / Square
+                const isSquare = isShiftPressed || (Math.abs(w - h) / maxDim < 0.2);
+                const finalW = isSquare ? maxDim : w;
+                const finalH = isSquare ? maxDim : h;
+                return {
+                    id: Date.now().toString(),
+                    type: 'rectangle',
+                    x: isSquare ? cx - maxDim / 2 : minX,
+                    y: isSquare ? cy - maxDim / 2 : minY,
+                    width: finalW,
+                    height: finalH,
+                    color: currentColor,
+                    strokeWidth: currentStrokeWidth,
+                    fillColor: 'transparent',
+                    rotation: 0
+                };
+            }
+
+            // Fallback for Rectangle / Square if areaRatio > 0.68
+            if (areaRatio > 0.68) {
                 const isSquare = isShiftPressed || (Math.abs(w - h) / maxDim < 0.2);
                 const finalW = isSquare ? maxDim : w;
                 const finalH = isSquare ? maxDim : h;
@@ -4829,10 +4942,10 @@ export default function Whiteboard({
             // 4. Any Polygon (Pentagon, Hexagon, Heptagon, Octagon, or any N-sided polygon, N >= 5)
             // Holding Shift forces a mathematically uniform, equal-sided regular polygon!
             if (cornerCount >= 5) {
-                const N = cornerCount;
+                const N = Math.min(12, cornerCount);
                 let polyPoints = [];
 
-                if (isShiftPressed) {
+                if (isShiftPressed || N === 5 || N === 6 || N === 8) {
                     const R = maxDim / 2;
                     const theta0 = (N % 2 === 1) ? -Math.PI / 2 : -Math.PI / 2 + Math.PI / N;
                     for (let i = 0; i < N; i++) {
@@ -4844,6 +4957,22 @@ export default function Whiteboard({
                     }
                 } else {
                     polyPoints = simplified.slice(0, N);
+                }
+
+                if (N === 6) {
+                    return {
+                        id: Date.now().toString(),
+                        type: 'hexagon',
+                        x: isShiftPressed ? cx - maxDim / 2 : minX,
+                        y: isShiftPressed ? cy - maxDim / 2 : minY,
+                        width: isShiftPressed ? maxDim : w,
+                        height: isShiftPressed ? maxDim : h,
+                        points: polyPoints,
+                        color: currentColor,
+                        strokeWidth: currentStrokeWidth,
+                        fillColor: 'transparent',
+                        rotation: 0
+                    };
                 }
 
                 return {
@@ -4926,6 +5055,21 @@ export default function Whiteboard({
         } else if (shape.type === 'rectangle') {
             ctx.rect(shape.x, shape.y, shape.width, shape.height);
             ctx.stroke();
+        } else if (shape.type === 'diamond') {
+            ctx.moveTo(shape.x + shape.width / 2, shape.y);
+            ctx.lineTo(shape.x + shape.width, shape.y + shape.height / 2);
+            ctx.lineTo(shape.x + shape.width / 2, shape.y + shape.height);
+            ctx.lineTo(shape.x, shape.y + shape.height / 2);
+            ctx.closePath();
+            ctx.stroke();
+        } else if (shape.type === 'parallelogram') {
+            const sk = shape.skew || shape.width * 0.25;
+            ctx.moveTo(shape.x + sk, shape.y);
+            ctx.lineTo(shape.x + shape.width, shape.y);
+            ctx.lineTo(shape.x + shape.width - sk, shape.y + shape.height);
+            ctx.lineTo(shape.x, shape.y + shape.height);
+            ctx.closePath();
+            ctx.stroke();
         } else if (shape.type === 'star') {
             const cx = shape.x + shape.width / 2;
             const cy = shape.y + shape.height / 2;
@@ -4941,7 +5085,7 @@ export default function Whiteboard({
             }
             ctx.closePath();
             ctx.stroke();
-        } else if (shape.type === 'polygon' && shape.points && shape.points.length >= 3) {
+        } else if ((shape.type === 'polygon' || shape.type === 'hexagon') && shape.points && shape.points.length >= 3) {
             ctx.moveTo(shape.points[0].x, shape.points[0].y);
             for (let i = 1; i < shape.points.length; i++) {
                 ctx.lineTo(shape.points[i].x, shape.points[i].y);
@@ -5081,7 +5225,7 @@ export default function Whiteboard({
             } catch (err) {}
 
             currentPathPointsRef.current = [pos];
-            if (tool === 'sparkle') {
+            if (tool === 'sparkle' || (tool === 'pen' && penMode === 'sparkle')) {
                 currentSparkleParticlesRef.current = [];
             }
 
@@ -5102,7 +5246,8 @@ export default function Whiteboard({
             ctx.moveTo(pos.x, pos.y);
 
             // Emit start event with action description
-            const currentAction = tool === 'eraser' ? 'erasing' : (tool === 'highlighter' ? 'highlighting' : (tool === 'sparkle' ? 'sparkle drawing' : (tool === 'line' || tool === 'arrow' ? `drawing ${tool}` : 'drawing with pen')));
+            const isSparkleAction = tool === 'sparkle' || (tool === 'pen' && penMode === 'sparkle');
+            const currentAction = tool === 'eraser' ? 'erasing' : (tool === 'highlighter' ? 'highlighting' : (isSparkleAction ? 'sparkle drawing' : (tool === 'line' || tool === 'arrow' ? `drawing ${tool}` : 'drawing with pen')));
             broadcastAction(currentAction, pos.x, pos.y);
             emitDrawEvent({
                 type: 'path',
@@ -5380,7 +5525,7 @@ export default function Whiteboard({
                     ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
                     ctx.setLineDash([]);
-                } else if (tool === 'sparkle') {
+                } else if (tool === 'sparkle' || (tool === 'pen' && penMode === 'sparkle')) {
                     ctx.globalCompositeOperation = 'source-over';
                     ctx.strokeStyle = color || '#f59e0b';
                     ctx.lineWidth = strokeWidth || 3;
@@ -5415,31 +5560,36 @@ export default function Whiteboard({
                     ctx.stroke();
                 }
 
-                if (tool === 'sparkle') {
+                if (tool === 'sparkle' || (tool === 'pen' && penMode === 'sparkle')) {
                     if (!currentSparkleParticlesRef.current) currentSparkleParticlesRef.current = [];
                     const particles = currentSparkleParticlesRef.current;
                     const lastP = particles[particles.length - 1];
-                    if (!lastP || Math.hypot(pos.x - lastP.x, pos.y - lastP.y) > 18) {
-                        const pSize = 5 + Math.random() * 7;
-                        const pRot = Math.random() * 360;
-                        const pX = pos.x + (Math.random() - 0.5) * 14;
-                        const pY = pos.y + (Math.random() - 0.5) * 14;
-                        const newP = { x: pX, y: pY, size: pSize, rotation: pRot, opacity: 0.9 };
+                    if (!lastP || Math.hypot(pos.x - lastP.x, pos.y - lastP.y) > 12) {
+                        const pSize = 2.5 + Math.random() * 2.5; // delicate 2.5 to 5px subtle glints
+                        const pRot = Math.random() * 90;
+                        const pX = pos.x + (Math.random() - 0.5) * 6; // tight to stroke spine
+                        const pY = pos.y + (Math.random() - 0.5) * 6;
+                        const newP = { x: pX, y: pY, size: pSize, rotation: pRot, color: color || '#f59e0b', opacity: 0.95 };
                         particles.push(newP);
                         ctx.save();
                         ctx.translate(pX, pY);
                         ctx.rotate((pRot * Math.PI) / 180);
+                        const rOut = pSize;
+                        const rIn = pSize * 0.22;
                         ctx.beginPath();
-                        ctx.moveTo(0, -pSize);
-                        ctx.quadraticCurveTo(0, 0, pSize, 0);
-                        ctx.quadraticCurveTo(0, 0, 0, pSize);
-                        ctx.quadraticCurveTo(0, 0, -pSize, 0);
-                        ctx.quadraticCurveTo(0, 0, 0, -pSize);
+                        for (let i = 0; i < 8; i++) {
+                            const r = i % 2 === 0 ? rOut : rIn;
+                            const a = (i * Math.PI) / 4;
+                            const px = Math.cos(a) * r;
+                            const py = Math.sin(a) * r;
+                            if (i === 0) ctx.moveTo(px, py);
+                            else ctx.lineTo(px, py);
+                        }
                         ctx.closePath();
                         ctx.fillStyle = '#ffffff';
                         ctx.fill();
                         ctx.strokeStyle = color || '#f59e0b';
-                        ctx.lineWidth = 1;
+                        ctx.lineWidth = 0.75;
                         ctx.stroke();
                         ctx.restore();
                     }
@@ -5801,7 +5951,7 @@ export default function Whiteboard({
                             smooth: false,
                             isHighlighter: false
                         };
-                    } else if (['circle', 'rectangle', 'triangle', 'star', 'polygon'].includes(autoSnapped.type)) {
+                    } else if (['circle', 'rectangle', 'triangle', 'diamond', 'parallelogram', 'hexagon', 'star', 'polygon'].includes(autoSnapped.type)) {
                         committedShape = {
                             id: Date.now().toString(),
                             type: autoSnapped.type,
@@ -5810,6 +5960,7 @@ export default function Whiteboard({
                             width: autoSnapped.width,
                             height: autoSnapped.height,
                             points: autoSnapped.points || null,
+                            skew: autoSnapped.skew || (autoSnapped.type === 'parallelogram' ? (autoSnapped.width * 0.25) : undefined),
                             rotation: 0,
                             color: color,
                             strokeWidth: strokeWidth,
@@ -5827,216 +5978,116 @@ export default function Whiteboard({
                     }
                 }
             }
-
-            if (!shapeCreated && tool === 'pen' && isAutoShape && pts && pts.length >= 8) {
-                // Auto shape recognition when user closes or connects a path
-                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                let pathLength = 0;
-
-                for (let i = 0; i < pts.length; i++) {
-                    const pt = pts[i];
-                    if (pt.x < minX) minX = pt.x;
-                    if (pt.x > maxX) maxX = pt.x;
-                    if (pt.y < minY) minY = pt.y;
-                    if (pt.y > maxY) maxY = pt.y;
-                    if (i > 0) {
-                        pathLength += Math.hypot(pt.x - pts[i - 1].x, pt.y - pts[i - 1].y);
-                    }
-                }
-
-                const w = maxX - minX;
-                const h = maxY - minY;
-                const pStart = pts[0];
-                const pEnd = pts[pts.length - 1];
-                const distClose = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
-                const maxDim = Math.max(w, h);
-                const isClosed = distClose < 20 || distClose < 0.15 * maxDim;
-
-                // Shoelace formula for enclosed polygon area
-                let polygonArea = 0;
-                for (let i = 0; i < pts.length; i++) {
-                    const nextPt = pts[(i + 1) % pts.length];
-                    polygonArea += pts[i].x * nextPt.y - nextPt.x * pts[i].y;
-                }
-                polygonArea = Math.abs(polygonArea / 2);
-
-                if (isClosed && maxDim > 20 && pathLength > 30) {
-                    const circularity = (4 * Math.PI * polygonArea) / (pathLength * pathLength);
-                    const aspectRatio = w / (h || 1);
-
-                    // Calculate radius variance to distinguish true Circles from Squares/Rectangles/Semi-circles
-                    const centerX = minX + w / 2;
-                    const centerY = minY + h / 2;
-                    let sumRadius = 0;
-                    for (let i = 0; i < pts.length; i++) {
-                        sumRadius += Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
-                    }
-                    const avgRadius = sumRadius / pts.length;
-                    let sumRadiusDiffSq = 0;
-                    for (let i = 0; i < pts.length; i++) {
-                        const r = Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
-                        sumRadiusDiffSq += (r - avgRadius) * (r - avgRadius);
-                    }
-                    const stdDevRadius = Math.sqrt(sumRadiusDiffSq / pts.length);
-                    const radiusVarianceRatio = stdDevRadius / (avgRadius || 1);
-
-                    // 1. Circle / Ellipse: Must have extremely low radius variance to avoid matching squares
-                    if (circularity > 0.85 && radiusVarianceRatio < 0.12 && aspectRatio >= 0.6 && aspectRatio <= 1.6) {
-                        const newShapeObj = {
-                            id: Date.now().toString(),
-                            type: 'circle',
-                            x: minX, y: minY, width: w, height: h,
-                            rotation: 0,
-                            color: color,
-                            strokeWidth: strokeWidth,
-                            borderStyle: strokeStyle,
-                            strokeStyle: strokeStyle,
-                            text: '',
-                            fontSize: 20,
-                            stepSize: shapeType === 'graph' ? 5 : undefined
-                        };
-                        setShapeObjects(prev => [...prev, newShapeObj]);
-                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-                        shapeCreated = true;
-                    }
-                    // 2. Rectangle / Square: Area fill > 0.68 of bounding box
-                    else if (polygonArea / (w * h) > 0.68) {
-                        const newShapeObj = {
-                            id: Date.now().toString(),
-                            type: 'rectangle',
-                            x: minX, y: minY, width: w, height: h,
-                            rotation: 0,
-                            color: color,
-                            strokeWidth: strokeWidth,
-                            borderStyle: strokeStyle,
-                            strokeStyle: strokeStyle,
-                            text: '',
-                            fontSize: 20
-                        };
-                        setShapeObjects(prev => [...prev, newShapeObj]);
-                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-                        shapeCreated = true;
-                    }
-                    // 3. Triangle
-                    else if (polygonArea / (w * h) >= 0.28 && polygonArea / (w * h) <= 0.65) {
-                        const newShapeObj = {
-                            id: Date.now().toString(),
-                            type: 'triangle',
-                            x: minX, y: minY, width: w, height: h,
-                            rotation: 0,
-                            color: color,
-                            strokeWidth: strokeWidth,
-                            borderStyle: strokeStyle,
-                            strokeStyle: strokeStyle,
-                            text: '',
-                            fontSize: 20
-                        };
-                        setShapeObjects(prev => [...prev, newShapeObj]);
-                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-                        shapeCreated = true;
-                    }
-                } else if (!isClosed && pathLength > 40) {
-                    const straightDist = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
-                    const straightness = straightDist / pathLength;
-
-                    // 4. Straight Line
-                    if (straightness > 0.88) {
-                        // Creating a path for a straight line
-                        const newShapeObj = {
-                            id: Date.now().toString(),
-                            type: 'path',
-                            x: Math.min(pStart.x, pEnd.x),
-                            y: Math.min(pStart.y, pEnd.y),
-                            width: Math.abs(pStart.x - pEnd.x),
-                            height: Math.abs(pStart.y - pEnd.y),
-                            originalWidth: Math.abs(pStart.x - pEnd.x),
-                            originalHeight: Math.abs(pStart.y - pEnd.y),
-                            points: [
-                                { x: pStart.x - Math.min(pStart.x, pEnd.x), y: pStart.y - Math.min(pStart.y, pEnd.y) },
-                                { x: pEnd.x - Math.min(pStart.x, pEnd.x), y: pEnd.y - Math.min(pStart.y, pEnd.y) }
-                            ],
-                            rotation: 0,
-                            color: color,
-                            strokeWidth: strokeWidth,
-                            borderStyle: strokeStyle,
-                            strokeStyle: strokeStyle,
-                            smooth: false,
-                            isHighlighter: false
-                        };
-                        setShapeObjects(prev => [...prev, newShapeObj]);
-                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-                        shapeCreated = true;
-                    }
-                }
-            }
             
             if (!shapeCreated && pts && pts.length > 1) {
-                // Not an auto shape, save as freehand path
-                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                pts.forEach(p => {
-                    if (p.x < minX) minX = p.x;
-                    if (p.x > maxX) maxX = p.x;
-                    if (p.y < minY) minY = p.y;
-                    if (p.y > maxY) maxY = p.y;
-                });
-                
-                // Relative points
-                const relPoints = pts.map(p => ({
-                    x: p.x - minX,
-                    y: p.y - minY
-                }));
-                
-                const newShapeObj = {
-                    id: Date.now().toString(),
-                    type: 'path',
-                    x: minX,
-                    y: minY,
-                    width: maxX - minX,
-                    height: maxY - minY,
-                    originalWidth: maxX - minX,
-                    originalHeight: maxY - minY,
-                    points: relPoints,
-                    rotation: 0,
-                    color: tool === 'highlighter' ? highlighterColor : color,
-                    strokeWidth: tool === 'highlighter' ? strokeWidth * 4 : strokeWidth,
-                    borderStyle: strokeStyle,
-                    strokeStyle: strokeStyle,
-                    smooth: true,
-                    isHighlighter: tool === 'highlighter',
-                    brushType: (tool === 'pen' ? brushType : 'normal') || 'normal'
-                };
-                setShapeObjects(prev => [...prev, newShapeObj]);
-                if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                // If pen is in sparkle mode, save as sparkle_path
+                if (tool === 'pen' && penMode === 'sparkle') {
+                    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                    pts.forEach(p => {
+                        if (p.x < minX) minX = p.x;
+                        if (p.x > maxX) maxX = p.x;
+                        if (p.y < minY) minY = p.y;
+                        if (p.y > maxY) maxY = p.y;
+                    });
+                    const relPoints = pts.map(p => ({
+                        x: p.x - minX,
+                        y: p.y - minY
+                    }));
+                    const relParticles = (currentSparkleParticlesRef.current || []).map(p => ({
+                        ...p,
+                        x: p.x - minX,
+                        y: p.y - minY
+                    }));
+                    const newSparkleObj = {
+                        id: `sparkle-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+                        type: 'sparkle_path',
+                        x: minX,
+                        y: minY,
+                        width: Math.max(maxX - minX, 1),
+                        height: Math.max(maxY - minY, 1),
+                        originalWidth: Math.max(maxX - minX, 1),
+                        originalHeight: Math.max(maxY - minY, 1),
+                        points: relPoints,
+                        particles: relParticles,
+                        rotation: 0,
+                        color: color || '#f59e0b',
+                        strokeWidth: strokeWidth || 3,
+                        smooth: true
+                    };
+                    setShapeObjects(prev => [...prev, newSparkleObj]);
+                    if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newSparkleObj });
+                    updateRecentPens('sparkle', color || '#f59e0b', strokeWidth || 3);
+                    currentSparkleParticlesRef.current = [];
+                } else {
+                    // Regular freehand path
+                    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                    pts.forEach(p => {
+                        if (p.x < minX) minX = p.x;
+                        if (p.x > maxX) maxX = p.x;
+                        if (p.y < minY) minY = p.y;
+                        if (p.y > maxY) maxY = p.y;
+                    });
+                    
+                    const relPoints = pts.map(p => ({
+                        x: p.x - minX,
+                        y: p.y - minY
+                    }));
+                    
+                    const newShapeObj = {
+                        id: Date.now().toString(),
+                        type: 'path',
+                        x: minX,
+                        y: minY,
+                        width: maxX - minX,
+                        height: maxY - minY,
+                        originalWidth: maxX - minX,
+                        originalHeight: maxY - minY,
+                        points: relPoints,
+                        rotation: 0,
+                        color: tool === 'highlighter' ? highlighterColor : color,
+                        strokeWidth: tool === 'highlighter' ? strokeWidth * 4 : strokeWidth,
+                        borderStyle: strokeStyle,
+                        strokeStyle: strokeStyle,
+                        smooth: true,
+                        isHighlighter: tool === 'highlighter',
+                        brushType: (tool === 'pen' ? brushType : 'normal') || 'normal'
+                    };
+                    setShapeObjects(prev => [...prev, newShapeObj]);
+                    if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                    if (tool === 'pen') {
+                        updateRecentPens('normal', color, strokeWidth);
+                    }
 
-                // If OCR/Handwriting Recognition is active, convert ink to typed text automatically
-                if (tool === 'pen' && isOcrActive && pts && pts.length >= 6) {
-                    recognizeHandwriting(pts).then(recognizedText => {
-                        if (recognizedText && recognizedText.trim()) {
-                            setShapeObjects(prev => prev.filter(s => s.id !== newShapeObj.id));
-                            if (socket && sessionId) socket.emit('whiteboard:shape-delete', { sessionId, shapeId: newShapeObj.id });
+                    // If OCR/Handwriting Recognition is active, convert ink to typed text automatically
+                    if (tool === 'pen' && isOcrActive && pts && pts.length >= 6) {
+                        recognizeHandwriting(pts).then(recognizedText => {
+                            if (recognizedText && recognizedText.trim()) {
+                                setShapeObjects(prev => prev.filter(s => s.id !== newShapeObj.id));
+                                if (socket && sessionId) socket.emit('whiteboard:shape-delete', { sessionId, shapeId: newShapeObj.id });
 
-                            const strokeH = Math.max(32, maxY - minY);
-                            const textW = Math.max(maxX - minX, 90);
-                            const newTextObj = {
-                                id: Date.now(),
-                                text: recognizedText,
-                                x: minX,
-                                y: minY,
-                                width: textW,
-                                height: strokeH,
-                                rotation: 0,
-                                color: color,
-                                fontSize: Math.max(16, Math.min(52, Math.round(strokeH * 0.75))),
-                                fontWeight: 'normal',
-                                fontStyle: 'normal',
-                                textAlign: 'left'
-                            };
-                            setTextObjects(prev => [...prev, newTextObj]);
-                            if (socket && sessionId) socket.emit('whiteboard:text-add', { sessionId, textObj: newTextObj });
-                            saveToHistory();
-                            toast.success(`✍️ Recognized handwriting: "${recognizedText}"`, { id: 'handwriting-ocr' });
-                        }
-                    }).catch(() => {});
+                                const strokeH = Math.max(32, maxY - minY);
+                                const textW = Math.max(maxX - minX, 90);
+                                const newTextObj = {
+                                    id: Date.now(),
+                                    text: recognizedText,
+                                    x: minX,
+                                    y: minY,
+                                    width: textW,
+                                    height: strokeH,
+                                    rotation: 0,
+                                    color: color,
+                                    fontSize: Math.max(16, Math.min(52, Math.round(strokeH * 0.75))),
+                                    fontWeight: 'normal',
+                                    fontStyle: 'normal',
+                                    textAlign: 'left'
+                                };
+                                setTextObjects(prev => [...prev, newTextObj]);
+                                if (socket && sessionId) socket.emit('whiteboard:text-add', { sessionId, textObj: newTextObj });
+                                saveToHistory();
+                                toast.success(`✍️ Recognized handwriting: "${recognizedText}"`, { id: 'handwriting-ocr' });
+                            }
+                        }).catch(() => {});
+                    }
                 }
             }
         } else if (tool === 'eraser') {
@@ -6441,6 +6492,10 @@ export default function Whiteboard({
                 textAlign: 'left',
                 bgColor: 'transparent'
             };
+            justCreatedTextRef.current = true;
+            setTimeout(() => {
+                justCreatedTextRef.current = false;
+            }, 350);
             setTextObjects(prev => [...prev, newTextObj]);
             setSelectedTextIds([newTextId]);
             setEditingTextId(newTextId);
@@ -7296,7 +7351,7 @@ export default function Whiteboard({
                 if (shpObj.points && shpObj.points.length > 0) {
                     const pts = shpObj.points;
                     ctx.beginPath();
-                    ctx.strokeStyle = shpObj.color;
+                    ctx.strokeStyle = shpObj.color || '#f59e0b';
                     ctx.lineWidth = shpObj.strokeWidth || 3;
                     ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
@@ -7307,25 +7362,38 @@ export default function Whiteboard({
                     ctx.stroke();
                     const particles = shpObj.particles || [];
                     particles.forEach(p => {
-                        const s = p.size || 8;
+                        const s = Math.min(6, Math.max(2, p.size || 3.5));
                         ctx.save();
                         ctx.translate(shpObj.x + p.x, shpObj.y + p.y);
                         ctx.rotate(((p.rotation || 0) * Math.PI) / 180);
+                        const rOut = s;
+                        const rIn = s * 0.22;
                         ctx.beginPath();
-                        ctx.moveTo(0, -s);
-                        ctx.quadraticCurveTo(0, 0, s, 0);
-                        ctx.quadraticCurveTo(0, 0, 0, s);
-                        ctx.quadraticCurveTo(0, 0, -s, 0);
-                        ctx.quadraticCurveTo(0, 0, 0, -s);
+                        for (let i = 0; i < 8; i++) {
+                            const r = i % 2 === 0 ? rOut : rIn;
+                            const a = (i * Math.PI) / 4;
+                            const px = Math.cos(a) * r;
+                            const py = Math.sin(a) * r;
+                            if (i === 0) ctx.moveTo(px, py);
+                            else ctx.lineTo(px, py);
+                        }
                         ctx.closePath();
                         ctx.fillStyle = '#ffffff';
                         ctx.fill();
-                        ctx.strokeStyle = shpObj.color;
-                        ctx.lineWidth = 1;
+                        ctx.strokeStyle = p.color || shpObj.color || '#f59e0b';
+                        ctx.lineWidth = 0.75;
                         ctx.stroke();
                         ctx.restore();
                     });
                 }
+            } else if (shpObj.type === 'equation') {
+                ctx.save();
+                ctx.font = `italic ${shpObj.fontSize || 22}px 'KaTeX_Math', 'Times New Roman', serif`;
+                ctx.fillStyle = shpObj.color || '#1e293b';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(shpObj.latex || '', shpObj.x + shpObj.width / 2, shpObj.y + shpObj.height / 2);
+                ctx.restore();
             }
 
             // Embedded text inside shape
@@ -8351,7 +8419,7 @@ export default function Whiteboard({
                             <span className="hidden sm:inline text-[11px] font-medium">Edit</span>
                             <ChevronDown size={11} className="text-slate-400 group-hover:rotate-180 transition-transform" />
                         </button>
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-850/95 backdrop-blur-md border border-slate-700/80 rounded-xl p-1.5 shadow-2xl z-50 min-w-[130px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-900 border-2 border-slate-700 rounded-xl p-1.5 shadow-2xl z-60 min-w-[130px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
                             <button onClick={handleCopy} className="flex items-center justify-between px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
                                 <span className="flex items-center gap-2"><Copy size={13} /> Copy</span>
                                 <kbd className="text-[9px] text-slate-400 font-mono">⌘C</kbd>
@@ -8380,7 +8448,7 @@ export default function Whiteboard({
                             <span className="hidden sm:inline text-[11px] font-medium">Layers</span>
                             <ChevronDown size={11} className="text-slate-400 group-hover:rotate-180 transition-transform" />
                         </button>
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-850/95 backdrop-blur-md border border-slate-700/80 rounded-xl p-1.5 shadow-2xl z-50 min-w-[140px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-900 border-2 border-slate-700 rounded-xl p-1.5 shadow-2xl z-60 min-w-[140px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
                             <button onClick={handleBringToFront} className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
                                 <BringToFront size={13} /> Bring to Front
                             </button>
@@ -8399,7 +8467,7 @@ export default function Whiteboard({
                             <span className="hidden sm:inline text-[11px] font-medium">Align</span>
                             <ChevronDown size={11} className="text-slate-400 group-hover:rotate-180 transition-transform" />
                         </button>
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-850/95 backdrop-blur-md border border-slate-700/80 rounded-xl p-2 shadow-2xl z-50 min-w-[170px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-900 border-2 border-slate-700 rounded-xl p-2 shadow-2xl z-60 min-w-[170px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
                             <div className="text-[10px] font-semibold text-slate-400 px-1 mb-1">Align</div>
                             <div className="grid grid-cols-3 gap-1 mb-2">
                                 <button onClick={() => handleAlign('left')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center" title="Align Left"><AlignLeft size={13} /></button>
@@ -8435,7 +8503,7 @@ export default function Whiteboard({
                             <span className="hidden sm:inline text-[11px] font-medium">Organize</span>
                             <ChevronDown size={11} className="text-slate-400 group-hover:rotate-180 transition-transform" />
                         </button>
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-850/95 backdrop-blur-md border border-slate-700/80 rounded-xl p-1.5 shadow-2xl z-50 min-w-[130px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-900 border-2 border-slate-700 rounded-xl p-1.5 shadow-2xl z-60 min-w-[130px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
                             <button onClick={handleToggleLock} className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
                                 {shapeObjects.some(s => selectedShapeIds.includes(s.id) && s.isLocked) || textObjects.some(t => selectedTextIds.includes(t.id) && t.isLocked) ? (
                                     <><Unlock size={13} /> Unlock</>
@@ -8486,13 +8554,13 @@ export default function Whiteboard({
 
                 const allTools = [
                     { id: 'select', icon: selectMode === 'lasso' ? Wand2 : MousePointer2, label: 'Select (V)', important: true },
-                    { id: 'pen', icon: Pencil, label: 'Pen & Smart Draw (P)', important: true },
-                    { id: 'sparkle', icon: Sparkles, label: 'Sparkle Pen (S)', important: true },
+                    { id: 'pen', icon: penMode === 'sparkle' ? Sparkles : Pencil, label: penMode === 'sparkle' ? 'Sparkle Pen (P)' : 'Pen & Smart Draw (P)', important: true },
                     { id: 'highlighter', icon: Highlighter, label: 'Highlighter (H)', important: true },
                     { id: 'eraser', icon: Eraser, label: 'Eraser (E)', important: true },
                     { id: 'line', icon: lineType.startsWith('connector') ? Waypoints : (lineType === 'arrow' ? MoveRight : Minus), label: 'Lines & Arrows', important: false },
-                    { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : RectangleHorizontal)), label: 'Shapes', important: true },
+                    { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : (shapeType === 'parallelogram' ? ParallelogramIcon : RectangleHorizontal))), label: 'Shapes', important: true },
                     { id: 'text', icon: Type, label: 'Text (T)', important: true },
+                    { id: 'equation', icon: Sigma, label: 'Math Equation (LaTeX)', important: true },
                     { id: 'image', icon: ImageIcon, label: 'Insert Image', important: false },
                     { id: 'media', icon: Film, label: 'Media & Documents (PDF, Video, Audio, Record, Web)', important: true },
                     { id: 'domain_3d', icon: Box, label: '3D Objects & Domain Library', important: true },
@@ -8514,7 +8582,7 @@ export default function Whiteboard({
                 <div 
                     ref={toolbarRef}
                     style={isFloating ? { left: `${toolbarPos.x}px`, top: `${toolbarPos.y}px`, transform: 'none' } : undefined}
-                    className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 flex z-40 overflow-visible whitespace-nowrap hide-scrollbar ${isDraggingToolbar ? '' : 'transition-all duration-200'} ${
+                    className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 flex z-50 overflow-visible whitespace-nowrap hide-scrollbar ${isDraggingToolbar ? '' : 'transition-all duration-200'} ${
                     !isStateLoaded ? 'pointer-events-none opacity-60 filter blur-[0.5px]' : 'pointer-events-auto opacity-100'
                 } ${
                     toolbarDock === 'top'
@@ -8555,6 +8623,12 @@ export default function Whiteboard({
                             <div key={t.id} className="relative">
                                 <button
                                     onClick={() => {
+                                        if (t.id === 'equation') {
+                                            setEquationInitialLatex('\\int_{0}^{\\infty} x^2 e^{-x}\\,dx = 2');
+                                            setEditingEquationId(null);
+                                            setShowEquationModal(true);
+                                            return;
+                                        }
                                         if (t.id === 'media') {
                                             setShowMediaModal(true);
                                             return;
@@ -8659,17 +8733,42 @@ export default function Whiteboard({
                                 
                                 {/* Popovers rendered with dynamic positioning */}
                                 {tool === t.id && t.id === 'pen' && showStrokePicker && (
-                                    <div className={`absolute ${popoverPos} p-3 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-2 min-w-[130px]`}>
-                                        <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1 text-center">Stroke Width</p>
-                                        <input
-                                            type="range"
-                                            min="1"
-                                            max="20"
-                                            value={strokeWidth}
-                                            onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
-                                            className="w-full h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer"
-                                        />
-                                        <div className="text-xs text-white text-center mt-0.5">{strokeWidth}px</div>
+                                    <div className={`absolute ${popoverPos} p-3 bg-slate-900 border-2 border-slate-700 rounded-xl shadow-2xl z-60 flex flex-col gap-2.5 min-w-[190px]`}>
+                                        {/* Pen Mode Switcher (Normal vs Sparkle) */}
+                                        <div className="flex items-center gap-1 p-0.5 bg-slate-800 rounded-lg border border-slate-700/80">
+                                            <button
+                                                type="button"
+                                                onClick={() => setPenMode('normal')}
+                                                className={`flex-1 py-1 px-2 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1.5 transition ${penMode === 'normal' ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-400 hover:text-slate-200'}`}
+                                            >
+                                                <Pencil className="w-3 h-3" />
+                                                Normal
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPenMode('sparkle')}
+                                                className={`flex-1 py-1 px-2 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1.5 transition ${penMode === 'sparkle' ? 'bg-amber-500 text-slate-950 font-bold shadow-xs' : 'text-slate-400 hover:text-amber-300'}`}
+                                            >
+                                                <Sparkles className="w-3 h-3" />
+                                                Sparkle
+                                            </button>
+                                        </div>
+
+                                        <div>
+                                            <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1">
+                                                <span>Stroke Width</span>
+                                                <span className="text-white font-mono">{strokeWidth}px</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="1"
+                                                max="20"
+                                                value={strokeWidth}
+                                                onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
+                                                className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
+                                            />
+                                        </div>
+
                                         <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between gap-2">
                                             <span className="text-[11px] text-slate-300 font-medium">Smart Shape</span>
                                             <button
@@ -8680,6 +8779,39 @@ export default function Whiteboard({
                                                 {isAutoShape ? 'ON' : 'OFF'}
                                             </button>
                                         </div>
+
+                                        {/* Recent Pens Palette */}
+                                        {recentPens && recentPens.length > 0 && (
+                                            <div className="pt-2 border-t border-slate-700/60">
+                                                <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">
+                                                    Recent Pens
+                                                </div>
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    {recentPens.slice(0, 6).map((rp, idx) => {
+                                                        const isCur = tool === 'pen' && penMode === rp.type && color === rp.color && strokeWidth === rp.strokeWidth;
+                                                        return (
+                                                            <button
+                                                                key={`${rp.type}-${rp.color}-${idx}`}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setTool('pen');
+                                                                    setPenMode(rp.type);
+                                                                    setColor(rp.color);
+                                                                    setStrokeWidth(rp.strokeWidth);
+                                                                }}
+                                                                className={`relative w-6 h-6 rounded-full border flex items-center justify-center transition hover:scale-110 ${isCur ? 'border-white ring-2 ring-primary-500' : 'border-slate-600'}`}
+                                                                style={{ backgroundColor: rp.color }}
+                                                                title={`${rp.type === 'sparkle' ? '✨ Sparkle Pen' : '✏️ Normal Pen'} (${rp.strokeWidth}px, ${rp.color})`}
+                                                            >
+                                                                {rp.type === 'sparkle' ? (
+                                                                    <Sparkles className="w-3 h-3 text-white drop-shadow-md" />
+                                                                ) : null}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
@@ -8824,7 +8956,7 @@ export default function Whiteboard({
                                             { id: 'diamond', icon: Diamond, label: 'Diamond' },
                                             { id: 'star', icon: Star, label: 'Star' },
                                             { id: 'hexagon', icon: Hexagon, label: 'Hexagon' },
-                                            { id: 'parallelogram', icon: Spline, label: 'Parallelogram' },
+                                            { id: 'parallelogram', icon: ParallelogramIcon, label: 'Parallelogram' },
                                             { id: 'terminator', icon: RectangleHorizontal, label: 'Terminator' },
                                             { id: 'cylinder', icon: Database, label: 'Cylinder' },
                                             { id: 'document', icon: FileText, label: 'Document' },
@@ -9104,7 +9236,7 @@ export default function Whiteboard({
                                 </div>
                             </button>
                             {showStrokeStylePicker && (
-                                <div className={`absolute ${popoverPos} p-2 bg-slate-850 bg-slate-900/95 backdrop-blur-md rounded-xl shadow-2xl border border-slate-700/80 z-50 w-36`}>
+                                <div className={`absolute ${popoverPos} p-2 bg-slate-900 border-2 border-slate-700 shadow-2xl z-60 rounded-xl w-36`}>
                                     <div className="flex flex-col gap-1">
                                         {[
                                             {
@@ -9488,12 +9620,60 @@ export default function Whiteboard({
                     }}
                 />
 
-            {/* Canvas */}
-            <div className={`flex-1 overflow-hidden p-2 sm:p-4 bg-slate-100 flex items-center justify-center relative touch-none select-none overscroll-none whiteboard-canvas-wrapper ${isFullscreen ? 'h-full' : ''}`}>
+            {/* Canvas Container - Infinite Canvas with edge-to-edge background */}
+            <div 
+                className={`flex-1 overflow-hidden p-0 flex items-center justify-center relative touch-none select-none overscroll-none whiteboard-canvas-wrapper ${isFullscreen ? 'h-full' : ''}`}
+                style={{
+                    backgroundColor: bgColor,
+                    backgroundImage: (() => {
+                        switch (bgPattern) {
+                            case 'dotted':
+                                return 'radial-gradient(circle, #999 1.5px, transparent 1.5px)';
+                            case 'grid':
+                                return 'linear-gradient(#ccc 1px, transparent 1px), linear-gradient(90deg, #ccc 1px, transparent 1px)';
+                            case 'lined':
+                                return 'linear-gradient(#ccc 1px, transparent 1px)';
+                            case 'graph':
+                                return 'linear-gradient(#bbb 1px, transparent 1px), linear-gradient(90deg, #bbb 1px, transparent 1px), linear-gradient(#ddd 0.5px, transparent 0.5px), linear-gradient(90deg, #ddd 0.5px, transparent 0.5px)';
+                            case 'music':
+                                return 'repeating-linear-gradient(transparent 0px, transparent 7px, #aaa 8px, #aaa 9px)';
+                            case 'iso':
+                                return 'linear-gradient(60deg, #ccc 1px, transparent 1px), linear-gradient(-60deg, #ccc 1px, transparent 1px), linear-gradient(#ccc 1px, transparent 1px)';
+                            case 'hex':
+                                return 'radial-gradient(circle, transparent 12px, #ccc 13px, #ccc 14px, transparent 15px), radial-gradient(circle, transparent 12px, #ccc 13px, #ccc 14px, transparent 15px)';
+                            default:
+                                return 'none';
+                        }
+                    })(),
+                    backgroundSize: (() => {
+                        const s = isFullscreen ? (fullscreenScale * zoomLevel) : zoomLevel;
+                        switch (bgPattern) {
+                            case 'dotted': return `${20 * s}px ${20 * s}px`;
+                            case 'grid': return `${25 * s}px ${25 * s}px`;
+                            case 'lined': return `100% ${25 * s}px`;
+                            case 'graph': return `${100 * s}px ${100 * s}px, ${100 * s}px ${100 * s}px, ${20 * s}px ${20 * s}px, ${20 * s}px ${20 * s}px`;
+                            case 'music': return `100% ${40 * s}px`;
+                            case 'iso': return `${30 * s}px ${52 * s}px`;
+                            case 'hex': return `${60 * s}px ${52 * s}px`;
+                            default: return 'auto';
+                        }
+                    })(),
+                    backgroundPosition: (() => {
+                        const s = isFullscreen ? (fullscreenScale * zoomLevel) : zoomLevel;
+                        const px = panOffset.x * s;
+                        const py = panOffset.y * s;
+                        switch (bgPattern) {
+                            case 'iso': return `calc(50% + ${px}px) calc(50% + ${py}px), calc(50% + ${px}px) calc(50% + ${py}px), calc(50% + ${px}px) calc(50% + ${py}px)`;
+                            case 'hex': return `calc(50% + ${px}px) calc(50% + ${py}px), calc(50% + ${px + 30 * s}px) calc(50% + ${py + 26 * s}px)`;
+                            default: return `calc(50% + ${px}px) calc(50% + ${py}px)`;
+                        }
+                    })()
+                }}
+            >
 
                 <div 
                     ref={canvasWrapperRef}
-                    className={`relative rounded-lg shadow-lg overflow-visible touch-none select-none overscroll-none transition-all duration-300 ${
+                    className={`relative overflow-visible touch-none select-none overscroll-none transition-all duration-300 ${
                         !isStateLoaded ? 'filter blur-sm pointer-events-none select-none opacity-80' : 'filter-none opacity-100'
                     }`}
                     style={{
@@ -9503,64 +9683,21 @@ export default function Whiteboard({
                             ? `scale(${fullscreenScale * zoomLevel}) translate(${panOffset.x}px, ${panOffset.y}px)` 
                             : `scale(${zoomLevel}) translate(${panOffset.x}px, ${panOffset.y}px)`,
                         transformOrigin: 'center center',
-                        backgroundColor: bgColor,
+                        backgroundColor: 'transparent',
                         touchAction: 'none',
                         userSelect: 'none',
                         WebkitUserSelect: 'none',
                         WebkitTouchCallout: 'none',
                         overscrollBehavior: 'none',
-                            backgroundImage: (() => {
-                                switch (bgPattern) {
-                                    case 'dotted':
-                                        return 'radial-gradient(circle, #999 1.5px, transparent 1.5px)';
-                                    case 'grid':
-                                        return 'linear-gradient(#ccc 1px, transparent 1px), linear-gradient(90deg, #ccc 1px, transparent 1px)';
-                                    case 'lined':
-                                        return 'linear-gradient(#ccc 1px, transparent 1px)';
-                                    case 'graph':
-                                        return 'linear-gradient(#bbb 1px, transparent 1px), linear-gradient(90deg, #bbb 1px, transparent 1px), linear-gradient(#ddd 0.5px, transparent 0.5px), linear-gradient(90deg, #ddd 0.5px, transparent 0.5px)';
-                                    case 'music':
-                                        return 'repeating-linear-gradient(transparent 0px, transparent 7px, #aaa 8px, #aaa 9px)';
-                                    case 'iso':
-                                        // Isometric grid - triangular pattern
-                                        return 'linear-gradient(60deg, #ccc 1px, transparent 1px), linear-gradient(-60deg, #ccc 1px, transparent 1px), linear-gradient(#ccc 1px, transparent 1px)';
-                                    case 'hex':
-                                        // Hexagonal pattern using overlapping radial gradients
-                                        return 'radial-gradient(circle, transparent 12px, #ccc 13px, #ccc 14px, transparent 15px), radial-gradient(circle, transparent 12px, #ccc 13px, #ccc 14px, transparent 15px)';
-                                    default:
-                                        return 'none';
-                                }
-                            })(),
-                            backgroundSize: (() => {
-                                switch (bgPattern) {
-                                    case 'dotted': return '20px 20px';
-                                    case 'grid': return '25px 25px';
-                                    case 'lined': return '100% 25px';
-                                    case 'graph': return '100px 100px, 100px 100px, 20px 20px, 20px 20px';
-                                    case 'music': return '100% 40px';
-                                    case 'iso': return '30px 52px';
-                                    case 'hex': return '60px 52px';
-                                    default: return 'auto';
-                                }
-                            })(),
-                            backgroundPosition: (() => {
-                                switch (bgPattern) {
-                                    case 'iso': return '0 0, 0 0, 0 0';
-                                    case 'hex': return '0 0, 30px 26px';
-                                    default: return undefined;
-                                }
-                            })(),
-                            cursor: getCursor(),
-                            border: '2px solid #e2e8f0',
-                            outline: '1px solid #cbd5e1'
-                        }}
-                        onPointerDown={handlePointerDown}
-                        onPointerMove={handlePointerMove}
-                        onPointerUp={handlePointerUp}
-                        onPointerCancel={handlePointerCancel}
-                        onPointerLeave={handlePointerLeave}
-                        onClick={handleCanvasClick}
-                    >
+                        cursor: getCursor()
+                    }}
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                    onPointerCancel={handlePointerCancel}
+                    onPointerLeave={handlePointerLeave}
+                    onClick={handleCanvasClick}
+                >
                     <canvas
                         ref={canvasRef}
                         id="main-whiteboard-canvas"
@@ -11821,15 +11958,47 @@ export default function Whiteboard({
                                             style={{ pointerEvents: 'none' }}
                                         />
                                         {particles.map((p, idx) => {
-                                            const s = p.size || 8;
-                                            const starD = `M ${p.x} ${p.y - s} Q ${p.x} ${p.y} ${p.x + s} ${p.y} Q ${p.x} ${p.y} ${p.x} ${p.y + s} Q ${p.x} ${p.y} ${p.x - s} ${p.y} Q ${p.x} ${p.y} ${p.x} ${p.y - s}`;
+                                            const s = Math.min(6, Math.max(2, p.size || 3.5));
+                                            const starD = `M ${p.x} ${p.y - s} Q ${p.x} ${p.y} ${p.x + s} ${p.y} Q ${p.x} ${p.y} ${p.x + s} ${p.y} Q ${p.x} ${p.y} ${p.x} ${p.y + s} Q ${p.x} ${p.y} ${p.x - s} ${p.y} Q ${p.x} ${p.y} ${p.x} ${p.y - s}`;
                                             return (
                                                 <g key={idx} transform={`rotate(${p.rotation || 0}, ${p.x}, ${p.y})`} style={{ pointerEvents: 'none' }}>
-                                                    <path d={starD} fill="#ffffff" stroke={shpObj.color} strokeWidth="1" opacity={p.opacity || 0.9} />
+                                                    <path d={starD} fill="#ffffff" stroke={p.color || shpObj.color || '#f59e0b'} strokeWidth="0.75" opacity={p.opacity || 0.95} />
                                                 </g>
                                             );
                                         })}
                                     </g>
+                                );
+                            } else if (shpObj.type === 'equation') {
+                                return (
+                                    <foreignObject
+                                        x={0}
+                                        y={0}
+                                        width={shpObj.width}
+                                        height={shpObj.height}
+                                        style={{ overflow: 'visible', pointerEvents: (tool === 'select' || isSelected) ? 'auto' : 'none' }}
+                                    >
+                                        <div
+                                            className="w-full h-full flex items-center justify-center select-none cursor-pointer"
+                                            style={{
+                                                color: shpObj.color || '#1e293b',
+                                                fontSize: `${shpObj.fontSize || 22}px`,
+                                                backgroundColor: shpObj.bgColor || 'transparent',
+                                                borderRadius: '6px'
+                                            }}
+                                            onDoubleClick={(e) => {
+                                                e.stopPropagation();
+                                                setEditingEquationId(shpObj.id);
+                                                setEquationInitialLatex(shpObj.latex || '');
+                                                setShowEquationModal(true);
+                                            }}
+                                            dangerouslySetInnerHTML={{
+                                                __html: katex.renderToString(shpObj.latex || '', {
+                                                    displayMode: true,
+                                                    throwOnError: false
+                                                })
+                                            }}
+                                        />
+                                    </foreignObject>
                                 );
                             }
                             if (DOMAIN_SHAPES && DOMAIN_SHAPES[shpObj.type]) {
@@ -12936,7 +13105,7 @@ export default function Whiteboard({
                                                         { id: 'diamond', icon: Diamond, label: 'Diamond' },
                                                         { id: 'star', icon: Star, label: 'Star' },
                                                         { id: 'hexagon', icon: Hexagon, label: 'Hexagon' },
-                                                        { id: 'parallelogram', icon: Spline, label: 'Parallelogram' },
+                                                        { id: 'parallelogram', icon: ParallelogramIcon, label: 'Parallelogram' },
                                                         { id: 'terminator', icon: RectangleHorizontal, label: 'Terminator' },
                                                         { id: 'cylinder', icon: Database, label: 'Cylinder' },
                                                         { id: 'document', icon: FileText, label: 'Document' },
@@ -13932,6 +14101,7 @@ export default function Whiteboard({
                     containerRef={canvasWrapperRef}
                     viewportWidth={canvasWrapperRef.current?.clientWidth || canvasWidth}
                     viewportHeight={canvasWrapperRef.current?.clientHeight || canvasHeight}
+                    isDrawing={isDrawing}
                 />
 
                 {/* Contextual Eraser Floating Toolbar */}
@@ -14032,6 +14202,47 @@ export default function Whiteboard({
             <ClassroomTimerModal
                 isOpen={showClassroomTimer}
                 onClose={() => setShowClassroomTimer(false)}
+            />
+
+            {/* KaTeX Math Equation Editor Modal */}
+            <WhiteboardEquationEditor
+                isOpen={showEquationModal}
+                initialLatex={equationInitialLatex}
+                onClose={() => {
+                    setShowEquationModal(false);
+                    setEditingEquationId(null);
+                }}
+                onInsert={(latexCode) => {
+                    if (editingEquationId) {
+                        setShapeObjects(prev => prev.map(s => s.id === editingEquationId ? { ...s, latex: latexCode } : s));
+                        setEditingEquationId(null);
+                        saveToHistory();
+                        toast.success('Equation updated!', { icon: '📐' });
+                    } else {
+                        const wrapper = canvasWrapperRef.current;
+                        const cx = wrapper ? (wrapper.clientWidth / 2 - 120) : 250;
+                        const cy = wrapper ? (wrapper.clientHeight / 2 - 40) : 250;
+                        const newEq = {
+                            id: `eq_${Date.now()}`,
+                            type: 'equation',
+                            latex: latexCode,
+                            x: Math.round(-panOffset.x + cx / zoomLevel),
+                            y: Math.round(-panOffset.y + cy / zoomLevel),
+                            width: 260,
+                            height: 70,
+                            fontSize: 24,
+                            color: color || '#1e293b',
+                            bgColor: 'transparent',
+                            rotation: 0
+                        };
+                        setShapeObjects(prev => [...prev, newEq]);
+                        setSelectedShapeIds([newEq.id]);
+                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newEq });
+                        saveToHistory();
+                        toast.success('Equation inserted!', { icon: '📐' });
+                    }
+                    setShowEquationModal(false);
+                }}
             />
 
             {/* Domain-Specific Shape Library Modal */}

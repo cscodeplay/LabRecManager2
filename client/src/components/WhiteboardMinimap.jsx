@@ -22,7 +22,8 @@ export default function WhiteboardMinimap({
     texts = [],
     textObjects = [],
     images = [],
-    imageObjects = []
+    imageObjects = [],
+    isDrawing = false
 }) {
     // Minimap preview toggle
     const [isMinimapExpanded, setIsMinimapExpanded] = useState(false);
@@ -35,6 +36,14 @@ export default function WhiteboardMinimap({
     const [pos, setPos] = useState({ x: 24, y: 0 }); // y calculated on mount
     const [isDraggingBar, setIsDraggingBar] = useState(false);
     const dragOffsetRef = useRef({ x: 0, y: 0 });
+
+    // Autohide / collapse zoom bar when user interacts or draws on the canvas
+    useEffect(() => {
+        if (isDrawing) {
+            setIsBarCollapsed(true);
+            setIsMinimapExpanded(false);
+        }
+    }, [isDrawing]);
 
     // Restore saved position and collapsed state
     useEffect(() => {
@@ -380,12 +389,12 @@ export default function WhiteboardMinimap({
                     <ChevronUp className="w-3 h-3 text-slate-400 group-hover:text-white" />
                 </div>
             ) : (
-                /* Full Control Bar & Optional Minimap Popup */
-                <div className="flex flex-col items-start gap-2">
-                    {/* Minimap Viewport Popup */}
+                /* Full Control Bar & Stationary Minimap Popup */
+                <div className="relative">
+                    {/* Minimap Viewport Popup - displayed directly above zoom bar without relocating the zoom bar */}
                     {isMinimapExpanded && (
                         <div 
-                            className="bg-slate-900/95 border border-slate-700/80 rounded-2xl shadow-2xl p-2.5 overflow-hidden backdrop-blur-md animate-in fade-in zoom-in-95 duration-150"
+                            className="absolute bottom-full mb-2 left-0 bg-slate-900 border-2 border-slate-700 rounded-2xl shadow-2xl p-2.5 overflow-hidden backdrop-blur-md animate-in fade-in zoom-in-95 duration-150 z-50"
                             style={{ width: `${MAP_WIDTH + 20}px` }}
                         >
                             <div className="flex items-center justify-between pb-1.5 border-b border-slate-800 text-xs font-semibold text-slate-300">
@@ -461,7 +470,7 @@ export default function WhiteboardMinimap({
                     )}
 
                     {/* Main Draggable Control Bar */}
-                    <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full shadow-2xl px-2.5 py-1 flex items-center gap-1.5 text-white">
+                    <div className="bg-slate-900 border-2 border-slate-700/80 rounded-full shadow-2xl px-2.5 py-1 flex items-center gap-1.5 text-white">
                         {/* Drag Grip Handle */}
                         <div
                             onMouseDown={handleDragStart}
