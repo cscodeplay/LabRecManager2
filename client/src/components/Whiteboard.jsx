@@ -59,6 +59,70 @@ import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/lib/store';
 import { formatDate, formatTime } from '@/lib/dateUtils';
 
+/**
+ * Render mixed plain text and KaTeX math formulas within text fields
+ */
+export function renderRichMathText(text) {
+    if (!text || typeof text !== 'string') return '';
+
+    const escapeHtml = (str) =>
+        str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+    // 1. Explicit math delimiters: $$...$$ (display mode) or $...$ (inline mode)
+    if (text.includes('$')) {
+        const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]+\$)/g);
+        return parts.map(part => {
+            if (part.startsWith('$$') && part.endsWith('$$')) {
+                const math = part.slice(2, -2).trim();
+                try {
+                    return `<span class="inline-block my-1 text-center w-full">${katex.renderToString(math, { displayMode: true, throwOnError: false })}</span>`;
+                } catch {
+                    return escapeHtml(part);
+                }
+            } else if (part.startsWith('$') && part.endsWith('$')) {
+                const math = part.slice(1, -1).trim();
+                try {
+                    return katex.renderToString(math, { displayMode: false, throwOnError: false });
+                } catch {
+                    return escapeHtml(part);
+                }
+            } else {
+                return escapeHtml(part).replace(/\n/g, '<br />');
+            }
+        }).join('');
+    }
+
+    // 2. Pure LaTeX formula (e.g. \frac{a}{b} + \sqrt{c} or x^2 + y^2 = r^2)
+    const isPureFormula = /^[\s\d+\-*/=<>()[\]{}.,:;\\^_a-zA-Z]+$/.test(text) && /\\|[\^_{}]/.test(text) && !/[a-zA-Z]{5,}\s+[a-zA-Z]{5,}/.test(text);
+    if (isPureFormula) {
+        try {
+            return katex.renderToString(text.trim(), { displayMode: false, throwOnError: false });
+        } catch {
+            // fall through to tokenized parser
+        }
+    }
+
+    // 3. Mixed text with LaTeX commands: tokenizes commands and renders them inline
+    const latexCmdRegex = /(\\(?:frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|sqrt(?:\[[^\]]*\])?\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|binom\{[^{}]*\}\{[^{}]*\}|int(?:_\{?[^{}\s]+\}?)?(?:\^\{?[^{}\s]+\}?)?|sum(?:_\{?[^{}\s]+\}?)?(?:\^\{?[^{}\s]+\}?)?|prod(?:_\{?[^{}\s]+\}?)?(?:\^\{?[^{}\s]+\}?)?|lim(?:_\{?[^{}\s]+\}?)?|[a-zA-Z0-9]+(?:_\{?[^{}\s]+\}?)?\^\{?[^{}\s]+\}?|[a-zA-Z0-9]+_\{?[^{}\s]+\}?|\\[a-zA-Z]+))/g;
+    if (text.includes('\\') || /[\^_{}]/.test(text)) {
+        const parts = text.split(latexCmdRegex);
+        if (parts.length > 1) {
+            return parts.map(part => {
+                if (part.startsWith('\\') || /[\^_{}]/.test(part)) {
+                    try {
+                        return katex.renderToString(part, { displayMode: false, throwOnError: false });
+                    } catch {
+                        return escapeHtml(part);
+                    }
+                }
+                return escapeHtml(part).replace(/\n/g, '<br />');
+            }).join('');
+        }
+    }
+
+    return escapeHtml(text).replace(/\n/g, '<br />');
+}
+
 // Default colors (rainbow + black/white)
 const DEFAULT_COLORS = [
     '#000000', '#ffffff', '#ef4444', // Black, White, Red
@@ -811,6 +875,10 @@ export default function Whiteboard({
     const [selectedTextIds, setSelectedTextIds] = useState([]);
     const [selectedShapeIds, setSelectedShapeIds] = useState([]);
     const [editingTextId, setEditingTextId] = useState(null); // For double-click edit mode
+    const lastActiveTextCaretRef = useRef({ id: null, start: null, end: null });
+    const [isConvertingInk, setIsConvertingInk] = useState(false);
+    const recentInkStrokesRef = useRef([]);
+    const autoConvertInkTimeoutRef = useRef(null);
     const [textDragState, setTextDragState] = useState(null);
     const [textInputMode, setTextInputMode] = useState('create'); // 'create' or 'edit'
     const [textBoundary, setTextBoundary] = useState(null); // { x, y, width, height } - dotted boundary while creating
@@ -4002,7 +4070,51 @@ export default function Whiteboard({
 
     // Math virtual keyboard symbol insertion handler
     const handleInsertMathSymbol = useCallback((symbolLatex) => {
-        // 1. If a single equation shape is selected, append symbol to its LaTeX
+        // 1. If currently editing text OR a text object is selected OR previously focused: INSERT DIRECTLY INTO THAT TEXT FIELD!
+        const activeTextId = editingTextId || (selectedTextIds.length === 1 ? selectedTextIds[0] : null) || lastActiveTextCaretRef.current.id;
+        if (activeTextId) {
+            const activeEl = document.activeElement;
+            const isTextareaActive = activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT');
+
+            setEditingTextId(activeTextId);
+            setSelectedTextIds([activeTextId]);
+
+            setTextObjects(prev => prev.map(t => {
+                if (t.id !== activeTextId) return t;
+                const currentVal = t.text || '';
+                
+                const start = isTextareaActive 
+                    ? (activeEl.selectionStart ?? currentVal.length)
+                    : (lastActiveTextCaretRef.current.start ?? currentVal.length);
+                const end = isTextareaActive
+                    ? (activeEl.selectionEnd ?? currentVal.length)
+                    : (lastActiveTextCaretRef.current.end ?? currentVal.length);
+
+                const before = currentVal.substring(0, start);
+                const after = currentVal.substring(end);
+                const nextVal = before + symbolLatex + after;
+                
+                const newPos = start + symbolLatex.length;
+                lastActiveTextCaretRef.current = { id: activeTextId, start: newPos, end: newPos };
+
+                setTimeout(() => {
+                    const el = document.querySelector(`[data-text-id="${activeTextId}"] textarea`);
+                    if (el) {
+                        el.focus();
+                        el.setSelectionRange?.(newPos, newPos);
+                    } else if (activeEl && isTextareaActive) {
+                        activeEl.focus();
+                        activeEl.setSelectionRange?.(newPos, newPos);
+                    }
+                }, 10);
+                return { ...t, text: nextVal };
+            }));
+            
+            saveToHistory();
+            return;
+        }
+
+        // 2. If a single equation shape is selected, append symbol to its LaTeX
         if (selectedShapeIds.length === 1) {
             const targetShape = shapeObjects.find(s => s.id === selectedShapeIds[0]);
             if (targetShape && (targetShape.type === 'equation' || targetShape.isEquation || targetShape.latex !== undefined)) {
@@ -4014,29 +4126,13 @@ export default function Whiteboard({
             }
         }
 
-        // 2. Determine spawn position (below active text if editing/selected, or centered on viewport)
-        let spawnX;
-        let spawnY;
-        const activeTextId = editingTextId || (selectedTextIds.length === 1 ? selectedTextIds[0] : null);
-        if (activeTextId) {
-            const targetText = textObjects.find(t => t.id === activeTextId);
-            if (targetText) {
-                spawnX = targetText.x;
-                spawnY = targetText.y + (targetText.height || 40) + 14;
-            }
-            setEditingTextId(null);
-            setSelectedTextIds([]);
-        }
+        // 3. Otherwise (no text or equation selected), spawn a new KaTeX equation shape centered on current canvas view
+        const wrapper = canvasWrapperRef.current;
+        const cx = wrapper ? (wrapper.clientWidth / 2 - 120) : 250;
+        const cy = wrapper ? (wrapper.clientHeight / 2 - 40) : 250;
+        const spawnX = Math.round(-panOffset.x + cx / zoomLevel);
+        const spawnY = Math.round(-panOffset.y + cy / zoomLevel);
 
-        if (spawnX === undefined || spawnY === undefined) {
-            const wrapper = canvasWrapperRef.current;
-            const cx = wrapper ? (wrapper.clientWidth / 2 - 120) : 250;
-            const cy = wrapper ? (wrapper.clientHeight / 2 - 40) : 250;
-            spawnX = Math.round(-panOffset.x + cx / zoomLevel);
-            spawnY = Math.round(-panOffset.y + cy / zoomLevel);
-        }
-
-        // 3. Spawn a new KaTeX equation shape
         const newEq = {
             id: `eq_${Date.now()}`,
             type: 'equation',
@@ -4055,13 +4151,58 @@ export default function Whiteboard({
         if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newEq });
         saveToHistory();
         toast.success('Equation inserted!', { icon: '📐' });
-    }, [editingTextId, selectedTextIds, textObjects, selectedShapeIds, shapeObjects, canvasWrapperRef, panOffset, zoomLevel, color, socket, sessionId, saveToHistory, setShapeObjects, setSelectedShapeIds, setEditingTextId, setSelectedTextIds]);
+    }, [editingTextId, selectedTextIds, selectedShapeIds, shapeObjects, canvasWrapperRef, panOffset, zoomLevel, color, socket, sessionId, saveToHistory, setShapeObjects, setTextObjects, setSelectedShapeIds]);
 
     // Windows Math Input Tablet insertion handler
     const handleInsertMathFromTablet = useCallback((latex) => {
         if (!latex || !latex.trim()) return;
 
-        // 1. If a single equation shape is selected, replace/update its LaTeX
+        // 1. If currently editing text OR a text object is selected OR previously focused: INSERT DIRECTLY INTO THAT TEXT FIELD!
+        const activeTextId = editingTextId || (selectedTextIds.length === 1 ? selectedTextIds[0] : null) || lastActiveTextCaretRef.current.id;
+        if (activeTextId) {
+            const activeEl = document.activeElement;
+            const isTextareaActive = activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT');
+
+            setEditingTextId(activeTextId);
+            setSelectedTextIds([activeTextId]);
+
+            setTextObjects(prev => prev.map(t => {
+                if (t.id !== activeTextId) return t;
+                const currentVal = t.text || '';
+                
+                const start = isTextareaActive
+                    ? (activeEl.selectionStart ?? currentVal.length)
+                    : (lastActiveTextCaretRef.current.start ?? currentVal.length);
+                const end = isTextareaActive
+                    ? (activeEl.selectionEnd ?? currentVal.length)
+                    : (lastActiveTextCaretRef.current.end ?? currentVal.length);
+
+                const before = currentVal.substring(0, start);
+                const after = currentVal.substring(end);
+                const nextVal = before + latex + after;
+
+                const newPos = start + latex.length;
+                lastActiveTextCaretRef.current = { id: activeTextId, start: newPos, end: newPos };
+
+                setTimeout(() => {
+                    const el = document.querySelector(`[data-text-id="${activeTextId}"] textarea`);
+                    if (el) {
+                        el.focus();
+                        el.setSelectionRange?.(newPos, newPos);
+                    } else if (activeEl && isTextareaActive) {
+                        activeEl.focus();
+                        activeEl.setSelectionRange?.(newPos, newPos);
+                    }
+                }, 10);
+                return { ...t, text: nextVal };
+            }));
+
+            saveToHistory();
+            toast.success('Inserted math into text field!', { icon: '📐' });
+            return;
+        }
+
+        // 2. If a single equation shape is selected, replace/update its LaTeX
         if (selectedShapeIds.length === 1) {
             const targetShape = shapeObjects.find(s => s.id === selectedShapeIds[0]);
             if (targetShape && (targetShape.type === 'equation' || targetShape.isEquation || targetShape.latex !== undefined)) {
@@ -4072,29 +4213,13 @@ export default function Whiteboard({
             }
         }
 
-        // 2. Determine spawn position (below active text if editing/selected, or centered on viewport)
-        let spawnX;
-        let spawnY;
-        const activeTextId = editingTextId || (selectedTextIds.length === 1 ? selectedTextIds[0] : null);
-        if (activeTextId) {
-            const targetText = textObjects.find(t => t.id === activeTextId);
-            if (targetText) {
-                spawnX = targetText.x;
-                spawnY = targetText.y + (targetText.height || 40) + 14;
-            }
-            setEditingTextId(null);
-            setSelectedTextIds([]);
-        }
+        // 3. Otherwise (no text or equation selected), spawn a new KaTeX equation shape centered on current canvas view
+        const wrapper = canvasWrapperRef.current;
+        const cx = wrapper ? (wrapper.clientWidth / 2 - 140) : 250;
+        const cy = wrapper ? (wrapper.clientHeight / 2 - 40) : 250;
+        const spawnX = Math.round(-panOffset.x + cx / zoomLevel);
+        const spawnY = Math.round(-panOffset.y + cy / zoomLevel);
 
-        if (spawnX === undefined || spawnY === undefined) {
-            const wrapper = canvasWrapperRef.current;
-            const cx = wrapper ? (wrapper.clientWidth / 2 - 140) : 250;
-            const cy = wrapper ? (wrapper.clientHeight / 2 - 40) : 250;
-            spawnX = Math.round(-panOffset.x + cx / zoomLevel);
-            spawnY = Math.round(-panOffset.y + cy / zoomLevel);
-        }
-
-        // 3. Spawn a new KaTeX equation shape
         const newEq = {
             id: `eq_${Date.now()}`,
             type: 'equation',
@@ -4112,7 +4237,8 @@ export default function Whiteboard({
         setSelectedShapeIds([newEq.id]);
         if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newEq });
         saveToHistory();
-    }, [selectedShapeIds, shapeObjects, editingTextId, selectedTextIds, textObjects, canvasWrapperRef, panOffset, zoomLevel, color, socket, sessionId, saveToHistory, setShapeObjects, setSelectedShapeIds, setEditingTextId, setSelectedTextIds]);
+        toast.success('Equation inserted!', { icon: '📐' });
+    }, [selectedShapeIds, shapeObjects, editingTextId, selectedTextIds, canvasWrapperRef, panOffset, zoomLevel, color, socket, sessionId, saveToHistory, setShapeObjects, setTextObjects, setSelectedShapeIds]);
     useEffect(() => {
         if (!imageDragState) return;
 
@@ -4905,49 +5031,189 @@ export default function Whiteboard({
         }
     };
 
-    // ─── AI Handwriting & Ink Recognition Engine ───
-    const recognizeHandwriting = async (strokePoints) => {
-        if (!strokePoints || strokePoints.length < 5) return null;
+    // ─── AI Handwriting, Text & Math Ink Recognition Engine ───
+    const handleConvertSelectedInkToText = useCallback(async (targetShapeIds = null, isAuto = false) => {
+        const ids = targetShapeIds || selectedShapeIds;
+        if (!ids || ids.length === 0) {
+            if (!isAuto) toast.error('Please select ink strokes or drawings to convert');
+            return;
+        }
+
+        // Find ink path shapes
+        const inkShapes = shapeObjects.filter(s => ids.includes(s.id) && (s.type === 'path' || s.type === 'sparkle_path'));
+        if (inkShapes.length === 0) {
+            if (!isAuto) toast.error('No handwritten ink strokes found in selection');
+            return;
+        }
+
+        setIsConvertingInk(true);
+        const toastId = isAuto ? null : toast.loading('✍️ Recognizing handwritten text and math...', { icon: '✨' });
+
         try {
-            const xs = strokePoints.map(p => Math.round(p.x));
-            const ys = strokePoints.map(p => Math.round(p.y));
-            const ts = strokePoints.map((p, i) => p.timestamp ? (p.timestamp - strokePoints[0].timestamp) : i * 20);
-
-            const payload = {
-                app_version: 0.4,
-                api_level: '533.0.30',
-                device: '5',
-                input_type: '0',
-                options: 'enable_pre_space',
-                requests: [
-                    {
-                        writing_guide: {
-                            writing_area_width: 1920,
-                            writing_area_height: 1080
-                        },
-                        ink: [
-                            [xs, ys, ts]
-                        ],
-                        language: 'en'
-                    }
-                ]
-            };
-
-            const res = await fetch('https://inputtools.google.com/request?itc=en-t-i0-handwrit&app=translate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+            // 1. Calculate bounding box across all ink shapes
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            inkShapes.forEach(shape => {
+                const sx = shape.x || 0;
+                const sy = shape.y || 0;
+                if (shape.points && shape.points.length > 0) {
+                    shape.points.forEach(p => {
+                        const px = sx + p.x;
+                        const py = sy + p.y;
+                        if (px < minX) minX = px;
+                        if (px > maxX) maxX = px;
+                        if (py < minY) minY = py;
+                        if (py > maxY) maxY = py;
+                    });
+                } else {
+                    const sw = shape.width || 50;
+                    const sh = shape.height || 50;
+                    minX = Math.min(minX, sx);
+                    minY = Math.min(minY, sy);
+                    maxX = Math.max(maxX, sx + sw);
+                    maxY = Math.max(maxY, sy + sh);
+                }
             });
 
-            if (!res.ok) return null;
-            const json = await res.json();
-            if (json[0] === 'SUCCESS' && json[1]?.[0]?.[1]?.[0]) {
-                return json[1][0][1][0];
+            const pad = 24;
+            const w = Math.max(80, Math.round(maxX - minX + pad * 2));
+            const h = Math.max(60, Math.round(maxY - minY + pad * 2));
+
+            // 2. Render ink strokes onto offscreen canvas (black strokes on white background)
+            const offCanvas = document.createElement('canvas');
+            offCanvas.width = w;
+            offCanvas.height = h;
+            const offCtx = offCanvas.getContext('2d');
+            offCtx.fillStyle = '#ffffff';
+            offCtx.fillRect(0, 0, w, h);
+
+            offCtx.strokeStyle = '#000000';
+            offCtx.lineCap = 'round';
+            offCtx.lineJoin = 'round';
+
+            inkShapes.forEach(shape => {
+                if (!shape.points || shape.points.length === 0) return;
+                const strokeX = (shape.x || 0) - minX + pad;
+                const strokeY = (shape.y || 0) - minY + pad;
+                offCtx.lineWidth = Math.max(3, shape.strokeWidth || 3);
+                offCtx.beginPath();
+                shape.points.forEach((pt, idx) => {
+                    const px = strokeX + pt.x;
+                    const py = strokeY + pt.y;
+                    if (idx === 0) offCtx.moveTo(px, py);
+                    else offCtx.lineTo(px, py);
+                });
+                offCtx.stroke();
+            });
+
+            const dataUrl = offCanvas.toDataURL('image/png');
+
+            // 3. Send to AI math recognition backend
+            const res = await api.post('/ai/recognize-math', { image: dataUrl });
+            const recognized = res.data?.data?.latex || res.data?.latex;
+
+            if (!recognized || !recognized.trim()) {
+                if (!isAuto && toastId) toast.dismiss(toastId);
+                if (!isAuto) toast.error('Could not recognize text or math in ink strokes');
+                setIsConvertingInk(false);
+                return;
             }
+
+            const cleanText = recognized.trim();
+
+            // 4. Remove original ink strokes
+            const inkIds = inkShapes.map(s => s.id);
+            setShapeObjects(prev => prev.filter(s => !inkIds.includes(s.id)));
+            if (socket && sessionId) {
+                inkIds.forEach(id => socket.emit('whiteboard:shape-delete', { sessionId, shapeId: id }));
+            }
+            setSelectedShapeIds([]);
+
+            // 5. If editing text or last active text object, insert directly into it
+            const activeTextId = editingTextId || (selectedTextIds.length === 1 ? selectedTextIds[0] : null) || lastActiveTextCaretRef.current.id;
+            const targetText = activeTextId ? textObjects.find(t => t.id === activeTextId) : null;
+
+            if (targetText) {
+                const currentVal = targetText.text || '';
+                const start = lastActiveTextCaretRef.current.start ?? currentVal.length;
+                const end = lastActiveTextCaretRef.current.end ?? currentVal.length;
+                const before = currentVal.substring(0, start);
+                const after = currentVal.substring(end);
+                const nextVal = before + (before.length > 0 && !before.endsWith(' ') ? ' ' : '') + cleanText + (after.length > 0 && !after.startsWith(' ') ? ' ' : '') + after;
+
+                setTextObjects(prev => prev.map(t => t.id === targetText.id ? { ...t, text: nextVal } : t));
+                setEditingTextId(targetText.id);
+                setSelectedTextIds([targetText.id]);
+                if (socket && sessionId) socket.emit('whiteboard:text-update', { sessionId, textObj: { ...targetText, text: nextVal } });
+            } else {
+                // Otherwise spawn a new text object at the exact ink bounding box
+                const newTextObj = {
+                    id: Date.now(),
+                    text: cleanText,
+                    x: Math.round(minX),
+                    y: Math.round(minY),
+                    width: Math.max(120, Math.round(maxX - minX)),
+                    height: Math.max(48, Math.round(maxY - minY)),
+                    rotation: 0,
+                    color: inkShapes[0]?.color && inkShapes[0].color !== '#ffffff' ? inkShapes[0].color : '#000000',
+                    fontSize: Math.max(18, Math.min(48, Math.round((maxY - minY) * 0.75))),
+                    fontWeight: 'normal',
+                    fontStyle: 'normal',
+                    textAlign: 'left'
+                };
+                setTextObjects(prev => [...prev, newTextObj]);
+                setSelectedTextIds([newTextObj.id]);
+                if (socket && sessionId) socket.emit('whiteboard:text-add', { sessionId, textObj: newTextObj });
+            }
+
+            saveToHistory();
+            if (toastId) toast.dismiss(toastId);
+            toast.success(`Converted to: "${cleanText}"`, { icon: '✍️' });
         } catch (err) {
-            console.warn('Handwriting recognition API notice:', err);
+            console.error('Ink conversion error:', err);
+            if (toastId) toast.dismiss(toastId);
+            if (!isAuto) toast.error(err.response?.data?.message || err.message || 'Failed to convert ink to text/math');
+        } finally {
+            setIsConvertingInk(false);
         }
-        return null;
+    }, [selectedShapeIds, shapeObjects, editingTextId, selectedTextIds, textObjects, socket, sessionId, saveToHistory]);
+
+    const recognizeHandwriting = async (strokePoints) => {
+        if (!strokePoints || strokePoints.length < 3) return null;
+        try {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            strokePoints.forEach(p => {
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.y > maxY) maxY = p.y;
+            });
+            const pad = 20;
+            const w = Math.max(60, Math.round(maxX - minX + pad * 2));
+            const h = Math.max(50, Math.round(maxY - minY + pad * 2));
+            const offCanvas = document.createElement('canvas');
+            offCanvas.width = w;
+            offCanvas.height = h;
+            const offCtx = offCanvas.getContext('2d');
+            offCtx.fillStyle = '#ffffff';
+            offCtx.fillRect(0, 0, w, h);
+            offCtx.strokeStyle = '#000000';
+            offCtx.lineWidth = 3;
+            offCtx.lineCap = 'round';
+            offCtx.lineJoin = 'round';
+            offCtx.beginPath();
+            strokePoints.forEach((p, idx) => {
+                const px = p.x - minX + pad;
+                const py = p.y - minY + pad;
+                if (idx === 0) offCtx.moveTo(px, py);
+                else offCtx.lineTo(px, py);
+            });
+            offCtx.stroke();
+            const res = await api.post('/ai/recognize-math', { image: offCanvas.toDataURL('image/png') });
+            return res.data?.data?.latex || res.data?.latex || null;
+        } catch (err) {
+            console.warn('Single-stroke handwriting recognition fallback:', err);
+            return null;
+        }
     };
 
     const classifyAndSnapStroke = (pts, autoShapeEnabled, currentColor, currentStrokeWidth, isShiftPressed = false) => {
@@ -6292,35 +6558,17 @@ export default function Whiteboard({
                         updateRecentPens('normal', color, strokeWidth);
                     }
 
-                    // If OCR/Handwriting Recognition is active, convert ink to typed text automatically
-                    if (tool === 'pen' && isOcrActive && pts && pts.length >= 6) {
-                        recognizeHandwriting(pts).then(recognizedText => {
-                            if (recognizedText && recognizedText.trim()) {
-                                setShapeObjects(prev => prev.filter(s => s.id !== newShapeObj.id));
-                                if (socket && sessionId) socket.emit('whiteboard:shape-delete', { sessionId, shapeId: newShapeObj.id });
-
-                                const strokeH = Math.max(32, maxY - minY);
-                                const textW = Math.max(maxX - minX, 90);
-                                const newTextObj = {
-                                    id: Date.now(),
-                                    text: recognizedText,
-                                    x: minX,
-                                    y: minY,
-                                    width: textW,
-                                    height: strokeH,
-                                    rotation: 0,
-                                    color: color,
-                                    fontSize: Math.max(16, Math.min(52, Math.round(strokeH * 0.75))),
-                                    fontWeight: 'normal',
-                                    fontStyle: 'normal',
-                                    textAlign: 'left'
-                                };
-                                setTextObjects(prev => [...prev, newTextObj]);
-                                if (socket && sessionId) socket.emit('whiteboard:text-add', { sessionId, textObj: newTextObj });
-                                saveToHistory();
-                                toast.success(`✍️ Recognized handwriting: "${recognizedText}"`, { id: 'handwriting-ocr' });
+                    // If OCR/Handwriting Recognition is active, batch strokes and convert ink to typed text/math
+                    if (tool === 'pen' && isOcrActive) {
+                        recentInkStrokesRef.current.push(newShapeObj.id);
+                        if (autoConvertInkTimeoutRef.current) clearTimeout(autoConvertInkTimeoutRef.current);
+                        autoConvertInkTimeoutRef.current = setTimeout(() => {
+                            const strokeIdsToConvert = [...recentInkStrokesRef.current];
+                            recentInkStrokesRef.current = [];
+                            if (strokeIdsToConvert.length > 0) {
+                                handleConvertSelectedInkToText(strokeIdsToConvert, true);
                             }
-                        }).catch(() => {});
+                        }, 1100);
                     }
                 }
             }
@@ -9017,6 +9265,29 @@ export default function Whiteboard({
                                             </button>
                                         </div>
 
+                                        {/* Smart Ink (Auto Math & Text Recognition) Switch */}
+                                        <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between gap-2">
+                                            <div>
+                                                <span className="text-[11px] text-slate-300 font-medium block">Smart Ink (Math & Text)</span>
+                                                <span className="text-[9px] text-slate-400 block">Auto-convert handwriting to equations</span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const next = !isOcrActive;
+                                                    setIsOcrActive(next);
+                                                    if (next) {
+                                                        toast('✍️ Smart Ink Active: write math or text to convert automatically!', { icon: '✨' });
+                                                    }
+                                                }}
+                                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase transition ${
+                                                    isOcrActive ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-700 text-slate-400'
+                                                }`}
+                                            >
+                                                {isOcrActive ? 'ON' : 'OFF'}
+                                            </button>
+                                        </div>
+
                                         {/* Recent Pens */}
                                         {recentPens && recentPens.length > 0 && (
                                             <div className="pt-2 border-t border-slate-700/60">
@@ -11048,39 +11319,65 @@ export default function Whiteboard({
                                 >
                                     {/* Text Content or Edit Textarea */}
                                     {isEditing ? (
-                                        <textarea
-                                            value={txtObj.text}
-                                            onChange={(e) => {
-                                                const newText = e.target.value;
-                                                setTextObjects(prev => prev.map(t =>
-                                                    t.id === txtObj.id ? { ...t, text: newText } : t
-                                                ));
-                                            }}
-                                            autoFocus
-                                            className="w-full h-full p-2 bg-transparent border-0 outline-none ring-2 ring-blue-500 ring-inset rounded resize-none m-0 shadow-none"
-                                            style={{
-                                                color: txtObj.color,
-                                                fontSize: `${txtObj.fontSize}px`,
-                                                fontWeight: txtObj.fontWeight || 'normal',
-                                                fontStyle: txtObj.fontStyle || 'normal',
-                                                fontFamily: txtObj.fontFamily || 'sans-serif',
-                                                textDecoration: txtObj.textDecoration || 'none',
-                                                textAlign: txtObj.textAlign || 'left',
-                                                lineHeight: 1.3,
-                                                minHeight: txtObj.height,
-                                                borderRadius: txtObj.borderRadius ? `${txtObj.borderRadius}px` : undefined,
-                                            }}
-                                            onBlur={() => {
-                                                if (!txtObj.text || txtObj.text.trim() === '') {
-                                                    setTextObjects(prev => prev.filter(t => t.id !== txtObj.id));
-                                                    setSelectedTextIds([]);
-                                                } else {
-                                                    saveToHistory();
-                                                }
-                                                setEditingTextId(null);
-                                            }}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Escape') {
+                                        <div className="relative w-full h-full">
+                                            <textarea
+                                                data-text-id={txtObj.id}
+                                                value={txtObj.text}
+                                                onChange={(e) => {
+                                                    const newText = e.target.value;
+                                                    setTextObjects(prev => prev.map(t =>
+                                                        t.id === txtObj.id ? { ...t, text: newText } : t
+                                                    ));
+                                                    lastActiveTextCaretRef.current = {
+                                                        id: txtObj.id,
+                                                        start: e.target.selectionStart,
+                                                        end: e.target.selectionEnd
+                                                    };
+                                                }}
+                                                onSelect={(e) => {
+                                                    lastActiveTextCaretRef.current = {
+                                                        id: txtObj.id,
+                                                        start: e.target.selectionStart,
+                                                        end: e.target.selectionEnd
+                                                    };
+                                                }}
+                                                onKeyUp={(e) => {
+                                                    lastActiveTextCaretRef.current = {
+                                                        id: txtObj.id,
+                                                        start: e.target.selectionStart,
+                                                        end: e.target.selectionEnd
+                                                    };
+                                                }}
+                                                onMouseUp={(e) => {
+                                                    lastActiveTextCaretRef.current = {
+                                                        id: txtObj.id,
+                                                        start: e.target.selectionStart,
+                                                        end: e.target.selectionEnd
+                                                    };
+                                                }}
+                                                autoFocus
+                                                className="w-full h-full p-2 bg-transparent border-0 outline-none ring-2 ring-blue-500 ring-inset rounded resize-none m-0 shadow-none font-sans"
+                                                style={{
+                                                    color: txtObj.color,
+                                                    fontSize: `${txtObj.fontSize}px`,
+                                                    fontWeight: txtObj.fontWeight || 'normal',
+                                                    fontStyle: txtObj.fontStyle || 'normal',
+                                                    fontFamily: txtObj.fontFamily || 'sans-serif',
+                                                    textDecoration: txtObj.textDecoration || 'none',
+                                                    textAlign: txtObj.textAlign || 'left',
+                                                    lineHeight: 1.3,
+                                                    minHeight: txtObj.height,
+                                                    borderRadius: txtObj.borderRadius ? `${txtObj.borderRadius}px` : undefined,
+                                                }}
+                                                onBlur={(e) => {
+                                                    // Preserve editing if clicking into Math Keyboard, Tablet, Modal, or Toolbar
+                                                    if (showMathKeyboard || showMathTablet || showEquationModal) {
+                                                        return;
+                                                    }
+                                                    const related = e.relatedTarget;
+                                                    if (related && (related.closest?.('.math-keyboard-panel') || related.closest?.('.math-tablet-modal') || related.closest?.('.text-format-bar'))) {
+                                                        return;
+                                                    }
                                                     if (!txtObj.text || txtObj.text.trim() === '') {
                                                         setTextObjects(prev => prev.filter(t => t.id !== txtObj.id));
                                                         setSelectedTextIds([]);
@@ -11088,17 +11385,44 @@ export default function Whiteboard({
                                                         saveToHistory();
                                                     }
                                                     setEditingTextId(null);
-                                                }
-                                                if (e.key === 'Enter' && !e.shiftKey) {
-                                                    e.preventDefault();
-                                                    e.target.blur();
-                                                }
-                                            }}
-                                            onClick={(e) => e.stopPropagation()}
-                                        />
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Escape') {
+                                                        if (!txtObj.text || txtObj.text.trim() === '') {
+                                                            setTextObjects(prev => prev.filter(t => t.id !== txtObj.id));
+                                                            setSelectedTextIds([]);
+                                                        } else {
+                                                            saveToHistory();
+                                                        }
+                                                        setEditingTextId(null);
+                                                    }
+                                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                                        e.preventDefault();
+                                                        e.target.blur();
+                                                    }
+                                                }}
+                                                onClick={(e) => e.stopPropagation()}
+                                            />
+
+                                            {/* Live Math Preview while editing if formula detected */}
+                                            {(txtObj.text?.includes('$') || /\\(frac|sqrt|int|sum|prod|lim|alpha|beta|theta|pi|times|div|pm|log|sin|cos|tan)\b|[\^_]/.test(txtObj.text || '')) && (
+                                                <div 
+                                                    className="absolute top-full left-0 mt-1.5 bg-slate-900/98 backdrop-blur-md border border-indigo-500/50 rounded-xl p-2.5 shadow-2xl z-50 text-white min-w-[160px] max-w-md pointer-events-none animate-in fade-in slide-in-from-top-1 duration-150"
+                                                    style={{ transform: `rotate(${- (txtObj.rotation || 0)}deg)` }}
+                                                >
+                                                    <div className="text-[10px] text-indigo-300 font-semibold mb-1 flex items-center gap-1 uppercase tracking-wider">
+                                                        <span>✨ Live Math Preview</span>
+                                                    </div>
+                                                    <div 
+                                                        className="text-white text-base overflow-x-auto py-0.5" 
+                                                        dangerouslySetInnerHTML={{ __html: renderRichMathText(txtObj.text) }} 
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
                                     ) : (
                                         <div
-                                            className="w-full h-full p-2 whitespace-pre-wrap break-words select-none"
+                                            className="w-full h-full p-2 whitespace-pre-wrap break-words select-none leading-relaxed"
                                             style={{
                                                 pointerEvents: (tool === 'select' || isSelected) ? 'auto' : 'none',
                                                 color: txtObj.color,
@@ -11110,9 +11434,8 @@ export default function Whiteboard({
                                                 textAlign: txtObj.textAlign || 'left',
                                                 lineHeight: 1.3,
                                             }}
-                                        >
-                                            {txtObj.text}
-                                        </div>
+                                            dangerouslySetInnerHTML={{ __html: renderRichMathText(txtObj.text) }}
+                                        />
                                     )}
 
                                     {/* Selection Border & Handles (not shown when editing) */}
@@ -13525,6 +13848,24 @@ export default function Whiteboard({
                                             </>
                                         )}
 
+                                        {/* Convert handwritten ink stroke(s) to text/math */}
+                                        {(shpObj.type === 'path' || shpObj.type === 'sparkle_path') && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleConvertSelectedInkToText([shpObj.id])}
+                                                disabled={isConvertingInk}
+                                                className="px-2 py-0.5 rounded text-xs font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center gap-1.5 transition shadow-sm"
+                                                title="Convert handwritten ink stroke(s) to typed text or rendered math equation"
+                                            >
+                                                {isConvertingInk ? (
+                                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                                ) : (
+                                                    <Sparkles className="w-3 h-3 text-amber-300" />
+                                                )}
+                                                <span>{isConvertingInk ? 'Converting...' : 'Convert to Text / Math'}</span>
+                                            </button>
+                                        )}
+
                                         {/* Replace Shape Control (strictly for geometric shapes) */}
                                         {['rectangle', 'rounded_rect', 'circle', 'triangle', 'diamond', 'star', 'hexagon', 'parallelogram', 'terminator', 'cylinder', 'document', 'callout', 'cube'].includes(shpObj.type) && (
                                             <div className="relative">
@@ -13802,6 +14143,27 @@ export default function Whiteboard({
                                             <SendToBack className="w-3 h-3" />
                                         </button>
                                     </div>
+
+                                    {/* Convert Multi-Stroke Ink to Text / Math */}
+                                    {selectedShapes.some(s => s.type === 'path' || s.type === 'sparkle_path') && (
+                                        <>
+                                            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                                            <button
+                                                type="button"
+                                                onClick={() => handleConvertSelectedInkToText()}
+                                                disabled={isConvertingInk}
+                                                className="px-2 py-0.5 rounded text-xs font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center gap-1.5 transition shadow-sm"
+                                                title="Convert all selected handwritten ink strokes to typed text or rendered math equation"
+                                            >
+                                                {isConvertingInk ? (
+                                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                                ) : (
+                                                    <Sparkles className="w-3 h-3 text-amber-300" />
+                                                )}
+                                                <span>{isConvertingInk ? 'Converting...' : 'Convert Ink to Text / Math'}</span>
+                                            </button>
+                                        </>
+                                    )}
 
                                     <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
 
@@ -14730,6 +15092,44 @@ export default function Whiteboard({
                         setEditingEquationId(null);
                         saveToHistory();
                         toast.success('Equation updated!', { icon: '📐' });
+                    } else if (editingTextId || selectedTextIds.length === 1 || lastActiveTextCaretRef.current.id) {
+                        const targetId = editingTextId || (selectedTextIds.length === 1 ? selectedTextIds[0] : null) || lastActiveTextCaretRef.current.id;
+                        const activeEl = document.activeElement;
+                        const isTextareaActive = activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT');
+
+                        setEditingTextId(targetId);
+                        setSelectedTextIds([targetId]);
+
+                        setTextObjects(prev => prev.map(t => {
+                            if (t.id !== targetId) return t;
+                            const currentVal = t.text || '';
+                            const start = isTextareaActive 
+                                ? (activeEl.selectionStart ?? currentVal.length)
+                                : (lastActiveTextCaretRef.current.start ?? currentVal.length);
+                            const end = isTextareaActive
+                                ? (activeEl.selectionEnd ?? currentVal.length)
+                                : (lastActiveTextCaretRef.current.end ?? currentVal.length);
+
+                            const before = currentVal.substring(0, start);
+                            const after = currentVal.substring(end);
+                            const nextVal = before + latexCode + after;
+                            const newPos = start + latexCode.length;
+                            lastActiveTextCaretRef.current = { id: targetId, start: newPos, end: newPos };
+
+                            setTimeout(() => {
+                                const el = document.querySelector(`[data-text-id="${targetId}"] textarea`);
+                                if (el) {
+                                    el.focus();
+                                    el.setSelectionRange?.(newPos, newPos);
+                                } else if (activeEl && isTextareaActive) {
+                                    activeEl.focus();
+                                    activeEl.setSelectionRange?.(newPos, newPos);
+                                }
+                            }, 10);
+                            return { ...t, text: nextVal };
+                        }));
+                        saveToHistory();
+                        toast.success('Inserted equation into text field!', { icon: '📐' });
                     } else {
                         const wrapper = canvasWrapperRef.current;
                         const cx = wrapper ? (wrapper.clientWidth / 2 - 120) : 250;

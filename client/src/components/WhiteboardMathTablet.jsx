@@ -425,7 +425,7 @@ export default function WhiteboardMathTablet({
     return (
         <div 
             ref={containerRef}
-            className="fixed z-[130] bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150 select-none text-slate-200"
+            className="math-tablet-modal fixed z-[130] bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150 select-none text-slate-200"
             style={{ 
                 left: `${position.x}px`, 
                 top: `${position.y}px`, 

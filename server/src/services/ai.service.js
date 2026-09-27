@@ -4973,14 +4973,17 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
         }
 
         const dataUrl = `data:${mimeType};base64,${rawBase64}`;
-        const systemPrompt = `You are a specialized mathematical handwriting recognition engine, exactly like the Windows Math Input Panel.
-Analyze the handwritten math strokes in the image and transcribe them into standard LaTeX equation format.
+        const systemPrompt = `You are a specialized handwriting and mathematical recognition engine, like Windows Math Input Panel and Apple Scribble.
+Analyze the handwritten ink strokes in the image and transcribe them accurately.
+If the drawing is mathematical (equations, fractions, variables, formulas, symbols), transcribe into standard LaTeX format.
+If the drawing is text (words, notes, sentences) or a mixture of text and math, transcribe the words clearly and format mathematical expressions in LaTeX (e.g. \\frac{a}{b}, x^2, \\sqrt{x}).
 
 RULES:
-1. Return ONLY the LaTeX equation string.
+1. Return ONLY the transcribed text or LaTeX string.
 2. Do NOT wrap in markdown code blocks (\`\`\`latex or \`\`\`), do NOT enclose in $ or $$, and do NOT provide conversational explanations.
-3. Correctly interpret fractions (\\frac{a}{b}), exponents (x^2), subscripts (a_n), square roots (\\sqrt{...}), integrals (\\int), summations (\\sum), limits (\\lim_{x \\to 0}), greek symbols (\\alpha, \\beta, \\pi, \\theta), matrices, brackets, and operators (+, -, \\times, \\div, \\pm, \\leq, \\geq, \\neq).
-4. If empty or no recognizable math is drawn, return an empty string "".`;
+3. Correctly interpret handwriting words, letters, punctuation, and numbers.
+4. Correctly interpret fractions (\\frac{a}{b}), exponents (x^2), subscripts (a_n), square roots (\\sqrt{...}), integrals (\\int), summations (\\sum), limits (\\lim_{x \\to 0}), greek symbols (\\alpha, \\beta, \\pi, \\theta), matrices, brackets, and operators (+, -, \\times, \\div, \\pm, \\leq, \\geq, \\neq).
+5. If empty or no recognizable writing is drawn, return an empty string "".`;
 
         const cleanLatex = (text) => {
             if (!text) return '';

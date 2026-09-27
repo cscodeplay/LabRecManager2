@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import katex from 'katex';
-import { X, Check, Calculator, Trash2, HelpCircle } from 'lucide-react';
+import { X, Check, Calculator, Trash2, HelpCircle, ArrowLeft, Sparkles } from 'lucide-react';
 
 export const SYMBOL_CATEGORIES = [
     {
@@ -346,9 +346,173 @@ export default function WhiteboardEquationEditor({
     );
 }
 
+export const FORMULA_TEMPLATES = [
+    {
+        id: 'fraction',
+        label: 'a/b',
+        title: 'Fraction (Numerator / Denominator)',
+        latex: '\\frac{a}{b}',
+        displayKaTeX: '\\frac{\\square}{\\square}',
+        slots: [
+            { id: 'num', label: 'Numerator', default: 'a', placeholder: 'e.g. 3x + 1' },
+            { id: 'den', label: 'Denominator', default: 'b', placeholder: 'e.g. 2' },
+        ],
+        format: (vals) => `\\frac{${vals.num || 'a'}}{${vals.den || 'b'}}`
+    },
+    {
+        id: 'power',
+        label: 'xⁿ',
+        title: 'Power / Exponent',
+        latex: 'x^{n}',
+        displayKaTeX: '\\square^{\\square}',
+        slots: [
+            { id: 'base', label: 'Base', default: 'x', placeholder: 'e.g. x' },
+            { id: 'exp', label: 'Exponent', default: '2', placeholder: 'e.g. 2' },
+        ],
+        format: (vals) => `{${vals.base || 'x'}}^{${vals.exp || '2'}}`
+    },
+    {
+        id: 'subscript',
+        label: 'xₙ',
+        title: 'Subscript Index',
+        latex: 'x_{n}',
+        displayKaTeX: '\\square_{\\square}',
+        slots: [
+            { id: 'base', label: 'Base', default: 'x', placeholder: 'e.g. a' },
+            { id: 'sub', label: 'Subscript', default: '1', placeholder: 'e.g. 1' },
+        ],
+        format: (vals) => `{${vals.base || 'x'}}_{${vals.sub || '1'}}`
+    },
+    {
+        id: 'sub_power',
+        label: 'xₙᵏ',
+        title: 'Subscript & Exponent',
+        latex: 'x_{n}^{k}',
+        displayKaTeX: '\\square_{\\square}^{\\square}',
+        slots: [
+            { id: 'base', label: 'Base', default: 'x', placeholder: 'e.g. x' },
+            { id: 'sub', label: 'Subscript', default: '1', placeholder: 'e.g. i' },
+            { id: 'exp', label: 'Exponent', default: '2', placeholder: 'e.g. 2' },
+        ],
+        format: (vals) => `{${vals.base || 'x'}}_{${vals.sub || '1'}}^{${vals.exp || '2'}}`
+    },
+    {
+        id: 'sqrt',
+        label: '√x',
+        title: 'Square Root',
+        latex: '\\sqrt{x}',
+        displayKaTeX: '\\sqrt{\\square}',
+        slots: [
+            { id: 'radicand', label: 'Under Radical (x)', default: 'x', placeholder: 'e.g. 16' },
+        ],
+        format: (vals) => `\\sqrt{${vals.radicand || 'x'}}`
+    },
+    {
+        id: 'nth_root',
+        label: 'ⁿ√x',
+        title: 'nth Root',
+        latex: '\\sqrt[n]{x}',
+        displayKaTeX: '\\sqrt[\\square]{\\square}',
+        slots: [
+            { id: 'index', label: 'Root Index (n)', default: '3', placeholder: 'e.g. 3' },
+            { id: 'radicand', label: 'Under Radical (x)', default: 'x', placeholder: 'e.g. 27' },
+        ],
+        format: (vals) => `\\sqrt[${vals.index || '3'}]{${vals.radicand || 'x'}}`
+    },
+    {
+        id: 'def_integral',
+        label: '∫ₐᵇ',
+        title: 'Definite Integral',
+        latex: '\\int_{a}^{b} f(x)\\,dx',
+        displayKaTeX: '\\int_{\\square}^{\\square} \\square\\,d\\square',
+        slots: [
+            { id: 'lower', label: 'Lower Limit (a)', default: '0', placeholder: 'e.g. 0' },
+            { id: 'upper', label: 'Upper Limit (b)', default: '1', placeholder: 'e.g. 1' },
+            { id: 'expr', label: 'Integrand f(x)', default: 'x^2', placeholder: 'e.g. x^2' },
+            { id: 'var', label: 'Variable (dx)', default: 'x', placeholder: 'e.g. x' },
+        ],
+        format: (vals) => `\\int_{${vals.lower || '0'}}^{${vals.upper || '1'}} ${vals.expr || 'x'}\\,d${vals.var || 'x'}`
+    },
+    {
+        id: 'indef_integral',
+        label: '∫',
+        title: 'Indefinite Integral',
+        latex: '\\int f(x)\\,dx',
+        displayKaTeX: '\\int \\square\\,d\\square',
+        slots: [
+            { id: 'expr', label: 'Expression f(x)', default: 'x', placeholder: 'e.g. 2x' },
+            { id: 'var', label: 'Variable (dx)', default: 'x', placeholder: 'e.g. x' },
+        ],
+        format: (vals) => `\\int ${vals.expr || 'x'}\\,d${vals.var || 'x'}`
+    },
+    {
+        id: 'summation',
+        label: '∑',
+        title: 'Summation with Bounds',
+        latex: '\\sum_{i=1}^{n} x_i',
+        displayKaTeX: '\\sum_{\\square}^{\\square} \\square',
+        slots: [
+            { id: 'from', label: 'From (Start)', default: 'i=1', placeholder: 'e.g. i=1' },
+            { id: 'to', label: 'To (End)', default: 'n', placeholder: 'e.g. n' },
+            { id: 'term', label: 'Term Formula', default: 'x_i', placeholder: 'e.g. i^2' },
+        ],
+        format: (vals) => `\\sum_{${vals.from || 'i=1'}}^{${vals.to || 'n'}} ${vals.term || 'x_i'}`
+    },
+    {
+        id: 'limit',
+        label: 'lim',
+        title: 'Limit Operator',
+        latex: '\\lim_{x \\to 0} f(x)',
+        displayKaTeX: '\\lim_{\\square \\to \\square} \\square',
+        slots: [
+            { id: 'var', label: 'Variable', default: 'x', placeholder: 'e.g. x' },
+            { id: 'to', label: 'Approaches', default: '0', placeholder: 'e.g. 0' },
+            { id: 'expr', label: 'Expression', default: 'f(x)', placeholder: 'e.g. \\frac{\\sin x}{x}' },
+        ],
+        format: (vals) => `\\lim_{${vals.var || 'x'} \\to ${vals.to || '0'}} ${vals.expr || 'f(x)'}`
+    },
+    {
+        id: 'log',
+        label: 'log_b',
+        title: 'Logarithm with Base',
+        latex: '\\log_{b}(x)',
+        displayKaTeX: '\\log_{\\square}(\\square)',
+        slots: [
+            { id: 'base', label: 'Base (b)', default: '10', placeholder: 'e.g. 10' },
+            { id: 'val', label: 'Argument (x)', default: 'x', placeholder: 'e.g. x' },
+        ],
+        format: (vals) => `\\log_{${vals.base || '10'}}(${vals.val || 'x'})`
+    },
+    {
+        id: 'brackets',
+        label: '(□)',
+        title: 'Parentheses (Auto-scaled)',
+        latex: '\\left( x \\right)',
+        displayKaTeX: '\\left( \\square \\right)',
+        slots: [
+            { id: 'expr', label: 'Enclosed Expression', default: 'x + 1', placeholder: 'e.g. x + 1' },
+        ],
+        format: (vals) => `\\left( ${vals.expr || 'x'} \\right)`
+    },
+    {
+        id: 'matrix2x2',
+        label: '[2×2]',
+        title: '2×2 Matrix',
+        latex: '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}',
+        displayKaTeX: '\\begin{pmatrix} \\square & \\square \\\\ \\square & \\square \\end{pmatrix}',
+        slots: [
+            { id: 'a11', label: 'Row 1, Col 1', default: '1', placeholder: 'a11' },
+            { id: 'a12', label: 'Row 1, Col 2', default: '0', placeholder: 'a12' },
+            { id: 'a21', label: 'Row 2, Col 1', default: '0', placeholder: 'a21' },
+            { id: 'a22', label: 'Row 2, Col 2', default: '1', placeholder: 'a22' },
+        ],
+        format: (vals) => `\\begin{pmatrix} ${vals.a11 || '0'} & ${vals.a12 || '0'} \\\\ ${vals.a21 || '0'} & ${vals.a22 || '0'} \\end{pmatrix}`
+    }
+];
+
 /**
- * MathVirtualKeyboard — Sleek floating virtual keyboard for inserting math symbols,
- * powers, subscripts, limits, integrals, greek letters, and logic operators directly into text.
+ * MathVirtualKeyboard — Floating virtual keyboard for inserting math symbols,
+ * powers, subscripts, limits, integrals, and VirtualX-style template constituent values.
  */
 export function MathVirtualKeyboard({
     isOpen = false,
@@ -356,8 +520,10 @@ export function MathVirtualKeyboard({
     onInsertSymbol,
     anchorPosition = { x: 300, y: 300 }
 }) {
-    const [activeTab, setActiveTab] = useState('powers');
+    const [activeTab, setActiveTab] = useState('templates');
     const [filterQuery, setFilterQuery] = useState('');
+    const [selectedTemplate, setSelectedTemplate] = useState(null);
+    const [slotValues, setSlotValues] = useState({});
     const [pos, setPos] = useState(anchorPosition);
     const [isDragging, setIsDragging] = useState(false);
     const dragOffsetRef = useRef({ x: 0, y: 0 });
@@ -396,18 +562,47 @@ export function MathVirtualKeyboard({
 
     if (!isOpen) return null;
 
-    const currentCategory = SYMBOL_CATEGORIES.find(c => c.id === activeTab) || SYMBOL_CATEGORIES[0];
+    // Pick active category
+    const currentCategory = SYMBOL_CATEGORIES.find(c => c.id === activeTab);
     const filteredItems = filterQuery.trim()
         ? SYMBOL_CATEGORIES.flatMap(c => c.items).filter(item =>
             item.label.toLowerCase().includes(filterQuery.toLowerCase()) ||
             (item.title && item.title.toLowerCase().includes(filterQuery.toLowerCase())) ||
             item.latex.toLowerCase().includes(filterQuery.toLowerCase())
         )
-        : currentCategory.items;
+        : (currentCategory ? currentCategory.items : []);
+
+    const allTabs = [
+        { id: 'templates', label: '⭐ Templates (VirtualX)' },
+        ...SYMBOL_CATEGORIES
+    ];
+
+    const handleSelectTemplate = (tmpl) => {
+        setSelectedTemplate(tmpl);
+        const init = {};
+        tmpl.slots.forEach(s => { init[s.id] = s.default || ''; });
+        setSlotValues(init);
+    };
+
+    const handleInsertTemplate = () => {
+        if (!selectedTemplate) return;
+        const formatted = selectedTemplate.format(slotValues);
+        onInsertSymbol?.(formatted, selectedTemplate.label);
+        setSelectedTemplate(null);
+    };
+
+    const handleQuickInsertBoxes = () => {
+        if (!selectedTemplate) return;
+        const boxVals = {};
+        selectedTemplate.slots.forEach(s => { boxVals[s.id] = '\\square'; });
+        const formatted = selectedTemplate.format(boxVals);
+        onInsertSymbol?.(formatted, selectedTemplate.label);
+        setSelectedTemplate(null);
+    };
 
     return (
         <div
-            className="fixed z-[999] pointer-events-auto select-none"
+            className="math-keyboard-panel fixed z-[999] pointer-events-auto select-none"
             style={{
                 left: `${pos.x}px`,
                 top: `${pos.y}px`,
@@ -415,7 +610,7 @@ export function MathVirtualKeyboard({
             onClick={e => e.stopPropagation()}
             onMouseDown={e => e.stopPropagation()}
         >
-            <div className="w-[360px] bg-slate-900/98 backdrop-blur-md border-2 border-slate-700/90 rounded-2xl shadow-2xl overflow-hidden text-slate-100 flex flex-col animate-in fade-in zoom-in-95 duration-100">
+            <div className="w-[370px] bg-slate-900/98 backdrop-blur-md border-2 border-slate-700/90 rounded-2xl shadow-2xl overflow-hidden text-slate-100 flex flex-col animate-in fade-in zoom-in-95 duration-100">
                 {/* Header with Drag Handle */}
                 <div
                     onPointerDown={handlePointerDown}
@@ -424,7 +619,7 @@ export function MathVirtualKeyboard({
                     <div className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
                         <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
-                            Math Symbol Keyboard
+                            {selectedTemplate ? selectedTemplate.title : 'Math Formula & Symbol Keyboard'}
                         </span>
                     </div>
                     <div className="flex items-center gap-1">
@@ -439,25 +634,30 @@ export function MathVirtualKeyboard({
                     </div>
                 </div>
 
-                {/* Filter / Search Bar */}
-                <div className="p-2 border-b border-slate-800 bg-slate-950/70">
-                    <input
-                        type="text"
-                        value={filterQuery}
-                        onChange={e => setFilterQuery(e.target.value)}
-                        placeholder="Search symbols (e.g. integral, alpha, power, lim)..."
-                        className="w-full px-2.5 py-1 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                    />
-                </div>
+                {/* Filter / Search Bar (only when not in slot edit mode) */}
+                {!selectedTemplate && (
+                    <div className="p-2 border-b border-slate-800 bg-slate-950/70">
+                        <input
+                            type="text"
+                            value={filterQuery}
+                            onChange={e => setFilterQuery(e.target.value)}
+                            placeholder="Search symbols or templates (fraction, integral, alpha, power)..."
+                            className="w-full px-2.5 py-1 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                        />
+                    </div>
+                )}
 
-                {/* Category Pills */}
-                {!filterQuery.trim() && (
+                {/* Category Pills (only when not in slot edit mode) */}
+                {!selectedTemplate && !filterQuery.trim() && (
                     <div className="flex items-center gap-1 px-2 pt-1.5 pb-1 bg-slate-950/40 border-b border-slate-800 overflow-x-auto hide-scrollbar">
-                        {SYMBOL_CATEGORIES.map(cat => (
+                        {allTabs.map(cat => (
                             <button
                                 key={cat.id}
                                 type="button"
-                                onClick={() => setActiveTab(cat.id)}
+                                onClick={() => {
+                                    setActiveTab(cat.id);
+                                    setSelectedTemplate(null);
+                                }}
                                 className={`px-2 py-0.5 text-[11px] font-semibold rounded-md transition whitespace-nowrap ${
                                     activeTab === cat.id
                                         ? 'bg-indigo-600 text-white shadow-xs'
@@ -470,34 +670,131 @@ export function MathVirtualKeyboard({
                     </div>
                 )}
 
-                {/* Keys Grid */}
-                <div className="p-2.5 max-h-[190px] overflow-y-auto hide-scrollbar">
-                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5">
-                        {filteredItems.map((item, idx) => (
-                            <button
-                                key={idx}
-                                type="button"
-                                onClick={() => {
-                                    onInsertSymbol?.(item.latex, item.label);
-                                }}
-                                className="group relative flex flex-col items-center justify-center py-2 px-1 bg-slate-800/90 hover:bg-indigo-600 hover:text-white border border-slate-700/70 rounded-xl transition active:scale-95 shadow-xs"
-                                title={item.title || item.label}
-                            >
-                                <span className="font-mono text-xs font-bold leading-none select-none text-slate-100 group-hover:text-white">
-                                    {item.label}
-                                </span>
-                                <span className="text-[8px] text-slate-400 group-hover:text-indigo-200 mt-1 truncate max-w-full font-mono">
-                                    {item.title ? item.title.split(' ')[0] : ''}
-                                </span>
-                            </button>
-                        ))}
-                    </div>
+                {/* Content Area */}
+                <div className="p-2.5 max-h-[220px] overflow-y-auto hide-scrollbar">
+                    {/* Constituent Values Template Slot Form (VirtualX Style) */}
+                    {selectedTemplate ? (
+                        <div className="flex flex-col gap-2">
+                            <div className="flex items-center justify-between pb-1 border-b border-slate-800">
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedTemplate(null)}
+                                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium transition"
+                                >
+                                    <ArrowLeft size={12} />
+                                    <span>Back to Templates</span>
+                                </button>
+                                <span className="text-[10px] text-slate-400 font-mono">Fill in values below</span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                {selectedTemplate.slots.map((slot, sIdx) => (
+                                    <div key={slot.id} className="flex flex-col gap-0.5">
+                                        <label className="text-[10px] text-slate-300 font-medium">
+                                            {slot.label}:
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={slotValues[slot.id] ?? ''}
+                                            onChange={(e) => setSlotValues(prev => ({ ...prev, [slot.id]: e.target.value }))}
+                                            placeholder={slot.placeholder}
+                                            className="px-2 py-1 bg-slate-800 border border-slate-700 rounded text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
+                                            autoFocus={sIdx === 0}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    handleInsertTemplate();
+                                                }
+                                            }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Live Formula Preview Box */}
+                            <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800 flex flex-col items-center justify-center min-h-[46px]">
+                                <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold mb-0.5">Formula Preview</span>
+                                <div
+                                    className="text-white text-base overflow-x-auto py-0.5 max-w-full"
+                                    dangerouslySetInnerHTML={{
+                                        __html: katex.renderToString(selectedTemplate.format(slotValues), { displayMode: false, throwOnError: false })
+                                    }}
+                                />
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex items-center justify-between pt-1">
+                                <button
+                                    type="button"
+                                    onClick={handleQuickInsertBoxes}
+                                    className="px-2 py-1 rounded text-[10px] text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                                    title="Insert with empty square box placeholders"
+                                >
+                                    Insert Empty [□]
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleInsertTemplate}
+                                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-md transition"
+                                >
+                                    <Check size={13} />
+                                    <span>Insert Formula</span>
+                                </button>
+                            </div>
+                        </div>
+                    ) : activeTab === 'templates' && !filterQuery.trim() ? (
+                        /* Visual Template Cards Gallery */
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                            {FORMULA_TEMPLATES.map(tmpl => (
+                                <button
+                                    key={tmpl.id}
+                                    type="button"
+                                    onClick={() => handleSelectTemplate(tmpl)}
+                                    className="group relative flex flex-col items-center justify-center py-2 px-1 bg-slate-800/90 hover:bg-indigo-600 hover:text-white border border-slate-700/70 rounded-xl transition active:scale-95 shadow-xs"
+                                    title={`Click to fill constituent values for ${tmpl.title}`}
+                                >
+                                    <span
+                                        className="text-xs font-bold leading-none select-none text-slate-100 group-hover:text-white my-1"
+                                        dangerouslySetInnerHTML={{
+                                            __html: katex.renderToString(tmpl.displayKaTeX, { displayMode: false, throwOnError: false })
+                                        }}
+                                    />
+                                    <span className="text-[8px] text-slate-400 group-hover:text-indigo-200 truncate max-w-full font-sans mt-0.5">
+                                        {tmpl.title.split(' ')[0]}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        /* Standard Symbols Grid */
+                        <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5">
+                            {filteredItems.map((item, idx) => (
+                                <button
+                                    key={idx}
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => {
+                                        onInsertSymbol?.(item.latex, item.label);
+                                    }}
+                                    className="group relative flex flex-col items-center justify-center py-2 px-1 bg-slate-800/90 hover:bg-indigo-600 hover:text-white border border-slate-700/70 rounded-xl transition active:scale-95 shadow-xs"
+                                    title={item.title || item.label}
+                                >
+                                    <span className="font-mono text-xs font-bold leading-none select-none text-slate-100 group-hover:text-white">
+                                        {item.label}
+                                    </span>
+                                    <span className="text-[8px] text-slate-400 group-hover:text-indigo-200 mt-1 truncate max-w-full font-mono">
+                                        {item.title ? item.title.split(' ')[0] : ''}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Footer hint */}
                 <div className="px-3 py-1.5 bg-slate-800/60 border-t border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
-                    <span>Click any key to insert at caret</span>
-                    <span className="text-slate-500">Supports LaTeX formatting</span>
+                    <span>{selectedTemplate ? 'Press Enter to insert' : 'Select a template or click any key to insert'}</span>
+                    <span className="text-slate-500">VirtualX Style</span>
                 </div>
             </div>
         </div>
