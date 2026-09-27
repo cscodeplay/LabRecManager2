@@ -16,11 +16,11 @@ import {
     Clock, GripHorizontal, GripVertical, LayoutTemplate, Flashlight, Library,
     Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX,
     ChevronUp, ChevronsUp, ChevronsDown, FileText, Check, Pause, Play, RotateCcw, Globe, Music,
-    Underline, Bold, Italic, Shapes, Database, MessageSquare, Sigma, Calculator
+    Underline, Bold, Italic, Shapes, Database, MessageSquare, Sigma, Calculator, Layers
 } from 'lucide-react';
 import fixWebmDuration from 'fix-webm-duration';
 import katex from 'katex';
-import WhiteboardEquationEditor from './WhiteboardEquationEditor';
+import WhiteboardEquationEditor, { MathVirtualKeyboard, SYMBOL_CATEGORIES } from './WhiteboardEquationEditor';
 
 const ParallelogramIcon = (props) => (
     <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -501,26 +501,31 @@ export default function Whiteboard({
     
     // Pen & Sparkle Mode & Recent Pens
     const [penMode, setPenMode] = useState('normal'); // 'normal' | 'sparkle'
+    const [sparkleTheme, setSparkleTheme] = useState('galaxy'); // 'galaxy' | 'rainbow' | 'gold'
+    const [penOpacity, setPenOpacity] = useState(100); // 10 to 100 (%)
     const [recentPens, setRecentPens] = useState([
         { type: 'normal', color: '#000000', strokeWidth: 3 },
         { type: 'normal', color: '#ef4444', strokeWidth: 3 },
         { type: 'normal', color: '#3b82f6', strokeWidth: 3 },
-        { type: 'sparkle', color: '#f59e0b', strokeWidth: 3 },
-        { type: 'sparkle', color: '#8b5cf6', strokeWidth: 3 },
-        { type: 'sparkle', color: '#ec4899', strokeWidth: 3 },
+        { type: 'sparkle', sparkleTheme: 'galaxy', color: '#7c3aed', strokeWidth: 4 },
+        { type: 'sparkle', sparkleTheme: 'rainbow', color: '#ef4444', strokeWidth: 4 },
+        { type: 'sparkle', sparkleTheme: 'gold', color: '#f59e0b', strokeWidth: 4 },
     ]);
-    const updateRecentPens = useCallback((type, penColor, penWidth) => {
+    const updateRecentPens = useCallback((type, penColor, penWidth, theme = 'galaxy') => {
         setRecentPens(prev => {
-            const filtered = prev.filter(p => !(p.type === type && p.color === penColor && p.strokeWidth === penWidth));
-            return [{ type, color: penColor, strokeWidth: penWidth }, ...filtered].slice(0, 8);
+            const filtered = prev.filter(p => !(p.type === type && (type === 'sparkle' ? p.sparkleTheme === theme : p.color === penColor) && p.strokeWidth === penWidth));
+            return [{ type, color: penColor, strokeWidth: penWidth, sparkleTheme: theme }, ...filtered].slice(0, 8);
         });
     }, []);
 
-    // Text & Math Equation Modal states
+    // Text & Math Equation Modal & Virtual Keyboard states
     const justCreatedTextRef = useRef(false);
     const [showEquationModal, setShowEquationModal] = useState(false);
     const [editingEquationId, setEditingEquationId] = useState(null);
     const [equationInitialLatex, setEquationInitialLatex] = useState('\\int_{0}^{\\infty} x^2 e^{-x}\\,dx = 2');
+    const [showMathKeyboard, setShowMathKeyboard] = useState(false);
+    const [mathKeyboardAnchor, setMathKeyboardAnchor] = useState({ x: 300, y: 300 });
+    const [showTextLayersPopover, setShowTextLayersPopover] = useState(null);
 
     // Pop-over UI states
     const [showStrokePicker, setShowStrokePicker] = useState(false);
@@ -560,6 +565,28 @@ export default function Whiteboard({
             }
         } catch(e) {}
     }, []);
+
+    // Reset toolbar to default bottom dock on window resize or fullscreen toggle (Safari/Mac Air fix)
+    useEffect(() => {
+        const handleToolbarDefaultReset = () => {
+            setToolbarDock('bottom');
+            setToolbarPos({ x: (window.innerWidth || 1200) / 2 - 200, y: (window.innerHeight || 800) - 75 });
+        };
+
+        window.addEventListener('resize', handleToolbarDefaultReset);
+        document.addEventListener('fullscreenchange', handleToolbarDefaultReset);
+        document.addEventListener('webkitfullscreenchange', handleToolbarDefaultReset);
+
+        return () => {
+            window.removeEventListener('resize', handleToolbarDefaultReset);
+            document.removeEventListener('fullscreenchange', handleToolbarDefaultReset);
+            document.removeEventListener('webkitfullscreenchange', handleToolbarDefaultReset);
+        };
+    }, []);
+
+    useEffect(() => {
+        setToolbarDock('bottom');
+    }, [isFullscreen]);
 
     const [showImagePicker, setShowImagePicker] = useState(false);
     const [showImagePickerModal, setShowImagePickerModal] = useState(false);
@@ -3919,12 +3946,126 @@ export default function Whiteboard({
                         return;
                     }
                 }
+
+                // 4. External Math Equation (LaTeX) pasting
+                // E.g. $E=mc^2$ or \[ ... \] or \int_{0}^{1} x^2 dx or \frac{a}{b}
+                const isLatex = /(?:\$[^$]+\$|\$\$[^$]+\$\$|\\\[[\s\S]+?\\\]|\\\(.+?\\\)|\\[a-zA-Z]+(?:\{[^}]*\}|\[[^\]]*\])*)/.test(trimmed);
+                if (isLatex) {
+                    let cleanLatex = trimmed;
+                    if (cleanLatex.startsWith('$$') && cleanLatex.endsWith('$$') && cleanLatex.length > 4) {
+                        cleanLatex = cleanLatex.slice(2, -2).trim();
+                    } else if (cleanLatex.startsWith('$') && cleanLatex.endsWith('$') && cleanLatex.length > 2) {
+                        cleanLatex = cleanLatex.slice(1, -1).trim();
+                    } else if (cleanLatex.startsWith('\\[') && cleanLatex.endsWith('\\]') && cleanLatex.length > 4) {
+                        cleanLatex = cleanLatex.slice(2, -2).trim();
+                    } else if (cleanLatex.startsWith('\\(') && cleanLatex.endsWith('\\)') && cleanLatex.length > 4) {
+                        cleanLatex = cleanLatex.slice(2, -2).trim();
+                    }
+
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    const canvas = canvasRef.current;
+                    const cWidth = canvas ? canvas.width : 1920;
+                    const cHeight = canvas ? canvas.height : 1080;
+                    const eqId = `eq_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+                    const newEq = {
+                        id: eqId,
+                        type: 'equation',
+                        latex: cleanLatex,
+                        x: Math.max(40, Math.round(cWidth / 2 - 120)),
+                        y: Math.max(40, Math.round(cHeight / 2 - 40)),
+                        width: 260,
+                        height: 90,
+                        fontSize: 24,
+                        color: '#1e293b',
+                        bgColor: '#ffffff',
+                        isLocked: false,
+                        zIndex: 25
+                    };
+                    setShapeObjects(prev => [...prev, newEq]);
+                    setSelectedShapeIds([eqId]);
+                    setSelectedImageIds([]);
+                    setSelectedTextIds([]);
+                    saveToHistory();
+                    toast.success('Pasted math equation onto canvas', { icon: '🧮' });
+                    return;
+                }
             }
         };
 
         window.addEventListener('paste', handleGlobalPaste);
         return () => window.removeEventListener('paste', handleGlobalPaste);
     }, [saveToHistory, setImageObjects, setSelectedImageIds, setSelectedImageId, setSelectedShapeIds, setSelectedTextIds, currentPage]);
+
+    // Math virtual keyboard symbol insertion handler
+    const handleInsertMathSymbol = useCallback((symbolLatex) => {
+        // 1. If currently editing text in a textarea
+        if (editingTextId) {
+            const activeEl = document.activeElement;
+            if (activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT')) {
+                const start = activeEl.selectionStart ?? activeEl.value.length;
+                const end = activeEl.selectionEnd ?? activeEl.value.length;
+                const val = activeEl.value;
+                const before = val.substring(0, start);
+                const after = val.substring(end);
+                const nextVal = before + symbolLatex + after;
+                setTextObjects(prev => prev.map(t => t.id === editingTextId ? { ...t, text: nextVal } : t));
+                setTimeout(() => {
+                    if (activeEl) {
+                        activeEl.focus();
+                        const newPos = start + symbolLatex.length;
+                        activeEl.setSelectionRange?.(newPos, newPos);
+                    }
+                }, 0);
+            } else {
+                setTextObjects(prev => prev.map(t => t.id === editingTextId ? { ...t, text: (t.text ? t.text + ' ' : '') + symbolLatex } : t));
+            }
+            saveToHistory();
+            return;
+        }
+
+        // 2. If a single text object is selected
+        if (selectedTextIds.length === 1) {
+            const targetId = selectedTextIds[0];
+            setTextObjects(prev => prev.map(t => t.id === targetId ? { ...t, text: (t.text ? t.text + ' ' : '') + symbolLatex } : t));
+            saveToHistory();
+            return;
+        }
+
+        // 3. If a single equation shape is selected
+        if (selectedShapeIds.length === 1) {
+            const targetShape = shapeObjects.find(s => s.id === selectedShapeIds[0]);
+            if (targetShape && (targetShape.type === 'equation' || targetShape.isEquation || targetShape.latex !== undefined)) {
+                setShapeObjects(prev => prev.map(s => s.id === targetShape.id ? { ...s, latex: (s.latex ? s.latex + ' ' : '') + symbolLatex } : s));
+                saveToHistory();
+                return;
+            }
+        }
+
+        // 4. Otherwise, spawn a new equation shape centered on current canvas view
+        const wrapper = canvasWrapperRef.current;
+        const cx = wrapper ? (wrapper.clientWidth / 2 - 120) : 250;
+        const cy = wrapper ? (wrapper.clientHeight / 2 - 40) : 250;
+        const newEq = {
+            id: `eq_${Date.now()}`,
+            type: 'equation',
+            latex: symbolLatex,
+            x: Math.round(-panOffset.x + cx / zoomLevel),
+            y: Math.round(-panOffset.y + cy / zoomLevel),
+            width: 240,
+            height: 70,
+            fontSize: 24,
+            color: color || '#1e293b',
+            bgColor: 'transparent',
+            rotation: 0
+        };
+        setShapeObjects(prev => [...prev, newEq]);
+        setSelectedShapeIds([newEq.id]);
+        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newEq });
+        saveToHistory();
+        toast.success('Equation inserted!', { icon: '📐' });
+    }, [editingTextId, selectedTextIds, selectedShapeIds, shapeObjects, canvasWrapperRef, panOffset, zoomLevel, color, socket, sessionId, saveToHistory, setTextObjects, setShapeObjects, setSelectedShapeIds]);
 
     // Image manipulation mouse handlers
     useEffect(() => {
@@ -3945,6 +4086,23 @@ export default function Whiteboard({
             const canvasDy = dy * scaleY;
 
             if (imageDragState.action === 'move') {
+                // If initiated as infinite cloner candidate, require movement > 4px before cloning
+                if (imageDragState.isClonerCandidate) {
+                    if (Math.hypot(dx, dy) > 4) {
+                        const cloneId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+                        const cloneObj = { ...startObj, id: cloneId, isInfiniteCloner: false };
+                        setImageObjects(prev => [...prev, cloneObj]);
+                        setSelectedImageIds([cloneId]);
+                        setSelectedImageId(cloneId);
+                        imageDragState.isClonerCandidate = false;
+                        imageDragState.id = cloneId;
+                        imageDragState.startObj = { ...cloneObj };
+                        imageDragState.startImageObjs = [cloneObj];
+                    } else {
+                        return; // Don't move original image
+                    }
+                }
+
                 const deltaX = (clientX - (imageDragState.lastX || imageDragState.startX)) * scaleX;
                 const deltaY = (clientY - (imageDragState.lastY || imageDragState.startY)) * scaleY;
                 imageDragState.lastX = clientX;
@@ -4188,6 +4346,22 @@ export default function Whiteboard({
             const canvasDy = dy * scaleY;
 
             if (shapeDragState.action === 'move') {
+                // If initiated as infinite cloner candidate, require movement > 4px before cloning
+                if (shapeDragState.isClonerCandidate) {
+                    if (Math.hypot(dx, dy) > 4) {
+                        const cloneId = `shape_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+                        const cloneObj = { ...startObj, id: cloneId, isInfiniteCloner: false };
+                        setShapeObjects(prev => [...prev, cloneObj]);
+                        setSelectedShapeIds([cloneId]);
+                        shapeDragState.isClonerCandidate = false;
+                        shapeDragState.id = cloneId;
+                        shapeDragState.startObj = { ...cloneObj };
+                        shapeDragState.startObjs = [cloneObj];
+                    } else {
+                        return; // Don't move original shape
+                    }
+                }
+
                 const deltaX = (clientX - (shapeDragState.lastX || shapeDragState.startX)) * scaleX;
                 const deltaY = (clientY - (shapeDragState.lastY || shapeDragState.startY)) * scaleY;
                 shapeDragState.lastX = clientX;
@@ -5564,12 +5738,25 @@ export default function Whiteboard({
                     if (!currentSparkleParticlesRef.current) currentSparkleParticlesRef.current = [];
                     const particles = currentSparkleParticlesRef.current;
                     const lastP = particles[particles.length - 1];
-                    if (!lastP || Math.hypot(pos.x - lastP.x, pos.y - lastP.y) > 12) {
-                        const pSize = 2.5 + Math.random() * 2.5; // delicate 2.5 to 5px subtle glints
+                    if (!lastP || Math.hypot(pos.x - lastP.x, pos.y - lastP.y) > 10) {
+                        const pSize = 2.5 + Math.random() * 3.5;
                         const pRot = Math.random() * 90;
-                        const pX = pos.x + (Math.random() - 0.5) * 6; // tight to stroke spine
-                        const pY = pos.y + (Math.random() - 0.5) * 6;
-                        const newP = { x: pX, y: pY, size: pSize, rotation: pRot, color: color || '#f59e0b', opacity: 0.95 };
+                        const pX = pos.x + (Math.random() - 0.5) * 8;
+                        const pY = pos.y + (Math.random() - 0.5) * 8;
+                        let pStroke = '#f59e0b';
+                        if (sparkleTheme === 'galaxy') {
+                            const galaxyColors = ['#ffffff', '#c084fc', '#67e8f9', '#a7f3d0', '#fde047', '#e879f9'];
+                            pStroke = galaxyColors[Math.floor(Math.random() * galaxyColors.length)];
+                        } else if (sparkleTheme === 'rainbow') {
+                            const rainbowColors = ['#ffffff', '#fde047', '#f43f5e', '#38bdf8', '#4ade80', '#fb923c'];
+                            pStroke = rainbowColors[Math.floor(Math.random() * rainbowColors.length)];
+                        } else if (sparkleTheme === 'gold') {
+                            const goldColors = ['#ffffff', '#fbbf24', '#f59e0b', '#fef3c7', '#d97706'];
+                            pStroke = goldColors[Math.floor(Math.random() * goldColors.length)];
+                        } else {
+                            pStroke = color || '#f59e0b';
+                        }
+                        const newP = { x: pX, y: pY, size: pSize, rotation: pRot, color: pStroke, opacity: 0.95 };
                         particles.push(newP);
                         ctx.save();
                         ctx.translate(pX, pY);
@@ -5588,7 +5775,7 @@ export default function Whiteboard({
                         ctx.closePath();
                         ctx.fillStyle = '#ffffff';
                         ctx.fill();
-                        ctx.strokeStyle = color || '#f59e0b';
+                        ctx.strokeStyle = pStroke;
                         ctx.lineWidth = 0.75;
                         ctx.stroke();
                         ctx.restore();
@@ -6011,12 +6198,14 @@ export default function Whiteboard({
                         particles: relParticles,
                         rotation: 0,
                         color: color || '#f59e0b',
+                        sparkleTheme: sparkleTheme || 'galaxy',
+                        opacity: penOpacity ? (penOpacity / 100) : 1,
                         strokeWidth: strokeWidth || 3,
                         smooth: true
                     };
                     setShapeObjects(prev => [...prev, newSparkleObj]);
                     if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newSparkleObj });
-                    updateRecentPens('sparkle', color || '#f59e0b', strokeWidth || 3);
+                    updateRecentPens('sparkle', color || '#f59e0b', strokeWidth || 3, sparkleTheme || 'galaxy');
                     currentSparkleParticlesRef.current = [];
                 } else {
                     // Regular freehand path
@@ -6124,11 +6313,14 @@ export default function Whiteboard({
                     particles: relParticles,
                     rotation: 0,
                     color: color || '#f59e0b',
+                    sparkleTheme: sparkleTheme || 'galaxy',
+                    opacity: penOpacity ? (penOpacity / 100) : 1,
                     strokeWidth: strokeWidth || 3,
                     smooth: true
                 };
                 setShapeObjects(prev => [...prev, newSparkleObj]);
                 if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newSparkleObj });
+                updateRecentPens('sparkle', color || '#f59e0b', strokeWidth || 3, sparkleTheme || 'galaxy');
                 saveToHistory();
             }
             currentSparkleParticlesRef.current = [];
@@ -7350,8 +7542,39 @@ export default function Whiteboard({
             } else if (shpObj.type === 'sparkle_path') {
                 if (shpObj.points && shpObj.points.length > 0) {
                     const pts = shpObj.points;
+                    ctx.save();
+                    if (shpObj.opacity !== undefined) {
+                        ctx.globalAlpha = shpObj.opacity;
+                    }
                     ctx.beginPath();
-                    ctx.strokeStyle = shpObj.color || '#f59e0b';
+                    const theme = shpObj.sparkleTheme || 'galaxy';
+                    const grad = ctx.createLinearGradient(shpObj.x, shpObj.y, shpObj.x + shpObj.width, shpObj.y + shpObj.height);
+                    if (theme === 'galaxy') {
+                        grad.addColorStop(0, '#3b0764');
+                        grad.addColorStop(0.2, '#7c3aed');
+                        grad.addColorStop(0.4, '#2563eb');
+                        grad.addColorStop(0.6, '#06b6d4');
+                        grad.addColorStop(0.8, '#34d399');
+                        grad.addColorStop(1, '#a855f7');
+                    } else if (theme === 'rainbow') {
+                        grad.addColorStop(0, '#ef4444');
+                        grad.addColorStop(0.18, '#f97316');
+                        grad.addColorStop(0.36, '#eab308');
+                        grad.addColorStop(0.54, '#22c55e');
+                        grad.addColorStop(0.72, '#06b6d4');
+                        grad.addColorStop(0.88, '#3b82f6');
+                        grad.addColorStop(1, '#a855f7');
+                    } else if (theme === 'gold') {
+                        grad.addColorStop(0, '#b45309');
+                        grad.addColorStop(0.25, '#f59e0b');
+                        grad.addColorStop(0.5, '#fef3c7');
+                        grad.addColorStop(0.75, '#fbbf24');
+                        grad.addColorStop(1, '#d97706');
+                    } else {
+                        grad.addColorStop(0, shpObj.color || '#f59e0b');
+                        grad.addColorStop(1, shpObj.color || '#f59e0b');
+                    }
+                    ctx.strokeStyle = grad;
                     ctx.lineWidth = shpObj.strokeWidth || 3;
                     ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
@@ -7362,7 +7585,7 @@ export default function Whiteboard({
                     ctx.stroke();
                     const particles = shpObj.particles || [];
                     particles.forEach(p => {
-                        const s = Math.min(6, Math.max(2, p.size || 3.5));
+                        const s = Math.min(7, Math.max(2, p.size || 3.5));
                         ctx.save();
                         ctx.translate(shpObj.x + p.x, shpObj.y + p.y);
                         ctx.rotate(((p.rotation || 0) * Math.PI) / 180);
@@ -7380,11 +7603,12 @@ export default function Whiteboard({
                         ctx.closePath();
                         ctx.fillStyle = '#ffffff';
                         ctx.fill();
-                        ctx.strokeStyle = p.color || shpObj.color || '#f59e0b';
+                        ctx.strokeStyle = p.color || (theme === 'galaxy' ? '#c084fc' : theme === 'rainbow' ? '#fde047' : '#f59e0b');
                         ctx.lineWidth = 0.75;
                         ctx.stroke();
                         ctx.restore();
                     });
+                    ctx.restore();
                 }
             } else if (shpObj.type === 'equation') {
                 ctx.save();
@@ -8331,201 +8555,6 @@ export default function Whiteboard({
         >
             {/* Whiteboard Workspace Container */}
 
-            {/* Common Format Bar for selected items */}
-            {(selectedShapeIds.length > 0 || selectedTextIds.length > 0) && (
-                <div className="absolute bottom-[4.5rem] left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 px-2 py-1 flex items-center gap-1.5 rounded-xl z-40 max-w-[95%] overflow-visible whitespace-nowrap hide-scrollbar transition-all text-slate-200">
-                    {/* Delete Selection */}
-                    <button 
-                        onClick={handleDelete} 
-                        className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-lg transition" 
-                        title="Delete Selection"
-                    >
-                        <Trash2 size={15} />
-                    </button>
-
-                    {/* Convert Ink to Text (Handwriting Recognition) */}
-                    {selectedShapeIds.some(id => shapeObjects.find(s => s.id === id)?.type === 'path') && (
-                        <>
-                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
-                            <button
-                                onClick={async () => {
-                                    const targetShapes = shapeObjects.filter(s => selectedShapeIds.includes(s.id) && s.type === 'path');
-                                    if (targetShapes.length === 0) return;
-
-                                    toast('Analyzing handwriting...', { icon: '✍️', id: 'ink-conv' });
-                                    let allPts = [];
-                                    targetShapes.forEach(ts => {
-                                        if (ts.points) {
-                                            ts.points.forEach(p => {
-                                                allPts.push({ x: (ts.x || 0) + p.x, y: (ts.y || 0) + p.y });
-                                            });
-                                        }
-                                    });
-
-                                    const text = await recognizeHandwriting(allPts);
-                                    if (text && text.trim()) {
-                                        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                                        targetShapes.forEach(ts => {
-                                            minX = Math.min(minX, ts.x);
-                                            minY = Math.min(minY, ts.y);
-                                            maxX = Math.max(maxX, ts.x + (ts.width || 0));
-                                            maxY = Math.max(maxY, ts.y + (ts.height || 0));
-                                        });
-
-                                        const targetIds = targetShapes.map(s => s.id);
-                                        setShapeObjects(prev => prev.filter(s => !targetIds.includes(s.id)));
-                                        setSelectedShapeIds([]);
-                                        targetIds.forEach(id => {
-                                            if (socket && sessionId) socket.emit('whiteboard:shape-delete', { sessionId, shapeId: id });
-                                        });
-
-                                        const newTextObj = {
-                                            id: Date.now(),
-                                            text,
-                                            x: minX,
-                                            y: minY,
-                                            width: Math.max(maxX - minX, 100),
-                                            height: Math.max(maxY - minY, 36),
-                                            rotation: 0,
-                                            color: targetShapes[0]?.color || color,
-                                            fontSize: Math.max(16, Math.min(54, Math.round((maxY - minY) * 0.75))),
-                                            fontWeight: 'normal',
-                                            fontStyle: 'normal',
-                                            textAlign: 'left'
-                                        };
-                                        setTextObjects(prev => [...prev, newTextObj]);
-                                        if (socket && sessionId) socket.emit('whiteboard:text-add', { sessionId, textObj: newTextObj });
-                                        saveToHistory();
-                                        toast.success(`✨ Converted to text: "${text}"`, { icon: '✍️', id: 'ink-conv' });
-                                    } else {
-                                        toast.error('Could not recognize handwriting. Try writing more clearly.', { id: 'ink-conv' });
-                                    }
-                                }}
-                                className="px-2 py-1 text-xs text-indigo-300 hover:text-white hover:bg-indigo-600/30 rounded-lg flex items-center gap-1.5 transition font-semibold"
-                                title="Convert Selected Ink Strokes to Typed Text (Handwriting Recognition)"
-                            >
-                                <Scan size={14} className="text-indigo-400" />
-                                <span className="text-[11px]">Convert to Text</span>
-                            </button>
-                        </>
-                    )}
-
-                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
-
-                    {/* Edit / Clipboard Hover Group */}
-                    <div className="relative group">
-                        <button className="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg flex items-center gap-1 transition" title="Clipboard Actions">
-                            <Copy size={14} />
-                            <span className="hidden sm:inline text-[11px] font-medium">Edit</span>
-                            <ChevronDown size={11} className="text-slate-400 group-hover:rotate-180 transition-transform" />
-                        </button>
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-900 border-2 border-slate-700 rounded-xl p-1.5 shadow-2xl z-60 min-w-[130px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
-                            <button onClick={handleCopy} className="flex items-center justify-between px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
-                                <span className="flex items-center gap-2"><Copy size={13} /> Copy</span>
-                                <kbd className="text-[9px] text-slate-400 font-mono">⌘C</kbd>
-                            </button>
-                            <button onClick={handleCut} className="flex items-center justify-between px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
-                                <span className="flex items-center gap-2"><Scissors size={13} /> Cut</span>
-                                <kbd className="text-[9px] text-slate-400 font-mono">⌘X</kbd>
-                            </button>
-                            <button onClick={handlePaste} className="flex items-center justify-between px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
-                                <span className="flex items-center gap-2"><ClipboardPaste size={13} /> Paste</span>
-                                <kbd className="text-[9px] text-slate-400 font-mono">⌘V</kbd>
-                            </button>
-                            <button onClick={handleDuplicate} className="flex items-center justify-between px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
-                                <span className="flex items-center gap-2"><Files size={13} /> Duplicate</span>
-                                <kbd className="text-[9px] text-slate-400 font-mono">⌘D</kbd>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
-
-                    {/* Layers Hover Group */}
-                    <div className="relative group">
-                        <button className="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg flex items-center gap-1 transition" title="Layer Ordering">
-                            <BringToFront size={14} />
-                            <span className="hidden sm:inline text-[11px] font-medium">Layers</span>
-                            <ChevronDown size={11} className="text-slate-400 group-hover:rotate-180 transition-transform" />
-                        </button>
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-900 border-2 border-slate-700 rounded-xl p-1.5 shadow-2xl z-60 min-w-[140px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
-                            <button onClick={handleBringToFront} className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
-                                <BringToFront size={13} /> Bring to Front
-                            </button>
-                            <button onClick={handleSendToBack} className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
-                                <SendToBack size={13} /> Send to Back
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
-
-                    {/* Align & Distribute Hover Group */}
-                    <div className="relative group">
-                        <button className="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg flex items-center gap-1 transition" title="Alignment & Distribution">
-                            <AlignLeft size={14} />
-                            <span className="hidden sm:inline text-[11px] font-medium">Align</span>
-                            <ChevronDown size={11} className="text-slate-400 group-hover:rotate-180 transition-transform" />
-                        </button>
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-900 border-2 border-slate-700 rounded-xl p-2 shadow-2xl z-60 min-w-[170px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
-                            <div className="text-[10px] font-semibold text-slate-400 px-1 mb-1">Align</div>
-                            <div className="grid grid-cols-3 gap-1 mb-2">
-                                <button onClick={() => handleAlign('left')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center" title="Align Left"><AlignLeft size={13} /></button>
-                                <button onClick={() => handleAlign('center')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center" title="Align Center"><AlignCenterHorizontal size={13} /></button>
-                                <button onClick={() => handleAlign('right')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center" title="Align Right"><AlignRight size={13} /></button>
-                                <button onClick={() => handleAlign('top')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center" title="Align Top"><AlignStartVertical size={13} /></button>
-                                <button onClick={() => handleAlign('middle')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center" title="Align Middle"><AlignCenterVertical size={13} /></button>
-                                <button onClick={() => handleAlign('bottom')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center" title="Align Bottom"><AlignEndVertical size={13} /></button>
-                            </div>
-                            {(selectedShapeIds.length > 2 || selectedTextIds.length > 2) && (
-                                <>
-                                    <div className="w-full h-px bg-slate-700 my-1" />
-                                    <div className="text-[10px] font-semibold text-slate-400 px-1 mb-1">Distribute</div>
-                                    <div className="grid grid-cols-2 gap-1">
-                                        <button onClick={() => handleDistribute('horizontal')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center gap-1" title="Distribute Horizontally"><AlignHorizontalSpaceBetween size={13} /> Horiz</button>
-                                        <button onClick={() => handleDistribute('vertical')} className="p-1.5 hover:bg-slate-700/70 rounded-md text-slate-300 hover:text-white flex items-center justify-center gap-1" title="Distribute Vertically"><AlignVerticalSpaceBetween size={13} /> Vert</button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
-
-                    {/* Organize Hover Group */}
-                    <div className="relative group">
-                        <button className="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg flex items-center gap-1 transition" title="Organize & Group">
-                            {shapeObjects.some(s => selectedShapeIds.includes(s.id) && s.isLocked) || textObjects.some(t => selectedTextIds.includes(t.id) && t.isLocked) ? (
-                                <Lock size={14} className="text-amber-400" />
-                            ) : (
-                                <Unlock size={14} />
-                            )}
-                            <span className="hidden sm:inline text-[11px] font-medium">Organize</span>
-                            <ChevronDown size={11} className="text-slate-400 group-hover:rotate-180 transition-transform" />
-                        </button>
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-900 border-2 border-slate-700 rounded-xl p-1.5 shadow-2xl z-60 min-w-[130px] text-xs before:content-[''] before:absolute before:-bottom-2.5 before:left-0 before:right-0 before:h-2.5 animate-in fade-in zoom-in-95 duration-100">
-                            <button onClick={handleToggleLock} className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
-                                {shapeObjects.some(s => selectedShapeIds.includes(s.id) && s.isLocked) || textObjects.some(t => selectedTextIds.includes(t.id) && t.isLocked) ? (
-                                    <><Unlock size={13} /> Unlock</>
-                                ) : (
-                                    <><Lock size={13} /> Lock</>
-                                )}
-                            </button>
-                            {(selectedShapeIds.length > 1 || selectedTextIds.length > 1) && (
-                                <button onClick={handleGroup} className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
-                                    <Group size={13} /> Group
-                                </button>
-                            )}
-                            {(shapeObjects.some(s => selectedShapeIds.includes(s.id) && s.groupId) || textObjects.some(t => selectedTextIds.includes(t.id) && t.groupId)) && (
-                                <button onClick={handleUngroup} className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-700/70 rounded-lg text-slate-200 hover:text-white transition">
-                                    <Ungroup size={13} /> Ungroup
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-
             {/* Floating Sleek Toolbar / View-Only Status Pill */}
             {!canUserDraw ? (
                 <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/70 px-4 py-2.5 flex items-center gap-3.5 rounded-full z-40 animate-in fade-in">
@@ -8581,19 +8610,24 @@ export default function Whiteboard({
                 return (
                 <div 
                     ref={toolbarRef}
-                    style={isFloating ? { left: `${toolbarPos.x}px`, top: `${toolbarPos.y}px`, transform: 'none' } : undefined}
+                    style={{
+                        ...(isFloating ? { left: `${toolbarPos.x}px`, top: `${toolbarPos.y}px`, transform: 'none' } : {}),
+                        WebkitBackfaceVisibility: 'hidden',
+                        backfaceVisibility: 'hidden',
+                        willChange: 'transform, opacity'
+                    }}
                     className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 flex z-50 overflow-visible whitespace-nowrap hide-scrollbar ${isDraggingToolbar ? '' : 'transition-all duration-200'} ${
-                    !isStateLoaded ? 'pointer-events-none opacity-60 filter blur-[0.5px]' : 'pointer-events-auto opacity-100'
+                    !isStateLoaded ? 'pointer-events-none opacity-60 filter blur-[0.5px]' : (isDrawing ? 'opacity-35 hover:opacity-100' : 'opacity-90 hover:opacity-100')
                 } ${
                     toolbarDock === 'top'
-                        ? 'top-4 left-1/2 transform -translate-x-1/2 flex-row items-center px-2 py-1 rounded-full gap-0.5 max-w-[95%]'
+                        ? 'top-4 left-1/2 transform -translate-x-1/2 flex-row items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[95%]'
                         : toolbarDock === 'left'
                         ? 'left-4 top-1/2 transform -translate-y-1/2 flex-col items-center w-12 py-2.5 px-1 rounded-2xl gap-1 max-h-[90vh] overflow-y-auto overflow-x-hidden'
                         : toolbarDock === 'right'
                         ? 'right-4 top-1/2 transform -translate-y-1/2 flex-col items-center w-12 py-2.5 px-1 rounded-2xl gap-1 max-h-[90vh] overflow-y-auto overflow-x-hidden'
                         : isFloating
-                        ? 'flex-row items-center px-2 py-1 rounded-full gap-0.5 max-w-[95%]'
-                        : 'bottom-4 left-1/2 transform -translate-x-1/2 flex-row items-center px-2 py-1 rounded-full gap-0.5 max-w-[95%]'
+                        ? 'flex-row items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[95%]'
+                        : 'bottom-4 left-1/2 transform -translate-x-1/2 flex-row items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[95%]'
                 }`}>
                     {/* Floatable Toolbar Drag Grip */}
                     <div
@@ -8733,13 +8767,15 @@ export default function Whiteboard({
                                 
                                 {/* Popovers rendered with dynamic positioning */}
                                 {tool === t.id && t.id === 'pen' && showStrokePicker && (
-                                    <div className={`absolute ${popoverPos} p-3 bg-slate-900 border-2 border-slate-700 rounded-xl shadow-2xl z-60 flex flex-col gap-2.5 min-w-[190px]`}>
+                                    <div className={`absolute ${popoverPos} p-3.5 bg-slate-900/98 backdrop-blur-md border-2 border-slate-700 rounded-2xl shadow-2xl z-60 flex flex-col gap-3 min-w-[220px] text-slate-200`}>
                                         {/* Pen Mode Switcher (Normal vs Sparkle) */}
-                                        <div className="flex items-center gap-1 p-0.5 bg-slate-800 rounded-lg border border-slate-700/80">
+                                        <div className="flex items-center gap-1 p-0.5 bg-slate-800/90 rounded-xl border border-slate-700/80">
                                             <button
                                                 type="button"
                                                 onClick={() => setPenMode('normal')}
-                                                className={`flex-1 py-1 px-2 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1.5 transition ${penMode === 'normal' ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-400 hover:text-slate-200'}`}
+                                                className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
+                                                    penMode === 'normal' ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-400 hover:text-slate-200'
+                                                }`}
                                             >
                                                 <Pencil className="w-3 h-3" />
                                                 Normal
@@ -8747,40 +8783,197 @@ export default function Whiteboard({
                                             <button
                                                 type="button"
                                                 onClick={() => setPenMode('sparkle')}
-                                                className={`flex-1 py-1 px-2 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1.5 transition ${penMode === 'sparkle' ? 'bg-amber-500 text-slate-950 font-bold shadow-xs' : 'text-slate-400 hover:text-amber-300'}`}
+                                                className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
+                                                    penMode === 'sparkle' ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-bold shadow-xs' : 'text-slate-400 hover:text-amber-300'
+                                                }`}
                                             >
-                                                <Sparkles className="w-3 h-3" />
+                                                <Sparkles className="w-3.5 h-3.5" />
                                                 Sparkle
                                             </button>
                                         </div>
 
+                                        {/* If Sparkle mode: Galaxy, Rainbow, Gold Glitter Swatches */}
+                                        {penMode === 'sparkle' ? (
+                                            <div>
+                                                <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">
+                                                    Sparkle Theme
+                                                </div>
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSparkleTheme('galaxy');
+                                                            setColor('#7c3aed');
+                                                        }}
+                                                        className={`group relative flex flex-col items-center gap-1 p-1.5 rounded-xl border transition ${
+                                                            sparkleTheme === 'galaxy' ? 'border-purple-400 bg-purple-950/40 ring-2 ring-purple-500' : 'border-slate-700 bg-slate-800/60 hover:border-slate-500'
+                                                        }`}
+                                                        title="Galaxy Sparkle: Cosmic purple/cyan/emerald gradient with stellar dust speckles"
+                                                    >
+                                                        <div
+                                                            className="w-7 h-7 rounded-full shadow-md flex items-center justify-center border border-white/40"
+                                                            style={{
+                                                                background: 'linear-gradient(135deg, #3b0764, #7c3aed, #2563eb, #06b6d4, #34d399, #a855f7)'
+                                                            }}
+                                                        >
+                                                            <Sparkles className="w-3.5 h-3.5 text-white drop-shadow-md" />
+                                                        </div>
+                                                        <span className="text-[10px] font-semibold text-slate-300 group-hover:text-white">Galaxy</span>
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSparkleTheme('rainbow');
+                                                            setColor('#ef4444');
+                                                        }}
+                                                        className={`group relative flex flex-col items-center gap-1 p-1.5 rounded-xl border transition ${
+                                                            sparkleTheme === 'rainbow' ? 'border-amber-400 bg-amber-950/40 ring-2 ring-amber-500' : 'border-slate-700 bg-slate-800/60 hover:border-slate-500'
+                                                        }`}
+                                                        title="Rainbow Sparkle: Spectral vibrant rainbow with star glitter"
+                                                    >
+                                                        <div
+                                                            className="w-7 h-7 rounded-full shadow-md flex items-center justify-center border border-white/40"
+                                                            style={{
+                                                                background: 'linear-gradient(135deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)'
+                                                            }}
+                                                        >
+                                                            <Sparkles className="w-3.5 h-3.5 text-white drop-shadow-md" />
+                                                        </div>
+                                                        <span className="text-[10px] font-semibold text-slate-300 group-hover:text-white">Rainbow</span>
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSparkleTheme('gold');
+                                                            setColor('#f59e0b');
+                                                        }}
+                                                        className={`group relative flex flex-col items-center gap-1 p-1.5 rounded-xl border transition ${
+                                                            sparkleTheme === 'gold' ? 'border-yellow-400 bg-yellow-950/40 ring-2 ring-yellow-500' : 'border-slate-700 bg-slate-800/60 hover:border-slate-500'
+                                                        }`}
+                                                        title="Gold Glitter: Radiant metallic amber with diamond glints"
+                                                    >
+                                                        <div
+                                                            className="w-7 h-7 rounded-full shadow-md flex items-center justify-center border border-white/40"
+                                                            style={{
+                                                                background: 'linear-gradient(135deg, #b45309, #f59e0b, #fef3c7, #fbbf24, #d97706)'
+                                                            }}
+                                                        >
+                                                            <Sparkles className="w-3.5 h-3.5 text-white drop-shadow-md" />
+                                                        </div>
+                                                        <span className="text-[10px] font-semibold text-slate-300 group-hover:text-white">Gold</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">
+                                                    Pen Color
+                                                </div>
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    {['#000000', '#475569', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#ffffff'].map(c => (
+                                                        <button
+                                                            key={c}
+                                                            type="button"
+                                                            onClick={() => setColor(c)}
+                                                            className={`w-6 h-6 rounded-full border transition hover:scale-110 flex items-center justify-center ${
+                                                                color === c ? 'border-white ring-2 ring-primary-500 scale-105' : 'border-slate-600'
+                                                            }`}
+                                                            style={{ backgroundColor: c }}
+                                                        >
+                                                            {color === c && (
+                                                                <Check className={`w-3 h-3 ${c === '#ffffff' || c === '#eab308' ? 'text-slate-900' : 'text-white'}`} />
+                                                            )}
+                                                        </button>
+                                                    ))}
+                                                    <div className="relative w-6 h-6 rounded-full border border-slate-600 overflow-hidden flex items-center justify-center cursor-pointer hover:scale-110">
+                                                        <span className="text-[10px] font-bold text-slate-300">+</span>
+                                                        <input
+                                                            type="color"
+                                                            value={color}
+                                                            onChange={(e) => setColor(e.target.value)}
+                                                            className="absolute inset-[-10px] w-12 h-12 opacity-0 cursor-pointer"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Thickness Controls: Discrete circular thickness buttons + slider */}
                                         <div>
-                                            <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1">
-                                                <span>Stroke Width</span>
+                                            <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">
+                                                <span>Thickness</span>
                                                 <span className="text-white font-mono">{strokeWidth}px</span>
+                                            </div>
+                                            <div className="flex items-center justify-between mb-2 px-1">
+                                                {[2, 4, 6, 10, 16, 24].map((size) => (
+                                                    <button
+                                                        key={size}
+                                                        type="button"
+                                                        onClick={() => setStrokeWidth(size)}
+                                                        className={`w-6 h-6 rounded-full border flex items-center justify-center transition hover:scale-110 ${
+                                                            strokeWidth === size ? 'border-indigo-400 bg-indigo-500/20 ring-2 ring-indigo-500/40' : 'border-slate-700 bg-slate-800/80'
+                                                        }`}
+                                                        title={`${size}px`}
+                                                    >
+                                                        <div
+                                                            className="rounded-full bg-slate-200"
+                                                            style={{ width: Math.max(3, Math.min(16, size * 0.7)), height: Math.max(3, Math.min(16, size * 0.7)) }}
+                                                        />
+                                                    </button>
+                                                ))}
                                             </div>
                                             <input
                                                 type="range"
                                                 min="1"
-                                                max="20"
+                                                max="30"
                                                 value={strokeWidth}
                                                 onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
-                                                className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
+                                                className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+                                                style={{
+                                                    background: penMode === 'sparkle'
+                                                        ? sparkleTheme === 'galaxy'
+                                                            ? 'linear-gradient(90deg, #3b0764, #7c3aed, #2563eb, #06b6d4, #34d399, #a855f7)'
+                                                            : sparkleTheme === 'rainbow'
+                                                            ? 'linear-gradient(90deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)'
+                                                            : 'linear-gradient(90deg, #b45309, #f59e0b, #fef3c7, #fbbf24, #d97706)'
+                                                        : undefined
+                                                }}
                                             />
                                         </div>
 
+                                        {/* Opacity Slider with Numeric Percentage */}
+                                        <div>
+                                            <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1">
+                                                <span>Opacity</span>
+                                                <span className="text-white font-mono">{penOpacity}%</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="10"
+                                                max="100"
+                                                value={penOpacity}
+                                                onChange={(e) => setPenOpacity(parseInt(e.target.value))}
+                                                className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                            />
+                                        </div>
+
+                                        {/* Smart Shape Switch */}
                                         <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between gap-2">
                                             <span className="text-[11px] text-slate-300 font-medium">Smart Shape</span>
                                             <button
                                                 type="button"
                                                 onClick={() => setIsAutoShape(prev => !prev)}
-                                                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition ${isAutoShape ? 'bg-primary-500 text-white shadow-xs' : 'bg-slate-700 text-slate-400'}`}
+                                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase transition ${
+                                                    isAutoShape ? 'bg-primary-500 text-white shadow-xs' : 'bg-slate-700 text-slate-400'
+                                                }`}
                                             >
                                                 {isAutoShape ? 'ON' : 'OFF'}
                                             </button>
                                         </div>
 
-                                        {/* Recent Pens Palette */}
+                                        {/* Recent Pens */}
                                         {recentPens && recentPens.length > 0 && (
                                             <div className="pt-2 border-t border-slate-700/60">
                                                 <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">
@@ -8788,7 +8981,7 @@ export default function Whiteboard({
                                                 </div>
                                                 <div className="flex items-center gap-1.5 flex-wrap">
                                                     {recentPens.slice(0, 6).map((rp, idx) => {
-                                                        const isCur = tool === 'pen' && penMode === rp.type && color === rp.color && strokeWidth === rp.strokeWidth;
+                                                        const isCur = tool === 'pen' && penMode === rp.type && (rp.type === 'sparkle' ? sparkleTheme === rp.sparkleTheme : color === rp.color) && strokeWidth === rp.strokeWidth;
                                                         return (
                                                             <button
                                                                 key={`${rp.type}-${rp.color}-${idx}`}
@@ -8796,16 +8989,30 @@ export default function Whiteboard({
                                                                 onClick={() => {
                                                                     setTool('pen');
                                                                     setPenMode(rp.type);
-                                                                    setColor(rp.color);
+                                                                    if (rp.type === 'sparkle') {
+                                                                        setSparkleTheme(rp.sparkleTheme || 'galaxy');
+                                                                    } else {
+                                                                        setColor(rp.color);
+                                                                    }
                                                                     setStrokeWidth(rp.strokeWidth);
                                                                 }}
-                                                                className={`relative w-6 h-6 rounded-full border flex items-center justify-center transition hover:scale-110 ${isCur ? 'border-white ring-2 ring-primary-500' : 'border-slate-600'}`}
-                                                                style={{ backgroundColor: rp.color }}
-                                                                title={`${rp.type === 'sparkle' ? '✨ Sparkle Pen' : '✏️ Normal Pen'} (${rp.strokeWidth}px, ${rp.color})`}
+                                                                className={`relative w-6 h-6 rounded-full border flex items-center justify-center transition hover:scale-110 ${
+                                                                    isCur ? 'border-white ring-2 ring-primary-500' : 'border-slate-600'
+                                                                }`}
+                                                                style={{
+                                                                    background: rp.type === 'sparkle'
+                                                                        ? rp.sparkleTheme === 'galaxy'
+                                                                            ? 'linear-gradient(135deg, #3b0764, #7c3aed, #2563eb, #06b6d4, #34d399, #a855f7)'
+                                                                            : rp.sparkleTheme === 'rainbow'
+                                                                            ? 'linear-gradient(135deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)'
+                                                                            : 'linear-gradient(135deg, #b45309, #f59e0b, #fef3c7, #fbbf24, #d97706)'
+                                                                        : rp.color
+                                                                }}
+                                                                title={`${rp.type === 'sparkle' ? `✨ ${rp.sparkleTheme} Sparkle Pen` : '✏️ Normal Pen'} (${rp.strokeWidth}px)`}
                                                             >
-                                                                {rp.type === 'sparkle' ? (
+                                                                {rp.type === 'sparkle' && (
                                                                     <Sparkles className="w-3 h-3 text-white drop-shadow-md" />
-                                                                ) : null}
+                                                                )}
                                                             </button>
                                                         );
                                                     })}
@@ -8817,7 +9024,7 @@ export default function Whiteboard({
 
                                 {/* Image Tool Popover */}
                                 {tool === t.id && t.id === 'image' && showImagePicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 min-w-[180px]`}>
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 z-50 flex flex-col gap-1 min-w-[180px]`}>
                                         <button 
                                             onClick={() => { setShowImagePickerModal(true); setShowImagePicker(false); }}
                                             className="text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded-md transition flex items-center gap-2"
@@ -8836,7 +9043,7 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'eraser' && showEraserPicker && (
-                                    <div className={`absolute ${popoverPos} p-3 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-2 w-48`}>
+                                    <div className={`absolute ${popoverPos} p-3 bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 z-50 flex flex-col gap-2 w-48`}>
                                         <div className="flex justify-between text-xs text-slate-300">
                                             <span>Size</span>
                                             <span>{eraserSize}px</span>
@@ -8853,7 +9060,7 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'highlighter' && showHighlighterPicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex gap-1`}>
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 z-50 flex gap-1`}>
                                         {HIGHLIGHTER_COLORS.map(c => (
                                             <button
                                                 key={c}
@@ -8867,7 +9074,7 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'select' && showSelectPicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 w-[120px]`}>
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 z-50 flex flex-col gap-1 w-[120px]`}>
                                         <button
                                             onClick={() => { setSelectMode('rectangle'); setShowSelectPicker(false); }}
                                             className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${selectMode === 'rectangle' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
@@ -8886,7 +9093,7 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'line' && showLinePicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 w-[150px]`}>
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 z-50 flex flex-col gap-1 w-[150px]`}>
                                         <button
                                             onClick={() => { setLineType('line'); setShowLinePicker(false); }}
                                             className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'line' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
@@ -8947,7 +9154,7 @@ export default function Whiteboard({
 
 
                                 {tool === t.id && t.id === 'shape' && showShapePicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 grid grid-cols-3 gap-1 w-[180px]`}>
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 z-50 grid grid-cols-3 gap-1 w-[180px]`}>
                                         {[
                                             { id: 'rectangle', icon: RectangleHorizontal, label: 'Rectangle' },
                                             { id: 'rounded_rect', icon: RectangleHorizontal, label: 'Rounded' },
@@ -9943,18 +10150,14 @@ export default function Whiteboard({
 
                             // Infinite Cloner drag-to-clone behavior
                             if (imgObj.isInfiniteCloner) {
-                                const cloneId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
-                                const cloneObj = { ...imgObj, id: cloneId, isInfiniteCloner: false };
-                                setImageObjects(prev => [...prev, cloneObj]);
-                                setSelectedImageIds([cloneId]);
-                                setSelectedImageId(cloneId);
                                 setImageDragState({
-                                    id: cloneId,
+                                    id: imgObj.id,
+                                    isClonerCandidate: true,
                                     action: 'move',
                                     startX: clientX,
                                     startY: clientY,
-                                    startObj: { ...cloneObj },
-                                    startImageObjs: [cloneObj],
+                                    startObj: { ...imgObj },
+                                    startImageObjs: [imgObj],
                                     startShapeObjs: [],
                                     startTextObjs: []
                                 });
@@ -10130,6 +10333,27 @@ export default function Whiteboard({
                                                 onPointerDown={handleStartMove}
                                             />
 
+                                            {/* Infinite Cloner Interactive Toggle / Badge for Image */}
+                                            {isSelected && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setImageObjects(prev => prev.map(i => i.id === imgObj.id ? { ...i, isInfiniteCloner: !i.isInfiniteCloner } : i));
+                                                    }}
+                                                    onMouseDown={e => e.stopPropagation()}
+                                                    onPointerDown={e => e.stopPropagation()}
+                                                    className={`absolute -top-7 -left-3.5 z-50 p-1 rounded shadow border transition-all pointer-events-auto cursor-pointer ${
+                                                        imgObj.isInfiniteCloner
+                                                            ? 'opacity-100 bg-indigo-600 border-indigo-400 text-white scale-105 shadow-indigo-500/50'
+                                                            : 'opacity-35 hover:opacity-100 bg-slate-900/90 hover:bg-slate-900 border-slate-700/70 text-slate-300 hover:text-white hover:scale-110'
+                                                    }`}
+                                                    title={imgObj.isInfiniteCloner ? "Infinite Copy ON (Click to Turn OFF)" : "Infinite Copy OFF (Click to Turn ON)"}
+                                                >
+                                                    <InfinityIcon size={12} />
+                                                </button>
+                                            )}
+
                                             {/* Top-Right Corner Lock Hook */}
                                             <button
                                                 type="button"
@@ -10137,7 +10361,7 @@ export default function Whiteboard({
                                                     e.stopPropagation();
                                                     handleToggleLock(imgObj.id);
                                                 }}
-                                                className={`absolute -top-3.5 -right-3.5 z-50 p-1 rounded shadow border transition-all pointer-events-auto cursor-pointer ${
+                                                className={`absolute -top-7 -right-3.5 z-50 p-1 rounded shadow border transition-all pointer-events-auto cursor-pointer ${
                                                     imgObj.isLocked
                                                         ? 'opacity-85 hover:opacity-100 bg-amber-600/90 border-amber-400 text-white scale-105'
                                                         : 'opacity-35 hover:opacity-100 bg-slate-900/90 hover:bg-slate-900 border-slate-700/70 text-slate-300 hover:text-white hover:scale-110'
@@ -10197,7 +10421,7 @@ export default function Whiteboard({
                                                     setImageObjects(prev => prev.filter(i => i.id !== imgObj.id));
                                                     setSelectedImageId(null);
                                                 }}
-                                                className="absolute -top-3.5 right-4 w-5 h-5 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-white/60 z-50 pointer-events-auto cursor-pointer transition-transform hover:scale-110 active:scale-95 opacity-60 hover:opacity-100"
+                                                className="absolute -top-7 right-4 w-5 h-5 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg border border-white/60 z-50 pointer-events-auto cursor-pointer transition-transform hover:scale-110 active:scale-95 opacity-60 hover:opacity-100"
                                                 title="Delete Image"
                                             >
                                                 <X className="w-3 h-3" />
@@ -10348,7 +10572,7 @@ export default function Whiteboard({
                                         onPointerDown={(e) => e.stopPropagation()}
                                     >
                                         {/* Image Quick Actions Toolbar */}
-                                        <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-lg shadow-xl px-2 py-1 text-slate-200">
+                                        <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2.5 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity">
                                             <button
                                                 type="button"
                                                 onClick={() => updateSelectedImageFilters({ flipX: !imgObj.flipX })}
@@ -10401,6 +10625,24 @@ export default function Whiteboard({
                                                 title="Adjust Image Quality, Borders & Filters"
                                             >
                                                 <Sliders className="w-3.5 h-3.5" />
+                                            </button>
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+                                            {/* Infinite Cloner Toggle (eye-catching highlighted pill when active) */}
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setImageObjects(prev => prev.map(i => i.id === imgObj.id ? { ...i, isInfiniteCloner: !i.isInfiniteCloner } : i));
+                                                    saveToHistory();
+                                                }}
+                                                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition ${
+                                                    imgObj.isInfiniteCloner 
+                                                        ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-400 font-semibold' 
+                                                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                                }`}
+                                                title={imgObj.isInfiniteCloner ? "Infinite Copy ON (drag creates clones)" : "Enable Infinite Copy"}
+                                            >
+                                                <InfinityIcon size={13} />
+                                                {imgObj.isInfiniteCloner && <span className="text-[10px] uppercase font-bold tracking-wider">Active</span>}
                                             </button>
                                         </div>
 
@@ -11038,7 +11280,7 @@ export default function Whiteboard({
                                         onPointerDown={(e) => e.stopPropagation()}
                                     >
                                         {/* Floating Toolbar Pill */}
-                                        <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl px-2 py-1 text-slate-200">
+                                        <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2.5 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity">
                                             {/* Font Family */}
                                             <select
                                                 value={txtObj.fontFamily || 'sans-serif'}
@@ -11188,6 +11430,73 @@ export default function Whiteboard({
                                             >
                                                 <Square className="w-3.5 h-3.5" />
                                             </button>
+
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+
+                                            {/* Math Virtual Keyboard Toggle */}
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    const rect = e.currentTarget.getBoundingClientRect();
+                                                    setMathKeyboardAnchor({
+                                                        x: Math.min(window.innerWidth - 380, Math.max(10, rect.left - 100)),
+                                                        y: Math.min(window.innerHeight - 340, rect.bottom + 8)
+                                                    });
+                                                    setShowMathKeyboard(prev => !prev);
+                                                }}
+                                                className={`w-6 h-6 flex items-center justify-center rounded text-xs font-serif font-bold transition ${showMathKeyboard ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                                                title="Math Symbols & Greek Letters (Virtual Keyboard)"
+                                            >
+                                                Σ
+                                            </button>
+
+                                            {/* 4-Level Layer Dropdown Popover */}
+                                            <div className="relative">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowTextLayersPopover(prev => prev === txtObj.id ? null : txtObj.id)}
+                                                    className={`w-6 h-6 flex items-center justify-center rounded transition ${showTextLayersPopover === txtObj.id ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                                                    title="Layer Order"
+                                                >
+                                                    <Layers className="w-3.5 h-3.5" />
+                                                </button>
+                                                {showTextLayersPopover === txtObj.id && (
+                                                    <div
+                                                        className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-36 bg-slate-900 border border-slate-700 rounded-xl shadow-xl p-1 z-50 flex flex-col gap-0.5 text-xs text-slate-200"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        onMouseDown={(e) => e.stopPropagation()}
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { handleBringToFront(txtObj.id); setShowTextLayersPopover(null); }}
+                                                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-800 rounded text-left transition text-slate-200 hover:text-white"
+                                                        >
+                                                            <ChevronsUp className="w-3.5 h-3.5 text-indigo-400" /> Bring to Front
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { handleBringForward(txtObj.id); setShowTextLayersPopover(null); }}
+                                                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-800 rounded text-left transition text-slate-200 hover:text-white"
+                                                        >
+                                                            <ChevronUp className="w-3.5 h-3.5 text-indigo-400" /> Bring Forward
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { handleSendBackward(txtObj.id); setShowTextLayersPopover(null); }}
+                                                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-800 rounded text-left transition text-slate-200 hover:text-white"
+                                                        >
+                                                            <ChevronDown className="w-3.5 h-3.5 text-indigo-400" /> Send Backward
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { handleSendToBack(txtObj.id); setShowTextLayersPopover(null); }}
+                                                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-800 rounded text-left transition text-slate-200 hover:text-white"
+                                                        >
+                                                            <ChevronsDown className="w-3.5 h-3.5 text-indigo-400" /> Send to Back
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
 
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
@@ -11925,9 +12234,45 @@ export default function Whiteboard({
                                 const scaleX = shpObj.width / origW;
                                 const scaleY = shpObj.height / origH;
                                 const particles = shpObj.particles || [];
+                                const theme = shpObj.sparkleTheme || 'galaxy';
+                                const gradId = `sparkle-grad-${shpObj.id}`;
 
                                 return (
-                                    <g transform={`scale(${scaleX}, ${scaleY})`}>
+                                    <g transform={`scale(${scaleX}, ${scaleY})`} opacity={shpObj.opacity !== undefined ? shpObj.opacity : 1}>
+                                        <defs>
+                                            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+                                                {theme === 'galaxy' ? (
+                                                    <>
+                                                        <stop offset="0%" stopColor="#3b0764" />
+                                                        <stop offset="20%" stopColor="#7c3aed" />
+                                                        <stop offset="40%" stopColor="#2563eb" />
+                                                        <stop offset="60%" stopColor="#06b6d4" />
+                                                        <stop offset="80%" stopColor="#34d399" />
+                                                        <stop offset="100%" stopColor="#a855f7" />
+                                                    </>
+                                                ) : theme === 'rainbow' ? (
+                                                    <>
+                                                        <stop offset="0%" stopColor="#ef4444" />
+                                                        <stop offset="18%" stopColor="#f97316" />
+                                                        <stop offset="36%" stopColor="#eab308" />
+                                                        <stop offset="54%" stopColor="#22c55e" />
+                                                        <stop offset="72%" stopColor="#06b6d4" />
+                                                        <stop offset="88%" stopColor="#3b82f6" />
+                                                        <stop offset="100%" stopColor="#a855f7" />
+                                                    </>
+                                                ) : theme === 'gold' ? (
+                                                    <>
+                                                        <stop offset="0%" stopColor="#b45309" />
+                                                        <stop offset="25%" stopColor="#f59e0b" />
+                                                        <stop offset="50%" stopColor="#fef3c7" />
+                                                        <stop offset="75%" stopColor="#fbbf24" />
+                                                        <stop offset="100%" stopColor="#d97706" />
+                                                    </>
+                                                ) : (
+                                                    <stop offset="0%" stopColor={shpObj.color || '#f59e0b'} />
+                                                )}
+                                            </linearGradient>
+                                        </defs>
                                         <path
                                             d={d}
                                             fill="none"
@@ -11940,29 +12285,29 @@ export default function Whiteboard({
                                         <path
                                             d={d}
                                             fill="none"
-                                            stroke={shpObj.color}
+                                            stroke={`url(#${gradId})`}
                                             strokeWidth={shpObj.strokeWidth * 1.5}
                                             strokeLinecap="round"
                                             strokeLinejoin="round"
-                                            opacity="0.35"
+                                            opacity="0.38"
                                             filter="blur(2px)"
                                             style={{ pointerEvents: 'none' }}
                                         />
                                         <path
                                             d={d}
                                             fill="none"
-                                            stroke={shpObj.color}
+                                            stroke={`url(#${gradId})`}
                                             strokeWidth={shpObj.strokeWidth}
                                             strokeLinecap="round"
                                             strokeLinejoin="round"
                                             style={{ pointerEvents: 'none' }}
                                         />
                                         {particles.map((p, idx) => {
-                                            const s = Math.min(6, Math.max(2, p.size || 3.5));
+                                            const s = Math.min(7, Math.max(2, p.size || 3.5));
                                             const starD = `M ${p.x} ${p.y - s} Q ${p.x} ${p.y} ${p.x + s} ${p.y} Q ${p.x} ${p.y} ${p.x + s} ${p.y} Q ${p.x} ${p.y} ${p.x} ${p.y + s} Q ${p.x} ${p.y} ${p.x - s} ${p.y} Q ${p.x} ${p.y} ${p.x} ${p.y - s}`;
                                             return (
                                                 <g key={idx} transform={`rotate(${p.rotation || 0}, ${p.x}, ${p.y})`} style={{ pointerEvents: 'none' }}>
-                                                    <path d={starD} fill="#ffffff" stroke={p.color || shpObj.color || '#f59e0b'} strokeWidth="0.75" opacity={p.opacity || 0.95} />
+                                                    <path d={starD} fill="#ffffff" stroke={p.color || (theme === 'galaxy' ? '#c084fc' : theme === 'rainbow' ? '#fde047' : '#f59e0b')} strokeWidth="0.75" opacity={p.opacity || 0.95} />
                                                 </g>
                                             );
                                         })}
@@ -12121,17 +12466,14 @@ export default function Whiteboard({
 
                                     // Infinite Cloner drag-to-clone behavior for shapes
                                     if (shpObj.isInfiniteCloner) {
-                                        const cloneId = `shape_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
-                                        const cloneObj = { ...shpObj, id: cloneId, isInfiniteCloner: false };
-                                        setShapeObjects(prev => [...prev, cloneObj]);
-                                        setSelectedShapeIds([cloneId]);
                                         setShapeDragState({
-                                            id: cloneId,
+                                            id: shpObj.id,
+                                            isClonerCandidate: true,
                                             action: 'move',
                                             startX: clientX,
                                             startY: clientY,
-                                            startObj: { ...cloneObj },
-                                            startObjs: [cloneObj],
+                                            startObj: { ...shpObj },
+                                            startObjs: [shpObj],
                                             startTextObjs: []
                                         });
                                         return;
@@ -12162,7 +12504,7 @@ export default function Whiteboard({
                                 }}
                                 onMouseDown={e => e.stopPropagation()}
                                 onPointerDown={e => e.stopPropagation()}
-                                className={`absolute -top-3.5 -left-3.5 z-40 p-1 rounded shadow border transition-all pointer-events-auto ${
+                                className={`absolute -top-7 -left-3.5 z-40 p-1 rounded shadow border transition-all pointer-events-auto ${
                                     shpObj.isInfiniteCloner
                                         ? 'opacity-100 bg-indigo-600 border-indigo-400 text-white scale-105 shadow-indigo-500/50'
                                         : 'opacity-35 hover:opacity-100 bg-slate-900/90 hover:bg-slate-900 border-slate-700/70 text-slate-300 hover:text-white hover:scale-110'
@@ -12189,7 +12531,7 @@ export default function Whiteboard({
                                 }}
                                 onMouseDown={e => e.stopPropagation()}
                                 onPointerDown={e => e.stopPropagation()}
-                                className={`absolute -top-3.5 -right-3.5 z-40 p-1 rounded shadow border transition-all pointer-events-auto ${
+                                className={`absolute -top-7 -right-3.5 z-40 p-1 rounded shadow border transition-all pointer-events-auto ${
                                     shpObj.isLocked
                                         ? 'opacity-85 hover:opacity-100 bg-amber-600/90 border-amber-400 text-white scale-105'
                                         : 'opacity-35 hover:opacity-100 bg-slate-900/90 hover:bg-slate-900 border-slate-700/70 text-slate-300 hover:text-white hover:scale-110'
@@ -12499,17 +12841,14 @@ export default function Whiteboard({
                                                 const clientY = e.clientY !== undefined ? e.clientY : (e.touches?.[0]?.clientY ?? 0);
 
                                                 if (shpObj.isInfiniteCloner) {
-                                                    const cloneId = `shape_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
-                                                    const cloneObj = { ...shpObj, id: cloneId, isInfiniteCloner: false };
-                                                    setShapeObjects(prev => [...prev, cloneObj]);
-                                                    setSelectedShapeIds([cloneId]);
                                                     setShapeDragState({
-                                                        id: cloneId,
+                                                        id: shpObj.id,
+                                                        isClonerCandidate: true,
                                                         action: 'move',
                                                         startX: clientX,
                                                         startY: clientY,
-                                                        startObj: { ...cloneObj },
-                                                        startObjs: [cloneObj],
+                                                        startObj: { ...shpObj },
+                                                        startObjs: [shpObj],
                                                         startTextObjs: []
                                                     });
                                                     return;
@@ -12779,44 +13118,52 @@ export default function Whiteboard({
                                                         />
                                                     </div>
 
-                                                    {/* Parallelogram Skew Handle */}
-                                                    {shpObj.type === 'parallelogram' && (
-                                                        <div
-                                                            data-handle="skew"
-                                                            title="Adjust Skew Offset"
-                                                            className="absolute w-4 h-4 rounded-full bg-amber-500 border-2 border-white shadow-lg cursor-ew-resize z-40 hover:scale-125 transition-transform flex items-center justify-center -translate-x-1/2 -translate-y-1/2"
-                                                            style={{
-                                                                left: `${Math.max(5, Math.min(shpObj.width - 5, shpObj.skew !== undefined ? shpObj.skew : shpObj.width * 0.25))}px`,
-                                                                top: 0
-                                                            }}
-                                                            onMouseDown={(e) => {
-                                                                e.stopPropagation();
-                                                                e.preventDefault();
-                                                                setShapeDragState({
-                                                                    id: shpObj.id,
-                                                                    action: 'skew',
-                                                                    startX: e.clientX,
-                                                                    startY: e.clientY,
-                                                                    startObj: { ...shpObj }
-                                                                });
-                                                            }}
-                                                            onPointerDown={(e) => {
-                                                                e.stopPropagation();
-                                                                if (e.cancelable) e.preventDefault();
-                                                                const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-                                                                const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-                                                                setShapeDragState({
-                                                                    id: shpObj.id,
-                                                                    action: 'skew',
-                                                                    startX: clientX,
-                                                                    startY: clientY,
-                                                                    startObj: { ...shpObj }
-                                                                });
-                                                            }}
-                                                        >
-                                                            <div className="w-1.5 h-1.5 rounded-full bg-white pointer-events-none" />
-                                                        </div>
-                                                    )}
+                                                    {/* Parallelogram Rhombus Angle Hook placed above top edge with rotating dashed stem */}
+                                                    {shpObj.type === 'parallelogram' && (() => {
+                                                        const sk = Math.max(5, Math.min(shpObj.width - 5, shpObj.skew !== undefined ? shpObj.skew : shpObj.width * 0.25));
+                                                        return (
+                                                            <>
+                                                                <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-35">
+                                                                    <line x1={sk} y1={0} x2={sk} y2={-22} stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="3,3" />
+                                                                </svg>
+                                                                <div
+                                                                    data-handle="skew"
+                                                                    title="Adjust Parallelogram Slant Angle (Drag horizontally)"
+                                                                    className="absolute w-4 h-4 bg-amber-500 border-2 border-white shadow-lg cursor-ew-resize z-40 hover:scale-125 transition-transform flex items-center justify-center -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-xs"
+                                                                    style={{
+                                                                        left: `${sk}px`,
+                                                                        top: '-22px'
+                                                                    }}
+                                                                    onMouseDown={(e) => {
+                                                                        e.stopPropagation();
+                                                                        e.preventDefault();
+                                                                        setShapeDragState({
+                                                                            id: shpObj.id,
+                                                                            action: 'skew',
+                                                                            startX: e.clientX,
+                                                                            startY: e.clientY,
+                                                                            startObj: { ...shpObj }
+                                                                        });
+                                                                    }}
+                                                                    onPointerDown={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (e.cancelable) e.preventDefault();
+                                                                        const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                                        const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                                        setShapeDragState({
+                                                                            id: shpObj.id,
+                                                                            action: 'skew',
+                                                                            startX: clientX,
+                                                                            startY: clientY,
+                                                                            startObj: { ...shpObj }
+                                                                        });
+                                                                    }}
+                                                                >
+                                                                    <div className="w-1.5 h-1.5 rounded-full bg-white pointer-events-none -rotate-45" />
+                                                                </div>
+                                                            </>
+                                                        );
+                                                    })()}
                                                 </>
                                             )
                                         )}
@@ -12838,7 +13185,7 @@ export default function Whiteboard({
                                     onMouseDown={(e) => e.stopPropagation()}
                                     onPointerDown={(e) => e.stopPropagation()}
                                 >
-                                    <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl px-2.5 py-1 text-slate-200 animate-in fade-in zoom-in-95 duration-100">
+                                    <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2.5 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity animate-in fade-in zoom-in-95 duration-100">
                                         {isLineLike ? (
                                             <>
                                                 {/* Line Color */}
@@ -13081,70 +13428,111 @@ export default function Whiteboard({
 
                                         <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
 
-                                        {/* Replace Shape Control */}
-                                        <div className="relative">
-                                            <button
-                                                type="button"
-                                                onClick={() => setReplaceShapePopoverId(prev => prev === shpObj.id ? null : shpObj.id)}
-                                                className={`p-1 rounded transition ${replaceShapePopoverId === shpObj.id ? 'bg-primary-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
-                                                title="Replace Shape"
-                                            >
-                                                <Shapes size={13} />
-                                            </button>
-                                            {replaceShapePopoverId === shpObj.id && (
-                                                <div
-                                                    className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl grid grid-cols-4 gap-1 z-80 animate-in fade-in zoom-in-95 duration-100 min-w-[170px]"
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    onMouseDown={(e) => e.stopPropagation()}
+                                        {/* If equation shape, show equation editor button and math virtual keyboard button */}
+                                        {shpObj.type === 'equation' && (
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setEditingEquationId(shpObj.id);
+                                                        setEquationInitialLatex(shpObj.latex || '');
+                                                        setShowEquationModal(true);
+                                                    }}
+                                                    className="px-2 py-0.5 rounded text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1 transition shadow-sm"
+                                                    title="Open Full Equation Editor"
                                                 >
-                                                    {[
-                                                        { id: 'rectangle', icon: RectangleHorizontal, label: 'Rectangle' },
-                                                        { id: 'rounded_rect', icon: RectangleHorizontal, label: 'Rounded Rect' },
-                                                        { id: 'circle', icon: Circle, label: 'Circle' },
-                                                        { id: 'triangle', icon: Triangle, label: 'Triangle' },
-                                                        { id: 'diamond', icon: Diamond, label: 'Diamond' },
-                                                        { id: 'star', icon: Star, label: 'Star' },
-                                                        { id: 'hexagon', icon: Hexagon, label: 'Hexagon' },
-                                                        { id: 'parallelogram', icon: ParallelogramIcon, label: 'Parallelogram' },
-                                                        { id: 'terminator', icon: RectangleHorizontal, label: 'Terminator' },
-                                                        { id: 'cylinder', icon: Database, label: 'Cylinder' },
-                                                        { id: 'document', icon: FileText, label: 'Document' },
-                                                        { id: 'callout', icon: MessageSquare, label: 'Callout' },
-                                                        { id: 'cube', icon: Box, label: 'Cube' }
-                                                    ].map(sItem => (
-                                                        <button
-                                                            key={sItem.id}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setShapeObjects(prev => prev.map(s => {
-                                                                    if (s.id !== shpObj.id) return s;
-                                                                    return {
-                                                                        ...s,
-                                                                        type: sItem.id,
-                                                                        skew: sItem.id === 'parallelogram' ? (s.skew ?? (s.width * 0.25)) : s.skew
-                                                                    };
-                                                                }));
-                                                                setReplaceShapePopoverId(null);
-                                                                saveToHistory();
-                                                            }}
-                                                            className={`p-1.5 rounded-lg flex items-center justify-center transition ${shpObj.type === sItem.id ? 'bg-primary-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
-                                                            title={sItem.label}
-                                                        >
-                                                            <sItem.icon size={13} />
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
+                                                    <Calculator size={12} />
+                                                    <span>Edit LaTeX</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        const rect = e.currentTarget.getBoundingClientRect();
+                                                        setMathKeyboardAnchor({
+                                                            x: Math.min(window.innerWidth - 380, Math.max(10, rect.left - 100)),
+                                                            y: Math.min(window.innerHeight - 340, rect.bottom + 8)
+                                                        });
+                                                        setShowMathKeyboard(prev => !prev);
+                                                    }}
+                                                    className={`w-6 h-6 flex items-center justify-center rounded text-xs font-serif font-bold transition ${showMathKeyboard ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                                                    title="Math Virtual Keyboard"
+                                                >
+                                                    Σ
+                                                </button>
+                                            </>
+                                        )}
 
-                                        {/* Infinite Cloner Toggle */}
+                                        {/* Replace Shape Control (strictly for geometric shapes) */}
+                                        {['rectangle', 'rounded_rect', 'circle', 'triangle', 'diamond', 'star', 'hexagon', 'parallelogram', 'terminator', 'cylinder', 'document', 'callout', 'cube'].includes(shpObj.type) && (
+                                            <div className="relative">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setReplaceShapePopoverId(prev => prev === shpObj.id ? null : shpObj.id)}
+                                                    className={`p-1 rounded transition ${replaceShapePopoverId === shpObj.id ? 'bg-primary-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                    title="Replace Shape"
+                                                >
+                                                    <Shapes size={13} />
+                                                </button>
+                                                {replaceShapePopoverId === shpObj.id && (
+                                                    <div
+                                                        className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl grid grid-cols-4 gap-1 z-80 animate-in fade-in zoom-in-95 duration-100 min-w-[170px]"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        onMouseDown={(e) => e.stopPropagation()}
+                                                    >
+                                                        {[
+                                                            { id: 'rectangle', icon: RectangleHorizontal, label: 'Rectangle' },
+                                                            { id: 'rounded_rect', icon: RectangleHorizontal, label: 'Rounded Rect' },
+                                                            { id: 'circle', icon: Circle, label: 'Circle' },
+                                                            { id: 'triangle', icon: Triangle, label: 'Triangle' },
+                                                            { id: 'diamond', icon: Diamond, label: 'Diamond' },
+                                                            { id: 'star', icon: Star, label: 'Star' },
+                                                            { id: 'hexagon', icon: Hexagon, label: 'Hexagon' },
+                                                            { id: 'parallelogram', icon: ParallelogramIcon, label: 'Parallelogram' },
+                                                            { id: 'terminator', icon: RectangleHorizontal, label: 'Terminator' },
+                                                            { id: 'cylinder', icon: Database, label: 'Cylinder' },
+                                                            { id: 'document', icon: FileText, label: 'Document' },
+                                                            { id: 'callout', icon: MessageSquare, label: 'Callout' },
+                                                            { id: 'cube', icon: Box, label: 'Cube' }
+                                                        ].map(sItem => (
+                                                            <button
+                                                                key={sItem.id}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setShapeObjects(prev => prev.map(s => {
+                                                                        if (s.id !== shpObj.id) return s;
+                                                                        return {
+                                                                            ...s,
+                                                                            type: sItem.id,
+                                                                            skew: sItem.id === 'parallelogram' ? (s.skew ?? (s.width * 0.25)) : s.skew
+                                                                        };
+                                                                    }));
+                                                                    setReplaceShapePopoverId(null);
+                                                                    saveToHistory();
+                                                                }}
+                                                                className={`p-1.5 rounded-lg flex items-center justify-center transition ${shpObj.type === sItem.id ? 'bg-primary-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                                                title={sItem.label}
+                                                            >
+                                                                <sItem.icon size={13} />
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Infinite Cloner Toggle (eye-catching highlighted pill when active) */}
                                         <button
                                             type="button"
                                             onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, isInfiniteCloner: !s.isInfiniteCloner } : s))}
-                                            className={`p-1 rounded transition ${shpObj.isInfiniteCloner ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-                                            title={shpObj.isInfiniteCloner ? "Disable Infinite Cloner" : "Enable Infinite Cloner (drag creates clones)"}
+                                            className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition ${
+                                                shpObj.isInfiniteCloner 
+                                                    ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-400 font-semibold' 
+                                                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                            }`}
+                                            title={shpObj.isInfiniteCloner ? "Infinite Copy ON (drag creates clones)" : "Enable Infinite Copy"}
                                         >
                                             <InfinityIcon size={13} />
+                                            {shpObj.isInfiniteCloner && <span className="text-[10px] uppercase font-bold tracking-wider">Active</span>}
                                         </button>
 
                                         {/* Lock */}
@@ -13204,7 +13592,7 @@ export default function Whiteboard({
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onPointerDown={(e) => e.stopPropagation()}
                             >
-                                <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl px-2.5 py-1 text-slate-200 animate-in fade-in zoom-in-95 duration-100">
+                                <div className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2.5 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity animate-in fade-in zoom-in-95 duration-100">
                                     <div className="flex items-center gap-1 px-1 text-slate-400" title={`${selectedShapes.length} shapes selected`}>
                                         <Shapes size={13} className="text-primary-400" />
                                         <span className="text-[10px] font-mono text-slate-300 font-bold">{selectedShapes.length}</span>
@@ -13289,6 +13677,82 @@ export default function Whiteboard({
                                                 <svg className="w-4 h-2.5" viewBox="0 0 24 10" fill="none">{b.icon}</svg>
                                             </button>
                                         ))}
+                                    </div>
+
+                                    <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+
+                                    {/* Alignment Controls */}
+                                    <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5" title="Align Shapes">
+                                        <button
+                                            type="button"
+                                            onClick={() => handleAlign('left')}
+                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            title="Align Left"
+                                        >
+                                            <AlignLeft className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleAlign('center')}
+                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            title="Align Center"
+                                        >
+                                            <AlignCenterHorizontal className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleAlign('right')}
+                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            title="Align Right"
+                                        >
+                                            <AlignRight className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleAlign('top')}
+                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            title="Align Top"
+                                        >
+                                            <AlignStartVertical className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleAlign('middle')}
+                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            title="Align Middle"
+                                        >
+                                            <AlignCenterVertical className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleAlign('bottom')}
+                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            title="Align Bottom"
+                                        >
+                                            <AlignEndVertical className="w-3 h-3" />
+                                        </button>
+                                    </div>
+
+                                    <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+
+                                    {/* Layer Ordering (Front/Back) */}
+                                    <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5" title="Layer Ordering">
+                                        <button
+                                            type="button"
+                                            onClick={() => handleBringToFront()}
+                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            title="Bring Selection to Front"
+                                        >
+                                            <BringToFront className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSendToBack()}
+                                            className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700 transition"
+                                            title="Send Selection to Back"
+                                        >
+                                            <SendToBack className="w-3 h-3" />
+                                        </button>
                                     </div>
 
                                     <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
@@ -14243,6 +14707,14 @@ export default function Whiteboard({
                     }
                     setShowEquationModal(false);
                 }}
+            />
+
+            {/* Math Virtual Keyboard Modal */}
+            <MathVirtualKeyboard
+                isOpen={showMathKeyboard}
+                onClose={() => setShowMathKeyboard(false)}
+                onInsertSymbol={handleInsertMathSymbol}
+                anchorPosition={mathKeyboardAnchor}
             />
 
             {/* Domain-Specific Shape Library Modal */}

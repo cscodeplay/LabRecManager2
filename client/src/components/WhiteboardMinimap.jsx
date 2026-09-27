@@ -82,6 +82,25 @@ export default function WhiteboardMinimap({
         } catch (e) {}
     }, []);
 
+    // Reset zoom bar to default bottom-left position on window resize, sidebar toggle, or fullscreen toggle
+    useEffect(() => {
+        const handleDefaultReset = () => {
+            const defaultPos = { x: 24, y: Math.max(60, (window.innerHeight || 800) - 70) };
+            setPos(defaultPos);
+            saveBarState(defaultPos, isBarCollapsed);
+        };
+
+        window.addEventListener('resize', handleDefaultReset);
+        document.addEventListener('fullscreenchange', handleDefaultReset);
+        document.addEventListener('webkitfullscreenchange', handleDefaultReset);
+
+        return () => {
+            window.removeEventListener('resize', handleDefaultReset);
+            document.removeEventListener('fullscreenchange', handleDefaultReset);
+            document.removeEventListener('webkitfullscreenchange', handleDefaultReset);
+        };
+    }, [saveBarState, isBarCollapsed]);
+
     // Auto-hide timer: automatically collapses the zoom tool after usage/inactivity
     const autoHideTimerRef = useRef(null);
 
@@ -353,14 +372,21 @@ export default function WhiteboardMinimap({
                 position: 'fixed',
                 left: `${pos.x}px`,
                 top: `${pos.y}px`,
-                zIndex: 80
+                zIndex: 80,
+                WebkitBackfaceVisibility: 'hidden',
+                backfaceVisibility: 'hidden',
+                WebkitTransform: 'translate3d(0, 0, 0)',
+                transform: 'translate3d(0, 0, 0)',
+                willChange: 'transform, opacity'
             }}
             data-interactive="true"
             onMouseEnter={cancelAutoHide}
             onMouseLeave={() => {
                 if (!isBarCollapsed) scheduleAutoHide(2500);
             }}
-            className={`whiteboard-minimap select-none transition-shadow ${isDraggingBar ? 'opacity-90' : ''}`}
+            className={`whiteboard-minimap select-none transition-all duration-300 ${
+                isDrawing ? 'opacity-30 pointer-events-none' : 'opacity-85 hover:opacity-100 focus-within:opacity-100'
+            } ${isDraggingBar ? 'opacity-100 scale-102 shadow-2xl' : ''}`}
         >
             {/* Collapsed Pill Button */}
             {isBarCollapsed ? (
