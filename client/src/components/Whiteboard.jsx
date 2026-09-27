@@ -21,6 +21,7 @@ import {
 import fixWebmDuration from 'fix-webm-duration';
 import katex from 'katex';
 import WhiteboardEquationEditor, { MathVirtualKeyboard, SYMBOL_CATEGORIES } from './WhiteboardEquationEditor';
+import WhiteboardMathTablet from './WhiteboardMathTablet';
 
 const ParallelogramIcon = (props) => (
     <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -525,6 +526,7 @@ export default function Whiteboard({
     const [equationInitialLatex, setEquationInitialLatex] = useState('\\int_{0}^{\\infty} x^2 e^{-x}\\,dx = 2');
     const [showMathKeyboard, setShowMathKeyboard] = useState(false);
     const [mathKeyboardAnchor, setMathKeyboardAnchor] = useState({ x: 300, y: 300 });
+    const [showMathTablet, setShowMathTablet] = useState(false);
     const [showTextLayersPopover, setShowTextLayersPopover] = useState(null);
 
     // Pop-over UI states
@@ -4000,59 +4002,47 @@ export default function Whiteboard({
 
     // Math virtual keyboard symbol insertion handler
     const handleInsertMathSymbol = useCallback((symbolLatex) => {
-        // 1. If currently editing text in a textarea
-        if (editingTextId) {
-            const activeEl = document.activeElement;
-            if (activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT')) {
-                const start = activeEl.selectionStart ?? activeEl.value.length;
-                const end = activeEl.selectionEnd ?? activeEl.value.length;
-                const val = activeEl.value;
-                const before = val.substring(0, start);
-                const after = val.substring(end);
-                const nextVal = before + symbolLatex + after;
-                setTextObjects(prev => prev.map(t => t.id === editingTextId ? { ...t, text: nextVal } : t));
-                setTimeout(() => {
-                    if (activeEl) {
-                        activeEl.focus();
-                        const newPos = start + symbolLatex.length;
-                        activeEl.setSelectionRange?.(newPos, newPos);
-                    }
-                }, 0);
-            } else {
-                setTextObjects(prev => prev.map(t => t.id === editingTextId ? { ...t, text: (t.text ? t.text + ' ' : '') + symbolLatex } : t));
-            }
-            saveToHistory();
-            return;
-        }
-
-        // 2. If a single text object is selected
-        if (selectedTextIds.length === 1) {
-            const targetId = selectedTextIds[0];
-            setTextObjects(prev => prev.map(t => t.id === targetId ? { ...t, text: (t.text ? t.text + ' ' : '') + symbolLatex } : t));
-            saveToHistory();
-            return;
-        }
-
-        // 3. If a single equation shape is selected
+        // 1. If a single equation shape is selected, append symbol to its LaTeX
         if (selectedShapeIds.length === 1) {
             const targetShape = shapeObjects.find(s => s.id === selectedShapeIds[0]);
             if (targetShape && (targetShape.type === 'equation' || targetShape.isEquation || targetShape.latex !== undefined)) {
-                setShapeObjects(prev => prev.map(s => s.id === targetShape.id ? { ...s, latex: (s.latex ? s.latex + ' ' : '') + symbolLatex } : s));
+                const nextLatex = (targetShape.latex ? targetShape.latex + ' ' : '') + symbolLatex;
+                setShapeObjects(prev => prev.map(s => s.id === targetShape.id ? { ...s, latex: nextLatex } : s));
+                if (socket && sessionId) socket.emit('whiteboard:shape-update', { sessionId, shape: { ...targetShape, latex: nextLatex } });
                 saveToHistory();
                 return;
             }
         }
 
-        // 4. Otherwise, spawn a new equation shape centered on current canvas view
-        const wrapper = canvasWrapperRef.current;
-        const cx = wrapper ? (wrapper.clientWidth / 2 - 120) : 250;
-        const cy = wrapper ? (wrapper.clientHeight / 2 - 40) : 250;
+        // 2. Determine spawn position (below active text if editing/selected, or centered on viewport)
+        let spawnX;
+        let spawnY;
+        const activeTextId = editingTextId || (selectedTextIds.length === 1 ? selectedTextIds[0] : null);
+        if (activeTextId) {
+            const targetText = textObjects.find(t => t.id === activeTextId);
+            if (targetText) {
+                spawnX = targetText.x;
+                spawnY = targetText.y + (targetText.height || 40) + 14;
+            }
+            setEditingTextId(null);
+            setSelectedTextIds([]);
+        }
+
+        if (spawnX === undefined || spawnY === undefined) {
+            const wrapper = canvasWrapperRef.current;
+            const cx = wrapper ? (wrapper.clientWidth / 2 - 120) : 250;
+            const cy = wrapper ? (wrapper.clientHeight / 2 - 40) : 250;
+            spawnX = Math.round(-panOffset.x + cx / zoomLevel);
+            spawnY = Math.round(-panOffset.y + cy / zoomLevel);
+        }
+
+        // 3. Spawn a new KaTeX equation shape
         const newEq = {
             id: `eq_${Date.now()}`,
             type: 'equation',
             latex: symbolLatex,
-            x: Math.round(-panOffset.x + cx / zoomLevel),
-            y: Math.round(-panOffset.y + cy / zoomLevel),
+            x: spawnX,
+            y: spawnY,
             width: 240,
             height: 70,
             fontSize: 24,
@@ -4065,9 +4055,64 @@ export default function Whiteboard({
         if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newEq });
         saveToHistory();
         toast.success('Equation inserted!', { icon: '📐' });
-    }, [editingTextId, selectedTextIds, selectedShapeIds, shapeObjects, canvasWrapperRef, panOffset, zoomLevel, color, socket, sessionId, saveToHistory, setTextObjects, setShapeObjects, setSelectedShapeIds]);
+    }, [editingTextId, selectedTextIds, textObjects, selectedShapeIds, shapeObjects, canvasWrapperRef, panOffset, zoomLevel, color, socket, sessionId, saveToHistory, setShapeObjects, setSelectedShapeIds, setEditingTextId, setSelectedTextIds]);
 
-    // Image manipulation mouse handlers
+    // Windows Math Input Tablet insertion handler
+    const handleInsertMathFromTablet = useCallback((latex) => {
+        if (!latex || !latex.trim()) return;
+
+        // 1. If a single equation shape is selected, replace/update its LaTeX
+        if (selectedShapeIds.length === 1) {
+            const targetShape = shapeObjects.find(s => s.id === selectedShapeIds[0]);
+            if (targetShape && (targetShape.type === 'equation' || targetShape.isEquation || targetShape.latex !== undefined)) {
+                setShapeObjects(prev => prev.map(s => s.id === targetShape.id ? { ...s, latex } : s));
+                if (socket && sessionId) socket.emit('whiteboard:shape-update', { sessionId, shape: { ...targetShape, latex } });
+                saveToHistory();
+                return;
+            }
+        }
+
+        // 2. Determine spawn position (below active text if editing/selected, or centered on viewport)
+        let spawnX;
+        let spawnY;
+        const activeTextId = editingTextId || (selectedTextIds.length === 1 ? selectedTextIds[0] : null);
+        if (activeTextId) {
+            const targetText = textObjects.find(t => t.id === activeTextId);
+            if (targetText) {
+                spawnX = targetText.x;
+                spawnY = targetText.y + (targetText.height || 40) + 14;
+            }
+            setEditingTextId(null);
+            setSelectedTextIds([]);
+        }
+
+        if (spawnX === undefined || spawnY === undefined) {
+            const wrapper = canvasWrapperRef.current;
+            const cx = wrapper ? (wrapper.clientWidth / 2 - 140) : 250;
+            const cy = wrapper ? (wrapper.clientHeight / 2 - 40) : 250;
+            spawnX = Math.round(-panOffset.x + cx / zoomLevel);
+            spawnY = Math.round(-panOffset.y + cy / zoomLevel);
+        }
+
+        // 3. Spawn a new KaTeX equation shape
+        const newEq = {
+            id: `eq_${Date.now()}`,
+            type: 'equation',
+            latex,
+            x: spawnX,
+            y: spawnY,
+            width: 260,
+            height: 75,
+            fontSize: 24,
+            color: color || '#1e293b',
+            bgColor: 'transparent',
+            rotation: 0
+        };
+        setShapeObjects(prev => [...prev, newEq]);
+        setSelectedShapeIds([newEq.id]);
+        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newEq });
+        saveToHistory();
+    }, [selectedShapeIds, shapeObjects, editingTextId, selectedTextIds, textObjects, canvasWrapperRef, panOffset, zoomLevel, color, socket, sessionId, saveToHistory, setShapeObjects, setSelectedShapeIds, setEditingTextId, setSelectedTextIds]);
     useEffect(() => {
         if (!imageDragState) return;
 
@@ -8589,7 +8634,6 @@ export default function Whiteboard({
                     { id: 'line', icon: lineType.startsWith('connector') ? Waypoints : (lineType === 'arrow' ? MoveRight : Minus), label: 'Lines & Arrows', important: false },
                     { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : (shapeType === 'parallelogram' ? ParallelogramIcon : RectangleHorizontal))), label: 'Shapes', important: true },
                     { id: 'text', icon: Type, label: 'Text (T)', important: true },
-                    { id: 'equation', icon: Sigma, label: 'Math Equation (LaTeX)', important: true },
                     { id: 'image', icon: ImageIcon, label: 'Insert Image', important: false },
                     { id: 'media', icon: Film, label: 'Media & Documents (PDF, Video, Audio, Record, Web)', important: true },
                     { id: 'domain_3d', icon: Box, label: '3D Objects & Domain Library', important: true },
@@ -10626,24 +10670,6 @@ export default function Whiteboard({
                                             >
                                                 <Sliders className="w-3.5 h-3.5" />
                                             </button>
-                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
-                                            {/* Infinite Cloner Toggle (eye-catching highlighted pill when active) */}
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setImageObjects(prev => prev.map(i => i.id === imgObj.id ? { ...i, isInfiniteCloner: !i.isInfiniteCloner } : i));
-                                                    saveToHistory();
-                                                }}
-                                                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition ${
-                                                    imgObj.isInfiniteCloner 
-                                                        ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-400 font-semibold' 
-                                                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                                                }`}
-                                                title={imgObj.isInfiniteCloner ? "Infinite Copy ON (drag creates clones)" : "Enable Infinite Copy"}
-                                            >
-                                                <InfinityIcon size={13} />
-                                                {imgObj.isInfiniteCloner && <span className="text-[10px] uppercase font-bold tracking-wider">Active</span>}
-                                            </button>
                                         </div>
 
                                         {/* Image Adjustments Popover */}
@@ -11433,6 +11459,20 @@ export default function Whiteboard({
 
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
+                                            {/* Insert Math Equation */}
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setEditingEquationId(null);
+                                                    setEquationInitialLatex('\\int_{0}^{\\infty} x^2 e^{-x}\\,dx = 2');
+                                                    setShowEquationModal(true);
+                                                }}
+                                                className="w-6 h-6 flex items-center justify-center rounded transition text-slate-300 hover:text-white hover:bg-slate-800"
+                                                title="Insert Math Equation (LaTeX Editor)"
+                                            >
+                                                <Calculator className="w-3.5 h-3.5" />
+                                            </button>
+
                                             {/* Math Virtual Keyboard Toggle */}
                                             <button
                                                 type="button"
@@ -11448,6 +11488,16 @@ export default function Whiteboard({
                                                 title="Math Symbols & Greek Letters (Virtual Keyboard)"
                                             >
                                                 Σ
+                                            </button>
+
+                                            {/* Windows Math Input Tablet */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowMathTablet(true)}
+                                                className={`w-6 h-6 flex items-center justify-center rounded transition ${showMathTablet ? 'bg-amber-600 text-white shadow-sm ring-1 ring-amber-400' : 'text-amber-400 hover:text-amber-300 hover:bg-slate-800'}`}
+                                                title="Math Input Tablet (Handwrite Math with Pencil/Stylus)"
+                                            >
+                                                <Pencil className="w-3.5 h-3.5" />
                                             </button>
 
                                             {/* 4-Level Layer Dropdown Popover */}
@@ -13459,6 +13509,19 @@ export default function Whiteboard({
                                                 >
                                                     Σ
                                                 </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowMathTablet(true)}
+                                                    className={`px-2 py-0.5 rounded text-xs font-semibold flex items-center gap-1 transition shadow-sm ${
+                                                        showMathTablet 
+                                                            ? 'bg-amber-600 text-white ring-1 ring-amber-400' 
+                                                            : 'bg-amber-600/80 hover:bg-amber-600 text-white'
+                                                    }`}
+                                                    title="Handwrite Math using Math Input Tablet"
+                                                >
+                                                    <Pencil size={12} />
+                                                    <span>Handwrite</span>
+                                                </button>
                                             </>
                                         )}
 
@@ -13519,21 +13582,6 @@ export default function Whiteboard({
                                                 )}
                                             </div>
                                         )}
-
-                                        {/* Infinite Cloner Toggle (eye-catching highlighted pill when active) */}
-                                        <button
-                                            type="button"
-                                            onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, isInfiniteCloner: !s.isInfiniteCloner } : s))}
-                                            className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition ${
-                                                shpObj.isInfiniteCloner 
-                                                    ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-400 font-semibold' 
-                                                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                                            }`}
-                                            title={shpObj.isInfiniteCloner ? "Infinite Copy ON (drag creates clones)" : "Enable Infinite Copy"}
-                                        >
-                                            <InfinityIcon size={13} />
-                                            {shpObj.isInfiniteCloner && <span className="text-[10px] uppercase font-bold tracking-wider">Active</span>}
-                                        </button>
 
                                         {/* Lock */}
                                         <button
@@ -14715,6 +14763,14 @@ export default function Whiteboard({
                 onClose={() => setShowMathKeyboard(false)}
                 onInsertSymbol={handleInsertMathSymbol}
                 anchorPosition={mathKeyboardAnchor}
+            />
+
+            {/* Windows-style Math Input Tablet (Math Input Panel) */}
+            <WhiteboardMathTablet
+                isOpen={showMathTablet}
+                onClose={() => setShowMathTablet(false)}
+                onInsert={handleInsertMathFromTablet}
+                initialLatex={selectedShapeIds.length === 1 ? (shapeObjects.find(s => s.id === selectedShapeIds[0])?.latex || '') : ''}
             />
 
             {/* Domain-Specific Shape Library Modal */}

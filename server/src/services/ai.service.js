@@ -4956,6 +4956,109 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
             units
         };
     }
+
+    /**
+     * Recognize handwritten math formulas from a base64 image (Windows Math Input Panel style)
+     */
+    async recognizeHandwrittenMath(base64Image, preferredProvider = 'gemini') {
+        let mimeType = 'image/png';
+        let rawBase64 = base64Image;
+
+        if (typeof base64Image === 'string' && base64Image.startsWith('data:')) {
+            const matches = base64Image.match(/^data:([^;]+);base64,(.+)$/);
+            if (matches) {
+                mimeType = matches[1];
+                rawBase64 = matches[2];
+            }
+        }
+
+        const dataUrl = `data:${mimeType};base64,${rawBase64}`;
+        const systemPrompt = `You are a specialized mathematical handwriting recognition engine, exactly like the Windows Math Input Panel.
+Analyze the handwritten math strokes in the image and transcribe them into standard LaTeX equation format.
+
+RULES:
+1. Return ONLY the LaTeX equation string.
+2. Do NOT wrap in markdown code blocks (\`\`\`latex or \`\`\`), do NOT enclose in $ or $$, and do NOT provide conversational explanations.
+3. Correctly interpret fractions (\\frac{a}{b}), exponents (x^2), subscripts (a_n), square roots (\\sqrt{...}), integrals (\\int), summations (\\sum), limits (\\lim_{x \\to 0}), greek symbols (\\alpha, \\beta, \\pi, \\theta), matrices, brackets, and operators (+, -, \\times, \\div, \\pm, \\leq, \\geq, \\neq).
+4. If empty or no recognizable math is drawn, return an empty string "".`;
+
+        const cleanLatex = (text) => {
+            if (!text) return '';
+            let cleaned = text.trim();
+            cleaned = cleaned.replace(/^```(?:latex|math|tex)?\s*/i, '').replace(/\s*```$/i, '').trim();
+            cleaned = cleaned.replace(/^\$\$?([\s\S]*?)\$\$?$/, '$1').trim();
+            return cleaned;
+        };
+
+        // 1. Try Gemini Vision first (default or preferred)
+        if (preferredProvider === 'gemini' && this.genAI) {
+            for (const modelName of ACTIVE_GEMINI_MODELS) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent([
+                        {
+                            inlineData: {
+                                data: rawBase64,
+                                mimeType: mimeType
+                            }
+                        },
+                        systemPrompt
+                    ]);
+                    const text = result?.response?.text?.() || '';
+                    if (text) return cleanLatex(text);
+                } catch (err) {
+                    console.warn(`[AIService] Gemini ${modelName} math recognition failed:`, err.message);
+                }
+            }
+        }
+
+        // 2. Try Groq Vision (llama-3.2-11b-vision-preview)
+        if (this.groq) {
+            try {
+                const completion = await this.groq.chat.completions.create({
+                    model: 'llama-3.2-11b-vision-preview',
+                    messages: [
+                        {
+                            role: 'user',
+                            content: [
+                                { type: 'text', text: systemPrompt },
+                                { type: 'image_url', image_url: { url: dataUrl } }
+                            ]
+                        }
+                    ],
+                    temperature: 0.1
+                });
+                const text = completion.choices[0]?.message?.content || '';
+                if (text) return cleanLatex(text);
+            } catch (err) {
+                console.warn(`[AIService] Groq math recognition failed:`, err.message);
+            }
+        }
+
+        // 3. Fallback to Gemini if preferredProvider was groq but failed
+        if (preferredProvider !== 'gemini' && this.genAI) {
+            for (const modelName of ACTIVE_GEMINI_MODELS) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent([
+                        {
+                            inlineData: {
+                                data: rawBase64,
+                                mimeType: mimeType
+                            }
+                        },
+                        systemPrompt
+                    ]);
+                    const text = result?.response?.text?.() || '';
+                    if (text) return cleanLatex(text);
+                } catch (err) {
+                    console.warn(`[AIService] Gemini fallback ${modelName} math recognition failed:`, err.message);
+                }
+            }
+        }
+
+        return '';
+    }
 }
 
 module.exports = new AIService();

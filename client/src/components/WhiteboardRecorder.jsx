@@ -1185,9 +1185,14 @@ const WhiteboardRecorder = ({
     };
 
     
+    // Do not mount or intercept any clicks if hidden and not actively recording
+    if (!isVisible && !isRecording) {
+        return null;
+    }
+
     return (
         <div 
-            className={`fixed z-[100] flex flex-col items-center gap-2 pointer-events-auto transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+            className={`fixed z-[100] flex flex-col items-center gap-2 transition-opacity duration-300 ${isVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
             style={{ left: `${position.x}px`, top: `${position.y}px`, cursor: isDragging.current ? 'grabbing' : 'grab', touchAction: 'none' }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}

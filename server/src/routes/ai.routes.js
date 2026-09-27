@@ -454,5 +454,32 @@ router.post('/whiteboard-tasks', authenticate, asyncHandler(async (req, res) => 
     }
 }));
 
+/**
+ * @route   POST /api/ai/recognize-math
+ * @desc    Recognize handwritten math equation from canvas drawing image (Windows Math Input Panel style)
+ * @access  Private (Authenticated users)
+ */
+router.post('/recognize-math', authenticate, asyncHandler(async (req, res) => {
+    const { image, provider = 'gemini' } = req.body;
+
+    if (!image) {
+        return res.status(400).json({ success: false, message: 'Image data is required' });
+    }
+
+    try {
+        const latex = await aiService.recognizeHandwrittenMath(image, provider);
+        res.json({
+            success: true,
+            data: { latex }
+        });
+    } catch (err) {
+        console.error('[AI Route] Math recognition error:', err.message);
+        res.status(500).json({
+            success: false,
+            message: err.message || 'Math handwriting recognition failed'
+        });
+    }
+}));
+
 module.exports = router;
 
