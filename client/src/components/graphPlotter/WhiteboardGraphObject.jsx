@@ -129,6 +129,10 @@ export default function WhiteboardGraphObject({
         }
     }, [onUpdate]);
 
+    const handleToggleTheme = useCallback(() => {
+        handleUpdate({ theme: isDark ? 'light' : 'dark' });
+    }, [handleUpdate, isDark]);
+
     // ─────────────────────────────────────────────────────────────────────────
     // EQUATION MANAGEMENT ACTIONS
     // ─────────────────────────────────────────────────────────────────────────
