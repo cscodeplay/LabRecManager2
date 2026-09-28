@@ -400,15 +400,25 @@ export function parseQuadricOrImplicit3D(rawInput) {
         const rhsVal = parseFloat(constStr);
         if (isNaN(rhsVal) || rhsVal <= 0) return null;
 
-        const termRegex = /(?:([+-])|^)(?:\(([xy])([+-]\d+(?:\.\d+)?)?\)|([xy]))\^2/g;
+        const termRegex = /(?:([+-])|^)(?:\(([xyz])([+-]\d+(?:\.\d+)?)?\)|([xyz]))\^2/g;
         const matches = [...exprStr.matchAll(termRegex)];
         if (matches.length === 2) {
+            let allPlus = true;
             const vars = {};
             for (const m of matches) {
+                const sign = m[1] || '+';
+                if (sign === '-') {
+                    allPlus = false;
+                    break;
+                }
                 const v = (m[2] || m[4]).toLowerCase();
                 const off = m[3] ? -parseFloat(m[3]) : 0;
                 vars[v] = off;
             }
+            if (!allPlus) return null;
+            const matchedLength = matches.reduce((acc, m) => acc + m[0].length, 0);
+            if (matchedLength < exprStr.length) return null;
+
             if ('x' in vars && 'y' in vars) {
                 const r = Math.sqrt(rhsVal);
                 return {
@@ -480,6 +490,88 @@ export function parseQuadricOrImplicit3D(rawInput) {
         };
     }
 
+    return null;
+}
+
+/**
+ * Automatically solves linear equations in 2D (Ax + By = C, y - mx = b) and 3D (Ax + By + Cz = D).
+ * Converts them to exact Cartesian form:
+ * - 2D line: y = -(Ax + D)/B
+ * - Vertical line: x = -D/A
+ * - 3D plane: z = -(Ax + By + D)/C
+ */
+export function parseLinearEquation(rawInput) {
+    if (!rawInput || typeof rawInput !== 'string' || !rawInput.includes('=')) return null;
+    const clean = rawInput.trim();
+    const parts = clean.split('=');
+    if (parts.length !== 2) return null;
+    const [lhs, rhs] = parts;
+    if (!lhs.trim() || !rhs.trim()) return null;
+
+    const diffExpr = '((' + lhs.trim() + ') - (' + rhs.trim() + '))';
+    if (/[\^]|\*\*|sqrt|sin|cos|tan|cot|sec|csc|asin|acos|atan|sinh|cosh|tanh|exp|ln|log|abs|floor|ceil/i.test(diffExpr)) {
+        return null;
+    }
+
+    try {
+        const fn = compileExpression(diffExpr);
+        const D = fn({ x: 0, y: 0, z: 0 });
+        const A = fn({ x: 1, y: 0, z: 0 }) - D;
+        const B = fn({ x: 0, y: 1, z: 0 }) - D;
+        const C = fn({ x: 0, y: 0, z: 1 }) - D;
+
+        // Verify linearity at 2 test points to reject non-linear terms (like x*y)
+        const test1 = fn({ x: 2, y: 3, z: 5 });
+        const exp1 = 2 * A + 3 * B + 5 * C + D;
+        if (Math.abs(test1 - exp1) > 1e-6) return null;
+
+        const test2 = fn({ x: -1.5, y: 4.2, z: -2.8 });
+        const exp2 = -1.5 * A + 4.2 * B - 2.8 * C + D;
+        if (Math.abs(test2 - exp2) > 1e-6) return null;
+
+        if (Math.abs(A) < 1e-9 && Math.abs(B) < 1e-9 && Math.abs(C) < 1e-9) return null;
+
+        // 3D Plane: Ax + By + Cz + D = 0 with C != 0
+        if (Math.abs(C) > 1e-9) {
+            return {
+                type: 'cartesian3d',
+                operator: '=',
+                leftSide: 'z',
+                expression: `(-(${A}*x + ${B}*y + ${D}) / ${C})`,
+                raw: rawInput,
+                parameters: [],
+                error: null
+            };
+        }
+
+        // 2D Line: Ax + By + D = 0 with B != 0
+        if (Math.abs(B) > 1e-9) {
+            return {
+                type: 'cartesian',
+                operator: '=',
+                leftSide: 'y',
+                expression: `(-(${A}*x + ${D}) / ${B})`,
+                raw: rawInput,
+                parameters: [],
+                error: null
+            };
+        }
+
+        // Vertical Line: Ax + D = 0 with A != 0
+        if (Math.abs(A) > 1e-9) {
+            return {
+                type: 'x_relation',
+                operator: '=',
+                leftSide: 'x',
+                expression: `${-D / A}`,
+                raw: rawInput,
+                parameters: [],
+                error: null
+            };
+        }
+    } catch {
+        return null;
+    }
     return null;
 }
 
@@ -685,17 +777,29 @@ export function parseEquation(rawInput) {
             }
         }
 
+        // Check for Linear Equations (Ax + By = C, x + y = 5, 2x + 3y + z = 6, 3x - 4y = 12)
+        const linear = parseLinearEquation(clean);
+        if (linear) {
+            return {
+                ...linear,
+                domainRestriction,
+                raw: rawInput
+            };
+        }
+
         // Check for 3D Quadrics & Implicit geometric surfaces (Sphere, Ellipsoid, Cylinder, Cone, Torus, etc.)
         const quadric = parseQuadricOrImplicit3D(clean);
         if (quadric) {
+            const [qLhs, qRhs] = clean.split('=');
             return {
                 type: 'quadric3d',
                 quadricType: quadric.type,
                 quadric,
                 operator: '=',
-                leftSide: clean.split('=')[0].trim(),
-                rightSide: clean.split('=')[1].trim(),
-                expression: quadric.formula,
+                leftSide: qLhs ? qLhs.trim() : 'z',
+                rightSide: qRhs ? qRhs.trim() : '0',
+                expression: '((' + (qLhs ? qLhs.trim() : '0') + ') - (' + (qRhs ? qRhs.trim() : '0') + '))',
+                formula: quadric.formula,
                 raw: rawInput,
                 parameters: [],
                 domainRestriction,
@@ -723,6 +827,7 @@ export function parseEquation(rawInput) {
                 operator: '=',
                 leftSide: lhs.trim(),
                 rightSide: rhs.trim(),
+                expression: '((' + lhs.trim() + ') - (' + rhs.trim() + '))',
                 raw: rawInput,
                 parameters: Array.from(new Set([...extractParameters(lhs), ...extractParameters(rhs)])),
                 domainRestriction,
@@ -1079,6 +1184,275 @@ export function sampleParametricCurve({
     }
 
     return segments;
+}
+
+/**
+ * Samples a horizontal relation x = g(y) or vertical line x = constant
+ */
+export function sampleXRelationCurve({
+    fn,
+    xMin,
+    xMax,
+    yMin,
+    yMax,
+    width,
+    height,
+    params = {},
+    samples = 800
+}) {
+    if (!fn) return [];
+
+    const segments = [];
+    let currentSegment = [];
+
+    const toScreenX = (mathX) => ((mathX - xMin) / (xMax - xMin)) * width;
+    const toScreenY = (mathY) => height - ((mathY - yMin) / (yMax - yMin)) * height;
+
+    const step = (yMax - yMin) / samples;
+    const xMargin = (xMax - xMin) * 2;
+    const xUpperBound = xMax + xMargin;
+    const xLowerBound = xMin - xMargin;
+
+    let prevMathX = null;
+    let prevScreenX = null;
+
+    for (let i = 0; i <= samples; i++) {
+        const mathY = yMin + i * step;
+        let mathX;
+        try {
+            mathX = fn({ y: mathY, x: 0 }, params);
+        } catch {
+            mathX = NaN;
+        }
+
+        if (isNaN(mathX) || !isFinite(mathX)) {
+            if (currentSegment.length > 0) {
+                segments.push(currentSegment);
+                currentSegment = [];
+            }
+            prevMathX = null;
+            prevScreenX = null;
+            continue;
+        }
+
+        const screenX = toScreenX(mathX);
+        const screenY = toScreenY(mathY);
+
+        // Discontinuity check across viewport
+        if (prevMathX !== null && prevScreenX !== null) {
+            const xDiff = Math.abs(screenX - prevScreenX);
+            const mathDiff = Math.abs(mathX - prevMathX);
+            const isOppositeSign = (mathX > 0 && prevMathX < 0) || (mathX < 0 && prevMathX > 0);
+
+            if ((xDiff > width * 0.8 && isOppositeSign) || (mathDiff > (xMax - xMin) * 1.5 && isOppositeSign)) {
+                if (currentSegment.length > 0) {
+                    segments.push(currentSegment);
+                    currentSegment = [];
+                }
+                prevMathX = mathX;
+                prevScreenX = screenX;
+                currentSegment.push({ x: mathX, y: mathY, screenX, screenY });
+                continue;
+            }
+        }
+
+        const clampedMathX = Math.max(xLowerBound, Math.min(xUpperBound, mathX));
+        const clampedScreenX = toScreenX(clampedMathX);
+
+        currentSegment.push({
+            x: mathX,
+            y: mathY,
+            screenX: clampedScreenX,
+            screenY
+        });
+
+        prevMathX = mathX;
+        prevScreenX = screenX;
+    }
+
+    if (currentSegment.length > 0) {
+        segments.push(currentSegment);
+    }
+
+    return segments;
+}
+
+/**
+ * Fast Marching Squares contouring algorithm for general 2D implicit curves: F(x, y) = 0
+ * Supports circles, ellipses, hyperbolas, parabolas, lemniscates, Cassini ovals, and algebraic curves.
+ * 
+ * Returns continuous path segments: Array<Array<{ x: number, y: number, screenX: number, screenY: number }>>
+ */
+export function sampleImplicitCurve2D({
+    fn,
+    xMin,
+    xMax,
+    yMin,
+    yMax,
+    width,
+    height,
+    params = {},
+    nx = 140,
+    ny = 90
+}) {
+    if (!fn) return [];
+
+    const dx = (xMax - xMin) / nx;
+    const dy = (yMax - yMin) / ny;
+
+    const toScreenX = (mx) => ((mx - xMin) / (xMax - xMin)) * width;
+    const toScreenY = (my) => height - ((my - yMin) / (yMax - yMin)) * height;
+
+    // Evaluate 2D scalar field
+    const cols = nx + 1;
+    const rows = ny + 1;
+    const grid = new Float64Array(cols * rows);
+
+    let idx = 0;
+    for (let j = 0; j < rows; j++) {
+        const y = yMin + j * dy;
+        for (let i = 0; i < cols; i++) {
+            const x = xMin + i * dx;
+            let val;
+            try {
+                val = fn({ x, y, z: 0 }, params);
+            } catch {
+                val = NaN;
+            }
+            if (isNaN(val) || !isFinite(val)) {
+                val = 1e9;
+            }
+            grid[idx++] = val;
+        }
+    }
+
+    const interp = (x1, y1, v1, x2, y2, v2) => {
+        const denom = v2 - v1;
+        if (Math.abs(denom) < 1e-12) return { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
+        let t = -v1 / denom;
+        if (t < 0) t = 0; else if (t > 1) t = 1;
+        return { x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1) };
+    };
+
+    const getVal = (i, j) => grid[j * cols + i];
+    const rawSegments = [];
+
+    // Marching squares cell scan
+    for (let j = 0; j < ny; j++) {
+        const y0 = yMin + j * dy;
+        const y1 = y0 + dy;
+        for (let i = 0; i < nx; i++) {
+            const x0 = xMin + i * dx;
+            const x1 = x0 + dx;
+
+            const v0 = getVal(i, j);         // BL (0,0)
+            const v1 = getVal(i + 1, j);     // BR (1,0)
+            const v2 = getVal(i + 1, j + 1); // TR (1,1)
+            const v3 = getVal(i, j + 1);     // TL (0,1)
+
+            // Bitmask for corner signs
+            const bit0 = v0 > 0 ? 1 : 0;
+            const bit1 = v1 > 0 ? 2 : 0;
+            const bit2 = v2 > 0 ? 4 : 0;
+            const bit3 = v3 > 0 ? 8 : 0;
+            const mask = bit0 | bit1 | bit2 | bit3;
+
+            if (mask === 0 || mask === 15) continue;
+
+            let pB, pR, pT, pL;
+            const getBottom = () => pB || (pB = interp(x0, y0, v0, x1, y0, v1));
+            const getRight = () => pR || (pR = interp(x1, y0, v1, x1, y1, v2));
+            const getTop = () => pT || (pT = interp(x0, y1, v3, x1, y1, v2));
+            const getLeft = () => pL || (pL = interp(x0, y0, v0, x0, y1, v3));
+
+            const addSeg = (pA, pB) => {
+                rawSegments.push([
+                    { x: pA.x, y: pA.y, screenX: toScreenX(pA.x), screenY: toScreenY(pA.y) },
+                    { x: pB.x, y: pB.y, screenX: toScreenX(pB.x), screenY: toScreenY(pB.y) }
+                ]);
+            };
+
+            switch (mask) {
+                case 1:  case 14: addSeg(getLeft(), getBottom()); break;
+                case 2:  case 13: addSeg(getBottom(), getRight()); break;
+                case 3:  case 12: addSeg(getLeft(), getRight()); break;
+                case 4:  case 11: addSeg(getRight(), getTop()); break;
+                case 5:
+                    addSeg(getLeft(), getTop());
+                    addSeg(getBottom(), getRight());
+                    break;
+                case 10:
+                    addSeg(getLeft(), getBottom());
+                    addSeg(getTop(), getRight());
+                    break;
+                case 6:  case 9:  addSeg(getBottom(), getTop()); break;
+                case 7:  case 8:  addSeg(getLeft(), getTop()); break;
+            }
+        }
+    }
+
+    if (rawSegments.length === 0) return [];
+
+    // Stitch connected segments into smooth continuous polylines
+    return stitchSegments(rawSegments);
+}
+
+function stitchSegments(rawSegments) {
+    if (!rawSegments || rawSegments.length <= 1) return rawSegments;
+
+    const remaining = new Set(rawSegments.map((_, i) => i));
+    const polylines = [];
+
+    const coordKey = (p) => `${Math.round(p.screenX * 10)},${Math.round(p.screenY * 10)}`;
+    const startMap = new Map();
+    const endMap = new Map();
+
+    rawSegments.forEach((seg, idx) => {
+        const kStart = coordKey(seg[0]);
+        const kEnd = coordKey(seg[1]);
+        if (!startMap.has(kStart)) startMap.set(kStart, []);
+        startMap.get(kStart).push(idx);
+        if (!endMap.has(kEnd)) endMap.set(kEnd, []);
+        endMap.get(kEnd).push(idx);
+    });
+
+    while (remaining.size > 0) {
+        const startIdx = remaining.values().next().value;
+        remaining.delete(startIdx);
+        const poly = [rawSegments[startIdx][0], rawSegments[startIdx][1]];
+
+        let extended = true;
+        while (extended && remaining.size > 0) {
+            extended = false;
+            const tail = poly[poly.length - 1];
+            const kTail = coordKey(tail);
+
+            const candidatesStart = startMap.get(kTail) || [];
+            for (const cand of candidatesStart) {
+                if (remaining.has(cand)) {
+                    remaining.delete(cand);
+                    poly.push(rawSegments[cand][1]);
+                    extended = true;
+                    break;
+                }
+            }
+            if (extended) continue;
+
+            const candidatesEnd = endMap.get(kTail) || [];
+            for (const cand of candidatesEnd) {
+                if (remaining.has(cand)) {
+                    remaining.delete(cand);
+                    poly.push(rawSegments[cand][0]);
+                    extended = true;
+                    break;
+                }
+            }
+        }
+
+        polylines.push(poly);
+    }
+
+    return polylines;
 }
 
 /**

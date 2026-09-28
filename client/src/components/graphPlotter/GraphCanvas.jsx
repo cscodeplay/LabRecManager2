@@ -5,6 +5,8 @@ import {
     sampleFunctionCurve,
     samplePolarCurve,
     sampleParametricCurve,
+    sampleXRelationCurve,
+    sampleImplicitCurve2D,
     segmentsToSvgPath,
     buildInequalityFillPath,
     numericalDerivative,
@@ -224,6 +226,21 @@ export default function GraphCanvas({
                         tMax: eq.parsed.parametric.tMax,
                         samples: 800
                     });
+                } else if (eq.parsed.type === 'x_relation') {
+                    segments = sampleXRelationCurve({
+                        fn: eq.compiled,
+                        xMin, xMax, yMin, yMax,
+                        width, height,
+                        params: parameters,
+                        samples: 800
+                    });
+                } else if (eq.parsed.type === 'implicit') {
+                    segments = sampleImplicitCurve2D({
+                        fn: eq.compiled,
+                        xMin, xMax, yMin, yMax,
+                        width, height,
+                        params: parameters
+                    });
                 } else if (eq.parsed.type === 'quadric3d' && eq.parsed.quadric) {
                     const q = eq.parsed.quadric;
                     if (q.type === 'sphere') {
@@ -290,6 +307,13 @@ export default function GraphCanvas({
                             });
                         }
                         segments = [circlePts];
+                    } else if (eq.compiled) {
+                        segments = sampleImplicitCurve2D({
+                            fn: eq.compiled,
+                            xMin, xMax, yMin, yMax,
+                            width, height,
+                            params: parameters
+                        });
                     }
                 } else {
                     // Standard Cartesian & Inequalities
@@ -480,7 +504,7 @@ export default function GraphCanvas({
     // Automatic intersection calculation across visible curves when showIntersections is enabled
     const curveIntersections = useMemo(() => {
         if (!showIntersections) return [];
-        const visibleFuncs = equations.filter(e => e.visible && e.compiled);
+        const visibleFuncs = equations.filter(e => e.visible && e.compiled && (!e.parsed || e.parsed.type === 'cartesian'));
         if (visibleFuncs.length < 2) return [];
 
         const pts = [];

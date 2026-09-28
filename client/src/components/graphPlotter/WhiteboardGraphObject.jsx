@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { 
     compileExpression, 
     parseEquation,
@@ -66,8 +67,34 @@ export default function WhiteboardGraphObject({
     const [activeAnalysis, setActiveAnalysis] = useState(null); // { type, eqId, x0, a, b }
     const [activeAnnotationTool, setActiveAnnotationTool] = useState(null);
 
-    // Fullscreen within browser
+    // Fullscreen state with window dimensions tracking
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [viewportDims, setViewportDims] = useState(() => ({
+        w: typeof window !== 'undefined' ? window.innerWidth : 1200,
+        h: typeof window !== 'undefined' ? window.innerHeight : 800
+    }));
+
+    useEffect(() => {
+        if (!isFullscreen) return;
+        const updateDims = () => {
+            setViewportDims({
+                w: window.innerWidth,
+                h: window.innerHeight
+            });
+        };
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                setIsFullscreen(false);
+            }
+        };
+        updateDims();
+        window.addEventListener('resize', updateDims);
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('resize', updateDims);
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [isFullscreen]);
 
     // Parsing and compiling equations
     // Each equation: { id, raw, label, color, visible, isLocked, parsed, compiled, compiledX, compiledY }
@@ -473,12 +500,39 @@ export default function WhiteboardGraphObject({
         handleUpdate({ equations: updated });
     };
 
-    // Computed canvas width (total width minus drawer if drawer is open in non-presentation mode)
+    // Computed canvas width & height (adapts to viewport in fullscreen)
+    const currentWidth = isFullscreen ? viewportDims.w : width;
+    const currentHeight = isFullscreen ? viewportDims.h : height;
     const activeDrawerWidth = (showDrawer && !isPresentationMode) ? drawerWidth : 0;
-    const canvasWidth = Math.max(300, width - activeDrawerWidth);
-    const canvasHeight = Math.max(260, height - 42); // minus header bar
+    const canvasWidth = Math.max(300, currentWidth - activeDrawerWidth);
+    const canvasHeight = Math.max(260, currentHeight - 42); // minus header bar
 
-    return (
+    const containerStyle = isFullscreen ? {
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100vw',
+        height: '100vh',
+        zIndex: 999999,
+        transform: 'none',
+        margin: 0,
+        borderRadius: 0,
+        border: 'none',
+        boxShadow: 'none'
+    } : {
+        position: 'absolute',
+        left: `${x}px`,
+        top: `${y}px`,
+        width: `${width}px`,
+        height: `${height}px`,
+        transform: `rotate(${rotation}deg)`,
+        transformOrigin: 'center center',
+        zIndex: graph?.zIndex || 20
+    };
+
+    const content = (
         <div
             ref={containerRef}
             data-graph-id={graph?.id}
@@ -492,28 +546,21 @@ export default function WhiteboardGraphObject({
                 e.stopPropagation();
                 onSelect && onSelect(graph?.id);
             }}
-            style={{
-                position: 'absolute',
-                left: `${x}px`,
-                top: `${y}px`,
-                width: `${width}px`,
-                height: `${height}px`,
-                transform: `rotate(${rotation}deg)`,
-                transformOrigin: 'center center',
-                zIndex: graph?.zIndex || 20
-            }}
-            className={`group rounded-2xl shadow-2xl flex flex-col overflow-visible select-none border-2 transition-shadow ${
+            style={containerStyle}
+            className={`group flex flex-col select-none border-2 transition-shadow ${
+                isFullscreen ? 'rounded-none border-0' : 'rounded-2xl shadow-2xl overflow-visible'
+            } ${
                 isDark 
                     ? 'bg-slate-900 border-slate-700/80 shadow-slate-950/80' 
                     : 'bg-white border-slate-300 text-slate-800 shadow-slate-300/60'
             } ${
-                isSelected
+                isSelected && !isFullscreen
                     ? 'border-sky-500 shadow-sky-500/20 ring-2 ring-sky-500/30'
                     : ''
             }`}
         >
             {/* Edge Drag Strips - Allow moving graph from all borders/edges */}
-            {!isLocked && (
+            {!isLocked && !isFullscreen && (
                 <>
                     {/* Left border drag strip */}
                     <div
@@ -538,8 +585,10 @@ export default function WhiteboardGraphObject({
 
             {/* 1. Header Drag Bar & Title */}
             <div
-                onPointerDown={handleMoveStart}
-                className={`h-10 px-3 flex items-center justify-between border-b cursor-move rounded-t-2xl shrink-0 ${
+                onPointerDown={isFullscreen ? undefined : handleMoveStart}
+                className={`h-10 px-3 flex items-center justify-between border-b shrink-0 ${
+                    isFullscreen ? 'rounded-none cursor-default' : 'rounded-t-2xl cursor-move'
+                } ${
                     isDark ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-100 border-slate-200 text-slate-800'
                 }`}
             >
@@ -623,6 +672,19 @@ export default function WhiteboardGraphObject({
                         {isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
                     </button>
 
+                    {/* Exit Fullscreen (when in fullscreen mode) */}
+                    {isFullscreen && (
+                        <button
+                            type="button"
+                            onClick={() => setIsFullscreen(false)}
+                            className="px-2 py-1 rounded-lg text-rose-400 hover:text-white hover:bg-rose-600/30 transition flex items-center gap-1 text-xs font-semibold"
+                            title="Exit Fullscreen Mode (Esc)"
+                        >
+                            <Minimize2 className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Exit Fullscreen</span>
+                        </button>
+                    )}
+
                     {/* Delete */}
                     <button
                         type="button"
@@ -638,7 +700,7 @@ export default function WhiteboardGraphObject({
             </div>
 
             {/* 2. Main Body: Split View (Equation Drawer + Graph Canvas) */}
-            <div className="flex-1 flex overflow-hidden relative rounded-b-2xl">
+            <div className={`flex-1 flex overflow-hidden relative ${isFullscreen ? 'rounded-none' : 'rounded-b-2xl'}`}>
                 {/* Equation Editor Drawer */}
                 {showDrawer && !isPresentationMode && (
                     <div
@@ -814,7 +876,7 @@ export default function WhiteboardGraphObject({
             </div>
 
             {/* 3. Floating Context Toolbar on Selection */}
-            {isSelected && !isLocked && (
+            {isSelected && !isLocked && !isFullscreen && (
                 <div
                     onPointerDown={(e) => e.stopPropagation()}
                     className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl shadow-2xl px-2.5 py-1 flex items-center gap-1.5 z-40 text-xs text-slate-200"
@@ -877,7 +939,7 @@ export default function WhiteboardGraphObject({
             )}
 
             {/* 4. Selection Corner & Edge Resize Handles */}
-            {isSelected && !isLocked && (
+            {isSelected && !isLocked && !isFullscreen && (
                 <>
                     {/* Corners */}
                     {[
@@ -912,4 +974,10 @@ export default function WhiteboardGraphObject({
             )}
         </div>
     );
+
+    if (isFullscreen && typeof document !== 'undefined') {
+        return createPortal(content, document.body);
+    }
+
+    return content;
 }
