@@ -491,6 +491,342 @@ function generateConeMesh({ radius = 3, height = 5, radialSteps = 32, heightStep
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// HELPER: COLOR WITH DIRECTIONAL LIGHTING AND SHADING
+// ─────────────────────────────────────────────────────────────────────────────
+
+function hexToRgbaShaded(hex, lighting = 1, alpha = 0.82) {
+    if (!hex) return `rgba(59, 130, 246, ${alpha})`;
+    let c = hex.replace('#', '');
+    if (c.length === 3) {
+        c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
+    }
+    const num = parseInt(c, 16);
+    if (isNaN(num)) return `rgba(59, 130, 246, ${alpha})`;
+    let r = (num >> 16) & 255;
+    let g = (num >> 8) & 255;
+    let b = num & 255;
+    const diffuse = Math.max(0.35, Math.min(1.4, lighting));
+    r = Math.min(255, Math.max(0, Math.round(r * diffuse)));
+    g = Math.min(255, Math.max(0, Math.round(g * diffuse)));
+    b = Math.min(255, Math.max(0, Math.round(b * diffuse)));
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SINGLE 3D SURFACE MESH GENERATOR
+// ─────────────────────────────────────────────────────────────────────────────
+
+function generateSingleSurfaceMesh(surface) {
+    if (surface.type === 'quadric' && surface.quadric) {
+        const q = surface.quadric;
+        if (q.type === 'sphere') {
+            return generateSphereMesh({
+                radius: q.radius || 4,
+                center: q.center || { x: 0, y: 0, z: 0 },
+                subType: q.subType || 'full'
+            });
+        }
+        if (q.type === 'ellipsoid') {
+            return generateEllipsoidMesh({
+                radii: q.radii || { x: 3, y: 2, z: 4 },
+                center: q.center || { x: 0, y: 0, z: 0 }
+            });
+        }
+        if (q.type === 'torus') {
+            return generateTorusMesh({
+                majorRadius: q.majorRadius || 3,
+                minorRadius: q.minorRadius || 1
+            });
+        }
+        if (q.type === 'cylinder') {
+            return generateCylinderMesh({
+                radius: q.radius || 3,
+                height: q.height || 6
+            });
+        }
+        if (q.type === 'cone') {
+            return generateConeMesh({
+                radius: 3,
+                height: 5
+            });
+        }
+    }
+
+    const gridSteps = 24;
+    const [xMin, xMax] = surface.xRange || [-4, 4];
+    const [yMin, yMax] = surface.yRange || [-4, 4];
+    const dx = (xMax - xMin) / gridSteps;
+    const dy = (yMax - yMin) / gridSteps;
+
+    const rawGrid = [];
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+
+    for (let j = 0; j <= gridSteps; j++) {
+        const y = yMin + j * dy;
+        const row = [];
+        for (let i = 0; i <= gridSteps; i++) {
+            const x = xMin + i * dx;
+            let z = 0;
+            try {
+                z = surface.fn ? surface.fn(x, y) : 0;
+                if (!isFinite(z) || isNaN(z)) z = 0;
+            } catch {
+                z = 0;
+            }
+            z = Math.max(-50, Math.min(50, z));
+            if (z < minZ) minZ = z;
+            if (z > maxZ) maxZ = z;
+            row.push({ x, y, rawZ: z });
+        }
+        rawGrid.push(row);
+    }
+
+    if (!isFinite(minZ)) minZ = -1;
+    if (!isFinite(maxZ)) maxZ = 1;
+    if (minZ === maxZ) {
+        minZ -= 1;
+        maxZ += 1;
+    }
+
+    const zSpan = maxZ - minZ;
+    const xySpan = Math.max(xMax - xMin, yMax - yMin);
+    const maxSpan = xySpan * 0.65;
+    const zScale = (zSpan > maxSpan && zSpan > 0) ? (maxSpan / zSpan) : 1;
+    const zCenter = (minZ + maxZ) / 2;
+
+    const vertices = [];
+    for (let j = 0; j <= gridSteps; j++) {
+        for (let i = 0; i <= gridSteps; i++) {
+            const pt = rawGrid[j][i];
+            const scaledZ = (pt.rawZ - zCenter) * zScale;
+            vertices.push({
+                x: pt.x,
+                y: pt.y,
+                z: scaledZ,
+                rawZ: pt.rawZ
+            });
+        }
+    }
+
+    const faces = [];
+    for (let j = 0; j < gridSteps; j++) {
+        for (let i = 0; i < gridSteps; i++) {
+            const row1 = j * (gridSteps + 1);
+            const row2 = (j + 1) * (gridSteps + 1);
+            const i0 = row1 + i;
+            const i1 = row1 + i + 1;
+            const i2 = row2 + i + 1;
+            const i3 = row2 + i;
+
+            const avgRawZ = (vertices[i0].rawZ + vertices[i1].rawZ + vertices[i2].rawZ + vertices[i3].rawZ) / 4;
+            const normZ = Math.max(0, Math.min(1, (avgRawZ - minZ) / (zSpan || 1)));
+
+            faces.push({
+                indices: [i0, i1, i2, i3],
+                avgZ: (vertices[i0].z + vertices[i1].z + vertices[i2].z + vertices[i3].z) / 4,
+                normZ
+            });
+        }
+    }
+
+    const floorZ = (minZ - zCenter) * zScale;
+    return {
+        vertices,
+        faces,
+        minZ,
+        maxZ,
+        floorZ,
+        xRange: [xMin, xMax],
+        yRange: [yMin, yMax],
+        maxDimension: Math.max(xySpan / 2, (maxSpan || 2))
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3D INTERSECTION CURVE EXTRACTION BETWEEN TWO SURFACES
+// ─────────────────────────────────────────────────────────────────────────────
+
+function extractIntersectionCurvesBetween(s1, s2) {
+    const isSphere1 = s1.type === 'quadric' && s1.quadric?.type === 'sphere';
+    const isSphere2 = s2.type === 'quadric' && s2.quadric?.type === 'sphere';
+
+    const getZValues = (s, x, y) => {
+        if (s.type === 'quadric' && s.quadric?.type === 'sphere') {
+            const r = s.quadric.radius || 4;
+            const cx = s.quadric.center?.x || 0;
+            const cy = s.quadric.center?.y || 0;
+            const cz = s.quadric.center?.z || 0;
+            const d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+            if (d2 <= r * r) {
+                const h = Math.sqrt(Math.max(0, r * r - d2));
+                return { top: cz + h, bot: cz - h, isSphere: true, valid: true };
+            }
+            return { valid: false };
+        }
+        if (s.type === 'quadric' && s.quadric?.type === 'cylinder') {
+            return { valid: false };
+        }
+        if (s.fn) {
+            try {
+                const z = s.fn(x, y);
+                if (isFinite(z)) {
+                    return { top: z, bot: z, isSphere: false, valid: true };
+                }
+            } catch {}
+        }
+        return { valid: false };
+    };
+
+    // Case A: Sphere + Constant Plane z = c
+    let sphere = isSphere1 ? s1 : (isSphere2 ? s2 : null);
+    let other = isSphere1 ? s2 : (isSphere2 ? s1 : null);
+
+    if (sphere && other && other.fn) {
+        const z0 = other.fn(0, 0);
+        const z1 = other.fn(2, 2);
+        const z2 = other.fn(-2, 1);
+        if (Math.abs(z0 - z1) < 1e-4 && Math.abs(z0 - z2) < 1e-4) {
+            const c = z0;
+            const R = sphere.quadric.radius || 4;
+            const cz = sphere.quadric.center?.z || 0;
+            const cx = sphere.quadric.center?.x || 0;
+            const cy = sphere.quadric.center?.y || 0;
+            const d = Math.abs(c - cz);
+            if (d < R) {
+                const rInt = Math.sqrt(R * R - d * d);
+                const steps = 64;
+                const points = [];
+                const segments = [];
+                for (let i = 0; i <= steps; i++) {
+                    const theta = (i / steps) * 2 * Math.PI;
+                    points.push({
+                        x: cx + rInt * Math.cos(theta),
+                        y: cy + rInt * Math.sin(theta),
+                        z: c
+                    });
+                }
+                for (let i = 0; i < points.length - 1; i++) {
+                    segments.push({ p1: points[i], p2: points[i + 1] });
+                }
+                return {
+                    id: `inter_${s1.id}_${s2.id}`,
+                    name: `${s1.name} ∩ ${s2.name}`,
+                    formula: `C(t): r(t) = ⟨${rInt.toFixed(2)}·cos(t), ${rInt.toFixed(2)}·sin(t), ${c.toFixed(2)}⟩`,
+                    systemFormula: `{ ${s1.formula || s1.name}, ${s2.formula || s2.name} }`,
+                    segments,
+                    points,
+                    pointCount: points.length,
+                    type: 'circle'
+                };
+            }
+        }
+    }
+
+    // Case B: General Surface Intersection via Marching Squares on Difference Field
+    const gridN = 44;
+    const xMin = -4, xMax = 4;
+    const yMin = -4, yMax = 4;
+    const dx = (xMax - xMin) / gridN;
+    const dy = (yMax - yMin) / gridN;
+
+    const segments = [];
+    const points = [];
+
+    const testSheetPair = (sheetA, sheetB) => {
+        const diffGrid = [];
+        for (let j = 0; j <= gridN; j++) {
+            const y = yMin + j * dy;
+            const row = [];
+            for (let i = 0; i <= gridN; i++) {
+                const x = xMin + i * dx;
+                const vA = getZValues(s1, x, y);
+                const vB = getZValues(s2, x, y);
+                if (vA.valid && vB.valid) {
+                    const zA = sheetA === 'top' ? vA.top : vA.bot;
+                    const zB = sheetB === 'top' ? vB.top : vB.bot;
+                    row.push({ diff: zA - zB, zA, zB, valid: true });
+                } else {
+                    row.push({ valid: false });
+                }
+            }
+            diffGrid.push(row);
+        }
+
+        for (let j = 0; j < gridN; j++) {
+            for (let i = 0; i < gridN; i++) {
+                const c00 = diffGrid[j][i];
+                const c10 = diffGrid[j][i + 1];
+                const c11 = diffGrid[j + 1][i + 1];
+                const c01 = diffGrid[j + 1][i];
+
+                if (!c00.valid || !c10.valid || !c11.valid || !c01.valid) continue;
+
+                const v0 = c00.diff, v1 = c10.diff, v2 = c11.diff, v3 = c01.diff;
+                const b0 = v0 > 0 ? 1 : 0;
+                const b1 = v1 > 0 ? 2 : 0;
+                const b2 = v2 > 0 ? 4 : 0;
+                const b3 = v3 > 0 ? 8 : 0;
+                const mask = b0 | b1 | b2 | b3;
+
+                if (mask === 0 || mask === 15) continue;
+
+                const x0 = xMin + i * dx, x1 = x0 + dx;
+                const y0 = yMin + j * dy, y1 = y0 + dy;
+
+                const interpPt = (xa, ya, va, za, xb, yb, vb, zb) => {
+                    const denom = vb - va;
+                    const t = Math.abs(denom) < 1e-12 ? 0.5 : Math.max(0, Math.min(1, -va / denom));
+                    const x = xa + t * (xb - xa);
+                    const y = ya + t * (yb - ya);
+                    const z = za + t * (zb - za);
+                    return { x, y, z };
+                };
+
+                const edgeB = () => interpPt(x0, y0, v0, (c00.zA + c00.zB) / 2, x1, y0, v1, (c10.zA + c10.zB) / 2);
+                const edgeR = () => interpPt(x1, y0, v1, (c10.zA + c10.zB) / 2, x1, y1, v2, (c11.zA + c11.zB) / 2);
+                const edgeT = () => interpPt(x0, y1, v3, (c01.zA + c01.zB) / 2, x1, y1, v2, (c11.zA + c11.zB) / 2);
+                const edgeL = () => interpPt(x0, y0, v0, (c00.zA + c00.zB) / 2, x0, y1, v3, (c01.zA + c01.zB) / 2);
+
+                const addSeg = (pA, pB) => {
+                    segments.push({ p1: pA, p2: pB });
+                    points.push(pA);
+                };
+
+                switch (mask) {
+                    case 1: case 14: addSeg(edgeL(), edgeB()); break;
+                    case 2: case 13: addSeg(edgeB(), edgeR()); break;
+                    case 3: case 12: addSeg(edgeL(), edgeR()); break;
+                    case 4: case 11: addSeg(edgeR(), edgeT()); break;
+                    case 5: addSeg(edgeL(), edgeT()); addSeg(edgeB(), edgeR()); break;
+                    case 10: addSeg(edgeL(), edgeB()); addSeg(edgeT(), edgeR()); break;
+                    case 6: case 9: addSeg(edgeB(), edgeT()); break;
+                    case 7: case 8: addSeg(edgeL(), edgeT()); break;
+                }
+            }
+        }
+    };
+
+    testSheetPair('top', 'top');
+    if (isSphere1 || isSphere2) {
+        testSheetPair('bot', 'top');
+    }
+
+    if (segments.length === 0) return null;
+
+    return {
+        id: `inter_${s1.id}_${s2.id}`,
+        name: `${s1.name} ∩ ${s2.name}`,
+        formula: `C: { z = f₁(x, y), f₁(x, y) = f₂(x, y) }`,
+        systemFormula: `{ ${s1.formula || s1.name}, ${s2.formula || s2.name} }`,
+        segments,
+        points: points.filter((_, idx) => idx % 4 === 0),
+        pointCount: segments.length * 2,
+        type: 'contour'
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN GRAPH 3D CANVAS COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -501,7 +837,9 @@ export default function Graph3DCanvas({
     equations = [],
     selectedEqId = null,
     onSelectEquation = null,
-    parameters = {}
+    parameters = {},
+    showIntersections = true,
+    onShowZoomMessage = null
 }) {
     const isDark = theme === 'dark';
     const containerRef = useRef(null);
@@ -518,6 +856,16 @@ export default function Graph3DCanvas({
     const [rotY, setRotY] = useState(45);  // Yaw (turn left/right)
     const [zoom, setZoom] = useState(1.1);
 
+    // Momentary zoom HUD banner
+    const [zoomMessage, setZoomMessage] = useState(null);
+    const zoomTimerRef = useRef(null);
+    const triggerZoomMessage = useCallback((msg) => {
+        setZoomMessage(msg);
+        if (onShowZoomMessage) onShowZoomMessage(msg);
+        if (zoomTimerRef.current) clearTimeout(zoomTimerRef.current);
+        zoomTimerRef.current = setTimeout(() => setZoomMessage(null), 800);
+    }, [onShowZoomMessage]);
+
     // Auto-spin animation
     const [isAutoSpinning, setIsAutoSpinning] = useState(false);
     const animRef = useRef(null);
@@ -533,13 +881,16 @@ export default function Graph3DCanvas({
         }
     }, [selectedEqId]);
 
-    // Active 3D surface function: supports real user equations AND presets
-    const activeSurface = useMemo(() => {
-        // 1. Check if user explicitly picked a 3D preset
+    // ─────────────────────────────────────────────────────────────────────────
+    // SIMULTANEOUS MULTI-SURFACE EXTRACTION
+    // ─────────────────────────────────────────────────────────────────────────
+    const visibleSurfaces = useMemo(() => {
+        // 1. If user explicitly picked a preset from dropdown
         const preset = SURFACE_3D_PRESETS.find(p => p.id === selectedSourceId);
         if (preset) {
+            let presetSurf;
             if (preset.quadricType === 'sphere') {
-                return {
+                presetSurf = {
                     type: 'quadric',
                     id: preset.id,
                     name: preset.name,
@@ -552,11 +903,11 @@ export default function Graph3DCanvas({
                         center: { x: 0, y: 0, z: 0 }
                     },
                     xRange: preset.xRange,
-                    yRange: preset.yRange
+                    yRange: preset.yRange,
+                    color: '#38bdf8'
                 };
-            }
-            if (preset.quadricType === 'torus') {
-                return {
+            } else if (preset.quadricType === 'torus') {
+                presetSurf = {
                     type: 'quadric',
                     id: preset.id,
                     name: preset.name,
@@ -569,53 +920,56 @@ export default function Graph3DCanvas({
                         minorRadius: preset.minorRadius || 1
                     },
                     xRange: preset.xRange,
-                    yRange: preset.yRange
+                    yRange: preset.yRange,
+                    color: '#f59e0b'
+                };
+            } else {
+                presetSurf = {
+                    type: 'preset',
+                    id: preset.id,
+                    name: preset.name,
+                    formula: preset.formula,
+                    xRange: preset.xRange,
+                    yRange: preset.yRange,
+                    fn: preset.fn,
+                    color: '#10b981'
                 };
             }
-            return {
-                type: 'preset',
-                id: preset.id,
-                name: preset.name,
-                formula: preset.formula,
-                xRange: preset.xRange,
-                yRange: preset.yRange,
-                fn: preset.fn
-            };
+            return [presetSurf];
         }
 
-        // 2. Otherwise find the target equation
-        let targetEq = null;
-        if (selectedSourceId && selectedSourceId !== 'equation_auto') {
-            targetEq = equations.find(e => e.id === selectedSourceId);
-        }
-        if (!targetEq && selectedEqId) {
-            targetEq = equations.find(e => e.id === selectedEqId);
-        }
-        if (!targetEq && equations.length > 0) {
-            targetEq = equations.find(e => e.compiled || (e.parsed && !e.parsed.error)) || equations[0];
-        }
+        // 2. Otherwise collect ALL visible equations from user's equations list
+        const visEqs = equations.filter(e => e.visible !== false);
+        const surfaces = [];
 
-        if (targetEq) {
-            // Check if this equation is a 3D Quadric (Sphere, Ellipsoid, Cylinder, Torus, etc.)
-            const quadric = targetEq.parsed?.quadric || parseQuadricOrImplicit3D(targetEq.raw || '');
+        visEqs.forEach((targetEq, idx) => {
+            const raw = (targetEq.raw || '').trim();
+            const quadric = targetEq.parsed?.quadric || parseQuadricOrImplicit3D(raw);
             if (quadric) {
-                return {
+                surfaces.push({
                     type: 'quadric',
                     id: targetEq.id,
-                    name: targetEq.raw || quadric.name,
-                    formula: quadric.formula || targetEq.raw,
+                    name: raw || quadric.name,
+                    formula: quadric.formula || raw,
                     quadric,
-                    color: targetEq.color
-                };
+                    color: targetEq.color || '#38bdf8'
+                });
+                return;
             }
 
-            // Otherwise, height-map function z = f(x, y)
             let fn = targetEq.compiled;
-            let formula = targetEq.parsed?.expression || targetEq.raw || 'Custom Function';
+            let formula = targetEq.parsed?.expression || raw;
 
             if (!fn) {
                 try {
-                    const cleanRaw = (targetEq.raw || '').replace(/^(z|y|[a-zA-Z]\([xy, ]+\))\s*=\s*/i, '').trim();
+                    let cleanRaw = raw;
+                    const zMatch = cleanRaw.match(/^(?:z|[a-zA-Z]\([xy, ]+\))\s*=\s*(.*)$/i);
+                    if (zMatch) {
+                        cleanRaw = zMatch[1];
+                    } else {
+                        const yMatch = cleanRaw.match(/^y\s*=\s*(.*)$/i);
+                        if (yMatch) cleanRaw = yMatch[1];
+                    }
                     if (cleanRaw) {
                         fn = compileExpression(cleanRaw);
                         formula = cleanRaw;
@@ -624,29 +978,33 @@ export default function Graph3DCanvas({
             }
 
             if (fn) {
-                return {
+                surfaces.push({
                     type: 'equation',
                     id: targetEq.id,
-                    name: targetEq.raw || 'User Equation',
+                    name: raw || `Equation ${idx + 1}`,
                     formula: formula,
                     xRange: [-4, 4],
                     yRange: [-4, 4],
-                    color: targetEq.color,
+                    color: targetEq.color || '#38bdf8',
                     fn: (x, y) => {
                         try {
-                            const val = fn({ x, y }, parameters);
+                            const val = fn({ x, y, z: 0 }, parameters);
                             return (typeof val === 'number' && isFinite(val)) ? val : 0;
                         } catch {
                             return 0;
                         }
                     }
-                };
+                });
             }
+        });
+
+        if (surfaces.length > 0) {
+            return surfaces;
         }
 
         // 3. Fallback to default preset (Sphere)
         const fallback = SURFACE_3D_PRESETS[0];
-        return {
+        return [{
             type: 'quadric',
             id: fallback.id,
             name: fallback.name,
@@ -659,9 +1017,13 @@ export default function Graph3DCanvas({
                 center: { x: 0, y: 0, z: 0 }
             },
             xRange: fallback.xRange,
-            yRange: fallback.yRange
-        };
-    }, [selectedSourceId, selectedEqId, equations, parameters]);
+            yRange: fallback.yRange,
+            color: '#38bdf8'
+        }];
+    }, [selectedSourceId, equations, parameters]);
+
+    // Active primary surface for preset dropdown label
+    const primarySurface = visibleSurfaces[0] || SURFACE_3D_PRESETS[0];
 
     // Auto-spin loop
     useEffect(() => {
@@ -683,142 +1045,74 @@ export default function Graph3DCanvas({
         };
     }, [isAutoSpinning]);
 
-    // Generate 3D surface mesh vertices and faces
+    // Generate combined 3D surface mesh vertices and faces for all visible surfaces simultaneously
     const meshData = useMemo(() => {
-        // ─────────────────────────────────────────────────────────────────────
-        // 1. Quadric geometric surface mesh generation (Sphere, Ellipsoid, etc.)
-        // ─────────────────────────────────────────────────────────────────────
-        if (activeSurface.type === 'quadric' && activeSurface.quadric) {
-            const q = activeSurface.quadric;
-            if (q.type === 'sphere') {
-                return generateSphereMesh({
-                    radius: q.radius || 4,
-                    center: q.center || { x: 0, y: 0, z: 0 },
-                    subType: q.subType || 'full'
+        const combinedVertices = [];
+        const combinedFaces = [];
+        let globalMinZ = Infinity;
+        let globalMaxZ = -Infinity;
+        let maxDimension = 3.5;
+        let floorZ = -4;
+
+        visibleSurfaces.forEach((surf, sIdx) => {
+            const singleMesh = generateSingleSurfaceMesh(surf);
+            if (!singleMesh || !singleMesh.vertices.length) return;
+
+            const vOffset = combinedVertices.length;
+            singleMesh.vertices.forEach(v => {
+                combinedVertices.push({
+                    ...v,
+                    surfaceId: surf.id,
+                    surfaceIndex: sIdx
                 });
-            }
-            if (q.type === 'ellipsoid') {
-                return generateEllipsoidMesh({
-                    radii: q.radii || { x: 3, y: 2, z: 4 },
-                    center: q.center || { x: 0, y: 0, z: 0 }
+            });
+
+            singleMesh.faces.forEach((f, fIdx) => {
+                combinedFaces.push({
+                    indices: f.indices.map(i => i + vOffset),
+                    avgZ: f.avgZ,
+                    normZ: f.normZ,
+                    normal: f.normal,
+                    surfaceId: surf.id,
+                    surfaceColor: surf.color || '#38bdf8',
+                    surfaceIndex: sIdx,
+                    faceId: `${surf.id || sIdx}_${fIdx}`
                 });
-            }
-            if (q.type === 'torus') {
-                return generateTorusMesh({
-                    majorRadius: q.majorRadius || 3,
-                    minorRadius: q.minorRadius || 1
-                });
-            }
-            if (q.type === 'cylinder') {
-                return generateCylinderMesh({
-                    radius: q.radius || 3,
-                    height: q.height || 6
-                });
-            }
-            if (q.type === 'cone') {
-                return generateConeMesh({
-                    radius: 3,
-                    height: 5
-                });
-            }
-        }
+            });
 
-        // ─────────────────────────────────────────────────────────────────────
-        // 2. Standard height-map surface grid: z = f(x, y)
-        // ─────────────────────────────────────────────────────────────────────
-        const gridSteps = 24; // 24x24 facets = 576 quads for smooth 60fps SVG rendering
-        const [xMin, xMax] = activeSurface.xRange || [-4, 4];
-        const [yMin, yMax] = activeSurface.yRange || [-4, 4];
-        const dx = (xMax - xMin) / gridSteps;
-        const dy = (yMax - yMin) / gridSteps;
+            if (singleMesh.minZ < globalMinZ) globalMinZ = singleMesh.minZ;
+            if (singleMesh.maxZ > globalMaxZ) globalMaxZ = singleMesh.maxZ;
+            if (singleMesh.maxDimension > maxDimension) maxDimension = singleMesh.maxDimension;
+            if (singleMesh.floorZ < floorZ) floorZ = singleMesh.floorZ;
+        });
 
-        const rawGrid = [];
-        let minZ = Infinity;
-        let maxZ = -Infinity;
-
-        // Sample raw values
-        for (let j = 0; j <= gridSteps; j++) {
-            const y = yMin + j * dy;
-            const row = [];
-            for (let i = 0; i <= gridSteps; i++) {
-                const x = xMin + i * dx;
-                let z = 0;
-                try {
-                    z = activeSurface.fn(x, y);
-                    if (!isFinite(z) || isNaN(z)) z = 0;
-                } catch {
-                    z = 0;
-                }
-                z = Math.max(-50, Math.min(50, z));
-                if (z < minZ) minZ = z;
-                if (z > maxZ) maxZ = z;
-                row.push({ x, y, rawZ: z });
-            }
-            rawGrid.push(row);
-        }
-
-        if (!isFinite(minZ)) minZ = -1;
-        if (!isFinite(maxZ)) maxZ = 1;
-        if (minZ === maxZ) {
-            minZ -= 1;
-            maxZ += 1;
-        }
-
-        const zSpan = maxZ - minZ;
-        const xySpan = Math.max(xMax - xMin, yMax - yMin);
-        const maxSpan = xySpan * 0.65;
-        const zScale = (zSpan > maxSpan && zSpan > 0) ? (maxSpan / zSpan) : 1;
-        const zCenter = (minZ + maxZ) / 2;
-
-        const vertices = [];
-        for (let j = 0; j <= gridSteps; j++) {
-            for (let i = 0; i <= gridSteps; i++) {
-                const pt = rawGrid[j][i];
-                const scaledZ = (pt.rawZ - zCenter) * zScale;
-                vertices.push({
-                    x: pt.x,
-                    y: pt.y,
-                    z: scaledZ,
-                    rawZ: pt.rawZ
-                });
-            }
-        }
-
-        const faces = [];
-        for (let j = 0; j < gridSteps; j++) {
-            for (let i = 0; i < gridSteps; i++) {
-                const row1 = j * (gridSteps + 1);
-                const row2 = (j + 1) * (gridSteps + 1);
-                const i0 = row1 + i;
-                const i1 = row1 + i + 1;
-                const i2 = row2 + i + 1;
-                const i3 = row2 + i;
-
-                const avgRawZ = (vertices[i0].rawZ + vertices[i1].rawZ + vertices[i2].rawZ + vertices[i3].rawZ) / 4;
-                const normZ = Math.max(0, Math.min(1, (avgRawZ - minZ) / (zSpan || 1)));
-
-                faces.push({
-                    indices: [i0, i1, i2, i3],
-                    avgZ: (vertices[i0].z + vertices[i1].z + vertices[i2].z + vertices[i3].z) / 4,
-                    normZ
-                });
-            }
-        }
-
-        const floorZ = (minZ - zCenter) * zScale;
         return {
-            vertices,
-            faces,
-            minZ,
-            maxZ,
-            floorZ,
-            xRange: [xMin, xMax],
-            yRange: [yMin, yMax],
-            maxDimension: Math.max(xySpan / 2, (maxSpan || 2))
+            vertices: combinedVertices,
+            faces: combinedFaces,
+            minZ: isFinite(globalMinZ) ? globalMinZ : -4,
+            maxZ: isFinite(globalMaxZ) ? globalMaxZ : 4,
+            floorZ: isFinite(floorZ) ? floorZ : -4,
+            maxDimension,
+            isMultiSurface: visibleSurfaces.length > 1
         };
-    }, [activeSurface]);
+    }, [visibleSurfaces]);
 
-    // Color gradient interpolation
+    // Extract 3D intersection curves between all pairs of visible surfaces
+    const intersectionCurves = useMemo(() => {
+        if (!showIntersections || visibleSurfaces.length < 2) return [];
+        const curves = [];
+        for (let i = 0; i < visibleSurfaces.length; i++) {
+            for (let j = i + 1; j < visibleSurfaces.length; j++) {
+                const res = extractIntersectionCurvesBetween(visibleSurfaces[i], visibleSurfaces[j]);
+                if (res && res.segments && res.segments.length > 0) {
+                    curves.push(res);
+                }
+            }
+        }
+        return curves;
+    }, [showIntersections, visibleSurfaces]);
+
+    // Color gradient interpolation for single surface colormap
     const getZColor = useCallback((normZ, lighting = 1) => {
         const t = Math.max(0, Math.min(1, normZ));
         let r = 0, g = 0, b = 0;
@@ -891,12 +1185,14 @@ export default function Graph3DCanvas({
         const lightLen = Math.hypot(lx, ly, lz) || 1;
         const nlx = lx / lightLen, nly = ly / lightLen, nlz = lz / lightLen;
 
-        // Project and sort faces by depth (back to front)
+        // Project and sort faces by depth across all surfaces (back to front)
         const sortedFaces = meshData.faces.map((f, fIdx) => {
             const v0 = projVertices[f.indices[0]];
             const v1 = projVertices[f.indices[1]];
             const v2 = projVertices[f.indices[2]];
             const v3 = projVertices[f.indices[3]];
+
+            if (!v0 || !v1 || !v2 || !v3) return null;
 
             const avgDepth = (v0.depth + v1.depth + v2.depth + v3.depth) / 4;
 
@@ -924,9 +1220,25 @@ export default function Graph3DCanvas({
                 path,
                 avgDepth,
                 normZ: f.normZ,
-                lighting
+                lighting,
+                surfaceColor: f.surfaceColor,
+                surfaceId: f.surfaceId
             };
-        }).sort((a, b) => a.avgDepth - b.avgDepth);
+        }).filter(Boolean).sort((a, b) => a.avgDepth - b.avgDepth);
+
+        // Project intersection curves
+        const projectedCurves = (intersectionCurves || []).map(curve => {
+            const projSegs = curve.segments.map(seg => ({
+                p1: transformPoint(seg.p1.x, seg.p1.y, seg.p1.z),
+                p2: transformPoint(seg.p2.x, seg.p2.y, seg.p2.z)
+            }));
+            const projPoints = (curve.points || []).map(pt => transformPoint(pt.x, pt.y, pt.z));
+            return {
+                ...curve,
+                projSegments: projSegs,
+                projPoints
+            };
+        });
 
         // 3D Coordinate Axes (X: red, Y: green, Z: blue)
         const maxDim = meshData.maxDimension || 3.5;
@@ -937,24 +1249,24 @@ export default function Graph3DCanvas({
         const axisZ = transformPoint(0, 0, axisLength * 0.9);
 
         // Ground bounding box wireframe at floorZ
-        const [xMin, xMax] = meshData.xRange || [-4, 4];
-        const [yMin, yMax] = meshData.yRange || [-4, 4];
-        const floorZ = meshData.floorZ;
-        const floorP1 = transformPoint(xMin, yMin, floorZ);
-        const floorP2 = transformPoint(xMax, yMin, floorZ);
-        const floorP3 = transformPoint(xMax, yMax, floorZ);
-        const floorP4 = transformPoint(xMin, yMax, floorZ);
+        const floorZ = meshData.floorZ || -4;
+        const floorSpan = maxDim * 1.1;
+        const floorP1 = transformPoint(-floorSpan, -floorSpan, floorZ);
+        const floorP2 = transformPoint(floorSpan, -floorSpan, floorZ);
+        const floorP3 = transformPoint(floorSpan, floorSpan, floorZ);
+        const floorP4 = transformPoint(-floorSpan, floorSpan, floorZ);
 
         return {
             projVertices,
             sortedFaces,
+            projectedCurves,
             origin,
             axisX,
             axisY,
             axisZ,
             floorBox: [floorP1, floorP2, floorP3, floorP4]
         };
-    }, [meshData, rotX, rotY, zoom, width, height]);
+    }, [meshData, intersectionCurves, rotX, rotY, zoom, width, height]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // INTERACTIVE ROTATION & DRAG HANDLERS
@@ -992,7 +1304,11 @@ export default function Graph3DCanvas({
         e.stopPropagation();
         e.preventDefault();
         const factor = e.deltaY < 0 ? 1.08 : 0.92;
-        setZoom(prev => Math.max(0.4, Math.min(3.0, prev * factor)));
+        setZoom(prev => {
+            const next = Math.max(0.4, Math.min(3.0, prev * factor));
+            triggerZoomMessage(`Zoom: ${Math.round(next * 100)}%`);
+            return next;
+        });
     };
 
     const setViewPreset = (view) => {
@@ -1041,15 +1357,21 @@ export default function Graph3DCanvas({
                     />
                 )}
 
-                {/* 3. Render Depth-Sorted Surface Facets */}
+                {/* 3. Render Depth-Sorted Surface Facets (Multi-Surface Translucency & Shading) */}
                 <g className="surface-facets">
                     {projectedData.sortedFaces.map((face) => {
-                        const fillColor = renderStyle === 'wireframe' 
-                            ? 'none' 
-                            : getZColor(face.normZ, face.lighting);
+                        let fillColor;
+                        if (renderStyle === 'wireframe') {
+                            fillColor = 'none';
+                        } else if (meshData.isMultiSurface) {
+                            fillColor = hexToRgbaShaded(face.surfaceColor, face.lighting, 0.82);
+                        } else {
+                            fillColor = getZColor(face.normZ, face.lighting);
+                        }
+
                         const strokeColor = renderStyle === 'shaded' 
                             ? (isDark ? 'rgba(15, 23, 42, 0.25)' : 'rgba(255, 255, 255, 0.35)') 
-                            : getZColor(face.normZ, 1.2);
+                            : (meshData.isMultiSurface ? face.surfaceColor : getZColor(face.normZ, 1.2));
                         const strokeWidth = renderStyle === 'wireframe' ? 1.2 : 0.4;
 
                         return (
@@ -1065,7 +1387,52 @@ export default function Graph3DCanvas({
                     })}
                 </g>
 
-                {/* 4. 3D Coordinate Axes (X: Crimson, Y: Emerald, Z: Sky Blue) */}
+                {/* 4. 3D Intersection Space Curves (Highlighted 3D Space Curve) */}
+                {showIntersections && projectedData.projectedCurves?.map((curve) => (
+                    <g key={curve.id} className="intersection-space-curve pointer-events-none">
+                        {/* Glow halo */}
+                        {curve.projSegments.map((seg, sIdx) => (
+                            <line
+                                key={`halo_${sIdx}`}
+                                x1={seg.p1.sx}
+                                y1={seg.p1.sy}
+                                x2={seg.p2.sx}
+                                y2={seg.p2.sy}
+                                stroke="#eab308"
+                                strokeWidth="6"
+                                strokeOpacity="0.45"
+                                strokeLinecap="round"
+                            />
+                        ))}
+                        {/* Sharp highlighted space curve */}
+                        {curve.projSegments.map((seg, sIdx) => (
+                            <line
+                                key={`seg_${sIdx}`}
+                                x1={seg.p1.sx}
+                                y1={seg.p1.sy}
+                                x2={seg.p2.sx}
+                                y2={seg.p2.sy}
+                                stroke="#facc15"
+                                strokeWidth="3.2"
+                                strokeLinecap="round"
+                            />
+                        ))}
+                        {/* Sample points along the space curve */}
+                        {curve.projPoints.map((pt, pIdx) => (
+                            <circle
+                                key={`pt_${pIdx}`}
+                                cx={pt.sx}
+                                cy={pt.sy}
+                                r="2.5"
+                                fill="#ffffff"
+                                stroke="#ca8a04"
+                                strokeWidth="1.2"
+                            />
+                        ))}
+                    </g>
+                ))}
+
+                {/* 5. 3D Coordinate Axes (X: Crimson, Y: Emerald, Z: Sky Blue) */}
                 <g className="coordinate-axes pointer-events-none">
                     {/* X Axis */}
                     <line
@@ -1137,6 +1504,47 @@ export default function Graph3DCanvas({
                 </g>
             </svg>
 
+            {/* Momentary Zoom Notification HUD Banner (Centered, auto-fades in 800ms) */}
+            {zoomMessage && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+                    <div className={`px-4 py-2 rounded-xl text-[14px] font-semibold tracking-wide backdrop-blur-md shadow-2xl border transition-all duration-300 animate-in fade-in zoom-in-95 ${
+                        isDark 
+                            ? 'bg-slate-900/90 text-indigo-300 border-indigo-500/40 shadow-indigo-950/50' 
+                            : 'bg-white/95 text-indigo-600 border-indigo-200 shadow-slate-300'
+                    }`}>
+                        {zoomMessage}
+                    </div>
+                </div>
+            )}
+
+            {/* 3D Intersection Space Curve Mathematical Representation Card */}
+            {showIntersections && intersectionCurves.length > 0 && (
+                <div className="absolute top-12 left-2 z-20 pointer-events-none max-w-[300px]">
+                    {intersectionCurves.map((c) => (
+                        <div
+                            key={c.id}
+                            className={`px-3 py-2 rounded-xl border backdrop-blur-md shadow-lg flex flex-col gap-1 text-[13px] font-mono ${
+                                isDark
+                                    ? 'bg-slate-900/90 border-amber-500/40 text-amber-300'
+                                    : 'bg-amber-50/95 border-amber-300 text-amber-900'
+                            }`}
+                        >
+                            <div className="flex items-center gap-1.5 font-bold text-[11px] uppercase tracking-wider text-amber-400">
+                                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                                <span>3D Intersection Curve:</span>
+                            </div>
+                            <div className="font-semibold text-[13px]">{c.formula}</div>
+                            <div className="text-[11px] opacity-75 truncate">
+                                System: {c.systemFormula}
+                            </div>
+                            <div className="text-[10px] opacity-60">
+                                Space curve ({c.pointCount} 3D points)
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
             {/* Floating Top Controls Bar inside 3D View */}
             <div className="absolute top-2 right-2 flex items-center gap-1.5 z-20" onPointerDown={(e) => e.stopPropagation()}>
                 {/* Surface / Equation Selector Dropdown */}
@@ -1144,39 +1552,72 @@ export default function Graph3DCanvas({
                     <button
                         type="button"
                         onClick={() => setShowPresetDropdown(prev => !prev)}
-                        className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 shadow-md backdrop-blur-md transition ${
+                        className={`px-2.5 py-1.5 rounded-xl border text-[14px] font-semibold flex items-center gap-1.5 shadow-md backdrop-blur-md transition ${
                             isDark 
                                 ? 'bg-slate-900/90 border-slate-700 text-slate-200 hover:bg-slate-800' 
                                 : 'bg-white/95 border-slate-300 text-slate-800 hover:bg-slate-100'
                         }`}
                         title="Select Equation or 3D Surface Preset"
                     >
-                        {activeSurface.type === 'equation' ? (
-                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: activeSurface.color || '#6366f1' }} />
-                        ) : activeSurface.quadric?.type === 'sphere' ? (
-                            <Circle className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        {visibleSurfaces.length > 1 ? (
+                            <>
+                                <Layers className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                <span className="truncate max-w-[130px]">{visibleSurfaces.length} Surfaces Visible</span>
+                            </>
+                        ) : primarySurface.type === 'equation' ? (
+                            <>
+                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: primarySurface.color || '#6366f1' }} />
+                                <span className="truncate max-w-[130px]">{primarySurface.name}</span>
+                            </>
+                        ) : primarySurface.quadric?.type === 'sphere' ? (
+                            <>
+                                <Circle className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                                <span className="truncate max-w-[130px]">{primarySurface.name}</span>
+                            </>
                         ) : (
-                            <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <>
+                                <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                <span className="truncate max-w-[130px]">{primarySurface.name}</span>
+                            </>
                         )}
-                        <span className="truncate max-w-[130px]">{activeSurface.name}</span>
                         <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
                     </button>
 
                     {showPresetDropdown && (
-                        <div className={`absolute right-0 top-full mt-1.5 w-68 max-h-80 overflow-y-auto border rounded-xl shadow-2xl p-1.5 flex flex-col gap-1 z-30 animate-in fade-in duration-100 ${
+                        <div className={`absolute right-0 top-full mt-1.5 w-72 max-h-80 overflow-y-auto border rounded-xl shadow-2xl p-1.5 flex flex-col gap-1 z-30 animate-in fade-in duration-100 ${
                             isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                         }`}>
                             {/* User Equations Section */}
                             {equations.length > 0 && (
                                 <>
-                                    <div className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider border-b flex items-center gap-1.5 ${
+                                    <div className={`px-2 py-1 text-[11px] font-bold uppercase tracking-wider border-b flex items-center justify-between ${
                                         isDark ? 'text-slate-400 border-slate-800' : 'text-slate-500 border-slate-200'
                                     }`}>
-                                        <Calculator className="w-3 h-3 text-indigo-400" />
-                                        <span>Your Equations</span>
+                                        <div className="flex items-center gap-1.5">
+                                            <Calculator className="w-3.5 h-3.5 text-indigo-400" />
+                                            <span>Your Equations (All Rendered)</span>
+                                        </div>
                                     </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedSourceId('equation_auto');
+                                            setShowPresetDropdown(false);
+                                        }}
+                                        className={`px-2 py-1.5 rounded-lg text-left text-[14px] flex items-center justify-between transition ${
+                                            selectedSourceId === 'equation_auto'
+                                                ? 'bg-indigo-600/20 text-indigo-400 font-semibold'
+                                                : (isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100')
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2 truncate">
+                                            <Layers className="w-4 h-4 text-indigo-400 shrink-0" />
+                                            <span className="truncate font-semibold">Render All Visible Equations</span>
+                                        </div>
+                                        {selectedSourceId === 'equation_auto' && <Check className="w-4 h-4 text-indigo-400 shrink-0 ml-1.5" />}
+                                    </button>
                                     {equations.map((eq, idx) => {
-                                        const isSelected = activeSurface.id === eq.id;
+                                        const isSelected = selectedSourceId === eq.id;
                                         return (
                                             <button
                                                 key={eq.id || idx}
@@ -1186,7 +1627,7 @@ export default function Graph3DCanvas({
                                                     if (onSelectEquation) onSelectEquation(eq.id);
                                                     setShowPresetDropdown(false);
                                                 }}
-                                                className={`px-2 py-1.5 rounded-lg text-left flex items-center justify-between transition ${
+                                                className={`px-2 py-1.5 rounded-lg text-left text-[14px] flex items-center justify-between transition ${
                                                     isSelected
                                                         ? 'bg-indigo-600/20 text-indigo-400 font-semibold'
                                                         : (isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100')
@@ -1195,9 +1636,9 @@ export default function Graph3DCanvas({
                                             >
                                                 <div className="flex items-center gap-2 truncate">
                                                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: eq.color || '#6366f1' }} />
-                                                    <span className="font-mono text-xs truncate">{eq.raw || `Equation ${idx + 1}`}</span>
+                                                    <span className="font-mono truncate">{eq.raw || `Equation ${idx + 1}`}</span>
                                                 </div>
-                                                {isSelected && <Check className="w-3.5 h-3.5 text-indigo-400 shrink-0 ml-1.5" />}
+                                                {isSelected && <Check className="w-4 h-4 text-indigo-400 shrink-0 ml-1.5" />}
                                             </button>
                                         );
                                     })}
@@ -1206,14 +1647,14 @@ export default function Graph3DCanvas({
                             )}
 
                             {/* 3D Mathematical Surface Presets Section */}
-                            <div className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider border-b flex items-center gap-1.5 ${
+                            <div className={`px-2 py-1 text-[11px] font-bold uppercase tracking-wider border-b flex items-center gap-1.5 ${
                                 isDark ? 'text-slate-400 border-slate-800' : 'text-slate-500 border-slate-200'
                             }`}>
-                                <Sparkles className="w-3 h-3 text-amber-500" />
+                                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                                 <span>3D Surface Presets</span>
                             </div>
                             {SURFACE_3D_PRESETS.map((preset) => {
-                                const isSelected = activeSurface.id === preset.id;
+                                const isSelected = selectedSourceId === preset.id;
                                 return (
                                     <button
                                         key={preset.id}
@@ -1222,7 +1663,7 @@ export default function Graph3DCanvas({
                                             setSelectedSourceId(preset.id);
                                             setShowPresetDropdown(false);
                                         }}
-                                        className={`px-2 py-1.5 rounded-lg text-left flex flex-col transition ${
+                                        className={`px-2 py-1.5 rounded-lg text-left text-[14px] flex flex-col transition ${
                                             isSelected
                                                 ? 'bg-amber-500/20 text-amber-400 font-semibold'
                                                 : (isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100')
@@ -1230,10 +1671,10 @@ export default function Graph3DCanvas({
                                         title={preset.description}
                                     >
                                         <div className="flex items-center justify-between">
-                                            <span className="text-xs">{preset.name}</span>
-                                            {isSelected && <Check className="w-3.5 h-3.5 text-amber-400" />}
+                                            <span>{preset.name}</span>
+                                            {isSelected && <Check className="w-4 h-4 text-amber-400" />}
                                         </div>
-                                        <span className="font-mono text-[10px] opacity-70 truncate">{preset.formula}</span>
+                                        <span className="font-mono text-[11px] opacity-70 truncate">{preset.formula}</span>
                                     </button>
                                 );
                             })}
@@ -1250,24 +1691,26 @@ export default function Graph3DCanvas({
                     }`}
                     title={`Style: ${renderStyle.toUpperCase()} (Click to toggle Shaded / Wireframe / Both)`}
                 >
-                    <Layers className="w-3.5 h-3.5 text-sky-400" />
+                    <Layers className="w-4 h-4 text-sky-400" />
                 </button>
 
-                {/* Color Palette Toggle */}
-                <button
-                    type="button"
-                    onClick={() => {
-                        const maps = ['viridis', 'coolwarm', 'sunset', 'neon'];
-                        const nextIdx = (maps.indexOf(colorMap) + 1) % maps.length;
-                        setColorMap(maps[nextIdx]);
-                    }}
-                    className={`px-2 py-1 rounded-xl border text-[11px] font-semibold capitalize shadow-md backdrop-blur-md transition ${
-                        isDark ? 'bg-slate-900/90 border-slate-700 text-slate-300 hover:bg-slate-800' : 'bg-white/95 border-slate-300 text-slate-700 hover:bg-slate-100'
-                    }`}
-                    title="Change 3D Height Color Gradient (Viridis, Coolwarm, Sunset, Neon)"
-                >
-                    {colorMap}
-                </button>
+                {/* Color Palette Toggle (single surface mode) */}
+                {!meshData.isMultiSurface && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const maps = ['viridis', 'coolwarm', 'sunset', 'neon'];
+                            const nextIdx = (maps.indexOf(colorMap) + 1) % maps.length;
+                            setColorMap(maps[nextIdx]);
+                        }}
+                        className={`px-2.5 py-1 rounded-xl border text-[14px] font-semibold capitalize shadow-md backdrop-blur-md transition ${
+                            isDark ? 'bg-slate-900/90 border-slate-700 text-slate-300 hover:bg-slate-800' : 'bg-white/95 border-slate-300 text-slate-700 hover:bg-slate-100'
+                        }`}
+                        title="Change 3D Height Color Gradient (Viridis, Coolwarm, Sunset, Neon)"
+                    >
+                        {colorMap}
+                    </button>
+                )}
 
                 {/* Auto-Spin Toggle */}
                 <button
@@ -1280,7 +1723,7 @@ export default function Graph3DCanvas({
                     }`}
                     title={isAutoSpinning ? "Pause Auto-Rotation" : "Start Auto-Rotation Spin"}
                 >
-                    {isAutoSpinning ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                    {isAutoSpinning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                 </button>
             </div>
 
@@ -1291,7 +1734,7 @@ export default function Graph3DCanvas({
                         key={v}
                         type="button"
                         onClick={() => setViewPreset(v)}
-                        className={`px-2 py-0.5 rounded-lg border text-[10px] font-bold uppercase backdrop-blur-md shadow-xs transition ${
+                        className={`px-2 py-0.5 rounded-lg border text-[14px] font-bold uppercase backdrop-blur-md shadow-xs transition ${
                             isDark 
                                 ? 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-800' 
                                 : 'bg-white/90 border-slate-300 text-slate-700 hover:bg-slate-100'
@@ -1304,44 +1747,47 @@ export default function Graph3DCanvas({
 
                 <button
                     type="button"
-                    onClick={() => { setRotX(30); setRotY(45); setZoom(1.1); }}
+                    onClick={() => { setRotX(30); setRotY(45); setZoom(1.1); triggerZoomMessage('Reset View'); }}
                     className={`p-1 rounded-lg border backdrop-blur-md shadow-xs transition ${
                         isDark ? 'bg-slate-900/80 border-slate-700 text-slate-400 hover:text-white' : 'bg-white/90 border-slate-300 text-slate-600 hover:text-black'
                     }`}
                     title="Reset 3D View Orientation"
                 >
-                    <RotateCcw className="w-3 h-3" />
+                    <RotateCcw className="w-3.5 h-3.5" />
                 </button>
             </div>
 
-            {/* Bottom-left Formula and Drag Hint Badge */}
-            <div className="absolute bottom-2 left-2 flex flex-col gap-0.5 pointer-events-none z-10 font-mono text-[11px]">
-                <div className={`px-2.5 py-1 rounded-lg border backdrop-blur-md shadow-xs flex items-center gap-1.5 ${
-                    isDark ? 'bg-slate-900/90 border-slate-800 text-slate-200' : 'bg-white/95 border-slate-200 text-slate-800'
-                }`}>
-                    {activeSurface.type === 'quadric' && activeSurface.quadric?.type === 'sphere' ? (
-                        <>
-                            <span className="font-bold text-sky-400">Sphere: </span>
-                            <span className="font-semibold">{activeSurface.name}</span>
-                            <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-400 text-[10px] font-semibold">
-                                R = {activeSurface.quadric.radius}
-                            </span>
-                        </>
-                    ) : activeSurface.type === 'quadric' ? (
-                        <>
-                            <span className="font-bold text-sky-400">Surface: </span>
-                            <span className="font-semibold">{activeSurface.name}</span>
-                        </>
-                    ) : (
-                        <>
-                            <span className="font-bold text-sky-400">z = </span>
-                            <span className="font-semibold">{activeSurface.formula}</span>
-                        </>
-                    )}
-                </div>
-                <div className={`text-[10px] px-1.5 opacity-60 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    Drag to rotate · Scroll to zoom
-                </div>
+            {/* Bottom-left Formula and Surfaces Badge */}
+            <div className="absolute bottom-2 left-2 flex flex-col gap-1 pointer-events-none z-10 font-mono text-[14px] max-w-[340px]">
+                {visibleSurfaces.map((surf, idx) => (
+                    <div
+                        key={surf.id || idx}
+                        className={`px-2.5 py-1 rounded-lg border backdrop-blur-md shadow-xs flex items-center gap-1.5 ${
+                            isDark ? 'bg-slate-900/90 border-slate-800 text-slate-200' : 'bg-white/95 border-slate-200 text-slate-800'
+                        }`}
+                    >
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: surf.color || '#38bdf8' }} />
+                        {surf.type === 'quadric' && surf.quadric?.type === 'sphere' ? (
+                            <>
+                                <span className="font-bold text-sky-400">Sphere: </span>
+                                <span className="font-semibold truncate">{surf.name}</span>
+                                <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-400 text-[11px] font-semibold shrink-0">
+                                    R = {surf.quadric.radius}
+                                </span>
+                            </>
+                        ) : surf.type === 'quadric' ? (
+                            <>
+                                <span className="font-bold text-sky-400">Quadric: </span>
+                                <span className="font-semibold truncate">{surf.name}</span>
+                            </>
+                        ) : (
+                            <>
+                                <span className="font-bold text-sky-400">z = </span>
+                                <span className="font-semibold truncate">{surf.formula}</span>
+                            </>
+                        )}
+                    </div>
+                ))}
             </div>
         </div>
     );

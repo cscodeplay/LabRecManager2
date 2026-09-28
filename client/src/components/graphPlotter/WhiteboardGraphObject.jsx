@@ -67,6 +67,15 @@ export default function WhiteboardGraphObject({
     const [activeAnalysis, setActiveAnalysis] = useState(null); // { type, eqId, x0, a, b }
     const [activeAnnotationTool, setActiveAnnotationTool] = useState(null);
 
+    // Momentary zoom HUD notification (800ms fadeout)
+    const [zoomMessage, setZoomMessage] = useState(null);
+    const zoomTimerRef = useRef(null);
+    const handleShowZoomMessage = useCallback((msg) => {
+        setZoomMessage(msg);
+        if (zoomTimerRef.current) clearTimeout(zoomTimerRef.current);
+        zoomTimerRef.current = setTimeout(() => setZoomMessage(null), 800);
+    }, []);
+
     // Fullscreen state with window dimensions tracking
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [viewportDims, setViewportDims] = useState(() => ({
@@ -758,6 +767,8 @@ export default function WhiteboardGraphObject({
                             onSelectEquation={(id) => setSelectedEqId(id)}
                             parameters={parameters}
                             theme={theme}
+                            showIntersections={showIntersections}
+                            onShowZoomMessage={handleShowZoomMessage}
                         />
                     ) : (
                         <GraphCanvas
@@ -784,7 +795,18 @@ export default function WhiteboardGraphObject({
                             theme={theme}
                             showIntersections={showIntersections}
                             angleUnit={angleUnit}
+                            onShowZoomMessage={handleShowZoomMessage}
                         />
+                    )}
+
+                    {/* Momentary Centered Zoom HUD (800ms fadeout) */}
+                    {zoomMessage && (
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50 transition-all duration-150 animate-in zoom-in-95">
+                            <div className="px-4 py-2 rounded-2xl backdrop-blur-md bg-slate-900/90 text-white font-mono text-[14px] font-bold shadow-2xl border border-sky-500/50 flex items-center gap-2">
+                                <span className="text-sky-400">🔍</span>
+                                <span>{zoomMessage}</span>
+                            </div>
+                        </div>
                     )}
 
                     {/* Floating Graph Controls Toolbar at Top of Canvas */}
@@ -839,6 +861,7 @@ export default function WhiteboardGraphObject({
                             onToggleGraphMode={() => setGraphMode(prev => prev === '3d' ? '2d' : '3d')}
                             angleUnit={angleUnit}
                             onToggleAngleUnit={handleToggleAngleUnit}
+                            onShowZoomMessage={handleShowZoomMessage}
                         />
                     </div>
 
