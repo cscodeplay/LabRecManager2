@@ -51,7 +51,7 @@ export const MATH_FUNCTIONS = {
 
 // Reserved words that cannot be user parameters
 const RESERVED_WORDS = new Set([
-    'x', 'y', 't', 'theta', 'θ', 'r',
+    'x', 'y', 'z', 't', 'theta', 'θ', 'phi', 'ϕ', 'r', 'u', 'v',
     ...Object.keys(CONSTANTS),
     ...Object.keys(MATH_FUNCTIONS),
     'if', 'else', 'true', 'false', 'and', 'or', 'not'
@@ -204,6 +204,285 @@ export function extractParameters(rawExpr) {
  *   error: null | string
  * }
  */
+/**
+ * Analyzes 3D equation strings to identify geometric quadrics:
+ * - Spheres: z^2 + x^2 + y^2 = 16, x^2 + y^2 + z^2 = 25, (x-x0)^2 + (y-y0)^2 + (z-z0)^2 = R^2
+ * - Ellipsoids: (x/a)^2 + (y/b)^2 + (z/c)^2 = 1 or x^2/a + y^2/b + z^2/c = 1
+ * - Cylinders: x^2 + y^2 = R^2, etc.
+ * - Cones: z^2 = x^2 + y^2
+ * - Tori: (sqrt(x^2+y^2) - R)^2 + z^2 = r^2
+ * - Dual-sheet quadrics: z^2 = f(x, y)
+ */
+export function parseQuadricOrImplicit3D(rawInput) {
+    if (!rawInput || typeof rawInput !== 'string') return null;
+
+    let clean = rawInput.trim();
+    clean = latexToMathExpression(clean);
+    clean = clean.replace(/²/g, '^2').replace(/³/g, '^3');
+    clean = clean.replace(/\*\*/g, '^');
+    clean = clean.replace(/\s+/g, '');
+
+    if (!clean.includes('=')) return null;
+
+    let [lhs, rhs] = clean.split('=');
+    if (!lhs || !rhs) return null;
+
+    // Check for explicit sqrt hemisphere form: z = sqrt(16 - x^2 - y^2) or z = -sqrt(...)
+    const hemiMatch = clean.match(/^z=([+-])?sqrt\((.+)\)$/i);
+    if (hemiMatch) {
+        const sign = hemiMatch[1] === '-' ? -1 : 1;
+        const inner = hemiMatch[2];
+        const rMatch = inner.match(/^(\d+(?:\.\d+)?)-x\^2-y\^2$/) || inner.match(/^(\d+(?:\.\d+)?)-y\^2-x\^2$/);
+        if (rMatch) {
+            const r2 = parseFloat(rMatch[1]);
+            const radius = Math.sqrt(r2);
+            return {
+                type: 'sphere',
+                subType: sign > 0 ? 'upper_hemisphere' : 'lower_hemisphere',
+                name: sign > 0 ? 'Hemisphere (Upper)' : 'Hemisphere (Lower)',
+                formula: clean,
+                center: { x: 0, y: 0, z: 0 },
+                radius,
+                raw: rawInput
+            };
+        }
+    }
+
+    // Check if equation has form LHS - C = 0 or 0 = LHS - C
+    if (rhs === '0') {
+        const constMatch = lhs.match(/([+-]\d+(?:\.\d+)?)$/);
+        if (constMatch) {
+            const num = parseFloat(constMatch[1]);
+            lhs = lhs.slice(0, constMatch.index);
+            rhs = String(-num);
+        }
+    } else if (lhs === '0') {
+        const constMatch = rhs.match(/([+-]\d+(?:\.\d+)?)$/);
+        if (constMatch) {
+            const num = parseFloat(constMatch[1]);
+            rhs = rhs.slice(0, constMatch.index);
+            lhs = String(-num);
+            const temp = lhs; lhs = rhs; rhs = temp;
+        }
+    }
+
+    // Check if equation has form z^2 = R^2 - x^2 - y^2
+    if (lhs === 'z^2') {
+        const matchRearranged = rhs.match(/^(\d+(?:\.\d+)?)-x\^2-y\^2$/) || rhs.match(/^(\d+(?:\.\d+)?)-y\^2-x\^2$/);
+        if (matchRearranged) {
+            lhs = 'z^2+x^2+y^2';
+            rhs = matchRearranged[1];
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 1. SPHERE DETECTION
+    // Terms: (x-x0)^2, (y-y0)^2, (z-z0)^2 in any order on LHS (or RHS)
+    // ─────────────────────────────────────────────────────────────────────────
+    const testSidesForSphere = (exprStr, constStr) => {
+        let rhsVal = NaN;
+        try {
+            const cleanC = constStr.replace(/\^/g, '**');
+            if (/^[\d\s+\-*/().]+$/.test(cleanC)) {
+                rhsVal = Function(`"use strict"; return (${cleanC});`)();
+            }
+        } catch {}
+        if (isNaN(rhsVal) || !isFinite(rhsVal) || rhsVal <= 0) {
+            rhsVal = parseFloat(constStr);
+        }
+        if (isNaN(rhsVal) || rhsVal <= 0) return null;
+
+        // Matches squared terms e.g. "z^2", "+x^2", "-x^2", "(x-1)^2", "+(y+2.5)^2"
+        const termRegex = /(?:([+-])|^)(?:\(([xyz])([+-]\d+(?:\.\d+)?)?\)|([xyz]))\^2/g;
+        const matches = [...exprStr.matchAll(termRegex)];
+
+        if (matches.length === 3) {
+            const vars = {};
+            let allPlus = true;
+
+            for (const m of matches) {
+                const sign = m[1] || '+';
+                if (sign === '-') {
+                    allPlus = false;
+                    break;
+                }
+                const varName = (m[2] || m[4]).toLowerCase();
+                const offset = m[3] ? -parseFloat(m[3]) : 0;
+                vars[varName] = offset;
+            }
+
+            if (allPlus && 'x' in vars && 'y' in vars && 'z' in vars) {
+                const matchedLength = matches.reduce((acc, m) => acc + m[0].length, 0);
+                if (matchedLength >= exprStr.length) {
+                    const radius = Math.sqrt(rhsVal);
+                    return {
+                        type: 'sphere',
+                        name: 'Sphere',
+                        formula: `x² + y² + z² = ${rhsVal}`,
+                        center: { x: vars.x || 0, y: vars.y || 0, z: vars.z || 0 },
+                        radius,
+                        raw: rawInput
+                    };
+                }
+            }
+        }
+        return null;
+    };
+
+    const sphereOnLHS = testSidesForSphere(lhs, rhs);
+    if (sphereOnLHS) return sphereOnLHS;
+
+    const sphereOnRHS = testSidesForSphere(rhs, lhs);
+    if (sphereOnRHS) return sphereOnRHS;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 2. ELLIPSOID DETECTION
+    // e.g. (x/a)^2 + (y/b)^2 + (z/c)^2 = 1 or x^2/A + y^2/B + z^2/C = 1
+    // ─────────────────────────────────────────────────────────────────────────
+    const testForEllipsoid = (exprStr, constStr) => {
+        const rhsVal = parseFloat(constStr);
+        if (isNaN(rhsVal) || rhsVal <= 0) return null;
+
+        const p1Regex = /(?:([+-])|^)\(([xyz])\/(\d+(?:\.\d+)?)\)\^2/g;
+        const m1 = [...exprStr.matchAll(p1Regex)];
+        if (m1.length === 3) {
+            const axes = {};
+            for (const m of m1) {
+                axes[m[2].toLowerCase()] = parseFloat(m[3]);
+            }
+            if ('x' in axes && 'y' in axes && 'z' in axes) {
+                const scale = Math.sqrt(rhsVal);
+                return {
+                    type: 'ellipsoid',
+                    name: 'Ellipsoid',
+                    formula: rawInput,
+                    center: { x: 0, y: 0, z: 0 },
+                    radii: { x: axes.x * scale, y: axes.y * scale, z: axes.z * scale },
+                    raw: rawInput
+                };
+            }
+        }
+
+        const p2Regex = /(?:([+-])|^)(?:\(([xyz])([+-]\d+(?:\.\d+)?)?\)|([xyz]))\^2\/(\d+(?:\.\d+)?)/g;
+        const m2 = [...exprStr.matchAll(p2Regex)];
+        if (m2.length === 3) {
+            const axes = {};
+            const center = {};
+            for (const m of m2) {
+                const v = (m[2] || m[4]).toLowerCase();
+                const off = m[3] ? -parseFloat(m[3]) : 0;
+                const denom = parseFloat(m[5]);
+                axes[v] = Math.sqrt(denom * rhsVal);
+                center[v] = off;
+            }
+            if ('x' in axes && 'y' in axes && 'z' in axes) {
+                return {
+                    type: 'ellipsoid',
+                    name: 'Ellipsoid',
+                    formula: rawInput,
+                    center,
+                    radii: axes,
+                    raw: rawInput
+                };
+            }
+        }
+        return null;
+    };
+
+    const ellipsoid = testForEllipsoid(lhs, rhs) || testForEllipsoid(rhs, lhs);
+    if (ellipsoid) return ellipsoid;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 3. CYLINDER DETECTION
+    // e.g. x^2 + y^2 = R^2  (circular cylinder along Z axis)
+    // ─────────────────────────────────────────────────────────────────────────
+    const testForCylinder = (exprStr, constStr) => {
+        const rhsVal = parseFloat(constStr);
+        if (isNaN(rhsVal) || rhsVal <= 0) return null;
+
+        const termRegex = /(?:([+-])|^)(?:\(([xy])([+-]\d+(?:\.\d+)?)?\)|([xy]))\^2/g;
+        const matches = [...exprStr.matchAll(termRegex)];
+        if (matches.length === 2) {
+            const vars = {};
+            for (const m of matches) {
+                const v = (m[2] || m[4]).toLowerCase();
+                const off = m[3] ? -parseFloat(m[3]) : 0;
+                vars[v] = off;
+            }
+            if ('x' in vars && 'y' in vars) {
+                const r = Math.sqrt(rhsVal);
+                return {
+                    type: 'cylinder',
+                    name: 'Cylinder',
+                    formula: `x² + y² = ${rhsVal}`,
+                    axis: 'z',
+                    center: { x: vars.x, y: vars.y, z: 0 },
+                    radius: r,
+                    height: r * 2.5,
+                    raw: rawInput
+                };
+            }
+        }
+        return null;
+    };
+
+    const cylinder = testForCylinder(lhs, rhs) || testForCylinder(rhs, lhs);
+    if (cylinder) return cylinder;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 4. CONE DETECTION: z^2 = x^2 + y^2
+    // ─────────────────────────────────────────────────────────────────────────
+    if (clean === 'z^2=x^2+y^2' || clean === 'x^2+y^2=z^2' || clean === 'x^2+y^2-z^2=0') {
+        return {
+            type: 'cone',
+            name: 'Double Cone',
+            formula: 'z² = x² + y²',
+            center: { x: 0, y: 0, z: 0 },
+            raw: rawInput
+        };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 5. TORUS DETECTION: (sqrt(x^2+y^2)-R)^2 + z^2 = r^2
+    // ─────────────────────────────────────────────────────────────────────────
+    const torusMatch = clean.match(/^\(sqrt\(x\^2\+y\^2\)-(\d+(?:\.\d+)?)\)\^2\+z\^2=(\d+(?:\.\d+)?)$/);
+    if (torusMatch) {
+        const R = parseFloat(torusMatch[1]);
+        const r2 = parseFloat(torusMatch[2]);
+        return {
+            type: 'torus',
+            name: 'Torus',
+            formula: rawInput,
+            majorRadius: R,
+            minorRadius: Math.sqrt(r2),
+            raw: rawInput
+        };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 6. DUAL-SHEET SURFACE: z^2 = f(x, y)
+    // ─────────────────────────────────────────────────────────────────────────
+    if (lhs === 'z^2') {
+        return {
+            type: 'dual_sheet',
+            name: 'Dual-Sheet Surface',
+            formula: `z = ±√(${rhs})`,
+            expression: rhs,
+            raw: rawInput
+        };
+    } else if (rhs === 'z^2') {
+        return {
+            type: 'dual_sheet',
+            name: 'Dual-Sheet Surface',
+            formula: `z = ±√(${lhs})`,
+            expression: lhs,
+            raw: rawInput
+        };
+    }
+
+    return null;
+}
+
 export function parseEquation(rawInput) {
     if (!rawInput || typeof rawInput !== 'string') {
         return { error: 'Empty expression' };
@@ -406,6 +685,24 @@ export function parseEquation(rawInput) {
             }
         }
 
+        // Check for 3D Quadrics & Implicit geometric surfaces (Sphere, Ellipsoid, Cylinder, Cone, Torus, etc.)
+        const quadric = parseQuadricOrImplicit3D(clean);
+        if (quadric) {
+            return {
+                type: 'quadric3d',
+                quadricType: quadric.type,
+                quadric,
+                operator: '=',
+                leftSide: clean.split('=')[0].trim(),
+                rightSide: clean.split('=')[1].trim(),
+                expression: quadric.formula,
+                raw: rawInput,
+                parameters: [],
+                domainRestriction,
+                error: null
+            };
+        }
+
         // Check for general Implicit equation: f(x, y) = g(x, y) (e.g. x^2 + y^2 = 25)
         if (clean.includes('=')) {
             const [lhs, rhs] = clean.split('=');
@@ -524,6 +821,7 @@ export function compileExpression(rawExpr) {
             'CONSTANTS',
             'x',
             'y',
+            'z',
             't',
             'theta',
             'params',
@@ -544,9 +842,10 @@ export function compileExpression(rawExpr) {
         return function evaluate(vars = {}, customParams = {}) {
             const x = vars.x !== undefined ? vars.x : 0;
             const y = vars.y !== undefined ? vars.y : 0;
+            const z = vars.z !== undefined ? vars.z : 0;
             const t = vars.t !== undefined ? vars.t : (vars.x || 0);
             const theta = vars.theta !== undefined ? vars.theta : (vars.t || vars.x || 0);
-            const val = evaluator(MATH_FUNCTIONS, CONSTANTS, x, y, t, theta, customParams);
+            const val = evaluator(MATH_FUNCTIONS, CONSTANTS, x, y, z, t, theta, customParams);
             return typeof val === 'number' && !isNaN(val) && isFinite(val) ? val : (isNaN(val) ? NaN : (val > 0 ? Infinity : -Infinity));
         };
     } catch (err) {

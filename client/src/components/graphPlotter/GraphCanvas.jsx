@@ -224,6 +224,73 @@ export default function GraphCanvas({
                         tMax: eq.parsed.parametric.tMax,
                         samples: 800
                     });
+                } else if (eq.parsed.type === 'quadric3d' && eq.parsed.quadric) {
+                    const q = eq.parsed.quadric;
+                    if (q.type === 'sphere') {
+                        const R = q.radius || 4;
+                        const cx = q.center?.x || 0;
+                        const cy = q.center?.y || 0;
+                        const cz = q.center?.z || 0;
+                        const disc = R * R - cz * cz;
+                        if (disc > 0) {
+                            const r2d = Math.sqrt(disc);
+                            const circlePts = [];
+                            const steps = 240;
+                            for (let i = 0; i <= steps; i++) {
+                                const angle = (i / steps) * 2 * Math.PI;
+                                const mx = cx + r2d * Math.cos(angle);
+                                const my = cy + r2d * Math.sin(angle);
+                                circlePts.push({
+                                    x: mx,
+                                    y: my,
+                                    screenX: mathToScreenX(mx),
+                                    screenY: mathToScreenY(my)
+                                });
+                            }
+                            segments = [circlePts];
+                        }
+                    } else if (q.type === 'ellipsoid') {
+                        const { x: rx = 3, y: ry = 2, z: rz = 4 } = q.radii || {};
+                        const { x: cx = 0, y: cy = 0, z: cz = 0 } = q.center || {};
+                        const zFrac = (cz * cz) / (rz * rz || 1);
+                        if (zFrac <= 1) {
+                            const factor = Math.sqrt(1 - zFrac);
+                            const drx = rx * factor;
+                            const dry = ry * factor;
+                            const ellPts = [];
+                            const steps = 240;
+                            for (let i = 0; i <= steps; i++) {
+                                const angle = (i / steps) * 2 * Math.PI;
+                                const mx = cx + drx * Math.cos(angle);
+                                const my = cy + dry * Math.sin(angle);
+                                ellPts.push({
+                                    x: mx,
+                                    y: my,
+                                    screenX: mathToScreenX(mx),
+                                    screenY: mathToScreenY(my)
+                                });
+                            }
+                            segments = [ellPts];
+                        }
+                    } else if (q.type === 'cylinder') {
+                        const R = q.radius || 3;
+                        const cx = q.center?.x || 0;
+                        const cy = q.center?.y || 0;
+                        const circlePts = [];
+                        const steps = 240;
+                        for (let i = 0; i <= steps; i++) {
+                            const angle = (i / steps) * 2 * Math.PI;
+                            const mx = cx + R * Math.cos(angle);
+                            const my = cy + R * Math.sin(angle);
+                            circlePts.push({
+                                x: mx,
+                                y: my,
+                                screenX: mathToScreenX(mx),
+                                screenY: mathToScreenY(my)
+                            });
+                        }
+                        segments = [circlePts];
+                    }
                 } else {
                     // Standard Cartesian & Inequalities
                     segments = sampleFunctionCurve({

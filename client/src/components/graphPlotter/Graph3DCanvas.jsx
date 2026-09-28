@@ -3,12 +3,34 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { 
     RotateCcw, Play, Pause, Layers, Compass, 
-    ZoomIn, ZoomOut, Sparkles, ChevronDown, Check, Calculator
+    ZoomIn, ZoomOut, Sparkles, ChevronDown, Check, Calculator, Circle
 } from 'lucide-react';
-import { compileExpression } from './mathParser';
+import { compileExpression, parseQuadricOrImplicit3D } from './mathParser';
 
-// Built-in 3D mathematical surfaces
+// Built-in 3D mathematical surfaces and quadrics
 export const SURFACE_3D_PRESETS = [
+    {
+        id: 'sphere',
+        name: 'Sphere (3D Solid)',
+        formula: 'x^2 + y^2 + z^2 = 16',
+        description: 'Classic closed 3D spherical quad surface (Radius = 4)',
+        quadricType: 'sphere',
+        radius: 4,
+        center: { x: 0, y: 0, z: 0 },
+        xRange: [-4.5, 4.5],
+        yRange: [-4.5, 4.5]
+    },
+    {
+        id: 'torus',
+        name: 'Torus (Donut Ring)',
+        formula: '(sqrt(x^2+y^2) - 3)^2 + z^2 = 1',
+        description: 'Smooth 3D toroidal ring (Major R = 3, Minor r = 1)',
+        quadricType: 'torus',
+        majorRadius: 3,
+        minorRadius: 1,
+        xRange: [-4.5, 4.5],
+        yRange: [-4.5, 4.5]
+    },
     {
         id: 'ripple',
         name: 'Wave / Ripple',
@@ -73,6 +95,405 @@ export const SURFACE_3D_PRESETS = [
     }
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PARAMETRIC 3D GEOMETRIC MESH GENERATORS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function generateSphereMesh({ radius = 4, center = { x: 0, y: 0, z: 0 }, subType = 'full', latSteps = 26, lonSteps = 36 }) {
+    const rawR = radius || 4;
+    const cx = center.x || 0;
+    const cy = center.y || 0;
+    const cz = center.z || 0;
+
+    // Visual framing scale: target display radius ~3.6 units
+    const displayR = rawR > 4.5 ? 3.6 : (rawR < 1.8 ? 2.8 : rawR);
+    const rScale = displayR / rawR;
+
+    const vertices = [];
+    let minZ = Infinity, maxZ = -Infinity;
+
+    // Determine latitude range for full sphere vs hemisphere
+    let phiMax = Math.PI;
+    let phiMin = 0;
+    if (subType === 'upper_hemisphere') {
+        phiMax = Math.PI / 2;
+    } else if (subType === 'lower_hemisphere') {
+        phiMin = Math.PI / 2;
+    }
+
+    for (let j = 0; j <= latSteps; j++) {
+        const phi = phiMin + (j / latSteps) * (phiMax - phiMin);
+        const sinPhi = Math.sin(phi);
+        const cosPhi = Math.cos(phi);
+
+        for (let i = 0; i <= lonSteps; i++) {
+            const theta = (i / lonSteps) * 2 * Math.PI;
+            const sinTheta = Math.sin(theta);
+            const cosTheta = Math.cos(theta);
+
+            // Unit outward normal
+            const nx = sinPhi * cosTheta;
+            const ny = sinPhi * sinTheta;
+            const nz = cosPhi;
+
+            const rawZ = cz + rawR * nz;
+            if (rawZ < minZ) minZ = rawZ;
+            if (rawZ > maxZ) maxZ = rawZ;
+
+            vertices.push({
+                x: cx * rScale + displayR * nx,
+                y: cy * rScale + displayR * ny,
+                z: cz * rScale + displayR * nz,
+                rawZ,
+                nx, ny, nz
+            });
+        }
+    }
+
+    const zSpan = maxZ - minZ || 1;
+    const faces = [];
+
+    for (let j = 0; j < latSteps; j++) {
+        for (let i = 0; i < lonSteps; i++) {
+            const row1 = j * (lonSteps + 1);
+            const row2 = (j + 1) * (lonSteps + 1);
+            const i0 = row1 + i;
+            const i1 = row1 + i + 1;
+            const i2 = row2 + i + 1;
+            const i3 = row2 + i;
+
+            const v0 = vertices[i0], v1 = vertices[i1], v2 = vertices[i2], v3 = vertices[i3];
+            const avgRawZ = (v0.rawZ + v1.rawZ + v2.rawZ + v3.rawZ) / 4;
+            const normZ = Math.max(0, Math.min(1, (avgRawZ - minZ) / zSpan));
+
+            faces.push({
+                indices: [i0, i1, i2, i3],
+                avgZ: (v0.z + v1.z + v2.z + v3.z) / 4,
+                normZ,
+                normal: {
+                    nx: (v0.nx + v1.nx + v2.nx + v3.nx) / 4,
+                    ny: (v0.ny + v1.ny + v2.ny + v3.ny) / 4,
+                    nz: (v0.nz + v1.nz + v2.nz + v3.nz) / 4
+                }
+            });
+        }
+    }
+
+    const floorZ = -displayR * 1.15;
+    const bounds = displayR * 1.25;
+    return {
+        vertices,
+        faces,
+        minZ,
+        maxZ,
+        floorZ,
+        xRange: [-bounds, bounds],
+        yRange: [-bounds, bounds],
+        maxDimension: displayR
+    };
+}
+
+function generateEllipsoidMesh({ radii = { x: 3, y: 2, z: 4 }, center = { x: 0, y: 0, z: 0 }, latSteps = 26, lonSteps = 36 }) {
+    const { x: rx = 3, y: ry = 2, z: rz = 4 } = radii;
+    const { x: cx = 0, y: cy = 0, z: cz = 0 } = center;
+
+    const maxR = Math.max(rx, ry, rz);
+    const scale = maxR > 4.5 ? (3.6 / maxR) : (maxR < 1.8 ? (2.8 / maxR) : 1);
+
+    const drx = rx * scale, dry = ry * scale, drz = rz * scale;
+    const vertices = [];
+    let minZ = Infinity, maxZ = -Infinity;
+
+    for (let j = 0; j <= latSteps; j++) {
+        const phi = (j / latSteps) * Math.PI;
+        const sinPhi = Math.sin(phi);
+        const cosPhi = Math.cos(phi);
+
+        for (let i = 0; i <= lonSteps; i++) {
+            const theta = (i / lonSteps) * 2 * Math.PI;
+            const sinTheta = Math.sin(theta);
+            const cosTheta = Math.cos(theta);
+
+            const nx = (sinPhi * cosTheta) / (rx || 1);
+            const ny = (sinPhi * sinTheta) / (ry || 1);
+            const nz = cosPhi / (rz || 1);
+            const nLen = Math.hypot(nx, ny, nz) || 1;
+
+            const rawZ = cz + rz * cosPhi;
+            if (rawZ < minZ) minZ = rawZ;
+            if (rawZ > maxZ) maxZ = rawZ;
+
+            vertices.push({
+                x: cx * scale + drx * sinPhi * cosTheta,
+                y: cy * scale + dry * sinPhi * sinTheta,
+                z: cz * scale + drz * cosPhi,
+                rawZ,
+                nx: nx / nLen,
+                ny: ny / nLen,
+                nz: nz / nLen
+            });
+        }
+    }
+
+    const zSpan = maxZ - minZ || 1;
+    const faces = [];
+
+    for (let j = 0; j < latSteps; j++) {
+        for (let i = 0; i < lonSteps; i++) {
+            const row1 = j * (lonSteps + 1);
+            const row2 = (j + 1) * (lonSteps + 1);
+            const i0 = row1 + i;
+            const i1 = row1 + i + 1;
+            const i2 = row2 + i + 1;
+            const i3 = row2 + i;
+
+            const v0 = vertices[i0], v1 = vertices[i1], v2 = vertices[i2], v3 = vertices[i3];
+            const avgRawZ = (v0.rawZ + v1.rawZ + v2.rawZ + v3.rawZ) / 4;
+            const normZ = Math.max(0, Math.min(1, (avgRawZ - minZ) / zSpan));
+
+            faces.push({
+                indices: [i0, i1, i2, i3],
+                avgZ: (v0.z + v1.z + v2.z + v3.z) / 4,
+                normZ,
+                normal: {
+                    nx: (v0.nx + v1.nx + v2.nx + v3.nx) / 4,
+                    ny: (v0.ny + v1.ny + v2.ny + v3.ny) / 4,
+                    nz: (v0.nz + v1.nz + v2.nz + v3.nz) / 4
+                }
+            });
+        }
+    }
+
+    const bounds = Math.max(drx, dry) * 1.25;
+    return {
+        vertices,
+        faces,
+        minZ,
+        maxZ,
+        floorZ: -drz * 1.15,
+        xRange: [-bounds, bounds],
+        yRange: [-bounds, bounds],
+        maxDimension: Math.max(drx, dry, drz)
+    };
+}
+
+function generateTorusMesh({ majorRadius = 3, minorRadius = 1, uSteps = 32, vSteps = 24 }) {
+    const R = majorRadius || 3;
+    const r = minorRadius || 1;
+
+    const maxDim = R + r;
+    const scale = maxDim > 4.5 ? (3.6 / maxDim) : 1;
+    const dR = R * scale;
+    const dr = r * scale;
+
+    const vertices = [];
+    const minZ = -r, maxZ = r;
+
+    for (let j = 0; j <= uSteps; j++) {
+        const u = (j / uSteps) * 2 * Math.PI;
+        const cosU = Math.cos(u), sinU = Math.sin(u);
+
+        for (let i = 0; i <= vSteps; i++) {
+            const v = (i / vSteps) * 2 * Math.PI;
+            const cosV = Math.cos(v), sinV = Math.sin(v);
+
+            const x = (dR + dr * cosV) * cosU;
+            const y = (dR + dr * cosV) * sinU;
+            const z = dr * sinV;
+
+            const nx = cosV * cosU;
+            const ny = cosV * sinU;
+            const nz = sinV;
+
+            vertices.push({ x, y, z, rawZ: r * sinV, nx, ny, nz });
+        }
+    }
+
+    const zSpan = 2 * r || 1;
+    const faces = [];
+
+    for (let j = 0; j < uSteps; j++) {
+        for (let i = 0; i < vSteps; i++) {
+            const row1 = j * (vSteps + 1);
+            const row2 = (j + 1) * (vSteps + 1);
+            const i0 = row1 + i;
+            const i1 = row1 + i + 1;
+            const i2 = row2 + i + 1;
+            const i3 = row2 + i;
+
+            const v0 = vertices[i0], v1 = vertices[i1], v2 = vertices[i2], v3 = vertices[i3];
+            const avgRawZ = (v0.rawZ + v1.rawZ + v2.rawZ + v3.rawZ) / 4;
+            const normZ = Math.max(0, Math.min(1, (avgRawZ - minZ) / zSpan));
+
+            faces.push({
+                indices: [i0, i1, i2, i3],
+                avgZ: (v0.z + v1.z + v2.z + v3.z) / 4,
+                normZ,
+                normal: {
+                    nx: (v0.nx + v1.nx + v2.nx + v3.nx) / 4,
+                    ny: (v0.ny + v1.ny + v2.ny + v3.ny) / 4,
+                    nz: (v0.nz + v1.nz + v2.nz + v3.nz) / 4
+                }
+            });
+        }
+    }
+
+    const bounds = (dR + dr) * 1.15;
+    return {
+        vertices,
+        faces,
+        minZ,
+        maxZ,
+        floorZ: -dr * 1.4,
+        xRange: [-bounds, bounds],
+        yRange: [-bounds, bounds],
+        maxDimension: dR + dr
+    };
+}
+
+function generateCylinderMesh({ radius = 3, height = 6, radialSteps = 32, heightSteps = 16 }) {
+    const R = radius || 3;
+    const H = height || (R * 2);
+
+    const maxDim = Math.max(R, H / 2);
+    const scale = maxDim > 4.5 ? (3.6 / maxDim) : 1;
+    const dR = R * scale;
+    const dH = H * scale;
+
+    const vertices = [];
+    const minZ = -dH / 2, maxZ = dH / 2;
+
+    for (let j = 0; j <= heightSteps; j++) {
+        const z = -dH / 2 + (j / heightSteps) * dH;
+        for (let i = 0; i <= radialSteps; i++) {
+            const theta = (i / radialSteps) * 2 * Math.PI;
+            const cosT = Math.cos(theta), sinT = Math.sin(theta);
+            vertices.push({
+                x: dR * cosT,
+                y: dR * sinT,
+                z,
+                rawZ: z / scale,
+                nx: cosT,
+                ny: sinT,
+                nz: 0
+            });
+        }
+    }
+
+    const faces = [];
+    for (let j = 0; j < heightSteps; j++) {
+        for (let i = 0; i < radialSteps; i++) {
+            const row1 = j * (radialSteps + 1);
+            const row2 = (j + 1) * (radialSteps + 1);
+            const i0 = row1 + i;
+            const i1 = row1 + i + 1;
+            const i2 = row2 + i + 1;
+            const i3 = row2 + i;
+
+            const v0 = vertices[i0], v1 = vertices[i1], v2 = vertices[i2], v3 = vertices[i3];
+            const avgRawZ = (v0.rawZ + v1.rawZ + v2.rawZ + v3.rawZ) / 4;
+            const normZ = Math.max(0, Math.min(1, (avgRawZ - (-H / 2)) / H));
+
+            faces.push({
+                indices: [i0, i1, i2, i3],
+                avgZ: (v0.z + v1.z + v2.z + v3.z) / 4,
+                normZ,
+                normal: {
+                    nx: (v0.nx + v1.nx + v2.nx + v3.nx) / 4,
+                    ny: (v0.ny + v1.ny + v2.ny + v3.ny) / 4,
+                    nz: 0
+                }
+            });
+        }
+    }
+
+    const bounds = dR * 1.35;
+    return {
+        vertices,
+        faces,
+        minZ: -H / 2,
+        maxZ: H / 2,
+        floorZ: -dH / 2 * 1.1,
+        xRange: [-bounds, bounds],
+        yRange: [-bounds, bounds],
+        maxDimension: maxDim * scale
+    };
+}
+
+function generateConeMesh({ radius = 3, height = 5, radialSteps = 32, heightSteps = 16 }) {
+    const R = radius || 3;
+    const H = height || 5;
+    const maxDim = Math.max(R, H / 2);
+    const scale = maxDim > 4.5 ? (3.6 / maxDim) : 1;
+    const dR = R * scale;
+    const dH = H * scale;
+
+    const vertices = [];
+    for (let j = 0; j <= heightSteps; j++) {
+        const u = j / heightSteps;
+        const z = -dH / 2 + u * dH;
+        // Cone tapers from base to apex
+        const ringR = dR * (1 - u);
+
+        for (let i = 0; i <= radialSteps; i++) {
+            const theta = (i / radialSteps) * 2 * Math.PI;
+            const cosT = Math.cos(theta), sinT = Math.sin(theta);
+            vertices.push({
+                x: ringR * cosT,
+                y: ringR * sinT,
+                z,
+                rawZ: z / scale,
+                nx: cosT,
+                ny: sinT,
+                nz: dR / dH
+            });
+        }
+    }
+
+    const faces = [];
+    for (let j = 0; j < heightSteps; j++) {
+        for (let i = 0; i < radialSteps; i++) {
+            const row1 = j * (radialSteps + 1);
+            const row2 = (j + 1) * (radialSteps + 1);
+            const i0 = row1 + i;
+            const i1 = row1 + i + 1;
+            const i2 = row2 + i + 1;
+            const i3 = row2 + i;
+
+            const v0 = vertices[i0], v1 = vertices[i1], v2 = vertices[i2], v3 = vertices[i3];
+            const avgRawZ = (v0.rawZ + v1.rawZ + v2.rawZ + v3.rawZ) / 4;
+            const normZ = Math.max(0, Math.min(1, (avgRawZ - (-H / 2)) / H));
+
+            faces.push({
+                indices: [i0, i1, i2, i3],
+                avgZ: (v0.z + v1.z + v2.z + v3.z) / 4,
+                normZ,
+                normal: {
+                    nx: (v0.nx + v1.nx + v2.nx + v3.nx) / 4,
+                    ny: (v0.ny + v1.ny + v2.ny + v3.ny) / 4,
+                    nz: dR / dH
+                }
+            });
+        }
+    }
+
+    const bounds = dR * 1.35;
+    return {
+        vertices,
+        faces,
+        minZ: -H / 2,
+        maxZ: H / 2,
+        floorZ: -dH / 2 * 1.1,
+        xRange: [-bounds, bounds],
+        yRange: [-bounds, bounds],
+        maxDimension: maxDim * scale
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN GRAPH 3D CANVAS COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function Graph3DCanvas({
     width = 700,
     height = 500,
@@ -117,6 +538,40 @@ export default function Graph3DCanvas({
         // 1. Check if user explicitly picked a 3D preset
         const preset = SURFACE_3D_PRESETS.find(p => p.id === selectedSourceId);
         if (preset) {
+            if (preset.quadricType === 'sphere') {
+                return {
+                    type: 'quadric',
+                    id: preset.id,
+                    name: preset.name,
+                    formula: preset.formula,
+                    quadric: {
+                        type: 'sphere',
+                        name: preset.name,
+                        formula: preset.formula,
+                        radius: preset.radius || 4,
+                        center: { x: 0, y: 0, z: 0 }
+                    },
+                    xRange: preset.xRange,
+                    yRange: preset.yRange
+                };
+            }
+            if (preset.quadricType === 'torus') {
+                return {
+                    type: 'quadric',
+                    id: preset.id,
+                    name: preset.name,
+                    formula: preset.formula,
+                    quadric: {
+                        type: 'torus',
+                        name: preset.name,
+                        formula: preset.formula,
+                        majorRadius: preset.majorRadius || 3,
+                        minorRadius: preset.minorRadius || 1
+                    },
+                    xRange: preset.xRange,
+                    yRange: preset.yRange
+                };
+            }
             return {
                 type: 'preset',
                 id: preset.id,
@@ -141,6 +596,20 @@ export default function Graph3DCanvas({
         }
 
         if (targetEq) {
+            // Check if this equation is a 3D Quadric (Sphere, Ellipsoid, Cylinder, Torus, etc.)
+            const quadric = targetEq.parsed?.quadric || parseQuadricOrImplicit3D(targetEq.raw || '');
+            if (quadric) {
+                return {
+                    type: 'quadric',
+                    id: targetEq.id,
+                    name: targetEq.raw || quadric.name,
+                    formula: quadric.formula || targetEq.raw,
+                    quadric,
+                    color: targetEq.color
+                };
+            }
+
+            // Otherwise, height-map function z = f(x, y)
             let fn = targetEq.compiled;
             let formula = targetEq.parsed?.expression || targetEq.raw || 'Custom Function';
 
@@ -175,16 +644,22 @@ export default function Graph3DCanvas({
             }
         }
 
-        // 3. Fallback to default preset (Ripple)
+        // 3. Fallback to default preset (Sphere)
         const fallback = SURFACE_3D_PRESETS[0];
         return {
-            type: 'preset',
+            type: 'quadric',
             id: fallback.id,
             name: fallback.name,
             formula: fallback.formula,
+            quadric: {
+                type: 'sphere',
+                name: fallback.name,
+                formula: fallback.formula,
+                radius: fallback.radius || 4,
+                center: { x: 0, y: 0, z: 0 }
+            },
             xRange: fallback.xRange,
-            yRange: fallback.yRange,
-            fn: fallback.fn
+            yRange: fallback.yRange
         };
     }, [selectedSourceId, selectedEqId, equations, parameters]);
 
@@ -208,8 +683,49 @@ export default function Graph3DCanvas({
         };
     }, [isAutoSpinning]);
 
-    // Generate 3D surface mesh vertices and faces with adaptive height scaling
+    // Generate 3D surface mesh vertices and faces
     const meshData = useMemo(() => {
+        // ─────────────────────────────────────────────────────────────────────
+        // 1. Quadric geometric surface mesh generation (Sphere, Ellipsoid, etc.)
+        // ─────────────────────────────────────────────────────────────────────
+        if (activeSurface.type === 'quadric' && activeSurface.quadric) {
+            const q = activeSurface.quadric;
+            if (q.type === 'sphere') {
+                return generateSphereMesh({
+                    radius: q.radius || 4,
+                    center: q.center || { x: 0, y: 0, z: 0 },
+                    subType: q.subType || 'full'
+                });
+            }
+            if (q.type === 'ellipsoid') {
+                return generateEllipsoidMesh({
+                    radii: q.radii || { x: 3, y: 2, z: 4 },
+                    center: q.center || { x: 0, y: 0, z: 0 }
+                });
+            }
+            if (q.type === 'torus') {
+                return generateTorusMesh({
+                    majorRadius: q.majorRadius || 3,
+                    minorRadius: q.minorRadius || 1
+                });
+            }
+            if (q.type === 'cylinder') {
+                return generateCylinderMesh({
+                    radius: q.radius || 3,
+                    height: q.height || 6
+                });
+            }
+            if (q.type === 'cone') {
+                return generateConeMesh({
+                    radius: 3,
+                    height: 5
+                });
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // 2. Standard height-map surface grid: z = f(x, y)
+        // ─────────────────────────────────────────────────────────────────────
         const gridSteps = 24; // 24x24 facets = 576 quads for smooth 60fps SVG rendering
         const [xMin, xMax] = activeSurface.xRange || [-4, 4];
         const [yMin, yMax] = activeSurface.yRange || [-4, 4];
@@ -233,7 +749,6 @@ export default function Graph3DCanvas({
                 } catch {
                     z = 0;
                 }
-                // Cap extreme singularities
                 z = Math.max(-50, Math.min(50, z));
                 if (z < minZ) minZ = z;
                 if (z > maxZ) maxZ = z;
@@ -251,7 +766,6 @@ export default function Graph3DCanvas({
 
         const zSpan = maxZ - minZ;
         const xySpan = Math.max(xMax - xMin, yMax - yMin);
-        // Vertical ceiling ~4.5 units in 3D world space
         const maxSpan = xySpan * 0.65;
         const zScale = (zSpan > maxSpan && zSpan > 0) ? (maxSpan / zSpan) : 1;
         const zCenter = (minZ + maxZ) / 2;
@@ -260,7 +774,6 @@ export default function Graph3DCanvas({
         for (let j = 0; j <= gridSteps; j++) {
             for (let i = 0; i <= gridSteps; i++) {
                 const pt = rawGrid[j][i];
-                // Center and scale Z for balanced rendering
                 const scaledZ = (pt.rawZ - zCenter) * zScale;
                 vertices.push({
                     x: pt.x,
@@ -271,7 +784,6 @@ export default function Graph3DCanvas({
             }
         }
 
-        // Construct quad faces
         const faces = [];
         for (let j = 0; j < gridSteps; j++) {
             for (let i = 0; i < gridSteps; i++) {
@@ -294,7 +806,16 @@ export default function Graph3DCanvas({
         }
 
         const floorZ = (minZ - zCenter) * zScale;
-        return { vertices, faces, minZ, maxZ, floorZ };
+        return {
+            vertices,
+            faces,
+            minZ,
+            maxZ,
+            floorZ,
+            xRange: [xMin, xMax],
+            yRange: [yMin, yMax],
+            maxDimension: Math.max(xySpan / 2, (maxSpan || 2))
+        };
     }, [activeSurface]);
 
     // Color gradient interpolation
@@ -329,7 +850,7 @@ export default function Graph3DCanvas({
         }
 
         // Apply directional lighting
-        const diffuse = Math.max(0.4, Math.min(1.2, lighting));
+        const diffuse = Math.max(0.35, Math.min(1.3, lighting));
         r = Math.min(255, Math.max(0, Math.round(r * diffuse)));
         g = Math.min(255, Math.max(0, Math.round(g * diffuse)));
         b = Math.min(255, Math.max(0, Math.round(b * diffuse)));
@@ -380,13 +901,21 @@ export default function Graph3DCanvas({
             const avgDepth = (v0.depth + v1.depth + v2.depth + v3.depth) / 4;
 
             // Compute face normal in world space for lighting
-            const ax = v1.x - v0.x, ay = v1.y - v0.y, az = v1.z - v0.z;
-            const bx = v3.x - v0.x, by = v3.y - v0.y, bz = v3.z - v0.z;
-            const nx = ay * bz - az * by;
-            const ny = az * bx - ax * bz;
-            const nz = ax * by - ay * bx;
+            let nx = 0, ny = 0, nz = 1;
+            if (f.normal) {
+                nx = f.normal.nx;
+                ny = f.normal.ny;
+                nz = f.normal.nz;
+            } else {
+                const ax = v1.x - v0.x, ay = v1.y - v0.y, az = v1.z - v0.z;
+                const bx = v3.x - v0.x, by = v3.y - v0.y, bz = v3.z - v0.z;
+                nx = ay * bz - az * by;
+                ny = az * bx - ax * bz;
+                nz = ax * by - ay * bx;
+            }
             const nLen = Math.hypot(nx, ny, nz) || 1;
-            const lighting = 0.5 + 0.5 * Math.abs((nx * nlx + ny * nly + nz * nlz) / nLen);
+            const dot = (nx * nlx + ny * nly + nz * nlz) / nLen;
+            const lighting = 0.5 + 0.5 * Math.abs(dot);
 
             const path = `M ${v0.sx.toFixed(1)} ${v0.sy.toFixed(1)} L ${v1.sx.toFixed(1)} ${v1.sy.toFixed(1)} L ${v2.sx.toFixed(1)} ${v2.sy.toFixed(1)} L ${v3.sx.toFixed(1)} ${v3.sy.toFixed(1)} Z`;
 
@@ -400,15 +929,16 @@ export default function Graph3DCanvas({
         }).sort((a, b) => a.avgDepth - b.avgDepth);
 
         // 3D Coordinate Axes (X: red, Y: green, Z: blue)
-        const axisLength = 3.8;
+        const maxDim = meshData.maxDimension || 3.5;
+        const axisLength = Math.max(3.8, maxDim * 1.35);
         const origin = transformPoint(0, 0, 0);
         const axisX = transformPoint(axisLength, 0, 0);
         const axisY = transformPoint(0, axisLength, 0);
-        const axisZ = transformPoint(0, 0, axisLength * 0.8);
+        const axisZ = transformPoint(0, 0, axisLength * 0.9);
 
         // Ground bounding box wireframe at floorZ
-        const [xMin, xMax] = activeSurface.xRange || [-4, 4];
-        const [yMin, yMax] = activeSurface.yRange || [-4, 4];
+        const [xMin, xMax] = meshData.xRange || [-4, 4];
+        const [yMin, yMax] = meshData.yRange || [-4, 4];
         const floorZ = meshData.floorZ;
         const floorP1 = transformPoint(xMin, yMin, floorZ);
         const floorP2 = transformPoint(xMax, yMin, floorZ);
@@ -424,7 +954,7 @@ export default function Graph3DCanvas({
             axisZ,
             floorBox: [floorP1, floorP2, floorP3, floorP4]
         };
-    }, [meshData, rotX, rotY, zoom, width, height, activeSurface]);
+    }, [meshData, rotX, rotY, zoom, width, height]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // INTERACTIVE ROTATION & DRAG HANDLERS
@@ -623,6 +1153,8 @@ export default function Graph3DCanvas({
                     >
                         {activeSurface.type === 'equation' ? (
                             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: activeSurface.color || '#6366f1' }} />
+                        ) : activeSurface.quadric?.type === 'sphere' ? (
+                            <Circle className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                         ) : (
                             <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                         )}
@@ -631,7 +1163,7 @@ export default function Graph3DCanvas({
                     </button>
 
                     {showPresetDropdown && (
-                        <div className={`absolute right-0 top-full mt-1.5 w-64 max-h-80 overflow-y-auto border rounded-xl shadow-2xl p-1.5 flex flex-col gap-1 z-30 animate-in fade-in duration-100 ${
+                        <div className={`absolute right-0 top-full mt-1.5 w-68 max-h-80 overflow-y-auto border rounded-xl shadow-2xl p-1.5 flex flex-col gap-1 z-30 animate-in fade-in duration-100 ${
                             isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                         }`}>
                             {/* User Equations Section */}
@@ -787,8 +1319,25 @@ export default function Graph3DCanvas({
                 <div className={`px-2.5 py-1 rounded-lg border backdrop-blur-md shadow-xs flex items-center gap-1.5 ${
                     isDark ? 'bg-slate-900/90 border-slate-800 text-slate-200' : 'bg-white/95 border-slate-200 text-slate-800'
                 }`}>
-                    <span className="font-bold text-sky-400">z = </span>
-                    <span className="font-semibold">{activeSurface.formula}</span>
+                    {activeSurface.type === 'quadric' && activeSurface.quadric?.type === 'sphere' ? (
+                        <>
+                            <span className="font-bold text-sky-400">Sphere: </span>
+                            <span className="font-semibold">{activeSurface.name}</span>
+                            <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-400 text-[10px] font-semibold">
+                                R = {activeSurface.quadric.radius}
+                            </span>
+                        </>
+                    ) : activeSurface.type === 'quadric' ? (
+                        <>
+                            <span className="font-bold text-sky-400">Surface: </span>
+                            <span className="font-semibold">{activeSurface.name}</span>
+                        </>
+                    ) : (
+                        <>
+                            <span className="font-bold text-sky-400">z = </span>
+                            <span className="font-semibold">{activeSurface.formula}</span>
+                        </>
+                    )}
                 </div>
                 <div className={`text-[10px] px-1.5 opacity-60 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                     Drag to rotate · Scroll to zoom
