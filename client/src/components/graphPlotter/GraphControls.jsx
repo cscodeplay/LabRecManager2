@@ -38,7 +38,11 @@ export default function GraphControls({
     onExportGraph,
     onConvertToStatic,
     theme = 'dark',
-    onToggleTheme
+    onToggleTheme,
+    showIntersections = false,
+    onToggleIntersections,
+    graphMode = '2d',
+    onToggleGraphMode
 }) {
     const isDark = theme === 'dark';
     const [showRangeModal, setShowRangeModal] = useState(false);
@@ -204,6 +208,47 @@ export default function GraphControls({
 
             <div className={`w-px h-4 mx-0.5 ${isDark ? 'bg-slate-700/80' : 'bg-slate-300'}`} />
 
+            {/* 2D / 3D Mode Switch */}
+            {onToggleGraphMode && (
+                <button
+                    type="button"
+                    onClick={onToggleGraphMode}
+                    className={`px-2 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition ${
+                        graphMode === '3d'
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : (isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100')
+                    }`}
+                    title={graphMode === '3d' ? "Switch to 2D Graph Plotter" : "Switch to 3D Rotatable Surface Graph"}
+                >
+                    <span className="font-mono">{graphMode === '3d' ? '3D Surface' : '2D Plane'}</span>
+                </button>
+            )}
+
+            {/* Intersections Checkbox Toggle */}
+            {onToggleIntersections && (
+                <button
+                    type="button"
+                    onClick={onToggleIntersections}
+                    className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                        showIntersections
+                            ? 'bg-rose-500/20 text-rose-400 ring-1 ring-rose-500/40'
+                            : (isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100')
+                    }`}
+                    title={showIntersections ? "Hide Points of Intersection of Curves" : "Display Points of Intersection of Curves"}
+                >
+                    <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors ${
+                        showIntersections 
+                            ? 'bg-rose-500 border-rose-500 text-white' 
+                            : (isDark ? 'border-slate-500 bg-slate-800' : 'border-slate-400 bg-white')
+                    }`}>
+                        {showIntersections && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                    </div>
+                    <span className="hidden md:inline">Intersect</span>
+                </button>
+            )}
+
+            <div className={`w-px h-4 mx-0.5 ${isDark ? 'bg-slate-700/80' : 'bg-slate-300'}`} />
+
             {/* Theme Toggle (Dark / Light) */}
             {onToggleTheme && (
                 <button
@@ -254,7 +299,7 @@ export default function GraphControls({
                 </button>
 
                 {showAnalysisMenu && (
-                    <div className={`absolute right-0 bottom-full mb-2 border rounded-xl shadow-2xl p-1.5 w-52 flex flex-col gap-0.5 text-xs z-50 animate-in fade-in duration-100 ${
+                    <div className={`absolute left-0 top-full mt-2 border rounded-xl shadow-2xl p-1.5 w-52 flex flex-col gap-0.5 text-xs z-50 animate-in fade-in duration-100 ${
                         isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                     }`}>
                         <div className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider border-b ${
@@ -325,7 +370,7 @@ export default function GraphControls({
                 </button>
 
                 {showAnnotationMenu && (
-                    <div className={`absolute right-0 bottom-full mb-2 border rounded-xl shadow-2xl p-1.5 w-48 flex flex-col gap-0.5 text-xs z-50 animate-in fade-in duration-100 ${
+                    <div className={`absolute left-0 top-full mt-2 border rounded-xl shadow-2xl p-1.5 w-48 flex flex-col gap-0.5 text-xs z-50 animate-in fade-in duration-100 ${
                         isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                     }`}>
                         <div className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider border-b ${
@@ -415,7 +460,7 @@ export default function GraphControls({
                 </button>
 
                 {showExportMenu && (
-                    <div className={`absolute right-0 bottom-full mb-2 border rounded-xl shadow-2xl p-1.5 w-56 flex flex-col gap-0.5 text-xs z-50 animate-in fade-in duration-100 ${
+                    <div className={`absolute right-0 top-full mt-2 border rounded-xl shadow-2xl p-1.5 w-56 flex flex-col gap-0.5 text-xs z-50 animate-in fade-in duration-100 ${
                         isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                     }`}>
                         <div className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider border-b ${

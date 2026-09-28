@@ -1037,3 +1037,33 @@ function roundTo(num, decimals = 4) {
     const factor = Math.pow(10, decimals);
     return Math.round(num * factor) / factor;
 }
+
+/**
+ * Format math formulas with Unicode superscripts and mathematical typography
+ * Converts e.g. x^2 -> x², y = 2x^3 - 4x^-1 -> y = 2x³ - 4x⁻¹, r = 3*sin(2*theta) -> r = 3·sin(2·θ)
+ */
+export function formatMathSuperscripts(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    const SUPERSCRIPTS = {
+        '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+        '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+        '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾',
+        'n': 'ⁿ', 'i': 'ⁱ', 'x': 'ˣ', 'y': 'ʸ', 'a': 'ᵃ', 'b': 'ᵇ', 't': 'ᵗ'
+    };
+
+    // Replace ^(expression)
+    let formatted = raw.replace(/\^\(([^)]+)\)/g, (_, exp) => {
+        return exp.split('').map(c => SUPERSCRIPTS[c] || c).join('');
+    });
+    // Replace ^alphanumeric
+    formatted = formatted.replace(/\^([0-9a-zA-Z+-]+)/g, (_, exp) => {
+        return exp.split('').map(c => SUPERSCRIPTS[c] || c).join('');
+    });
+    // Replace * with ·
+    formatted = formatted.replace(/\*/g, '·');
+    // Replace greek letters
+    formatted = formatted.replace(/\btheta\b/gi, 'θ');
+    formatted = formatted.replace(/\bpi\b/gi, 'π');
+    return formatted;
+}
+

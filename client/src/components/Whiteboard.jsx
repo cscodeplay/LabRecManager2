@@ -3736,8 +3736,8 @@ export default function Whiteboard({
         const handleKeyDown = (e) => {
             const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
             const modKey = isMac ? e.metaKey : e.ctrlKey;
-            const activeTag = document.activeElement.tagName.toLowerCase();
-            const isInput = activeTag === 'input' || activeTag === 'textarea';
+            const activeTag = document.activeElement?.tagName?.toLowerCase() || '';
+            const isInput = activeTag === 'input' || activeTag === 'textarea' || Boolean(document.activeElement?.isContentEditable) || Boolean(document.activeElement?.closest?.('input, textarea, [contenteditable="true"], [data-interactive="true"]'));
 
             if (isInput) return; // let default inputs work
 
@@ -3905,7 +3905,7 @@ export default function Whiteboard({
                 e.preventDefault();
                 handleSendToBack();
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (!isInput || selectedImageIds.length > 0 || selection || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedMediaId || selected3DId || selectedGraphId) {
+                if (!isInput && (selectedImageIds.length > 0 || selection || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedMediaId || selected3DId || selectedGraphId)) {
                     e.preventDefault();
                     handleDelete();
                 }
@@ -8541,7 +8541,10 @@ export default function Whiteboard({
         const currentGraphObjects = (pageGraphObjects[currentPage] || []).filter(Boolean);
         for (const graphObj of currentGraphObjects) {
             try {
-                const domGraphSvg = document.querySelector(`[data-graph-id="${graphObj.id}"] svg`);
+                const domGraphSvg = document.querySelector(`[data-graph-id="${graphObj.id}"] svg[data-graph-canvas-svg="true"]`) ||
+                                    document.querySelector(`[data-graph-id="${graphObj.id}"] .graph-canvas-svg`) ||
+                                    document.querySelectorAll(`[data-graph-id="${graphObj.id}"] svg`)[1] ||
+                                    document.querySelector(`[data-graph-id="${graphObj.id}"] svg`);
                 if (domGraphSvg) {
                     const serializer = new XMLSerializer();
                     let svgStr = serializer.serializeToString(domGraphSvg);
@@ -8556,13 +8559,51 @@ export default function Whiteboard({
                             ctx.save();
                             const gW = graphObj.width || 760;
                             const gH = graphObj.height || 480;
+                            const isDark = graphObj.theme === 'dark';
                             ctx.translate(graphObj.x || 0, graphObj.y || 0);
                             if (graphObj.rotation) {
                                 ctx.translate(gW / 2, gH / 2);
                                 ctx.rotate((graphObj.rotation * Math.PI) / 180);
                                 ctx.translate(-gW / 2, -gH / 2);
                             }
-                            ctx.drawImage(img, 0, 0, gW, gH);
+                            
+                            // Card background & rounded border
+                            ctx.fillStyle = isDark ? '#0f172a' : '#ffffff';
+                            ctx.strokeStyle = isDark ? '#334155' : '#cbd5e1';
+                            ctx.lineWidth = 2;
+                            ctx.beginPath();
+                            if (typeof ctx.roundRect === 'function') {
+                                ctx.roundRect(0, 0, gW, gH, 16);
+                            } else {
+                                ctx.rect(0, 0, gW, gH);
+                            }
+                            ctx.fill();
+                            ctx.stroke();
+
+                            // Header bar
+                            ctx.fillStyle = isDark ? '#020617' : '#f1f5f9';
+                            ctx.beginPath();
+                            if (typeof ctx.roundRect === 'function') {
+                                ctx.roundRect(0, 0, gW, 40, [16, 16, 0, 0]);
+                            } else {
+                                ctx.rect(0, 0, gW, 40);
+                            }
+                            ctx.fill();
+
+                            // Header title & indicator
+                            ctx.fillStyle = '#10b981';
+                            ctx.beginPath();
+                            ctx.arc(18, 20, 4, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.fillStyle = isDark ? '#e2e8f0' : '#1e293b';
+                            ctx.font = 'bold 12px sans-serif';
+                            ctx.fillText(graphObj.title || 'Graph Plotter', 30, 24);
+
+                            // Draw SVG canvas into body area below header
+                            const svgRect = domGraphSvg.getBoundingClientRect();
+                            const canvasW = svgRect.width || gW;
+                            const canvasH = svgRect.height || (gH - 40);
+                            ctx.drawImage(img, gW - canvasW, 40, canvasW, gH - 40);
                             ctx.restore();
                             URL.revokeObjectURL(blobUrl);
                             resolve();

@@ -8,6 +8,7 @@ import {
 } from './mathParser';
 import { getEquationColor } from './colorPalette';
 import GraphCanvas from './GraphCanvas';
+import Graph3DCanvas from './Graph3DCanvas';
 import EquationEditor from './EquationEditor';
 import GraphControls from './GraphControls';
 import { 
@@ -46,6 +47,10 @@ export default function WhiteboardGraphObject({
     // Theme (dark / light)
     const theme = graph?.theme || 'dark';
     const isDark = theme === 'dark';
+
+    // 2D Curve Plotter vs 3D Surface Graph Mode
+    const [graphMode, setGraphMode] = useState(graph?.graphMode || '2d');
+    const [showIntersections, setShowIntersections] = useState(Boolean(graph?.showIntersections));
 
     // Equation editor panel visibility (drawer toggle)
     const [showDrawer, setShowDrawer] = useState(graph?.showDrawer !== undefined ? graph.showDrawer : true);
@@ -302,7 +307,9 @@ export default function WhiteboardGraphObject({
     // ─────────────────────────────────────────────────────────────────────────
 
     const handleExportGraph = async (type) => {
-        const svgEl = containerRef.current?.querySelector('svg');
+        const svgEl = containerRef.current?.querySelector('svg[data-graph-canvas-svg="true"]') ||
+                      containerRef.current?.querySelector('.graph-canvas-svg') ||
+                      containerRef.current?.querySelector('svg');
         if (!svgEl) return;
 
         try {
@@ -326,11 +333,15 @@ export default function WhiteboardGraphObject({
                 const img = new Image();
                 img.onload = async () => {
                     const canvas = document.createElement('canvas');
-                    canvas.width = svgEl.clientWidth * 2;
-                    canvas.height = svgEl.clientHeight * 2;
+                    const targetW = svgEl.clientWidth || (svgEl.getBoundingClientRect ? svgEl.getBoundingClientRect().width : 800);
+                    const targetH = svgEl.clientHeight || (svgEl.getBoundingClientRect ? svgEl.getBoundingClientRect().height : 600);
+                    canvas.width = targetW * 2;
+                    canvas.height = targetH * 2;
                     const ctx = canvas.getContext('2d');
                     ctx.scale(2, 2);
-                    ctx.drawImage(img, 0, 0);
+                    ctx.fillStyle = isDark ? '#020617' : '#ffffff';
+                    ctx.fillRect(0, 0, targetW, targetH);
+                    ctx.drawImage(img, 0, 0, targetW, targetH);
                     URL.revokeObjectURL(url);
 
                     if (type === 'copy_image') {
@@ -368,7 +379,9 @@ export default function WhiteboardGraphObject({
 
     // Convert to static drawing
     const handleConvertToStatic = async () => {
-        const svgEl = containerRef.current?.querySelector('svg');
+        const svgEl = containerRef.current?.querySelector('svg[data-graph-canvas-svg="true"]') ||
+                      containerRef.current?.querySelector('.graph-canvas-svg') ||
+                      containerRef.current?.querySelector('svg');
         if (!svgEl) return;
 
         try {
@@ -380,10 +393,14 @@ export default function WhiteboardGraphObject({
             const img = new Image();
             img.onload = () => {
                 const canvas = document.createElement('canvas');
-                canvas.width = svgEl.clientWidth;
-                canvas.height = svgEl.clientHeight;
+                const targetW = svgEl.clientWidth || (svgEl.getBoundingClientRect ? svgEl.getBoundingClientRect().width : 800);
+                const targetH = svgEl.clientHeight || (svgEl.getBoundingClientRect ? svgEl.getBoundingClientRect().height : 600);
+                canvas.width = targetW;
+                canvas.height = targetH;
                 const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
+                ctx.fillStyle = isDark ? '#020617' : '#ffffff';
+                ctx.fillRect(0, 0, targetW, targetH);
+                ctx.drawImage(img, 0, 0, targetW, targetH);
                 URL.revokeObjectURL(url);
 
                 const dataUrl = canvas.toDataURL('image/png');
@@ -437,6 +454,11 @@ export default function WhiteboardGraphObject({
         <div
             ref={containerRef}
             data-graph-id={graph?.id}
+            data-interactive="true"
+            onPointerDown={(e) => {
+                // Ensure interactions inside graph object don't bubble to canvas selection handlers
+                e.stopPropagation();
+            }}
             onClick={() => onSelect && onSelect(graph?.id)}
             style={{
                 position: 'absolute',
@@ -609,29 +631,39 @@ export default function WhiteboardGraphObject({
                         </button>
                     )}
 
-                    <GraphCanvas
-                        width={canvasWidth}
-                        height={canvasHeight}
-                        equations={compiledEquations}
-                        selectedEqId={selectedEqId}
-                        onSelectEquation={(id) => setSelectedEqId(id)}
-                        viewBounds={viewBounds}
-                        onUpdateViewBounds={(nb) => handleUpdate({ viewBounds: nb })}
-                        coordinateSystem={coordinateSystem}
-                        showGrid={showGrid}
-                        showMinorGrid={showMinorGrid}
-                        showAxisLabels={showAxisLabels}
-                        lockAspectRatio={lockAspectRatio}
-                        parameters={parameters}
-                        legendConfig={legendConfig}
-                        activeAnalysis={activeAnalysis}
-                        onUpdateAnalysis={setActiveAnalysis}
-                        annotations={annotations}
-                        onUpdateAnnotations={(ann) => handleUpdate({ annotations: ann })}
-                        activeAnnotationTool={activeAnnotationTool}
-                        isPresentationMode={isPresentationMode}
-                        theme={theme}
-                    />
+                    {graphMode === '3d' ? (
+                        <Graph3DCanvas
+                            width={canvasWidth}
+                            height={canvasHeight}
+                            equations={compiledEquations}
+                            theme={theme}
+                        />
+                    ) : (
+                        <GraphCanvas
+                            width={canvasWidth}
+                            height={canvasHeight}
+                            equations={compiledEquations}
+                            selectedEqId={selectedEqId}
+                            onSelectEquation={(id) => setSelectedEqId(id)}
+                            viewBounds={viewBounds}
+                            onUpdateViewBounds={(nb) => handleUpdate({ viewBounds: nb })}
+                            coordinateSystem={coordinateSystem}
+                            showGrid={showGrid}
+                            showMinorGrid={showMinorGrid}
+                            showAxisLabels={showAxisLabels}
+                            lockAspectRatio={lockAspectRatio}
+                            parameters={parameters}
+                            legendConfig={legendConfig}
+                            activeAnalysis={activeAnalysis}
+                            onUpdateAnalysis={setActiveAnalysis}
+                            annotations={annotations}
+                            onUpdateAnnotations={(ann) => handleUpdate({ annotations: ann })}
+                            activeAnnotationTool={activeAnnotationTool}
+                            isPresentationMode={isPresentationMode}
+                            theme={theme}
+                            showIntersections={showIntersections}
+                        />
+                    )}
 
                     {/* Floating Graph Controls Toolbar at Top of Canvas */}
                     <div className="absolute top-2 left-2 z-30">
@@ -679,6 +711,10 @@ export default function WhiteboardGraphObject({
                             onConvertToStatic={handleConvertToStatic}
                             theme={theme}
                             onToggleTheme={handleToggleTheme}
+                            showIntersections={showIntersections}
+                            onToggleIntersections={() => setShowIntersections(prev => !prev)}
+                            graphMode={graphMode}
+                            onToggleGraphMode={() => setGraphMode(prev => prev === '3d' ? '2d' : '3d')}
                         />
                     </div>
 

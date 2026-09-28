@@ -13,7 +13,8 @@ import {
     findIntersections,
     calculateDefiniteIntegral,
     getTangentLine,
-    getSecantLine
+    getSecantLine,
+    formatMathSuperscripts
 } from './mathParser';
 import { hexToRgba } from './colorPalette';
 import katex from 'katex';
@@ -56,6 +57,7 @@ export default function GraphCanvas({
     parameters = {},
     legendConfig = { show: true, position: 'top-right' },
     showCurveLabels = true,
+    showIntersections = false,
     activeAnalysis = null, // { type: 'roots' | 'extrema' | 'intersections' | 'tangent' | 'integral' | 'derivative', eqId, x0, a, b }
     onUpdateAnalysis,
     annotations = [],
@@ -387,15 +389,56 @@ export default function GraphCanvas({
         return results;
     }, [activeAnalysis, equations, xMin, xMax, yMin, yMax, parameters, mathToScreenX, mathToScreenY, width, height]);
 
+    // Automatic intersection calculation across visible curves when showIntersections is enabled
+    const curveIntersections = useMemo(() => {
+        if (!showIntersections) return [];
+        const visibleFuncs = equations.filter(e => e.visible && e.compiled);
+        if (visibleFuncs.length < 2) return [];
+
+        const pts = [];
+        const seen = new Set();
+        for (let i = 0; i < visibleFuncs.length; i++) {
+            for (let j = i + 1; j < visibleFuncs.length; j++) {
+                const eq1 = visibleFuncs[i];
+                const eq2 = visibleFuncs[j];
+                try {
+                    const rawPts = findIntersections(eq1.compiled, eq2.compiled, xMin, xMax, parameters, 250);
+                    rawPts.forEach(p => {
+                        const key = `${p.x.toFixed(2)}_${p.y.toFixed(2)}`;
+                        if (!seen.has(key)) {
+                            seen.add(key);
+                            pts.push({
+                                x: p.x,
+                                y: p.y,
+                                screenX: mathToScreenX(p.x),
+                                screenY: mathToScreenY(p.y),
+                                eq1Id: eq1.id,
+                                eq2Id: eq2.id,
+                                color1: eq1.color,
+                                color2: eq2.color,
+                                label: `(${p.x.toFixed(2)}, ${p.y.toFixed(2)})`
+                            });
+                        }
+                    });
+                } catch (err) {
+                    console.warn('Intersection calc error:', err);
+                }
+            }
+        }
+        return pts;
+    }, [showIntersections, equations, xMin, xMax, parameters, mathToScreenX, mathToScreenY]);
+
     // ─────────────────────────────────────────────────────────────────────────
     // PAN & ZOOM EVENT HANDLERS
     // ─────────────────────────────────────────────────────────────────────────
 
     const handlePointerDown = (e) => {
+        e.stopPropagation();
+
         // If clicking on an interactive handle (tangent / integral)
         if (e.target.dataset.handle) {
             setDraggingHandle(e.target.dataset.handle);
-            e.stopPropagation();
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
             return;
         }
 
@@ -410,6 +453,7 @@ export default function GraphCanvas({
                 color: annotationColor,
                 points: [{ x: sx, y: sy }]
             });
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
             return;
         }
 
@@ -417,6 +461,7 @@ export default function GraphCanvas({
         setIsPanning(true);
         panStartRef.current = { x: e.clientX, y: e.clientY };
         boundsStartRef.current = { ...viewBounds };
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
     };
 
     const handlePointerMove = (e) => {
@@ -452,7 +497,7 @@ export default function GraphCanvas({
         }
 
         // If panning canvas
-        if (isPanning && boundsStartRef.current) {
+        if (isPanning && boundsStartRef.current && onUpdateViewBounds) {
             const deltaX = e.clientX - panStartRef.current.x;
             const deltaY = e.clientY - panStartRef.current.y;
 
@@ -466,7 +511,7 @@ export default function GraphCanvas({
                 yMax: boundsStartRef.current.yMax + mathDeltaY
             };
 
-            if (onUpdateViewBounds) onUpdateViewBounds(newBounds);
+            onUpdateViewBounds(newBounds);
             return;
         }
 
@@ -520,9 +565,12 @@ export default function GraphCanvas({
         setSnappedPoint(closestSnap);
     };
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (e) => {
         if (isPanning) setIsPanning(false);
         if (draggingHandle) setDraggingHandle(null);
+        if (e) {
+            try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+        }
 
         if (currentDrawingStroke) {
             if (onUpdateAnnotations) {
@@ -534,6 +582,7 @@ export default function GraphCanvas({
 
     // Zoom via mouse wheel / trackpad pinch
     const handleWheel = (e) => {
+        e.stopPropagation();
         e.preventDefault();
         const rect = svgRef.current.getBoundingClientRect();
         const cursorSx = e.clientX - rect.left;
@@ -632,10 +681,11 @@ export default function GraphCanvas({
     // Colors according to theme
     const isDark = theme === 'dark';
     const bgColor = isDark ? '#0f172a' : '#ffffff';
-    const gridMajorColor = isDark ? 'rgba(71, 85, 105, 0.45)' : 'rgba(203, 213, 225, 0.7)';
-    const gridMinorColor = isDark ? 'rgba(51, 65, 85, 0.25)' : 'rgba(241, 245, 249, 0.9)';
-    const axisColor = isDark ? '#94a3b8' : '#334155';
-    const textColor = isDark ? '#cbd5e1' : '#475569';
+    // Crisp, clearly visible grid lines in light mode (slate-400 and slate-300) and dark mode
+    const gridMajorColor = isDark ? 'rgba(71, 85, 105, 0.55)' : 'rgba(100, 116, 139, 0.65)';
+    const gridMinorColor = isDark ? 'rgba(51, 65, 85, 0.35)' : 'rgba(148, 163, 184, 0.45)';
+    const axisColor = isDark ? '#cbd5e1' : '#0f172a';
+    const textColor = isDark ? '#cbd5e1' : '#0f172a';
 
     return (
         <div 
@@ -651,7 +701,9 @@ export default function GraphCanvas({
                 width={width}
                 height={height}
                 viewBox={`0 0 ${width} ${height}`}
-                className={`w-full h-full ${activeAnnotationTool ? 'cursor-crosshair' : isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
+                data-graph-canvas-svg="true"
+                xmlns="http://www.w3.org/2000/svg"
+                className={`graph-canvas-svg w-full h-full ${activeAnnotationTool ? 'cursor-crosshair' : isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
@@ -670,8 +722,8 @@ export default function GraphCanvas({
                     </filter>
                 </defs>
 
-                {/* 1. Background Fill */}
-                <rect width={width} height={height} fill={bgColor} />
+                {/* 1. Solid Background Fill */}
+                <rect width="100%" height="100%" fill={bgColor} />
 
                 {/* 2. Polar Grid (if coordinateSystem === 'polar') */}
                 {coordinateSystem === 'polar' && (
@@ -947,34 +999,37 @@ export default function GraphCanvas({
                                     opacity={isSubdued ? 0.35 : 1}
                                     filter={isEmphasized ? 'url(#curve-glow)' : 'none'}
                                 />
-                                {/* Optional In-Canvas Curve Label */}
-                                {showCurveLabels && curve.labelPoint && !isSubdued && (
-                                    <g
-                                        transform={`translate(${curve.labelPoint.x}, ${curve.labelPoint.y})`}
-                                        className="pointer-events-none"
-                                    >
-                                        <rect
-                                            x="-6"
-                                            y="-14"
-                                            width={(curve.labelPoint.text.length * 7.5) + 12}
-                                            height="20"
-                                            rx="5"
-                                            fill={isDark ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.9)'}
-                                            stroke={curve.color}
-                                            strokeWidth="1.5"
-                                        />
-                                        <text
-                                            x="0"
-                                            y="0"
-                                            fill={curve.color}
-                                            fontSize="11"
-                                            fontWeight="bold"
-                                            fontFamily="monospace"
+                                {/* Optional In-Canvas Curve Label with Math Superscripts */}
+                                {showCurveLabels && curve.labelPoint && !isSubdued && (() => {
+                                    const formattedText = formatMathSuperscripts(curve.labelPoint.text);
+                                    return (
+                                        <g
+                                            transform={`translate(${curve.labelPoint.x}, ${curve.labelPoint.y})`}
+                                            className="pointer-events-none"
                                         >
-                                            {curve.labelPoint.text}
-                                        </text>
-                                    </g>
-                                )}
+                                            <rect
+                                                x="-6"
+                                                y="-14"
+                                                width={(formattedText.length * 7.5) + 14}
+                                                height="20"
+                                                rx="5"
+                                                fill={isDark ? 'rgba(15, 23, 42, 0.92)' : 'rgba(255, 255, 255, 0.95)'}
+                                                stroke={curve.color}
+                                                strokeWidth="1.5"
+                                            />
+                                            <text
+                                                x="0"
+                                                y="0"
+                                                fill={curve.color}
+                                                fontSize="11"
+                                                fontWeight="bold"
+                                                fontFamily="monospace"
+                                            >
+                                                {formattedText}
+                                            </text>
+                                        </g>
+                                    );
+                                })()}
                             </g>
                         );
                     })}
@@ -1118,6 +1173,54 @@ export default function GraphCanvas({
                             </text>
                         </g>
                     ))}
+
+                    {/* Automatic Points of Intersection of Curves */}
+                    {showIntersections && curveIntersections.map((pt, idx) => (
+                        <g key={`intersect_pt_${idx}`} className="animate-in fade-in duration-200 pointer-events-none">
+                            {/* Outer pulse/glow circle */}
+                            <circle
+                                cx={pt.screenX}
+                                cy={pt.screenY}
+                                r="8"
+                                fill="none"
+                                stroke="#f43f5e"
+                                strokeWidth="2"
+                                opacity="0.75"
+                            />
+                            {/* Inner solid intersection dot */}
+                            <circle
+                                cx={pt.screenX}
+                                cy={pt.screenY}
+                                r="4.5"
+                                fill="#f43f5e"
+                                stroke="#ffffff"
+                                strokeWidth="2"
+                            />
+                            {/* Intersection Coordinate Badge */}
+                            <g transform={`translate(${pt.screenX + 8}, ${pt.screenY - 20})`}>
+                                <rect
+                                    x="0"
+                                    y="0"
+                                    width={(pt.label.length * 6.8) + 14}
+                                    height="18"
+                                    rx="4"
+                                    fill={isDark ? "rgba(15, 23, 42, 0.95)" : "rgba(255, 255, 255, 0.95)"}
+                                    stroke="#f43f5e"
+                                    strokeWidth="1.2"
+                                />
+                                <text
+                                    x="6"
+                                    y="13"
+                                    fill={isDark ? "#fca5a5" : "#e11d48"}
+                                    fontSize="10"
+                                    fontFamily="monospace"
+                                    fontWeight="bold"
+                                >
+                                    {pt.label}
+                                </text>
+                            </g>
+                        </g>
+                    ))}
                 </g>
 
                 {/* 7. Persistent Pinned Inspection Points */}
@@ -1219,38 +1322,45 @@ export default function GraphCanvas({
             {/* 10. Graph Legend (Configurable on/off, draggable or selectable position) */}
             {legendConfig.show && equations.length > 0 && (
                 <div
-                    className={`absolute p-2.5 rounded-xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 shadow-2xl flex flex-col gap-1.5 z-20 max-w-[240px] text-xs pointer-events-auto transition-all ${
+                    className={`absolute p-2.5 rounded-xl backdrop-blur-md border shadow-2xl flex flex-col gap-1.5 z-20 max-w-[240px] text-xs pointer-events-auto transition-all ${
+                        isDark ? 'bg-slate-900/90 border-slate-700/80 text-slate-100' : 'bg-white/95 border-slate-300 text-slate-800'
+                    } ${
                         legendConfig.position === 'top-left' ? 'top-3 left-3' :
                         legendConfig.position === 'bottom-right' ? 'bottom-3 right-3' :
                         legendConfig.position === 'bottom-left' ? 'bottom-3 left-3' :
                         'top-3 right-3'
                     }`}
                 >
-                    <div className="flex items-center justify-between gap-2 pb-1 border-b border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    <div className={`flex items-center justify-between gap-2 pb-1 border-b text-[10px] font-bold uppercase tracking-wider ${
+                        isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'
+                    }`}>
                         <span>Equations</span>
-                        <span className="text-slate-500 font-mono">({equations.filter(e => e.visible).length}/{equations.length})</span>
+                        <span className="font-mono opacity-70">({equations.filter(e => e.visible).length}/{equations.length})</span>
                     </div>
                     <div className="flex flex-col gap-1 max-h-[160px] overflow-y-auto pr-1">
-                        {equations.map((eq, idx) => (
-                            <button
-                                key={eq.id}
-                                type="button"
-                                onClick={() => onSelectEquation && onSelectEquation(eq.id)}
-                                className={`flex items-center gap-2 px-2 py-1 rounded-lg text-left transition-all ${
-                                    selectedEqId === eq.id
-                                        ? 'bg-slate-800 text-white font-semibold shadow-xs ring-1 ring-inset ring-slate-600'
-                                        : 'text-slate-300 hover:bg-slate-800/60'
-                                } ${!eq.visible ? 'opacity-40 line-through' : ''}`}
-                            >
-                                <span
-                                    className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs"
-                                    style={{ backgroundColor: eq.color }}
-                                />
-                                <span className="truncate font-mono text-[11px]" title={eq.raw}>
-                                    {eq.label || eq.raw}
-                                </span>
-                            </button>
-                        ))}
+                        {equations.map((eq, idx) => {
+                            const displayFormula = eq.label || formatMathSuperscripts(eq.raw);
+                            return (
+                                <button
+                                    key={eq.id}
+                                    type="button"
+                                    onClick={() => onSelectEquation && onSelectEquation(eq.id)}
+                                    className={`flex items-center gap-2 px-2 py-1 rounded-lg text-left transition-all ${
+                                        selectedEqId === eq.id
+                                            ? (isDark ? 'bg-slate-800 text-white font-semibold ring-1 ring-inset ring-slate-600' : 'bg-slate-100 text-slate-900 font-semibold ring-1 ring-inset ring-slate-300')
+                                            : (isDark ? 'text-slate-300 hover:bg-slate-800/60' : 'text-slate-700 hover:bg-slate-100')
+                                    } ${!eq.visible ? 'opacity-40 line-through' : ''}`}
+                                >
+                                    <span
+                                        className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs"
+                                        style={{ backgroundColor: eq.color }}
+                                    />
+                                    <span className="truncate font-mono text-[11px]" title={eq.raw}>
+                                        {displayFormula}
+                                    </span>
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
             )}

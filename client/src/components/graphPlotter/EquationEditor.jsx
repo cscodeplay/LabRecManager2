@@ -140,9 +140,12 @@ export default function EquationEditor({
     };
 
     return (
-        <div className={`flex flex-col h-full w-full overflow-hidden select-none border-r ${
-            isLight ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-slate-100'
-        }`}>
+        <div 
+            onPointerDown={(e) => e.stopPropagation()}
+            className={`flex flex-col h-full w-full overflow-hidden select-none border-r ${
+                isLight ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-slate-100'
+            }`}
+        >
             {/* Header Toolbar */}
             <div className={`flex items-center justify-between px-3.5 py-2.5 border-b shrink-0 ${
                 isLight ? 'bg-slate-100/90 border-slate-200 text-slate-800' : 'bg-slate-950/70 border-slate-800/80 text-slate-100'
@@ -337,198 +340,24 @@ export default function EquationEditor({
 
             {/* List of Equation Rows */}
             <div className={`flex-1 overflow-y-auto p-3 flex flex-col gap-2.5 ${isLight ? 'bg-slate-50' : 'bg-slate-900'}`}>
-                {equations.map((eq, idx) => {
-                    const isSelected = selectedEqId === eq.id;
-                    const isValid = !eq.parsed?.error;
-
-                    return (
-                        <div
-                            key={eq.id}
-                            onClick={() => onSelectEquation(eq.id)}
-                            className={`group relative flex flex-col p-2.5 rounded-xl border-2 transition-all ${
-                                isSelected
-                                    ? (isLight ? 'bg-white shadow-md' : 'bg-slate-850 shadow-lg ring-1')
-                                    : (isLight ? 'bg-white/80 border-slate-200 hover:border-slate-300' : 'bg-slate-900/90 border-slate-800 hover:border-slate-700')
-                            }`}
-                            style={{
-                                borderColor: isSelected ? eq.color : undefined,
-                                ringColor: isSelected ? `${eq.color}40` : undefined
-                            }}
-                        >
-                            {/* Equation Top Controls Bar */}
-                            <div className="flex items-center justify-between gap-1.5 pb-2">
-                                <div className="flex items-center gap-2">
-                                    {/* Color Indicator Swatch / Picker Trigger */}
-                                    <div className="relative">
-                                        <button
-                                            type="button"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setColorPickerTargetId(colorPickerTargetId === eq.id ? null : eq.id);
-                                            }}
-                                            className="w-4 h-4 rounded-full border border-black/20 shadow-xs cursor-pointer hover:scale-110 transition-transform"
-                                            style={{ backgroundColor: eq.color }}
-                                            title="Change Equation Color"
-                                        />
-
-                                        {/* Color Picker Swatches Popover */}
-                                        {colorPickerTargetId === eq.id && (
-                                            <div
-                                                onClick={(e) => e.stopPropagation()}
-                                                className={`absolute left-0 top-6 z-50 p-2.5 border rounded-xl shadow-2xl grid grid-cols-4 gap-1.5 w-36 animate-in fade-in duration-100 ${
-                                                    isLight ? 'bg-white border-slate-300' : 'bg-slate-900 border-slate-700'
-                                                }`}
-                                            >
-                                                {COLOR_SWATCHES.map((hex) => (
-                                                    <button
-                                                        key={hex}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            onUpdateEquation(eq.id, { color: hex });
-                                                            setColorPickerTargetId(null);
-                                                        }}
-                                                        className="w-6 h-6 rounded-full border border-black/20 hover:scale-115 transition-transform"
-                                                        style={{ backgroundColor: hex }}
-                                                        title={`Select Color ${hex}`}
-                                                    />
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Equation Sequence Number Badge */}
-                                    <span className={`font-mono text-xs font-bold ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
-                                        #{idx + 1}
-                                    </span>
-
-                                    {/* Validation Status Badge */}
-                                    {isValid ? (
-                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" title="Valid expression" />
-                                    ) : (
-                                        <span className="flex items-center gap-1 text-[11px] text-rose-500 font-semibold" title={eq.parsed?.error}>
-                                            <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
-                                            Syntax error
-                                        </span>
-                                    )}
-                                </div>
-
-                                {/* Row Actions: Reorder, Duplicate, Lock, Visibility, Delete */}
-                                <div className="flex items-center gap-0.5 opacity-80 group-hover:opacity-100 transition-opacity">
-                                    {/* Move Up */}
-                                    {idx > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={(e) => { e.stopPropagation(); onReorderEquations(idx, idx - 1); }}
-                                            className={`p-1 rounded transition ${isLight ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}`}
-                                            title="Move Up"
-                                        >
-                                            <ArrowUp className="w-3 h-3" />
-                                        </button>
-                                    )}
-
-                                    {/* Move Down */}
-                                    {idx < equations.length - 1 && (
-                                        <button
-                                            type="button"
-                                            onClick={(e) => { e.stopPropagation(); onReorderEquations(idx, idx + 1); }}
-                                            className={`p-1 rounded transition ${isLight ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}`}
-                                            title="Move Down"
-                                        >
-                                            <ArrowDown className="w-3 h-3" />
-                                        </button>
-                                    )}
-
-                                    {/* Duplicate */}
-                                    <button
-                                        type="button"
-                                        onClick={(e) => { e.stopPropagation(); onDuplicateEquation(eq.id); }}
-                                        className={`p-1 rounded transition ${isLight ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}`}
-                                        title="Duplicate Equation"
-                                    >
-                                        <Copy className="w-3 h-3" />
-                                    </button>
-
-                                    {/* Lock Toggle */}
-                                    <button
-                                        type="button"
-                                        onClick={(e) => { e.stopPropagation(); onUpdateEquation(eq.id, { isLocked: !eq.isLocked }); }}
-                                        className={`p-1 rounded transition ${
-                                            eq.isLocked 
-                                                ? 'text-amber-500 bg-amber-500/10' 
-                                                : (isLight ? 'text-slate-500 hover:text-slate-800 hover:bg-slate-100' : 'text-slate-400 hover:text-white hover:bg-slate-800')
-                                        }`}
-                                        title={eq.isLocked ? "Unlock Equation" : "Lock Equation"}
-                                    >
-                                        {eq.isLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-                                    </button>
-
-                                    {/* Visibility Toggle */}
-                                    <button
-                                        type="button"
-                                        onClick={(e) => { e.stopPropagation(); onUpdateEquation(eq.id, { visible: !eq.visible }); }}
-                                        className={`p-1 rounded transition ${
-                                            eq.visible 
-                                                ? 'text-sky-500' 
-                                                : (isLight ? 'text-slate-400 hover:text-slate-600' : 'text-slate-600 hover:text-slate-400')
-                                        }`}
-                                        title={eq.visible ? "Hide Equation" : "Show Equation"}
-                                    >
-                                        {eq.visible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                                    </button>
-
-                                    {/* Delete Button */}
-                                    <button
-                                        type="button"
-                                        onClick={(e) => { e.stopPropagation(); onDeleteEquation(eq.id); }}
-                                        className="p-1 hover:bg-rose-500/20 rounded text-slate-400 hover:text-rose-500 transition"
-                                        title="Delete Equation"
-                                    >
-                                        <Trash2 className="w-3 h-3" />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Main Formula Input Field */}
-                            <div className="relative">
-                                <input
-                                    type="text"
-                                    value={eq.raw || ''}
-                                    disabled={eq.isLocked}
-                                    onChange={(e) => {
-                                        onUpdateEquation(eq.id, { raw: e.target.value });
-                                        addToHistory(e.target.value);
-                                    }}
-                                    placeholder="e.g. y = 2x + 1 or sin(x)"
-                                    className={`w-full px-3 py-1.5 border rounded-lg font-mono text-sm outline-none transition focus:ring-2 ${
-                                        isLight 
-                                            ? 'bg-slate-50 text-slate-900 placeholder-slate-400' 
-                                            : 'bg-slate-950/80 text-slate-100 placeholder-slate-600'
-                                    } ${
-                                        isValid
-                                            ? (isLight ? 'border-slate-300 focus:border-sky-500 focus:ring-sky-500/20' : 'border-slate-700/80 focus:border-sky-500 focus:ring-sky-500/20')
-                                            : 'border-rose-500/80 focus:border-rose-500 focus:ring-rose-500/20 text-rose-500'
-                                    }`}
-                                />
-                            </div>
-
-                            {/* KaTeX Math Formula Preview */}
-                            {isValid && eq.raw && (
-                                <div className={`mt-1.5 px-2 py-0.5 text-xs font-mono overflow-x-auto hide-scrollbar opacity-90 ${
-                                    isLight ? 'text-slate-700' : 'text-slate-300'
-                                }`}>
-                                    <KaTeXPreview math={eq.raw} />
-                                </div>
-                            )}
-
-                            {/* Inline Error Message */}
-                            {!isValid && (
-                                <div className="mt-1.5 text-[11px] text-rose-500 font-mono flex items-center gap-1">
-                                    <span>Check expression syntax</span>
-                                </div>
-                            )}
-                        </div>
-                    );
-                })}
+                {equations.map((eq, idx) => (
+                    <EquationRow
+                        key={eq.id}
+                        eq={eq}
+                        idx={idx}
+                        isSelected={selectedEqId === eq.id}
+                        onSelect={() => onSelectEquation(eq.id)}
+                        onUpdateEquation={onUpdateEquation}
+                        onDeleteEquation={onDeleteEquation}
+                        onDuplicateEquation={onDuplicateEquation}
+                        onReorderEquations={onReorderEquations}
+                        colorPickerTargetId={colorPickerTargetId}
+                        setColorPickerTargetId={setColorPickerTargetId}
+                        isLight={isLight}
+                        totalEquations={equations.length}
+                        onAddToHistory={addToHistory}
+                    />
+                ))}
 
                 {/* Empty State */}
                 {equations.length === 0 && (
@@ -724,3 +553,241 @@ function KaTeXPreview({ math }) {
 
     return <span dangerouslySetInnerHTML={{ __html: html }} />;
 }
+
+function EquationRow({
+    eq,
+    idx,
+    isSelected,
+    onSelect,
+    onUpdateEquation,
+    onDeleteEquation,
+    onDuplicateEquation,
+    onReorderEquations,
+    colorPickerTargetId,
+    setColorPickerTargetId,
+    isLight,
+    totalEquations,
+    onAddToHistory
+}) {
+    const [localVal, setLocalVal] = useState(eq.raw || '');
+    const inputRef = useRef(null);
+
+    // Sync from parent when formula changed from presets, history, or palette
+    useEffect(() => {
+        setLocalVal(eq.raw || '');
+    }, [eq.raw]);
+
+    const isValid = !eq.parsed?.error;
+
+    const handleChange = (e) => {
+        const nextVal = e.target.value;
+        setLocalVal(nextVal);
+        onUpdateEquation(eq.id, { raw: nextVal });
+    };
+
+    const handleBlur = () => {
+        if (localVal && onAddToHistory) {
+            onAddToHistory(localVal);
+        }
+    };
+
+    const handleKeyDown = (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+            if (localVal && onAddToHistory) {
+                onAddToHistory(localVal);
+            }
+            inputRef.current?.blur();
+        }
+    };
+
+    return (
+        <div
+            onClick={onSelect}
+            onPointerDown={(e) => e.stopPropagation()}
+            className={`group relative flex flex-col p-2.5 rounded-xl border-2 transition-all ${
+                isSelected
+                    ? (isLight ? 'bg-white shadow-md' : 'bg-slate-850 shadow-lg ring-1')
+                    : (isLight ? 'bg-white/80 border-slate-200 hover:border-slate-300' : 'bg-slate-900/90 border-slate-800 hover:border-slate-700')
+            }`}
+            style={{
+                borderColor: isSelected ? eq.color : undefined,
+                ringColor: isSelected ? `${eq.color}40` : undefined
+            }}
+        >
+            {/* Equation Top Controls Bar */}
+            <div className="flex items-center justify-between gap-1.5 pb-2">
+                <div className="flex items-center gap-2">
+                    {/* Color Indicator Swatch / Picker Trigger */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setColorPickerTargetId(colorPickerTargetId === eq.id ? null : eq.id);
+                            }}
+                            className="w-4 h-4 rounded-full border border-black/20 shadow-xs cursor-pointer hover:scale-110 transition-transform"
+                            style={{ backgroundColor: eq.color }}
+                            title="Change Equation Color"
+                        />
+
+                        {/* Color Picker Swatches Popover */}
+                        {colorPickerTargetId === eq.id && (
+                            <div
+                                onClick={(e) => e.stopPropagation()}
+                                className={`absolute left-0 top-6 z-50 p-2.5 border rounded-xl shadow-2xl grid grid-cols-4 gap-1.5 w-36 animate-in fade-in duration-100 ${
+                                    isLight ? 'bg-white border-slate-300' : 'bg-slate-900 border-slate-700'
+                                }`}
+                            >
+                                {COLOR_SWATCHES.map((hex) => (
+                                    <button
+                                        key={hex}
+                                        type="button"
+                                        onClick={() => {
+                                            onUpdateEquation(eq.id, { color: hex });
+                                            setColorPickerTargetId(null);
+                                        }}
+                                        className="w-6 h-6 rounded-full border border-black/20 hover:scale-115 transition-transform"
+                                        style={{ backgroundColor: hex }}
+                                        title={`Select Color ${hex}`}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Equation Sequence Number Badge */}
+                    <span className={`font-mono text-xs font-bold ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+                        #{idx + 1}
+                    </span>
+
+                    {/* Validation Status Badge */}
+                    {isValid ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" title="Valid expression" />
+                    ) : (
+                        <span className="flex items-center gap-1 text-[11px] text-rose-500 font-semibold" title={eq.parsed?.error}>
+                            <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+                            Syntax error
+                        </span>
+                    )}
+                </div>
+
+                {/* Row Actions: Reorder, Duplicate, Lock, Visibility, Delete */}
+                <div className="flex items-center gap-0.5 opacity-80 group-hover:opacity-100 transition-opacity">
+                    {/* Move Up */}
+                    {idx > 0 && (
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onReorderEquations(idx, idx - 1); }}
+                            className={`p-1 rounded transition ${isLight ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}`}
+                            title="Move Up"
+                        >
+                            <ArrowUp className="w-3 h-3" />
+                        </button>
+                    )}
+
+                    {/* Move Down */}
+                    {idx < totalEquations - 1 && (
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onReorderEquations(idx, idx + 1); }}
+                            className={`p-1 rounded transition ${isLight ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}`}
+                            title="Move Down"
+                        >
+                            <ArrowDown className="w-3 h-3" />
+                        </button>
+                    )}
+
+                    {/* Duplicate */}
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onDuplicateEquation(eq.id); }}
+                        className={`p-1 rounded transition ${isLight ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}`}
+                        title="Duplicate Equation"
+                    >
+                        <Copy className="w-3 h-3" />
+                    </button>
+
+                    {/* Lock Toggle */}
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onUpdateEquation(eq.id, { isLocked: !eq.isLocked }); }}
+                        className={`p-1 rounded transition ${
+                            eq.isLocked 
+                                ? 'text-amber-500 bg-amber-500/10' 
+                                : (isLight ? 'text-slate-500 hover:text-slate-800 hover:bg-slate-100' : 'text-slate-400 hover:text-white hover:bg-slate-800')
+                        }`}
+                        title={eq.isLocked ? "Unlock Equation" : "Lock Equation"}
+                    >
+                        {eq.isLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                    </button>
+
+                    {/* Visibility Toggle */}
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onUpdateEquation(eq.id, { visible: !eq.visible }); }}
+                        className={`p-1 rounded transition ${
+                            eq.visible 
+                                ? 'text-sky-500' 
+                                : (isLight ? 'text-slate-400 hover:text-slate-600' : 'text-slate-600 hover:text-slate-400')
+                        }`}
+                        title={eq.visible ? "Hide Equation" : "Show Equation"}
+                    >
+                        {eq.visible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                    </button>
+
+                    {/* Delete Button */}
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onDeleteEquation(eq.id); }}
+                        className="p-1 hover:bg-rose-500/20 rounded text-slate-400 hover:text-rose-500 transition"
+                        title="Delete Equation"
+                    >
+                        <Trash2 className="w-3 h-3" />
+                    </button>
+                </div>
+            </div>
+
+            {/* Main Formula Input Field */}
+            <div className="relative">
+                <input
+                    ref={inputRef}
+                    type="text"
+                    value={localVal}
+                    disabled={eq.isLocked}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    onKeyDown={handleKeyDown}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    placeholder="e.g. y = 2x + 1 or sin(x)"
+                    className={`w-full px-3 py-1.5 border rounded-lg font-mono text-sm outline-none transition focus:ring-2 ${
+                        isLight 
+                            ? 'bg-slate-50 text-slate-900 placeholder-slate-400' 
+                            : 'bg-slate-950/80 text-slate-100 placeholder-slate-600'
+                    } ${
+                        isValid
+                            ? (isLight ? 'border-slate-300 focus:border-sky-500 focus:ring-sky-500/20' : 'border-slate-700/80 focus:border-sky-500 focus:ring-sky-500/20')
+                            : 'border-rose-500/80 focus:border-rose-500 focus:ring-rose-500/20 text-rose-500'
+                    }`}
+                />
+            </div>
+
+            {/* KaTeX Math Formula Preview */}
+            {isValid && localVal && (
+                <div className={`mt-1.5 px-2 py-0.5 text-xs font-mono overflow-x-auto hide-scrollbar opacity-90 ${
+                    isLight ? 'text-slate-700' : 'text-slate-300'
+                }`}>
+                    <KaTeXPreview math={localVal} />
+                </div>
+            )}
+
+            {/* Inline Error Message */}
+            {!isValid && (
+                <div className="mt-1.5 text-[11px] text-rose-500 font-mono flex items-center gap-1">
+                    <span>Check expression syntax</span>
+                </div>
+            )}
+        </div>
+    );
+}
+
