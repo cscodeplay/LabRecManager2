@@ -5,7 +5,8 @@ import {
     ZoomIn, ZoomOut, RotateCcw, Maximize, Minimize, Settings2, 
     Download, Calculator, Edit3, Presentation, Grid, Eye, Check,
     Compass, Lock, Unlock, Layers, Share2, Copy, FileText, Image as ImageIcon,
-    FileSpreadsheet, Sparkles, X, ChevronDown, Crosshair
+    FileSpreadsheet, Sparkles, X, ChevronDown, Crosshair,
+    Sun, Moon, Camera
 } from 'lucide-react';
 
 export default function GraphControls({
@@ -35,8 +36,11 @@ export default function GraphControls({
     onSelectAnnotationTool,
     onClearAnnotations,
     onExportGraph,
-    onConvertToStatic
+    onConvertToStatic,
+    theme = 'dark',
+    onToggleTheme
 }) {
+    const isDark = theme === 'dark';
     const [showRangeModal, setShowRangeModal] = useState(false);
     const [showAnalysisMenu, setShowAnalysisMenu] = useState(false);
     const [showExportMenu, setShowExportMenu] = useState(false);
@@ -62,7 +66,9 @@ export default function GraphControls({
     };
 
     return (
-        <div className="flex items-center gap-1 p-1 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl z-30 select-none">
+        <div className={`flex items-center gap-1 p-1 backdrop-blur-md rounded-xl shadow-2xl z-30 select-none border transition-colors ${
+            isDark ? 'bg-slate-900/90 border-slate-700/80 text-slate-100' : 'bg-white/95 border-slate-300 text-slate-800'
+        }`}>
             {/* Zoom In */}
             <button
                 type="button"
@@ -79,7 +85,9 @@ export default function GraphControls({
                         yMax: cy + yRange / 2
                     });
                 }}
-                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                className={`p-1.5 rounded-lg transition ${
+                    isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
                 title="Zoom In (+)"
             >
                 <ZoomIn className="w-3.5 h-3.5" />
@@ -101,7 +109,9 @@ export default function GraphControls({
                         yMax: cy + yRange / 2
                     });
                 }}
-                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                className={`p-1.5 rounded-lg transition ${
+                    isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
                 title="Zoom Out (-)"
             >
                 <ZoomOut className="w-3.5 h-3.5" />
@@ -111,7 +121,9 @@ export default function GraphControls({
             <button
                 type="button"
                 onClick={onResetView}
-                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                className={`p-1.5 rounded-lg transition ${
+                    isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
                 title="Reset View (Default [-10, 10])"
             >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -121,13 +133,15 @@ export default function GraphControls({
             <button
                 type="button"
                 onClick={onFitToEquations}
-                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition"
-                title="Fit to Equations"
+                className={`p-1.5 rounded-lg transition ${
+                    isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+                title="Fit View to Equations"
             >
                 <Crosshair className="w-3.5 h-3.5" />
             </button>
 
-            <div className="w-px h-4 bg-slate-700/80 mx-0.5" />
+            <div className={`w-px h-4 mx-0.5 ${isDark ? 'bg-slate-700/80' : 'bg-slate-300'}`} />
 
             {/* Range Settings Modal Button */}
             <button
@@ -137,7 +151,9 @@ export default function GraphControls({
                     setShowRangeModal(true);
                 }}
                 className={`p-1.5 rounded-lg transition ${
-                    showRangeModal ? 'bg-sky-500 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                    showRangeModal 
+                        ? 'bg-sky-500 text-white' 
+                        : (isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100')
                 }`}
                 title="Axes Range Settings"
             >
@@ -149,7 +165,9 @@ export default function GraphControls({
                 type="button"
                 onClick={onToggleGrid}
                 className={`p-1.5 rounded-lg transition ${
-                    showGrid ? 'text-sky-400 bg-sky-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    showGrid 
+                        ? 'text-sky-400 bg-sky-500/20' 
+                        : (isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100')
                 }`}
                 title={showGrid ? "Hide Grid" : "Show Grid"}
             >
@@ -161,9 +179,11 @@ export default function GraphControls({
                 type="button"
                 onClick={onToggleCoordinateSystem}
                 className={`p-1.5 rounded-lg transition ${
-                    coordinateSystem === 'polar' ? 'text-emerald-400 bg-emerald-500/20 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    coordinateSystem === 'polar' 
+                        ? 'text-emerald-500 bg-emerald-500/20 font-bold' 
+                        : (isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100')
                 }`}
-                title={`Coordinate System: ${coordinateSystem === 'polar' ? 'Polar Grid' : 'Cartesian Grid'}`}
+                title={`Coordinate System: ${coordinateSystem === 'polar' ? 'Switch to Cartesian Grid' : 'Switch to Polar Grid'}`}
             >
                 <Compass className="w-3.5 h-3.5" />
             </button>
@@ -173,14 +193,44 @@ export default function GraphControls({
                 type="button"
                 onClick={onToggleLockAspectRatio}
                 className={`p-1.5 rounded-lg transition ${
-                    lockAspectRatio ? 'text-amber-400 bg-amber-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    lockAspectRatio 
+                        ? 'text-amber-500 bg-amber-500/20' 
+                        : (isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100')
                 }`}
                 title={lockAspectRatio ? "Unlock 1:1 Aspect Ratio" : "Lock 1:1 Aspect Ratio (Square Scale)"}
             >
                 {lockAspectRatio ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
             </button>
 
-            <div className="w-px h-4 bg-slate-700/80 mx-0.5" />
+            <div className={`w-px h-4 mx-0.5 ${isDark ? 'bg-slate-700/80' : 'bg-slate-300'}`} />
+
+            {/* Theme Toggle (Dark / Light) */}
+            {onToggleTheme && (
+                <button
+                    type="button"
+                    onClick={onToggleTheme}
+                    className={`p-1.5 rounded-lg transition ${
+                        isDark ? 'text-amber-400 hover:text-white hover:bg-slate-800' : 'text-amber-600 hover:text-amber-900 hover:bg-slate-100'
+                    }`}
+                    title={isDark ? "Switch to Light Theme" : "Switch to Dark Theme"}
+                >
+                    {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+                </button>
+            )}
+
+            {/* Directly Insert Graph as Image onto Whiteboard */}
+            {onConvertToStatic && (
+                <button
+                    type="button"
+                    onClick={onConvertToStatic}
+                    className={`p-1.5 rounded-lg transition ${
+                        isDark ? 'text-indigo-400 hover:text-white hover:bg-slate-800' : 'text-indigo-600 hover:text-indigo-900 hover:bg-slate-100'
+                    }`}
+                    title="Insert Graph as Image onto Whiteboard"
+                >
+                    <Camera className="w-3.5 h-3.5" />
+                </button>
+            )}
 
             {/* Mathematical Analysis Tools Menu */}
             <div className="relative">
@@ -192,18 +242,24 @@ export default function GraphControls({
                         setShowAnnotationMenu(false);
                     }}
                     className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition ${
-                        activeAnalysis ? 'bg-amber-500/25 text-amber-300 ring-1 ring-amber-500/50' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                        activeAnalysis 
+                            ? 'bg-amber-500/25 text-amber-500 ring-1 ring-amber-500/50' 
+                            : (isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100')
                     }`}
-                    title="Mathematical Analysis Features"
+                    title="Mathematical Analysis Tools (Roots, Extrema, Intersections, Tangents, Integrals)"
                 >
-                    <Calculator className="w-3.5 h-3.5 text-amber-400" />
+                    <Calculator className="w-3.5 h-3.5 text-amber-500" />
                     <span className="hidden sm:inline">Analysis</span>
                     <ChevronDown className="w-3 h-3 opacity-60" />
                 </button>
 
                 {showAnalysisMenu && (
-                    <div className="absolute right-0 bottom-full mb-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1.5 w-48 flex flex-col gap-0.5 text-xs z-50 animate-in fade-in duration-100">
-                        <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                    <div className={`absolute right-0 bottom-full mb-2 border rounded-xl shadow-2xl p-1.5 w-52 flex flex-col gap-0.5 text-xs z-50 animate-in fade-in duration-100 ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
+                    }`}>
+                        <div className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider border-b ${
+                            isDark ? 'text-slate-400 border-slate-800' : 'text-slate-500 border-slate-200'
+                        }`}>
                             Mathematical Tools
                         </div>
                         {[
@@ -222,11 +278,14 @@ export default function GraphControls({
                                     setShowAnalysisMenu(false);
                                 }}
                                 className={`px-2 py-1.5 rounded-lg text-left flex items-center justify-between transition ${
-                                    activeAnalysis?.type === tool.id ? 'bg-amber-500/20 text-amber-300 font-semibold' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                    activeAnalysis?.type === tool.id 
+                                        ? 'bg-amber-500/20 text-amber-500 font-semibold' 
+                                        : (isDark ? 'text-slate-300 hover:bg-slate-800 hover:text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900')
                                 }`}
+                                title={`Calculate and plot ${tool.label}`}
                             >
                                 <span>{tool.label}</span>
-                                {activeAnalysis?.type === tool.id && <Check className="w-3.5 h-3.5 text-amber-400" />}
+                                {activeAnalysis?.type === tool.id && <Check className="w-3.5 h-3.5 text-amber-500" />}
                             </button>
                         ))}
                         {activeAnalysis && (
@@ -236,7 +295,8 @@ export default function GraphControls({
                                     onSelectAnalysis(null);
                                     setShowAnalysisMenu(false);
                                 }}
-                                className="mt-1 px-2 py-1 text-center text-rose-400 hover:bg-rose-500/10 rounded-lg text-[11px]"
+                                className="mt-1 px-2 py-1 text-center text-rose-500 hover:bg-rose-500/10 rounded-lg text-[11px]"
+                                title="Clear Analysis Overlays"
                             >
                                 Clear Analysis Overlays
                             </button>
@@ -255,42 +315,55 @@ export default function GraphControls({
                         setShowExportMenu(false);
                     }}
                     className={`p-1.5 rounded-lg transition ${
-                        activeAnnotationTool ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/50' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                        activeAnnotationTool 
+                            ? 'bg-emerald-500/20 text-emerald-500 ring-1 ring-emerald-500/50' 
+                            : (isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100')
                     }`}
-                    title="Graph Freehand Annotations"
+                    title="Graph Freehand Annotations & Drawing Tools"
                 >
-                    <Edit3 className="w-3.5 h-3.5 text-emerald-400" />
+                    <Edit3 className="w-3.5 h-3.5 text-emerald-500" />
                 </button>
 
                 {showAnnotationMenu && (
-                    <div className="absolute right-0 bottom-full mb-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1.5 w-44 flex flex-col gap-0.5 text-xs z-50 animate-in fade-in duration-100">
-                        <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                    <div className={`absolute right-0 bottom-full mb-2 border rounded-xl shadow-2xl p-1.5 w-48 flex flex-col gap-0.5 text-xs z-50 animate-in fade-in duration-100 ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
+                    }`}>
+                        <div className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider border-b ${
+                            isDark ? 'text-slate-400 border-slate-800' : 'text-slate-500 border-slate-200'
+                        }`}>
                             Graph Annotations
                         </div>
                         <button
                             type="button"
                             onClick={() => { onSelectAnnotationTool(activeAnnotationTool === 'pen' ? null : 'pen'); setShowAnnotationMenu(false); }}
-                            className={`px-2 py-1.5 rounded-lg text-left flex items-center justify-between ${
-                                activeAnnotationTool === 'pen' ? 'bg-emerald-500/20 text-emerald-300 font-bold' : 'text-slate-300 hover:bg-slate-800'
+                            className={`px-2 py-1.5 rounded-lg text-left flex items-center justify-between transition ${
+                                activeAnnotationTool === 'pen' 
+                                    ? 'bg-emerald-500/20 text-emerald-500 font-bold' 
+                                    : (isDark ? 'text-slate-300 hover:bg-slate-800 hover:text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900')
                             }`}
+                            title="Freehand Pen Tool"
                         >
                             <span>Freehand Pen</span>
-                            {activeAnnotationTool === 'pen' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                            {activeAnnotationTool === 'pen' && <Check className="w-3.5 h-3.5 text-emerald-500" />}
                         </button>
                         <button
                             type="button"
                             onClick={() => { onSelectAnnotationTool(activeAnnotationTool === 'highlighter' ? null : 'highlighter'); setShowAnnotationMenu(false); }}
-                            className={`px-2 py-1.5 rounded-lg text-left flex items-center justify-between ${
-                                activeAnnotationTool === 'highlighter' ? 'bg-emerald-500/20 text-emerald-300 font-bold' : 'text-slate-300 hover:bg-slate-800'
+                            className={`px-2 py-1.5 rounded-lg text-left flex items-center justify-between transition ${
+                                activeAnnotationTool === 'highlighter' 
+                                    ? 'bg-emerald-500/20 text-emerald-500 font-bold' 
+                                    : (isDark ? 'text-slate-300 hover:bg-slate-800 hover:text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900')
                             }`}
+                            title="Highlighter Tool"
                         >
                             <span>Highlighter</span>
-                            {activeAnnotationTool === 'highlighter' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                            {activeAnnotationTool === 'highlighter' && <Check className="w-3.5 h-3.5 text-emerald-500" />}
                         </button>
                         <button
                             type="button"
                             onClick={() => { onClearAnnotations(); setShowAnnotationMenu(false); }}
-                            className="mt-1 px-2 py-1 text-center text-rose-400 hover:bg-rose-500/10 rounded-lg text-[11px]"
+                            className="mt-1 px-2 py-1 text-center text-rose-500 hover:bg-rose-500/10 rounded-lg text-[11px]"
+                            title="Clear Annotations"
                         >
                             Clear Annotations
                         </button>
@@ -303,9 +376,11 @@ export default function GraphControls({
                 type="button"
                 onClick={onTogglePresentationMode}
                 className={`p-1.5 rounded-lg transition ${
-                    isPresentationMode ? 'bg-violet-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                    isPresentationMode 
+                        ? 'bg-violet-600 text-white shadow-md' 
+                        : (isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100')
                 }`}
-                title="Classroom / Presentation Mode (Clean, Large)"
+                title={isPresentationMode ? "Exit Classroom Presentation Mode" : "Classroom Presentation Mode (Clean View & Step-by-Step Reveal)"}
             >
                 <Presentation className="w-3.5 h-3.5 text-violet-400" />
             </button>
@@ -314,7 +389,9 @@ export default function GraphControls({
             <button
                 type="button"
                 onClick={onToggleFullscreen}
-                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                className={`p-1.5 rounded-lg transition ${
+                    isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
                 title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Graph Mode"}
             >
                 {isFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
@@ -329,21 +406,30 @@ export default function GraphControls({
                         setShowAnalysisMenu(false);
                         setShowAnnotationMenu(false);
                     }}
-                    className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                    className={`p-1.5 rounded-lg transition ${
+                        isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
                     title="Export & Convert Graph"
                 >
                     <Download className="w-3.5 h-3.5 text-sky-400" />
                 </button>
 
                 {showExportMenu && (
-                    <div className="absolute right-0 bottom-full mb-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1.5 w-52 flex flex-col gap-0.5 text-xs z-50 animate-in fade-in duration-100">
-                        <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                    <div className={`absolute right-0 bottom-full mb-2 border rounded-xl shadow-2xl p-1.5 w-56 flex flex-col gap-0.5 text-xs z-50 animate-in fade-in duration-100 ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
+                    }`}>
+                        <div className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider border-b ${
+                            isDark ? 'text-slate-400 border-slate-800' : 'text-slate-500 border-slate-200'
+                        }`}>
                             Export Options
                         </div>
                         <button
                             type="button"
                             onClick={() => { onExportGraph('png'); setShowExportMenu(false); }}
-                            className="px-2 py-1.5 rounded-lg text-left text-slate-300 hover:bg-slate-800 hover:text-white flex items-center gap-2"
+                            className={`px-2 py-1.5 rounded-lg text-left flex items-center gap-2 transition ${
+                                isDark ? 'text-slate-300 hover:bg-slate-800 hover:text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                            }`}
+                            title="Export Graph as PNG Image file"
                         >
                             <ImageIcon className="w-3.5 h-3.5 text-sky-400" />
                             <span>Export as PNG Image</span>
@@ -351,7 +437,10 @@ export default function GraphControls({
                         <button
                             type="button"
                             onClick={() => { onExportGraph('svg'); setShowExportMenu(false); }}
-                            className="px-2 py-1.5 rounded-lg text-left text-slate-300 hover:bg-slate-800 hover:text-white flex items-center gap-2"
+                            className={`px-2 py-1.5 rounded-lg text-left flex items-center gap-2 transition ${
+                                isDark ? 'text-slate-300 hover:bg-slate-800 hover:text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                            }`}
+                            title="Export Graph as SVG Vector file"
                         >
                             <FileText className="w-3.5 h-3.5 text-emerald-400" />
                             <span>Export as SVG Vector</span>
@@ -359,7 +448,10 @@ export default function GraphControls({
                         <button
                             type="button"
                             onClick={() => { onExportGraph('copy_image'); setShowExportMenu(false); }}
-                            className="px-2 py-1.5 rounded-lg text-left text-slate-300 hover:bg-slate-800 hover:text-white flex items-center gap-2"
+                            className={`px-2 py-1.5 rounded-lg text-left flex items-center gap-2 transition ${
+                                isDark ? 'text-slate-300 hover:bg-slate-800 hover:text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                            }`}
+                            title="Copy Graph Image to Clipboard"
                         >
                             <Copy className="w-3.5 h-3.5 text-amber-400" />
                             <span>Copy Image to Clipboard</span>
@@ -367,22 +459,28 @@ export default function GraphControls({
                         <button
                             type="button"
                             onClick={() => { onExportGraph('copy_equations'); setShowExportMenu(false); }}
-                            className="px-2 py-1.5 rounded-lg text-left text-slate-300 hover:bg-slate-800 hover:text-white flex items-center gap-2"
+                            className={`px-2 py-1.5 rounded-lg text-left flex items-center gap-2 transition ${
+                                isDark ? 'text-slate-300 hover:bg-slate-800 hover:text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                            }`}
+                            title="Copy All Equation Formulas as Text"
                         >
                             <FileSpreadsheet className="w-3.5 h-3.5 text-violet-400" />
                             <span>Copy Equations as Text</span>
                         </button>
 
-                        <div className="w-full h-px bg-slate-800 my-1" />
+                        <div className={`w-full h-px my-1 ${isDark ? 'bg-slate-800' : 'bg-slate-200'}`} />
 
-                        {/* Convert to Static Drawing */}
+                        {/* Directly Insert Graph as Image onto Whiteboard */}
                         <button
                             type="button"
                             onClick={() => { onConvertToStatic(); setShowExportMenu(false); }}
-                            className="px-2 py-1.5 rounded-lg text-left text-indigo-300 hover:bg-indigo-600/20 flex items-center gap-2 font-semibold"
+                            className={`px-2 py-1.5 rounded-lg text-left flex items-center gap-2 font-semibold transition ${
+                                isDark ? 'text-indigo-300 hover:bg-indigo-600/20' : 'text-indigo-600 hover:bg-indigo-50'
+                            }`}
+                            title="Insert Graph as Image onto Whiteboard"
                         >
-                            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                            <span>Convert to Static Drawing</span>
+                            <Camera className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>Insert Image onto Whiteboard</span>
                         </button>
                     </div>
                 )}
@@ -405,6 +503,7 @@ export default function GraphControls({
                                 type="button"
                                 onClick={() => setShowRangeModal(false)}
                                 className="p-1 hover:bg-slate-800 rounded-lg text-slate-400"
+                                title="Close Range Dialog"
                             >
                                 <X className="w-4 h-4" />
                             </button>
@@ -460,12 +559,14 @@ export default function GraphControls({
                                     setRangeForm({ xMin: -10, xMax: 10, yMin: -6, yMax: 6 });
                                 }}
                                 className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold"
+                                title="Reset to Default Range [-10, 10]"
                             >
                                 Reset Default
                             </button>
                             <button
                                 type="submit"
                                 className="flex-1 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold"
+                                title="Apply Axes Ranges"
                             >
                                 Apply Ranges
                             </button>

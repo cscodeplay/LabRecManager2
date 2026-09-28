@@ -13,7 +13,8 @@ import GraphControls from './GraphControls';
 import { 
     Move, Lock, Unlock, Trash2, Copy, RotateCw, Sparkles, 
     Presentation, ChevronLeft, ChevronRight, Download, Eye, EyeOff,
-    Check, X, ChevronsUp, ChevronsDown, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen
+    Check, X, ChevronsUp, ChevronsDown, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen,
+    Camera, Sun, Moon
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -41,6 +42,10 @@ export default function WhiteboardGraphObject({
     const y = graph?.y || 80;
     const rotation = graph?.rotation || 0;
     const isLocked = Boolean(graph?.isLocked);
+
+    // Theme (dark / light)
+    const theme = graph?.theme || 'dark';
+    const isDark = theme === 'dark';
 
     // Equation editor panel visibility (drawer toggle)
     const [showDrawer, setShowDrawer] = useState(graph?.showDrawer !== undefined ? graph.showDrawer : true);
@@ -130,9 +135,10 @@ export default function WhiteboardGraphObject({
 
     const handleAddEquation = (customRaw = '') => {
         const nextColor = getEquationColor(compiledEquations.length);
+        const rawFormula = (typeof customRaw === 'string' && customRaw.trim()) ? customRaw.trim() : 'y = sin(x)';
         const newEq = {
             id: `eq_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-            raw: customRaw || 'y = sin(x)',
+            raw: rawFormula,
             color: nextColor,
             visible: true
         };
@@ -438,20 +444,26 @@ export default function WhiteboardGraphObject({
                 transformOrigin: 'center center',
                 zIndex: graph?.zIndex || 20
             }}
-            className={`group rounded-2xl shadow-2xl flex flex-col overflow-visible bg-slate-900 border-2 select-none transition-shadow ${
+            className={`group rounded-2xl shadow-2xl flex flex-col overflow-visible select-none border-2 transition-shadow ${
+                isDark 
+                    ? 'bg-slate-900 border-slate-700/80 shadow-slate-950/80' 
+                    : 'bg-white border-slate-300 text-slate-800 shadow-slate-300/60'
+            } ${
                 isSelected
-                    ? 'border-sky-500 shadow-sky-500/20 shadow-2xl ring-2 ring-sky-500/30'
-                    : 'border-slate-700/80 shadow-slate-950/80'
+                    ? 'border-sky-500 shadow-sky-500/20 ring-2 ring-sky-500/30'
+                    : ''
             }`}
         >
             {/* 1. Header Drag Bar & Title */}
             <div
                 onPointerDown={handleMoveStart}
-                className="h-10 bg-slate-950 px-3 flex items-center justify-between border-b border-slate-800 cursor-move rounded-t-2xl shrink-0"
+                className={`h-10 px-3 flex items-center justify-between border-b cursor-move rounded-t-2xl shrink-0 ${
+                    isDark ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-100 border-slate-200 text-slate-800'
+                }`}
             >
                 <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-xs animate-pulse" />
-                    <span className="font-bold text-xs tracking-wider text-slate-200">
+                    <span className={`font-bold text-xs tracking-wider ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
                         {graph?.title || 'Graph Plotter'}
                     </span>
                     {isPresentationMode && (
@@ -469,9 +481,11 @@ export default function WhiteboardGraphObject({
                             type="button"
                             onClick={() => setShowDrawer(prev => !prev)}
                             className={`p-1.5 rounded-lg text-xs flex items-center gap-1 transition ${
-                                showDrawer ? 'text-sky-400 bg-slate-800' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                showDrawer 
+                                    ? 'text-sky-400 bg-sky-500/20' 
+                                    : (isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200')
                             }`}
-                            title={showDrawer ? "Hide Equation Drawer" : "Show Equation Drawer"}
+                            title={showDrawer ? "Collapse Equation Sidebar" : "Expand Equation Sidebar"}
                         >
                             {showDrawer ? <PanelLeftClose className="w-3.5 h-3.5" /> : <PanelLeftOpen className="w-3.5 h-3.5" />}
                         </button>
@@ -482,11 +496,37 @@ export default function WhiteboardGraphObject({
                         type="button"
                         onClick={() => setIsPresentationMode(prev => !prev)}
                         className={`p-1.5 rounded-lg transition ${
-                            isPresentationMode ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                            isPresentationMode 
+                                ? 'bg-violet-600 text-white' 
+                                : (isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200')
                         }`}
-                        title="Classroom Presentation Mode"
+                        title={isPresentationMode ? "Exit Classroom Presentation Mode" : "Classroom Presentation Mode"}
                     >
                         <Presentation className="w-3.5 h-3.5 text-violet-400" />
+                    </button>
+
+                    {/* Theme Toggle (Dark / Light) */}
+                    <button
+                        type="button"
+                        onClick={handleToggleTheme}
+                        className={`p-1.5 rounded-lg transition ${
+                            isDark ? 'text-amber-400 hover:text-white hover:bg-slate-800' : 'text-amber-600 hover:text-amber-900 hover:bg-slate-200'
+                        }`}
+                        title={isDark ? "Switch to Light Theme" : "Switch to Dark Theme"}
+                    >
+                        {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+                    </button>
+
+                    {/* Directly Insert Graph as Image onto Whiteboard */}
+                    <button
+                        type="button"
+                        onClick={handleConvertToStatic}
+                        className={`p-1.5 rounded-lg transition ${
+                            isDark ? 'text-indigo-400 hover:text-white hover:bg-slate-800' : 'text-indigo-600 hover:text-indigo-900 hover:bg-slate-200'
+                        }`}
+                        title="Insert Graph as Image onto Whiteboard"
+                    >
+                        <Camera className="w-3.5 h-3.5" />
                     </button>
 
                     {/* Lock Toggle */}
@@ -494,7 +534,7 @@ export default function WhiteboardGraphObject({
                         type="button"
                         onClick={() => handleUpdate({ isLocked: !isLocked })}
                         className={`p-1.5 rounded-lg transition ${
-                            isLocked ? 'text-amber-400 bg-amber-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                            isLocked ? 'text-amber-400 bg-amber-500/20' : (isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200')
                         }`}
                         title={isLocked ? "Unlock Graph Object" : "Lock Graph Object"}
                     >
@@ -505,8 +545,10 @@ export default function WhiteboardGraphObject({
                     <button
                         type="button"
                         onClick={() => onDelete && onDelete(graph?.id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
-                        title="Delete Graph"
+                        className={`p-1.5 rounded-lg transition ${
+                            isDark ? 'text-slate-400 hover:text-rose-400 hover:bg-rose-500/10' : 'text-slate-600 hover:text-rose-600 hover:bg-rose-100'
+                        }`}
+                        title="Delete Graph Object"
                     >
                         <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -519,7 +561,9 @@ export default function WhiteboardGraphObject({
                 {showDrawer && !isPresentationMode && (
                     <div
                         style={{ width: `${drawerWidth}px` }}
-                        className="h-full shrink-0 flex flex-col border-r border-slate-800 animate-in slide-in-from-left-2 duration-150"
+                        className={`h-full shrink-0 flex flex-col border-r animate-in slide-in-from-left-2 duration-150 ${
+                            isDark ? 'border-slate-800' : 'border-slate-200'
+                        }`}
                     >
                         <EquationEditor
                             equations={compiledEquations}
@@ -534,12 +578,33 @@ export default function WhiteboardGraphObject({
                             onToggleAllVisibility={handleToggleAllVisibility}
                             parameters={parameters}
                             onUpdateParameter={handleUpdateParameter}
+                            theme={theme}
+                            onCloseDrawer={() => setShowDrawer(false)}
                         />
                     </div>
                 )}
 
                 {/* Graph Canvas Plane Area */}
-                <div className="flex-1 flex flex-col relative overflow-hidden bg-slate-950">
+                <div className={`flex-1 flex flex-col relative overflow-hidden ${isDark ? 'bg-slate-950' : 'bg-slate-50'}`}>
+                    {/* Collapsible Sidebar Floating Expand Tab */}
+                    {!showDrawer && !isPresentationMode && (
+                        <button
+                            type="button"
+                            onClick={() => setShowDrawer(true)}
+                            className={`absolute left-0 top-1/2 -translate-y-1/2 z-30 px-1 py-2.5 rounded-r-xl border shadow-lg flex flex-col items-center gap-1 transition ${
+                                isDark
+                                    ? 'bg-slate-900/95 border-slate-700 text-slate-300 hover:text-sky-400 hover:bg-slate-800'
+                                    : 'bg-white/95 border-slate-300 text-slate-700 hover:text-sky-600 hover:bg-slate-50'
+                            }`}
+                            title="Expand Equation Sidebar"
+                        >
+                            <PanelLeftOpen className="w-4 h-4 text-sky-400" />
+                            <span className="text-[10px] font-bold tracking-wider [writing-mode:vertical-lr] rotate-180">
+                                Equations
+                            </span>
+                        </button>
+                    )}
+
                     <GraphCanvas
                         width={canvasWidth}
                         height={canvasHeight}
@@ -561,6 +626,7 @@ export default function WhiteboardGraphObject({
                         onUpdateAnnotations={(ann) => handleUpdate({ annotations: ann })}
                         activeAnnotationTool={activeAnnotationTool}
                         isPresentationMode={isPresentationMode}
+                        theme={theme}
                     />
 
                     {/* Floating Graph Controls Toolbar at Top of Canvas */}
@@ -570,7 +636,6 @@ export default function WhiteboardGraphObject({
                             onUpdateViewBounds={(nb) => handleUpdate({ viewBounds: nb })}
                             onResetView={() => handleUpdate({ viewBounds: { xMin: -10, xMax: 10, yMin: -6, yMax: 6 } })}
                             onFitToEquations={() => {
-                                // Fit view
                                 handleUpdate({ viewBounds: { xMin: -8, xMax: 8, yMin: -5, yMax: 5 } });
                                 toast.success('Fitted view to equations', { icon: '🎯' });
                             }}
@@ -608,6 +673,8 @@ export default function WhiteboardGraphObject({
                             onClearAnnotations={() => handleUpdate({ annotations: [] })}
                             onExportGraph={handleExportGraph}
                             onConvertToStatic={handleConvertToStatic}
+                            theme={theme}
+                            onToggleTheme={handleToggleTheme}
                         />
                     </div>
 
@@ -619,6 +686,7 @@ export default function WhiteboardGraphObject({
                                 type="button"
                                 onClick={handlePresentationRevealNext}
                                 className="px-3 py-1 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-semibold shadow-xs"
+                                title="Reveal Next Equation in Presentation"
                             >
                                 Reveal Next ({presentationStep}/{compiledEquations.length})
                             </button>
@@ -626,6 +694,7 @@ export default function WhiteboardGraphObject({
                                 type="button"
                                 onClick={handlePresentationRevealAll}
                                 className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold"
+                                title="Reveal All Equations"
                             >
                                 Reveal All
                             </button>
@@ -633,6 +702,7 @@ export default function WhiteboardGraphObject({
                                 type="button"
                                 onClick={handlePresentationHideAll}
                                 className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-lg text-xs"
+                                title="Hide All Equations"
                             >
                                 Hide All
                             </button>
@@ -678,15 +748,14 @@ export default function WhiteboardGraphObject({
 
                     <div className="w-px h-3.5 bg-slate-700" />
 
-                    {/* Convert to Static Drawing */}
+                    {/* Directly Insert Graph as Image onto Whiteboard */}
                     <button
                         type="button"
                         onClick={handleConvertToStatic}
-                        className="px-2 py-0.5 bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 hover:text-white rounded flex items-center gap-1 font-semibold text-[11px] transition"
-                        title="Convert to Static Whiteboard Artwork"
+                        className="p-1 hover:bg-slate-800 rounded text-indigo-400 hover:text-white transition flex items-center justify-center"
+                        title="Insert Graph as Image onto Whiteboard"
                     >
-                        <Sparkles className="w-3 h-3 text-indigo-400" />
-                        <span>Make Static</span>
+                        <Camera className="w-3.5 h-3.5" />
                     </button>
 
                     <div className="w-px h-3.5 bg-slate-700" />

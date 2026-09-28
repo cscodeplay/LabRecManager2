@@ -144,39 +144,26 @@ export function normalizeMathExpression(rawExpr) {
     expr = expr.replace(/\|([^|]+)\|/g, 'abs($1)');
 
     // Implicit multiplication patterns:
-    // 1. Number followed by letter or parenthesis: 2x -> 2*x, 2(x) -> 2*(x), 2pi -> 2*pi
+    // 1. Number followed by letter, constant, or open paren: 2x -> 2*x, 2(x) -> 2*(x), 2pi -> 2*pi
     expr = expr.replace(/(\d+(\.\d+)?)\s*([a-zA-Zπθτϕ(])/g, '$1*$3');
 
-    // 2. Closing parenthesis followed by letter or opening parenthesis: (x+1)(x-1) -> (x+1)*(x-1), (x)x -> (x)*x
-    expr = expr.replace(/(\))\s*([a-zA-Zπθτϕ(])/g, '$1*$2');
+    // 2. Closing parenthesis followed by letter, number, constant, or open paren: (x+1)(x-1) -> (x+1)*(x-1), (x)2 -> (x)*2
+    expr = expr.replace(/(\))\s*([a-zA-Z0-9πθτϕ(])/g, '$1*$2');
 
-    // 3. Variable followed by opening paren or function: x(x+1) -> x*(x+1) (except known function names)
-    // We handle this carefully:
-    const funcNames = Object.keys(MATH_FUNCTIONS).join('|');
-    const funcRegex = new RegExp(`(?<![a-zA-Z0-9_])(${funcNames})\\s*\\(`, 'g');
-    // Temporarily replace valid functions with tokens
-    const funcTokens = [];
-    expr = expr.replace(funcRegex, (match, fn) => {
-        const token = `__FN_${funcTokens.length}__(`;
-        funcTokens.push(fn);
-        return token;
+    // 3. Number, variable, or constant followed by a math function name: e.g. x sin(x) -> x*sin(x), 2 cos(x) -> 2*cos(x)
+    const funcList = Object.keys(MATH_FUNCTIONS).join('|');
+    const fnRegex = new RegExp('([a-zA-Z0-9_πθτϕ])\\s+(' + funcList + ')\\b', 'gi');
+    expr = expr.replace(fnRegex, '$1*$2');
+
+    // 4. Identifier followed by open paren: x( -> x*(, but sin( -> sin(
+    expr = expr.replace(/\b([a-zA-Z0-9_]+)\s*(\()/g, (match, id, paren) => {
+        if (MATH_FUNCTIONS[id.toLowerCase()]) {
+            return id.toLowerCase() + paren;
+        }
+        return id + '*' + paren;
     });
 
-    // Variable or constant followed by another variable or parenthesis: x y -> x*y, x theta -> x*theta
-    expr = expr.replace(/([a-zA-Z0-9_])\s+([a-zA-Z0-9_])/g, (match, a, b) => {
-        if (a === 'in' || b === 'in') return match;
-        return `${a}*${b}`;
-    });
-
-    // Variable followed by parenthesis: x( -> x*(
-    expr = expr.replace(/([a-zA-Z0-9_])\s*(\()/g, '$1*$2');
-
-    // Restore functions
-    expr = expr.replace(/__FN_(\d+)__\(/g, (m, idx) => {
-        return `${funcTokens[parseInt(idx)]}(`;
-    });
-
-    // Exponents: a^b -> a**b
+    // 5. Exponents: a^b -> a**b
     expr = expr.replace(/\^/g, '**');
 
     return expr.trim();
@@ -318,6 +305,37 @@ export function parseEquation(rawInput) {
             };
         }
 
+        // Check for incomplete equations e.g. "y =", "f(x) =", "x =", "r ="
+        if (/^([a-zA-Z](\(x\))?|[yxr])\s*=\s*$/i.test(clean)) {
+            const varName = clean.charAt(0).toLowerCase();
+            return {
+                type: varName === 'r' ? 'polar' : (varName === 'x' ? 'x_relation' : 'cartesian'),
+                operator: '=',
+                leftSide: varName,
+                expression: '',
+                raw: rawInput,
+                parameters: [],
+                domainRestriction: null,
+                error: 'Please enter a function (e.g. 2x + 1)'
+            };
+        }
+
+        // Check for function notation: f(x) = ... or g(x) = ...
+        const funcNotationMatch = clean.match(/^[a-zA-Z]\s*\(\s*x\s*\)\s*=\s*(.+)$/i);
+        if (funcNotationMatch) {
+            const expr = funcNotationMatch[1].trim();
+            return {
+                type: 'cartesian',
+                operator: '=',
+                leftSide: 'y',
+                expression: expr,
+                raw: rawInput,
+                parameters: extractParameters(expr),
+                domainRestriction,
+                error: null
+            };
+        }
+
         // Check for standard Cartesian assignment: y = f(x)
         const cartesianMatch = clean.match(/^y\s*=\s*(.+)$/i);
         if (cartesianMatch) {
@@ -359,6 +377,18 @@ export function parseEquation(rawInput) {
         // Check for general Implicit equation: f(x, y) = g(x, y) (e.g. x^2 + y^2 = 25)
         if (clean.includes('=')) {
             const [lhs, rhs] = clean.split('=');
+            if (!rhs || !rhs.trim()) {
+                return {
+                    type: 'cartesian',
+                    operator: '=',
+                    leftSide: lhs.trim(),
+                    expression: '',
+                    raw: rawInput,
+                    parameters: [],
+                    domainRestriction: null,
+                    error: 'Please enter an expression on the right-hand side'
+                };
+            }
             return {
                 type: 'implicit',
                 operator: '=',
@@ -452,7 +482,8 @@ export function compileExpression(rawExpr) {
     // Prepare JS evaluation code:
     // Expose Math functions in scope
     const funcNames = Object.keys(MATH_FUNCTIONS);
-    const constNames = Object.keys(CONSTANTS);
+    const constNames = ['pi', 'e', 'tau', 'phi'];
+    const paramsList = extractParameters(normalized);
 
     // Build argument signature and body
     try {
@@ -467,8 +498,8 @@ export function compileExpression(rawExpr) {
             `
             const { ${funcNames.join(', ')} } = MATH_FUNCTIONS;
             const { ${constNames.join(', ')} } = CONSTANTS;
-            const { ...p } = params || {};
-            ${Object.keys(paramsProxyStub()).map(p => `const ${p} = p['${p}'] !== undefined ? p['${p}'] : 1;`).join('\n')}
+            const __user_params__ = params || {};
+            ${paramsList.map(p => `const ${p} = (__user_params__['${p}'] !== undefined ? __user_params__['${p}'] : 1);`).join('\n')}
             try {
                 return (${normalized});
             } catch (e) {
@@ -489,22 +520,6 @@ export function compileExpression(rawExpr) {
     } catch (err) {
         throw new Error(`Syntax error in expression: ${err.message}`);
     }
-}
-
-// Helper stub for common single-letter and multi-letter parameter declarations
-function paramsProxyStub() {
-    const stubs = {};
-    const letters = 'abcdefghijklmnopqrstuvwxyzABCDFGHIJKLMNOPQRSTUVWXYZ';
-    for (const ch of letters) {
-        if (!RESERVED_WORDS.has(ch.toLowerCase())) {
-            stubs[ch] = 1;
-        }
-    }
-    // Also include common parameter words
-    ['step', 'freq', 'amp', 'phase', 'scale', 'radius', 'offset', 'k1', 'k2', 'm', 'c'].forEach(k => {
-        stubs[k] = 1;
-    });
-    return stubs;
 }
 
 /**

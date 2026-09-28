@@ -5,7 +5,7 @@ import {
     Plus, Trash2, Copy, Eye, EyeOff, Lock, Unlock, Play, Pause, 
     RotateCcw, Sliders, AlertCircle, CheckCircle2, ChevronDown, 
     ChevronUp, Sparkles, BookOpen, Star, History, ArrowUp, ArrowDown,
-    Palette, X, RefreshCw
+    Palette, X, RefreshCw, PanelLeftClose
 } from 'lucide-react';
 import { PALETTE_CATEGORIES } from './mathPalette';
 import { MATH_PRESETS } from './mathPresets';
@@ -26,8 +26,11 @@ export default function EquationEditor({
     parameters = {},
     onUpdateParameter,
     onBatchAddEquations,
-    isPresentationMode = false
+    isPresentationMode = false,
+    theme = 'dark',
+    onCloseDrawer = null
 }) {
+    const isLight = theme === 'light';
     const [showPalette, setShowPalette] = useState(false);
     const [paletteCategory, setPaletteCategory] = useState('algebra');
     const [showPresetsModal, setShowPresetsModal] = useState(false);
@@ -137,12 +140,18 @@ export default function EquationEditor({
     };
 
     return (
-        <div className="flex flex-col h-full bg-slate-900 border-r border-slate-800 text-slate-100 w-full overflow-hidden select-none">
+        <div className={`flex flex-col h-full w-full overflow-hidden select-none border-r ${
+            isLight ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-slate-100'
+        }`}>
             {/* Header Toolbar */}
-            <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-950/70 border-b border-slate-800/80 shrink-0">
+            <div className={`flex items-center justify-between px-3.5 py-2.5 border-b shrink-0 ${
+                isLight ? 'bg-slate-100/90 border-slate-200 text-slate-800' : 'bg-slate-950/70 border-slate-800/80 text-slate-100'
+            }`}>
                 <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Equation Editor</span>
-                    <span className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-slate-800 text-sky-400 font-semibold">
+                    <span className={`text-xs font-bold uppercase tracking-wider ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Equation Editor</span>
+                    <span className={`px-1.5 py-0.5 text-[10px] font-mono rounded font-semibold ${
+                        isLight ? 'bg-slate-200 text-sky-700' : 'bg-slate-800 text-sky-400'
+                    }`}>
                         {equations.length} {equations.length === 1 ? 'func' : 'funcs'}
                     </span>
                 </div>
@@ -153,7 +162,9 @@ export default function EquationEditor({
                         type="button"
                         onClick={() => setShowPalette(prev => !prev)}
                         className={`p-1.5 rounded-lg text-xs font-medium flex items-center gap-1 transition ${
-                            showPalette ? 'bg-sky-500 text-white shadow-xs' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                            showPalette 
+                                ? 'bg-sky-500 text-white shadow-xs' 
+                                : (isLight ? 'text-slate-600 hover:bg-slate-200 hover:text-slate-900' : 'text-slate-400 hover:bg-slate-800 hover:text-white')
                         }`}
                         title="Math Symbol Palette"
                     >
@@ -165,8 +176,10 @@ export default function EquationEditor({
                     <button
                         type="button"
                         onClick={() => setShowPresetsModal(true)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition flex items-center gap-1"
-                        title="Function Presets"
+                        className={`p-1.5 rounded-lg text-xs transition flex items-center gap-1 ${
+                            isLight ? 'text-slate-600 hover:bg-slate-200 hover:text-slate-900' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                        }`}
+                        title="Browse Mathematical Function Presets"
                     >
                         <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
                         <span className="hidden sm:inline text-[11px]">Presets</span>
@@ -176,7 +189,9 @@ export default function EquationEditor({
                     <button
                         type="button"
                         onClick={() => setShowHistoryModal(true)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition"
+                        className={`p-1.5 rounded-lg transition ${
+                            isLight ? 'text-slate-600 hover:bg-slate-200 hover:text-slate-900' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                        }`}
                         title="Equation History & Favorites"
                     >
                         <History className="w-3.5 h-3.5 text-violet-400" />
@@ -185,18 +200,35 @@ export default function EquationEditor({
                     {/* Add Equation Button */}
                     <button
                         type="button"
-                        onClick={onAddEquation}
+                        onClick={() => onAddEquation()}
                         className="px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs flex items-center gap-1 shadow-md transition"
+                        title="Add New Equation"
                     >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Add</span>
                     </button>
+
+                    {/* Collapse Sidebar Button */}
+                    {onCloseDrawer && (
+                        <button
+                            type="button"
+                            onClick={onCloseDrawer}
+                            className={`p-1.5 rounded-lg transition ${
+                                isLight ? 'text-slate-600 hover:bg-slate-200 hover:text-slate-900' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                            }`}
+                            title="Collapse Equation Sidebar"
+                        >
+                            <PanelLeftClose className="w-3.5 h-3.5" />
+                        </button>
+                    )}
                 </div>
             </div>
 
             {/* Virtual Math Symbol Palette (Collapsible Drawer) */}
             {showPalette && (
-                <div className="bg-slate-950/90 border-b border-slate-800 p-2.5 flex flex-col gap-2 shrink-0 animate-in slide-in-from-top-2 duration-150">
+                <div className={`border-b p-2.5 flex flex-col gap-2 shrink-0 animate-in slide-in-from-top-2 duration-150 ${
+                    isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-950/90 border-slate-800'
+                }`}>
                     <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[11px] hide-scrollbar">
                         {PALETTE_CATEGORIES.map(cat => (
                             <button
@@ -204,8 +236,11 @@ export default function EquationEditor({
                                 type="button"
                                 onClick={() => setPaletteCategory(cat.id)}
                                 className={`px-2 py-0.5 rounded-md whitespace-nowrap font-medium transition ${
-                                    paletteCategory === cat.id ? 'bg-sky-500/20 text-sky-400 ring-1 ring-sky-500/50' : 'text-slate-400 hover:text-white'
+                                    paletteCategory === cat.id 
+                                        ? 'bg-sky-500/20 text-sky-500 ring-1 ring-sky-500/50' 
+                                        : (isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white')
                                 }`}
+                                title={`Category: ${cat.label}`}
                             >
                                 {cat.label}
                             </button>
@@ -218,8 +253,12 @@ export default function EquationEditor({
                                 key={idx}
                                 type="button"
                                 onClick={() => handleInsertSymbol(item)}
-                                className="p-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 hover:text-white rounded font-mono text-xs font-semibold flex items-center justify-center border border-slate-700/60 shadow-xs transition"
-                                title={item.title}
+                                className={`p-1.5 active:scale-95 rounded font-mono text-xs font-semibold flex items-center justify-center border shadow-xs transition ${
+                                    isLight 
+                                        ? 'bg-white hover:bg-slate-200 text-slate-800 border-slate-300' 
+                                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border-slate-700/60'
+                                }`}
+                                title={item.title || `Insert ${item.label}`}
                             >
                                 {item.label}
                             </button>
@@ -230,13 +269,17 @@ export default function EquationEditor({
 
             {/* Parameter Sliders Panel (Detected Variables) */}
             {detectedParams.length > 0 && (
-                <div className="bg-slate-950/60 border-b border-slate-800/80 px-3.5 py-2.5 flex flex-col gap-2 shrink-0">
-                    <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                <div className={`border-b px-3.5 py-2.5 flex flex-col gap-2 shrink-0 ${
+                    isLight ? 'bg-slate-100/60 border-slate-200' : 'bg-slate-950/60 border-slate-800/80'
+                }`}>
+                    <div className={`flex items-center justify-between text-[11px] font-bold uppercase tracking-wider ${
+                        isLight ? 'text-slate-600' : 'text-slate-400'
+                    }`}>
                         <span className="flex items-center gap-1.5">
-                            <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                            <Sliders className="w-3.5 h-3.5 text-amber-500" />
                             Parameters & Sliders
                         </span>
-                        <span className="text-[10px] text-slate-500 font-mono">Real-time</span>
+                        <span className={`text-[10px] font-mono ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>Real-time</span>
                     </div>
 
                     <div className="flex flex-col gap-2 max-h-[140px] overflow-y-auto pr-1">
@@ -245,8 +288,10 @@ export default function EquationEditor({
                             const isPlaying = animatingParam === paramName;
 
                             return (
-                                <div key={paramName} className="flex items-center gap-2 bg-slate-900/80 p-1.5 rounded-lg border border-slate-800">
-                                    <span className="font-mono font-bold text-sky-400 text-xs w-4">{paramName}</span>
+                                <div key={paramName} className={`flex items-center gap-2 p-1.5 rounded-lg border ${
+                                    isLight ? 'bg-white border-slate-200 shadow-xs' : 'bg-slate-900/80 border-slate-800'
+                                }`}>
+                                    <span className="font-mono font-bold text-sky-500 text-xs w-4">{paramName}</span>
                                     
                                     <input
                                         type="range"
@@ -255,21 +300,29 @@ export default function EquationEditor({
                                         step="0.1"
                                         value={val}
                                         onChange={(e) => onUpdateParameter(paramName, parseFloat(e.target.value))}
-                                        className="flex-1 accent-sky-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+                                        className={`flex-1 accent-sky-500 h-1.5 rounded-lg cursor-pointer ${
+                                            isLight ? 'bg-slate-200' : 'bg-slate-800'
+                                        }`}
+                                        title={`Adjust parameter ${paramName}`}
                                     />
 
                                     <input
                                         type="number"
                                         value={val}
                                         onChange={(e) => onUpdateParameter(paramName, parseFloat(e.target.value) || 0)}
-                                        className="w-14 px-1.5 py-0.5 text-right font-mono text-xs bg-slate-800 border border-slate-700 rounded text-white"
+                                        className={`w-14 px-1.5 py-0.5 text-right font-mono text-xs border rounded ${
+                                            isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-800 border-slate-700 text-white'
+                                        }`}
+                                        title={`Exact value of ${paramName}`}
                                     />
 
                                     <button
                                         type="button"
                                         onClick={() => setAnimatingParam(isPlaying ? null : paramName)}
                                         className={`p-1 rounded transition ${
-                                            isPlaying ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                            isPlaying 
+                                                ? 'bg-amber-500 text-slate-950 font-bold' 
+                                                : (isLight ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-100' : 'text-slate-400 hover:text-white hover:bg-slate-800')
                                         }`}
                                         title={isPlaying ? "Pause Parameter Animation" : "Animate / Play Slider"}
                                     >
@@ -283,7 +336,7 @@ export default function EquationEditor({
             )}
 
             {/* List of Equation Rows */}
-            <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5">
+            <div className={`flex-1 overflow-y-auto p-3 flex flex-col gap-2.5 ${isLight ? 'bg-slate-50' : 'bg-slate-900'}`}>
                 {equations.map((eq, idx) => {
                     const isSelected = selectedEqId === eq.id;
                     const isValid = !eq.parsed?.error;
@@ -294,8 +347,8 @@ export default function EquationEditor({
                             onClick={() => onSelectEquation(eq.id)}
                             className={`group relative flex flex-col p-2.5 rounded-xl border-2 transition-all ${
                                 isSelected
-                                    ? 'bg-slate-850 shadow-lg ring-1'
-                                    : 'bg-slate-900/90 border-slate-800 hover:border-slate-700'
+                                    ? (isLight ? 'bg-white shadow-md' : 'bg-slate-850 shadow-lg ring-1')
+                                    : (isLight ? 'bg-white/80 border-slate-200 hover:border-slate-300' : 'bg-slate-900/90 border-slate-800 hover:border-slate-700')
                             }`}
                             style={{
                                 borderColor: isSelected ? eq.color : undefined,
@@ -313,7 +366,7 @@ export default function EquationEditor({
                                                 e.stopPropagation();
                                                 setColorPickerTargetId(colorPickerTargetId === eq.id ? null : eq.id);
                                             }}
-                                            className="w-4 h-4 rounded-full border border-white/40 shadow-xs cursor-pointer hover:scale-110 transition-transform"
+                                            className="w-4 h-4 rounded-full border border-black/20 shadow-xs cursor-pointer hover:scale-110 transition-transform"
                                             style={{ backgroundColor: eq.color }}
                                             title="Change Equation Color"
                                         />
@@ -322,7 +375,9 @@ export default function EquationEditor({
                                         {colorPickerTargetId === eq.id && (
                                             <div
                                                 onClick={(e) => e.stopPropagation()}
-                                                className="absolute left-0 top-6 z-50 p-2.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl grid grid-cols-4 gap-1.5 w-36 animate-in fade-in duration-100"
+                                                className={`absolute left-0 top-6 z-50 p-2.5 border rounded-xl shadow-2xl grid grid-cols-4 gap-1.5 w-36 animate-in fade-in duration-100 ${
+                                                    isLight ? 'bg-white border-slate-300' : 'bg-slate-900 border-slate-700'
+                                                }`}
                                             >
                                                 {COLOR_SWATCHES.map((hex) => (
                                                     <button
@@ -332,8 +387,9 @@ export default function EquationEditor({
                                                             onUpdateEquation(eq.id, { color: hex });
                                                             setColorPickerTargetId(null);
                                                         }}
-                                                        className="w-6 h-6 rounded-full border border-white/20 hover:scale-115 transition-transform"
+                                                        className="w-6 h-6 rounded-full border border-black/20 hover:scale-115 transition-transform"
                                                         style={{ backgroundColor: hex }}
+                                                        title={`Select Color ${hex}`}
                                                     />
                                                 ))}
                                             </div>
@@ -341,16 +397,16 @@ export default function EquationEditor({
                                     </div>
 
                                     {/* Equation Sequence Number Badge */}
-                                    <span className="font-mono text-xs font-bold text-slate-400">
+                                    <span className={`font-mono text-xs font-bold ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
                                         #{idx + 1}
                                     </span>
 
                                     {/* Validation Status Badge */}
                                     {isValid ? (
-                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" title="Valid expression" />
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" title="Valid expression" />
                                     ) : (
-                                        <span className="flex items-center gap-1 text-[11px] text-rose-400 font-semibold" title={eq.parsed?.error}>
-                                            <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                                        <span className="flex items-center gap-1 text-[11px] text-rose-500 font-semibold" title={eq.parsed?.error}>
+                                            <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
                                             Syntax error
                                         </span>
                                     )}
@@ -363,7 +419,7 @@ export default function EquationEditor({
                                         <button
                                             type="button"
                                             onClick={(e) => { e.stopPropagation(); onReorderEquations(idx, idx - 1); }}
-                                            className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white"
+                                            className={`p-1 rounded transition ${isLight ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}`}
                                             title="Move Up"
                                         >
                                             <ArrowUp className="w-3 h-3" />
@@ -375,7 +431,7 @@ export default function EquationEditor({
                                         <button
                                             type="button"
                                             onClick={(e) => { e.stopPropagation(); onReorderEquations(idx, idx + 1); }}
-                                            className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white"
+                                            className={`p-1 rounded transition ${isLight ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}`}
                                             title="Move Down"
                                         >
                                             <ArrowDown className="w-3 h-3" />
@@ -386,7 +442,7 @@ export default function EquationEditor({
                                     <button
                                         type="button"
                                         onClick={(e) => { e.stopPropagation(); onDuplicateEquation(eq.id); }}
-                                        className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white"
+                                        className={`p-1 rounded transition ${isLight ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}`}
                                         title="Duplicate Equation"
                                     >
                                         <Copy className="w-3 h-3" />
@@ -396,7 +452,11 @@ export default function EquationEditor({
                                     <button
                                         type="button"
                                         onClick={(e) => { e.stopPropagation(); onUpdateEquation(eq.id, { isLocked: !eq.isLocked }); }}
-                                        className={`p-1 hover:bg-slate-800 rounded transition ${eq.isLocked ? 'text-amber-400' : 'text-slate-400 hover:text-white'}`}
+                                        className={`p-1 rounded transition ${
+                                            eq.isLocked 
+                                                ? 'text-amber-500 bg-amber-500/10' 
+                                                : (isLight ? 'text-slate-500 hover:text-slate-800 hover:bg-slate-100' : 'text-slate-400 hover:text-white hover:bg-slate-800')
+                                        }`}
                                         title={eq.isLocked ? "Unlock Equation" : "Lock Equation"}
                                     >
                                         {eq.isLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
@@ -406,7 +466,11 @@ export default function EquationEditor({
                                     <button
                                         type="button"
                                         onClick={(e) => { e.stopPropagation(); onUpdateEquation(eq.id, { visible: !eq.visible }); }}
-                                        className={`p-1 hover:bg-slate-800 rounded transition ${eq.visible ? 'text-sky-400' : 'text-slate-600'}`}
+                                        className={`p-1 rounded transition ${
+                                            eq.visible 
+                                                ? 'text-sky-500' 
+                                                : (isLight ? 'text-slate-400 hover:text-slate-600' : 'text-slate-600 hover:text-slate-400')
+                                        }`}
                                         title={eq.visible ? "Hide Equation" : "Show Equation"}
                                     >
                                         {eq.visible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
@@ -416,7 +480,7 @@ export default function EquationEditor({
                                     <button
                                         type="button"
                                         onClick={(e) => { e.stopPropagation(); onDeleteEquation(eq.id); }}
-                                        className="p-1 hover:bg-rose-500/20 rounded text-slate-400 hover:text-rose-400 transition"
+                                        className="p-1 hover:bg-rose-500/20 rounded text-slate-400 hover:text-rose-500 transition"
                                         title="Delete Equation"
                                     >
                                         <Trash2 className="w-3 h-3" />
@@ -435,24 +499,30 @@ export default function EquationEditor({
                                         addToHistory(e.target.value);
                                     }}
                                     placeholder="e.g. y = 2x + 1 or sin(x)"
-                                    className={`w-full px-3 py-1.5 bg-slate-950/80 border rounded-lg font-mono text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:ring-2 ${
+                                    className={`w-full px-3 py-1.5 border rounded-lg font-mono text-sm outline-none transition focus:ring-2 ${
+                                        isLight 
+                                            ? 'bg-slate-50 text-slate-900 placeholder-slate-400' 
+                                            : 'bg-slate-950/80 text-slate-100 placeholder-slate-600'
+                                    } ${
                                         isValid
-                                            ? 'border-slate-700/80 focus:border-sky-500 focus:ring-sky-500/20'
-                                            : 'border-rose-500/80 focus:border-rose-500 focus:ring-rose-500/20 text-rose-200'
+                                            ? (isLight ? 'border-slate-300 focus:border-sky-500 focus:ring-sky-500/20' : 'border-slate-700/80 focus:border-sky-500 focus:ring-sky-500/20')
+                                            : 'border-rose-500/80 focus:border-rose-500 focus:ring-rose-500/20 text-rose-500'
                                     }`}
                                 />
                             </div>
 
                             {/* KaTeX Math Formula Preview */}
                             {isValid && eq.raw && (
-                                <div className="mt-1.5 px-2 py-0.5 text-slate-300 text-xs font-mono overflow-x-auto hide-scrollbar opacity-90">
+                                <div className={`mt-1.5 px-2 py-0.5 text-xs font-mono overflow-x-auto hide-scrollbar opacity-90 ${
+                                    isLight ? 'text-slate-700' : 'text-slate-300'
+                                }`}>
                                     <KaTeXPreview math={eq.raw} />
                                 </div>
                             )}
 
                             {/* Inline Error Message */}
                             {!isValid && (
-                                <div className="mt-1.5 text-[11px] text-rose-400 font-mono flex items-center gap-1">
+                                <div className="mt-1.5 text-[11px] text-rose-500 font-mono flex items-center gap-1">
                                     <span>Check expression syntax</span>
                                 </div>
                             )}
@@ -462,14 +532,17 @@ export default function EquationEditor({
 
                 {/* Empty State */}
                 {equations.length === 0 && (
-                    <div className="flex flex-col items-center justify-center p-8 text-center text-slate-500 border-2 border-dashed border-slate-800 rounded-2xl">
-                        <Sparkles className="w-8 h-8 text-slate-600 mb-2" />
-                        <p className="text-sm font-medium text-slate-400">No equations added yet</p>
-                        <p className="text-xs text-slate-600 mt-1 max-w-[200px]">Click &quot;+ Add&quot; or choose from Presets to plot mathematical functions.</p>
+                    <div className={`flex flex-col items-center justify-center p-8 text-center border-2 border-dashed rounded-2xl ${
+                        isLight ? 'border-slate-300 bg-white/50 text-slate-500' : 'border-slate-800 text-slate-500'
+                    }`}>
+                        <Sparkles className={`w-8 h-8 mb-2 ${isLight ? 'text-slate-400' : 'text-slate-600'}`} />
+                        <p className={`text-sm font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>No equations added yet</p>
+                        <p className={`text-xs mt-1 max-w-[200px] ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>Click &quot;+ Add&quot; or choose from Presets to plot mathematical functions.</p>
                         <button
                             type="button"
-                            onClick={onAddEquation}
+                            onClick={() => onAddEquation()}
                             className="mt-3 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs rounded-lg transition"
+                            title="Add First Equation"
                         >
                             + Add First Equation
                         </button>
@@ -496,6 +569,7 @@ export default function EquationEditor({
                                 type="button"
                                 onClick={() => setShowPresetsModal(false)}
                                 className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"
+                                title="Close Presets Modal"
                             >
                                 <X className="w-4 h-4" />
                             </button>
@@ -517,6 +591,7 @@ export default function EquationEditor({
                                                     setShowPresetsModal(false);
                                                 }}
                                                 className="p-2.5 bg-slate-950/60 hover:bg-slate-800/80 border border-slate-800 hover:border-sky-500/50 rounded-xl text-left transition flex flex-col gap-1 group"
+                                                title={`Insert Preset: ${preset.name} (${preset.formula})`}
                                             >
                                                 <div className="flex items-center justify-between">
                                                     <span className="font-semibold text-xs text-slate-200 group-hover:text-sky-300">
@@ -561,6 +636,7 @@ export default function EquationEditor({
                                 type="button"
                                 onClick={() => setShowHistoryModal(false)}
                                 className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"
+                                title="Close History Modal"
                             >
                                 <X className="w-4 h-4" />
                             </button>
@@ -578,6 +654,7 @@ export default function EquationEditor({
                                                     type="button"
                                                     onClick={() => { onAddEquation(fav); setShowHistoryModal(false); }}
                                                     className="px-2 py-0.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs"
+                                                    title={`Insert favorite ${fav}`}
                                                 >
                                                     Insert
                                                 </button>
@@ -585,6 +662,7 @@ export default function EquationEditor({
                                                     type="button"
                                                     onClick={() => toggleFavorite(fav)}
                                                     className="p-1 text-amber-400 hover:text-slate-400"
+                                                    title="Remove from Favorites"
                                                 >
                                                     <Star className="w-3.5 h-3.5 fill-current" />
                                                 </button>
@@ -605,6 +683,7 @@ export default function EquationEditor({
                                                     type="button"
                                                     onClick={() => { onAddEquation(rec); setShowHistoryModal(false); }}
                                                     className="px-2 py-0.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs"
+                                                    title={`Insert equation ${rec}`}
                                                 >
                                                     Insert
                                                 </button>
@@ -612,6 +691,7 @@ export default function EquationEditor({
                                                     type="button"
                                                     onClick={() => toggleFavorite(rec)}
                                                     className={`p-1 ${favorites.includes(rec) ? 'text-amber-400' : 'text-slate-500 hover:text-amber-400'}`}
+                                                    title={favorites.includes(rec) ? "Remove from Favorites" : "Add to Favorites"}
                                                 >
                                                     <Star className="w-3.5 h-3.5" />
                                                 </button>
