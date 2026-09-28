@@ -142,6 +142,8 @@ export default function EquationEditor({
     return (
         <div 
             onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
             className={`flex flex-col h-full w-full overflow-hidden select-none border-r ${
                 isLight ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-slate-100'
             }`}
@@ -572,9 +574,11 @@ function EquationRow({
     const [localVal, setLocalVal] = useState(eq.raw || '');
     const inputRef = useRef(null);
 
-    // Sync from parent when formula changed from presets, history, or palette
+    // Sync from parent only when external formula changed (e.g. presets, history, or palette)
     useEffect(() => {
-        setLocalVal(eq.raw || '');
+        if (eq.raw !== undefined && eq.raw !== localVal) {
+            setLocalVal(eq.raw);
+        }
     }, [eq.raw]);
 
     const isValid = !eq.parsed?.error;
@@ -603,8 +607,12 @@ function EquationRow({
 
     return (
         <div
-            onClick={onSelect}
+            onClick={(e) => {
+                e.stopPropagation();
+                onSelect();
+            }}
             onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             className={`group relative flex flex-col p-2.5 rounded-xl border-2 transition-all ${
                 isSelected
                     ? (isLight ? 'bg-white shadow-md' : 'bg-slate-850 shadow-lg ring-1')
@@ -759,6 +767,9 @@ function EquationRow({
                     onBlur={handleBlur}
                     onKeyDown={handleKeyDown}
                     onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    onFocus={(e) => e.stopPropagation()}
                     placeholder="e.g. y = 2x + 1 or sin(x)"
                     className={`w-full px-3 py-1.5 border rounded-lg font-mono text-sm outline-none transition focus:ring-2 ${
                         isLight 

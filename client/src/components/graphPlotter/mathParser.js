@@ -305,11 +305,11 @@ export function parseEquation(rawInput) {
             };
         }
 
-        // Check for incomplete equations e.g. "y =", "f(x) =", "x =", "r ="
-        if (/^([a-zA-Z](\(x\))?|[yxr])\s*=\s*$/i.test(clean)) {
+        // Check for incomplete equations e.g. "y =", "f(x) =", "x =", "r =", "z ="
+        if (/^([a-zA-Z](\([xy, ]+\))?|[yxrz])\s*=\s*$/i.test(clean)) {
             const varName = clean.charAt(0).toLowerCase();
             return {
-                type: varName === 'r' ? 'polar' : (varName === 'x' ? 'x_relation' : 'cartesian'),
+                type: varName === 'r' ? 'polar' : (varName === 'x' ? 'x_relation' : (varName === 'z' ? 'cartesian3d' : 'cartesian')),
                 operator: '=',
                 leftSide: varName,
                 expression: '',
@@ -317,6 +317,38 @@ export function parseEquation(rawInput) {
                 parameters: [],
                 domainRestriction: null,
                 error: 'Please enter a function (e.g. 2x + 1)'
+            };
+        }
+
+        // Check for 2D function notation: f(x, y) = ... or z(x, y) = ...
+        const func2DNotationMatch = clean.match(/^[a-zA-Z]\s*\(\s*x\s*,\s*y\s*\)\s*=\s*(.+)$/i);
+        if (func2DNotationMatch) {
+            const expr = func2DNotationMatch[1].trim();
+            return {
+                type: 'cartesian3d',
+                operator: '=',
+                leftSide: 'z',
+                expression: expr,
+                raw: rawInput,
+                parameters: extractParameters(expr).filter(p => p.toLowerCase() !== 'x' && p.toLowerCase() !== 'y'),
+                domainRestriction,
+                error: null
+            };
+        }
+
+        // Check for 3D assignment: z = f(x, y) or z = f(x)
+        const zMatch = clean.match(/^z\s*=\s*(.+)$/i);
+        if (zMatch) {
+            const expr = zMatch[1].trim();
+            return {
+                type: 'cartesian3d',
+                operator: '=',
+                leftSide: 'z',
+                expression: expr,
+                raw: rawInput,
+                parameters: extractParameters(expr).filter(p => p.toLowerCase() !== 'x' && p.toLowerCase() !== 'y'),
+                domainRestriction,
+                error: null
             };
         }
 

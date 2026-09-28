@@ -4926,7 +4926,10 @@ export default function Whiteboard({
     }, [activeConnectorDrag, shapeObjects, imageObjects, color, strokeWidth, socket, sessionId, saveToHistory, setShapeObjects, isShiftDown]);
 
     // Click on canvas to deselect images, text, shapes, 3D, media and PDF objects
-    const handleCanvasClick = useCallback(() => {
+    const handleCanvasClick = useCallback((e) => {
+        if (e?.target?.closest?.('input, textarea, select, button, [data-interactive="true"], [data-graph-id], .graph-canvas-svg, [data-color-picker]')) {
+            return;
+        }
         if (justCreatedShapeRef.current) {
             justCreatedShapeRef.current = false;
             return;
@@ -8914,28 +8917,39 @@ export default function Whiteboard({
         const cx = Math.round((-panX + viewW / 2) / currentZoomVal);
         const cy = Math.round((-panY + viewH / 2) / currentZoomVal);
 
+        let savedState = null;
+        try {
+            const raw = localStorage.getItem('whiteboard_last_graph_plotter_state');
+            if (raw) savedState = JSON.parse(raw);
+        } catch {}
+
         const newGraphId = `graph_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
         const newGraph = {
             id: newGraphId,
-            title: 'Interactive Graph Plotter',
+            title: savedState?.title || 'Interactive Graph Plotter',
             x: Math.max(30, cx - 380),
             y: Math.max(30, cy - 240),
-            width: 760,
-            height: 480,
+            width: savedState?.width || 760,
+            height: savedState?.height || 480,
             rotation: 0,
             zIndex: 25,
-            viewBounds: { xMin: -10, xMax: 10, yMin: -6, yMax: 6 },
-            coordinateSystem: 'cartesian',
-            showGrid: true,
-            showMinorGrid: true,
-            showAxisLabels: true,
-            lockAspectRatio: false,
-            equations: [
-                { id: `eq_${Date.now()}_1`, raw: 'y = 2x + 1', color: getEquationColor(0), visible: true },
-                { id: `eq_${Date.now()}_2`, raw: 'y = x^2 - 4', color: getEquationColor(1), visible: true }
-            ],
-            parameters: {},
-            annotations: []
+            theme: savedState?.theme || 'dark',
+            graphMode: savedState?.graphMode || '2d',
+            showIntersections: Boolean(savedState?.showIntersections),
+            viewBounds: savedState?.viewBounds || { xMin: -10, xMax: 10, yMin: -6, yMax: 6 },
+            coordinateSystem: savedState?.coordinateSystem || 'cartesian',
+            showGrid: savedState?.showGrid !== undefined ? savedState.showGrid : true,
+            showMinorGrid: savedState?.showMinorGrid !== undefined ? savedState.showMinorGrid : true,
+            showAxisLabels: savedState?.showAxisLabels !== undefined ? savedState.showAxisLabels : true,
+            lockAspectRatio: Boolean(savedState?.lockAspectRatio),
+            equations: (savedState?.equations && savedState.equations.length > 0)
+                ? savedState.equations
+                : [
+                    { id: `eq_${Date.now()}_1`, raw: 'y = 2x + 1', color: getEquationColor(0), visible: true },
+                    { id: `eq_${Date.now()}_2`, raw: 'y = x^2 - 4', color: getEquationColor(1), visible: true }
+                ],
+            parameters: savedState?.parameters || {},
+            annotations: savedState?.annotations || []
         };
 
         setPageGraphObjects(prev => ({
@@ -15366,6 +15380,23 @@ export default function Whiteboard({
                                 setGraphObjects(prev => prev.map(g => g.id === graphObj.id ? { ...g, ...updates } : g));
                             }}
                             onDelete={(id) => {
+                                try {
+                                    const target = (pageGraphObjects[currentPage] || []).find(g => g.id === id);
+                                    if (target) {
+                                        localStorage.setItem('whiteboard_last_graph_plotter_state', JSON.stringify({
+                                            equations: target.equations,
+                                            theme: target.theme || 'dark',
+                                            graphMode: target.graphMode || '2d',
+                                            showIntersections: Boolean(target.showIntersections),
+                                            viewBounds: target.viewBounds,
+                                            coordinateSystem: target.coordinateSystem,
+                                            showGrid: target.showGrid,
+                                            showMinorGrid: target.showMinorGrid,
+                                            showAxisLabels: target.showAxisLabels,
+                                            parameters: target.parameters
+                                        }));
+                                    }
+                                } catch {}
                                 setGraphObjects(prev => prev.filter(g => g.id !== id));
                                 if (selectedGraphId === id) setSelectedGraphId(null);
                             }}

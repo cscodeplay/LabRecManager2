@@ -58,6 +58,7 @@ export default function GraphCanvas({
     legendConfig = { show: true, position: 'top-right' },
     showCurveLabels = true,
     showIntersections = false,
+    angleUnit = 'rad', // 'rad' | 'deg'
     activeAnalysis = null, // { type: 'roots' | 'extrema' | 'intersections' | 'tangent' | 'integral' | 'derivative', eqId, x0, a, b }
     onUpdateAnalysis,
     annotations = [],
@@ -70,6 +71,10 @@ export default function GraphCanvas({
 }) {
     const containerRef = useRef(null);
     const svgRef = useRef(null);
+
+    // Temporary zoom message overlay at center of graph
+    const [zoomMessage, setZoomMessage] = useState(null);
+    const zoomTimerRef = useRef(null);
 
     // Pan & Drag state
     const [isPanning, setIsPanning] = useState(false);
@@ -107,8 +112,24 @@ export default function GraphCanvas({
         return yMin + ((height - sy) / height) * (yMax - yMin);
     }, [yMin, yMax, height]);
 
-    // Calculate intelligent grid intervals
-    const xInterval = useMemo(() => calculateTickInterval(xMax - xMin, Math.max(6, Math.floor(width / 90))), [xMin, xMax, width]);
+    // Calculate intelligent grid intervals with radian/degree support
+    const xInterval = useMemo(() => {
+        const range = xMax - xMin;
+        if (angleUnit === 'deg') {
+            if (range <= 90) return 15;
+            if (range <= 180) return 30;
+            if (range <= 360) return 45;
+            if (range <= 720) return 90;
+            return 180;
+        }
+        if (angleUnit === 'rad' && range <= 40) {
+            if (range <= 4) return Math.PI / 4;
+            if (range <= 12) return Math.PI / 2;
+            if (range <= 25) return Math.PI;
+            return 2 * Math.PI;
+        }
+        return calculateTickInterval(range, Math.max(6, Math.floor(width / 90)));
+    }, [xMin, xMax, width, angleUnit]);
     const yInterval = useMemo(() => calculateTickInterval(yMax - yMin, Math.max(5, Math.floor(height / 75))), [yMin, yMax, height]);
 
     // Generate grid lines and tick marks
@@ -580,41 +601,61 @@ export default function GraphCanvas({
         }
     };
 
-    // Zoom via mouse wheel / trackpad pinch
-    const handleWheel = (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        const rect = svgRef.current.getBoundingClientRect();
-        const cursorSx = e.clientX - rect.left;
-        const cursorSy = e.clientY - rect.top;
+    // Zoom via mouse wheel / trackpad pinch with focal point invariant at mouse cursor
+    useEffect(() => {
+        const el = svgRef.current;
+        if (!el) return;
 
-        // Zoom factor: wheel down = zoom out, wheel up = zoom in
-        const zoomFactor = e.deltaY < 0 ? 0.85 : 1.18;
+        const onWheelNonPassive = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
 
-        const cursorMathX = screenToMathX(cursorSx);
-        const cursorMathY = screenToMathY(cursorSy);
+            const rect = el.getBoundingClientRect();
+            const cursorSx = e.clientX - rect.left;
+            const cursorSy = e.clientY - rect.top;
 
-        const newXRange = (xMax - xMin) * zoomFactor;
-        const newYRange = (yMax - yMin) * zoomFactor;
+            // Zoom factor: wheel up = zoom in, wheel down = zoom out
+            const zoomFactor = e.deltaY < 0 ? 0.82 : 1.22;
+            const currentXRange = xMax - xMin;
+            const currentYRange = yMax - yMin;
 
-        // Keep point under cursor stable during zoom
-        const xFraction = cursorSx / width;
-        const yFraction = (height - cursorSy) / height;
+            // Mathematical coordinate under mouse cursor
+            const cursorMathX = xMin + (cursorSx / width) * currentXRange;
+            const cursorMathY = yMin + ((height - cursorSy) / height) * currentYRange;
 
-        const newXMin = cursorMathX - xFraction * newXRange;
-        const newXMax = newXMin + newXRange;
-        const newYMin = cursorMathY - yFraction * newYRange;
-        const newYMax = newYMin + newYRange;
+            const newXRange = currentXRange * zoomFactor;
+            const newYRange = currentYRange * zoomFactor;
 
-        if (onUpdateViewBounds) {
-            onUpdateViewBounds({
-                xMin: newXMin,
-                xMax: newXMax,
-                yMin: newYMin,
-                yMax: newYMax
-            });
-        }
-    };
+            // Invariant: Keep cursor math coordinate fixed on screen
+            const xFraction = cursorSx / width;
+            const yFraction = (height - cursorSy) / height;
+
+            const newXMin = cursorMathX - xFraction * newXRange;
+            const newXMax = newXMin + newXRange;
+            const newYMin = cursorMathY - yFraction * newYRange;
+            const newYMax = newYMin + newYRange;
+
+            const zoomPct = Math.round((20 / newXRange) * 100);
+            setZoomMessage(`${e.deltaY < 0 ? 'Zoom In' : 'Zoom Out'} (${zoomPct}%)`);
+            if (zoomTimerRef.current) clearTimeout(zoomTimerRef.current);
+            zoomTimerRef.current = setTimeout(() => setZoomMessage(null), 800);
+
+            if (onUpdateViewBounds) {
+                onUpdateViewBounds({
+                    xMin: newXMin,
+                    xMax: newXMax,
+                    yMin: newYMin,
+                    yMax: newYMax
+                });
+            }
+        };
+
+        el.addEventListener('wheel', onWheelNonPassive, { passive: false });
+        return () => {
+            el.removeEventListener('wheel', onWheelNonPassive);
+            if (zoomTimerRef.current) clearTimeout(zoomTimerRef.current);
+        };
+    }, [xMin, xMax, yMin, yMax, width, height, onUpdateViewBounds]);
 
     // Pin inspection point on click
     const handleCanvasClick = (e) => {
@@ -708,7 +749,6 @@ export default function GraphCanvas({
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
                 onPointerLeave={handlePointerUp}
-                onWheel={handleWheel}
                 onClick={handleCanvasClick}
             >
                 <defs>
@@ -913,7 +953,7 @@ export default function GraphCanvas({
                                         fontFamily="monospace"
                                         fontWeight="500"
                                     >
-                                        {formatAxisNumber(t.val)}
+                                        {formatAxisNumber(t.val, angleUnit)}
                                     </text>
                                 </g>
                             );
@@ -934,7 +974,7 @@ export default function GraphCanvas({
                                         fontFamily="monospace"
                                         fontWeight="500"
                                     >
-                                        {formatAxisNumber(t.val)}
+                                        {formatAxisNumber(t.val, 'cartesian')}
                                     </text>
                                 </g>
                             );
@@ -1269,11 +1309,11 @@ export default function GraphCanvas({
                             stroke="#ffffff"
                             strokeWidth="2"
                         />
-                        <g transform={`translate(${Math.min(width - 120, Math.max(10, snappedPoint.screenX + 10))}, ${Math.max(25, snappedPoint.screenY - 20)})`}>
+                        <g transform={`translate(${Math.min(width - 150, Math.max(10, snappedPoint.screenX + 10))}, ${Math.max(25, snappedPoint.screenY - 20)})`}>
                             <rect
                                 x="0"
                                 y="-14"
-                                width="115"
+                                width="145"
                                 height="28"
                                 rx="6"
                                 fill="rgba(15, 23, 42, 0.95)"
@@ -1281,10 +1321,12 @@ export default function GraphCanvas({
                                 strokeWidth="1.5"
                                 filter="drop-shadow(0 4px 6px rgba(0,0,0,0.4))"
                             />
-                            <text x="8" y="4" fill="#38bdf8" fontSize="11" fontFamily="monospace" fontWeight="bold">
-                                x = {snappedPoint.x.toFixed(2)}
+                            <text x="8" y="4" fill="#38bdf8" fontSize="10.5" fontFamily="monospace" fontWeight="bold">
+                                {angleUnit === 'deg' 
+                                    ? `x = ${Math.round(snappedPoint.x * 10) / 10}°` 
+                                    : `x = ${formatAxisNumber(snappedPoint.x, 'rad')}`}
                             </text>
-                            <text x="64" y="4" fill="#a7f3d0" fontSize="11" fontFamily="monospace" fontWeight="bold">
+                            <text x="78" y="4" fill="#a7f3d0" fontSize="10.5" fontFamily="monospace" fontWeight="bold">
                                 y = {snappedPoint.y.toFixed(2)}
                             </text>
                         </g>
@@ -1369,8 +1411,24 @@ export default function GraphCanvas({
             {cursorMathPos && !snappedPoint && (
                 <div className="absolute bottom-2 left-2 px-2.5 py-1 rounded-lg bg-slate-900/85 backdrop-blur-sm border border-slate-700/60 text-slate-300 font-mono text-[11px] pointer-events-none z-10 flex items-center gap-2">
                     <Crosshair className="w-3 h-3 text-slate-400" />
-                    <span>x: <strong className="text-sky-400">{cursorMathPos.x.toFixed(2)}</strong></span>
+                    <span>
+                        x: <strong className="text-sky-400">
+                            {angleUnit === 'deg' 
+                                ? `${Math.round(cursorMathPos.x * 10) / 10}°` 
+                                : `${cursorMathPos.x.toFixed(2)} (${formatAxisNumber(cursorMathPos.x, 'rad')})`}
+                        </strong>
+                    </span>
                     <span>y: <strong className="text-emerald-400">{cursorMathPos.y.toFixed(2)}</strong></span>
+                </div>
+            )}
+
+            {/* Temporary Centered Zoom Message */}
+            {zoomMessage && (
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-40 transition-all duration-150 animate-in zoom-in-95">
+                    <div className="px-4 py-2 rounded-2xl backdrop-blur-md bg-slate-900/90 text-white font-mono text-xs font-bold shadow-2xl border border-sky-500/50 flex items-center gap-2">
+                        <span className="text-sky-400">🔍</span>
+                        <span>{zoomMessage}</span>
+                    </div>
                 </div>
             )}
         </div>
@@ -1378,12 +1436,37 @@ export default function GraphCanvas({
 }
 
 // Helpers
-function formatAxisNumber(val) {
+function formatAxisNumber(val, unit = 'rad') {
     if (Math.abs(val) < 1e-8) return '0';
+    if (unit === 'deg') {
+        return `${Math.round(val)}°`;
+    }
+    if (unit === 'rad') {
+        const piRatio = val / Math.PI;
+        const quarters = Math.round(piRatio * 4);
+        if (Math.abs(piRatio - quarters / 4) < 0.04) {
+            if (quarters === 0) return '0';
+            if (quarters === 4) return 'π';
+            if (quarters === -4) return '-π';
+            if (quarters === 8) return '2π';
+            if (quarters === -8) return '-2π';
+            if (quarters === 2) return 'π/2';
+            if (quarters === -2) return '-π/2';
+            if (quarters === 6) return '3π/2';
+            if (quarters === -6) return '-3π/2';
+            if (quarters === 1) return 'π/4';
+            if (quarters === -1) return '-π/4';
+            if (quarters === 3) return '3π/4';
+            if (quarters === -3) return '-3π/4';
+            if (quarters % 4 === 0) return `${quarters / 4}π`;
+            if (quarters % 2 === 0) return `${quarters / 2}π/2`;
+            return `${quarters}π/4`;
+        }
+    }
     if (Math.abs(val) >= 10000 || (Math.abs(val) < 0.01 && Math.abs(val) > 0)) {
         return val.toExponential(1);
     }
-    return Number(val.toFixed(3)).toString();
+    return Number(val.toFixed(2)).toString();
 }
 
 function pointsToSvgPath(pts) {

@@ -51,6 +51,7 @@ export default function WhiteboardGraphObject({
     // 2D Curve Plotter vs 3D Surface Graph Mode
     const [graphMode, setGraphMode] = useState(graph?.graphMode || '2d');
     const [showIntersections, setShowIntersections] = useState(Boolean(graph?.showIntersections));
+    const angleUnit = graph?.angleUnit || 'rad'; // 'rad' (radians) or 'deg' (degrees)
 
     // Equation editor panel visibility (drawer toggle)
     const [showDrawer, setShowDrawer] = useState(graph?.showDrawer !== undefined ? graph.showDrawer : true);
@@ -127,16 +128,36 @@ export default function WhiteboardGraphObject({
         }
     }, [compiledEquations, selectedEqId]);
 
-    // Update handler helper
+    // Update handler helper with localStorage persistence
     const handleUpdate = useCallback((updates) => {
         if (onUpdate) {
             onUpdate(updates);
         }
-    }, [onUpdate]);
+        try {
+            const merged = { ...graph, ...updates };
+            localStorage.setItem('whiteboard_last_graph_plotter_state', JSON.stringify({
+                equations: merged.equations || graph?.equations,
+                theme: merged.theme || graph?.theme || 'dark',
+                graphMode: merged.graphMode || graphMode || '2d',
+                showIntersections: Boolean(merged.showIntersections !== undefined ? merged.showIntersections : showIntersections),
+                viewBounds: merged.viewBounds || graph?.viewBounds,
+                coordinateSystem: merged.coordinateSystem || graph?.coordinateSystem,
+                showGrid: merged.showGrid !== undefined ? merged.showGrid : graph?.showGrid,
+                showMinorGrid: merged.showMinorGrid !== undefined ? merged.showMinorGrid : graph?.showMinorGrid,
+                showAxisLabels: merged.showAxisLabels !== undefined ? merged.showAxisLabels : graph?.showAxisLabels,
+                angleUnit: merged.angleUnit || angleUnit || 'rad',
+                parameters: merged.parameters || graph?.parameters
+            }));
+        } catch {}
+    }, [onUpdate, graph, graphMode, showIntersections, angleUnit]);
 
     const handleToggleTheme = useCallback(() => {
         handleUpdate({ theme: isDark ? 'light' : 'dark' });
     }, [handleUpdate, isDark]);
+
+    const handleToggleAngleUnit = useCallback(() => {
+        handleUpdate({ angleUnit: angleUnit === 'rad' ? 'deg' : 'rad' });
+    }, [handleUpdate, angleUnit]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // EQUATION MANAGEMENT ACTIONS
@@ -335,10 +356,13 @@ export default function WhiteboardGraphObject({
                     const canvas = document.createElement('canvas');
                     const targetW = svgEl.clientWidth || (svgEl.getBoundingClientRect ? svgEl.getBoundingClientRect().width : 800);
                     const targetH = svgEl.clientHeight || (svgEl.getBoundingClientRect ? svgEl.getBoundingClientRect().height : 600);
-                    canvas.width = targetW * 2;
-                    canvas.height = targetH * 2;
+                    const scaleFactor = 3;
+                    canvas.width = Math.round(targetW * scaleFactor);
+                    canvas.height = Math.round(targetH * scaleFactor);
                     const ctx = canvas.getContext('2d');
-                    ctx.scale(2, 2);
+                    ctx.scale(scaleFactor, scaleFactor);
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
                     ctx.fillStyle = isDark ? '#020617' : '#ffffff';
                     ctx.fillRect(0, 0, targetW, targetH);
                     ctx.drawImage(img, 0, 0, targetW, targetH);
@@ -351,7 +375,7 @@ export default function WhiteboardGraphObject({
                                     await navigator.clipboard.write([
                                         new ClipboardItem({ 'image/png': blob })
                                     ]);
-                                    toast.success('Graph image copied to clipboard!', { icon: '📋' });
+                                    toast.success('High-res graph copied to clipboard!', { icon: '📋' });
                                 } catch {
                                     toast.error('Clipboard copy not supported by browser');
                                 }
@@ -359,7 +383,7 @@ export default function WhiteboardGraphObject({
                         });
                     } else {
                         const a = document.createElement('a');
-                        a.href = canvas.toDataURL('image/png');
+                        a.href = canvas.toDataURL('image/png', 1.0);
                         a.download = `graph_plotter_${Date.now()}.png`;
                         a.click();
                         toast.success('Exported as high-res PNG image', { icon: '🖼️' });
@@ -395,26 +419,30 @@ export default function WhiteboardGraphObject({
                 const canvas = document.createElement('canvas');
                 const targetW = svgEl.clientWidth || (svgEl.getBoundingClientRect ? svgEl.getBoundingClientRect().width : 800);
                 const targetH = svgEl.clientHeight || (svgEl.getBoundingClientRect ? svgEl.getBoundingClientRect().height : 600);
-                canvas.width = targetW;
-                canvas.height = targetH;
+                const scaleFactor = 3;
+                canvas.width = Math.round(targetW * scaleFactor);
+                canvas.height = Math.round(targetH * scaleFactor);
                 const ctx = canvas.getContext('2d');
+                ctx.scale(scaleFactor, scaleFactor);
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
                 ctx.fillStyle = isDark ? '#020617' : '#ffffff';
                 ctx.fillRect(0, 0, targetW, targetH);
                 ctx.drawImage(img, 0, 0, targetW, targetH);
                 URL.revokeObjectURL(url);
 
-                const dataUrl = canvas.toDataURL('image/png');
+                const dataUrl = canvas.toDataURL('image/png', 1.0);
                 if (onConvertToStaticDrawing) {
                     onConvertToStaticDrawing({
                         x,
                         y,
-                        width,
-                        height,
+                        width: targetW,
+                        height: targetH,
                         dataUrl,
                         rotation
                     });
                 }
-                toast.success('Converted graph into static whiteboard drawing!', { icon: '✨' });
+                toast.success('Inserted high-definition graph image onto whiteboard!', { icon: '✨' });
             };
             img.src = url;
         } catch (err) {
@@ -459,7 +487,11 @@ export default function WhiteboardGraphObject({
                 // Ensure interactions inside graph object don't bubble to canvas selection handlers
                 e.stopPropagation();
             }}
-            onClick={() => onSelect && onSelect(graph?.id)}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+                e.stopPropagation();
+                onSelect && onSelect(graph?.id);
+            }}
             style={{
                 position: 'absolute',
                 left: `${x}px`,
@@ -480,6 +512,30 @@ export default function WhiteboardGraphObject({
                     : ''
             }`}
         >
+            {/* Edge Drag Strips - Allow moving graph from all borders/edges */}
+            {!isLocked && (
+                <>
+                    {/* Left border drag strip */}
+                    <div
+                        onPointerDown={handleMoveStart}
+                        className="absolute left-0 top-10 bottom-0 w-2.5 cursor-move z-20 hover:bg-sky-500/20 active:bg-sky-500/30 transition-colors"
+                        title="Drag border to move graph"
+                    />
+                    {/* Right border drag strip */}
+                    <div
+                        onPointerDown={handleMoveStart}
+                        className="absolute right-0 top-10 bottom-0 w-2.5 cursor-move z-20 hover:bg-sky-500/20 active:bg-sky-500/30 transition-colors"
+                        title="Drag border to move graph"
+                    />
+                    {/* Bottom border drag strip */}
+                    <div
+                        onPointerDown={handleMoveStart}
+                        className="absolute left-0 right-0 bottom-0 h-2.5 cursor-move z-20 hover:bg-sky-500/20 active:bg-sky-500/30 transition-colors"
+                        title="Drag border to move graph"
+                    />
+                </>
+            )}
+
             {/* 1. Header Drag Bar & Title */}
             <div
                 onPointerDown={handleMoveStart}
@@ -636,6 +692,9 @@ export default function WhiteboardGraphObject({
                             width={canvasWidth}
                             height={canvasHeight}
                             equations={compiledEquations}
+                            selectedEqId={selectedEqId}
+                            onSelectEquation={(id) => setSelectedEqId(id)}
+                            parameters={parameters}
                             theme={theme}
                         />
                     ) : (
@@ -662,6 +721,7 @@ export default function WhiteboardGraphObject({
                             isPresentationMode={isPresentationMode}
                             theme={theme}
                             showIntersections={showIntersections}
+                            angleUnit={angleUnit}
                         />
                     )}
 
@@ -715,6 +775,8 @@ export default function WhiteboardGraphObject({
                             onToggleIntersections={() => setShowIntersections(prev => !prev)}
                             graphMode={graphMode}
                             onToggleGraphMode={() => setGraphMode(prev => prev === '3d' ? '2d' : '3d')}
+                            angleUnit={angleUnit}
+                            onToggleAngleUnit={handleToggleAngleUnit}
                         />
                     </div>
 

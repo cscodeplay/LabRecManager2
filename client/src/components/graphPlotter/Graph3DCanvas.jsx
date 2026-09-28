@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { 
     RotateCcw, Play, Pause, Layers, Compass, 
-    ZoomIn, ZoomOut, Sparkles, ChevronDown, Check
+    ZoomIn, ZoomOut, Sparkles, ChevronDown, Check, Calculator
 } from 'lucide-react';
 import { compileExpression } from './mathParser';
 
@@ -78,14 +78,16 @@ export default function Graph3DCanvas({
     height = 500,
     theme = 'dark',
     equations = [],
-    selectedEqId = null
+    selectedEqId = null,
+    onSelectEquation = null,
+    parameters = {}
 }) {
     const isDark = theme === 'dark';
     const containerRef = useRef(null);
     const svgRef = useRef(null);
 
-    // Selected 3D surface preset
-    const [selectedPresetId, setSelectedPresetId] = useState('ripple');
+    // Selected 3D surface or equation ID: 'equation_auto' | equationId | presetId
+    const [selectedSourceId, setSelectedSourceId] = useState('equation_auto');
     const [showPresetDropdown, setShowPresetDropdown] = useState(false);
     const [renderStyle, setRenderStyle] = useState('shaded'); // 'shaded' | 'wireframe' | 'both'
     const [colorMap, setColorMap] = useState('viridis'); // 'viridis' | 'coolwarm' | 'neon' | 'sunset'
@@ -103,9 +105,88 @@ export default function Graph3DCanvas({
     const [isDragging, setIsDragging] = useState(false);
     const lastMousePos = useRef({ x: 0, y: 0 });
 
-    const activePreset = useMemo(() => {
-        return SURFACE_3D_PRESETS.find(p => p.id === selectedPresetId) || SURFACE_3D_PRESETS[0];
-    }, [selectedPresetId]);
+    // Sync when selectedEqId changes from sidebar
+    useEffect(() => {
+        if (selectedEqId && selectedSourceId !== selectedEqId) {
+            setSelectedSourceId(selectedEqId);
+        }
+    }, [selectedEqId]);
+
+    // Active 3D surface function: supports real user equations AND presets
+    const activeSurface = useMemo(() => {
+        // 1. Check if user explicitly picked a 3D preset
+        const preset = SURFACE_3D_PRESETS.find(p => p.id === selectedSourceId);
+        if (preset) {
+            return {
+                type: 'preset',
+                id: preset.id,
+                name: preset.name,
+                formula: preset.formula,
+                xRange: preset.xRange,
+                yRange: preset.yRange,
+                fn: preset.fn
+            };
+        }
+
+        // 2. Otherwise find the target equation
+        let targetEq = null;
+        if (selectedSourceId && selectedSourceId !== 'equation_auto') {
+            targetEq = equations.find(e => e.id === selectedSourceId);
+        }
+        if (!targetEq && selectedEqId) {
+            targetEq = equations.find(e => e.id === selectedEqId);
+        }
+        if (!targetEq && equations.length > 0) {
+            targetEq = equations.find(e => e.compiled || (e.parsed && !e.parsed.error)) || equations[0];
+        }
+
+        if (targetEq) {
+            let fn = targetEq.compiled;
+            let formula = targetEq.parsed?.expression || targetEq.raw || 'Custom Function';
+
+            if (!fn) {
+                try {
+                    const cleanRaw = (targetEq.raw || '').replace(/^(z|y|[a-zA-Z]\([xy, ]+\))\s*=\s*/i, '').trim();
+                    if (cleanRaw) {
+                        fn = compileExpression(cleanRaw);
+                        formula = cleanRaw;
+                    }
+                } catch {}
+            }
+
+            if (fn) {
+                return {
+                    type: 'equation',
+                    id: targetEq.id,
+                    name: targetEq.raw || 'User Equation',
+                    formula: formula,
+                    xRange: [-4, 4],
+                    yRange: [-4, 4],
+                    color: targetEq.color,
+                    fn: (x, y) => {
+                        try {
+                            const val = fn({ x, y }, parameters);
+                            return (typeof val === 'number' && isFinite(val)) ? val : 0;
+                        } catch {
+                            return 0;
+                        }
+                    }
+                };
+            }
+        }
+
+        // 3. Fallback to default preset (Ripple)
+        const fallback = SURFACE_3D_PRESETS[0];
+        return {
+            type: 'preset',
+            id: fallback.id,
+            name: fallback.name,
+            formula: fallback.formula,
+            xRange: fallback.xRange,
+            yRange: fallback.yRange,
+            fn: fallback.fn
+        };
+    }, [selectedSourceId, selectedEqId, equations, parameters]);
 
     // Auto-spin loop
     useEffect(() => {
@@ -127,37 +208,68 @@ export default function Graph3DCanvas({
         };
     }, [isAutoSpinning]);
 
-    // Generate 3D surface mesh vertices and faces
+    // Generate 3D surface mesh vertices and faces with adaptive height scaling
     const meshData = useMemo(() => {
-        const gridSteps = 24; // 24x24 facets = 576 quads (1152 tris) for optimal 60fps
-        const [xMin, xMax] = activePreset.xRange;
-        const [yMin, yMax] = activePreset.yRange;
+        const gridSteps = 24; // 24x24 facets = 576 quads for smooth 60fps SVG rendering
+        const [xMin, xMax] = activeSurface.xRange || [-4, 4];
+        const [yMin, yMax] = activeSurface.yRange || [-4, 4];
         const dx = (xMax - xMin) / gridSteps;
         const dy = (yMax - yMin) / gridSteps;
 
-        const vertices = [];
+        const rawGrid = [];
         let minZ = Infinity;
         let maxZ = -Infinity;
 
-        // Sample grid
+        // Sample raw values
         for (let j = 0; j <= gridSteps; j++) {
             const y = yMin + j * dy;
+            const row = [];
             for (let i = 0; i <= gridSteps; i++) {
                 const x = xMin + i * dx;
                 let z = 0;
                 try {
-                    z = activePreset.fn(x, y);
+                    z = activeSurface.fn(x, y);
                     if (!isFinite(z) || isNaN(z)) z = 0;
                 } catch {
                     z = 0;
                 }
+                // Cap extreme singularities
+                z = Math.max(-50, Math.min(50, z));
                 if (z < minZ) minZ = z;
                 if (z > maxZ) maxZ = z;
-                vertices.push({ x, y, z });
+                row.push({ x, y, rawZ: z });
             }
+            rawGrid.push(row);
         }
 
-        const zRange = (maxZ - minZ) || 1;
+        if (!isFinite(minZ)) minZ = -1;
+        if (!isFinite(maxZ)) maxZ = 1;
+        if (minZ === maxZ) {
+            minZ -= 1;
+            maxZ += 1;
+        }
+
+        const zSpan = maxZ - minZ;
+        const xySpan = Math.max(xMax - xMin, yMax - yMin);
+        // Vertical ceiling ~4.5 units in 3D world space
+        const maxSpan = xySpan * 0.65;
+        const zScale = (zSpan > maxSpan && zSpan > 0) ? (maxSpan / zSpan) : 1;
+        const zCenter = (minZ + maxZ) / 2;
+
+        const vertices = [];
+        for (let j = 0; j <= gridSteps; j++) {
+            for (let i = 0; i <= gridSteps; i++) {
+                const pt = rawGrid[j][i];
+                // Center and scale Z for balanced rendering
+                const scaledZ = (pt.rawZ - zCenter) * zScale;
+                vertices.push({
+                    x: pt.x,
+                    y: pt.y,
+                    z: scaledZ,
+                    rawZ: pt.rawZ
+                });
+            }
+        }
 
         // Construct quad faces
         const faces = [];
@@ -170,19 +282,20 @@ export default function Graph3DCanvas({
                 const i2 = row2 + i + 1;
                 const i3 = row2 + i;
 
-                const avgZ = (vertices[i0].z + vertices[i1].z + vertices[i2].z + vertices[i3].z) / 4;
-                const normZ = (avgZ - minZ) / zRange;
+                const avgRawZ = (vertices[i0].rawZ + vertices[i1].rawZ + vertices[i2].rawZ + vertices[i3].rawZ) / 4;
+                const normZ = Math.max(0, Math.min(1, (avgRawZ - minZ) / (zSpan || 1)));
 
                 faces.push({
                     indices: [i0, i1, i2, i3],
-                    avgZ,
+                    avgZ: (vertices[i0].z + vertices[i1].z + vertices[i2].z + vertices[i3].z) / 4,
                     normZ
                 });
             }
         }
 
-        return { vertices, faces, minZ, maxZ };
-    }, [activePreset]);
+        const floorZ = (minZ - zCenter) * zScale;
+        return { vertices, faces, minZ, maxZ, floorZ };
+    }, [activeSurface]);
 
     // Color gradient interpolation
     const getZColor = useCallback((normZ, lighting = 1) => {
@@ -190,12 +303,10 @@ export default function Graph3DCanvas({
         let r = 0, g = 0, b = 0;
 
         if (colorMap === 'viridis') {
-            // Viridis approx
             r = Math.round(68 + 180 * t);
             g = Math.round(1 + 220 * Math.sin(t * Math.PI));
             b = Math.round(84 + 170 * (1 - t));
         } else if (colorMap === 'coolwarm') {
-            // Deep blue to white to crimson
             if (t < 0.5) {
                 const sub = t * 2;
                 r = Math.round(59 + 180 * sub);
@@ -208,12 +319,10 @@ export default function Graph3DCanvas({
                 b = Math.round(240 * (1 - sub * 0.8));
             }
         } else if (colorMap === 'sunset') {
-            // Indigo -> Rose -> Amber
             r = Math.round(99 + 156 * t);
             g = Math.round(102 * (1 - t) + 180 * t);
             b = Math.round(241 * (1 - t) + 20 * t);
         } else {
-            // Neon Cyan -> Magenta -> Yellow
             r = Math.round(16 + 239 * t);
             g = Math.round(185 * Math.sin(t * Math.PI));
             b = Math.round(250 * (1 - t * 0.7));
@@ -241,7 +350,6 @@ export default function Graph3DCanvas({
 
         // Transform vertex
         const transformPoint = (x, y, z) => {
-            // Rotate around Z/Y then X
             const x1 = x * cosY - y * sinY;
             const y1 = x * sinY + y * cosY;
             const z1 = z;
@@ -291,17 +399,17 @@ export default function Graph3DCanvas({
             };
         }).sort((a, b) => a.avgDepth - b.avgDepth);
 
-        // 3D Coordinate Axes (X in red, Y in green, Z in blue)
+        // 3D Coordinate Axes (X: red, Y: green, Z: blue)
         const axisLength = 3.8;
         const origin = transformPoint(0, 0, 0);
         const axisX = transformPoint(axisLength, 0, 0);
         const axisY = transformPoint(0, axisLength, 0);
         const axisZ = transformPoint(0, 0, axisLength * 0.8);
 
-        // Ground bounding box wireframe at z = minZ
-        const [xMin, xMax] = activePreset.xRange;
-        const [yMin, yMax] = activePreset.yRange;
-        const floorZ = meshData.minZ;
+        // Ground bounding box wireframe at floorZ
+        const [xMin, xMax] = activeSurface.xRange || [-4, 4];
+        const [yMin, yMax] = activeSurface.yRange || [-4, 4];
+        const floorZ = meshData.floorZ;
         const floorP1 = transformPoint(xMin, yMin, floorZ);
         const floorP2 = transformPoint(xMax, yMin, floorZ);
         const floorP3 = transformPoint(xMax, yMax, floorZ);
@@ -316,7 +424,7 @@ export default function Graph3DCanvas({
             axisZ,
             floorBox: [floorP1, floorP2, floorP3, floorP4]
         };
-    }, [meshData, rotX, rotY, zoom, width, height, activePreset]);
+    }, [meshData, rotX, rotY, zoom, width, height, activeSurface]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // INTERACTIVE ROTATION & DRAG HANDLERS
@@ -364,7 +472,7 @@ export default function Graph3DCanvas({
         else if (view === 'side') { setRotX(0); setRotY(90); }
     };
 
-    const bgColor = isDark ? '#090d16' : '#ffffff';
+    const bgColor = isDark ? '#020617' : '#ffffff';
 
     return (
         <div 
@@ -501,7 +609,7 @@ export default function Graph3DCanvas({
 
             {/* Floating Top Controls Bar inside 3D View */}
             <div className="absolute top-2 right-2 flex items-center gap-1.5 z-20" onPointerDown={(e) => e.stopPropagation()}>
-                {/* 3D Surface Preset Selector Dropdown */}
+                {/* Surface / Equation Selector Dropdown */}
                 <div className="relative">
                     <button
                         type="button"
@@ -511,44 +619,92 @@ export default function Graph3DCanvas({
                                 ? 'bg-slate-900/90 border-slate-700 text-slate-200 hover:bg-slate-800' 
                                 : 'bg-white/95 border-slate-300 text-slate-800 hover:bg-slate-100'
                         }`}
-                        title="Choose 3D Surface Model Preset"
+                        title="Select Equation or 3D Surface Preset"
                     >
-                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                        <span>{activePreset.name}</span>
-                        <ChevronDown className="w-3 h-3 opacity-60" />
+                        {activeSurface.type === 'equation' ? (
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: activeSurface.color || '#6366f1' }} />
+                        ) : (
+                            <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        )}
+                        <span className="truncate max-w-[130px]">{activeSurface.name}</span>
+                        <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
                     </button>
 
                     {showPresetDropdown && (
-                        <div className={`absolute right-0 top-full mt-1.5 w-60 border rounded-xl shadow-2xl p-1.5 flex flex-col gap-1 z-30 animate-in fade-in duration-100 ${
+                        <div className={`absolute right-0 top-full mt-1.5 w-64 max-h-80 overflow-y-auto border rounded-xl shadow-2xl p-1.5 flex flex-col gap-1 z-30 animate-in fade-in duration-100 ${
                             isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                         }`}>
-                            <div className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider border-b ${
+                            {/* User Equations Section */}
+                            {equations.length > 0 && (
+                                <>
+                                    <div className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider border-b flex items-center gap-1.5 ${
+                                        isDark ? 'text-slate-400 border-slate-800' : 'text-slate-500 border-slate-200'
+                                    }`}>
+                                        <Calculator className="w-3 h-3 text-indigo-400" />
+                                        <span>Your Equations</span>
+                                    </div>
+                                    {equations.map((eq, idx) => {
+                                        const isSelected = activeSurface.id === eq.id;
+                                        return (
+                                            <button
+                                                key={eq.id || idx}
+                                                type="button"
+                                                onClick={() => {
+                                                    setSelectedSourceId(eq.id);
+                                                    if (onSelectEquation) onSelectEquation(eq.id);
+                                                    setShowPresetDropdown(false);
+                                                }}
+                                                className={`px-2 py-1.5 rounded-lg text-left flex items-center justify-between transition ${
+                                                    isSelected
+                                                        ? 'bg-indigo-600/20 text-indigo-400 font-semibold'
+                                                        : (isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100')
+                                                }`}
+                                                title={eq.raw}
+                                            >
+                                                <div className="flex items-center gap-2 truncate">
+                                                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: eq.color || '#6366f1' }} />
+                                                    <span className="font-mono text-xs truncate">{eq.raw || `Equation ${idx + 1}`}</span>
+                                                </div>
+                                                {isSelected && <Check className="w-3.5 h-3.5 text-indigo-400 shrink-0 ml-1.5" />}
+                                            </button>
+                                        );
+                                    })}
+                                    <div className={`my-1 border-t ${isDark ? 'border-slate-800' : 'border-slate-200'}`} />
+                                </>
+                            )}
+
+                            {/* 3D Mathematical Surface Presets Section */}
+                            <div className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider border-b flex items-center gap-1.5 ${
                                 isDark ? 'text-slate-400 border-slate-800' : 'text-slate-500 border-slate-200'
                             }`}>
-                                3D Mathematical Surfaces
+                                <Sparkles className="w-3 h-3 text-amber-500" />
+                                <span>3D Surface Presets</span>
                             </div>
-                            {SURFACE_3D_PRESETS.map((preset) => (
-                                <button
-                                    key={preset.id}
-                                    type="button"
-                                    onClick={() => {
-                                        setSelectedPresetId(preset.id);
-                                        setShowPresetDropdown(false);
-                                    }}
-                                    className={`px-2 py-1.5 rounded-lg text-left flex flex-col transition ${
-                                        selectedPresetId === preset.id
-                                            ? 'bg-indigo-600/20 text-indigo-400 font-semibold'
-                                            : (isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100')
-                                    }`}
-                                    title={preset.description}
-                                >
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs">{preset.name}</span>
-                                        {selectedPresetId === preset.id && <Check className="w-3.5 h-3.5 text-indigo-400" />}
-                                    </div>
-                                    <span className="font-mono text-[10px] opacity-70 truncate">{preset.formula}</span>
-                                </button>
-                            ))}
+                            {SURFACE_3D_PRESETS.map((preset) => {
+                                const isSelected = activeSurface.id === preset.id;
+                                return (
+                                    <button
+                                        key={preset.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedSourceId(preset.id);
+                                            setShowPresetDropdown(false);
+                                        }}
+                                        className={`px-2 py-1.5 rounded-lg text-left flex flex-col transition ${
+                                            isSelected
+                                                ? 'bg-amber-500/20 text-amber-400 font-semibold'
+                                                : (isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100')
+                                        }`}
+                                        title={preset.description}
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs">{preset.name}</span>
+                                            {isSelected && <Check className="w-3.5 h-3.5 text-amber-400" />}
+                                        </div>
+                                        <span className="font-mono text-[10px] opacity-70 truncate">{preset.formula}</span>
+                                    </button>
+                                );
+                            })}
                         </div>
                     )}
                 </div>
@@ -628,11 +784,11 @@ export default function Graph3DCanvas({
 
             {/* Bottom-left Formula and Drag Hint Badge */}
             <div className="absolute bottom-2 left-2 flex flex-col gap-0.5 pointer-events-none z-10 font-mono text-[11px]">
-                <div className={`px-2 py-0.5 rounded-lg border backdrop-blur-md ${
-                    isDark ? 'bg-slate-900/85 border-slate-800 text-slate-300' : 'bg-white/90 border-slate-200 text-slate-700'
+                <div className={`px-2.5 py-1 rounded-lg border backdrop-blur-md shadow-xs flex items-center gap-1.5 ${
+                    isDark ? 'bg-slate-900/90 border-slate-800 text-slate-200' : 'bg-white/95 border-slate-200 text-slate-800'
                 }`}>
                     <span className="font-bold text-sky-400">z = </span>
-                    <span>{activePreset.formula}</span>
+                    <span className="font-semibold">{activeSurface.formula}</span>
                 </div>
                 <div className={`text-[10px] px-1.5 opacity-60 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                     Drag to rotate · Scroll to zoom

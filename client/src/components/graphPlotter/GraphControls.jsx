@@ -42,7 +42,9 @@ export default function GraphControls({
     showIntersections = false,
     onToggleIntersections,
     graphMode = '2d',
-    onToggleGraphMode
+    onToggleGraphMode,
+    angleUnit = 'rad',
+    onToggleAngleUnit
 }) {
     const isDark = theme === 'dark';
     const [showRangeModal, setShowRangeModal] = useState(false);
@@ -244,6 +246,22 @@ export default function GraphControls({
                         {showIntersections && <Check className="w-2.5 h-2.5 stroke-[3]" />}
                     </div>
                     <span className="hidden md:inline">Intersect</span>
+                </button>
+            )}
+
+            {/* Angle Unit (Radians / Degrees) */}
+            {onToggleAngleUnit && (
+                <button
+                    type="button"
+                    onClick={onToggleAngleUnit}
+                    className={`px-2 py-1 rounded-lg text-xs font-bold font-mono transition ${
+                        angleUnit === 'deg'
+                            ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/40'
+                            : (isDark ? 'bg-sky-500/15 text-sky-400 ring-1 ring-sky-500/30' : 'bg-sky-50 text-sky-600 ring-1 ring-sky-200')
+                    }`}
+                    title={angleUnit === 'deg' ? "Current Angle Unit: Degrees (°). Click to switch to Radians (π)" : "Current Angle Unit: Radians (π). Click to switch to Degrees (°)"}
+                >
+                    <span>{angleUnit === 'deg' ? 'DEG' : 'RAD'}</span>
                 </button>
             )}
 
