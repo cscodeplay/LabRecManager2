@@ -522,8 +522,6 @@ export function MathVirtualKeyboard({
 }) {
     const [activeTab, setActiveTab] = useState('templates');
     const [filterQuery, setFilterQuery] = useState('');
-    const [selectedTemplate, setSelectedTemplate] = useState(null);
-    const [slotValues, setSlotValues] = useState({});
     const [pos, setPos] = useState(anchorPosition);
     const [isDragging, setIsDragging] = useState(false);
     const dragOffsetRef = useRef({ x: 0, y: 0 });
@@ -578,26 +576,11 @@ export function MathVirtualKeyboard({
     ];
 
     const handleSelectTemplate = (tmpl) => {
-        setSelectedTemplate(tmpl);
-        const init = {};
-        tmpl.slots.forEach(s => { init[s.id] = s.default || ''; });
-        setSlotValues(init);
-    };
-
-    const handleInsertTemplate = () => {
-        if (!selectedTemplate) return;
-        const formatted = selectedTemplate.format(slotValues);
-        onInsertSymbol?.(formatted, selectedTemplate.label);
-        setSelectedTemplate(null);
-    };
-
-    const handleQuickInsertBoxes = () => {
-        if (!selectedTemplate) return;
+        // Insert directly with square placeholders - no separate form
         const boxVals = {};
-        selectedTemplate.slots.forEach(s => { boxVals[s.id] = '\\square'; });
-        const formatted = selectedTemplate.format(boxVals);
-        onInsertSymbol?.(formatted, selectedTemplate.label);
-        setSelectedTemplate(null);
+        tmpl.slots.forEach(s => { boxVals[s.id] = s.default || '\\square'; });
+        const formatted = tmpl.format(boxVals);
+        onInsertSymbol?.(formatted, tmpl.label);
     };
 
     return (
@@ -619,7 +602,7 @@ export function MathVirtualKeyboard({
                     <div className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
                         <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
-                            {selectedTemplate ? selectedTemplate.title : 'Math Formula & Symbol Keyboard'}
+                            Math Formula & Symbol Keyboard
                         </span>
                     </div>
                     <div className="flex items-center gap-1">
@@ -634,30 +617,25 @@ export function MathVirtualKeyboard({
                     </div>
                 </div>
 
-                {/* Filter / Search Bar (only when not in slot edit mode) */}
-                {!selectedTemplate && (
-                    <div className="p-2 border-b border-slate-800 bg-slate-950/70">
-                        <input
-                            type="text"
-                            value={filterQuery}
-                            onChange={e => setFilterQuery(e.target.value)}
-                            placeholder="Search symbols or templates (fraction, integral, alpha, power)..."
-                            className="w-full px-2.5 py-1 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                        />
-                    </div>
-                )}
+                {/* Filter / Search Bar */}
+                <div className="p-2 border-b border-slate-800 bg-slate-950/70">
+                    <input
+                        type="text"
+                        value={filterQuery}
+                        onChange={e => setFilterQuery(e.target.value)}
+                        placeholder="Search symbols or templates (fraction, integral, alpha, power)..."
+                        className="w-full px-2.5 py-1 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    />
+                </div>
 
-                {/* Category Pills (only when not in slot edit mode) */}
-                {!selectedTemplate && !filterQuery.trim() && (
+                {/* Category Pills */}
+                {!filterQuery.trim() && (
                     <div className="flex items-center gap-1 px-2 pt-1.5 pb-1 bg-slate-950/40 border-b border-slate-800 overflow-x-auto hide-scrollbar">
                         {allTabs.map(cat => (
                             <button
                                 key={cat.id}
                                 type="button"
-                                onClick={() => {
-                                    setActiveTab(cat.id);
-                                    setSelectedTemplate(null);
-                                }}
+                                onClick={() => setActiveTab(cat.id)}
                                 className={`px-2 py-0.5 text-[11px] font-semibold rounded-md transition whitespace-nowrap ${
                                     activeTab === cat.id
                                         ? 'bg-indigo-600 text-white shadow-xs'
@@ -672,77 +650,7 @@ export function MathVirtualKeyboard({
 
                 {/* Content Area */}
                 <div className="p-2.5 max-h-[220px] overflow-y-auto hide-scrollbar">
-                    {/* Constituent Values Template Slot Form (VirtualX Style) */}
-                    {selectedTemplate ? (
-                        <div className="flex flex-col gap-2">
-                            <div className="flex items-center justify-between pb-1 border-b border-slate-800">
-                                <button
-                                    type="button"
-                                    onClick={() => setSelectedTemplate(null)}
-                                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium transition"
-                                >
-                                    <ArrowLeft size={12} />
-                                    <span>Back to Templates</span>
-                                </button>
-                                <span className="text-[10px] text-slate-400 font-mono">Fill in values below</span>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2">
-                                {selectedTemplate.slots.map((slot, sIdx) => (
-                                    <div key={slot.id} className="flex flex-col gap-0.5">
-                                        <label className="text-[10px] text-slate-300 font-medium">
-                                            {slot.label}:
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={slotValues[slot.id] ?? ''}
-                                            onChange={(e) => setSlotValues(prev => ({ ...prev, [slot.id]: e.target.value }))}
-                                            placeholder={slot.placeholder}
-                                            className="px-2 py-1 bg-slate-800 border border-slate-700 rounded text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
-                                            autoFocus={sIdx === 0}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    e.preventDefault();
-                                                    handleInsertTemplate();
-                                                }
-                                            }}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-
-                            {/* Live Formula Preview Box */}
-                            <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800 flex flex-col items-center justify-center min-h-[46px]">
-                                <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold mb-0.5">Formula Preview</span>
-                                <div
-                                    className="text-white text-base overflow-x-auto py-0.5 max-w-full"
-                                    dangerouslySetInnerHTML={{
-                                        __html: katex.renderToString(selectedTemplate.format(slotValues), { displayMode: false, throwOnError: false })
-                                    }}
-                                />
-                            </div>
-
-                            {/* Action Buttons */}
-                            <div className="flex items-center justify-between pt-1">
-                                <button
-                                    type="button"
-                                    onClick={handleQuickInsertBoxes}
-                                    className="px-2 py-1 rounded text-[10px] text-slate-400 hover:text-white hover:bg-slate-800 transition"
-                                    title="Insert with empty square box placeholders"
-                                >
-                                    Insert Empty [□]
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleInsertTemplate}
-                                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-md transition"
-                                >
-                                    <Check size={13} />
-                                    <span>Insert Formula</span>
-                                </button>
-                            </div>
-                        </div>
-                    ) : activeTab === 'templates' && !filterQuery.trim() ? (
+                    {activeTab === 'templates' && !filterQuery.trim() ? (
                         /* Visual Template Cards Gallery */
                         <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
                             {FORMULA_TEMPLATES.map(tmpl => (
@@ -793,7 +701,7 @@ export function MathVirtualKeyboard({
 
                 {/* Footer hint */}
                 <div className="px-3 py-1.5 bg-slate-800/60 border-t border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
-                    <span>{selectedTemplate ? 'Press Enter to insert' : 'Select a template or click any key to insert'}</span>
+                    <span>Select a template or click any key to insert</span>
                     <span className="text-slate-500">VirtualX Style</span>
                 </div>
             </div>

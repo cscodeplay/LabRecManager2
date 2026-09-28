@@ -547,7 +547,16 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
     \`SELECT INITCAP(REPLACE(role::text, '_', ' ')) AS user_type, COUNT(*) AS count FROM users GROUP BY role ORDER BY count DESC;\`
   * Never write \`SELECT type FROM users\` or \`GROUP BY type\` on the \`users\` table!
 
-16. **AUTOMATIC FUTURE TABLE & COLUMN INTERPRETATION**:
+16. **ADMIN NOTES & NOTE TEXT SEARCH (SEARCHING BOTH TITLE AND CONTENT)**:
+- The \`admin_notes\` table stores administrative notes (columns: \`id\`, \`title\`, \`content\`, \`category\`, \`is_pinned\`, \`author_id\`, \`created_at\`, \`updated_at\`).
+- DO NOT confuse the \`admin_notes\` table with the \`admin_notes\` column on \`equipment_shift_requests\`. When the user asks for "notes", "admin notes", or searches for text in notes, ALWAYS query the \`admin_notes\` table!
+- When searching for notes containing a keyword (e.g. "scheduled", "meeting", "maintenance", "audit"):
+  * ALWAYS search BOTH \`title\` AND \`content\` using wildcard \`%\` matching (\`ILIKE '%keyword%'\`):
+    \`SELECT id, title, content, category, is_pinned, created_at FROM admin_notes WHERE title ILIKE '%scheduled%' OR content ILIKE '%scheduled%' ORDER BY created_at DESC;\`
+  * ALWAYS include \`%\` wildcards around the search term in \`ILIKE '%keyword%'\`. Never use exact equality \`=\` or \`ILIKE 'keyword'\` without wildcards, because note titles and bodies contain full phrases/paragraphs!
+  * Also consider root word variations (e.g. \`title ILIKE '%schedul%' OR content ILIKE '%schedul%'\` to match both 'scheduled' and 'schedule').
+
+17. **AUTOMATIC FUTURE TABLE & COLUMN INTERPRETATION**:
 - The DATABASE SCHEMA section above is introspected live from the PostgreSQL database.
 - Any newly created tables, columns, foreign keys, or enum types added across this application appear directly in the schema above.
 - You are fully authorized to query ANY table listed in the DATABASE SCHEMA, including newly added custom tables, modules, or imported datasets.
@@ -6854,6 +6863,37 @@ ${documentContext || message}
             // Clean out redundant raw SQL codeblocks from visible text so only clean natural language and visual cards are shown
             if (executedSQL || queryResult) {
                 aiText = aiText.replace(/```sql[\s\S]*?```/gi, '').trim();
+            }
+
+            // ─── Post-Query Data Synthesis & Summarization Engine ───
+            if (queryResult?.success && Array.isArray(queryResult.rows) && queryResult.rows.length > 0) {
+                const isAnalysisRequested = /summariz|analyz|explain|insight|takeaway|note|detail|overview|breakdown|digest/i.test(message);
+                const hasTextColumns = queryResult.rows.some(r => r.content || r.description || r.details || r.reason || r.admin_notes);
+                
+                if (isAnalysisRequested || hasTextColumns) {
+                    try {
+                        console.log(`[ChatBot] Synthesizing summary/analysis for ${queryResult.rows.length} retrieved database records...`);
+                        const sampleRows = queryResult.rows.slice(0, 15);
+                        const synthPrompt = `The user asked: "${message}"\n\nBelow are the actual records (${queryResult.rows.length} total) retrieved from the database:\n${JSON.stringify(sampleRows, null, 2)}\n\nProvide a clear, high-impact executive summary and analysis of these retrieved records. Highlight key points, dates, actions required, or insights using bullet points and bold terms.`;
+
+                        let synthRes = null;
+                        if (this.geminiModels.length > 0) {
+                            synthRes = await this.callGemini([{ role: 'user', parts: [{ text: synthPrompt }] }]).catch(() => null);
+                        }
+                        if (!synthRes && this.groqClient) {
+                            synthRes = await this.callGroq([{ role: 'user', content: synthPrompt }]).catch(() => null);
+                        }
+
+                        if (synthRes && synthRes.text) {
+                            const cleanSummary = synthRes.text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+                            if (cleanSummary && !aiText.includes(cleanSummary.substring(0, 30))) {
+                                aiText = (aiText ? aiText + '\n\n' : '') + `### 📊 Summary & Analysis\n${cleanSummary}`;
+                            }
+                        }
+                    } catch (synthErr) {
+                        console.warn('[ChatBot] Post-query AI synthesis failed:', synthErr.message);
+                    }
+                }
             }
         }
 

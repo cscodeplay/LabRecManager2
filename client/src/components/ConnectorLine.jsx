@@ -723,6 +723,7 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                     >
                         <div
                             className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 text-slate-200 pointer-events-auto select-none"
+                            style={{ transform: `scale(${1 / (scale || 1)})`, transformOrigin: 'center center' }}
                             onClick={(e) => e.stopPropagation()}
                             onMouseDown={(e) => e.stopPropagation()}
                             onPointerDown={(e) => e.stopPropagation()}

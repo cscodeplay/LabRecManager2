@@ -54,6 +54,7 @@ import WhiteboardClipboardPanel from './WhiteboardClipboardPanel';
 import WhiteboardMediaPlayer from './WhiteboardMediaPlayer';
 import WhiteboardPdfViewer from './WhiteboardPdfViewer';
 import Whiteboard3DObject, { get3DModelMesh, parseOBJ, parseSTL, parseJSON3D, shadeColor, render3DObjectSVG } from './Whiteboard3DObject';
+import { WhiteboardGraphObject, getEquationColor } from './graphPlotter';
 import TorchIcon from './TorchIcon';
 import api from '@/lib/api';
 import { toast } from 'react-hot-toast';
@@ -1266,6 +1267,11 @@ export default function Whiteboard({
     const threeDObjects = page3DObjects[currentPage] || [];
     const [selected3DId, setSelected3DId] = useState(null);
 
+    // ─── Graph Plotter / Equation Graphing Objects State ───
+    const [pageGraphObjects, setPageGraphObjects] = useState({ 0: [] });
+    const graphObjects = pageGraphObjects[currentPage] || [];
+    const [selectedGraphId, setSelectedGraphId] = useState(null);
+
     // Global Shift key tracking for geometric aspect-ratio (circles) and straight-line constraints
     const [isShiftDown, setIsShiftDown] = useState(false);
     useEffect(() => {
@@ -1283,17 +1289,19 @@ export default function Whiteboard({
         };
     }, []);
 
-    // Outside pointer click/tap listener to deselect 3D object when clicking outside
+    // Outside pointer click/tap listener to deselect 3D object and graph object when clicking outside
     useEffect(() => {
-        if (!selected3DId) return;
+        if (!selected3DId && !selectedGraphId) return;
         const handleOutsidePointer = (e) => {
             if (e.target?.closest?.('.whiteboard-3d-object')) return;
+            if (e.target?.closest?.('[data-graph-id]')) return;
             if (e.target?.closest?.('[data-color-picker]')) return;
-            setSelected3DId(null);
+            if (selected3DId) setSelected3DId(null);
+            if (selectedGraphId) setSelectedGraphId(null);
         };
         window.addEventListener('pointerdown', handleOutsidePointer);
         return () => window.removeEventListener('pointerdown', handleOutsidePointer);
-    }, [selected3DId]);
+    }, [selected3DId, selectedGraphId]);
 
     // ─── Whiteboard Tasks Checklist State ───
     const [whiteboardTasks, setWhiteboardTasks] = useState([]);
@@ -1401,6 +1409,13 @@ export default function Whiteboard({
 
     const setThreeDObjects = useCallback((updater) => {
         setPage3DObjects(prev => ({
+            ...prev,
+            [currentPageRef.current]: typeof updater === 'function' ? updater(prev[currentPageRef.current] || []) : updater
+        }));
+    }, []);
+
+    const setGraphObjects = useCallback((updater) => {
+        setPageGraphObjects(prev => ({
             ...prev,
             [currentPageRef.current]: typeof updater === 'function' ? updater(prev[currentPageRef.current] || []) : updater
         }));
@@ -1541,6 +1556,7 @@ export default function Whiteboard({
                     if (state.pageMediaObjects) setPageMediaObjects(state.pageMediaObjects);
                     if (state.pagePdfObjects) setPagePdfObjects(state.pagePdfObjects);
                     if (state.page3DObjects) setPage3DObjects(state.page3DObjects);
+                    if (state.pageGraphObjects) setPageGraphObjects(state.pageGraphObjects);
                     if (state.whiteboardTasks) setWhiteboardTasks(state.whiteboardTasks);
                     if (state.color) setColor(state.color);
                     if (state.strokeWidth) setStrokeWidth(state.strokeWidth);
@@ -1609,6 +1625,7 @@ export default function Whiteboard({
                     pageMediaObjects,
                     pagePdfObjects,
                     page3DObjects,
+                    pageGraphObjects,
                     whiteboardTasks,
                     color,
                     strokeWidth,
@@ -1654,7 +1671,7 @@ export default function Whiteboard({
         return () => {
             if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         };
-    }, [STORAGE_KEY, pages, currentPage, totalPages, pageBackgrounds, pageImageObjects, pageTextObjects, pageShapeObjects, pageMediaObjects, pagePdfObjects, page3DObjects, whiteboardTasks, color, strokeWidth, eraserSize, strokeStyle, tool]);
+    }, [STORAGE_KEY, pages, currentPage, totalPages, pageBackgrounds, pageImageObjects, pageTextObjects, pageShapeObjects, pageMediaObjects, pagePdfObjects, page3DObjects, pageGraphObjects, whiteboardTasks, color, strokeWidth, eraserSize, strokeStyle, tool]);
 
     // Initialize canvas - keep transparent to show CSS background patterns
     useEffect(() => {
@@ -1991,6 +2008,7 @@ export default function Whiteboard({
         const currentImages = pageImageObjects[currentPage] ? [...pageImageObjects[currentPage]] : [];
         const currentTexts = pageTextObjects[currentPage] ? [...pageTextObjects[currentPage]] : [];
         const currentShapes = pageShapeObjects[currentPage] ? [...pageShapeObjects[currentPage]] : [];
+        const currentGraphs = pageGraphObjects[currentPage] ? [...pageGraphObjects[currentPage]] : [];
 
         setPageHistories(prev => {
             const currentHistory = prev[currentPage] || [];
@@ -2000,7 +2018,8 @@ export default function Whiteboard({
                 imageData,
                 imageObjects: currentImages,
                 textObjects: currentTexts,
-                shapeObjects: currentShapes
+                shapeObjects: currentShapes,
+                graphObjects: currentGraphs
             });
             return {
                 ...prev,
@@ -2015,7 +2034,7 @@ export default function Whiteboard({
                 [currentPage]: Math.min(currentIndex + 1, 49)
             };
         });
-    }, [pageHistoryIndices, pageImageObjects, pageTextObjects, pageShapeObjects, currentPage]);
+    }, [pageHistoryIndices, pageImageObjects, pageTextObjects, pageShapeObjects, pageGraphObjects, currentPage]);
 
     // Restore state from history
     const restoreFromHistory = useCallback((index) => {
@@ -2045,6 +2064,9 @@ export default function Whiteboard({
             setPageImageObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.imageObjects }));
             setPageTextObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.textObjects }));
             setPageShapeObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.shapeObjects }));
+            if (stateSnapshot.graphObjects) {
+                setPageGraphObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.graphObjects }));
+            }
             
             if (socket && sessionId) {
                 socket.emit('whiteboard:objects-update', {
@@ -2469,6 +2491,7 @@ export default function Whiteboard({
             if (data.page3DObjects) setPage3DObjects(data.page3DObjects);
             if (data.pagePdfObjects) setPagePdfObjects(data.pagePdfObjects);
             if (data.pageMediaObjects) setPageMediaObjects(data.pageMediaObjects);
+            if (data.pageGraphObjects) setPageGraphObjects(data.pageGraphObjects);
             if (data.totalPages) setTotalPages(data.totalPages);
             if (data.currentPage !== undefined) setCurrentPage(data.currentPage);
             saveToHistory();
@@ -2662,6 +2685,28 @@ export default function Whiteboard({
             setSelectedImageIds([]);
             setSelectedMediaId(null);
             saveToHistory();
+        } else if (item.type === 'graph_object' && item.data) {
+            pasteCountRef.current += 1;
+            const stackOffset = ((pasteCountRef.current - 1) % 12 + 1) * 25;
+            const newId = `graph_${Date.now()}`;
+            const newGraph = {
+                ...item.data,
+                id: newId,
+                x: (item.data.x || 100) + stackOffset,
+                y: (item.data.y || 100) + stackOffset
+            };
+            setPageGraphObjects(prev => ({
+                ...prev,
+                [currentPage]: [...(prev[currentPage] || []), newGraph]
+            }));
+            setSelectedGraphId(newId);
+            setSelectedShapeIds([]);
+            setSelectedTextIds([]);
+            setSelectedImageIds([]);
+            setSelectedMediaId(null);
+            setSelected3DId(null);
+            setSelectedPdfId(null);
+            saveToHistory();
         } else if (item.type === 'group' && item.data) {
             pasteCountRef.current += 1;
             const stackOffset = ((pasteCountRef.current - 1) % 12 + 1) * 25;
@@ -2838,6 +2883,14 @@ export default function Whiteboard({
             setSelected3DId(null);
             hasDeleted = true;
         }
+        if (selectedGraphId) {
+            setPageGraphObjects(prev => ({
+                ...prev,
+                [currentPage]: (prev[currentPage] || []).filter(g => g.id !== selectedGraphId)
+            }));
+            setSelectedGraphId(null);
+            hasDeleted = true;
+        }
         if (selectedPdfId) {
             setPagePdfObjects(prev => ({
                 ...prev,
@@ -2853,7 +2906,7 @@ export default function Whiteboard({
         if (hasDeleted) {
             saveToHistory();
         }
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, selectedPdfId, selection, handleDeleteSelection, saveToHistory, currentPage]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, selectedGraphId, selectedPdfId, selection, handleDeleteSelection, saveToHistory, currentPage]);
 
     // Unified Copy
     const handleCopy = useCallback(() => {
@@ -2870,14 +2923,16 @@ export default function Whiteboard({
         const selectedImages = imageObjects.filter(img => selectedImageIds.includes(img.id));
         const selectedMedia = mediaObjects.filter(m => m.id === selectedMediaId);
         const selected3D = threeDObjects.filter(o => o.id === selected3DId);
+        const selectedGraphs = graphObjects.filter(g => g.id === selectedGraphId);
 
         const totalKinds = (allSelectedShapes.length > 0 ? 1 : 0) + 
                            (selectedTexts.length > 0 ? 1 : 0) + 
                            (selectedImages.length > 0 ? 1 : 0) + 
                            (selectedMedia.length > 0 ? 1 : 0) + 
-                           (selected3D.length > 0 ? 1 : 0);
+                           (selected3D.length > 0 ? 1 : 0) +
+                           (selectedGraphs.length > 0 ? 1 : 0);
 
-        const totalCount = allSelectedShapes.length + selectedTexts.length + selectedImages.length + selectedMedia.length + selected3D.length;
+        const totalCount = allSelectedShapes.length + selectedTexts.length + selectedImages.length + selectedMedia.length + selected3D.length + selectedGraphs.length;
 
         if (totalCount === 0 && selection) {
             handleCopySelection();
@@ -2891,7 +2946,8 @@ export default function Whiteboard({
                 texts: selectedTexts.map(t => ({ ...t })),
                 images: selectedImages.map(i => ({ ...i })),
                 media: selectedMedia.map(m => ({ ...m })),
-                threeD: selected3D.map(o => ({ ...o }))
+                threeD: selected3D.map(o => ({ ...o })),
+                graphs: selectedGraphs.map(g => ({ ...g }))
             };
             setClipboardHistory(prev => [{
                 id: Date.now(),
@@ -2929,7 +2985,12 @@ export default function Whiteboard({
             toast.success('Copied 3D model');
             return;
         }
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, imageObjects, textObjects, shapeObjects, mediaObjects, threeDObjects, selection, handleCopySelection]);
+        if (selectedGraphs.length === 1) {
+            setClipboardHistory(prev => [{ id: Date.now(), type: 'graph_object', data: { ...selectedGraphs[0] } }, ...prev].slice(0, 15));
+            toast.success('Copied graph object');
+            return;
+        }
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, selectedGraphId, imageObjects, textObjects, shapeObjects, mediaObjects, threeDObjects, graphObjects, selection, handleCopySelection]);
 
     // Unified Cut
     const handleCut = useCallback(() => {
@@ -2953,12 +3014,14 @@ export default function Whiteboard({
         const textTargets = targetId ? (textObjects.some(t => t.id === targetId) ? [targetId] : []) : selectedTextIds;
         const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
         const threeDTarget = targetId ? (threeDObjects.some(o => o.id === targetId) ? targetId : null) : selected3DId;
+        const graphTarget = targetId ? (graphObjects.some(g => g.id === targetId) ? targetId : null) : selectedGraphId;
 
         const allObjects = [
             ...shapeObjects.map(o => o.zIndex || 30),
             ...textObjects.map(o => o.zIndex || 20),
             ...imageObjects.map(o => o.zIndex || 10),
-            ...threeDObjects.map(o => o.zIndex || 15)
+            ...threeDObjects.map(o => o.zIndex || 15),
+            ...graphObjects.map(o => o.zIndex || 25)
         ];
         const maxZ = allObjects.length > 0 ? Math.max(...allObjects) : 30;
         const newZ = maxZ + 1;
@@ -2975,14 +3038,18 @@ export default function Whiteboard({
         if (threeDTarget) {
             setThreeDObjects(prev => prev.map(o => o.id === threeDTarget ? { ...o, zIndex: newZ } : o));
         }
+        if (graphTarget) {
+            setGraphObjects(prev => prev.map(g => g.id === graphTarget ? { ...g, zIndex: newZ } : g));
+        }
         saveToHistory();
-    }, [shapeObjects, textObjects, imageObjects, threeDObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, saveToHistory]);
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, selectedGraphId, saveToHistory]);
 
     const handleBringForward = useCallback((targetId = null) => {
         const shapeTargets = targetId ? (shapeObjects.some(s => s.id === targetId) ? [targetId] : []) : selectedShapeIds;
         const textTargets = targetId ? (textObjects.some(t => t.id === targetId) ? [targetId] : []) : selectedTextIds;
         const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
         const threeDTarget = targetId ? (threeDObjects.some(o => o.id === targetId) ? targetId : null) : selected3DId;
+        const graphTarget = targetId ? (graphObjects.some(g => g.id === targetId) ? targetId : null) : selectedGraphId;
 
         if (shapeTargets.length > 0) {
             setShapeObjects(prev => prev.map(s => shapeTargets.includes(s.id) ? { ...s, zIndex: (s.zIndex || 30) + 1 } : s));
@@ -2996,14 +3063,18 @@ export default function Whiteboard({
         if (threeDTarget) {
             setThreeDObjects(prev => prev.map(o => o.id === threeDTarget ? { ...o, zIndex: (o.zIndex || 15) + 1 } : o));
         }
+        if (graphTarget) {
+            setGraphObjects(prev => prev.map(g => g.id === graphTarget ? { ...g, zIndex: (g.zIndex || 25) + 1 } : g));
+        }
         saveToHistory();
-    }, [shapeObjects, textObjects, imageObjects, threeDObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, saveToHistory]);
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, selectedGraphId, saveToHistory]);
 
     const handleSendBackward = useCallback((targetId = null) => {
         const shapeTargets = targetId ? (shapeObjects.some(s => s.id === targetId) ? [targetId] : []) : selectedShapeIds;
         const textTargets = targetId ? (textObjects.some(t => t.id === targetId) ? [targetId] : []) : selectedTextIds;
         const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
         const threeDTarget = targetId ? (threeDObjects.some(o => o.id === targetId) ? targetId : null) : selected3DId;
+        const graphTarget = targetId ? (graphObjects.some(g => g.id === targetId) ? targetId : null) : selectedGraphId;
 
         if (shapeTargets.length > 0) {
             setShapeObjects(prev => prev.map(s => shapeTargets.includes(s.id) ? { ...s, zIndex: Math.max(1, (s.zIndex || 30) - 1) } : s));
@@ -3017,20 +3088,25 @@ export default function Whiteboard({
         if (threeDTarget) {
             setThreeDObjects(prev => prev.map(o => o.id === threeDTarget ? { ...o, zIndex: Math.max(1, (o.zIndex || 15) - 1) } : o));
         }
+        if (graphTarget) {
+            setGraphObjects(prev => prev.map(g => g.id === graphTarget ? { ...g, zIndex: Math.max(1, (g.zIndex || 25) - 1) } : g));
+        }
         saveToHistory();
-    }, [shapeObjects, textObjects, imageObjects, threeDObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, saveToHistory]);
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, selectedGraphId, saveToHistory]);
 
     const handleSendToBack = useCallback((targetId = null) => {
         const shapeTargets = targetId ? (shapeObjects.some(s => s.id === targetId) ? [targetId] : []) : selectedShapeIds;
         const textTargets = targetId ? (textObjects.some(t => t.id === targetId) ? [targetId] : []) : selectedTextIds;
         const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
         const threeDTarget = targetId ? (threeDObjects.some(o => o.id === targetId) ? targetId : null) : selected3DId;
+        const graphTarget = targetId ? (graphObjects.some(g => g.id === targetId) ? targetId : null) : selectedGraphId;
 
         const allObjects = [
             ...shapeObjects.map(o => o.zIndex || 30),
             ...textObjects.map(o => o.zIndex || 20),
             ...imageObjects.map(o => o.zIndex || 10),
-            ...threeDObjects.map(o => o.zIndex || 15)
+            ...threeDObjects.map(o => o.zIndex || 15),
+            ...graphObjects.map(o => o.zIndex || 25)
         ];
         const minZ = allObjects.length > 0 ? Math.min(...allObjects) : 10;
         const newZ = Math.max(1, minZ - 1);
@@ -3047,8 +3123,11 @@ export default function Whiteboard({
         if (threeDTarget) {
             setThreeDObjects(prev => prev.map(o => o.id === threeDTarget ? { ...o, zIndex: newZ } : o));
         }
+        if (graphTarget) {
+            setGraphObjects(prev => prev.map(g => g.id === graphTarget ? { ...g, zIndex: newZ } : g));
+        }
         saveToHistory();
-    }, [shapeObjects, textObjects, imageObjects, threeDObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, saveToHistory]);
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, selectedGraphId, saveToHistory]);
 
     // Alignment tools
     const handleAlign = useCallback((alignment) => {
@@ -3140,6 +3219,7 @@ export default function Whiteboard({
             setShapeObjects(prev => prev.map(s => s.id === targetId ? { ...s, isLocked: !s.isLocked } : s));
             setImageObjects(prev => prev.map(i => i.id === targetId ? { ...i, isLocked: !i.isLocked } : i));
             setThreeDObjects(prev => prev.map(o => o.id === targetId ? { ...o, isLocked: !o.isLocked } : o));
+            setGraphObjects(prev => prev.map(g => g.id === targetId ? { ...g, isLocked: !g.isLocked } : g));
             saveToHistory();
             return;
         }
@@ -3161,8 +3241,11 @@ export default function Whiteboard({
         if (selected3DId) {
             setThreeDObjects(prev => prev.map(o => o.id === selected3DId ? { ...o, isLocked: !o.isLocked } : o));
         }
+        if (selectedGraphId) {
+            setGraphObjects(prev => prev.map(g => g.id === selectedGraphId ? { ...g, isLocked: !g.isLocked } : g));
+        }
         saveToHistory();
-    }, [selectedShapeIds, selectedImageId, selected3DId, saveToHistory]);
+    }, [selectedShapeIds, selectedImageId, selected3DId, selectedGraphId, saveToHistory]);
 
     // Floatable Main Toolbar Drag Start (Zero-lag, 120fps direct DOM manipulation)
     const handleToolbarDragStart = (e) => {
@@ -3822,7 +3905,7 @@ export default function Whiteboard({
                 e.preventDefault();
                 handleSendToBack();
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (!isInput || selectedImageIds.length > 0 || selection || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedMediaId || selected3DId) {
+                if (!isInput || selectedImageIds.length > 0 || selection || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedMediaId || selected3DId || selectedGraphId) {
                     e.preventDefault();
                     handleDelete();
                 }
@@ -3838,6 +3921,7 @@ export default function Whiteboard({
                 setSelectedShapeIds([]);
                 setSelectedMediaId(null);
                 setSelected3DId(null);
+                setSelectedGraphId(null);
             } else if (e.key === '`' || e.key === '~') {
                 e.preventDefault();
                 const wrapper = canvasWrapperRef.current;
@@ -3851,7 +3935,7 @@ export default function Whiteboard({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, selection, showRadialMenu, showTemplateGallery, showShortcutsModal, showTasksPanel, showMediaModal, showDomainLibrary, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack, handleUndo, handleRedo, handleGroup, handleUngroup, handleToggleLock, onToggleFullscreen, saveToHistory, clipboardHistory, canvasWidth, canvasHeight]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, selectedGraphId, selection, showRadialMenu, showTemplateGallery, showShortcutsModal, showTasksPanel, showMediaModal, showDomainLibrary, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack, handleUndo, handleRedo, handleGroup, handleUngroup, handleToggleLock, onToggleFullscreen, saveToHistory, clipboardHistory, canvasWidth, canvasHeight]);
 
     // Global clipboard paste listener for pasting images from websites (HTML <img>, URLs, bitmaps) and 3D files
     useEffect(() => {
@@ -7187,8 +7271,8 @@ export default function Whiteboard({
             if (
                 e.target?.closest?.(
                     'button, input, textarea, select, video, audio, ' +
-                    '[data-interactive="true"], [data-handle], ' +
-                    '.whiteboard-media-player, .whiteboard-3d-object, ' +
+                    '[data-interactive="true"], [data-handle], [data-graph-id], ' +
+                    '.whiteboard-media-player, .whiteboard-3d-object, .whiteboard-graph-object, ' +
                     '.whiteboard-clipboard-panel, .whiteboard-minimap, ' +
                     '.whiteboard-tasks-panel, .radial-toolbar-container, ' +
                     '.radial-fab-button, .whiteboard-spotlight-overlay, ' +
@@ -8453,6 +8537,48 @@ export default function Whiteboard({
             }
         });
 
+        // 4F. Graph Objects Layer (Interactive Coordinate Plotter)
+        const currentGraphObjects = pageGraphObjects[currentPage] || [];
+        for (const graphObj of currentGraphObjects) {
+            try {
+                const domGraphSvg = document.querySelector(`[data-graph-id="${graphObj.id}"] svg`);
+                if (domGraphSvg) {
+                    const serializer = new XMLSerializer();
+                    let svgStr = serializer.serializeToString(domGraphSvg);
+                    if (!svgStr.includes('xmlns=')) {
+                        svgStr = svgStr.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+                    }
+                    const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+                    const blobUrl = URL.createObjectURL(svgBlob);
+                    const img = new Image();
+                    await new Promise((resolve) => {
+                        img.onload = () => {
+                            ctx.save();
+                            const gW = graphObj.width || 760;
+                            const gH = graphObj.height || 480;
+                            ctx.translate(graphObj.x || 0, graphObj.y || 0);
+                            if (graphObj.rotation) {
+                                ctx.translate(gW / 2, gH / 2);
+                                ctx.rotate((graphObj.rotation * Math.PI) / 180);
+                                ctx.translate(-gW / 2, -gH / 2);
+                            }
+                            ctx.drawImage(img, 0, 0, gW, gH);
+                            ctx.restore();
+                            URL.revokeObjectURL(blobUrl);
+                            resolve();
+                        };
+                        img.onerror = () => {
+                            URL.revokeObjectURL(blobUrl);
+                            resolve();
+                        };
+                        img.src = blobUrl;
+                    });
+                }
+            } catch (e) {
+                console.error("Failed to render graph object to screenshot:", e);
+            }
+        }
+
         // 5. Draw image objects (query DOM rendered img first to avoid CORS reload drops, with async fallback)
         if (currentImageObjects.length > 0) {
             await Promise.all(currentImageObjects.map(imgObj => new Promise((resolve) => {
@@ -8653,7 +8779,7 @@ export default function Whiteboard({
                 toast.error('Could not capture screenshot');
             }
         }
-    }, [currentPage, pageBackgrounds, pageImageObjects, pageShapeObjects, pageTextObjects, page3DObjects, pagePdfObjects, pageMediaObjects, selection, bgColor, bgPattern]);
+    }, [currentPage, pageBackgrounds, pageImageObjects, pageShapeObjects, pageTextObjects, page3DObjects, pagePdfObjects, pageMediaObjects, pageGraphObjects, selection, bgColor, bgPattern]);
 
     // Save and return data
     const handleSave = useCallback(() => {
@@ -8733,6 +8859,59 @@ export default function Whiteboard({
         });
         saveToHistory();
     }, [color, strokeWidth, saveToHistory, setTextObjects]);
+
+    // Insert Interactive Graph Plotter
+    const handleInsertGraph = useCallback(() => {
+        const wrapper = canvasWrapperRef.current;
+        const currentZoomVal = zoomLevel || 1;
+        const panX = panOffset.x || 0;
+        const panY = panOffset.y || 0;
+        const viewW = wrapper?.clientWidth || 1200;
+        const viewH = wrapper?.clientHeight || 800;
+
+        // Viewport center in canvas coords
+        const cx = Math.round((-panX + viewW / 2) / currentZoomVal);
+        const cy = Math.round((-panY + viewH / 2) / currentZoomVal);
+
+        const newGraphId = `graph_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+        const newGraph = {
+            id: newGraphId,
+            title: 'Interactive Graph Plotter',
+            x: Math.max(30, cx - 380),
+            y: Math.max(30, cy - 240),
+            width: 760,
+            height: 480,
+            rotation: 0,
+            zIndex: 25,
+            viewBounds: { xMin: -10, xMax: 10, yMin: -6, yMax: 6 },
+            coordinateSystem: 'cartesian',
+            showGrid: true,
+            showMinorGrid: true,
+            showAxisLabels: true,
+            lockAspectRatio: false,
+            equations: [
+                { id: `eq_${Date.now()}_1`, raw: 'y = 2x + 1', color: getEquationColor(0), visible: true },
+                { id: `eq_${Date.now()}_2`, raw: 'y = x^2 - 4', color: getEquationColor(1), visible: true }
+            ],
+            parameters: {},
+            annotations: []
+        };
+
+        setPageGraphObjects(prev => ({
+            ...prev,
+            [currentPage]: [...(prev[currentPage] || []), newGraph]
+        }));
+        setSelectedGraphId(newGraphId);
+        setSelectedShapeIds([]);
+        setSelectedTextIds([]);
+        setSelectedImageIds([]);
+        setSelected3DId(null);
+        setSelectedMediaId(null);
+        setSelectedPdfId(null);
+        setTool('select');
+        saveToHistory();
+        toast.success('Inserted Graph Plotter to whiteboard!', { icon: '📊' });
+    }, [currentPage, panOffset, zoomLevel, saveToHistory]);
 
     // Page navigation functions
     const saveCurrentPage = useCallback(() => {
@@ -8988,6 +9167,10 @@ export default function Whiteboard({
         }
     }, []);
 
+    // Scale factors for constant-sized context toolbars across canvas zoom and fullscreen
+    const currentZoom = (isFullscreen ? (fullscreenScale * zoomLevel) : zoomLevel) || 1;
+    const invZoom = 1 / currentZoom;
+
     return (
         <div
             ref={containerRef}
@@ -9032,6 +9215,7 @@ export default function Whiteboard({
                     { id: 'image', icon: ImageIcon, label: 'Insert Image', important: false },
                     { id: 'media', icon: Film, label: 'Media & Documents (PDF, Video, Audio, Record, Web)', important: true },
                     { id: 'domain_3d', icon: Box, label: '3D Objects & Domain Library', important: true },
+                    { id: 'graph_plotter', icon: LineChart, label: 'Graph Plotter / Equation Graphing', important: true },
                     { id: 'tasks', icon: ListTodo, label: 'Whiteboard Tasks Checklist', important: true },
                     { id: 'templates', icon: LayoutTemplate, label: 'Templates & SmartArt', important: false },
                     { id: 'shortcuts', icon: Keyboard, label: 'Keyboard Shortcuts (Cmd+/ or ?)', important: false },
@@ -9056,7 +9240,7 @@ export default function Whiteboard({
                         willChange: 'transform, opacity'
                     }}
                     className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 flex z-50 overflow-visible whitespace-nowrap hide-scrollbar ${isDraggingToolbar ? '' : 'transition-all duration-200'} ${
-                    !isStateLoaded ? 'pointer-events-none opacity-60 filter blur-[0.5px]' : (isDrawing ? 'opacity-35 hover:opacity-100' : 'opacity-90 hover:opacity-100')
+                    !isStateLoaded ? 'pointer-events-none opacity-60 filter blur-[0.5px]' : (isDrawing ? 'opacity-20 hover:opacity-100' : 'opacity-40 hover:opacity-100')
                 } ${
                     toolbarDock === 'top'
                         ? 'top-4 left-1/2 transform -translate-x-1/2 flex-row items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[95%]'
@@ -9108,6 +9292,10 @@ export default function Whiteboard({
                                         }
                                         if (t.id === 'domain_3d') {
                                             setShowDomainLibrary(true);
+                                            return;
+                                        }
+                                        if (t.id === 'graph_plotter') {
+                                            handleInsertGraph();
                                             return;
                                         }
                                         if (t.id === 'tasks') {
@@ -11026,8 +11214,9 @@ export default function Whiteboard({
                                         className="absolute pointer-events-auto select-none"
                                         style={{
                                             left: cx,
-                                            top: imgMinY - 14,
-                                            transform: 'translate(-50%, -100%)',
+                                            top: imgMinY - 14 * invZoom,
+                                            transform: `translate(-50%, -100%) scale(${invZoom})`,
+                                            transformOrigin: 'center bottom',
                                             zIndex: 60,
                                         }}
                                         onClick={(e) => e.stopPropagation()}
@@ -11470,7 +11659,18 @@ export default function Whiteboard({
                                     {/* Text Content or Edit Textarea */}
                                     {isEditing ? (
                                         <div className="relative w-full h-full">
+                                            {/* Hidden textarea for state management and keyboard input */}
                                             <textarea
+                                                ref={(el) => {
+                                                    if (el) {
+                                                        el.dataset.textId = txtObj.id;
+                                                        // Position cursor
+                                                        const caret = lastActiveTextCaretRef.current;
+                                                        if (caret && caret.id === txtObj.id && caret.start != null) {
+                                                            el.setSelectionRange(caret.start, caret.end);
+                                                        }
+                                                    }
+                                                }}
                                                 data-text-id={txtObj.id}
                                                 value={txtObj.text}
                                                 onChange={(e) => {
@@ -11506,21 +11706,9 @@ export default function Whiteboard({
                                                     };
                                                 }}
                                                 autoFocus
-                                                className="w-full h-full p-2 bg-transparent border-0 outline-none ring-2 ring-blue-500 ring-inset rounded resize-none m-0 shadow-none font-sans"
-                                                style={{
-                                                    color: txtObj.color,
-                                                    fontSize: `${txtObj.fontSize}px`,
-                                                    fontWeight: txtObj.fontWeight || 'normal',
-                                                    fontStyle: txtObj.fontStyle || 'normal',
-                                                    fontFamily: txtObj.fontFamily || 'sans-serif',
-                                                    textDecoration: txtObj.textDecoration || 'none',
-                                                    textAlign: txtObj.textAlign || 'left',
-                                                    lineHeight: 1.3,
-                                                    minHeight: txtObj.height,
-                                                    borderRadius: txtObj.borderRadius ? `${txtObj.borderRadius}px` : undefined,
-                                                }}
+                                                className="absolute inset-0 w-full h-full opacity-0 pointer-events-none"
+                                                style={{ position: 'absolute', zIndex: -1 }}
                                                 onBlur={(e) => {
-                                                    // Preserve editing if clicking into Math Keyboard, Tablet, Modal, or Toolbar
                                                     if (showMathKeyboard || showMathTablet || showEquationModal) {
                                                         return;
                                                     }
@@ -11551,24 +11739,29 @@ export default function Whiteboard({
                                                         e.target.blur();
                                                     }
                                                 }}
-                                                onClick={(e) => e.stopPropagation()}
                                             />
-
-                                            {/* Live Math Preview while editing if formula detected */}
-                                            {(txtObj.text?.includes('$') || /\\(frac|sqrt|int|sum|prod|lim|alpha|beta|theta|pi|times|div|pm|log|sin|cos|tan)\b|[\^_]/.test(txtObj.text || '')) && (
-                                                <div 
-                                                    className="absolute top-full left-0 mt-1.5 bg-slate-900/98 backdrop-blur-md border border-indigo-500/50 rounded-xl p-2.5 shadow-2xl z-50 text-white min-w-[160px] max-w-md pointer-events-none animate-in fade-in slide-in-from-top-1 duration-150"
-                                                    style={{ transform: `rotate(${- (txtObj.rotation || 0)}deg)` }}
-                                                >
-                                                    <div className="text-[10px] text-indigo-300 font-semibold mb-1 flex items-center gap-1 uppercase tracking-wider">
-                                                        <span>✨ Live Math Preview</span>
-                                                    </div>
-                                                    <div 
-                                                        className="text-white text-base overflow-x-auto py-0.5" 
-                                                        dangerouslySetInnerHTML={{ __html: renderRichMathText(txtObj.text) }} 
-                                                    />
-                                                </div>
-                                            )}
+                                            {/* Visible WYSIWYG rendered view - click to focus hidden textarea */}
+                                            <div
+                                                className="w-full h-full p-2 whitespace-pre-wrap break-words leading-relaxed ring-2 ring-blue-500 ring-inset rounded cursor-text"
+                                                style={{
+                                                    color: txtObj.color,
+                                                    fontSize: `${txtObj.fontSize}px`,
+                                                    fontWeight: txtObj.fontWeight || 'normal',
+                                                    fontStyle: txtObj.fontStyle || 'normal',
+                                                    fontFamily: txtObj.fontFamily || 'sans-serif',
+                                                    textDecoration: txtObj.textDecoration || 'none',
+                                                    textAlign: txtObj.textAlign || 'left',
+                                                    lineHeight: 1.3,
+                                                    minHeight: txtObj.height,
+                                                    borderRadius: txtObj.borderRadius ? `${txtObj.borderRadius}px` : undefined,
+                                                }}
+                                                dangerouslySetInnerHTML={{ __html: renderRichMathText(txtObj.text) || '<span class="text-slate-500 italic">Type here...</span>' }}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const ta = document.querySelector(`textarea[data-text-id="${txtObj.id}"]`);
+                                                    if (ta) { ta.style.position = 'absolute'; ta.style.zIndex = '-1'; ta.focus(); }
+                                                }}
+                                            />
                                         </div>
                                     ) : (
                                         <div
@@ -11770,8 +11963,9 @@ export default function Whiteboard({
                                         className="absolute pointer-events-auto select-none"
                                         style={{
                                             left: cx,
-                                            top: textMinY - (txtObj.isLocked ? 14 : 44),
-                                            transform: 'translate(-50%, -100%)',
+                                            top: textMinY - (txtObj.isLocked ? 14 : 44) * invZoom,
+                                            transform: `translate(-50%, -100%) scale(${invZoom})`,
+                                            transformOrigin: 'center bottom',
                                             zIndex: 70,
                                         }}
                                         onClick={(e) => e.stopPropagation()}
@@ -11779,12 +11973,12 @@ export default function Whiteboard({
                                         onPointerDown={(e) => e.stopPropagation()}
                                     >
                                         {/* Floating Toolbar Pill */}
-                                        <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity">
+                                        <div className="flex items-center gap-0.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity">
                                             {/* Font Family */}
                                             <select
                                                 value={txtObj.fontFamily || 'sans-serif'}
                                                 onChange={(e) => updateSelectedTextProps({ fontFamily: e.target.value })}
-                                                className="h-6 bg-slate-800 text-[10px] text-white rounded-lg px-1.5 py-0.5 border border-slate-700 outline-none cursor-pointer hover:bg-slate-750 transition"
+                                                className="h-5 bg-slate-800 text-[10px] text-white rounded px-1 py-0 border border-slate-700 outline-none cursor-pointer hover:bg-slate-750 transition"
                                                 title="Font Family"
                                             >
                                                 <option value="sans-serif">Sans-serif</option>
@@ -11797,11 +11991,11 @@ export default function Whiteboard({
                                             </select>
 
                                             {/* Font Size +/- */}
-                                            <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 px-1 py-0.5 h-6">
+                                            <div className="flex items-center bg-slate-800 rounded border border-slate-700 px-0.5 py-0 h-5">
                                                 <button
                                                     type="button"
                                                     onClick={() => updateSelectedTextProps({ fontSize: Math.max(8, (txtObj.fontSize || 20) - 2) })}
-                                                    className="w-4 h-4 flex items-center justify-center text-xs text-slate-300 hover:text-white hover:bg-slate-700 rounded transition font-bold"
+                                                    className="w-3.5 h-3.5 flex items-center justify-center text-[10px] text-slate-300 hover:text-white hover:bg-slate-700 rounded transition font-bold"
                                                     title="Decrease Font Size"
                                                 >
                                                     -
@@ -11812,7 +12006,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => updateSelectedTextProps({ fontSize: Math.min(120, (txtObj.fontSize || 20) + 2) })}
-                                                    className="w-4 h-4 flex items-center justify-center text-xs text-slate-300 hover:text-white hover:bg-slate-700 rounded transition font-bold"
+                                                    className="w-3.5 h-3.5 flex items-center justify-center text-[10px] text-slate-300 hover:text-white hover:bg-slate-700 rounded transition font-bold"
                                                     title="Increase Font Size"
                                                 >
                                                     +
@@ -11850,11 +12044,11 @@ export default function Whiteboard({
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                                             {/* Alignment */}
-                                            <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 p-0.5 h-6">
+                                            <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5 h-5">
                                                 <button
                                                     type="button"
                                                     onClick={() => updateSelectedTextProps({ textAlign: 'left' })}
-                                                    className={`w-5 h-5 flex items-center justify-center rounded-full transition ${(txtObj.textAlign || 'left') === 'left' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                    className={`w-4 h-4 flex items-center justify-center rounded-full transition ${(txtObj.textAlign || 'left') === 'left' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                                     title="Align Left"
                                                 >
                                                     <AlignLeft className="w-3 h-3" />
@@ -11862,7 +12056,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => updateSelectedTextProps({ textAlign: 'center' })}
-                                                    className={`w-5 h-5 flex items-center justify-center rounded-full transition ${txtObj.textAlign === 'center' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                    className={`w-4 h-4 flex items-center justify-center rounded-full transition ${txtObj.textAlign === 'center' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                                     title="Align Center"
                                                 >
                                                     <AlignCenterHorizontal className="w-3 h-3" />
@@ -11870,7 +12064,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => updateSelectedTextProps({ textAlign: 'right' })}
-                                                    className={`w-5 h-5 flex items-center justify-center rounded-full transition ${txtObj.textAlign === 'right' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                                    className={`w-4 h-4 flex items-center justify-center rounded-full transition ${txtObj.textAlign === 'right' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                                                     title="Align Right"
                                                 >
                                                     <AlignRight className="w-3 h-3" />
@@ -11880,7 +12074,7 @@ export default function Whiteboard({
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
                                             {/* Text Color */}
-                                            <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex flex-col items-center justify-center hover:scale-105 transition" title="Text Color">
+                                            <div className="relative w-4 h-4 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex flex-col items-center justify-center hover:scale-105 transition" title="Text Color">
                                                 <span className="font-bold text-[11px] leading-none select-none text-slate-200">A</span>
                                                 <div className="w-3 h-0.5 mt-[0.5px] rounded-xs" style={{ backgroundColor: txtObj.color || '#000000' }} />
                                                 <input
@@ -11893,7 +12087,7 @@ export default function Whiteboard({
                                             </div>
 
                                             {/* Background Color */}
-                                            <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Background Fill">
+                                            <div className="relative w-4 h-4 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Background Fill">
                                                 <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: txtObj.bgColor && txtObj.bgColor !== 'transparent' ? txtObj.bgColor : 'transparent' }}>
                                                     {(!txtObj.bgColor || txtObj.bgColor === 'transparent') && (
                                                         <span className="text-[7px] text-slate-400 leading-none">✕</span>
@@ -13700,8 +13894,9 @@ export default function Whiteboard({
                                     className="absolute pointer-events-auto select-none"
                                     style={{
                                         left: cx,
-                                        top: shapeMinY - (shpObj.isLocked ? 14 : 44),
-                                        transform: 'translate(-50%, -100%)',
+                                        top: shapeMinY - (shpObj.isLocked ? 14 : 44) * invZoom,
+                                        transform: `translate(-50%, -100%) scale(${invZoom})`,
+                                        transformOrigin: 'center bottom',
                                         zIndex: 70,
                                     }}
                                     onClick={(e) => e.stopPropagation()}
@@ -14116,7 +14311,7 @@ export default function Whiteboard({
                             maxY = Math.max(maxY, sy, sy + sh);
                         });
                         const groupCx = (minX + maxX) / 2;
-                        const groupTop = minY - 44;
+                        const groupTop = minY - 44 * invZoom;
 
                         return (
                             <div
@@ -14124,7 +14319,8 @@ export default function Whiteboard({
                                 style={{
                                     left: groupCx,
                                     top: groupTop,
-                                    transform: 'translate(-50%, -100%)',
+                                    transform: `translate(-50%, -100%) scale(${invZoom})`,
+                                    transformOrigin: 'center bottom',
                                     zIndex: 70,
                                 }}
                                 onClick={(e) => e.stopPropagation()}
@@ -14623,7 +14819,7 @@ export default function Whiteboard({
                                 shapes={(pageShapeObjects[currentPage] || []).filter(s => s.type !== 'connector')}
                                 images={pageImageObjects[currentPage] || []}
                                 isSelected={selectedShapeIds.includes(conn.id)}
-                                scale={zoomLevel || 1}
+                                scale={currentZoom}
                                 onSelect={(id) => {
                                     setSelectedShapeIds([id]);
                                     setSelectedImageId(null);
@@ -14717,7 +14913,9 @@ export default function Whiteboard({
                             position: 'absolute',
                             left: `${floatingBallPos.x}px`,
                             top: `${floatingBallPos.y}px`,
-                            touchAction: 'none'
+                            touchAction: 'none',
+                            transform: `scale(${invZoom})`,
+                            transformOrigin: 'top left'
                         }}
                         className="z-40 pointer-events-auto select-none"
                     >
@@ -14990,7 +15188,7 @@ export default function Whiteboard({
                             key={mediaObj.id}
                             media={mediaObj}
                             isSelected={selectedMediaId === mediaObj.id}
-                            scale={zoomLevel}
+                            scale={currentZoom}
                             onSelect={(id) => {
                                 setSelectedMediaId(id);
                                 setSelectedShapeIds([]);
@@ -15027,6 +15225,7 @@ export default function Whiteboard({
                             key={obj3d.id}
                             obj={obj3d}
                             isSelected={selected3DId === obj3d.id}
+                            scale={currentZoom}
                             onSelect={(id) => {
                                 setSelected3DId(id);
                                 setSelectedShapeIds([]);
@@ -15063,7 +15262,7 @@ export default function Whiteboard({
                             key={pdfObj.id}
                             pdf={pdfObj}
                             isSelected={selectedPdfId === pdfObj.id}
-                            scale={zoomLevel}
+                            scale={currentZoom}
                             onSelect={(id) => {
                                 setSelectedPdfId(id);
                                 setSelected3DId(null);
@@ -15101,6 +15300,66 @@ export default function Whiteboard({
                                 }));
                                 setSelectedPdfId(clone.id);
                             }}
+                        />
+                    ))}
+
+                    {/* Interactive Classroom Graph Plotter & Equation Graphing Layer */}
+                    {(pageGraphObjects[currentPage] || []).map((graphObj) => (
+                        <WhiteboardGraphObject
+                            key={graphObj.id}
+                            graphObj={graphObj}
+                            isSelected={selectedGraphId === graphObj.id}
+                            scale={currentZoom}
+                            onSelect={(id) => {
+                                setSelectedGraphId(id);
+                                setSelected3DId(null);
+                                setSelectedPdfId(null);
+                                setSelectedShapeIds([]);
+                                setSelectedTextIds([]);
+                                setSelectedImageId(null);
+                                setSelectedImageIds([]);
+                                setSelectedMediaId(null);
+                            }}
+                            onUpdate={(updates) => {
+                                setGraphObjects(prev => prev.map(g => g.id === graphObj.id ? { ...g, ...updates } : g));
+                            }}
+                            onDelete={(id) => {
+                                setGraphObjects(prev => prev.filter(g => g.id !== id));
+                                if (selectedGraphId === id) setSelectedGraphId(null);
+                            }}
+                            onDuplicate={(id) => {
+                                const orig = (pageGraphObjects[currentPage] || []).find(g => g.id === id);
+                                if (!orig) return;
+                                const clone = {
+                                    ...orig,
+                                    id: `graph_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                    x: (orig.x || 0) + 30,
+                                    y: (orig.y || 0) + 30
+                                };
+                                setGraphObjects(prev => [...prev, clone]);
+                                setSelectedGraphId(clone.id);
+                                saveToHistory();
+                            }}
+                            onConvertToStaticDrawing={({ x, y, width, height, dataUrl, rotation }) => {
+                                const newImg = {
+                                    id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                    x: x || 100,
+                                    y: y || 100,
+                                    width: width || 760,
+                                    height: height || 480,
+                                    src: dataUrl,
+                                    rotation: rotation || 0,
+                                    isLocked: false
+                                };
+                                setImageObjects(prev => [...prev, newImg]);
+                                setGraphObjects(prev => prev.filter(g => g.id !== graphObj.id));
+                                setSelectedGraphId(null);
+                                setSelectedImageId(newImg.id);
+                                setSelectedImageIds([newImg.id]);
+                                saveToHistory();
+                            }}
+                            onBringForward={() => handleBringForward(graphObj.id)}
+                            onSendBackward={() => handleSendBackward(graphObj.id)}
                         />
                     ))}
                 </div>
@@ -15397,6 +15656,7 @@ export default function Whiteboard({
                     page3DObjects,
                     pagePdfObjects,
                     pageMediaObjects,
+                    pageGraphObjects,
                     pages
                 }}
                 sessionId={sessionId}

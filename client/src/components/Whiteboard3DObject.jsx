@@ -599,7 +599,8 @@ export default function Whiteboard3DObject({
     onBringToFront,
     onBringForward,
     onSendBackward,
-    onSendToBack
+    onSendToBack,
+    scale = 1
 }) {
     const [rotX, setRotX] = useState(obj.rotX || -25);
     const [rotY, setRotY] = useState(obj.rotY || 45);
@@ -1145,9 +1146,10 @@ export default function Whiteboard3DObject({
             {/* Sleek Horizontal Floating 3D Format Bar (matches Whiteboard main toolbar design) */}
             {isSelected && (
                 <div
-                    className="absolute -top-12 left-1/2 bg-slate-900/95 border border-slate-700/80 shadow-2xl rounded-2xl px-2 py-1 flex items-center gap-1 z-40 text-slate-200 pointer-events-auto select-none backdrop-blur-md whitespace-nowrap"
+                    className="absolute left-1/2 bg-slate-900/95 border border-slate-700/80 shadow-2xl rounded-2xl px-2 py-1 flex items-center gap-1 z-40 text-slate-200 pointer-events-auto select-none backdrop-blur-md whitespace-nowrap"
                     style={{
-                        transform: `translateX(-50%) rotate(-${obj.rotation || 0}deg)`,
+                        top: `-${48 / (scale || 1)}px`,
+                        transform: `translateX(-50%) rotate(-${obj.rotation || 0}deg) scale(${1 / (scale || 1)})`,
                         transformOrigin: 'bottom center'
                     }}
                     onPointerDown={e => e.stopPropagation()}

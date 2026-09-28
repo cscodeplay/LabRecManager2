@@ -217,6 +217,23 @@ export default function WhiteboardExportModal({
     </g>`;
         }).join('\n');
 
+        // Serialized Graph Objects
+        const currentGraphObjects = whiteboardData.pageGraphObjects?.[currentPage] || [];
+        const graphsSVG = currentGraphObjects.map(graph => {
+            const rot = graph.rotation ? `transform="rotate(${graph.rotation} ${graph.x + (graph.width || 760)/2} ${graph.y + (graph.height || 480)/2})"` : '';
+            const domGraphSvg = document.querySelector(`[data-graph-id="${graph.id}"] svg`);
+            let innerSvg = '';
+            if (domGraphSvg) {
+                const serializer = new XMLSerializer();
+                const str = serializer.serializeToString(domGraphSvg);
+                innerSvg = str.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
+            }
+            return `
+    <g transform="translate(${graph.x || 0}, ${graph.y || 0})" ${rot}>
+        ${innerSvg}
+    </g>`;
+        }).join('\n');
+
         // Serialized Text Elements
         const textsSVG = currentTexts.map(t => {
             const rot = t.rotation ? `transform="rotate(${t.rotation} ${t.x + (t.width || 120)/2} ${t.y + (t.height || 30)/2})"` : '';
@@ -264,6 +281,8 @@ export default function WhiteboardExportModal({
     ${connectorsSVG}
     <!-- 3D Objects Layer -->
     ${objects3DSVG}
+    <!-- Graph Plotter Layer -->
+    ${graphsSVG}
     <!-- Images Layer -->
     ${imagesSVG}
     <!-- Text Elements Layer -->
@@ -618,6 +637,48 @@ export default function WhiteboardExportModal({
                 }
             } catch (e) {
                 console.warn("Export 3D object rendering error:", e);
+            }
+        }
+
+        // 5.5 Draw Graph Plotter Layer
+        const currentGraphObjects = whiteboardData.pageGraphObjects?.[currentPage] || [];
+        for (const graphObj of currentGraphObjects) {
+            try {
+                const domGraphSvg = document.querySelector(`[data-graph-id="${graphObj.id}"] svg`);
+                if (domGraphSvg) {
+                    const serializer = new XMLSerializer();
+                    let svgStr = serializer.serializeToString(domGraphSvg);
+                    if (!svgStr.includes('xmlns=')) {
+                        svgStr = svgStr.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+                    }
+                    const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+                    const blobUrl = URL.createObjectURL(svgBlob);
+                    const img = new Image();
+                    await new Promise((resolve) => {
+                        img.onload = () => {
+                            ctx.save();
+                            const gw = graphObj.width || 760;
+                            const gh = graphObj.height || 480;
+                            ctx.translate(graphObj.x || 0, graphObj.y || 0);
+                            if (graphObj.rotation) {
+                                ctx.translate(gw / 2, gh / 2);
+                                ctx.rotate((graphObj.rotation * Math.PI) / 180);
+                                ctx.translate(-gw / 2, -gh / 2);
+                            }
+                            ctx.drawImage(img, 0, 0, gw, gh);
+                            ctx.restore();
+                            URL.revokeObjectURL(blobUrl);
+                            resolve();
+                        };
+                        img.onerror = () => {
+                            URL.revokeObjectURL(blobUrl);
+                            resolve();
+                        };
+                        img.src = blobUrl;
+                    });
+                }
+            } catch (gErr) {
+                console.warn("Export graph object rendering error:", gErr);
             }
         }
 

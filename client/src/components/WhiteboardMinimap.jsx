@@ -385,7 +385,7 @@ export default function WhiteboardMinimap({
                 if (!isBarCollapsed) scheduleAutoHide(2500);
             }}
             className={`whiteboard-minimap select-none transition-all duration-300 ${
-                isDrawing ? 'opacity-30 pointer-events-none' : 'opacity-85 hover:opacity-100 focus-within:opacity-100'
+                isDrawing ? 'opacity-15 pointer-events-none' : 'opacity-40 hover:opacity-100 focus-within:opacity-100'
             } ${isDraggingBar ? 'opacity-100 scale-102 shadow-2xl' : ''}`}
         >
             {/* Collapsed Pill Button */}
