@@ -18,7 +18,8 @@ import {
 import toast from 'react-hot-toast';
 
 export default function WhiteboardGraphObject({
-    graph,
+    graph: propGraph,
+    graphObj,
     isSelected = false,
     scale = 1,
     onSelect,
@@ -30,6 +31,8 @@ export default function WhiteboardGraphObject({
     onSendBackward
 }) {
     const containerRef = useRef(null);
+    const graph = propGraph || graphObj;
+    if (!graph) return null;
 
     // Initial state normalization
     const width = Math.max(480, graph.width || 760);

@@ -228,6 +228,7 @@ export default function WhiteboardMinimap({
 
         const allObjects = [...resolvedShapes, ...resolvedTexts, ...resolvedImages];
         allObjects.forEach(obj => {
+            if (!obj) return;
             const ox = obj.x ?? 0;
             const oy = obj.y ?? 0;
             const ow = obj.width ?? 60;
@@ -330,6 +331,7 @@ export default function WhiteboardMinimap({
         if (allObjects.length > 0) {
             minX = Infinity; minY = Infinity; maxX = -Infinity; maxY = -Infinity;
             allObjects.forEach(obj => {
+                if (!obj) return;
                 const ox = obj.x || 0;
                 const oy = obj.y || 0;
                 const ow = obj.width || 100;

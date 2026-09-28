@@ -8538,7 +8538,7 @@ export default function Whiteboard({
         });
 
         // 4F. Graph Objects Layer (Interactive Coordinate Plotter)
-        const currentGraphObjects = pageGraphObjects[currentPage] || [];
+        const currentGraphObjects = (pageGraphObjects[currentPage] || []).filter(Boolean);
         for (const graphObj of currentGraphObjects) {
             try {
                 const domGraphSvg = document.querySelector(`[data-graph-id="${graphObj.id}"] svg`);
@@ -15304,9 +15304,10 @@ export default function Whiteboard({
                     ))}
 
                     {/* Interactive Classroom Graph Plotter & Equation Graphing Layer */}
-                    {(pageGraphObjects[currentPage] || []).map((graphObj) => (
+                    {(pageGraphObjects[currentPage] || []).filter(Boolean).map((graphObj) => (
                         <WhiteboardGraphObject
                             key={graphObj.id}
+                            graph={graphObj}
                             graphObj={graphObj}
                             isSelected={selectedGraphId === graphObj.id}
                             scale={currentZoom}

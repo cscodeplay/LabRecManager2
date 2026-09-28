@@ -218,7 +218,7 @@ export default function WhiteboardExportModal({
         }).join('\n');
 
         // Serialized Graph Objects
-        const currentGraphObjects = whiteboardData.pageGraphObjects?.[currentPage] || [];
+        const currentGraphObjects = (whiteboardData.pageGraphObjects?.[currentPage] || []).filter(Boolean);
         const graphsSVG = currentGraphObjects.map(graph => {
             const rot = graph.rotation ? `transform="rotate(${graph.rotation} ${graph.x + (graph.width || 760)/2} ${graph.y + (graph.height || 480)/2})"` : '';
             const domGraphSvg = document.querySelector(`[data-graph-id="${graph.id}"] svg`);
@@ -641,7 +641,7 @@ export default function WhiteboardExportModal({
         }
 
         // 5.5 Draw Graph Plotter Layer
-        const currentGraphObjects = whiteboardData.pageGraphObjects?.[currentPage] || [];
+        const currentGraphObjects = (whiteboardData.pageGraphObjects?.[currentPage] || []).filter(Boolean);
         for (const graphObj of currentGraphObjects) {
             try {
                 const domGraphSvg = document.querySelector(`[data-graph-id="${graphObj.id}"] svg`);
