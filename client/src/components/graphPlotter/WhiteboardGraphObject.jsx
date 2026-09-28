@@ -35,19 +35,19 @@ export default function WhiteboardGraphObject({
     if (!graph) return null;
 
     // Initial state normalization
-    const width = Math.max(480, graph.width || 760);
-    const height = Math.max(340, graph.height || 480);
-    const x = graph.x || 120;
-    const y = graph.y || 80;
-    const rotation = graph.rotation || 0;
-    const isLocked = Boolean(graph.isLocked);
+    const width = Math.max(480, graph?.width || 760);
+    const height = Math.max(340, graph?.height || 480);
+    const x = graph?.x || 120;
+    const y = graph?.y || 80;
+    const rotation = graph?.rotation || 0;
+    const isLocked = Boolean(graph?.isLocked);
 
     // Equation editor panel visibility (drawer toggle)
-    const [showDrawer, setShowDrawer] = useState(graph.showDrawer !== undefined ? graph.showDrawer : true);
+    const [showDrawer, setShowDrawer] = useState(graph?.showDrawer !== undefined ? graph.showDrawer : true);
     const [drawerWidth, setDrawerWidth] = useState(300);
 
     // Presentation mode
-    const [isPresentationMode, setIsPresentationMode] = useState(Boolean(graph.isPresentationMode));
+    const [isPresentationMode, setIsPresentationMode] = useState(Boolean(graph?.isPresentationMode));
     const [presentationStep, setPresentationStep] = useState(0);
 
     // Active selection within graph
@@ -61,7 +61,7 @@ export default function WhiteboardGraphObject({
     // Parsing and compiling equations
     // Each equation: { id, raw, label, color, visible, isLocked, parsed, compiled, compiledX, compiledY }
     const compiledEquations = useMemo(() => {
-        const rawList = graph.equations || [
+        const rawList = graph?.equations || [
             { id: 'eq_1', raw: 'y = 2x + 1', color: getEquationColor(0), visible: true },
             { id: 'eq_2', raw: 'y = x^2 - 4', color: getEquationColor(1), visible: true }
         ];
@@ -97,18 +97,18 @@ export default function WhiteboardGraphObject({
                 compiledY
             };
         });
-    }, [graph.equations]);
+    }, [graph?.equations]);
 
     // View bounds: [xMin, xMax, yMin, yMax]
-    const viewBounds = graph.viewBounds || { xMin: -10, xMax: 10, yMin: -6, yMax: 6 };
-    const coordinateSystem = graph.coordinateSystem || 'cartesian';
-    const showGrid = graph.showGrid !== undefined ? graph.showGrid : true;
-    const showMinorGrid = graph.showMinorGrid !== undefined ? graph.showMinorGrid : true;
-    const showAxisLabels = graph.showAxisLabels !== undefined ? graph.showAxisLabels : true;
-    const lockAspectRatio = Boolean(graph.lockAspectRatio);
-    const parameters = graph.parameters || {};
-    const legendConfig = graph.legendConfig || { show: true, position: 'top-right' };
-    const annotations = graph.annotations || [];
+    const viewBounds = graph?.viewBounds || { xMin: -10, xMax: 10, yMin: -6, yMax: 6 };
+    const coordinateSystem = graph?.coordinateSystem || 'cartesian';
+    const showGrid = graph?.showGrid !== undefined ? graph.showGrid : true;
+    const showMinorGrid = graph?.showMinorGrid !== undefined ? graph.showMinorGrid : true;
+    const showAxisLabels = graph?.showAxisLabels !== undefined ? graph.showAxisLabels : true;
+    const lockAspectRatio = Boolean(graph?.lockAspectRatio);
+    const parameters = graph?.parameters || {};
+    const legendConfig = graph?.legendConfig || { show: true, position: 'top-right' };
+    const annotations = graph?.annotations || [];
 
     // Ensure selected equation defaults to first valid equation
     useEffect(() => {
@@ -136,7 +136,7 @@ export default function WhiteboardGraphObject({
             color: nextColor,
             visible: true
         };
-        const nextList = [...(graph.equations || compiledEquations), newEq];
+        const nextList = [...(graph?.equations || compiledEquations), newEq];
         handleUpdate({ equations: nextList });
         setSelectedEqId(newEq.id);
         toast.success('Equation added', { icon: '📐' });
@@ -207,7 +207,7 @@ export default function WhiteboardGraphObject({
     const handleMoveStart = (e) => {
         if (isLocked) return;
         e.stopPropagation();
-        onSelect && onSelect(graph.id);
+        onSelect && onSelect(graph?.id);
 
         const startX = e.clientX;
         const startY = e.clientY;
@@ -235,7 +235,7 @@ export default function WhiteboardGraphObject({
     const handleResizeStart = (handle, e) => {
         if (isLocked) return;
         e.stopPropagation();
-        onSelect && onSelect(graph.id);
+        onSelect && onSelect(graph?.id);
 
         const startX = e.clientX;
         const startY = e.clientY;
@@ -426,8 +426,8 @@ export default function WhiteboardGraphObject({
     return (
         <div
             ref={containerRef}
-            data-graph-id={graph.id}
-            onClick={() => onSelect && onSelect(graph.id)}
+            data-graph-id={graph?.id}
+            onClick={() => onSelect && onSelect(graph?.id)}
             style={{
                 position: 'absolute',
                 left: `${x}px`,
@@ -436,7 +436,7 @@ export default function WhiteboardGraphObject({
                 height: `${height}px`,
                 transform: `rotate(${rotation}deg)`,
                 transformOrigin: 'center center',
-                zIndex: graph.zIndex || 20
+                zIndex: graph?.zIndex || 20
             }}
             className={`group rounded-2xl shadow-2xl flex flex-col overflow-visible bg-slate-900 border-2 select-none transition-shadow ${
                 isSelected
@@ -452,7 +452,7 @@ export default function WhiteboardGraphObject({
                 <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-xs animate-pulse" />
                     <span className="font-bold text-xs tracking-wider text-slate-200">
-                        {graph.title || 'Graph Plotter'}
+                        {graph?.title || 'Graph Plotter'}
                     </span>
                     {isPresentationMode && (
                         <span className="px-2 py-0.5 rounded-full bg-violet-600/30 border border-violet-500/50 text-violet-300 font-bold text-[10px] uppercase tracking-wider">
@@ -504,7 +504,7 @@ export default function WhiteboardGraphObject({
                     {/* Delete */}
                     <button
                         type="button"
-                        onClick={() => onDelete && onDelete(graph.id)}
+                        onClick={() => onDelete && onDelete(graph?.id)}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
                         title="Delete Graph"
                     >
@@ -649,7 +649,7 @@ export default function WhiteboardGraphObject({
                 >
                     <button
                         type="button"
-                        onClick={() => onDuplicate && onDuplicate(graph.id)}
+                        onClick={() => onDuplicate && onDuplicate(graph?.id)}
                         className="p-1 hover:bg-slate-800 rounded text-slate-300 hover:text-white flex items-center gap-1"
                         title="Duplicate Graph"
                     >
@@ -661,7 +661,7 @@ export default function WhiteboardGraphObject({
 
                     <button
                         type="button"
-                        onClick={() => onBringForward && onBringForward(graph.id)}
+                        onClick={() => onBringForward && onBringForward(graph?.id)}
                         className="p-1 hover:bg-slate-800 rounded text-slate-300 hover:text-white"
                         title="Bring Forward"
                     >
@@ -669,7 +669,7 @@ export default function WhiteboardGraphObject({
                     </button>
                     <button
                         type="button"
-                        onClick={() => onSendBackward && onSendBackward(graph.id)}
+                        onClick={() => onSendBackward && onSendBackward(graph?.id)}
                         className="p-1 hover:bg-slate-800 rounded text-slate-300 hover:text-white"
                         title="Send Backward"
                     >

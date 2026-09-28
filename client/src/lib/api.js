@@ -740,6 +740,7 @@ export const implementationPlansAPI = {
 // Google Drive API
 export const googleDriveAPI = {
     getStatus: () => api.get('/drive/status'),
+    getProviders: () => api.get('/drive/providers'),
     listFiles: (params) => api.get('/drive/files', { params }),
     getFile: (id) => api.get(`/drive/files/${id}`),
     getFileText: (id) => api.get(`/drive/files/${id}/text`),
@@ -751,14 +752,23 @@ export const googleDriveAPI = {
         });
     },
     importToDocuments: (data) => api.post('/drive/import-to-documents', data),
-    getAuthUrl: () => api.get('/drive/auth/url'),
+    getAuthUrl: (params) => api.get('/drive/auth/url', { params }),
     saveOAuthConfig: (data) => api.post('/drive/auth/config', data),
-    disconnect: () => api.post('/drive/auth/disconnect'),
+    disconnect: (accountId) => api.post('/drive/auth/disconnect', { accountId }),
     createFolder: (data) => api.post('/drive/folders', data),
     importBatch: (data) => api.post('/drive/import-batch', data),
     exportFromDocuments: (data) => api.post('/drive/export-from-documents', data),
     getFolderStats: (id) => api.get(`/drive/folder-tree/${id}`),
     checkStorage: () => api.get('/drive/storage-check'),
 };
+
+// Cloud Storage & Drives Admin API
+export const driveAdminAPI = {
+    getConfigs: () => api.get('/drive/admin/config'),
+    saveConfig: (data) => api.post('/drive/admin/config', data),
+    getAccounts: () => api.get('/drive/admin/accounts'),
+    disconnectAccount: (accountId) => api.post('/drive/admin/accounts/disconnect', { accountId }),
+};
+
 
 

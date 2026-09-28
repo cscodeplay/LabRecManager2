@@ -124,10 +124,13 @@ router.get('/providers', asyncHandler(async (req, res) => {
     const resolvedUser = quotaData.user || connectedUser || null;
     const isGoogleConnected = effectiveAuthType === 'oauth_user' || Boolean(connectedUser?.emailAddress);
 
+    const connectedAccounts = await googleDriveService.getConnectedAccounts();
+
     res.json({
         success: true,
         data: {
             activeProvider: 'google_drive_primary',
+            connectedAccounts,
             providers: [
                 {
                     id: 'google_drive_primary',
@@ -202,15 +205,97 @@ router.get('/auth/url', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * @route   GET /api/drive/admin/config
+ * @desc    Get configuration for all cloud drive providers (Google, OneDrive, Dropbox, iCloud, S3)
+ * @access  Admin only
+ */
+router.get('/admin/config', asyncHandler(async (req, res) => {
+    if (!['admin', 'principal'].includes(req.user?.role)) {
+        return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+    const callbackUrl = getCallbackUrl(req);
+    const configs = await googleDriveService.getAllProvidersConfig();
+    
+    // Set dynamic callback URLs if not already custom
+    if (!configs.google_drive.redirectUri) configs.google_drive.redirectUri = callbackUrl;
+    if (!configs.microsoft_onedrive.redirectUri) {
+        configs.microsoft_onedrive.redirectUri = callbackUrl.replace('/api/drive/auth/callback', '/api/drive/onedrive/callback');
+    }
+    if (!configs.dropbox.redirectUri) {
+        configs.dropbox.redirectUri = callbackUrl.replace('/api/drive/auth/callback', '/api/drive/dropbox/callback');
+    }
+
+    res.json({
+        success: true,
+        data: {
+            configs,
+            systemCallbackUrl: callbackUrl
+        }
+    });
+}));
+
+/**
+ * @route   POST /api/drive/admin/config
+ * @desc    Save configuration for a specific cloud drive provider
+ * @access  Admin only
+ */
+router.post('/admin/config', asyncHandler(async (req, res) => {
+    if (!['admin', 'principal'].includes(req.user?.role)) {
+        return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+    const { provider, ...configData } = req.body;
+    if (!provider) {
+        return res.status(400).json({ success: false, message: 'Provider identifier is required' });
+    }
+
+    await googleDriveService.saveProviderConfig(provider, configData);
+    const allConfigs = await googleDriveService.getAllProvidersConfig();
+
+    res.json({
+        success: true,
+        message: `${provider} configuration saved successfully`,
+        data: {
+            configs: allConfigs
+        }
+    });
+}));
+
+/**
+ * @route   GET /api/drive/admin/accounts
+ * @desc    Get list of all connected cloud accounts across providers
+ * @access  Protected
+ */
+router.get('/admin/accounts', asyncHandler(async (req, res) => {
+    const accounts = await googleDriveService.getConnectedAccounts();
+    res.json({
+        success: true,
+        data: {
+            accounts
+        }
+    });
+}));
+
+/**
+ * @route   POST /api/drive/admin/accounts/disconnect
+ * @desc    Disconnect a specific connected cloud account
+ * @access  Admin / User
+ */
+router.post('/admin/accounts/disconnect', asyncHandler(async (req, res) => {
+    const { accountId } = req.body;
+    const result = await googleDriveService.disconnectAccount(accountId);
+    res.json(result);
+}));
+
+/**
  * @route   POST /api/drive/auth/config
  * @desc    Save OAuth 2.0 Client ID and Secret (allows setup from UI)
  */
 router.post('/auth/config', asyncHandler(async (req, res) => {
-    const { clientId, clientSecret, redirectUri } = req.body;
+    const { clientId, clientSecret, redirectUri, folderId } = req.body;
     if (!clientId || !clientSecret) {
         return res.status(400).json({ success: false, message: 'Both Client ID and Client Secret are required' });
     }
-    const saved = googleDriveService.saveOAuthConfig({ clientId, clientSecret, redirectUri });
+    const saved = await googleDriveService.saveOAuthConfig({ clientId, clientSecret, redirectUri, folderId });
     res.json({
         success: true,
         message: 'Google OAuth client credentials saved successfully',
@@ -226,7 +311,8 @@ router.post('/auth/config', asyncHandler(async (req, res) => {
  * @desc    Disconnect Google OAuth account
  */
 router.post('/auth/disconnect', asyncHandler(async (req, res) => {
-    googleDriveService.disconnectOAuth();
+    const { accountId } = req.body || {};
+    await googleDriveService.disconnectAccount(accountId || 'google_primary');
     res.json({
         success: true,
         message: 'Google OAuth account disconnected. Reverted to standard configuration.'

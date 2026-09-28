@@ -25,11 +25,10 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const [selectedTargetFolderId, setSelectedTargetFolderId] = useState('');
     const [previewFile, setPreviewFile] = useState(null);
 
-    // Multi-Cloud & Alternate Accounts State (Synced with Whiteboard Drive engine)
-    const [selectedGoogleAccount, setSelectedGoogleAccount] = useState('charan881130@gmail.com');
-    const [showLinkAccountModal, setShowLinkAccountModal] = useState(false);
-    const [secondaryGoogleEmail, setSecondaryGoogleEmail] = useState('');
-    const [linkedSecondaryAccount, setLinkedSecondaryAccount] = useState(null);
+    // Multi-Cloud & Multi-Account State
+    const [connectedAccounts, setConnectedAccounts] = useState([]);
+    const [selectedAccountId, setSelectedAccountId] = useState('primary');
+    const [providersList, setProvidersList] = useState([]);
     const [driveSearchMode, setDriveSearchMode] = useState('folder'); // 'folder' | 'all' (recursive 5TB search)
 
     // Local Destination Folders state
@@ -89,10 +88,6 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
 
     // OAuth & Direct Upload state
     const [connectingOAuth, setConnectingOAuth] = useState(false);
-    const [showOAuthConfigModal, setShowOAuthConfigModal] = useState(false);
-    const [oauthClientIdInput, setOauthClientIdInput] = useState('');
-    const [oauthClientSecretInput, setOauthClientSecretInput] = useState('');
-    const [savingConfig, setSavingConfig] = useState(false);
     const [uploading, setUploading] = useState(false);
     const fileUploadRef = useRef(null);
 
@@ -102,11 +97,19 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const [newFolderName, setNewFolderName] = useState('');
     const [creatingFolder, setCreatingFolder] = useState(false);
 
-    // Fetch integration status
+    // Fetch integration status & multi-account providers
     const refreshStatus = useCallback(async () => {
         try {
-            const res = await googleDriveAPI.getStatus();
-            setStatus(res.data?.data || null);
+            const [statusRes, providersRes] = await Promise.all([
+                googleDriveAPI.getStatus(),
+                googleDriveAPI.getProviders().catch(() => ({ data: null }))
+            ]);
+            const s = statusRes.data?.data || null;
+            setStatus(s);
+            if (providersRes?.data?.data) {
+                setConnectedAccounts(providersRes.data.data.connectedAccounts || []);
+                setProvidersList(providersRes.data.data.providers || []);
+            }
         } catch (err) {
             setStatus({ isConfigured: false });
         }
@@ -171,56 +174,28 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     }, [fetchFiles, refreshStatus]);
 
     // Connect Personal Google Drive via OAuth 2.0
-    const handleConnectOAuth = async () => {
+    const handleConnectOAuth = async (promptSelect = false) => {
         setConnectingOAuth(true);
         try {
-            const res = await googleDriveAPI.getAuthUrl();
+            const res = await googleDriveAPI.getAuthUrl(promptSelect ? { prompt: 'select_account' } : {});
             if (res.data?.data?.authUrl) {
                 window.location.href = res.data.data.authUrl;
             } else {
-                setShowOAuthConfigModal(true);
+                toast.error('Google OAuth credentials not configured. Please set Client ID & Secret in Admin Settings > Cloud Storage & Drives.', { duration: 6000 });
             }
         } catch (err) {
-            // If OAuth credentials not yet configured on server, open modal
-            setShowOAuthConfigModal(true);
+            toast.error(err.response?.data?.message || 'Google OAuth is not configured yet. Configure Client ID and Secret in Admin Settings > Cloud Storage & Drives.', { duration: 6000 });
         } finally {
             setConnectingOAuth(false);
         }
     };
 
-    // Save Client ID / Secret from modal and trigger OAuth
-    const handleSaveOAuthConfig = async (e) => {
-        e?.preventDefault();
-        if (!oauthClientIdInput.trim() || !oauthClientSecretInput.trim()) {
-            toast.error('Please enter both Client ID and Client Secret');
-            return;
-        }
-        setSavingConfig(true);
-        try {
-            await googleDriveAPI.saveOAuthConfig({
-                clientId: oauthClientIdInput.trim(),
-                clientSecret: oauthClientSecretInput.trim()
-            });
-            toast.success('Credentials saved! Redirecting to Google authorization...');
-            setShowOAuthConfigModal(false);
-            const res = await googleDriveAPI.getAuthUrl();
-            if (res.data?.data?.authUrl) {
-                window.location.href = res.data.data.authUrl;
-            }
-        } catch (err) {
-            console.error('Failed to save OAuth config:', err);
-            toast.error(err.response?.data?.message || 'Failed to save credentials');
-        } finally {
-            setSavingConfig(false);
-        }
-    };
-
     // Disconnect OAuth
-    const handleDisconnectOAuth = async () => {
-        if (!window.confirm('Disconnect your personal Google account?')) return;
+    const handleDisconnectOAuth = async (accountId) => {
+        if (!window.confirm('Disconnect your connected Google Drive session?')) return;
         try {
-            await googleDriveAPI.disconnect();
-            toast.success('Google account disconnected');
+            await googleDriveAPI.disconnect(accountId);
+            toast.success('Drive account disconnected');
             refreshStatus();
             fetchFiles();
         } catch (err) {
@@ -524,53 +499,83 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                     <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
                                         <Check className="w-2.5 h-2.5" /> 5 TB Google One AI Pro Active
                                     </span>
-                                    <span className="bg-blue-50 text-blue-700 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-blue-200">
-                                        OneDrive Ready
-                                    </span>
-                                    <span className="bg-slate-100 text-slate-700 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-slate-300">
-                                        iCloud Ready
-                                    </span>
+
+                                    {/* Clean Provider Icons with Tooltips */}
+                                    <div className="flex items-center gap-1 ml-1">
+                                        <div
+                                            className="w-6 h-6 rounded-lg bg-emerald-100 border border-emerald-300 flex items-center justify-center text-xs font-bold text-emerald-800 cursor-pointer hover:bg-emerald-200 transition"
+                                            title={`Google Drive: Connected as ${status.user?.emailAddress || 'charan881130@gmail.com'} (5 TB Google One AI Pro Active)`}
+                                        >
+                                            G
+                                        </div>
+                                        <div
+                                            className="w-6 h-6 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-xs font-bold text-blue-700 cursor-pointer hover:bg-blue-100 transition"
+                                            title="Microsoft OneDrive / SharePoint: Multi-Account Ready (Configure in Admin Settings)"
+                                        >
+                                            M
+                                        </div>
+                                        <div
+                                            className="w-6 h-6 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-700 cursor-pointer hover:bg-slate-200 transition"
+                                            title="Apple iCloud Drive: Ready for sync via App-Specific Password (Configure in Admin Settings)"
+                                        >
+                                            
+                                        </div>
+                                        <div
+                                            className="w-6 h-6 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-center text-xs font-bold text-indigo-700 cursor-pointer hover:bg-indigo-100 transition"
+                                            title="Dropbox: Ready for workspace sync (Configure in Admin Settings)"
+                                        >
+                                            D
+                                        </div>
+                                        <div
+                                            className="w-6 h-6 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-[10px] font-bold text-amber-700 cursor-pointer hover:bg-amber-100 transition"
+                                            title="AWS S3: Enterprise Storage Ready (Configure in Admin Settings)"
+                                        >
+                                            S3
+                                        </div>
+                                    </div>
                                 </div>
+
                                 <div className="text-slate-600 text-xs mt-1 font-medium flex items-center gap-2 flex-wrap">
                                     <span className="font-semibold text-slate-800 flex items-center gap-1">
                                         <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-                                        {selectedGoogleAccount || status.user?.emailAddress || 'charan881130@gmail.com'}
+                                        {status.user?.emailAddress || 'charan881130@gmail.com'}
                                     </span>
                                     {status.user?.displayName && <span className="text-slate-400">• {status.user.displayName}</span>}
 
-                                    {/* Account switcher if secondary linked */}
-                                    {linkedSecondaryAccount ? (
+                                    {/* Multi-Account Switcher */}
+                                    {connectedAccounts && connectedAccounts.length > 1 ? (
                                         <div className="inline-flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-[11px]">
+                                            {connectedAccounts.map((acc) => (
+                                                <button
+                                                    key={acc.id}
+                                                    type="button"
+                                                    onClick={() => setSelectedAccountId(acc.id)}
+                                                    className={`px-2 py-0.5 rounded-md font-medium transition ${
+                                                        selectedAccountId === acc.id
+                                                            ? 'bg-white text-emerald-700 shadow-xs font-bold'
+                                                            : 'text-slate-600 hover:text-slate-900'
+                                                    }`}
+                                                >
+                                                    {acc.displayName || acc.email?.split('@')[0] || acc.provider}
+                                                </button>
+                                            ))}
                                             <button
                                                 type="button"
-                                                onClick={() => setSelectedGoogleAccount(status.user?.emailAddress || 'charan881130@gmail.com')}
-                                                className={`px-2 py-0.5 rounded-md font-medium transition ${
-                                                    selectedGoogleAccount !== linkedSecondaryAccount
-                                                        ? 'bg-white text-emerald-700 shadow-xs font-bold'
-                                                        : 'text-slate-600 hover:text-slate-900'
-                                                }`}
+                                                onClick={() => handleConnectOAuth(true)}
+                                                className="px-2 py-0.5 text-emerald-600 hover:text-emerald-700 font-bold hover:underline"
+                                                title="Link another account"
                                             >
-                                                Primary
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setSelectedGoogleAccount(linkedSecondaryAccount)}
-                                                className={`px-2 py-0.5 rounded-md font-medium transition ${
-                                                    selectedGoogleAccount === linkedSecondaryAccount
-                                                        ? 'bg-white text-emerald-700 shadow-xs font-bold'
-                                                        : 'text-slate-600 hover:text-slate-900'
-                                                }`}
-                                            >
-                                                {linkedSecondaryAccount.split('@')[0]}
+                                                +
                                             </button>
                                         </div>
                                     ) : (
                                         <button
                                             type="button"
-                                            onClick={() => setShowLinkAccountModal(true)}
+                                            onClick={() => handleConnectOAuth(true)}
                                             className="text-[11px] text-emerald-600 hover:text-emerald-700 font-semibold hover:underline inline-flex items-center gap-0.5"
+                                            title="Link a secondary or institutional Google account"
                                         >
-                                            + Link Secondary Account
+                                            + Link Another Account
                                         </button>
                                     )}
                                 </div>
@@ -619,51 +624,84 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                     <span>Drive</span>
                                     <ExternalLink className="w-3.5 h-3.5" />
                                 </a>
+
+                                {/* Prominently Highlighted Disconnect/Logout Button */}
                                 <button
                                     type="button"
-                                    onClick={handleDisconnectOAuth}
-                                    className="p-2 rounded-xl bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 transition"
-                                    title="Disconnect Google account"
+                                    onClick={() => handleDisconnectOAuth()}
+                                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border-2 border-rose-300 hover:border-rose-400 font-bold transition shadow-xs text-xs"
+                                    title="Disconnect Google account and log out of Drive session"
                                 >
-                                    <LogOut className="w-3.5 h-3.5" />
+                                    <LogOut className="w-4 h-4 text-rose-600" />
+                                    <span>Disconnect</span>
                                 </button>
                             </div>
                         </div>
                     </div>
                 </div>
             ) : (
-                <div className="bg-gradient-to-r from-indigo-50 via-purple-50 to-slate-50 border border-indigo-200 rounded-2xl p-4 shadow-xs">
+                <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-200 rounded-2xl p-4 shadow-xs">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
                         <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
                                 <Sparkles className="w-5 h-5" />
                             </div>
                             <div className="min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <span className="font-bold text-slate-800 text-sm">
-                                        {status?.authError ? 'Re-authorize 5TB Personal Google Account' : 'Connect 5TB Personal Google Account'}
+                                        Connect 5TB Personal Google Drive
                                     </span>
-                                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${status?.authError ? 'bg-rose-100 text-rose-800 border-rose-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>
-                                        {status?.authError ? 'Permission Update Required' : 'Service Account (0 MB quota)'}
-                                    </span>
+                                    {/* Clean Provider Icons with Tooltips */}
+                                    <div className="flex items-center gap-1 ml-1">
+                                        <div
+                                            className="w-5 h-5 rounded-md bg-emerald-100 border border-emerald-300 flex items-center justify-center text-[10px] font-bold text-emerald-800 cursor-pointer"
+                                            title="Google Drive: Ready to connect"
+                                        >
+                                            G
+                                        </div>
+                                        <div
+                                            className="w-5 h-5 rounded-md bg-blue-50 border border-blue-200 flex items-center justify-center text-[10px] font-bold text-blue-700 cursor-pointer"
+                                            title="Microsoft OneDrive: Configurable in Admin Settings"
+                                        >
+                                            M
+                                        </div>
+                                        <div
+                                            className="w-5 h-5 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-700 cursor-pointer"
+                                            title="Apple iCloud: Configurable in Admin Settings"
+                                        >
+                                            
+                                        </div>
+                                        <div
+                                            className="w-5 h-5 rounded-md bg-indigo-50 border border-indigo-200 flex items-center justify-center text-[10px] font-bold text-indigo-700 cursor-pointer"
+                                            title="Dropbox: Configurable in Admin Settings"
+                                        >
+                                            D
+                                        </div>
+                                    </div>
                                 </div>
                                 <p className="text-slate-600 text-[11px] mt-0.5">
-                                    {status?.authError
-                                        ? `Notice: ${status.authError}. Click below to grant full Google Drive permissions so your session stays permanently connected.`
-                                        : 'Connect your @gmail.com account to unlock your full 5 TB Google One AI Pro quota, upload files directly, and sync with iPhone Files app.'}
+                                    Connect your @gmail.com account to unlock your full 5 TB Google One AI Pro quota, upload files directly, and sync records.
                                 </p>
                             </div>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
                             <button
                                 type="button"
-                                onClick={handleConnectOAuth}
+                                onClick={() => handleConnectOAuth(false)}
                                 disabled={connectingOAuth}
-                                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition shadow-xs text-xs disabled:opacity-50"
+                                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition shadow-xs text-xs disabled:opacity-50"
                             >
                                 <Sparkles className="w-3.5 h-3.5" />
-                                <span>{connectingOAuth ? 'Connecting...' : (status?.authError ? 'Re-authorize 5TB Drive' : 'Connect 5TB Drive')}</span>
+                                <span>{connectingOAuth ? 'Connecting...' : 'Connect 5TB Drive'}</span>
                             </button>
+                            <a
+                                href="/settings?tab=cloud_drives"
+                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-semibold transition shadow-xs text-xs"
+                                title="Configure Cloud Storage & Drives in Admin Settings"
+                            >
+                                <Settings className="w-3.5 h-3.5 text-slate-500" />
+                                <span>Admin Settings</span>
+                            </a>
                             <a
                                 href={currentFolderId ? `https://drive.google.com/drive/folders/${currentFolderId}` : "https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp"}
                                 target="_blank"
@@ -1311,86 +1349,6 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                 </div>
             )}
 
-            {/* OAuth Credentials Configuration Modal */}
-            {showOAuthConfigModal && (
-                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                        <div className="px-5 py-4 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white flex items-center justify-between">
-                            <div className="flex items-center gap-2.5">
-                                <Key className="w-5 h-5 text-indigo-200" />
-                                <div>
-                                    <h3 className="font-bold text-sm">Configure Google OAuth 2.0</h3>
-                                    <p className="text-[11px] text-indigo-100">Connect personal 5TB Google One account</p>
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setShowOAuthConfigModal(false)}
-                                className="p-1 rounded-lg hover:bg-indigo-500/50 text-indigo-200 hover:text-white transition"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-                        <form onSubmit={handleSaveOAuthConfig} className="p-5 space-y-4 text-xs">
-                            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-slate-700 space-y-1.5">
-                                <p className="font-bold text-indigo-950 flex items-center gap-1.5">
-                                    <ShieldCheck className="w-4 h-4 text-indigo-600" /> Quick 2-Minute Google Cloud Setup:
-                                </p>
-                                <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-600 ml-1">
-                                    <li>Open <a href="https://console.cloud.google.com/apis/credentials?project=ulrms-481916" target="_blank" rel="noreferrer" className="text-indigo-600 font-bold underline">Google Cloud Credentials (ulrms-481916) ↗</a></li>
-                                    <li>Click <strong>+ CREATE CREDENTIALS</strong> &rarr; <strong>OAuth client ID</strong></li>
-                                    <li>Application type: <strong>Web application</strong></li>
-                                    <li>Add Authorized redirect URI: <code className="bg-white px-1.5 py-0.5 rounded border border-indigo-200 font-mono text-[10px] select-all">http://localhost:5001/api/drive/auth/callback</code></li>
-                                    <li>Paste the generated <strong>Client ID</strong> and <strong>Client Secret</strong> below:</li>
-                                </ol>
-                            </div>
-
-                            <div>
-                                <label className="block text-slate-700 font-bold mb-1">OAuth Client ID</label>
-                                <input
-                                    type="text"
-                                    value={oauthClientIdInput}
-                                    onChange={(e) => setOauthClientIdInput(e.target.value)}
-                                    placeholder="e.g. 1234567890-abcdef.apps.googleusercontent.com"
-                                    required
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-slate-700 font-bold mb-1">OAuth Client Secret</label>
-                                <input
-                                    type="password"
-                                    value={oauthClientSecretInput}
-                                    onChange={(e) => setOauthClientSecretInput(e.target.value)}
-                                    placeholder="GOCSPX-..."
-                                    required
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
-                                />
-                            </div>
-
-                            <div className="pt-2 flex items-center justify-end gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowOAuthConfigModal(false)}
-                                    className="px-3.5 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={savingConfig}
-                                    className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-xs transition disabled:opacity-50 flex items-center gap-1.5"
-                                >
-                                    {savingConfig ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                                    <span>Save & Connect</span>
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
             {/* Create New Folder Modal */}
             {showNewFolderModal && (
                 <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -1514,70 +1472,6 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                 </button>
                             </div>
                         </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Link Secondary Google Account Modal */}
-            {showLinkAccountModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200">
-                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                            <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                                    <HardDrive className="w-4 h-4" />
-                                </div>
-                                <h3 className="text-sm font-bold text-slate-800">Link Secondary Google Drive</h3>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setShowLinkAccountModal(false)}
-                                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-                        <div className="py-4 space-y-3">
-                            <p className="text-xs text-slate-600 leading-relaxed">
-                                Enter the Google email address for your alternate personal, departmental, or institutional account:
-                            </p>
-                            <input
-                                type="email"
-                                value={secondaryGoogleEmail}
-                                onChange={(e) => setSecondaryGoogleEmail(e.target.value)}
-                                placeholder="e.g. charanpreetsingh@domain.com or alternate@gmail.com"
-                                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
-                            />
-                            <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-[11px] text-emerald-800 leading-relaxed">
-                                <p className="font-semibold mb-0.5">Dual-Account Architecture:</p>
-                                <p>Both accounts remain linked in your session. You can switch between them instantaneously using the header controls.</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                            <button
-                                type="button"
-                                onClick={() => setShowLinkAccountModal(false)}
-                                className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (!secondaryGoogleEmail || !secondaryGoogleEmail.includes('@')) {
-                                        toast.error('Please enter a valid Google email address');
-                                        return;
-                                    }
-                                    setLinkedSecondaryAccount(secondaryGoogleEmail);
-                                    setSelectedGoogleAccount(secondaryGoogleEmail);
-                                    setShowLinkAccountModal(false);
-                                    toast.success(`Linked secondary Google account: ${secondaryGoogleEmail}!`, { icon: '✅' });
-                                }}
-                                className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs"
-                            >
-                                Link Account
-                            </button>
-                        </div>
                     </div>
                 </div>
             )}

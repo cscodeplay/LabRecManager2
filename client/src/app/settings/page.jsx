@@ -6,10 +6,11 @@ import {
     Settings as SettingsIcon, User, Bell, Shield, Palette, Save,
     GraduationCap, Plus, Trash2, RotateCcw, Calendar, Filter, Clock,
     Video, Mic, MicOff, VideoOff, CheckCircle, XCircle, AlertTriangle,
-    Volume2, Play, Square
+    Volume2, Play, Square, Cloud, HardDrive, Key, Copy, Check, ExternalLink,
+    RefreshCw, Eye, EyeOff, Server, Database, Sparkles
 } from 'lucide-react';
 import { useAuthStore, useThemeStore, useLanguageStore } from '@/lib/store';
-import { authAPI, gradeScalesAPI, devicesAPI, academicYearsAPI } from '@/lib/api';
+import { authAPI, gradeScalesAPI, devicesAPI, academicYearsAPI, driveAdminAPI, googleDriveAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import ConfirmDialog, { useConfirm } from '@/components/ConfirmDialog';
@@ -79,6 +80,25 @@ export default function SettingsPage() {
         startDate: `${new Date().getFullYear()}-04-01`
     });
 
+    // Cloud Storage & Drives state
+    const [driveConfigs, setDriveConfigs] = useState({
+        google: { clientId: '', clientSecret: '', rootFolderId: '', isConfigured: false },
+        onedrive: { clientId: '', clientSecret: '', tenantId: 'common', isConfigured: false },
+        dropbox: { appKey: '', appSecret: '', isConfigured: false },
+        s3: { bucket: '', region: 'us-east-1', accessKeyId: '', secretAccessKey: '', endpoint: '', isConfigured: false },
+        icloud: { appleId: '', appSpecificPassword: '', serverUrl: '', isConfigured: false }
+    });
+    const [connectedDriveAccounts, setConnectedDriveAccounts] = useState([]);
+    const [loadingDriveSettings, setLoadingDriveSettings] = useState(false);
+    const [savingDriveProvider, setSavingDriveProvider] = useState(null);
+    const [copiedUrlKey, setCopiedUrlKey] = useState(null);
+    const [showSecrets, setShowSecrets] = useState({});
+    const [systemCallbackUrls, setSystemCallbackUrls] = useState({
+        google: 'http://localhost:5001/api/drive/auth/callback',
+        onedrive: 'http://localhost:5001/api/drive/auth/callback/onedrive',
+        dropbox: 'http://localhost:5001/api/drive/auth/callback/dropbox'
+    });
+
     const isAdmin = user?.role === 'admin' || user?.role === 'principal';
 
     useEffect(() => {
@@ -96,6 +116,9 @@ export default function SettingsPage() {
         }
         if (activeTab === 'sessions' && isAdmin) {
             loadSessionsList();
+        }
+        if (activeTab === 'cloud_drives' && isAdmin) {
+            loadCloudDriveSettings();
         }
     }, [activeTab, isAdmin]);
 
@@ -391,6 +414,98 @@ export default function SettingsPage() {
         };
     }, [newSession.startDate]);
 
+    // --- Cloud Storage & Drives Handlers ---
+    const loadCloudDriveSettings = async () => {
+        setLoadingDriveSettings(true);
+        try {
+            const [configsRes, accountsRes] = await Promise.all([
+                driveAdminAPI.getConfigs().catch(e => ({ data: null })),
+                driveAdminAPI.getAccounts().catch(e => ({ data: null }))
+            ]);
+            if (configsRes?.data?.data) {
+                const { configs, callbackUrls } = configsRes.data.data;
+                if (configs) {
+                    setDriveConfigs(prev => ({
+                        google: { ...prev.google, ...(configs.google || {}) },
+                        onedrive: { ...prev.onedrive, ...(configs.onedrive || {}) },
+                        dropbox: { ...prev.dropbox, ...(configs.dropbox || {}) },
+                        s3: { ...prev.s3, ...(configs.s3 || {}) },
+                        icloud: { ...prev.icloud, ...(configs.icloud || {}) },
+                    }));
+                }
+                if (callbackUrls) {
+                    setSystemCallbackUrls(callbackUrls);
+                }
+            }
+            if (accountsRes?.data?.data?.accounts) {
+                setConnectedDriveAccounts(accountsRes.data.data.accounts);
+            }
+        } catch (error) {
+            console.error('Failed to load cloud drive settings:', error);
+            toast.error('Failed to load cloud drive configurations');
+        } finally {
+            setLoadingDriveSettings(false);
+        }
+    };
+
+    const handleSaveDriveConfig = async (provider) => {
+        setSavingDriveProvider(provider);
+        try {
+            const res = await driveAdminAPI.saveConfig({
+                provider,
+                data: driveConfigs[provider]
+            });
+            toast.success(res.data?.message || `${provider.toUpperCase()} credentials saved successfully!`);
+            loadCloudDriveSettings();
+        } catch (error) {
+            console.error(`Failed to save ${provider} config:`, error);
+            toast.error(error.response?.data?.message || `Failed to save ${provider} credentials`);
+        } finally {
+            setSavingDriveProvider(null);
+        }
+    };
+
+    const handleDisconnectDriveAccount = async (accountId, providerName) => {
+        const ok = await confirm({
+            title: `Disconnect ${providerName || 'Drive'} Account?`,
+            message: `Are you sure you want to disconnect this account (${accountId})? Cloud sync and file imports will require re-authorization.`,
+            confirmText: 'Disconnect Account',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!ok) return;
+
+        try {
+            await driveAdminAPI.disconnectAccount(accountId);
+            toast.success(`Account ${accountId} disconnected`);
+            loadCloudDriveSettings();
+        } catch (error) {
+            console.error('Failed to disconnect drive account:', error);
+            toast.error(error.response?.data?.message || 'Failed to disconnect account');
+        }
+    };
+
+    const copyToClipboard = (text, key) => {
+        if (!text) return;
+        navigator.clipboard.writeText(text);
+        setCopiedUrlKey(key);
+        toast.success('Redirect URI copied to clipboard!');
+        setTimeout(() => setCopiedUrlKey(null), 2500);
+    };
+
+    const handleConnectNewGoogleAccount = async () => {
+        try {
+            const res = await googleDriveAPI.getAuthUrl({ prompt: 'select_account' });
+            if (res.data?.data?.authUrl) {
+                window.location.href = res.data.data.authUrl;
+            } else {
+                toast.error('Please configure Google OAuth Client ID and Secret below first!');
+            }
+        } catch (err) {
+            toast.error('Google OAuth credentials not configured. Please save Client ID & Secret below.');
+        }
+    };
+
     const tabs = [
         { id: 'profile', icon: User, label: 'Profile' },
         { id: 'devices', icon: Video, label: 'Devices' },
@@ -398,6 +513,7 @@ export default function SettingsPage() {
         { id: 'appearance', icon: Palette, label: 'Appearance' },
         { id: 'security', icon: Shield, label: 'Security' },
         ...(isAdmin ? [
+            { id: 'cloud_drives', icon: Cloud, label: 'Cloud Storage & Drives' },
             { id: 'sessions', icon: Calendar, label: 'Sessions' },
             { id: 'grading', icon: GraduationCap, label: 'Grading' },
             { id: 'database', icon: SettingsIcon, label: 'SQL Console' },
@@ -1400,6 +1516,708 @@ export default function SettingsPage() {
                                     <SettingsIcon className="w-4 h-4" />
                                     Open SQL Console
                                 </a>
+                            </div>
+                        )}
+
+                        {activeTab === 'cloud_drives' && isAdmin && (
+                            <div className="space-y-6">
+                                {/* Header Info Card */}
+                                <div className="card p-6 bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-200">
+                                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-sm">
+                                                <Cloud className="w-6 h-6" />
+                                            </div>
+                                            <div>
+                                                <h2 className="text-xl font-bold text-slate-900">Cloud Storage & Drives Configuration</h2>
+                                                <p className="text-xs text-slate-600 mt-0.5">
+                                                    Manage multi-account OAuth credentials, enterprise storage, and cloud synchronization across Google Drive, OneDrive, iCloud, Dropbox, and AWS S3.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={loadCloudDriveSettings}
+                                            disabled={loadingDriveSettings}
+                                            className="btn btn-secondary text-xs flex items-center gap-1.5 self-end sm:self-center"
+                                        >
+                                            <RefreshCw className={`w-3.5 h-3.5 ${loadingDriveSettings ? 'animate-spin' : ''}`} />
+                                            <span>Refresh</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Active Connected Accounts Card */}
+                                <div className="card p-6 border border-slate-200">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
+                                        <div>
+                                            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                                <HardDrive className="w-5 h-5 text-emerald-600" />
+                                                Connected Accounts & Active Drive Sessions
+                                            </h3>
+                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                Active drives connected for file sync, direct imports, and dual-account multi-cloud access.
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleConnectNewGoogleAccount}
+                                            className="btn btn-primary text-xs flex items-center gap-1.5 shadow-sm"
+                                        >
+                                            <Plus className="w-4 h-4" />
+                                            <span>+ Connect Another Account</span>
+                                        </button>
+                                    </div>
+
+                                    {connectedDriveAccounts && connectedDriveAccounts.length > 0 ? (
+                                        <div className="grid gap-3">
+                                            {connectedDriveAccounts.map((acc) => (
+                                                <div
+                                                    key={acc.id}
+                                                    className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-slate-50 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-lg font-bold shadow-xs">
+                                                            {acc.provider === 'google' ? '🇬' : acc.provider === 'onedrive' ? '🟦' : acc.provider === 'icloud' ? '🍎' : '📁'}
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-bold text-slate-900 text-sm">{acc.email || acc.displayName || acc.id}</span>
+                                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                                    {acc.isDefault ? 'Primary Active' : 'Connected'}
+                                                                </span>
+                                                                <span className="text-[10px] font-semibold text-slate-500 uppercase">
+                                                                    {acc.provider}
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-3">
+                                                                <span>Plan / Quota: <strong className="text-slate-700">{acc.plan || acc.quota || '5 TB Active'}</strong></span>
+                                                                <span>Status: <strong className="text-emerald-700">● {acc.status || 'Active'}</strong></span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDisconnectDriveAccount(acc.id, acc.provider)}
+                                                        className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition flex items-center gap-1.5 self-start sm:self-center"
+                                                        title="Disconnect this account"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                        <span>Disconnect</span>
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-6 px-4 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                                            <HardDrive className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                                            <p className="text-sm font-semibold text-slate-700">No external accounts connected yet</p>
+                                            <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 mb-3">
+                                                Configure the OAuth credentials below, then click &quot;Connect Another Account&quot; to authorize your Google, Microsoft, or Apple drives.
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Google Drive OAuth 2.0 Card */}
+                                <div className="card p-6 border border-emerald-200/80 shadow-xs">
+                                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-sm">
+                                                G
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <h3 className="text-base font-bold text-slate-900">Google Drive OAuth 2.0</h3>
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                                        5 TB Google One / Workspace
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-slate-500">Configure Client ID and Secret for seamless personal and multi-account Google Drive sync.</p>
+                                            </div>
+                                        </div>
+                                        <a
+                                            href="https://console.cloud.google.com/apis/credentials"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold flex items-center gap-1 hover:underline"
+                                        >
+                                            <span>Google Cloud Console</span>
+                                            <ExternalLink className="w-3.5 h-3.5" />
+                                        </a>
+                                    </div>
+
+                                    {/* Quick Guide */}
+                                    <div className="bg-emerald-50/70 border border-emerald-100 rounded-xl p-3.5 text-xs text-slate-700 mb-4 space-y-1">
+                                        <p className="font-bold text-emerald-950 flex items-center gap-1.5">
+                                            <Key className="w-4 h-4 text-emerald-600" /> Setup Instructions for Google Cloud Console:
+                                        </p>
+                                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                                            1. In Google Cloud Console &rarr; <strong>APIs & Services &rarr; Credentials</strong>, create an <strong>OAuth client ID</strong> (Web application).<br />
+                                            2. Add the <strong>Authorized redirect URI</strong> shown below.<br />
+                                            3. Paste the generated Client ID and Client Secret, then click <strong>Save Google Credentials</strong>.
+                                        </p>
+                                    </div>
+
+                                    <form
+                                        onSubmit={(e) => {
+                                            e.preventDefault();
+                                            handleSaveDriveConfig('google');
+                                        }}
+                                        className="space-y-4 text-xs"
+                                    >
+                                        <div>
+                                            <label className="block text-slate-700 font-bold mb-1">OAuth Client ID</label>
+                                            <input
+                                                type="text"
+                                                value={driveConfigs.google?.clientId || ''}
+                                                onChange={(e) => setDriveConfigs(prev => ({
+                                                    ...prev,
+                                                    google: { ...prev.google, clientId: e.target.value }
+                                                }))}
+                                                placeholder="e.g. 1234567890-abcdef.apps.googleusercontent.com"
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                                                required
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="block text-slate-700 font-bold">OAuth Client Secret</label>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowSecrets(prev => ({ ...prev, google: !prev.google }))}
+                                                    className="text-[11px] text-slate-500 hover:text-slate-800 flex items-center gap-1"
+                                                >
+                                                    {showSecrets.google ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                    <span>{showSecrets.google ? 'Hide' : 'Show'}</span>
+                                                </button>
+                                            </div>
+                                            <input
+                                                type={showSecrets.google ? 'text' : 'password'}
+                                                value={driveConfigs.google?.clientSecret || ''}
+                                                onChange={(e) => setDriveConfigs(prev => ({
+                                                    ...prev,
+                                                    google: { ...prev.google, clientSecret: e.target.value }
+                                                }))}
+                                                placeholder="GOCSPX-..."
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                                                required
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-slate-700 font-bold mb-1">System Authorized Redirect URI (Copy to Google Console)</label>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="text"
+                                                    readOnly
+                                                    value={systemCallbackUrls.google || 'http://localhost:5001/api/drive/auth/callback'}
+                                                    className="w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-lg text-xs font-mono text-slate-700 select-all"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => copyToClipboard(systemCallbackUrls.google || 'http://localhost:5001/api/drive/auth/callback', 'google')}
+                                                    className="px-3 py-2 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition flex-shrink-0"
+                                                >
+                                                    {copiedUrlKey === 'google' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                                    <span>{copiedUrlKey === 'google' ? 'Copied!' : 'Copy'}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-slate-700 font-bold mb-1">Default Root Folder ID (Optional)</label>
+                                            <input
+                                                type="text"
+                                                value={driveConfigs.google?.rootFolderId || ''}
+                                                onChange={(e) => setDriveConfigs(prev => ({
+                                                    ...prev,
+                                                    google: { ...prev.google, rootFolderId: e.target.value }
+                                                }))}
+                                                placeholder="Leave empty for root folder, or paste specific Drive folder ID"
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                                            />
+                                        </div>
+
+                                        <div className="pt-2 flex items-center justify-end gap-3">
+                                            <button
+                                                type="submit"
+                                                disabled={savingDriveProvider === 'google'}
+                                                className="btn btn-primary text-xs flex items-center gap-1.5 shadow-sm"
+                                            >
+                                                <Save className="w-4 h-4" />
+                                                <span>{savingDriveProvider === 'google' ? 'Saving...' : 'Save Google Credentials'}</span>
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+
+                                {/* Microsoft OneDrive / SharePoint Card */}
+                                <div className="card p-6 border border-blue-200/80 shadow-xs">
+                                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm">
+                                                M
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <h3 className="text-base font-bold text-slate-900">Microsoft OneDrive & SharePoint</h3>
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                                        Microsoft 365
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-slate-500">Connect personal OneDrive, work school accounts, and institutional SharePoint document libraries.</p>
+                                            </div>
+                                        </div>
+                                        <a
+                                            href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-xs text-blue-700 hover:text-blue-800 font-semibold flex items-center gap-1 hover:underline"
+                                        >
+                                            <span>Azure App Registrations</span>
+                                            <ExternalLink className="w-3.5 h-3.5" />
+                                        </a>
+                                    </div>
+
+                                    <form
+                                        onSubmit={(e) => {
+                                            e.preventDefault();
+                                            handleSaveDriveConfig('onedrive');
+                                        }}
+                                        className="space-y-4 text-xs"
+                                    >
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-slate-700 font-bold mb-1">Application (Client) ID</label>
+                                                <input
+                                                    type="text"
+                                                    value={driveConfigs.onedrive?.clientId || ''}
+                                                    onChange={(e) => setDriveConfigs(prev => ({
+                                                        ...prev,
+                                                        onedrive: { ...prev.onedrive, clientId: e.target.value }
+                                                    }))}
+                                                    placeholder="e.g. 00000000-0000-0000-0000-000000000000"
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                                                    required
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-slate-700 font-bold mb-1">Directory (Tenant) ID</label>
+                                                <input
+                                                    type="text"
+                                                    value={driveConfigs.onedrive?.tenantId || 'common'}
+                                                    onChange={(e) => setDriveConfigs(prev => ({
+                                                        ...prev,
+                                                        onedrive: { ...prev.onedrive, tenantId: e.target.value }
+                                                    }))}
+                                                    placeholder="common (or organizational tenant GUID)"
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                                                    required
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="block text-slate-700 font-bold">Client Secret Value</label>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowSecrets(prev => ({ ...prev, onedrive: !prev.onedrive }))}
+                                                    className="text-[11px] text-slate-500 hover:text-slate-800 flex items-center gap-1"
+                                                >
+                                                    {showSecrets.onedrive ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                    <span>{showSecrets.onedrive ? 'Hide' : 'Show'}</span>
+                                                </button>
+                                            </div>
+                                            <input
+                                                type={showSecrets.onedrive ? 'text' : 'password'}
+                                                value={driveConfigs.onedrive?.clientSecret || ''}
+                                                onChange={(e) => setDriveConfigs(prev => ({
+                                                    ...prev,
+                                                    onedrive: { ...prev.onedrive, clientSecret: e.target.value }
+                                                }))}
+                                                placeholder="Azure client secret"
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                                                required
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-slate-700 font-bold mb-1">Azure Authorized Redirect URI</label>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="text"
+                                                    readOnly
+                                                    value={systemCallbackUrls.onedrive || 'http://localhost:5001/api/drive/auth/callback/onedrive'}
+                                                    className="w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-lg text-xs font-mono text-slate-700 select-all"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => copyToClipboard(systemCallbackUrls.onedrive || 'http://localhost:5001/api/drive/auth/callback/onedrive', 'onedrive')}
+                                                    className="px-3 py-2 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition flex-shrink-0"
+                                                >
+                                                    {copiedUrlKey === 'onedrive' ? <Check className="w-3.5 h-3.5 text-blue-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                                    <span>{copiedUrlKey === 'onedrive' ? 'Copied!' : 'Copy'}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="pt-2 flex items-center justify-end">
+                                            <button
+                                                type="submit"
+                                                disabled={savingDriveProvider === 'onedrive'}
+                                                className="btn btn-primary text-xs flex items-center gap-1.5 shadow-sm"
+                                            >
+                                                <Save className="w-4 h-4" />
+                                                <span>{savingDriveProvider === 'onedrive' ? 'Saving...' : 'Save OneDrive Credentials'}</span>
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+
+                                {/* Apple iCloud Drive Card */}
+                                <div className="card p-6 border border-slate-300/80 shadow-xs">
+                                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-sm">
+                                                
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <h3 className="text-base font-bold text-slate-900">Apple iCloud Drive</h3>
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-300">
+                                                        iPhone & Mac Files
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-slate-500">Sync with Apple iCloud Drive, iPhone Files App, and iPad lab notes via App-Specific Password.</p>
+                                            </div>
+                                        </div>
+                                        <a
+                                            href="https://appleid.apple.com/account/manage"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-xs text-slate-700 hover:text-slate-900 font-semibold flex items-center gap-1 hover:underline"
+                                        >
+                                            <span>Apple ID Portal</span>
+                                            <ExternalLink className="w-3.5 h-3.5" />
+                                        </a>
+                                    </div>
+
+                                    <form
+                                        onSubmit={(e) => {
+                                            e.preventDefault();
+                                            handleSaveDriveConfig('icloud');
+                                        }}
+                                        className="space-y-4 text-xs"
+                                    >
+                                        <div>
+                                            <label className="block text-slate-700 font-bold mb-1">Apple ID (Email)</label>
+                                            <input
+                                                type="email"
+                                                value={driveConfigs.icloud?.appleId || ''}
+                                                onChange={(e) => setDriveConfigs(prev => ({
+                                                    ...prev,
+                                                    icloud: { ...prev.icloud, appleId: e.target.value }
+                                                }))}
+                                                placeholder="e.g. user@icloud.com"
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-slate-500 focus:outline-hidden"
+                                                required
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="block text-slate-700 font-bold">App-Specific Password</label>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowSecrets(prev => ({ ...prev, icloud: !prev.icloud }))}
+                                                    className="text-[11px] text-slate-500 hover:text-slate-800 flex items-center gap-1"
+                                                >
+                                                    {showSecrets.icloud ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                    <span>{showSecrets.icloud ? 'Hide' : 'Show'}</span>
+                                                </button>
+                                            </div>
+                                            <input
+                                                type={showSecrets.icloud ? 'text' : 'password'}
+                                                value={driveConfigs.icloud?.appSpecificPassword || ''}
+                                                onChange={(e) => setDriveConfigs(prev => ({
+                                                    ...prev,
+                                                    icloud: { ...prev.icloud, appSpecificPassword: e.target.value }
+                                                }))}
+                                                placeholder="xxxx-xxxx-xxxx-xxxx (Generate at appleid.apple.com)"
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-slate-500 focus:outline-hidden"
+                                                required
+                                            />
+                                            <p className="text-[11px] text-slate-500 mt-1">
+                                                Go to <a href="https://appleid.apple.com" target="_blank" rel="noreferrer" className="underline font-semibold">appleid.apple.com</a> &rarr; Sign-In and Security &rarr; App-Specific Passwords to generate one.
+                                            </p>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-slate-700 font-bold mb-1">Drive / WebDAV Server URL</label>
+                                            <input
+                                                type="text"
+                                                value={driveConfigs.icloud?.serverUrl || 'https://caldav.icloud.com'}
+                                                onChange={(e) => setDriveConfigs(prev => ({
+                                                    ...prev,
+                                                    icloud: { ...prev.icloud, serverUrl: e.target.value }
+                                                }))}
+                                                placeholder="https://caldav.icloud.com"
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-slate-500 focus:outline-hidden"
+                                            />
+                                        </div>
+
+                                        <div className="pt-2 flex items-center justify-end">
+                                            <button
+                                                type="submit"
+                                                disabled={savingDriveProvider === 'icloud'}
+                                                className="btn btn-primary text-xs flex items-center gap-1.5 shadow-sm"
+                                            >
+                                                <Save className="w-4 h-4" />
+                                                <span>{savingDriveProvider === 'icloud' ? 'Saving...' : 'Save iCloud Configuration'}</span>
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+
+                                {/* Dropbox Card */}
+                                <div className="card p-6 border border-indigo-200/80 shadow-xs">
+                                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-sm">
+                                                D
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <h3 className="text-base font-bold text-slate-900">Dropbox Integration</h3>
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                                        Dropbox Cloud
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-slate-500">Sync lab documentation and student archives directly to Dropbox folders.</p>
+                                            </div>
+                                        </div>
+                                        <a
+                                            href="https://www.dropbox.com/developers/apps"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-xs text-indigo-700 hover:text-indigo-800 font-semibold flex items-center gap-1 hover:underline"
+                                        >
+                                            <span>Dropbox App Console</span>
+                                            <ExternalLink className="w-3.5 h-3.5" />
+                                        </a>
+                                    </div>
+
+                                    <form
+                                        onSubmit={(e) => {
+                                            e.preventDefault();
+                                            handleSaveDriveConfig('dropbox');
+                                        }}
+                                        className="space-y-4 text-xs"
+                                    >
+                                        <div>
+                                            <label className="block text-slate-700 font-bold mb-1">Dropbox App Key</label>
+                                            <input
+                                                type="text"
+                                                value={driveConfigs.dropbox?.appKey || ''}
+                                                onChange={(e) => setDriveConfigs(prev => ({
+                                                    ...prev,
+                                                    dropbox: { ...prev.dropbox, appKey: e.target.value }
+                                                }))}
+                                                placeholder="Dropbox App Key"
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                                                required
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="block text-slate-700 font-bold">Dropbox App Secret</label>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowSecrets(prev => ({ ...prev, dropbox: !prev.dropbox }))}
+                                                    className="text-[11px] text-slate-500 hover:text-slate-800 flex items-center gap-1"
+                                                >
+                                                    {showSecrets.dropbox ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                    <span>{showSecrets.dropbox ? 'Hide' : 'Show'}</span>
+                                                </button>
+                                            </div>
+                                            <input
+                                                type={showSecrets.dropbox ? 'text' : 'password'}
+                                                value={driveConfigs.dropbox?.appSecret || ''}
+                                                onChange={(e) => setDriveConfigs(prev => ({
+                                                    ...prev,
+                                                    dropbox: { ...prev.dropbox, appSecret: e.target.value }
+                                                }))}
+                                                placeholder="Dropbox App Secret"
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                                                required
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-slate-700 font-bold mb-1">Dropbox Authorized Redirect URI</label>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="text"
+                                                    readOnly
+                                                    value={systemCallbackUrls.dropbox || 'http://localhost:5001/api/drive/auth/callback/dropbox'}
+                                                    className="w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-lg text-xs font-mono text-slate-700 select-all"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => copyToClipboard(systemCallbackUrls.dropbox || 'http://localhost:5001/api/drive/auth/callback/dropbox', 'dropbox')}
+                                                    className="px-3 py-2 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition flex-shrink-0"
+                                                >
+                                                    {copiedUrlKey === 'dropbox' ? <Check className="w-3.5 h-3.5 text-indigo-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                                    <span>{copiedUrlKey === 'dropbox' ? 'Copied!' : 'Copy'}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="pt-2 flex items-center justify-end">
+                                            <button
+                                                type="submit"
+                                                disabled={savingDriveProvider === 'dropbox'}
+                                                className="btn btn-primary text-xs flex items-center gap-1.5 shadow-sm"
+                                            >
+                                                <Save className="w-4 h-4" />
+                                                <span>{savingDriveProvider === 'dropbox' ? 'Saving...' : 'Save Dropbox Credentials'}</span>
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+
+                                {/* Amazon S3 / Object Storage Card */}
+                                <div className="card p-6 border border-amber-200/80 shadow-xs">
+                                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center font-bold text-sm">
+                                                S3
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <h3 className="text-base font-bold text-slate-900">AWS S3 / Compatible Object Storage</h3>
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                                        Enterprise S3 / MinIO / R2
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-slate-500">Connect Amazon S3 bucket, Cloudflare R2, MinIO, or Wasabi for institutional object storage.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <form
+                                        onSubmit={(e) => {
+                                            e.preventDefault();
+                                            handleSaveDriveConfig('s3');
+                                        }}
+                                        className="space-y-4 text-xs"
+                                    >
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-slate-700 font-bold mb-1">S3 Bucket Name</label>
+                                                <input
+                                                    type="text"
+                                                    value={driveConfigs.s3?.bucket || ''}
+                                                    onChange={(e) => setDriveConfigs(prev => ({
+                                                        ...prev,
+                                                        s3: { ...prev.s3, bucket: e.target.value }
+                                                    }))}
+                                                    placeholder="e.g. labrec-records-storage"
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                                                    required
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-slate-700 font-bold mb-1">AWS Region</label>
+                                                <input
+                                                    type="text"
+                                                    value={driveConfigs.s3?.region || 'us-east-1'}
+                                                    onChange={(e) => setDriveConfigs(prev => ({
+                                                        ...prev,
+                                                        s3: { ...prev.s3, region: e.target.value }
+                                                    }))}
+                                                    placeholder="e.g. us-east-1, ap-south-1"
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                                                    required
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-slate-700 font-bold mb-1">Access Key ID</label>
+                                                <input
+                                                    type="text"
+                                                    value={driveConfigs.s3?.accessKeyId || ''}
+                                                    onChange={(e) => setDriveConfigs(prev => ({
+                                                        ...prev,
+                                                        s3: { ...prev.s3, accessKeyId: e.target.value }
+                                                    }))}
+                                                    placeholder="AKIA..."
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                                                    required
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <label className="block text-slate-700 font-bold">Secret Access Key</label>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowSecrets(prev => ({ ...prev, s3: !prev.s3 }))}
+                                                        className="text-[11px] text-slate-500 hover:text-slate-800 flex items-center gap-1"
+                                                    >
+                                                        {showSecrets.s3 ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                        <span>{showSecrets.s3 ? 'Hide' : 'Show'}</span>
+                                                    </button>
+                                                </div>
+                                                <input
+                                                    type={showSecrets.s3 ? 'text' : 'password'}
+                                                    value={driveConfigs.s3?.secretAccessKey || ''}
+                                                    onChange={(e) => setDriveConfigs(prev => ({
+                                                        ...prev,
+                                                        s3: { ...prev.s3, secretAccessKey: e.target.value }
+                                                    }))}
+                                                    placeholder="AWS Secret Access Key"
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                                                    required
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-slate-700 font-bold mb-1">Custom S3 Endpoint URL (Optional for R2/MinIO)</label>
+                                            <input
+                                                type="text"
+                                                value={driveConfigs.s3?.endpoint || ''}
+                                                onChange={(e) => setDriveConfigs(prev => ({
+                                                    ...prev,
+                                                    s3: { ...prev.s3, endpoint: e.target.value }
+                                                }))}
+                                                placeholder="e.g. https://<account_id>.r2.cloudflarestorage.com or https://minio.yourdomain.com"
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                                            />
+                                        </div>
+
+                                        <div className="pt-2 flex items-center justify-end">
+                                            <button
+                                                type="submit"
+                                                disabled={savingDriveProvider === 's3'}
+                                                className="btn btn-primary text-xs flex items-center gap-1.5 shadow-sm"
+                                            >
+                                                <Save className="w-4 h-4" />
+                                                <span>{savingDriveProvider === 's3' ? 'Saving...' : 'Save S3 Configuration'}</span>
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
                             </div>
                         )}
 
