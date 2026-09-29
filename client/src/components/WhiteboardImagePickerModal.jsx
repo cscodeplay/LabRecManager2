@@ -871,9 +871,20 @@ export default function WhiteboardImagePickerModal({ isOpen, onClose, onSelectIm
                                 <div className="flex items-center gap-2 shrink-0">
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            toast.success('Initiating Microsoft Graph OAuth 2.0 flow...', { icon: '🔐' });
-                                            window.open('https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=labrec-onedrive&response_type=code&redirect_uri=https://examssolved.com/api/drive/onedrive/callback&scope=Files.Read.All+offline_access', '_blank');
+                                        onClick={async () => {
+                                            try {
+                                                toast.loading('Initiating Microsoft Graph OAuth 2.0 flow...', { id: 'ms-oauth' });
+                                                const res = await googleDriveAPI.getAuthUrl({ provider: 'onedrive' });
+                                                const authUrl = res.data?.data?.authUrl || res.data?.authUrl;
+                                                if (authUrl) {
+                                                    toast.dismiss('ms-oauth');
+                                                    window.open(authUrl, '_blank');
+                                                } else {
+                                                    toast.error('Please configure Microsoft OneDrive in Settings > Cloud Storage & Drives first.', { id: 'ms-oauth' });
+                                                }
+                                            } catch (e) {
+                                                toast.error(e.response?.data?.message || 'Microsoft OneDrive is not configured yet. Configure Client ID in Settings > Cloud Storage & Drives.', { id: 'ms-oauth' });
+                                            }
                                         }}
                                         className="px-4 py-2 bg-blue-500 hover:bg-blue-400 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-500/30 transition flex items-center gap-2 cursor-pointer"
                                     >

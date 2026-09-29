@@ -868,14 +868,63 @@ class GoogleDriveService {
     /**
      * Switch the active Google Drive account dynamically
      */
-    async switchAccount(accountIdOrEmail) {
+    async switchAccount(accountIdOrEmail, callbackUrl = null) {
         if (!accountIdOrEmail) {
             throw new Error('Account email or ID is required');
         }
+
+        const norm = accountIdOrEmail.toLowerCase().trim();
+
+        // Check if account is Apple iCloud
+        if (norm === 'apple_icloud' || norm.includes('icloud') || norm.includes('apple')) {
+            try {
+                const rows = await prisma.$queryRawUnsafe(`
+                    SELECT "value" FROM "system_settings" WHERE "key" = 'icloud_config' LIMIT 1
+                `);
+                if (rows && rows.length > 0 && rows[0].value) {
+                    const ic = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
+                    if (ic && (ic.appleId || ic.appSpecificPassword)) {
+                        return {
+                            success: true,
+                            requiresAuth: false,
+                            activeEmail: ic.appleId || 'Apple iCloud Drive',
+                            provider: 'icloud',
+                            message: `Active storage switched to Apple iCloud Drive (${ic.appleId || 'Configured'})`
+                        };
+                    }
+                }
+            } catch (e) {}
+            return {
+                success: false,
+                requiresAuth: false,
+                provider: 'icloud',
+                message: 'Apple iCloud Drive connects using an App-Specific Password in Admin Settings > Cloud Storage & Drives. It does not use Google OAuth.'
+            };
+        }
+
+        // Check if account is Microsoft OneDrive
+        if (norm === 'microsoft_onedrive' || norm.includes('onedrive')) {
+            return {
+                success: false,
+                requiresAuth: false,
+                provider: 'onedrive',
+                message: 'Microsoft OneDrive connects via Azure App Registration in Admin Settings > Cloud Storage & Drives.'
+            };
+        }
+
+        // Check if account is Dropbox
+        if (norm === 'dropbox') {
+            return {
+                success: false,
+                requiresAuth: false,
+                provider: 'dropbox',
+                message: 'Dropbox connects via Dropbox App Console in Admin Settings > Cloud Storage & Drives.'
+            };
+        }
+
         this.loadAccountsStore();
         await this.loadAccountsStoreFromDb();
 
-        const norm = accountIdOrEmail.toLowerCase().trim();
         let target = this.connectedGoogleAccounts[norm];
         if (!target) {
             target = Object.values(this.connectedGoogleAccounts).find(a => 
@@ -886,7 +935,7 @@ class GoogleDriveService {
         if (!target || !target.tokens) {
             let authUrl = null;
             try {
-                authUrl = this.generateAuthUrl(null, { prompt: 'select_account consent', login_hint: norm });
+                authUrl = this.generateAuthUrl(callbackUrl, { prompt: 'select_account consent', login_hint: norm });
             } catch (e) {
                 console.warn('[GoogleDrive] Could not generate authUrl for switchAccount:', e.message);
             }
@@ -895,7 +944,7 @@ class GoogleDriveService {
                 requiresAuth: true,
                 targetEmail: norm,
                 authUrl,
-                message: `Account "${accountIdOrEmail}" is not authorized yet. Please connect via Google OAuth.`
+                message: `Google Account "${accountIdOrEmail}" is not authorized yet. Please connect via Google OAuth.`
             };
         }
 
@@ -989,25 +1038,25 @@ class GoogleDriveService {
             `).catch(() => {});
             return { success: true, message: 'Google Secondary account disconnected' };
         }
-        if (accountId === 'microsoft_onedrive') {
+        if (norm === 'microsoft_onedrive' || norm.includes('onedrive')) {
             await prisma.$executeRawUnsafe(`
                 DELETE FROM "system_settings" WHERE "key" IN ('onedrive_connected_account', 'onedrive_oauth_config')
             `).catch(() => {});
             return { success: true, message: 'Microsoft OneDrive account disconnected' };
         }
-        if (accountId === 'apple_icloud') {
+        if (norm === 'apple_icloud' || norm.includes('icloud') || norm.includes('apple')) {
             await prisma.$executeRawUnsafe(`
                 DELETE FROM "system_settings" WHERE "key" = 'icloud_config'
             `).catch(() => {});
             return { success: true, message: 'Apple iCloud account disconnected' };
         }
-        if (accountId === 'dropbox') {
+        if (norm === 'dropbox') {
             await prisma.$executeRawUnsafe(`
                 DELETE FROM "system_settings" WHERE "key" IN ('dropbox_connected_account', 'dropbox_oauth_config')
             `).catch(() => {});
             return { success: true, message: 'Dropbox account disconnected' };
         }
-        if (accountId === 'aws_s3') {
+        if (norm === 'aws_s3' || norm.includes('s3')) {
             await prisma.$executeRawUnsafe(`
                 DELETE FROM "system_settings" WHERE "key" = 's3_storage_config'
             `).catch(() => {});

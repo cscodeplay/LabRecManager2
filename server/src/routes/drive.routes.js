@@ -284,19 +284,28 @@ router.post('/switch-account', asyncHandler(async (req, res) => {
     if (!target) {
         return res.status(400).json({ success: false, message: 'Account identifier is required' });
     }
-    const result = await googleDriveService.switchAccount(target);
+    const callbackUrl = getCallbackUrl(req);
+    const result = await googleDriveService.switchAccount(target, callbackUrl);
     if (result.requiresAuth) {
         return res.json({
             success: false,
             requiresAuth: true,
             authUrl: result.authUrl,
+            provider: result.provider || 'google',
             message: result.message || 'Authorization required for this Google account',
             data: result
         });
     }
+    if (!result.success) {
+        return res.status(400).json({
+            success: false,
+            provider: result.provider,
+            message: result.message || 'Failed to switch account'
+        });
+    }
     res.json({
         success: true,
-        message: `Switched active Google Drive account to ${result.activeEmail}`,
+        message: result.message || `Switched active Google Drive account to ${result.activeEmail}`,
         data: result
     });
 }));
@@ -328,20 +337,75 @@ router.get('/auth/url', asyncHandler(async (req, res) => {
         const prompt = req.query.prompt || 'select_account consent';
         const loginHint = req.query.login_hint || req.query.loginHint || undefined;
         const state = Buffer.from(JSON.stringify({ returnTo, t: Date.now() })).toString('base64');
+        const provider = (req.query.provider || 'google').toLowerCase().trim();
+
+        if (provider === 'onedrive' || provider === 'microsoft') {
+            const configs = await googleDriveService.getAllProvidersConfig();
+            const oneConf = configs.onedrive || configs.microsoft_onedrive;
+            if (!oneConf?.clientId) {
+                return res.status(400).json({
+                    success: false,
+                    provider: 'onedrive',
+                    message: 'Microsoft OneDrive Client ID is not configured. Please configure it in Admin Settings > Cloud Storage & Drives.'
+                });
+            }
+            const oneCallback = oneConf.redirectUri || callbackUrl.replace('/api/drive/auth/callback', '/api/drive/auth/callback/onedrive');
+            const tenant = oneConf.tenantId || 'common';
+            const authUrl = `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/authorize?client_id=${encodeURIComponent(oneConf.clientId)}&response_type=code&redirect_uri=${encodeURIComponent(oneCallback)}&response_mode=query&scope=Files.Read.All+offline_access+User.Read&state=${encodeURIComponent(state)}`;
+            return res.json({
+                success: true,
+                data: {
+                    authUrl,
+                    callbackUrl: oneCallback,
+                    provider: 'onedrive'
+                }
+            });
+        }
+
+        if (provider === 'dropbox') {
+            const configs = await googleDriveService.getAllProvidersConfig();
+            const dropConf = configs.dropbox;
+            if (!dropConf?.appKey) {
+                return res.status(400).json({
+                    success: false,
+                    provider: 'dropbox',
+                    message: 'Dropbox App Key is not configured. Please configure it in Admin Settings > Cloud Storage & Drives.'
+                });
+            }
+            const dropCallback = dropConf.redirectUri || callbackUrl.replace('/api/drive/auth/callback', '/api/drive/auth/callback/dropbox');
+            const authUrl = `https://www.dropbox.com/oauth2/authorize?client_id=${encodeURIComponent(dropConf.appKey)}&response_type=code&redirect_uri=${encodeURIComponent(dropCallback)}&token_access_type=offline&state=${encodeURIComponent(state)}`;
+            return res.json({
+                success: true,
+                data: {
+                    authUrl,
+                    callbackUrl: dropCallback,
+                    provider: 'dropbox'
+                }
+            });
+        }
+
+        if (provider === 'icloud' || provider === 'apple') {
+            return res.status(400).json({
+                success: false,
+                provider: 'icloud',
+                message: 'Apple iCloud connects using your Apple ID and App-Specific Password in Admin Settings > Cloud Storage & Drives. No OAuth redirect required.'
+            });
+        }
 
         const authUrl = googleDriveService.generateAuthUrl(callbackUrl, { prompt, state, login_hint: loginHint });
         res.json({
             success: true,
             data: {
                 authUrl,
-                callbackUrl
+                callbackUrl,
+                provider: 'google'
             }
         });
     } catch (err) {
         console.error('[GoogleDrive /auth/url error]:', err.message);
         res.status(500).json({
             success: false,
-            message: err.message || 'Failed to generate Google authorization URL'
+            message: err.message || 'Failed to generate authorization URL'
         });
     }
 }));

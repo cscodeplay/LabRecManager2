@@ -518,18 +518,23 @@ export default function SettingsPage() {
                 window.location.href = res.data.authUrl;
                 return;
             }
-            toast.success(`Active Google Drive switched to ${accountIdOrEmail}!`, { id: toastId });
+            toast.success(res.data?.message || `Active drive switched to ${accountIdOrEmail}!`, { id: toastId });
             await loadCloudDriveSettings();
         } catch (error) {
             console.error('Failed to switch drive account:', error);
             const errData = error.response?.data;
             if (errData?.requiresAuth && errData?.authUrl) {
                 toast.dismiss(toastId);
-                toast(`Redirecting to Google to authorize ${accountIdOrEmail}...`, { icon: '🔐' });
+                toast(`Redirecting to authorize ${accountIdOrEmail}...`, { icon: '🔐' });
                 window.location.href = errData.authUrl;
                 return;
             }
-            if (errData?.message?.includes('not authorized') || errData?.message?.includes('OAuth')) {
+            if (errData?.provider && errData.provider !== 'google') {
+                toast.error(errData.message || 'Cannot switch non-Google provider via Google OAuth', { id: toastId, duration: 6000 });
+                return;
+            }
+            const isGoogleTarget = String(accountIdOrEmail).toLowerCase().includes('gmail.com') || String(accountIdOrEmail).toLowerCase().includes('google');
+            if ((errData?.message?.includes('not authorized') || errData?.message?.includes('OAuth')) && isGoogleTarget) {
                 toast.dismiss(toastId);
                 toast(`Redirecting to Google to authorize ${accountIdOrEmail}...`, { icon: '🔐' });
                 try {

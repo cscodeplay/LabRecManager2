@@ -288,7 +288,8 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         const seen = new Set();
 
         (connectedAccounts || []).forEach(acc => {
-            if (acc.provider === 'google' || acc.id?.includes('@') || acc.email?.includes('@')) {
+            // Strictly include only Google accounts, never iCloud, OneDrive, Dropbox or S3
+            if (acc.provider === 'google' || (!acc.provider && acc.email?.toLowerCase().includes('@gmail.com'))) {
                 const norm = acc.email?.toLowerCase().trim();
                 if (norm && !seen.has(norm)) {
                     seen.add(norm);
