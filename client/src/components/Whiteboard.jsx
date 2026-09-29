@@ -16,7 +16,8 @@ import {
     Clock, GripHorizontal, GripVertical, LayoutTemplate, Flashlight, Library,
     Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX,
     ChevronUp, ChevronsUp, ChevronsDown, FileText, Check, Pause, Play, RotateCcw, Globe, Music,
-    Underline, Bold, Italic, Shapes, Database, MessageSquare, Sigma, Calculator, Layers
+    Underline, Bold, Italic, Shapes, Database, MessageSquare, Sigma, Calculator, Layers,
+    ZoomIn, ZoomOut, BookOpen
 } from 'lucide-react';
 import fixWebmDuration from 'fix-webm-duration';
 import katex from 'katex';
@@ -962,6 +963,8 @@ export default function Whiteboard({
     const [selectedPdfId, setSelectedPdfId] = useState(null);
     const [pdfInputUrl, setPdfInputUrl] = useState('');
     const [pdfInputTitle, setPdfInputTitle] = useState('');
+    const [showPageNavMenu, setShowPageNavMenu] = useState(false);
+    const [pageJumpInput, setPageJumpInput] = useState('');
 
     // ─── Direct Audio / Video Capture to Canvas State ───
     const [captureMode, setCaptureMode] = useState('video'); // 'video' | 'audio'
@@ -3905,7 +3908,7 @@ export default function Whiteboard({
                 e.preventDefault();
                 handleSendToBack();
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (!isInput && (selectedImageIds.length > 0 || selection || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedMediaId || selected3DId || selectedGraphId)) {
+                if (!isInput && (selectedImageIds.length > 0 || selection || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedMediaId || selected3DId || selectedGraphId || selectedPdfId)) {
                     e.preventDefault();
                     handleDelete();
                 }
@@ -3922,6 +3925,7 @@ export default function Whiteboard({
                 setSelectedMediaId(null);
                 setSelected3DId(null);
                 setSelectedGraphId(null);
+                setSelectedPdfId(null);
             } else if (e.key === '`' || e.key === '~') {
                 e.preventDefault();
                 const wrapper = canvasWrapperRef.current;
@@ -3935,7 +3939,7 @@ export default function Whiteboard({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, selectedGraphId, selection, showRadialMenu, showTemplateGallery, showShortcutsModal, showTasksPanel, showMediaModal, showDomainLibrary, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack, handleUndo, handleRedo, handleGroup, handleUngroup, handleToggleLock, onToggleFullscreen, saveToHistory, clipboardHistory, canvasWidth, canvasHeight]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, selectedGraphId, selectedPdfId, selection, showRadialMenu, showTemplateGallery, showShortcutsModal, showTasksPanel, showMediaModal, showDomainLibrary, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack, handleUndo, handleRedo, handleGroup, handleUngroup, handleToggleLock, onToggleFullscreen, saveToHistory, clipboardHistory, canvasWidth, canvasHeight]);
 
     // Global clipboard paste listener for pasting images from websites (HTML <img>, URLs, bitmaps) and 3D files
     useEffect(() => {
@@ -8986,6 +8990,16 @@ export default function Whiteboard({
 
         saveCurrentPage();
 
+        // Clear active selections so they do not bleed into the newly visited page
+        setSelectedImageIds([]);
+        setSelectedTextIds([]);
+        setSelectedShapeIds([]);
+        setSelectedMediaId(null);
+        setSelectedPdfId(null);
+        setSelected3DId(null);
+        setSelectedGraphId(null);
+        setSelection(null);
+
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (pages[pageIndex]) {
             const img = new Image();
@@ -9015,19 +9029,75 @@ export default function Whiteboard({
             [newIndex]: { pattern: 'plain', color: '#ffffff' }
         }));
 
-        // Initialize image/text objects for new page
+        // Initialize object stores for new page
         setPageImageObjects(prev => ({ ...prev, [newIndex]: [] }));
         setPageTextObjects(prev => ({ ...prev, [newIndex]: [] }));
+        setPageShapeObjects(prev => ({ ...prev, [newIndex]: [] }));
+        setPageMediaObjects(prev => ({ ...prev, [newIndex]: [] }));
+        setPagePdfObjects(prev => ({ ...prev, [newIndex]: [] }));
+        setPage3DObjects(prev => ({ ...prev, [newIndex]: [] }));
+        setPageGraphObjects(prev => ({ ...prev, [newIndex]: [] }));
+
+        // Clear active selections
+        setSelectedImageIds([]);
+        setSelectedTextIds([]);
+        setSelectedShapeIds([]);
+        setSelectedMediaId(null);
+        setSelectedPdfId(null);
+        setSelected3DId(null);
+        setSelectedGraphId(null);
+        setSelection(null);
 
         const canvas = canvasRef.current;
         if (canvas) {
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            // Clear canvas (transparent) to show CSS background
             ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
         saveToHistory();
+        toast.success(`Page ${newIndex + 1} added!`, { icon: '📄' });
     }, [totalPages, saveCurrentPage, saveToHistory]);
 
+    const duplicateCurrentPage = useCallback(() => {
+        saveCurrentPage();
+        const newIndex = totalPages;
+        const currentData = pages[currentPage];
+        setPages(prev => [...prev, currentData]);
+        setTotalPages(prev => prev + 1);
+
+        setPageBackgrounds(prev => ({ ...prev, [newIndex]: { ...(prev[currentPage] || { pattern: 'plain', color: '#ffffff' }) } }));
+        setPageImageObjects(prev => ({
+            ...prev,
+            [newIndex]: (prev[currentPage] || []).map(img => ({ ...img, id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }))
+        }));
+        setPageTextObjects(prev => ({
+            ...prev,
+            [newIndex]: (prev[currentPage] || []).map(txt => ({ ...txt, id: `txt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }))
+        }));
+        setPageShapeObjects(prev => ({
+            ...prev,
+            [newIndex]: (prev[currentPage] || []).map(shp => ({ ...shp, id: `shp_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }))
+        }));
+        setPageMediaObjects(prev => ({
+            ...prev,
+            [newIndex]: (prev[currentPage] || []).map(m => ({ ...m, id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }))
+        }));
+        setPagePdfObjects(prev => ({
+            ...prev,
+            [newIndex]: (prev[currentPage] || []).map(p => ({ ...p, id: `pdf_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }))
+        }));
+        setPage3DObjects(prev => ({
+            ...prev,
+            [newIndex]: (prev[currentPage] || []).map(o => ({ ...o, id: `obj3d_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }))
+        }));
+        setPageGraphObjects(prev => ({
+            ...prev,
+            [newIndex]: (prev[currentPage] || []).map(g => ({ ...g, id: `graph_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }))
+        }));
+
+        loadPage(newIndex);
+        toast.success(`Duplicated Page ${currentPage + 1} to Page ${newIndex + 1}!`, { icon: '📋' });
+        saveToHistory();
+    }, [totalPages, currentPage, pages, saveCurrentPage, loadPage, saveToHistory]);
     
     const deletePage = useCallback((indexToDelete) => {
         if (totalPages <= 1) {
@@ -9066,6 +9136,10 @@ export default function Whiteboard({
         shiftMap(setPageImageObjects);
         shiftMap(setPageTextObjects);
         shiftMap(setPageShapeObjects);
+        shiftMap(setPageMediaObjects);
+        shiftMap(setPagePdfObjects);
+        shiftMap(setPage3DObjects);
+        shiftMap(setPageGraphObjects);
 
         setTotalPages(prev => prev - 1);
         
@@ -9078,6 +9152,7 @@ export default function Whiteboard({
             setCurrentPage(prev => prev - 1);
             loadPage(currentPage - 1);
         }
+        toast.success(`Page ${indexToDelete + 1} deleted`);
     }, [totalPages, currentPage, saveCurrentPage, loadPage]);
 
     const reorderPage = useCallback((dragIndex, hoverIndex) => {
@@ -9128,6 +9203,10 @@ export default function Whiteboard({
         swapMap(setPageImageObjects);
         swapMap(setPageTextObjects);
         swapMap(setPageShapeObjects);
+        swapMap(setPageMediaObjects);
+        swapMap(setPagePdfObjects);
+        swapMap(setPage3DObjects);
+        swapMap(setPageGraphObjects);
 
         if (currentPage === dragIndex) {
             setCurrentPage(hoverIndex);
@@ -10426,33 +10505,223 @@ export default function Whiteboard({
                     {/* Divider */}
                     <div className={`${isVertical ? 'w-6 h-px my-0.5' : 'w-px h-4 mx-1'} bg-slate-700/60 shrink-0`} />
 
-                    {/* Page Navigation */}
+                    {/* Page Navigation & Interactive Switcher Popover */}
+                    <div className="relative">
+                        <div className={`flex ${isVertical ? 'flex-col gap-0.5 p-1 rounded-xl' : 'items-center gap-0.5 px-1 py-0.5 rounded-full'} bg-slate-800/80`}>
+                            <button
+                                onClick={goToPrevPage}
+                                disabled={currentPage === 0}
+                                className="p-1 hover:bg-slate-700 rounded-full transition disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 hover:text-white"
+                                title="Previous Page"
+                            >
+                                <ChevronLeft className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowPageNavMenu(prev => !prev)}
+                                className={`px-2 py-0.5 text-[10.5px] font-mono font-semibold rounded-md transition flex items-center gap-1 ${
+                                    showPageNavMenu ? 'bg-indigo-600 text-white' : 'text-slate-200 hover:text-white hover:bg-slate-700/80'
+                                }`}
+                                title="Click to view all pages, jump, duplicate, or manage pages"
+                            >
+                                <BookOpen className="w-3 h-3 text-slate-400 group-hover:text-white" />
+                                <span>{currentPage + 1}/{totalPages}</span>
+                                <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${showPageNavMenu ? 'rotate-180 text-white' : ''}`} />
+                            </button>
+                            <button
+                                onClick={goToNextPage}
+                                disabled={currentPage === totalPages - 1}
+                                className="p-1 hover:bg-slate-700 rounded-full transition disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 hover:text-white"
+                                title="Next Page"
+                            >
+                                <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                onClick={addNewPage}
+                                className="p-1 hover:bg-green-500/20 text-green-400 rounded-full transition"
+                                title="Add New Blank Page"
+                            >
+                                <Plus className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                onClick={duplicateCurrentPage}
+                                className="p-1 hover:bg-indigo-500/20 text-indigo-400 rounded-full transition"
+                                title="Duplicate Current Page"
+                            >
+                                <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            {totalPages > 1 && (
+                                <button
+                                    onClick={() => deletePage(currentPage)}
+                                    className="p-1 hover:bg-rose-500/20 text-rose-400 rounded-full transition"
+                                    title={`Delete Page ${currentPage + 1}`}
+                                >
+                                    <Trash2 className="w-3 h-3" />
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Interactive Page Switcher & Manager Dropdown Menu */}
+                        {showPageNavMenu && (
+                            <div 
+                                className={`absolute z-60 w-64 bg-slate-900/98 backdrop-blur-md border border-slate-700/90 rounded-2xl shadow-2xl p-3 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-150 ${popoverPos}`}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-700/80">
+                                    <div className="flex items-center gap-1.5 font-bold text-slate-100">
+                                        <Layers className="w-4 h-4 text-indigo-400" />
+                                        <span>Whiteboard Pages ({totalPages})</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPageNavMenu(false)}
+                                        className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                                        title="Close page manager"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+
+                                {/* Direct Jump to Page Input */}
+                                <form
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+                                        const pNum = parseInt(pageJumpInput, 10);
+                                        if (!isNaN(pNum) && pNum >= 1 && pNum <= totalPages) {
+                                            loadPage(pNum - 1);
+                                            setShowPageNavMenu(false);
+                                            setPageJumpInput('');
+                                        } else {
+                                            toast.error(`Enter a page between 1 and ${totalPages}`);
+                                        }
+                                    }}
+                                    className="flex items-center gap-1.5 mb-2.5 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800"
+                                >
+                                    <span className="text-[11px] text-slate-400 pl-1 font-medium">Go to:</span>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max={totalPages}
+                                        value={pageJumpInput}
+                                        onChange={(e) => setPageJumpInput(e.target.value)}
+                                        placeholder={`1 - ${totalPages}`}
+                                        className="w-16 px-2 py-1 text-xs bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-center focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                                    />
+                                    <button
+                                        type="submit"
+                                        className="px-2.5 py-1 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition ml-auto"
+                                    >
+                                        Jump
+                                    </button>
+                                </form>
+
+                                {/* Page List */}
+                                <div className="max-h-48 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                                    {Array.from({ length: totalPages }, (_, idx) => {
+                                        const isCur = idx === currentPage;
+                                        return (
+                                            <div
+                                                key={`page-item-${idx}`}
+                                                className={`group/page flex items-center justify-between px-2.5 py-1.5 rounded-xl border transition cursor-pointer ${
+                                                    isCur
+                                                        ? 'bg-indigo-600/30 border-indigo-500/70 text-white font-bold'
+                                                        : 'bg-slate-800/60 border-slate-700/50 text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                                onClick={() => {
+                                                    loadPage(idx);
+                                                    setShowPageNavMenu(false);
+                                                }}
+                                            >
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-mono ${
+                                                        isCur ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'
+                                                    }`}>
+                                                        {idx + 1}
+                                                    </span>
+                                                    <span className="truncate">Page {idx + 1}</span>
+                                                    {isCur && (
+                                                        <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-indigo-500/30 text-indigo-300 border border-indigo-500/40">
+                                                            Current
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                {totalPages > 1 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            deletePage(idx);
+                                                        }}
+                                                        className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition opacity-40 group-hover/page:opacity-100"
+                                                        title={`Delete Page ${idx + 1}`}
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                {/* Actions Footer */}
+                                <div className="mt-2.5 pt-2 border-t border-slate-800 flex items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            addNewPage();
+                                            setShowPageNavMenu(false);
+                                        }}
+                                        className="flex-1 py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-green-400 text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" />
+                                        <span>Add Page</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            duplicateCurrentPage();
+                                            setShowPageNavMenu(false);
+                                        }}
+                                        className="flex-1 py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-indigo-400 text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition"
+                                    >
+                                        <Copy className="w-3.5 h-3.5" />
+                                        <span>Duplicate</span>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Quick Canvas Zoom Controls */}
                     <div className={`flex ${isVertical ? 'flex-col gap-0.5 p-1 rounded-xl' : 'items-center gap-0.5 px-1 py-0.5 rounded-full'} bg-slate-800/80`}>
                         <button
-                            onClick={goToPrevPage}
-                            disabled={currentPage === 0}
-                            className="p-1 hover:bg-slate-700 rounded-full transition disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 hover:text-white"
-                            title="Previous Page"
+                            type="button"
+                            onClick={() => setZoomLevel(prev => Math.max(0.1, Number((prev - 0.1).toFixed(1))))}
+                            className="p-1 hover:bg-slate-700 rounded-full transition text-slate-300 hover:text-white"
+                            title="Zoom Out (-10%)"
                         >
-                            <ChevronLeft className="w-3.5 h-3.5" />
-                        </button>
-                        <span className={`text-[10px] font-medium text-slate-300 ${isVertical ? 'text-center' : 'min-w-[36px] text-center tracking-wider'}`}>
-                            {currentPage + 1}/{totalPages}
-                        </span>
-                        <button
-                            onClick={goToNextPage}
-                            disabled={currentPage === totalPages - 1}
-                            className="p-1 hover:bg-slate-700 rounded-full transition disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 hover:text-white"
-                            title="Next Page"
-                        >
-                            <ChevronRight className="w-3.5 h-3.5" />
+                            <ZoomOut className="w-3.5 h-3.5" />
                         </button>
                         <button
-                            onClick={addNewPage}
-                            className="p-1 hover:bg-green-500/20 text-green-400 rounded-full transition"
-                            title="Add New Page"
+                            type="button"
+                            onClick={() => {
+                                setZoomLevel(1);
+                                setPanOffset({ x: 0, y: 0 });
+                                toast('Zoom reset to 100%', { icon: '🔍' });
+                            }}
+                            className="px-1 text-[10px] font-mono font-medium text-slate-300 hover:text-white hover:underline transition"
+                            title="Reset Zoom to 100% and Center Canvas"
                         >
-                            <Plus className="w-3.5 h-3.5" />
+                            {Math.round(zoomLevel * 100)}%
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setZoomLevel(prev => Math.min(5, Number((prev + 0.1).toFixed(1))))}
+                            className="p-1 hover:bg-slate-700 rounded-full transition text-slate-300 hover:text-white"
+                            title="Zoom In (+10%)"
+                        >
+                            <ZoomIn className="w-3.5 h-3.5" />
                         </button>
                     </div>
 

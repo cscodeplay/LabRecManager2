@@ -28,15 +28,74 @@ export default function WhiteboardPdfViewer({
     const resizeStartRef = useRef({ x: 0, y: 0, w: 0, h: 0, objX: 0, objY: 0 });
 
     const handleSize = 10;
+    const rawPdfUrl = pdf.src || pdf.url || '';
+
+    // Auto-detect total pages from raw PDF content if unknown or defaulted
+    useEffect(() => {
+        if (!rawPdfUrl) return;
+        let isMounted = true;
+        (async () => {
+            try {
+                const res = await fetch(rawPdfUrl);
+                const text = await res.text();
+                let count = 1;
+                // PDF catalog /Pages /Count regex
+                const countMatch = text.match(/\/Type\s*\/Pages[\s\S]*?\/Count\s+(\d+)/);
+                if (countMatch && parseInt(countMatch[1], 10) > 0) {
+                    count = parseInt(countMatch[1], 10);
+                } else {
+                    // Fallback: match individual /Type /Page (excluding /Pages)
+                    const matches = text.match(/\/Type\s*\/Page\b/g);
+                    if (matches && matches.length > 0) {
+                        count = matches.length;
+                    }
+                }
+                if (isMounted && count > 0) {
+                    setTotalPages(count);
+                    onUpdate?.({ totalPages: count });
+                    setCurrentPage(prev => {
+                        if (prev > count) {
+                            onUpdate?.({ page: count, totalPages: count });
+                            return count;
+                        }
+                        return prev;
+                    });
+                }
+            } catch (err) {
+                // Ignore network/CORS errors on third-party links
+            }
+        })();
+        return () => { isMounted = false; };
+    }, [rawPdfUrl]);
 
     useEffect(() => {
         if (typeof pdf.isCollapsed === 'boolean') setIsCollapsed(pdf.isCollapsed);
         if (typeof pdf.isLocked === 'boolean') setIsLocked(pdf.isLocked);
-        if (pdf.page) setCurrentPage(pdf.page);
+        const resolvedTotal = pdf.totalPages || totalPages || 1;
         if (pdf.totalPages) setTotalPages(pdf.totalPages);
+        if (pdf.page) {
+            const clamped = Math.min(Math.max(1, pdf.page), Math.max(1, resolvedTotal));
+            setCurrentPage(clamped);
+        }
     }, [pdf.isCollapsed, pdf.isLocked, pdf.page, pdf.totalPages]);
 
-    // Page navigation
+    // Keyboard Delete / Backspace listener when PDF is selected
+    useEffect(() => {
+        if (!isSelected) return;
+        const handleKeyDown = (e) => {
+            const tag = e.target?.tagName?.toLowerCase();
+            if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                e.preventDefault();
+                e.stopPropagation();
+                onDelete?.(pdf.id);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isSelected, pdf.id, onDelete]);
+
+    // Page navigation with strict boundary enforcement
     const handlePrevPage = (e) => {
         e.stopPropagation();
         if (currentPage > 1) {
@@ -48,9 +107,12 @@ export default function WhiteboardPdfViewer({
 
     const handleNextPage = (e) => {
         e.stopPropagation();
-        const next = currentPage + 1;
-        setCurrentPage(next);
-        onUpdate?.({ page: next });
+        const max = Math.max(1, totalPages || 1);
+        if (currentPage < max) {
+            const next = currentPage + 1;
+            setCurrentPage(next);
+            onUpdate?.({ page: next });
+        }
     };
 
     // Dragging
@@ -159,7 +221,6 @@ export default function WhiteboardPdfViewer({
         };
     }, [isDragging, isResizing, activeHandle, scale, onUpdate]);
 
-    const rawPdfUrl = pdf.src || pdf.url || '';
     const pdfSrc = rawPdfUrl ? `${rawPdfUrl}#page=${currentPage}&view=Fit&toolbar=0&navpanes=0` : '';
 
     return (
@@ -218,7 +279,7 @@ export default function WhiteboardPdfViewer({
                                 <button
                                     type="button"
                                     onClick={handleNextPage}
-                                    disabled={totalPages > 1 && currentPage >= totalPages}
+                                    disabled={currentPage >= Math.max(1, totalPages || 1)}
                                     className="p-0.5 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
                                     title="Next Page"
                                 >

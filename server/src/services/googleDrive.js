@@ -142,11 +142,33 @@ class GoogleDriveService {
                 this._cachedConfig = savedConfig;
             } catch (e) {}
         }
+
+        let clientId = savedConfig.clientId || process.env.GOOGLE_CLIENT_ID || null;
+        let clientSecret = savedConfig.clientSecret || process.env.GOOGLE_CLIENT_SECRET || null;
+        let redirectUri = savedConfig.redirectUri || process.env.GOOGLE_REDIRECT_URI || null;
+        let folderId = savedConfig.folderId || process.env.GOOGLE_DRIVE_FOLDER_ID || null;
+
+        // Auto-sanitize quotes and whitespace
+        const sanitize = (val) => (typeof val === 'string' ? val.trim().replace(/^["']|["']$/g, '') : val);
+        clientId = sanitize(clientId);
+        clientSecret = sanitize(clientSecret);
+        redirectUri = sanitize(redirectUri);
+        folderId = sanitize(folderId);
+
+        // Filter out dummy/test placeholders and fallback to environment credentials
+        const isDummy = (val) => !val || typeof val !== 'string' || val.startsWith('test-') || val.includes('placeholder') || val.includes('example.com') || val.includes('your-');
+        if (isDummy(clientId) && !isDummy(process.env.GOOGLE_CLIENT_ID)) {
+            clientId = sanitize(process.env.GOOGLE_CLIENT_ID);
+        }
+        if (isDummy(clientSecret) && !isDummy(process.env.GOOGLE_CLIENT_SECRET)) {
+            clientSecret = sanitize(process.env.GOOGLE_CLIENT_SECRET);
+        }
+
         return {
-            clientId: savedConfig.clientId || process.env.GOOGLE_CLIENT_ID || null,
-            clientSecret: savedConfig.clientSecret || process.env.GOOGLE_CLIENT_SECRET || null,
-            redirectUri: savedConfig.redirectUri || process.env.GOOGLE_REDIRECT_URI || null,
-            folderId: savedConfig.folderId || process.env.GOOGLE_DRIVE_FOLDER_ID || null
+            clientId,
+            clientSecret,
+            redirectUri,
+            folderId
         };
     }
 
@@ -154,7 +176,9 @@ class GoogleDriveService {
      * Save OAuth 2.0 Client credentials (allows setup via UI without manually editing .env)
      */
     async saveOAuthConfig(payload) {
-        await this.ensureSettingsTable();
+        try {
+            await this.ensureSettingsTable();
+        } catch (e) {}
         const data = (payload && payload.data) ? payload.data : (payload || {});
         const clientId = data.clientId;
         const clientSecret = data.clientSecret;
@@ -162,14 +186,16 @@ class GoogleDriveService {
         const folderId = data.folderId !== undefined ? data.folderId : data.rootFolderId;
 
         const dir = path.dirname(this.configPath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        try {
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        } catch (e) {}
         
         const existing = this.getOAuthConfig();
         const isMaskedSecret = clientSecret && (clientSecret.includes('•••') || clientSecret.includes('••••'));
         const updated = {
-            clientId: (clientId && clientId.trim()) ? clientId.trim() : existing.clientId,
-            clientSecret: (clientSecret && clientSecret.trim() && !isMaskedSecret) ? clientSecret.trim() : existing.clientSecret,
-            redirectUri: (redirectUri && redirectUri.trim()) ? redirectUri.trim() : existing.redirectUri,
+            clientId: (clientId && clientId.trim()) ? clientId.trim().replace(/^["']|["']$/g, '') : existing.clientId,
+            clientSecret: (clientSecret && clientSecret.trim() && !isMaskedSecret) ? clientSecret.trim().replace(/^["']|["']$/g, '') : existing.clientSecret,
+            redirectUri: (redirectUri && redirectUri.trim()) ? redirectUri.trim().replace(/^["']|["']$/g, '') : existing.redirectUri,
             folderId: (folderId !== undefined) ? (folderId && folderId.trim() ? folderId.trim() : null) : existing.folderId
         };
         this._cachedConfig = updated;
@@ -179,7 +205,7 @@ class GoogleDriveService {
             console.warn('[GoogleDrive] Failed to write config file:', e.message);
         }
 
-        // Persist to PostgreSQL database
+        // Persist to PostgreSQL database (safe fallback)
         try {
             await prisma.$executeRawUnsafe(`
                 INSERT INTO "system_settings" ("key", "value", "updated_at")
@@ -195,8 +221,12 @@ class GoogleDriveService {
             this.folderId = updated.folderId;
         }
 
-        this.initialize();
-        await this.initFromDb();
+        try {
+            this.initialize();
+            await this.initFromDb();
+        } catch (initErr) {
+            console.warn('[GoogleDrive] Post-save initialize notice:', initErr.message);
+        }
         return updated;
     }
 
@@ -303,7 +333,9 @@ class GoogleDriveService {
      * Save configuration for any provider from Admin Settings
      */
     async saveProviderConfig(provider, data) {
-        await this.ensureSettingsTable();
+        try {
+            await this.ensureSettingsTable();
+        } catch (e) {}
         const rawData = (data && data.data) ? data.data : (data || {});
         const norm = String(provider || '').toLowerCase().trim();
 
