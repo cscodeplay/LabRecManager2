@@ -423,18 +423,33 @@ export default function SettingsPage() {
                 driveAdminAPI.getAccounts().catch(e => ({ data: null }))
             ]);
             if (configsRes?.data?.data) {
-                const { configs, callbackUrls } = configsRes.data.data;
+                const { configs, callbackUrls, systemCallbackUrl } = configsRes.data.data;
                 if (configs) {
                     setDriveConfigs(prev => ({
-                        google: { ...prev.google, ...(configs.google || {}) },
-                        onedrive: { ...prev.onedrive, ...(configs.onedrive || {}) },
+                        google: {
+                            ...prev.google,
+                            ...(configs.google || configs.google_drive || {}),
+                            rootFolderId: configs.google?.rootFolderId || configs.google?.folderId || configs.google_drive?.rootFolderId || configs.google_drive?.folderId || prev.google.rootFolderId || ''
+                        },
+                        onedrive: { ...prev.onedrive, ...(configs.onedrive || configs.microsoft_onedrive || {}) },
                         dropbox: { ...prev.dropbox, ...(configs.dropbox || {}) },
-                        s3: { ...prev.s3, ...(configs.s3 || {}) },
-                        icloud: { ...prev.icloud, ...(configs.icloud || {}) },
+                        s3: { ...prev.s3, ...(configs.s3 || configs.aws_s3 || {}) },
+                        icloud: {
+                            ...prev.icloud,
+                            ...(configs.icloud || configs.apple_icloud || {}),
+                            appSpecificPassword: configs.icloud?.appSpecificPassword || configs.icloud?.appPassword || configs.apple_icloud?.appSpecificPassword || configs.apple_icloud?.appPassword || prev.icloud.appSpecificPassword || '',
+                            serverUrl: configs.icloud?.serverUrl || configs.icloud?.webdavUrl || configs.apple_icloud?.serverUrl || configs.apple_icloud?.webdavUrl || prev.icloud.serverUrl || ''
+                        },
                     }));
                 }
                 if (callbackUrls) {
                     setSystemCallbackUrls(callbackUrls);
+                } else if (systemCallbackUrl) {
+                    setSystemCallbackUrls({
+                        google: systemCallbackUrl,
+                        onedrive: systemCallbackUrl.replace('/api/drive/auth/callback', '/api/drive/auth/callback/onedrive'),
+                        dropbox: systemCallbackUrl.replace('/api/drive/auth/callback', '/api/drive/auth/callback/dropbox')
+                    });
                 }
             }
             if (accountsRes?.data?.data?.accounts) {
@@ -456,7 +471,7 @@ export default function SettingsPage() {
                 data: driveConfigs[provider]
             });
             toast.success(res.data?.message || `${provider.toUpperCase()} credentials saved successfully!`);
-            loadCloudDriveSettings();
+            await loadCloudDriveSettings();
         } catch (error) {
             console.error(`Failed to save ${provider} config:`, error);
             toast.error(error.response?.data?.message || `Failed to save ${provider} credentials`);
@@ -495,7 +510,8 @@ export default function SettingsPage() {
 
     const handleConnectNewGoogleAccount = async () => {
         try {
-            const res = await googleDriveAPI.getAuthUrl({ prompt: 'select_account' });
+            const returnTo = typeof window !== 'undefined' ? window.location.origin : undefined;
+            const res = await googleDriveAPI.getAuthUrl({ prompt: 'select_account', returnTo });
             if (res.data?.data?.authUrl) {
                 window.location.href = res.data.data.authUrl;
             } else {

@@ -177,7 +177,8 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const handleConnectOAuth = async (promptSelect = false) => {
         setConnectingOAuth(true);
         try {
-            const res = await googleDriveAPI.getAuthUrl(promptSelect ? { prompt: 'select_account' } : {});
+            const returnTo = typeof window !== 'undefined' ? window.location.origin : undefined;
+            const res = await googleDriveAPI.getAuthUrl({ ...(promptSelect ? { prompt: 'select_account' } : {}), returnTo });
             if (res.data?.data?.authUrl) {
                 window.location.href = res.data.data.authUrl;
             } else {

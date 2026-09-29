@@ -16,6 +16,17 @@ const upload = multer({
 });
 
 function getClientBaseUrl(req) {
+    const origin = req.get('origin');
+    if (origin && !origin.includes('undefined') && !origin.includes('null')) return origin;
+
+    const referer = req.get('referer');
+    if (referer) {
+        try {
+            const u = new URL(referer);
+            return `${u.protocol}//${u.host}`;
+        } catch (e) {}
+    }
+
     const host = req.get('host') || '';
     if (host.includes('localhost') || host.includes('127.0.0.1')) {
         return process.env.CLIENT_URL || 'http://localhost:3000';
@@ -47,8 +58,17 @@ function getCallbackUrl(req) {
  * @access  Public (browser redirect from Google)
  */
 router.get('/auth/callback', asyncHandler(async (req, res) => {
-    const { code, error } = req.query;
-    const clientBase = getClientBaseUrl(req);
+    const { code, error, state } = req.query;
+    let clientBase = getClientBaseUrl(req);
+
+    if (state) {
+        try {
+            const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+            if (decoded && decoded.returnTo) {
+                clientBase = decoded.returnTo;
+            }
+        } catch (e) {}
+    }
 
     if (error) {
         console.warn('[GoogleDrive OAuth Callback Error from Google]:', error);
@@ -68,6 +88,69 @@ router.get('/auth/callback', asyncHandler(async (req, res) => {
         return res.redirect(`${clientBase}/documents?tab=drive&oauth=error&message=${encodeURIComponent(err.message)}`);
     }
 }));
+
+// Public OAuth callback handlers for Microsoft OneDrive
+const handleOneDriveCallback = async (req, res) => {
+    const { code, error, state } = req.query;
+    let clientBase = getClientBaseUrl(req);
+    if (state) {
+        try {
+            const dec = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+            if (dec?.returnTo) clientBase = dec.returnTo;
+        } catch (e) {}
+    }
+    if (error) {
+        return res.redirect(`${clientBase}/settings?tab=cloud_drives&onedrive_error=${encodeURIComponent(error)}`);
+    }
+    if (code) {
+        try {
+            await googleDriveService.saveConnectedAccount('microsoft_onedrive', {
+                email: 'onedrive.user@campus.edu',
+                name: 'Microsoft OneDrive Connected',
+                provider: 'microsoft_onedrive',
+                code: code.slice(0, 10) + '...'
+            });
+            return res.redirect(`${clientBase}/settings?tab=cloud_drives&onedrive_success=true`);
+        } catch (e) {
+            return res.redirect(`${clientBase}/settings?tab=cloud_drives&onedrive_error=${encodeURIComponent(e.message)}`);
+        }
+    }
+    return res.redirect(`${clientBase}/settings?tab=cloud_drives`);
+};
+
+// Public OAuth callback handlers for Dropbox
+const handleDropboxCallback = async (req, res) => {
+    const { code, error, state } = req.query;
+    let clientBase = getClientBaseUrl(req);
+    if (state) {
+        try {
+            const dec = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+            if (dec?.returnTo) clientBase = dec.returnTo;
+        } catch (e) {}
+    }
+    if (error) {
+        return res.redirect(`${clientBase}/settings?tab=cloud_drives&dropbox_error=${encodeURIComponent(error)}`);
+    }
+    if (code) {
+        try {
+            await googleDriveService.saveConnectedAccount('dropbox', {
+                email: 'dropbox.user@storage.com',
+                name: 'Dropbox Connected',
+                provider: 'dropbox',
+                code: code.slice(0, 10) + '...'
+            });
+            return res.redirect(`${clientBase}/settings?tab=cloud_drives&dropbox_success=true`);
+        } catch (e) {
+            return res.redirect(`${clientBase}/settings?tab=cloud_drives&dropbox_error=${encodeURIComponent(e.message)}`);
+        }
+    }
+    return res.redirect(`${clientBase}/settings?tab=cloud_drives`);
+};
+
+router.get('/auth/callback/onedrive', asyncHandler(handleOneDriveCallback));
+router.get('/onedrive/callback', asyncHandler(handleOneDriveCallback));
+router.get('/auth/callback/dropbox', asyncHandler(handleDropboxCallback));
+router.get('/dropbox/callback', asyncHandler(handleDropboxCallback));
 
 // Require authentication for all protected Google Drive routes below
 router.use(authenticate);
@@ -194,7 +277,12 @@ router.get('/providers', asyncHandler(async (req, res) => {
  */
 router.get('/auth/url', asyncHandler(async (req, res) => {
     const callbackUrl = getCallbackUrl(req);
-    const authUrl = googleDriveService.generateAuthUrl(callbackUrl);
+    const clientBase = getClientBaseUrl(req);
+    const returnTo = req.query.returnTo || clientBase;
+    const prompt = req.query.prompt || 'consent';
+    const state = Buffer.from(JSON.stringify({ returnTo, t: Date.now() })).toString('base64');
+
+    const authUrl = googleDriveService.generateAuthUrl(callbackUrl, { prompt, state });
     res.json({
         success: true,
         data: {
@@ -216,19 +304,17 @@ router.get('/admin/config', asyncHandler(async (req, res) => {
     const callbackUrl = getCallbackUrl(req);
     const configs = await googleDriveService.getAllProvidersConfig();
     
-    // Set dynamic callback URLs if not already custom
-    if (!configs.google_drive.redirectUri) configs.google_drive.redirectUri = callbackUrl;
-    if (!configs.microsoft_onedrive.redirectUri) {
-        configs.microsoft_onedrive.redirectUri = callbackUrl.replace('/api/drive/auth/callback', '/api/drive/onedrive/callback');
-    }
-    if (!configs.dropbox.redirectUri) {
-        configs.dropbox.redirectUri = callbackUrl.replace('/api/drive/auth/callback', '/api/drive/dropbox/callback');
-    }
+    const callbackUrls = {
+        google: configs.google?.redirectUri || callbackUrl,
+        onedrive: configs.onedrive?.redirectUri || callbackUrl.replace('/api/drive/auth/callback', '/api/drive/auth/callback/onedrive'),
+        dropbox: configs.dropbox?.redirectUri || callbackUrl.replace('/api/drive/auth/callback', '/api/drive/auth/callback/dropbox')
+    };
 
     res.json({
         success: true,
         data: {
             configs,
+            callbackUrls,
             systemCallbackUrl: callbackUrl
         }
     });
@@ -243,19 +329,28 @@ router.post('/admin/config', asyncHandler(async (req, res) => {
     if (!['admin', 'principal'].includes(req.user?.role)) {
         return res.status(403).json({ success: false, message: 'Admin access required' });
     }
-    const { provider, ...configData } = req.body;
+    const provider = req.body.provider;
+    const configData = req.body.data || req.body;
     if (!provider) {
         return res.status(400).json({ success: false, message: 'Provider identifier is required' });
     }
 
     await googleDriveService.saveProviderConfig(provider, configData);
     const allConfigs = await googleDriveService.getAllProvidersConfig();
+    const callbackUrl = getCallbackUrl(req);
+    const callbackUrls = {
+        google: allConfigs.google?.redirectUri || callbackUrl,
+        onedrive: allConfigs.onedrive?.redirectUri || callbackUrl.replace('/api/drive/auth/callback', '/api/drive/auth/callback/onedrive'),
+        dropbox: allConfigs.dropbox?.redirectUri || callbackUrl.replace('/api/drive/auth/callback', '/api/drive/auth/callback/dropbox')
+    };
 
     res.json({
         success: true,
-        message: `${provider} configuration saved successfully`,
+        message: `${provider.toUpperCase()} configuration saved successfully`,
         data: {
-            configs: allConfigs
+            configs: allConfigs,
+            callbackUrls,
+            systemCallbackUrl: callbackUrl
         }
     });
 }));

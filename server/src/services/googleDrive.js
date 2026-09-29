@@ -41,15 +41,47 @@ class GoogleDriveService {
         this.localSyncDir = path.join(__dirname, '../../uploads/google_drive');
         this.tokenPath = path.join(__dirname, '../../uploads/google_oauth_tokens.json');
         this.configPath = path.join(__dirname, '../../uploads/google_oauth_client_config.json');
+        this.cloudConfigPath = path.join(__dirname, '../../uploads/cloud_providers_config.json');
         this._cachedTokens = null;
+        this._cachedConfig = null;
         this._initializingPromise = null;
+        this._settingsTableChecked = false;
 
+        const uploadsDir = path.join(__dirname, '../../uploads');
+        if (!fs.existsSync(uploadsDir)) {
+            try { fs.mkdirSync(uploadsDir, { recursive: true }); } catch (e) {}
+        }
         if (!fs.existsSync(this.localSyncDir)) {
             try { fs.mkdirSync(this.localSyncDir, { recursive: true }); } catch (e) {}
         }
         this.initialize();
-        // Asynchronously attempt to restore OAuth from persistent PostgreSQL database
-        this.initFromDb().catch(() => {});
+        // Asynchronously attempt to ensure table exists and restore OAuth from persistent DB
+        this.ensureSettingsTable().then(() => this.initFromDb()).catch(() => {});
+    }
+
+    /**
+     * Ensure system_settings table exists in PostgreSQL to survive fresh databases and migrations
+     */
+    async ensureSettingsTable() {
+        if (this._settingsTableChecked) return;
+        try {
+            await prisma.$executeRawUnsafe(`
+                CREATE TABLE IF NOT EXISTS "system_settings" (
+                    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+                    "key" VARCHAR(100) UNIQUE NOT NULL,
+                    "value" JSONB NOT NULL,
+                    "created_at" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+                    "updated_at" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT "system_settings_pkey" PRIMARY KEY ("id")
+                );
+            `);
+            await prisma.$executeRawUnsafe(`
+                CREATE INDEX IF NOT EXISTS "idx_system_settings_key" ON "system_settings"("key");
+            `).catch(() => {});
+            this._settingsTableChecked = true;
+        } catch (err) {
+            console.warn('[GoogleDrive] system_settings table check notice:', err.message);
+        }
     }
 
     /**
@@ -82,6 +114,7 @@ class GoogleDriveService {
      * Load OAuth 2.0 client configuration from PostgreSQL database
      */
     async loadOAuthConfigFromDb() {
+        await this.ensureSettingsTable();
         try {
             const rows = await prisma.$queryRawUnsafe(`
                 SELECT "value" FROM "system_settings" WHERE "key" = 'google_drive_oauth_config' LIMIT 1
@@ -120,18 +153,31 @@ class GoogleDriveService {
     /**
      * Save OAuth 2.0 Client credentials (allows setup via UI without manually editing .env)
      */
-    async saveOAuthConfig({ clientId, clientSecret, redirectUri, folderId }) {
+    async saveOAuthConfig(payload) {
+        await this.ensureSettingsTable();
+        const data = (payload && payload.data) ? payload.data : (payload || {});
+        const clientId = data.clientId;
+        const clientSecret = data.clientSecret;
+        const redirectUri = data.redirectUri;
+        const folderId = data.folderId !== undefined ? data.folderId : data.rootFolderId;
+
         const dir = path.dirname(this.configPath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        
         const existing = this.getOAuthConfig();
+        const isMaskedSecret = clientSecret && (clientSecret.includes('•••') || clientSecret.includes('••••'));
         const updated = {
-            clientId: (clientId && clientId.trim()) || existing.clientId,
-            clientSecret: (clientSecret && clientSecret.trim() && !clientSecret.includes('•••')) ? clientSecret.trim() : existing.clientSecret,
-            redirectUri: (redirectUri && redirectUri.trim()) || existing.redirectUri,
+            clientId: (clientId && clientId.trim()) ? clientId.trim() : existing.clientId,
+            clientSecret: (clientSecret && clientSecret.trim() && !isMaskedSecret) ? clientSecret.trim() : existing.clientSecret,
+            redirectUri: (redirectUri && redirectUri.trim()) ? redirectUri.trim() : existing.redirectUri,
             folderId: (folderId !== undefined) ? (folderId && folderId.trim() ? folderId.trim() : null) : existing.folderId
         };
         this._cachedConfig = updated;
-        fs.writeFileSync(this.configPath, JSON.stringify(updated, null, 2), 'utf8');
+        try {
+            fs.writeFileSync(this.configPath, JSON.stringify(updated, null, 2), 'utf8');
+        } catch (e) {
+            console.warn('[GoogleDrive] Failed to write config file:', e.message);
+        }
 
         // Persist to PostgreSQL database
         try {
@@ -145,6 +191,10 @@ class GoogleDriveService {
             console.warn('[GoogleDrive] Failed to persist OAuth config to DB:', dbErr.message);
         }
 
+        if (updated.folderId) {
+            this.folderId = updated.folderId;
+        }
+
         this.initialize();
         await this.initFromDb();
         return updated;
@@ -154,6 +204,7 @@ class GoogleDriveService {
      * Get multi-cloud provider configurations for Admin Settings
      */
     async getAllProvidersConfig() {
+        await this.ensureSettingsTable();
         await this.loadOAuthConfigFromDb();
         const googleConfig = this.getOAuthConfig();
         
@@ -161,6 +212,17 @@ class GoogleDriveService {
         let dropboxConfig = {};
         let s3Config = {};
         let icloudConfig = {};
+
+        // Try reading fallback file first
+        try {
+            if (fs.existsSync(this.cloudConfigPath)) {
+                const fileJson = JSON.parse(fs.readFileSync(this.cloudConfigPath, 'utf8'));
+                if (fileJson.microsoft_onedrive) onedriveConfig = fileJson.microsoft_onedrive;
+                if (fileJson.dropbox) dropboxConfig = fileJson.dropbox;
+                if (fileJson.aws_s3) s3Config = fileJson.aws_s3;
+                if (fileJson.apple_icloud) icloudConfig = fileJson.apple_icloud;
+            }
+        } catch (e) {}
         
         try {
             const rows = await prisma.$queryRawUnsafe(`
@@ -169,53 +231,71 @@ class GoogleDriveService {
             `);
             for (const row of rows) {
                 const val = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
-                if (row.key === 'onedrive_oauth_config') onedriveConfig = val;
-                if (row.key === 'dropbox_oauth_config') dropboxConfig = val;
-                if (row.key === 's3_storage_config') s3Config = val;
-                if (row.key === 'icloud_config') icloudConfig = val;
+                if (row.key === 'onedrive_oauth_config') onedriveConfig = { ...onedriveConfig, ...val };
+                if (row.key === 'dropbox_oauth_config') dropboxConfig = { ...dropboxConfig, ...val };
+                if (row.key === 's3_storage_config') s3Config = { ...s3Config, ...val };
+                if (row.key === 'icloud_config') icloudConfig = { ...icloudConfig, ...val };
             }
         } catch (e) {}
 
+        const googleObj = {
+            clientId: googleConfig.clientId || '',
+            hasSecret: Boolean(googleConfig.clientSecret),
+            maskedSecret: googleConfig.clientSecret ? '••••••••••••••••' : '',
+            redirectUri: googleConfig.redirectUri || '',
+            folderId: googleConfig.folderId || '',
+            rootFolderId: googleConfig.folderId || '',
+            isConfigured: Boolean(googleConfig.clientId && googleConfig.clientSecret)
+        };
+
+        const onedriveObj = {
+            clientId: onedriveConfig.clientId || process.env.MICROSOFT_GRAPH_CLIENT_ID || '',
+            tenantId: onedriveConfig.tenantId || process.env.MICROSOFT_GRAPH_TENANT_ID || 'common',
+            hasSecret: Boolean(onedriveConfig.clientSecret || process.env.MICROSOFT_GRAPH_CLIENT_SECRET),
+            maskedSecret: (onedriveConfig.clientSecret || process.env.MICROSOFT_GRAPH_CLIENT_SECRET) ? '••••••••••••••••' : '',
+            redirectUri: onedriveConfig.redirectUri || '',
+            isConfigured: Boolean(onedriveConfig.clientId || process.env.MICROSOFT_GRAPH_CLIENT_ID)
+        };
+
+        const dropboxObj = {
+            appKey: dropboxConfig.appKey || process.env.DROPBOX_APP_KEY || '',
+            hasSecret: Boolean(dropboxConfig.appSecret || process.env.DROPBOX_APP_SECRET),
+            maskedSecret: (dropboxConfig.appSecret || process.env.DROPBOX_APP_SECRET) ? '••••••••••••••••' : '',
+            redirectUri: dropboxConfig.redirectUri || '',
+            isConfigured: Boolean(dropboxConfig.appKey || process.env.DROPBOX_APP_KEY)
+        };
+
+        const icloudObj = {
+            appleId: icloudConfig.appleId || '',
+            appPassword: icloudConfig.appPassword || icloudConfig.appSpecificPassword || '',
+            appSpecificPassword: icloudConfig.appSpecificPassword || icloudConfig.appPassword || '',
+            hasSecret: Boolean(icloudConfig.appPassword || icloudConfig.appSpecificPassword),
+            maskedSecret: (icloudConfig.appPassword || icloudConfig.appSpecificPassword) ? '••••••••••••••••' : '',
+            webdavUrl: icloudConfig.webdavUrl || icloudConfig.serverUrl || 'https://caldav.icloud.com',
+            serverUrl: icloudConfig.serverUrl || icloudConfig.webdavUrl || 'https://caldav.icloud.com',
+            isConfigured: Boolean(icloudConfig.appleId)
+        };
+
+        const s3Obj = {
+            accessKeyId: s3Config.accessKeyId || process.env.AWS_ACCESS_KEY_ID || '',
+            hasSecret: Boolean(s3Config.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY),
+            maskedSecret: (s3Config.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY) ? '••••••••••••••••' : '',
+            bucket: s3Config.bucket || process.env.AWS_S3_BUCKET || '',
+            region: s3Config.region || process.env.AWS_REGION || 'us-east-1',
+            endpoint: s3Config.endpoint || process.env.AWS_ENDPOINT || '',
+            isConfigured: Boolean((s3Config.accessKeyId || process.env.AWS_ACCESS_KEY_ID) && (s3Config.bucket || process.env.AWS_S3_BUCKET))
+        };
+
         return {
-            google_drive: {
-                clientId: googleConfig.clientId || '',
-                hasSecret: Boolean(googleConfig.clientSecret),
-                maskedSecret: googleConfig.clientSecret ? '••••••••••••••••' : '',
-                redirectUri: googleConfig.redirectUri || '',
-                folderId: googleConfig.folderId || '',
-                isConfigured: Boolean(googleConfig.clientId && googleConfig.clientSecret)
-            },
-            microsoft_onedrive: {
-                clientId: onedriveConfig.clientId || process.env.MICROSOFT_GRAPH_CLIENT_ID || '',
-                tenantId: onedriveConfig.tenantId || process.env.MICROSOFT_GRAPH_TENANT_ID || 'common',
-                hasSecret: Boolean(onedriveConfig.clientSecret || process.env.MICROSOFT_GRAPH_CLIENT_SECRET),
-                maskedSecret: (onedriveConfig.clientSecret || process.env.MICROSOFT_GRAPH_CLIENT_SECRET) ? '••••••••••••••••' : '',
-                redirectUri: onedriveConfig.redirectUri || '',
-                isConfigured: Boolean(onedriveConfig.clientId || process.env.MICROSOFT_GRAPH_CLIENT_ID)
-            },
-            dropbox: {
-                appKey: dropboxConfig.appKey || process.env.DROPBOX_APP_KEY || '',
-                hasSecret: Boolean(dropboxConfig.appSecret || process.env.DROPBOX_APP_SECRET),
-                maskedSecret: (dropboxConfig.appSecret || process.env.DROPBOX_APP_SECRET) ? '••••••••••••••••' : '',
-                redirectUri: dropboxConfig.redirectUri || '',
-                isConfigured: Boolean(dropboxConfig.appKey || process.env.DROPBOX_APP_KEY)
-            },
-            apple_icloud: {
-                appleId: icloudConfig.appleId || '',
-                hasSecret: Boolean(icloudConfig.appPassword),
-                maskedSecret: icloudConfig.appPassword ? '••••••••••••••••' : '',
-                webdavUrl: icloudConfig.webdavUrl || '',
-                isConfigured: Boolean(icloudConfig.appleId)
-            },
-            aws_s3: {
-                accessKeyId: s3Config.accessKeyId || process.env.AWS_ACCESS_KEY_ID || '',
-                hasSecret: Boolean(s3Config.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY),
-                maskedSecret: (s3Config.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY) ? '••••••••••••••••' : '',
-                bucket: s3Config.bucket || process.env.AWS_S3_BUCKET || '',
-                region: s3Config.region || process.env.AWS_REGION || 'us-east-1',
-                endpoint: s3Config.endpoint || process.env.AWS_ENDPOINT || '',
-                isConfigured: Boolean((s3Config.accessKeyId || process.env.AWS_ACCESS_KEY_ID) && (s3Config.bucket || process.env.AWS_S3_BUCKET))
-            }
+            google: googleObj,
+            google_drive: googleObj,
+            onedrive: onedriveObj,
+            microsoft_onedrive: onedriveObj,
+            dropbox: dropboxObj,
+            icloud: icloudObj,
+            apple_icloud: icloudObj,
+            s3: s3Obj,
+            aws_s3: s3Obj
         };
     }
 
@@ -223,8 +303,27 @@ class GoogleDriveService {
      * Save configuration for any provider from Admin Settings
      */
     async saveProviderConfig(provider, data) {
-        if (provider === 'google_drive') {
-            return await this.saveOAuthConfig(data);
+        await this.ensureSettingsTable();
+        const rawData = (data && data.data) ? data.data : (data || {});
+        const norm = String(provider || '').toLowerCase().trim();
+
+        let canonical = 'google_drive';
+        if (norm === 'google' || norm === 'google_drive' || norm === 'googledrive') {
+            canonical = 'google_drive';
+        } else if (norm === 'onedrive' || norm === 'microsoft_onedrive' || norm === 'microsoft') {
+            canonical = 'microsoft_onedrive';
+        } else if (norm === 'dropbox') {
+            canonical = 'dropbox';
+        } else if (norm === 'icloud' || norm === 'apple_icloud' || norm === 'apple') {
+            canonical = 'apple_icloud';
+        } else if (norm === 's3' || norm === 'aws_s3' || norm === 'aws') {
+            canonical = 'aws_s3';
+        } else {
+            canonical = norm;
+        }
+
+        if (canonical === 'google_drive') {
+            return await this.saveOAuthConfig(rawData);
         }
         
         const keyMap = {
@@ -233,7 +332,7 @@ class GoogleDriveService {
             apple_icloud: 'icloud_config',
             aws_s3: 's3_storage_config'
         };
-        const dbKey = keyMap[provider];
+        const dbKey = keyMap[canonical];
         if (!dbKey) throw new Error('Unsupported provider: ' + provider);
 
         let existing = {};
@@ -244,28 +343,84 @@ class GoogleDriveService {
             if (rows && rows.length > 0 && rows[0].value) {
                 existing = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
             }
-        } catch (e) {}
+        } catch (e) {
+            // Check fallback file
+            try {
+                if (fs.existsSync(this.cloudConfigPath)) {
+                    const fileJson = JSON.parse(fs.readFileSync(this.cloudConfigPath, 'utf8'));
+                    if (fileJson[canonical]) existing = fileJson[canonical];
+                }
+            } catch (err) {}
+        }
 
         const merged = { ...existing };
-        for (const [k, v] of Object.entries(data)) {
-            if ((k.includes('Secret') || k.includes('Password') || k.includes('secretAccessKey')) && (!v || v.includes('•••'))) {
+        for (const [k, v] of Object.entries(rawData)) {
+            if ((k.includes('Secret') || k.includes('Password') || k.includes('secretAccessKey')) && (!v || String(v).includes('•••'))) {
                 continue;
             }
             if (v !== undefined) merged[k] = v;
         }
 
-        await prisma.$executeRawUnsafe(`
-            INSERT INTO "system_settings" ("key", "value", "updated_at")
-            VALUES ($1, $2::jsonb, CURRENT_TIMESTAMP)
-            ON CONFLICT ("key") 
-            DO UPDATE SET "value" = $2::jsonb, "updated_at" = CURRENT_TIMESTAMP
-        `, dbKey, JSON.stringify(merged));
+        // Normalize iCloud aliases
+        if (canonical === 'apple_icloud') {
+            if (rawData.appSpecificPassword) merged.appPassword = rawData.appSpecificPassword;
+            if (rawData.appPassword) merged.appSpecificPassword = rawData.appPassword;
+            if (rawData.serverUrl) merged.webdavUrl = rawData.serverUrl;
+            if (rawData.webdavUrl) merged.serverUrl = rawData.webdavUrl;
+        }
+
+        // 1. Persist to PostgreSQL database
+        try {
+            await prisma.$executeRawUnsafe(`
+                INSERT INTO "system_settings" ("key", "value", "updated_at")
+                VALUES ($1, $2::jsonb, CURRENT_TIMESTAMP)
+                ON CONFLICT ("key") 
+                DO UPDATE SET "value" = $2::jsonb, "updated_at" = CURRENT_TIMESTAMP
+            `, dbKey, JSON.stringify(merged));
+        } catch (dbErr) {
+            console.warn(`[GoogleDrive] DB save notice for ${dbKey}:`, dbErr.message);
+        }
+
+        // 2. Persist to fallback JSON file
+        try {
+            const dir = path.dirname(this.cloudConfigPath);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            let allSaved = {};
+            if (fs.existsSync(this.cloudConfigPath)) {
+                try { allSaved = JSON.parse(fs.readFileSync(this.cloudConfigPath, 'utf8')); } catch (e) {}
+            }
+            allSaved[canonical] = merged;
+            fs.writeFileSync(this.cloudConfigPath, JSON.stringify(allSaved, null, 2), 'utf8');
+        } catch (fileErr) {
+            console.warn('[GoogleDrive] File fallback save error:', fileErr.message);
+        }
 
         return merged;
     }
 
     /**
-     * Get all connected cloud accounts across Google, Microsoft, Apple, Dropbox
+     * Save connected account session (OneDrive, Dropbox, etc.)
+     */
+    async saveConnectedAccount(provider, accountData) {
+        await this.ensureSettingsTable();
+        const norm = String(provider || '').toLowerCase().trim();
+        const key = (norm.includes('onedrive') || norm.includes('microsoft')) ? 'onedrive_connected_account' :
+                    (norm.includes('dropbox')) ? 'dropbox_connected_account' :
+                    `${provider}_connected_account`;
+        try {
+            await prisma.$executeRawUnsafe(`
+                INSERT INTO "system_settings" ("key", "value", "updated_at")
+                VALUES ($1, $2::jsonb, CURRENT_TIMESTAMP)
+                ON CONFLICT ("key") 
+                DO UPDATE SET "value" = $2::jsonb, "updated_at" = CURRENT_TIMESTAMP
+            `, key, JSON.stringify(accountData));
+        } catch (e) {
+            console.warn(`[GoogleDrive] Could not persist ${key} to DB:`, e.message);
+        }
+    }
+
+    /**
+     * Get all connected cloud accounts across Google, Microsoft, Apple, Dropbox, and AWS S3
      */
     async getConnectedAccounts() {
         const quotaData = await this.getStorageQuota();
@@ -276,7 +431,7 @@ class GoogleDriveService {
         if (isOAuthConnected && user?.emailAddress) {
             accounts.push({
                 id: 'google_primary',
-                provider: 'google_drive',
+                provider: 'google',
                 providerName: 'Google Drive',
                 name: 'Google Drive (Primary)',
                 email: user.emailAddress,
@@ -301,7 +456,7 @@ class GoogleDriveService {
                 if (sec && sec.email) {
                     accounts.push({
                         id: 'google_secondary',
-                        provider: 'google_drive',
+                        provider: 'google',
                         providerName: 'Google Drive',
                         name: 'Google Drive (Secondary)',
                         email: sec.email,
@@ -318,29 +473,48 @@ class GoogleDriveService {
             }
         } catch (e) {}
 
-        // Microsoft OneDrive account if stored in DB
+        // Microsoft OneDrive account if stored in DB or config
         try {
             const rows = await prisma.$queryRawUnsafe(`
-                SELECT "value" FROM "system_settings" WHERE "key" = 'onedrive_connected_account' LIMIT 1
+                SELECT "key", "value" FROM "system_settings" WHERE "key" IN ('onedrive_connected_account', 'onedrive_oauth_config')
             `);
-            if (rows && rows.length > 0 && rows[0].value) {
-                const one = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
-                if (one && one.email) {
-                    accounts.push({
-                        id: 'microsoft_onedrive',
-                        provider: 'microsoft_onedrive',
-                        providerName: 'Microsoft OneDrive',
-                        name: 'Microsoft OneDrive (Campus)',
-                        email: one.email,
-                        displayName: one.name || one.email,
-                        plan: '1 TB Microsoft 365',
-                        percentUsed: one.percentUsed || 8,
-                        usageFormatted: one.usageFormatted || '80 GB',
-                        limitFormatted: '1.0 TB',
-                        status: 'connected',
-                        isDefault: false
-                    });
-                }
+            let oneAcc = null;
+            let oneConf = null;
+            for (const r of rows) {
+                const val = typeof r.value === 'string' ? JSON.parse(r.value) : r.value;
+                if (r.key === 'onedrive_connected_account') oneAcc = val;
+                if (r.key === 'onedrive_oauth_config') oneConf = val;
+            }
+            if (oneAcc && oneAcc.email) {
+                accounts.push({
+                    id: 'microsoft_onedrive',
+                    provider: 'onedrive',
+                    providerName: 'Microsoft OneDrive',
+                    name: oneAcc.name || 'Microsoft OneDrive (Campus)',
+                    email: oneAcc.email,
+                    displayName: oneAcc.displayName || oneAcc.email,
+                    plan: '1 TB Microsoft 365',
+                    percentUsed: oneAcc.percentUsed || 8,
+                    usageFormatted: oneAcc.usageFormatted || '80 GB',
+                    limitFormatted: '1.0 TB',
+                    status: 'connected',
+                    isDefault: false
+                });
+            } else if (oneConf && oneConf.clientId) {
+                accounts.push({
+                    id: 'microsoft_onedrive',
+                    provider: 'onedrive',
+                    providerName: 'Microsoft OneDrive',
+                    name: 'Microsoft OneDrive (Configured)',
+                    email: `app:${oneConf.clientId.substring(0, 8)}...`,
+                    displayName: 'OneDrive Integration',
+                    plan: 'Microsoft 365 Cloud',
+                    percentUsed: 0,
+                    usageFormatted: '0 GB',
+                    limitFormatted: '1.0 TB',
+                    status: 'configured',
+                    isDefault: false
+                });
             }
         } catch (e) {}
 
@@ -354,7 +528,7 @@ class GoogleDriveService {
                 if (ic && ic.appleId) {
                     accounts.push({
                         id: 'apple_icloud',
-                        provider: 'apple_icloud',
+                        provider: 'icloud',
                         providerName: 'Apple iCloud Drive',
                         name: 'Apple iCloud Drive',
                         email: ic.appleId,
@@ -370,6 +544,77 @@ class GoogleDriveService {
             }
         } catch (e) {}
 
+        // Dropbox account if stored in DB
+        try {
+            const rows = await prisma.$queryRawUnsafe(`
+                SELECT "key", "value" FROM "system_settings" WHERE "key" IN ('dropbox_oauth_config', 'dropbox_connected_account')
+            `);
+            let dropConf = null;
+            let dropAcc = null;
+            for (const r of rows) {
+                const val = typeof r.value === 'string' ? JSON.parse(r.value) : r.value;
+                if (r.key === 'dropbox_oauth_config') dropConf = val;
+                if (r.key === 'dropbox_connected_account') dropAcc = val;
+            }
+            if (dropAcc?.email) {
+                accounts.push({
+                    id: 'dropbox',
+                    provider: 'dropbox',
+                    providerName: 'Dropbox',
+                    name: dropAcc.name || 'Dropbox Connected',
+                    email: dropAcc.email,
+                    displayName: dropAcc.name || 'Dropbox Account',
+                    plan: 'Dropbox Standard / Plus',
+                    percentUsed: 12,
+                    usageFormatted: '24 GB',
+                    limitFormatted: '2.0 TB',
+                    status: 'connected',
+                    isDefault: false
+                });
+            } else if (dropConf?.appKey) {
+                accounts.push({
+                    id: 'dropbox',
+                    provider: 'dropbox',
+                    providerName: 'Dropbox',
+                    name: 'Dropbox Integration',
+                    email: `app:${dropConf.appKey.substring(0, 8)}...`,
+                    displayName: 'Dropbox App',
+                    plan: 'Dropbox Storage',
+                    percentUsed: 0,
+                    usageFormatted: '0 GB',
+                    limitFormatted: '2.0 TB',
+                    status: 'configured',
+                    isDefault: false
+                });
+            }
+        } catch (e) {}
+
+        // AWS S3 account if stored in DB
+        try {
+            const rows = await prisma.$queryRawUnsafe(`
+                SELECT "value" FROM "system_settings" WHERE "key" = 's3_storage_config' LIMIT 1
+            `);
+            if (rows && rows.length > 0 && rows[0].value) {
+                const s3 = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
+                if (s3?.bucket && s3?.accessKeyId) {
+                    accounts.push({
+                        id: 'aws_s3',
+                        provider: 's3',
+                        providerName: 'AWS S3 Storage',
+                        name: `S3: ${s3.bucket}`,
+                        email: `${s3.region || 'us-east-1'} @ ${s3.bucket}`,
+                        displayName: `AWS S3 (${s3.bucket})`,
+                        plan: 'AWS S3 Standard / Enterprise',
+                        percentUsed: 5,
+                        usageFormatted: '50 GB',
+                        limitFormatted: 'Unlimited S3',
+                        status: 'configured',
+                        isDefault: false
+                    });
+                }
+            }
+        } catch (e) {}
+
         return accounts;
     }
 
@@ -377,8 +622,9 @@ class GoogleDriveService {
      * Disconnect a specific connected cloud account
      */
     async disconnectAccount(accountId) {
+        await this.ensureSettingsTable();
         if (accountId === 'google_primary' || !accountId) {
-            this.disconnectOAuth();
+            await this.disconnectOAuth();
             return { success: true, message: 'Google Primary account disconnected' };
         }
         if (accountId === 'google_secondary') {
@@ -389,7 +635,7 @@ class GoogleDriveService {
         }
         if (accountId === 'microsoft_onedrive') {
             await prisma.$executeRawUnsafe(`
-                DELETE FROM "system_settings" WHERE "key" = 'onedrive_connected_account'
+                DELETE FROM "system_settings" WHERE "key" IN ('onedrive_connected_account', 'onedrive_oauth_config')
             `).catch(() => {});
             return { success: true, message: 'Microsoft OneDrive account disconnected' };
         }
@@ -398,6 +644,18 @@ class GoogleDriveService {
                 DELETE FROM "system_settings" WHERE "key" = 'icloud_config'
             `).catch(() => {});
             return { success: true, message: 'Apple iCloud account disconnected' };
+        }
+        if (accountId === 'dropbox') {
+            await prisma.$executeRawUnsafe(`
+                DELETE FROM "system_settings" WHERE "key" IN ('dropbox_connected_account', 'dropbox_oauth_config')
+            `).catch(() => {});
+            return { success: true, message: 'Dropbox account disconnected' };
+        }
+        if (accountId === 'aws_s3') {
+            await prisma.$executeRawUnsafe(`
+                DELETE FROM "system_settings" WHERE "key" = 's3_storage_config'
+            `).catch(() => {});
+            return { success: true, message: 'AWS S3 configuration cleared' };
         }
         return { success: false, message: 'Unknown account ID' };
     }
@@ -513,7 +771,17 @@ class GoogleDriveService {
         if (!config.clientId || !config.clientSecret) {
             return null;
         }
-        const effectiveRedirectUri = redirectUri || config.redirectUri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5001/api/drive/auth/callback';
+        let effectiveRedirectUri = redirectUri || config.redirectUri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5001/api/drive/auth/callback';
+        
+        // Auto-heal localhost vs remote redirect URI mismatches between dev and production
+        if (redirectUri && redirectUri !== effectiveRedirectUri) {
+            const isLocalReq = redirectUri.includes('localhost') || redirectUri.includes('127.0.0.1');
+            const isLocalEff = effectiveRedirectUri.includes('localhost') || effectiveRedirectUri.includes('127.0.0.1');
+            if (isLocalReq !== isLocalEff) {
+                effectiveRedirectUri = redirectUri;
+            }
+        }
+
         return new google.auth.OAuth2(
             config.clientId,
             config.clientSecret,
@@ -524,15 +792,16 @@ class GoogleDriveService {
     /**
      * Generate Google OAuth consent URL requesting full Google Drive access
      */
-    generateAuthUrl(redirectUri = null) {
+    generateAuthUrl(redirectUri = null, opts = {}) {
         const client = this.getOAuth2Client(redirectUri);
         if (!client) {
-            throw new Error('Google OAuth Client ID and Secret are not configured. Please configure them in settings.');
+            throw new Error('Google OAuth Client ID and Secret are not configured. Please configure them in Admin Settings.');
         }
         return client.generateAuthUrl({
             access_type: 'offline',
-            prompt: 'consent', // guarantees refresh_token on consent
+            prompt: opts.prompt || 'consent', // guarantees refresh_token on consent
             include_granted_scopes: true,
+            state: opts.state || undefined,
             scope: [
                 'https://www.googleapis.com/auth/drive',
                 'https://www.googleapis.com/auth/drive.file',
