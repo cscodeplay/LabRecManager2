@@ -48,6 +48,7 @@ import TemplateGallery from './TemplateGallery';
 import ClassroomTimerModal from './ClassroomTimerModal';
 import WhiteboardImagePickerModal from './WhiteboardImagePickerModal';
 import WhiteboardExportModal from './WhiteboardExportModal';
+import WhiteboardVoiceControlModal from './WhiteboardVoiceControlModal';
 import WhiteboardMinimap from './WhiteboardMinimap';
 import DomainShapeLibraryModal, { DOMAIN_SHAPES } from './DomainShapeLibrary';
 import WhiteboardShortcutsModal from './WhiteboardShortcutsModal';
@@ -569,7 +570,7 @@ export default function Whiteboard({
     
     // Pen & Sparkle Mode & Recent Pens
     const [penMode, setPenMode] = useState('normal'); // 'normal' | 'sparkle'
-    const [sparkleTheme, setSparkleTheme] = useState('galaxy'); // 'galaxy' | 'rainbow' | 'gold'
+    const [sparkleTheme, setSparkleTheme] = useState('galaxy'); // 'galaxy' | 'rainbow' | 'gold' | 'emerald'
     const [penOpacity, setPenOpacity] = useState(100); // 10 to 100 (%)
     const [recentPens, setRecentPens] = useState([
         { type: 'normal', color: '#000000', strokeWidth: 3 },
@@ -578,6 +579,7 @@ export default function Whiteboard({
         { type: 'sparkle', sparkleTheme: 'galaxy', color: '#7c3aed', strokeWidth: 4 },
         { type: 'sparkle', sparkleTheme: 'rainbow', color: '#ef4444', strokeWidth: 4 },
         { type: 'sparkle', sparkleTheme: 'gold', color: '#f59e0b', strokeWidth: 4 },
+        { type: 'sparkle', sparkleTheme: 'emerald', color: '#10b981', strokeWidth: 4 },
     ]);
     const updateRecentPens = useCallback((type, penColor, penWidth, theme = 'galaxy') => {
         setRecentPens(prev => {
@@ -907,6 +909,14 @@ export default function Whiteboard({
 
     // OCR toggle
     const [isOcrActive, setIsOcrActive] = useState(false);
+
+    // Voice Control State
+    const [isVoiceListening, setIsVoiceListening] = useState(false);
+    const [voiceTranscript, setVoiceTranscript] = useState('');
+    const [voiceFeedback, setVoiceFeedback] = useState('');
+    const [showVoiceHelpModal, setShowVoiceHelpModal] = useState(false);
+    const voiceRecognitionRef = useRef(null);
+    const isVoiceListeningRef = useRef(false);
 
     // ─── Radial Toolbar & Draggable Ball State ──────────────────────────
     const [showRadialMenu, setShowRadialMenu] = useState(false);
@@ -5126,6 +5136,63 @@ export default function Whiteboard({
         }
     };
 
+    // ─── iPad-style Scratch-Out Scribble Detection Engine ───
+    const isScribbleGesture = (pts) => {
+        if (!pts || pts.length < 8) return false;
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        let totalLen = 0;
+        for (let i = 0; i < pts.length; i++) {
+            const p = pts[i];
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+            if (i > 0) totalLen += Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y);
+        }
+        const w = maxX - minX;
+        const h = maxY - minY;
+        const maxDim = Math.max(w, h);
+        if (maxDim < 20 || totalLen < 60) return false;
+
+        // Density of stroke: path length relative to bounding box
+        const density = totalLen / (maxDim || 1);
+        if (density < 2.4) return false;
+
+        // Count direction reversals in X and Y
+        let dirX = 0, dirY = 0;
+        let reversalsX = 0, reversalsY = 0;
+        const threshold = 5;
+
+        let lastSigX = pts[0].x;
+        let lastSigY = pts[0].y;
+
+        for (let i = 1; i < pts.length; i++) {
+            const dx = pts[i].x - lastSigX;
+            const dy = pts[i].y - lastSigY;
+
+            if (Math.abs(dx) >= threshold) {
+                const newDirX = Math.sign(dx);
+                if (dirX !== 0 && newDirX !== dirX) {
+                    reversalsX++;
+                }
+                dirX = newDirX;
+                lastSigX = pts[i].x;
+            }
+
+            if (Math.abs(dy) >= threshold) {
+                const newDirY = Math.sign(dy);
+                if (dirY !== 0 && newDirY !== dirY) {
+                    reversalsY++;
+                }
+                dirY = newDirY;
+                lastSigY = pts[i].y;
+            }
+        }
+
+        // Scratch-out scribble has at least 3 direction reversals in X or Y
+        return (reversalsX >= 3 || reversalsY >= 3 || (reversalsX + reversalsY >= 4));
+    };
+
     // ─── AI Handwriting, Text & Math Ink Recognition Engine ───
     const handleConvertSelectedInkToText = useCallback(async (targetShapeIds = null, isAuto = false) => {
         const ids = targetShapeIds || selectedShapeIds;
@@ -5367,18 +5434,53 @@ export default function Whiteboard({
             const stdDevRadius = Math.sqrt(sumRadiusDiffSq / pts.length);
             const radiusVarianceRatio = stdDevRadius / (avgRadius || 1);
 
-            // 1. Circle / Ellipse (Holding Shift forces a mathematically perfect uniform Circle)
-            if (circularity > 0.70 && radiusVarianceRatio < 0.18) {
-                const isEquilateral = isShiftPressed || (aspectRatio >= 0.75 && aspectRatio <= 1.35);
-                const finalW = isEquilateral ? maxDim : w;
-                const finalH = isEquilateral ? maxDim : h;
+            // Compute turning angles along the stroke to detect distinct sharp corners
+            const win = Math.max(2, Math.min(5, Math.floor(pts.length / 14)));
+            const turns = [];
+            const N = pts.length;
+            for (let i = 0; i < N; i++) {
+                const prev = pts[(i - win + N) % N];
+                const cur = pts[i];
+                const next = pts[(i + win) % N];
+                const v1x = cur.x - prev.x, v1y = cur.y - prev.y;
+                const v2x = next.x - cur.x, v2y = next.y - cur.y;
+                const mag1 = Math.hypot(v1x, v1y), mag2 = Math.hypot(v2x, v2y);
+                if (mag1 > 3 && mag2 > 3) {
+                    const dot = (v1x * v2x + v1y * v2y) / (mag1 * mag2);
+                    const clamped = Math.max(-1, Math.min(1, dot));
+                    const angle = Math.acos(clamped) * (180 / Math.PI);
+                    turns.push({ i, angle, pt: cur });
+                }
+            }
+            const sharpCorners = [];
+            for (let j = 0; j < turns.length; j++) {
+                const cur = turns[j];
+                const prev = turns[(j - 1 + turns.length) % turns.length];
+                const next = turns[(j + 1) % turns.length];
+                if (cur.angle > 36 && cur.angle >= prev.angle && cur.angle >= next.angle) {
+                    if (!sharpCorners.some(p => Math.hypot(p.pt.x - cur.pt.x, p.pt.y - cur.pt.y) < Math.max(16, maxDim * 0.12))) {
+                        sharpCorners.push(cur);
+                    }
+                }
+            }
+            const cornerCount = sharpCorners.length;
+
+            // Star detection: radius ratio check
+            const radii = pts.map(p => Math.hypot(p.x - cx, p.y - cy));
+            const maxR = Math.max(...radii), minR = Math.min(...radii);
+            const radialRatio = maxR / (minR || 1);
+            const isStar = radialRatio > 1.7 && (cornerCount === 5 || cornerCount === 10 || (circularity < 0.48 && areaRatio < 0.45));
+
+            // 1. Five-Pointed Star
+            if (isStar) {
+                const s = maxDim;
                 return {
                     id: Date.now().toString(),
-                    type: 'circle',
-                    x: cx - finalW / 2,
-                    y: cy - finalH / 2,
-                    width: finalW,
-                    height: finalH,
+                    type: 'star',
+                    x: cx - s / 2,
+                    y: cy - s / 2,
+                    width: s,
+                    height: s,
                     color: currentColor,
                     strokeWidth: currentStrokeWidth,
                     fillColor: 'transparent',
@@ -5386,13 +5488,8 @@ export default function Whiteboard({
                 };
             }
 
-            // Run Douglas-Peucker simplification with adaptive tolerance
-            const simplified = simplifyPoints(pts, Math.max(10, maxDim * 0.10));
-            const cornerCount = simplified.length - 1;
-
-            // 2. Triangle: 3 corners (or 3-4 simplified vertices) AND area ratio in 0.18 - 0.70
-            // Holding Shift forces a mathematically perfect Equilateral Triangle
-            if ((cornerCount === 3 || cornerCount === 4) && areaRatio >= 0.18 && areaRatio <= 0.65) {
+            // 2. Triangle (3 sharp corners, or 4 with areaRatio < 0.55)
+            if (cornerCount === 3 || (cornerCount === 4 && areaRatio < 0.55 && circularity < 0.65)) {
                 if (isShiftPressed) {
                     const side = maxDim;
                     const triH = side * (Math.sqrt(3) / 2);
@@ -5427,13 +5524,11 @@ export default function Whiteboard({
                 };
             }
 
-            // 3. Four-corner shapes: Diamond / Rhombus, Parallelogram, or Rectangle / Square
-            if (cornerCount === 4 || (cornerCount === 5 && Math.hypot(simplified[0].x - simplified[4].x, simplified[0].y - simplified[4].y) < 25)) {
-                const verts = simplified.slice(0, 4);
-
-                // A. Diamond / Rhombus check:
-                // Area ratio ~0.50 (between 0.35 and 0.64) AND vertices near the 4 diamond midpoints:
-                const isDiamond = areaRatio >= 0.35 && areaRatio <= 0.64 && verts.every(v => {
+            // 3. Four-corner shapes: Diamond / Parallelogram / Rectangle / Square
+            if (cornerCount === 4) {
+                // Check if Diamond (Rhombus): Area ratio ~0.50 (between 0.35 and 0.64)
+                const isDiamond = areaRatio >= 0.35 && areaRatio <= 0.64 && sharpCorners.every(c => {
+                    const v = c.pt;
                     const dTop = Math.hypot(v.x - cx, v.y - minY);
                     const dBottom = Math.hypot(v.x - cx, v.y - maxY);
                     const dLeft = Math.hypot(v.x - minX, v.y - cy);
@@ -5456,14 +5551,13 @@ export default function Whiteboard({
                     };
                 }
 
-                // B. Parallelogram check:
-                // Check if vertices have significant horizontal slant (skew)
-                const topVerts = verts.filter(v => v.y < cy).sort((a, b) => a.x - b.x);
-                const bottomVerts = verts.filter(v => v.y >= cy).sort((a, b) => a.x - b.x);
+                // Check if Parallelogram
+                const topVerts = sharpCorners.filter(c => c.pt.y < cy).sort((a, b) => a.pt.x - b.pt.x);
+                const bottomVerts = sharpCorners.filter(c => c.pt.y >= cy).sort((a, b) => a.pt.x - b.pt.x);
                 if (topVerts.length === 2 && bottomVerts.length === 2) {
-                    const topSlant = topVerts[0].x - bottomVerts[0].x;
-                    const bottomSlant = topVerts[1].x - bottomVerts[1].x;
-                    if (Math.abs(topSlant) > 0.10 * w && Math.abs(bottomSlant) > 0.10 * w && Math.sign(topSlant) === Math.sign(bottomSlant)) {
+                    const topSlant = topVerts[0].pt.x - bottomVerts[0].pt.x;
+                    const bottomSlant = topVerts[1].pt.x - bottomVerts[1].pt.x;
+                    if (Math.abs(topSlant) > 0.12 * w && Math.abs(bottomSlant) > 0.12 * w && Math.sign(topSlant) === Math.sign(bottomSlant)) {
                         const calculatedSkew = Math.abs(topSlant);
                         const finalSkew = Math.max(8, Math.min(w - 8, calculatedSkew));
                         return {
@@ -5482,7 +5576,7 @@ export default function Whiteboard({
                     }
                 }
 
-                // C. Rectangle / Square
+                // Default Rectangle / Square
                 const isSquare = isShiftPressed || (Math.abs(w - h) / maxDim < 0.2);
                 const finalW = isSquare ? maxDim : w;
                 const finalH = isSquare ? maxDim : h;
@@ -5500,7 +5594,86 @@ export default function Whiteboard({
                 };
             }
 
-            // Fallback for Rectangle / Square if areaRatio > 0.68
+            // 4. Five-sided Regular Pentagon
+            if (cornerCount === 5) {
+                const s = isShiftPressed ? maxDim : Math.max(w, h);
+                return {
+                    id: Date.now().toString(),
+                    type: 'pentagon',
+                    x: cx - s / 2,
+                    y: cy - s / 2,
+                    width: s,
+                    height: s,
+                    color: currentColor,
+                    strokeWidth: currentStrokeWidth,
+                    fillColor: 'transparent',
+                    rotation: 0
+                };
+            }
+
+            // 5. Six-sided Regular Hexagon
+            if (cornerCount === 6) {
+                const s = isShiftPressed ? maxDim : Math.max(w, h);
+                return {
+                    id: Date.now().toString(),
+                    type: 'hexagon',
+                    x: cx - s / 2,
+                    y: cy - s / 2,
+                    width: s,
+                    height: s,
+                    color: currentColor,
+                    strokeWidth: currentStrokeWidth,
+                    fillColor: 'transparent',
+                    rotation: 0
+                };
+            }
+
+            // 6. Eight-sided Octagon
+            if (cornerCount === 8) {
+                const R = maxDim / 2;
+                const polyPoints = [];
+                for (let i = 0; i < 8; i++) {
+                    const angle = -Math.PI / 2 + Math.PI / 8 + (2 * Math.PI * i) / 8;
+                    polyPoints.push({
+                        x: Math.round(cx + R * Math.cos(angle)),
+                        y: Math.round(cy + R * Math.sin(angle))
+                    });
+                }
+                return {
+                    id: Date.now().toString(),
+                    type: 'polygon',
+                    x: cx - maxDim / 2,
+                    y: cy - maxDim / 2,
+                    width: maxDim,
+                    height: maxDim,
+                    points: polyPoints,
+                    color: currentColor,
+                    strokeWidth: currentStrokeWidth,
+                    fillColor: 'transparent',
+                    rotation: 0
+                };
+            }
+
+            // 7. Circle / Ellipse (smooth continuous curvature, no sharp corners, high circularity)
+            if ((cornerCount <= 2 || cornerCount >= 7) && circularity > 0.65 && radiusVarianceRatio < 0.22) {
+                const isEquilateral = isShiftPressed || (aspectRatio >= 0.75 && aspectRatio <= 1.35);
+                const finalW = isEquilateral ? maxDim : w;
+                const finalH = isEquilateral ? maxDim : h;
+                return {
+                    id: Date.now().toString(),
+                    type: 'circle',
+                    x: cx - finalW / 2,
+                    y: cy - finalH / 2,
+                    width: finalW,
+                    height: finalH,
+                    color: currentColor,
+                    strokeWidth: currentStrokeWidth,
+                    fillColor: 'transparent',
+                    rotation: 0
+                };
+            }
+
+            // 8. Fallback for Rectangle / Square if areaRatio > 0.68
             if (areaRatio > 0.68) {
                 const isSquare = isShiftPressed || (Math.abs(w - h) / maxDim < 0.2);
                 const finalW = isSquare ? maxDim : w;
@@ -5512,57 +5685,6 @@ export default function Whiteboard({
                     y: isSquare ? cy - maxDim / 2 : minY,
                     width: finalW,
                     height: finalH,
-                    color: currentColor,
-                    strokeWidth: currentStrokeWidth,
-                    fillColor: 'transparent',
-                    rotation: 0
-                };
-            }
-
-            // 4. Any Polygon (Pentagon, Hexagon, Heptagon, Octagon, or any N-sided polygon, N >= 5)
-            // Holding Shift forces a mathematically uniform, equal-sided regular polygon!
-            if (cornerCount >= 5) {
-                const N = Math.min(12, cornerCount);
-                let polyPoints = [];
-
-                if (isShiftPressed || N === 5 || N === 6 || N === 8) {
-                    const R = maxDim / 2;
-                    const theta0 = (N % 2 === 1) ? -Math.PI / 2 : -Math.PI / 2 + Math.PI / N;
-                    for (let i = 0; i < N; i++) {
-                        const angle = theta0 + (2 * Math.PI * i) / N;
-                        polyPoints.push({
-                            x: Math.round(cx + R * Math.cos(angle)),
-                            y: Math.round(cy + R * Math.sin(angle))
-                        });
-                    }
-                } else {
-                    polyPoints = simplified.slice(0, N);
-                }
-
-                if (N === 6) {
-                    return {
-                        id: Date.now().toString(),
-                        type: 'hexagon',
-                        x: isShiftPressed ? cx - maxDim / 2 : minX,
-                        y: isShiftPressed ? cy - maxDim / 2 : minY,
-                        width: isShiftPressed ? maxDim : w,
-                        height: isShiftPressed ? maxDim : h,
-                        points: polyPoints,
-                        color: currentColor,
-                        strokeWidth: currentStrokeWidth,
-                        fillColor: 'transparent',
-                        rotation: 0
-                    };
-                }
-
-                return {
-                    id: Date.now().toString(),
-                    type: 'polygon',
-                    x: isShiftPressed ? cx - maxDim / 2 : minX,
-                    y: isShiftPressed ? cy - maxDim / 2 : minY,
-                    width: isShiftPressed ? maxDim : w,
-                    height: isShiftPressed ? maxDim : h,
-                    points: polyPoints,
                     color: currentColor,
                     strokeWidth: currentStrokeWidth,
                     fillColor: 'transparent',
@@ -5662,6 +5784,30 @@ export default function Whiteboard({
                 const y = cy + r * Math.sin(angle);
                 if (i === 0) ctx.moveTo(x, y);
                 else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.stroke();
+        } else if (shape.type === 'pentagon') {
+            const cx = shape.x + shape.width / 2;
+            const cy = shape.y + shape.height / 2;
+            const rx = shape.width / 2;
+            const ry = shape.height / 2;
+            ctx.moveTo(cx + rx * Math.cos(-Math.PI / 2), cy + ry * Math.sin(-Math.PI / 2));
+            for (let i = 1; i < 5; i++) {
+                const a = -Math.PI / 2 + (2 * Math.PI * i) / 5;
+                ctx.lineTo(cx + rx * Math.cos(a), cy + ry * Math.sin(a));
+            }
+            ctx.closePath();
+            ctx.stroke();
+        } else if (shape.type === 'hexagon') {
+            const cx = shape.x + shape.width / 2;
+            const cy = shape.y + shape.height / 2;
+            const rx = shape.width / 2;
+            const ry = shape.height / 2;
+            ctx.moveTo(cx + rx * Math.cos(-Math.PI / 2), cy + ry * Math.sin(-Math.PI / 2));
+            for (let i = 1; i < 6; i++) {
+                const a = -Math.PI / 2 + (2 * Math.PI * i) / 6;
+                ctx.lineTo(cx + rx * Math.cos(a), cy + ry * Math.sin(a));
             }
             ctx.closePath();
             ctx.stroke();
@@ -6144,11 +6290,14 @@ export default function Whiteboard({
                     if (!currentSparkleParticlesRef.current) currentSparkleParticlesRef.current = [];
                     const particles = currentSparkleParticlesRef.current;
                     const lastP = particles[particles.length - 1];
-                    if (!lastP || Math.hypot(pos.x - lastP.x, pos.y - lastP.y) > 10) {
-                        const pSize = 2.5 + Math.random() * 3.5;
+                    const curWidth = tool === 'sparkle' ? 4 : strokeWidth;
+                    if (!lastP || Math.hypot(pos.x - lastP.x, pos.y - lastP.y) > Math.max(8, curWidth * 1.5)) {
+                        // Confine sparkle star strictly within the drawn stroke line:
+                        const pSize = Math.max(1.8, Math.min(curWidth * 0.42, 5.5));
                         const pRot = Math.random() * 90;
-                        const pX = pos.x + (Math.random() - 0.5) * 8;
-                        const pY = pos.y + (Math.random() - 0.5) * 8;
+                        const jitterLimit = Math.min(curWidth * 0.2, 2.5);
+                        const pX = pos.x + (Math.random() - 0.5) * jitterLimit;
+                        const pY = pos.y + (Math.random() - 0.5) * jitterLimit;
                         let pStroke = '#f59e0b';
                         if (sparkleTheme === 'galaxy') {
                             const galaxyColors = ['#ffffff', '#c084fc', '#67e8f9', '#a7f3d0', '#fde047', '#e879f9'];
@@ -6159,6 +6308,9 @@ export default function Whiteboard({
                         } else if (sparkleTheme === 'gold') {
                             const goldColors = ['#ffffff', '#fbbf24', '#f59e0b', '#fef3c7', '#d97706'];
                             pStroke = goldColors[Math.floor(Math.random() * goldColors.length)];
+                        } else if (sparkleTheme === 'emerald') {
+                            const emeraldColors = ['#ffffff', '#6ee7b7', '#34d399', '#10b981', '#06b6d4', '#a7f3d0'];
+                            pStroke = emeraldColors[Math.floor(Math.random() * emeraldColors.length)];
                         } else {
                             pStroke = color || '#f59e0b';
                         }
@@ -6209,11 +6361,14 @@ export default function Whiteboard({
                                 continue;
                             }
 
+                            const shpX = shp.x || 0;
+                            const shpY = shp.y || 0;
+
                             if (
-                                eraserX + eraserRadius < shp.x ||
-                                eraserX - eraserRadius > shp.x + shp.width ||
-                                eraserY + eraserRadius < shp.y ||
-                                eraserY - eraserRadius > shp.y + shp.height
+                                eraserX + eraserRadius < shpX ||
+                                eraserX - eraserRadius > shpX + (shp.width || 0) ||
+                                eraserY + eraserRadius < shpY ||
+                                eraserY - eraserRadius > shpY + (shp.height || 0)
                             ) {
                                 nextShapes.push(shp);
                                 continue;
@@ -6224,10 +6379,30 @@ export default function Whiteboard({
                             const segments = [];
                             let currentSegment = [];
 
-                            for (const pt of pathPts) {
-                                const dx = pt.x - eraserX;
-                                const dy = pt.y - eraserY;
-                                if (dx * dx + dy * dy <= rSq) {
+                            for (let i = 0; i < pathPts.length; i++) {
+                                const pt = pathPts[i];
+                                const absX = shpX + pt.x;
+                                const absY = shpY + pt.y;
+                                const dx = absX - eraserX;
+                                const dy = absY - eraserY;
+                                const distSq = dx * dx + dy * dy;
+
+                                let segHit = false;
+                                if (i > 0) {
+                                    const prevPt = pathPts[i - 1];
+                                    const prevAbsX = shpX + prevPt.x;
+                                    const prevAbsY = shpY + prevPt.y;
+                                    const d = getPerpendicularDist({ x: eraserX, y: eraserY }, { x: prevAbsX, y: prevAbsY }, { x: absX, y: absY });
+                                    const minSegX = Math.min(prevAbsX, absX) - eraserRadius;
+                                    const maxSegX = Math.max(prevAbsX, absX) + eraserRadius;
+                                    const minSegY = Math.min(prevAbsY, absY) - eraserRadius;
+                                    const maxSegY = Math.max(prevAbsY, absY) + eraserRadius;
+                                    if (d <= eraserRadius && eraserX >= minSegX && eraserX <= maxSegX && eraserY >= minSegY && eraserY <= maxSegY) {
+                                        segHit = true;
+                                    }
+                                }
+
+                                if (distSq <= rSq || segHit) {
                                     anyPointErased = true;
                                     if (currentSegment.length > 0) {
                                         segments.push(currentSegment);
@@ -6247,21 +6422,29 @@ export default function Whiteboard({
                                 hasChanges = true;
                                 for (let i = 0; i < segments.length; i++) {
                                     const segPts = segments[i];
-                                    if (segPts.length === 0) continue;
-                                    const minPx = Math.min(...segPts.map(p => p.x));
-                                    const maxPx = Math.max(...segPts.map(p => p.x));
-                                    const minPy = Math.min(...segPts.map(p => p.y));
-                                    const maxPy = Math.max(...segPts.map(p => p.y));
+                                    if (segPts.length < 2) continue;
+                                    const absPts = segPts.map(p => ({ x: shpX + p.x, y: shpY + p.y }));
+                                    const minPx = Math.min(...absPts.map(p => p.x));
+                                    const maxPx = Math.max(...absPts.map(p => p.x));
+                                    const minPy = Math.min(...absPts.map(p => p.y));
+                                    const maxPy = Math.max(...absPts.map(p => p.y));
                                     const w = Math.max(maxPx - minPx, 1);
                                     const h = Math.max(maxPy - minPy, 1);
+                                    const newRelPts = absPts.map(p => ({ x: p.x - minPx, y: p.y - minPy }));
 
                                     let survivingParticles = shp.particles;
                                     if (shp.type === 'sparkle_path' && shp.particles) {
-                                        survivingParticles = shp.particles.filter(p => {
-                                            const pdx = p.x - eraserX;
-                                            const pdy = p.y - eraserY;
-                                            return pdx * pdx + pdy * pdy > rSq;
-                                        });
+                                        survivingParticles = shp.particles
+                                            .filter(p => {
+                                                const pdx = (shpX + p.x) - eraserX;
+                                                const pdy = (shpY + p.y) - eraserY;
+                                                return pdx * pdx + pdy * pdy > rSq;
+                                            })
+                                            .map(p => ({
+                                                ...p,
+                                                x: (shpX + p.x) - minPx,
+                                                y: (shpY + p.y) - minPy
+                                            }));
                                     }
 
                                     nextShapes.push({
@@ -6273,7 +6456,7 @@ export default function Whiteboard({
                                         height: h,
                                         originalWidth: w,
                                         originalHeight: h,
-                                        points: segPts,
+                                        points: newRelPts,
                                         particles: survivingParticles
                                     });
                                 }
@@ -6285,12 +6468,43 @@ export default function Whiteboard({
                 } else {
                     // Object Eraser: Delete entire shapes, texts, images under eraser
                     setShapeObjects(prev => prev.filter(shape => {
-                        const closestX = Math.max(shape.x, Math.min(eraserX, shape.x + shape.width));
-                        const closestY = Math.max(shape.y, Math.min(eraserY, shape.y + shape.height));
-                        const distX = eraserX - closestX;
-                        const distY = eraserY - closestY;
-                        const distSq = distX * distX + distY * distY;
-                        const intersects = distSq <= eraserRadius * eraserRadius;
+                        let intersects = false;
+                        if (shape.type === 'path' || shape.type === 'sparkle_path') {
+                            const sx = shape.x || 0;
+                            const sy = shape.y || 0;
+                            const pts = shape.points || [];
+                            for (let pi = 0; pi < pts.length; pi++) {
+                                const pt = pts[pi];
+                                const absX = sx + pt.x;
+                                const absY = sy + pt.y;
+                                const dx = absX - eraserX;
+                                const dy = absY - eraserY;
+                                if (dx * dx + dy * dy <= rSq) {
+                                    intersects = true;
+                                    break;
+                                }
+                                if (pi > 0) {
+                                    const prevPt = pts[pi - 1];
+                                    const pAbsX = sx + prevPt.x;
+                                    const pAbsY = sy + prevPt.y;
+                                    const d = getPerpendicularDist({ x: eraserX, y: eraserY }, { x: pAbsX, y: pAbsY }, { x: absX, y: absY });
+                                    const minSegX = Math.min(pAbsX, absX) - eraserRadius;
+                                    const maxSegX = Math.max(pAbsX, absX) + eraserRadius;
+                                    const minSegY = Math.min(pAbsY, absY) - eraserRadius;
+                                    const maxSegY = Math.max(pAbsY, absY) + eraserRadius;
+                                    if (d <= eraserRadius && eraserX >= minSegX && eraserX <= maxSegX && eraserY >= minSegY && eraserY <= maxSegY) {
+                                        intersects = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        } else {
+                            const closestX = Math.max(shape.x, Math.min(eraserX, shape.x + shape.width));
+                            const closestY = Math.max(shape.y, Math.min(eraserY, shape.y + shape.height));
+                            const distX = eraserX - closestX;
+                            const distY = eraserY - closestY;
+                            intersects = (distX * distX + distY * distY) <= rSq;
+                        }
                         
                         if (intersects && socket && sessionId) {
                             socket.emit('whiteboard:shape-delete', { sessionId, shapeId: shape.id });
@@ -6474,7 +6688,7 @@ export default function Whiteboard({
                     smooth: false,
                     isHighlighter: false
                 };
-            } else if (['circle', 'rectangle', 'triangle', 'star', 'polygon'].includes(snapped.type)) {
+            } else if (['circle', 'rectangle', 'triangle', 'diamond', 'parallelogram', 'hexagon', 'pentagon', 'star', 'polygon'].includes(snapped.type)) {
                 committedShape = {
                     id: Date.now().toString(),
                     type: snapped.type,
@@ -6508,6 +6722,67 @@ export default function Whiteboard({
             const pts = currentPathPointsRef.current;
             if (preStrokeImageDataRef.current) {
                 ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+            }
+
+            // 0. iPad-style Scratch-Out Scribble Gesture: Rapid zigzag over strokes or text erases them!
+            if (pts && isScribbleGesture(pts)) {
+                let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
+                pts.forEach(p => {
+                    if (p.x < minSx) minSx = p.x;
+                    if (p.x > maxSx) maxSx = p.x;
+                    if (p.y < minSy) minSy = p.y;
+                    if (p.y > maxSy) maxSy = p.y;
+                });
+                const sPad = 24;
+                const sBox = {
+                    left: minSx - sPad,
+                    right: maxSx + sPad,
+                    top: minSy - sPad,
+                    bottom: maxSy + sPad
+                };
+
+                const deletedShapeIds = [];
+                const deletedTextIds = [];
+
+                const remainingShapes = shapeObjects.filter(shp => {
+                    const shpLeft = shp.x || 0;
+                    const shpRight = shpLeft + (shp.width || 0);
+                    const shpTop = shp.y || 0;
+                    const shpBottom = shpTop + (shp.height || 0);
+                    const overlaps = !(shpRight < sBox.left || shpLeft > sBox.right || shpBottom < sBox.top || shpTop > sBox.bottom);
+                    if (overlaps) {
+                        deletedShapeIds.push(shp.id);
+                        return false;
+                    }
+                    return true;
+                });
+
+                const remainingTexts = textObjects.filter(txt => {
+                    const txtLeft = txt.x || 0;
+                    const txtRight = txtLeft + (txt.width || 0);
+                    const txtTop = txt.y || 0;
+                    const txtBottom = txtTop + (txt.height || 0);
+                    const overlaps = !(txtRight < sBox.left || txtLeft > sBox.right || txtBottom < sBox.top || txtTop > sBox.bottom);
+                    if (overlaps) {
+                        deletedTextIds.push(txt.id);
+                        return false;
+                    }
+                    return true;
+                });
+
+                if (deletedShapeIds.length > 0 || deletedTextIds.length > 0) {
+                    setShapeObjects(remainingShapes);
+                    setTextObjects(remainingTexts);
+                    if (socket && sessionId) {
+                        deletedShapeIds.forEach(id => socket.emit('whiteboard:shape-delete', { sessionId, shapeId: id }));
+                        deletedTextIds.forEach(id => socket.emit('whiteboard:text-delete', { sessionId, textId: id }));
+                    }
+                    saveToHistory();
+                    currentPathPointsRef.current = [];
+                    setIsDrawing(false);
+                    toast('✏️ Scribble erased!', { id: 'scribble-erased', icon: '🪄', duration: 1500 });
+                    return;
+                }
             }
             
             let shapeCreated = false;
@@ -6544,7 +6819,7 @@ export default function Whiteboard({
                             smooth: false,
                             isHighlighter: false
                         };
-                    } else if (['circle', 'rectangle', 'triangle', 'diamond', 'parallelogram', 'hexagon', 'star', 'polygon'].includes(autoSnapped.type)) {
+                    } else if (['circle', 'rectangle', 'triangle', 'diamond', 'parallelogram', 'hexagon', 'pentagon', 'star', 'polygon'].includes(autoSnapped.type)) {
                         committedShape = {
                             id: Date.now().toString(),
                             type: autoSnapped.type,
@@ -6943,6 +7218,14 @@ export default function Whiteboard({
                             setSelectedTextIds(selectedTexts);
                             setSelectedImageIds(selectedImages);
                             setSelection(null);
+
+                            // Auto-convert selected ink strokes if OCR tool is active
+                            if (isOcrActive && selectedShapes.length > 0) {
+                                const inkShapes = shapeObjects.filter(s => selectedShapes.includes(s.id) && (s.type === 'path' || s.type === 'sparkle_path'));
+                                if (inkShapes.length > 0) {
+                                    handleConvertSelectedInkToText(inkShapes.map(s => s.id), true);
+                                }
+                            }
                         } else if (selWidth > 15 && selHeight > 15) {
                             setSelectedShapeIds([]);
                             setSelectedTextIds([]);
@@ -7021,6 +7304,14 @@ export default function Whiteboard({
                         setSelectedTextIds(selectedTexts);
                         setSelectedImageIds(selectedImages);
                         setSelection(null);
+
+                        // Auto-convert selected ink strokes if OCR tool is active
+                        if (isOcrActive && selectedShapes.length > 0) {
+                            const inkShapes = shapeObjects.filter(s => selectedShapes.includes(s.id) && (s.type === 'path' || s.type === 'sparkle_path'));
+                            if (inkShapes.length > 0) {
+                                handleConvertSelectedInkToText(inkShapes.map(s => s.id), true);
+                            }
+                        }
                     } else if (selWidth > 15 && selHeight > 15) {
                         setSelectedShapeIds([]);
                         setSelectedTextIds([]);
@@ -7734,6 +8025,21 @@ export default function Whiteboard({
                 ctx.closePath();
                 if (fill && fill !== 'transparent') ctx.fill();
                 ctx.stroke();
+            } else if (shpObj.type === 'pentagon') {
+                const cx = shpObj.x + shpObj.width / 2;
+                const cy = shpObj.y + shpObj.height / 2;
+                const rx = shpObj.width / 2;
+                const ry = shpObj.height / 2;
+                for (let i = 0; i < 5; i++) {
+                    const angle = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+                    const px = cx + rx * Math.cos(angle);
+                    const py = cy + ry * Math.sin(angle);
+                    if (i === 0) ctx.moveTo(px, py);
+                    else ctx.lineTo(px, py);
+                }
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
             } else if (shpObj.type === 'polygon' && shpObj.points && shpObj.points.length >= 3) {
                 const pts = shpObj.points;
                 ctx.moveTo(pts[0].x, pts[0].y);
@@ -7958,6 +8264,12 @@ export default function Whiteboard({
                         grad.addColorStop(0.5, '#fef3c7');
                         grad.addColorStop(0.75, '#fbbf24');
                         grad.addColorStop(1, '#d97706');
+                    } else if (theme === 'emerald') {
+                        grad.addColorStop(0, '#064e3b');
+                        grad.addColorStop(0.25, '#059669');
+                        grad.addColorStop(0.5, '#34d399');
+                        grad.addColorStop(0.75, '#10b981');
+                        grad.addColorStop(1, '#6ee7b7');
                     } else {
                         grad.addColorStop(0, shpObj.color || '#f59e0b');
                         grad.addColorStop(1, shpObj.color || '#f59e0b');
@@ -9301,6 +9613,572 @@ export default function Whiteboard({
         }
     }, []);
 
+    // ─── Voice Control & Speech Recognition Engine ──────────────────────
+    const executeVoiceCommand = useCallback((rawText) => {
+        if (!rawText || typeof rawText !== 'string') return;
+        const txt = rawText.trim().toLowerCase();
+        setVoiceTranscript(rawText);
+
+        // Center calculation in current canvas coordinate space
+        const canvas = canvasRef.current;
+        const cWidth = canvas?.width || 1200;
+        const cHeight = canvas?.height || 800;
+        const cx = Math.round((cWidth / 2 - panOffset.x) / zoomLevel);
+        const cy = Math.round((cHeight / 2 - panOffset.y) / zoomLevel);
+
+        // 1. Shapes with Dimensions & Radii
+        // Circle: "draw circle radius 80", "draw circle of radius 60", "circle 50"
+        if (txt.includes('circle')) {
+            const match = txt.match(/(?:radius|size|of)?\s*(\d+)/i);
+            const radius = match ? parseInt(match[1], 10) : 60;
+            const newShape = {
+                id: Date.now(),
+                type: 'circle',
+                x: Math.round(cx - radius),
+                y: Math.round(cy - radius),
+                width: radius * 2,
+                height: radius * 2,
+                color: color || '#3b82f6',
+                strokeWidth: strokeWidth || 3,
+                fillColor: fillColor || 'transparent',
+                strokeStyle: strokeStyle || 'solid',
+                rotation: 0
+            };
+            setShapeObjects(prev => [...prev, newShape]);
+            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
+            saveToHistory();
+            const msg = `⭕ Drew circle with radius ${radius}px`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '⭕' });
+            return;
+        }
+
+        // Square: "draw square side 100", "draw square of side 80", "square 120"
+        if (txt.includes('square')) {
+            const match = txt.match(/(?:side|size|of)?\s*(\d+)/i);
+            const side = match ? parseInt(match[1], 10) : 100;
+            const newShape = {
+                id: Date.now(),
+                type: 'rectangle',
+                x: Math.round(cx - side / 2),
+                y: Math.round(cy - side / 2),
+                width: side,
+                height: side,
+                color: color || '#3b82f6',
+                strokeWidth: strokeWidth || 3,
+                fillColor: fillColor || 'transparent',
+                strokeStyle: strokeStyle || 'solid',
+                rotation: 0
+            };
+            setShapeObjects(prev => [...prev, newShape]);
+            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
+            saveToHistory();
+            const msg = `⏹️ Drew square with side ${side}px`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '⏹️' });
+            return;
+        }
+
+        // Rectangle: "draw rectangle 200 by 120", "draw rectangle width 160 height 90", "draw rectangle"
+        if (txt.includes('rectangle') || txt.includes('box')) {
+            const byMatch = txt.match(/(\d+)\s*(?:by|x|\*)\s*(\d+)/i);
+            let w = 160, h = 100;
+            if (byMatch) {
+                w = parseInt(byMatch[1], 10);
+                h = parseInt(byMatch[2], 10);
+            } else {
+                const wMatch = txt.match(/(?:width|w)\s*(\d+)/i);
+                const hMatch = txt.match(/(?:height|h)\s*(\d+)/i);
+                if (wMatch) w = parseInt(wMatch[1], 10);
+                if (hMatch) h = parseInt(hMatch[1], 10);
+            }
+            const newShape = {
+                id: Date.now(),
+                type: 'rectangle',
+                x: Math.round(cx - w / 2),
+                y: Math.round(cy - h / 2),
+                width: w,
+                height: h,
+                color: color || '#3b82f6',
+                strokeWidth: strokeWidth || 3,
+                fillColor: fillColor || 'transparent',
+                strokeStyle: strokeStyle || 'solid',
+                rotation: 0
+            };
+            setShapeObjects(prev => [...prev, newShape]);
+            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
+            saveToHistory();
+            const msg = `▭ Drew rectangle (${w} × ${h}px)`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '▭' });
+            return;
+        }
+
+        // Triangle
+        if (txt.includes('triangle')) {
+            const match = txt.match(/(?:size|of)?\s*(\d+)/i);
+            const s = match ? parseInt(match[1], 10) : 120;
+            const newShape = {
+                id: Date.now(),
+                type: 'triangle',
+                x: Math.round(cx - s / 2),
+                y: Math.round(cy - s / 2),
+                width: s,
+                height: Math.round(s * 0.9),
+                color: color || '#3b82f6',
+                strokeWidth: strokeWidth || 3,
+                fillColor: fillColor || 'transparent',
+                strokeStyle: strokeStyle || 'solid',
+                rotation: 0
+            };
+            setShapeObjects(prev => [...prev, newShape]);
+            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
+            saveToHistory();
+            const msg = `🔺 Drew triangle (${s}px)`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '🔺' });
+            return;
+        }
+
+        // Pentagon: 5-sided regular polygon
+        if (txt.includes('pentagon')) {
+            const match = txt.match(/(?:size|of)?\s*(\d+)/i);
+            const s = match ? parseInt(match[1], 10) : 120;
+            const newShape = {
+                id: Date.now(),
+                type: 'pentagon',
+                x: Math.round(cx - s / 2),
+                y: Math.round(cy - s / 2),
+                width: s,
+                height: s,
+                color: color || '#3b82f6',
+                strokeWidth: strokeWidth || 3,
+                fillColor: fillColor || 'transparent',
+                strokeStyle: strokeStyle || 'solid',
+                rotation: 0
+            };
+            setShapeObjects(prev => [...prev, newShape]);
+            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
+            saveToHistory();
+            const msg = `⬠ Drew 5-sided pentagon (${s}px)`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '⬠' });
+            return;
+        }
+
+        // Hexagon: 6-sided regular polygon
+        if (txt.includes('hexagon')) {
+            const match = txt.match(/(?:size|of)?\s*(\d+)/i);
+            const s = match ? parseInt(match[1], 10) : 120;
+            const newShape = {
+                id: Date.now(),
+                type: 'hexagon',
+                x: Math.round(cx - s / 2),
+                y: Math.round(cy - s / 2),
+                width: s,
+                height: Math.round(s * 0.9),
+                color: color || '#3b82f6',
+                strokeWidth: strokeWidth || 3,
+                fillColor: fillColor || 'transparent',
+                strokeStyle: strokeStyle || 'solid',
+                rotation: 0
+            };
+            setShapeObjects(prev => [...prev, newShape]);
+            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
+            saveToHistory();
+            const msg = `⬡ Drew 6-sided hexagon (${s}px)`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '⬡' });
+            return;
+        }
+
+        // Star
+        if (txt.includes('star')) {
+            const match = txt.match(/(?:size|of)?\s*(\d+)/i);
+            const s = match ? parseInt(match[1], 10) : 120;
+            const newShape = {
+                id: Date.now(),
+                type: 'star',
+                x: Math.round(cx - s / 2),
+                y: Math.round(cy - s / 2),
+                width: s,
+                height: s,
+                color: color || '#eab308',
+                strokeWidth: strokeWidth || 3,
+                fillColor: fillColor || 'transparent',
+                strokeStyle: strokeStyle || 'solid',
+                rotation: 0
+            };
+            setShapeObjects(prev => [...prev, newShape]);
+            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
+            saveToHistory();
+            const msg = `⭐ Drew 5-point star (${s}px)`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '⭐' });
+            return;
+        }
+
+        // Diamond
+        if (txt.includes('diamond') || txt.includes('rhombus')) {
+            const match = txt.match(/(?:size|of)?\s*(\d+)/i);
+            const s = match ? parseInt(match[1], 10) : 110;
+            const newShape = {
+                id: Date.now(),
+                type: 'diamond',
+                x: Math.round(cx - s / 2),
+                y: Math.round(cy - s / 2),
+                width: s,
+                height: s,
+                color: color || '#3b82f6',
+                strokeWidth: strokeWidth || 3,
+                fillColor: fillColor || 'transparent',
+                strokeStyle: strokeStyle || 'solid',
+                rotation: 0
+            };
+            setShapeObjects(prev => [...prev, newShape]);
+            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
+            saveToHistory();
+            const msg = `💠 Drew diamond (${s}px)`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '💠' });
+            return;
+        }
+
+        // Arrow / Line
+        if (txt.includes('arrow')) {
+            const newShape = {
+                id: Date.now(),
+                type: 'arrow',
+                x: cx - 80,
+                y: cy,
+                width: 160,
+                height: 0,
+                startX: 0,
+                startY: 0,
+                endX: 160,
+                endY: 0,
+                color: color || '#3b82f6',
+                strokeWidth: strokeWidth || 3
+            };
+            setShapeObjects(prev => [...prev, newShape]);
+            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
+            saveToHistory();
+            const msg = '➡️ Drew directional arrow';
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '➡️' });
+            return;
+        }
+        if (txt.includes('line')) {
+            const newShape = {
+                id: Date.now(),
+                type: 'line',
+                x: cx - 80,
+                y: cy,
+                width: 160,
+                height: 0,
+                startX: 0,
+                startY: 0,
+                endX: 160,
+                endY: 0,
+                color: color || '#3b82f6',
+                strokeWidth: strokeWidth || 3
+            };
+            setShapeObjects(prev => [...prev, newShape]);
+            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
+            saveToHistory();
+            const msg = '━ Drew straight line';
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '━' });
+            return;
+        }
+
+        // 2. Typing Text with Fixed Font and Position
+        if (txt.startsWith('type ') || txt.startsWith('write ') || txt.startsWith('text ')) {
+            let content = rawText.replace(/^(?:type|write|text)\s+/i, '');
+            let fontSize = 24;
+            const fontMatch = content.match(/\s+font\s*(?:size)?\s*(\d+)/i);
+            if (fontMatch) {
+                fontSize = parseInt(fontMatch[1], 10);
+                content = content.replace(/\s+font\s*(?:size)?\s*\d+/i, '').trim();
+            }
+            let posX = cx - 120;
+            let posY = cy - 25;
+            if (txt.includes('at top') || txt.includes('on top')) posY = Math.max(50, cy - 250);
+            else if (txt.includes('at bottom') || txt.includes('on bottom')) posY = cy + 200;
+            else if (txt.includes('at left') || txt.includes('on left')) posX = Math.max(50, cx - 350);
+            else if (txt.includes('at right') || txt.includes('on right')) posX = cx + 250;
+
+            content = content.replace(/\s+(?:at|on)\s+(?:top|bottom|left|right|center)/i, '').trim();
+
+            if (content) {
+                const newText = {
+                    id: Date.now(),
+                    text: content,
+                    x: Math.round(posX),
+                    y: Math.round(posY),
+                    width: Math.max(160, Math.round(content.length * (fontSize * 0.6))),
+                    height: Math.round(fontSize * 1.6),
+                    fontSize: fontSize,
+                    color: color && color !== '#ffffff' ? color : '#000000',
+                    fontWeight: 'normal',
+                    fontStyle: 'normal',
+                    textAlign: 'left'
+                };
+                setTextObjects(prev => [...prev, newText]);
+                if (socket && sessionId) socket.emit('whiteboard:text-add', { sessionId, textObj: newText });
+                saveToHistory();
+                const msg = `🔤 Typed "${content}" (font size ${fontSize}px)`;
+                setVoiceFeedback(msg);
+                toast.success(msg, { icon: '🔤' });
+                return;
+            }
+        }
+
+        // 3. Tools & Modes
+        if (txt.includes('pen') && !txt.includes('sparkle')) {
+            setTool('pen');
+            setPenMode('normal');
+            setVoiceFeedback('✏️ Switched to Pen');
+            toast.success('Switched to Pen', { icon: '✏️' });
+            return;
+        }
+        if (txt.includes('sparkle')) {
+            setTool('pen');
+            setPenMode('sparkle');
+            if (txt.includes('galaxy')) setSparkleTheme('galaxy');
+            else if (txt.includes('rainbow')) setSparkleTheme('rainbow');
+            else if (txt.includes('gold')) setSparkleTheme('gold');
+            else if (txt.includes('emerald')) setSparkleTheme('emerald');
+            setVoiceFeedback('✨ Switched to Sparkle Pen');
+            toast.success('Switched to Sparkle Pen', { icon: '✨' });
+            return;
+        }
+        if (txt.includes('highlighter')) {
+            setTool('highlighter');
+            setVoiceFeedback('🖊️ Switched to Highlighter');
+            toast.success('Switched to Highlighter', { icon: '🖊️' });
+            return;
+        }
+        if (txt.includes('eraser')) {
+            setTool('eraser');
+            setVoiceFeedback('🧹 Switched to Eraser');
+            toast.success('Switched to Eraser', { icon: '🧹' });
+            return;
+        }
+        if (txt.includes('select') || txt.includes('lasso') || txt.includes('pointer tool')) {
+            setTool('select');
+            setVoiceFeedback('👆 Switched to Selection tool');
+            toast.success('Switched to Selection tool', { icon: '👆' });
+            return;
+        }
+        if (txt.includes('laser')) {
+            setTool('laser');
+            setVoiceFeedback('🔦 Laser Pointer active');
+            toast.success('Laser Pointer active', { icon: '🔦' });
+            return;
+        }
+        if (txt.includes('ruler')) {
+            setShapeType('ruler');
+            setTool('shape');
+            setVoiceFeedback('📏 Ruler tool active');
+            toast.success('Ruler tool active', { icon: '📏' });
+            return;
+        }
+        if (txt.includes('protractor') || txt.includes('compass')) {
+            setShapeType('protractor');
+            setTool('shape');
+            setVoiceFeedback('📐 Protractor tool active');
+            toast.success('Protractor tool active', { icon: '📐' });
+            return;
+        }
+
+        // 4. Color Palette
+        const colorMap = {
+            'red': '#ef4444',
+            'blue': '#3b82f6',
+            'green': '#22c55e',
+            'yellow': '#eab308',
+            'orange': '#f97316',
+            'purple': '#8b5cf6',
+            'violet': '#7c3aed',
+            'black': '#000000',
+            'white': '#ffffff',
+            'pink': '#ec4899',
+            'cyan': '#06b6d4',
+            'emerald': '#10b981'
+        };
+        for (const [name, hex] of Object.entries(colorMap)) {
+            if (txt.includes(`color ${name}`) || txt === name) {
+                setColor(hex);
+                setVoiceFeedback(`🎨 Set color to ${name}`);
+                toast.success(`Color set to ${name}`, { icon: '🎨' });
+                return;
+            }
+        }
+
+        // 5. Canvas Navigation & Actions
+        if (txt.includes('clear board') || txt.includes('clear whiteboard') || txt === 'clear') {
+            handleClear();
+            setVoiceFeedback('🗑️ Canvas cleared');
+            return;
+        }
+        if (txt.includes('undo')) {
+            handleUndo();
+            setVoiceFeedback('↩️ Undo');
+            return;
+        }
+        if (txt.includes('redo')) {
+            handleRedo();
+            setVoiceFeedback('↪️ Redo');
+            return;
+        }
+        if (txt.includes('zoom in')) {
+            setZoomLevel(prev => Math.min(5, Number((prev + 0.2).toFixed(1))));
+            setVoiceFeedback('🔍 Zoomed in');
+            toast.success('Zoomed in', { icon: '🔍' });
+            return;
+        }
+        if (txt.includes('zoom out')) {
+            setZoomLevel(prev => Math.max(0.2, Number((prev - 0.2).toFixed(1))));
+            setVoiceFeedback('🔍 Zoomed out');
+            toast.success('Zoomed out', { icon: '🔍' });
+            return;
+        }
+        if (txt.includes('reset zoom') || txt.includes('zoom reset')) {
+            setZoomLevel(1);
+            setPanOffset({ x: 0, y: 0 });
+            setVoiceFeedback('🎯 Zoom reset to 100%');
+            toast.success('Zoom reset to 100%', { icon: '🎯' });
+            return;
+        }
+        if (txt.includes('new page') || txt.includes('add page')) {
+            addNewPage();
+            setVoiceFeedback('📄 Added new page');
+            return;
+        }
+        if (txt.includes('next page')) {
+            if (currentPage < totalPages - 1) {
+                loadPage(currentPage + 1);
+                setVoiceFeedback(`📄 Page ${currentPage + 2}`);
+            } else {
+                toast('Already on the last page');
+            }
+            return;
+        }
+        if (txt.includes('previous page') || txt.includes('prev page')) {
+            if (currentPage > 0) {
+                loadPage(currentPage - 1);
+                setVoiceFeedback(`📄 Page ${currentPage}`);
+            } else {
+                toast('Already on the first page');
+            }
+            return;
+        }
+        if (txt.includes('help') || txt.includes('cheatsheet') || txt.includes('commands')) {
+            setShowVoiceHelpModal(true);
+            setVoiceFeedback('🎙️ Opened Voice Commands list');
+            return;
+        }
+
+        setVoiceFeedback(`Unrecognized: "${rawText}" - say "help" for commands`);
+        toast(`Command not recognized: "${rawText}"`, { icon: '❓' });
+    }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, loadPage, currentPage, totalPages]);
+
+    const toggleVoiceListening = useCallback(() => {
+        const SpeechRecognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+        if (!SpeechRecognition) {
+            toast.error('Voice Recognition is not supported in this browser. Please use Chrome, Edge, or Safari.', { icon: '🎙️' });
+            return;
+        }
+
+        if (isVoiceListeningRef.current) {
+            try {
+                voiceRecognitionRef.current?.stop();
+            } catch (e) {
+                console.error('Error stopping speech recognition:', e);
+            }
+            setIsVoiceListening(false);
+            isVoiceListeningRef.current = false;
+            toast('🎙️ Voice Control stopped', { icon: '⏹️' });
+        } else {
+            try {
+                const recognition = new SpeechRecognition();
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.lang = 'en-US';
+
+                recognition.onstart = () => {
+                    setIsVoiceListening(true);
+                    isVoiceListeningRef.current = true;
+                    toast.success('🎙️ Voice Control active! Listening to commands...', { icon: '🎤' });
+                };
+
+                recognition.onresult = (event) => {
+                    let interim = '';
+                    let finalTranscript = '';
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const trans = event.results[i][0].transcript;
+                        if (event.results[i].isFinal) {
+                            finalTranscript += trans;
+                        } else {
+                            interim += trans;
+                        }
+                    }
+
+                    if (interim) {
+                        setVoiceTranscript(interim);
+                    }
+
+                    if (finalTranscript) {
+                        setVoiceTranscript(finalTranscript);
+                        executeVoiceCommand(finalTranscript);
+                    }
+                };
+
+                recognition.onerror = (err) => {
+                    console.warn('Speech recognition error:', err.error);
+                    if (err.error === 'not-allowed') {
+                        toast.error('Microphone access denied. Please allow microphone permissions.', { icon: '🚫' });
+                        setIsVoiceListening(false);
+                        isVoiceListeningRef.current = false;
+                    }
+                };
+
+                recognition.onend = () => {
+                    if (isVoiceListeningRef.current) {
+                        try {
+                            recognition.start();
+                        } catch (e) {
+                            setIsVoiceListening(false);
+                            isVoiceListeningRef.current = false;
+                        }
+                    } else {
+                        setIsVoiceListening(false);
+                    }
+                };
+
+                voiceRecognitionRef.current = recognition;
+                recognition.start();
+            } catch (err) {
+                console.error('Failed to start speech recognition:', err);
+                toast.error('Failed to start microphone: ' + err.message);
+                setIsVoiceListening(false);
+                isVoiceListeningRef.current = false;
+            }
+        }
+    }, [executeVoiceCommand]);
+
+    useEffect(() => {
+        return () => {
+            if (voiceRecognitionRef.current) {
+                isVoiceListeningRef.current = false;
+                try {
+                    voiceRecognitionRef.current.stop();
+                } catch (e) {}
+            }
+        };
+    }, []);
+
     // Scale factors for constant-sized context toolbars across canvas zoom and fullscreen
     const currentZoom = (isFullscreen ? (fullscreenScale * zoomLevel) : zoomLevel) || 1;
     const invZoom = 1 / currentZoom;
@@ -9528,9 +10406,12 @@ export default function Whiteboard({
                                 
                                 {/* Popovers rendered with dynamic positioning */}
                                 {tool === t.id && t.id === 'pen' && showStrokePicker && (
-                                    <div className={`absolute ${popoverPos} p-3.5 bg-slate-900/98 backdrop-blur-md border-2 border-slate-700 rounded-2xl shadow-2xl z-60 flex flex-col gap-3 min-w-[220px] text-slate-200`}>
+                                    <div
+                                        className={`absolute ${popoverPos} p-3.5 bg-slate-900 border-2 border-slate-700 rounded-2xl shadow-2xl z-60 flex flex-col gap-3 min-w-[250px] text-slate-200`}
+                                        style={{ backgroundColor: '#0f172a', opacity: 1 }}
+                                    >
                                         {/* Pen Mode Switcher (Normal vs Sparkle) */}
-                                        <div className="flex items-center gap-1 p-0.5 bg-slate-800/90 rounded-xl border border-slate-700/80">
+                                        <div className="flex items-center gap-1 p-0.5 bg-slate-800 rounded-xl border border-slate-700">
                                             <button
                                                 type="button"
                                                 onClick={() => setPenMode('normal')}
@@ -9553,33 +10434,33 @@ export default function Whiteboard({
                                             </button>
                                         </div>
 
-                                        {/* If Sparkle mode: Galaxy, Rainbow, Gold Glitter Swatches */}
+                                        {/* If Sparkle mode: Galaxy, Rainbow, Gold, Emerald Swatches */}
                                         {penMode === 'sparkle' ? (
                                             <div>
                                                 <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">
                                                     Sparkle Theme
                                                 </div>
-                                                <div className="grid grid-cols-3 gap-2">
+                                                <div className="grid grid-cols-4 gap-1.5">
                                                     <button
                                                         type="button"
                                                         onClick={() => {
                                                             setSparkleTheme('galaxy');
                                                             setColor('#7c3aed');
                                                         }}
-                                                        className={`group relative flex flex-col items-center gap-1 p-1.5 rounded-xl border transition ${
-                                                            sparkleTheme === 'galaxy' ? 'border-purple-400 bg-purple-950/40 ring-2 ring-purple-500' : 'border-slate-700 bg-slate-800/60 hover:border-slate-500'
+                                                        className={`group relative flex flex-col items-center gap-1 p-1 rounded-xl border transition ${
+                                                            sparkleTheme === 'galaxy' ? 'border-purple-400 bg-purple-950/60 ring-2 ring-purple-500' : 'border-slate-700 bg-slate-800 hover:border-slate-500'
                                                         }`}
                                                         title="Galaxy Sparkle: Cosmic purple/cyan/emerald gradient with stellar dust speckles"
                                                     >
                                                         <div
-                                                            className="w-7 h-7 rounded-full shadow-md flex items-center justify-center border border-white/40"
+                                                            className="w-6 h-6 rounded-full shadow-md flex items-center justify-center border border-white/40"
                                                             style={{
                                                                 background: 'linear-gradient(135deg, #3b0764, #7c3aed, #2563eb, #06b6d4, #34d399, #a855f7)'
                                                             }}
                                                         >
-                                                            <Sparkles className="w-3.5 h-3.5 text-white drop-shadow-md" />
+                                                            <Sparkles className="w-3 h-3 text-white drop-shadow-md" />
                                                         </div>
-                                                        <span className="text-[10px] font-semibold text-slate-300 group-hover:text-white">Galaxy</span>
+                                                        <span className="text-[9px] font-semibold text-slate-300 group-hover:text-white">Galaxy</span>
                                                     </button>
 
                                                     <button
@@ -9588,20 +10469,20 @@ export default function Whiteboard({
                                                             setSparkleTheme('rainbow');
                                                             setColor('#ef4444');
                                                         }}
-                                                        className={`group relative flex flex-col items-center gap-1 p-1.5 rounded-xl border transition ${
-                                                            sparkleTheme === 'rainbow' ? 'border-amber-400 bg-amber-950/40 ring-2 ring-amber-500' : 'border-slate-700 bg-slate-800/60 hover:border-slate-500'
+                                                        className={`group relative flex flex-col items-center gap-1 p-1 rounded-xl border transition ${
+                                                            sparkleTheme === 'rainbow' ? 'border-amber-400 bg-amber-950/60 ring-2 ring-amber-500' : 'border-slate-700 bg-slate-800 hover:border-slate-500'
                                                         }`}
                                                         title="Rainbow Sparkle: Spectral vibrant rainbow with star glitter"
                                                     >
                                                         <div
-                                                            className="w-7 h-7 rounded-full shadow-md flex items-center justify-center border border-white/40"
+                                                            className="w-6 h-6 rounded-full shadow-md flex items-center justify-center border border-white/40"
                                                             style={{
                                                                 background: 'linear-gradient(135deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)'
                                                             }}
                                                         >
-                                                            <Sparkles className="w-3.5 h-3.5 text-white drop-shadow-md" />
+                                                            <Sparkles className="w-3 h-3 text-white drop-shadow-md" />
                                                         </div>
-                                                        <span className="text-[10px] font-semibold text-slate-300 group-hover:text-white">Rainbow</span>
+                                                        <span className="text-[9px] font-semibold text-slate-300 group-hover:text-white">Rainbow</span>
                                                     </button>
 
                                                     <button
@@ -9610,20 +10491,42 @@ export default function Whiteboard({
                                                             setSparkleTheme('gold');
                                                             setColor('#f59e0b');
                                                         }}
-                                                        className={`group relative flex flex-col items-center gap-1 p-1.5 rounded-xl border transition ${
-                                                            sparkleTheme === 'gold' ? 'border-yellow-400 bg-yellow-950/40 ring-2 ring-yellow-500' : 'border-slate-700 bg-slate-800/60 hover:border-slate-500'
+                                                        className={`group relative flex flex-col items-center gap-1 p-1 rounded-xl border transition ${
+                                                            sparkleTheme === 'gold' ? 'border-yellow-400 bg-yellow-950/60 ring-2 ring-yellow-500' : 'border-slate-700 bg-slate-800 hover:border-slate-500'
                                                         }`}
                                                         title="Gold Glitter: Radiant metallic amber with diamond glints"
                                                     >
                                                         <div
-                                                            className="w-7 h-7 rounded-full shadow-md flex items-center justify-center border border-white/40"
+                                                            className="w-6 h-6 rounded-full shadow-md flex items-center justify-center border border-white/40"
                                                             style={{
                                                                 background: 'linear-gradient(135deg, #b45309, #f59e0b, #fef3c7, #fbbf24, #d97706)'
                                                             }}
                                                         >
-                                                            <Sparkles className="w-3.5 h-3.5 text-white drop-shadow-md" />
+                                                            <Sparkles className="w-3 h-3 text-white drop-shadow-md" />
                                                         </div>
-                                                        <span className="text-[10px] font-semibold text-slate-300 group-hover:text-white">Gold</span>
+                                                        <span className="text-[9px] font-semibold text-slate-300 group-hover:text-white">Gold</span>
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSparkleTheme('emerald');
+                                                            setColor('#10b981');
+                                                        }}
+                                                        className={`group relative flex flex-col items-center gap-1 p-1 rounded-xl border transition ${
+                                                            sparkleTheme === 'emerald' ? 'border-emerald-400 bg-emerald-950/60 ring-2 ring-emerald-500' : 'border-slate-700 bg-slate-800 hover:border-slate-500'
+                                                        }`}
+                                                        title="Emerald Aurora: Lush botanical emerald with green-gold glimmer"
+                                                    >
+                                                        <div
+                                                            className="w-6 h-6 rounded-full shadow-md flex items-center justify-center border border-white/40"
+                                                            style={{
+                                                                background: 'linear-gradient(135deg, #064e3b, #059669, #34d399, #10b981, #6ee7b7)'
+                                                            }}
+                                                        >
+                                                            <Sparkles className="w-3 h-3 text-white drop-shadow-md" />
+                                                        </div>
+                                                        <span className="text-[9px] font-semibold text-slate-300 group-hover:text-white">Emerald</span>
                                                     </button>
                                                 </div>
                                             </div>
@@ -9698,6 +10601,8 @@ export default function Whiteboard({
                                                             ? 'linear-gradient(90deg, #3b0764, #7c3aed, #2563eb, #06b6d4, #34d399, #a855f7)'
                                                             : sparkleTheme === 'rainbow'
                                                             ? 'linear-gradient(90deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)'
+                                                            : sparkleTheme === 'emerald'
+                                                            ? 'linear-gradient(90deg, #064e3b, #059669, #34d399, #10b981, #6ee7b7)'
                                                             : 'linear-gradient(90deg, #b45309, #f59e0b, #fef3c7, #fbbf24, #d97706)'
                                                         : undefined
                                                 }}
@@ -9720,18 +10625,38 @@ export default function Whiteboard({
                                             />
                                         </div>
 
-                                        {/* Smart Shape Switch */}
-                                        <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between gap-2">
-                                            <span className="text-[11px] text-slate-300 font-medium">Smart Shape</span>
-                                            <button
-                                                type="button"
-                                                onClick={() => setIsAutoShape(prev => !prev)}
-                                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase transition ${
-                                                    isAutoShape ? 'bg-primary-500 text-white shadow-xs' : 'bg-slate-700 text-slate-400'
-                                                }`}
-                                            >
-                                                {isAutoShape ? 'ON' : 'OFF'}
-                                            </button>
+                                        {/* Smart Shape Switch & Recognizer List */}
+                                        <div className="pt-2 border-t border-slate-700/60 flex flex-col gap-1.5">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div>
+                                                    <span className="text-[11px] text-slate-300 font-medium block">Smart Shape</span>
+                                                    <span className="text-[9px] text-slate-400 block">Auto-snaps drawn ink to shapes</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsAutoShape(prev => !prev)}
+                                                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase transition ${
+                                                        isAutoShape ? 'bg-primary-500 text-white shadow-xs' : 'bg-slate-700 text-slate-400'
+                                                    }`}
+                                                >
+                                                    {isAutoShape ? 'ON' : 'OFF'}
+                                                </button>
+                                            </div>
+                                            <div className="bg-slate-800 rounded-lg p-2 border border-slate-700 text-[9px] text-slate-300">
+                                                <span className="text-[9.5px] font-semibold text-slate-200 block mb-1">📐 Detectable Smart Shapes:</span>
+                                                <div className="flex flex-wrap gap-1 text-[8.5px]">
+                                                    <span className="bg-slate-700/80 px-1 py-0.5 rounded text-slate-200">⭕ Circle</span>
+                                                    <span className="bg-slate-700/80 px-1 py-0.5 rounded text-slate-200">⬭ Ellipse</span>
+                                                    <span className="bg-slate-700/80 px-1 py-0.5 rounded text-slate-200">🔺 Triangle</span>
+                                                    <span className="bg-slate-700/80 px-1 py-0.5 rounded text-slate-200">⏹️ Square</span>
+                                                    <span className="bg-slate-700/80 px-1 py-0.5 rounded text-slate-200">▭ Rectangle</span>
+                                                    <span className="bg-indigo-900/80 border border-indigo-500/50 px-1 py-0.5 rounded text-indigo-200 font-semibold">⬠ Pentagon (5-side)</span>
+                                                    <span className="bg-indigo-900/80 border border-indigo-500/50 px-1 py-0.5 rounded text-indigo-200 font-semibold">⬡ Hexagon (6-side)</span>
+                                                    <span className="bg-slate-700/80 px-1 py-0.5 rounded text-slate-200">💠 Diamond</span>
+                                                    <span className="bg-slate-700/80 px-1 py-0.5 rounded text-slate-200">⭐ 5-Point Star</span>
+                                                    <span className="bg-slate-700/80 px-1 py-0.5 rounded text-slate-200">━ Line / ➡️ Arrow</span>
+                                                </div>
+                                            </div>
                                         </div>
 
                                         {/* Smart Ink (Auto Math & Text Recognition) Switch */}
@@ -9789,6 +10714,8 @@ export default function Whiteboard({
                                                                             ? 'linear-gradient(135deg, #3b0764, #7c3aed, #2563eb, #06b6d4, #34d399, #a855f7)'
                                                                             : rp.sparkleTheme === 'rainbow'
                                                                             ? 'linear-gradient(135deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)'
+                                                                            : rp.sparkleTheme === 'emerald'
+                                                                            ? 'linear-gradient(135deg, #064e3b, #059669, #34d399, #10b981, #6ee7b7)'
                                                                             : 'linear-gradient(135deg, #b45309, #f59e0b, #fef3c7, #fbbf24, #d97706)'
                                                                         : rp.color
                                                                 }}
@@ -10032,7 +10959,7 @@ export default function Whiteboard({
                         </button>
 
                         {showColorPicker && (
-                            <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 w-[220px]`}>
+                            <div className={`absolute ${popoverPos} p-2.5 bg-slate-900 rounded-xl shadow-xl border border-slate-700 z-50 w-[240px]`}>
                                 <div className="flex justify-between items-center mb-2">
                                     <span className="text-xs font-semibold text-slate-300">Colors</span>
                                     <button
@@ -10046,7 +10973,7 @@ export default function Whiteboard({
                                         Custom
                                     </button>
                                 </div>
-                                <div className="grid grid-cols-6 gap-1">
+                                <div className="grid grid-cols-6 gap-1 mb-2.5">
                                     {[...new Set([...DEFAULT_COLORS, ...recentColors])].slice(0, 18).map(c => (
                                         <button
                                             key={c}
@@ -10055,6 +10982,47 @@ export default function Whiteboard({
                                             style={{ backgroundColor: c }}
                                         />
                                     ))}
+                                </div>
+
+                                {/* Sparkle Gradients Selection */}
+                                <div className="pt-2 border-t border-slate-700/80">
+                                    <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                                        <span>Sparkle Gradients</span>
+                                        <Sparkles className="w-3 h-3 text-amber-400" />
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-1.5">
+                                        {[
+                                            { id: 'galaxy', label: 'Galaxy', grad: 'linear-gradient(135deg, #3b0764, #7c3aed, #2563eb, #06b6d4, #34d399, #a855f7)', color: '#7c3aed' },
+                                            { id: 'rainbow', label: 'Rainbow', grad: 'linear-gradient(135deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)', color: '#ef4444' },
+                                            { id: 'gold', label: 'Gold', grad: 'linear-gradient(135deg, #b45309, #f59e0b, #fef3c7, #fbbf24, #d97706)', color: '#f59e0b' },
+                                            { id: 'emerald', label: 'Emerald', grad: 'linear-gradient(135deg, #064e3b, #059669, #34d399, #10b981, #6ee7b7)', color: '#10b981' }
+                                        ].map(sp => (
+                                            <button
+                                                key={sp.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    setTool('pen');
+                                                    setPenMode('sparkle');
+                                                    setSparkleTheme(sp.id);
+                                                    setColor(sp.color);
+                                                    setShowColorPicker(false);
+                                                    toast.success(`Selected ✨ ${sp.label} Sparkle Pen!`);
+                                                }}
+                                                className={`group flex flex-col items-center gap-1 p-1 rounded-lg border transition ${
+                                                    tool === 'pen' && penMode === 'sparkle' && sparkleTheme === sp.id
+                                                        ? 'border-amber-400 bg-amber-950/40 ring-1 ring-amber-400'
+                                                        : 'border-slate-700 bg-slate-800/60 hover:border-slate-500'
+                                                }`}
+                                                title={`${sp.label} Sparkle Gradient`}
+                                            >
+                                                <div
+                                                    className="w-5 h-5 rounded-full shadow-sm flex items-center justify-center border border-white/40"
+                                                    style={{ background: sp.grad }}
+                                                />
+                                                <span className="text-[9px] font-medium text-slate-300 group-hover:text-white leading-none">{sp.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -10440,25 +11408,29 @@ export default function Whiteboard({
                         )}
                     </div>
 
-                    {/* OCR & Handwriting Recognition Toggle */}
-                    <button
-                        onClick={() => {
-                            const next = !isOcrActive;
-                            setIsOcrActive(next);
-                            if (next) {
-                                toast('✍️ Handwriting Recognition & OCR Active! Write on board to convert ink to text.', {
-                                    icon: '✍️',
-                                    duration: 3000
-                                });
-                            } else {
-                                toast('Handwriting Recognition turned off', { icon: 'ℹ️' });
-                            }
-                        }}
-                        className={`p-1 rounded-full transition-colors flex items-center justify-center ${isOcrActive ? 'bg-indigo-500 text-white shadow-inner animate-pulse' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
-                        title={isOcrActive ? 'Handwriting Recognition & OCR Active (Click to turn OFF)' : 'Enable Handwriting Recognition & OCR'}
-                    >
-                        <Scan className="w-3.5 h-3.5" />
-                    </button>
+                    {/* Voice Control Toolbar Tool & Statement List Modal Launcher */}
+                    <div className="relative flex items-center gap-0.5">
+                        <button
+                            type="button"
+                            onClick={toggleVoiceListening}
+                            className={`p-1 rounded-full transition-colors flex items-center justify-center ${
+                                isVoiceListening 
+                                    ? 'bg-red-500 text-white shadow-lg animate-pulse ring-2 ring-red-400/70' 
+                                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                            }`}
+                            title={isVoiceListening ? 'Voice Control Active (Listening to commands) - Click to Stop' : 'Start Voice Control (Listen to voice commands)'}
+                        >
+                            {isVoiceListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setShowVoiceHelpModal(true)}
+                            className="p-1 rounded-full transition-colors flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800"
+                            title="Voice Control Statements & Cheatsheet"
+                        >
+                            <Volume2 className="w-3 h-3" />
+                        </button>
+                    </div>
 
                     {/* Divider */}
                     <div className={`${isVertical ? 'w-6 h-px my-0.5' : 'w-px h-4 mx-1'} bg-slate-700/60 shrink-0`} />
@@ -12883,6 +13855,34 @@ export default function Whiteboard({
                                     );
                                 }
                                 return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={`${w*0.25},0 ${w*0.75},0 ${w},${h*0.5} ${w*0.75},${h} ${w*0.25},${h} 0,${h*0.5}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" strokeDasharray={dashArray} />;
+                            } else if (shpObj.type === 'pentagon') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const cx = w / 2, cy = h / 2;
+                                const rx = w / 2, ry = h / 2;
+                                const pts = [];
+                                for (let i = 0; i < 5; i++) {
+                                    const angle = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+                                    pts.push(`${cx + rx * Math.cos(angle)},${cy + ry * Math.sin(angle)}`);
+                                }
+                                const ptsStr = pts.join(' ');
+                                if (bStyle === 'double') {
+                                    const sw = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.45));
+                                    const gap = Math.max(2, Math.round((shpObj.strokeWidth || 2) * 0.6));
+                                    const inset = sw + gap;
+                                    const scale = Math.max(0.2, (Math.min(w, h) - inset * 2) / Math.min(w, h));
+                                    const innerPts = [];
+                                    for (let i = 0; i < 5; i++) {
+                                        const angle = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+                                        innerPts.push(`${cx + rx * scale * Math.cos(angle)},${cy + ry * scale * Math.sin(angle)}`);
+                                    }
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <polygon points={ptsStr} fill={fill} stroke={shpObj.color} strokeWidth={sw} strokeLinejoin="round" />
+                                            <polygon points={innerPts.join(' ')} fill="none" stroke={shpObj.color} strokeWidth={sw} strokeLinejoin="round" />
+                                        </g>
+                                    );
+                                }
+                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={ptsStr} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" strokeDasharray={dashArray} />;
                             } else if (shpObj.type === 'polygon' && shpObj.points && shpObj.points.length >= 3) {
                                 const ptsStr = shpObj.points.map(p => `${p.x - (shpObj.x || 0)},${p.y - (shpObj.y || 0)}`).join(' ');
                                 return (
@@ -13308,6 +14308,14 @@ export default function Whiteboard({
                                                         <stop offset="50%" stopColor="#fef3c7" />
                                                         <stop offset="75%" stopColor="#fbbf24" />
                                                         <stop offset="100%" stopColor="#d97706" />
+                                                    </>
+                                                ) : theme === 'emerald' ? (
+                                                    <>
+                                                        <stop offset="0%" stopColor="#064e3b" />
+                                                        <stop offset="25%" stopColor="#059669" />
+                                                        <stop offset="50%" stopColor="#34d399" />
+                                                        <stop offset="75%" stopColor="#10b981" />
+                                                        <stop offset="100%" stopColor="#6ee7b7" />
                                                     </>
                                                 ) : (
                                                     <stop offset="0%" stopColor={shpObj.color || '#f59e0b'} />
@@ -14536,7 +15544,7 @@ export default function Whiteboard({
                                         )}
 
                                         {/* Replace Shape Control (strictly for geometric shapes) */}
-                                        {['rectangle', 'rounded_rect', 'circle', 'triangle', 'diamond', 'star', 'hexagon', 'parallelogram', 'terminator', 'cylinder', 'document', 'callout', 'cube'].includes(shpObj.type) && (
+                                        {['rectangle', 'rounded_rect', 'circle', 'triangle', 'diamond', 'star', 'hexagon', 'pentagon', 'parallelogram', 'terminator', 'cylinder', 'document', 'callout', 'cube'].includes(shpObj.type) && (
                                             <div className="relative">
                                                 <button
                                                     type="button"
@@ -14560,6 +15568,7 @@ export default function Whiteboard({
                                                             { id: 'diamond', icon: Diamond, label: 'Diamond' },
                                                             { id: 'star', icon: Star, label: 'Star' },
                                                             { id: 'hexagon', icon: Hexagon, label: 'Hexagon' },
+                                                            { id: 'pentagon', icon: Hexagon, label: 'Pentagon' },
                                                             { id: 'parallelogram', icon: ParallelogramIcon, label: 'Parallelogram' },
                                                             { id: 'terminator', icon: RectangleHorizontal, label: 'Terminator' },
                                                             { id: 'cylinder', icon: Database, label: 'Cylinder' },
@@ -16799,6 +17808,17 @@ export default function Whiteboard({
                     </div>
                 </div>
             )}
+
+            {/* Voice Control Statements Cheatsheet Modal */}
+            <WhiteboardVoiceControlModal
+                isOpen={showVoiceHelpModal}
+                onClose={() => setShowVoiceHelpModal(false)}
+                isListening={isVoiceListening}
+                onToggleListen={toggleVoiceListening}
+                transcript={voiceTranscript}
+                voiceFeedback={voiceFeedback}
+                onExecuteCommand={executeVoiceCommand}
+            />
 
         </div>
     );
