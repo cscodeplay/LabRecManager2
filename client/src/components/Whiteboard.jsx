@@ -17,7 +17,7 @@ import {
     Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX,
     ChevronUp, ChevronsUp, ChevronsDown, FileText, Check, Pause, Play, RotateCcw, Globe, Music,
     Underline, Bold, Italic, Shapes, Database, MessageSquare, Sigma, Calculator, Layers,
-    ZoomIn, ZoomOut, BookOpen
+    ZoomIn, ZoomOut, BookOpen, Gamepad2
 } from 'lucide-react';
 import fixWebmDuration from 'fix-webm-duration';
 import katex from 'katex';
@@ -58,6 +58,10 @@ import WhiteboardPdfViewer from './WhiteboardPdfViewer';
 import Whiteboard3DObject, { get3DModelMesh, parseOBJ, parseSTL, parseJSON3D, shadeColor, render3DObjectSVG } from './Whiteboard3DObject';
 import { WhiteboardGraphObject, getEquationColor } from './graphPlotter';
 import TorchIcon from './TorchIcon';
+import GameSelectorModal from './games/GameSelectorModal';
+import WhiteboardShooterGame from './games/WhiteboardShooterGame';
+import WhiteboardSnakeGame from './games/WhiteboardSnakeGame';
+import { convertToGameObjects, generateRandomObstacles } from './games/obstacleConverter';
 import api from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/lib/store';
@@ -967,6 +971,11 @@ export default function Whiteboard({
     const [availableRecordings, setAvailableRecordings] = useState([]);
     const [isLoadingRecordings, setIsLoadingRecordings] = useState(false);
     const [recordingsSearch, setRecordingsSearch] = useState('');
+
+    // ─── Whiteboard Games State ─────────────────────────────────────────
+    const [showGameSelector, setShowGameSelector] = useState(false);
+    const [activeGame, setActiveGame] = useState(null); // 'shooter' | 'snake' | null
+    const [gameObstacles, setGameObstacles] = useState({ obstacles: [], collectibles: [] });
 
     // ─── Canvas Embedded Resizable PDF Viewers State ───
     const [pagePdfObjects, setPagePdfObjects] = useState({ 0: [] });
@@ -3721,6 +3730,30 @@ export default function Whiteboard({
             setShowRadialMenu(false);
         }
     }, [currentPage, color, strokeWidth, handleClear, handleUndo, handleRedo]);
+
+    // ─── Game Launcher ──────────────────────────────────────────────────
+    const handleLaunchGame = useCallback((gameType) => {
+        const shapes = pageShapeObjects[currentPage] || [];
+        const texts = pageTextObjects[currentPage] || [];
+        const images = pageImageObjects[currentPage] || [];
+
+        let gameData = convertToGameObjects({
+            shapes, texts, images,
+            canvasW: canvasWidth, canvasH: canvasHeight
+        });
+
+        // If canvas is empty, generate random obstacles
+        if (gameData.obstacles.length === 0) {
+            gameData = {
+                obstacles: generateRandomObstacles(canvasWidth, canvasHeight, 12, 1),
+                collectibles: []
+            };
+        }
+
+        setGameObstacles(gameData);
+        setActiveGame(gameType);
+        setShowGameSelector(false);
+    }, [currentPage, pageShapeObjects, pageTextObjects, pageImageObjects, canvasWidth, canvasHeight]);
 
     const handleApplyTemplate = useCallback((templateData) => {
         if (!templateData) return;
@@ -10342,6 +10375,7 @@ export default function Whiteboard({
                     { id: 'laser', icon: Sparkles, label: 'Laser Pointer (L)', important: false },
                     { id: 'datetime', icon: CalendarClock, label: 'Insert DateTime', important: false },
                     { id: 'recorder', icon: Video, label: 'Screen/Board Recorder', important: false },
+                    { id: 'games', icon: Gamepad2, label: 'Whiteboard Games 🎮', important: false },
                     ...(isInstructor ? [{ id: 'permissions', icon: Users, label: 'Manage Permissions', important: false }] : []),
                 ];
 
@@ -10458,6 +10492,10 @@ export default function Whiteboard({
                                         }
                                         if (t.id === 'recorder') {
                                             setShowRecorder(!showRecorder);
+                                            return;
+                                        }
+                                        if (t.id === 'games') {
+                                            setShowGameSelector(true);
                                             return;
                                         }
                                         if (t.id === 'permissions') {
@@ -17924,6 +17962,33 @@ export default function Whiteboard({
                 voiceFeedback={voiceFeedback}
                 onExecuteCommand={executeVoiceCommand}
             />
+
+            {/* ─── Whiteboard Games ─────────────────────────────────────── */}
+            {showGameSelector && (
+                <GameSelectorModal
+                    isOpen={showGameSelector}
+                    onClose={() => setShowGameSelector(false)}
+                    onSelectGame={handleLaunchGame}
+                />
+            )}
+            {activeGame === 'shooter' && (
+                <WhiteboardShooterGame
+                    obstacles={gameObstacles.obstacles}
+                    collectibles={gameObstacles.collectibles}
+                    canvasWidth={canvasWidth}
+                    canvasHeight={canvasHeight}
+                    onExit={() => setActiveGame(null)}
+                />
+            )}
+            {activeGame === 'snake' && (
+                <WhiteboardSnakeGame
+                    obstacles={gameObstacles.obstacles}
+                    collectibles={gameObstacles.collectibles}
+                    canvasWidth={canvasWidth}
+                    canvasHeight={canvasHeight}
+                    onExit={() => setActiveGame(null)}
+                />
+            )}
 
         </div>
     );
