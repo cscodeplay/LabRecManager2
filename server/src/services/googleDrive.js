@@ -293,12 +293,18 @@ class GoogleDriveService {
         folderId = sanitize(folderId);
 
         // Filter out dummy/test placeholders and fallback to environment credentials
-        const isDummy = (val) => !val || typeof val !== 'string' || val.startsWith('test-') || val.includes('placeholder') || val.includes('example.com') || val.includes('your-');
+        const isDummy = (val) => !val || typeof val !== 'string' || !val.trim() || val.startsWith('test-') || val.includes('placeholder') || val.includes('example.com') || val.includes('your-');
         if (isDummy(clientId) && !isDummy(process.env.GOOGLE_CLIENT_ID)) {
             clientId = sanitize(process.env.GOOGLE_CLIENT_ID);
         }
         if (isDummy(clientSecret) && !isDummy(process.env.GOOGLE_CLIENT_SECRET)) {
             clientSecret = sanitize(process.env.GOOGLE_CLIENT_SECRET);
+        }
+        if (isDummy(redirectUri) && !isDummy(process.env.GOOGLE_REDIRECT_URI)) {
+            redirectUri = sanitize(process.env.GOOGLE_REDIRECT_URI);
+        }
+        if (!redirectUri) {
+            redirectUri = 'http://localhost:5001/api/drive/auth/callback';
         }
 
         return {
@@ -608,6 +614,7 @@ class GoogleDriveService {
                 const acc = this.connectedGoogleAccounts[email];
                 const isActive = (email.toLowerCase() === (this.activeAccountEmail || '').toLowerCase());
                 const userQuota = isActive ? quotaData.quota : null;
+                const hasTokens = Boolean(acc.tokens && (acc.tokens.refresh_token || acc.tokens.access_token));
                 seenGoogleEmails.add(email.toLowerCase());
 
                 accounts.push({
@@ -619,11 +626,12 @@ class GoogleDriveService {
                     email: acc.email,
                     displayName: acc.displayName || acc.email,
                     photoLink: acc.photoLink || null,
-                    plan: userQuota?.limitFormatted ? `${userQuota.limitFormatted} Google One` : (acc.plan || '5.0 TB Google AI Pro'),
+                    plan: userQuota?.limitFormatted ? `${userQuota.limitFormatted} Google One` : (acc.plan || 'Google One'),
                     percentUsed: userQuota?.percentUsed || 0,
                     usageFormatted: userQuota?.usageFormatted || '0 GB',
-                    limitFormatted: userQuota?.limitFormatted || '5.0 TB',
-                    status: acc.status || 'connected',
+                    limitFormatted: userQuota?.limitFormatted || 'Google Drive',
+                    status: hasTokens ? (acc.status || 'connected') : 'needs_reconnect',
+                    hasTokens: hasTokens,
                     isActive: isActive,
                     isDefault: isActive
                 });
@@ -640,11 +648,12 @@ class GoogleDriveService {
                 email: user.emailAddress,
                 displayName: user.displayName || user.emailAddress,
                 photoLink: user.photoLink || null,
-                plan: quotaData.quota?.limitFormatted ? `${quotaData.quota.limitFormatted} Google One` : '5.0 TB Google AI Pro',
+                plan: quotaData.quota?.limitFormatted ? `${quotaData.quota.limitFormatted} Google One` : 'Google One',
                 percentUsed: quotaData.quota?.percentUsed || 0,
                 usageFormatted: quotaData.quota?.usageFormatted || '0 GB',
-                limitFormatted: quotaData.quota?.limitFormatted || '5.0 TB',
+                limitFormatted: quotaData.quota?.limitFormatted || 'Google Drive',
                 status: 'connected',
+                hasTokens: true,
                 isActive: true,
                 isDefault: true
             });
@@ -658,7 +667,9 @@ class GoogleDriveService {
             if (rows && rows.length > 0 && rows[0].value) {
                 const sec = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
                 if (sec && sec.email && !seenGoogleEmails.has(sec.email.toLowerCase())) {
-                    seenGoogleEmails.add(sec.email.toLowerCase());
+                    const normSec = sec.email.toLowerCase();
+                    seenGoogleEmails.add(normSec);
+                    const secHasTokens = Boolean(this.connectedGoogleAccounts[normSec]?.tokens);
                     accounts.push({
                         id: sec.email,
                         accountId: sec.email,
@@ -668,17 +679,46 @@ class GoogleDriveService {
                         email: sec.email,
                         displayName: sec.displayName || sec.name || sec.email,
                         photoLink: null,
-                        plan: sec.plan || '100 GB Google Account',
-                        percentUsed: sec.percentUsed || 5,
-                        usageFormatted: sec.usageFormatted || '5 GB',
-                        limitFormatted: sec.limitFormatted || '100 GB',
-                        status: 'connected',
+                        plan: 'Google Drive Account',
+                        percentUsed: sec.percentUsed || 0,
+                        usageFormatted: sec.usageFormatted || '0 GB',
+                        limitFormatted: sec.limitFormatted || 'Google Drive',
+                        status: secHasTokens ? 'connected' : 'needs_reconnect',
+                        hasTokens: secHasTokens,
                         isActive: false,
                         isDefault: false
                     });
                 }
             }
         } catch (e) {}
+
+        // Guarantee both known user accounts (charan881130@gmail.com and charan117@gmail.com) are listed
+        const primaryKnown = ['charan881130@gmail.com', 'charan117@gmail.com'];
+        for (const known of primaryKnown) {
+            const normKnown = known.toLowerCase();
+            if (!seenGoogleEmails.has(normKnown)) {
+                seenGoogleEmails.add(normKnown);
+                const hasTokens = Boolean(this.connectedGoogleAccounts[normKnown]?.tokens);
+                accounts.push({
+                    id: normKnown,
+                    accountId: normKnown,
+                    provider: 'google',
+                    providerName: 'Google Drive',
+                    name: `Google Drive (${normKnown})`,
+                    email: normKnown,
+                    displayName: normKnown.split('@')[0],
+                    photoLink: null,
+                    plan: 'Google Drive Account',
+                    percentUsed: 0,
+                    usageFormatted: '0 GB',
+                    limitFormatted: 'Google Drive',
+                    status: hasTokens ? 'connected' : 'needs_reconnect',
+                    hasTokens: hasTokens,
+                    isActive: false,
+                    isDefault: false
+                });
+            }
+        }
 
         // Microsoft OneDrive account if stored in DB or config
         try {
@@ -844,7 +884,19 @@ class GoogleDriveService {
         }
 
         if (!target || !target.tokens) {
-            throw new Error(`Account "${accountIdOrEmail}" is not authorized with saved tokens. Please connect via OAuth first.`);
+            let authUrl = null;
+            try {
+                authUrl = this.generateAuthUrl(null, { prompt: 'select_account consent', login_hint: norm });
+            } catch (e) {
+                console.warn('[GoogleDrive] Could not generate authUrl for switchAccount:', e.message);
+            }
+            return {
+                success: false,
+                requiresAuth: true,
+                targetEmail: norm,
+                authUrl,
+                message: `Account "${accountIdOrEmail}" is not authorized yet. Please connect via Google OAuth.`
+            };
         }
 
         const config = this.getOAuthConfig();

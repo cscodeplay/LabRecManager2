@@ -193,8 +193,8 @@ router.get('/status', asyncHandler(async (req, res) => {
             ulrmsFolderUrl: 'https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp',
             ulrmsFilesFolderUrl: 'https://drive.google.com/drive/folders/1R6SmhanodL-ghLTOoBhX_EgQ5Farf853',
             storageNotice: isOAuthConnected
-                ? `Connected to personal Google Drive (${resolvedUser?.emailAddress || 'User'}). 5 TB storage quota active.`
-                : 'Google Service Accounts have a 0-byte quota for creating files in personal @gmail.com folders. Connect your personal Google account via OAuth 2.0 to upload directly using your 5 TB storage plan.'
+                ? `Connected to Google Drive (${resolvedUser?.emailAddress || 'User'}).`
+                : 'Connect your Google account via OAuth 2.0 to upload and manage files directly.'
         }
     });
 }));
@@ -224,7 +224,7 @@ router.get('/providers', asyncHandler(async (req, res) => {
                     name: 'Google Drive (Primary)',
                     account: resolvedUser?.emailAddress || 'charan881130@gmail.com',
                     status: isGoogleConnected ? 'connected' : 'service_account',
-                    plan: '5 TB Google One / Workspace',
+                    plan: 'Google Drive',
                     isDefault: true,
                     folderUrl: 'https://drive.google.com/drive/folders/1R6SmhanodL-ghLTOoBhX_EgQ5Farf853',
                     quota: quotaData.quota || null
@@ -285,6 +285,15 @@ router.post('/switch-account', asyncHandler(async (req, res) => {
         return res.status(400).json({ success: false, message: 'Account identifier is required' });
     }
     const result = await googleDriveService.switchAccount(target);
+    if (result.requiresAuth) {
+        return res.json({
+            success: false,
+            requiresAuth: true,
+            authUrl: result.authUrl,
+            message: result.message || 'Authorization required for this Google account',
+            data: result
+        });
+    }
     res.json({
         success: true,
         message: `Switched active Google Drive account to ${result.activeEmail}`,
@@ -312,21 +321,29 @@ router.get('/accounts', asyncHandler(async (req, res) => {
  * @desc    Generate Google OAuth consent URL for user authorization
  */
 router.get('/auth/url', asyncHandler(async (req, res) => {
-    const callbackUrl = getCallbackUrl(req);
-    const clientBase = getClientBaseUrl(req);
-    const returnTo = req.query.returnTo || clientBase;
-    const prompt = req.query.prompt || 'select_account consent';
-    const loginHint = req.query.login_hint || req.query.loginHint || undefined;
-    const state = Buffer.from(JSON.stringify({ returnTo, t: Date.now() })).toString('base64');
+    try {
+        const callbackUrl = getCallbackUrl(req);
+        const clientBase = getClientBaseUrl(req);
+        const returnTo = req.query.returnTo || clientBase;
+        const prompt = req.query.prompt || 'select_account consent';
+        const loginHint = req.query.login_hint || req.query.loginHint || undefined;
+        const state = Buffer.from(JSON.stringify({ returnTo, t: Date.now() })).toString('base64');
 
-    const authUrl = googleDriveService.generateAuthUrl(callbackUrl, { prompt, state, login_hint: loginHint });
-    res.json({
-        success: true,
-        data: {
-            authUrl,
-            callbackUrl
-        }
-    });
+        const authUrl = googleDriveService.generateAuthUrl(callbackUrl, { prompt, state, login_hint: loginHint });
+        res.json({
+            success: true,
+            data: {
+                authUrl,
+                callbackUrl
+            }
+        });
+    } catch (err) {
+        console.error('[GoogleDrive /auth/url error]:', err.message);
+        res.status(500).json({
+            success: false,
+            message: err.message || 'Failed to generate Google authorization URL'
+        });
+    }
 }));
 
 /**

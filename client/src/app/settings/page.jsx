@@ -511,12 +511,36 @@ export default function SettingsPage() {
     const handleSwitchDriveAccount = async (accountIdOrEmail) => {
         const toastId = toast.loading(`Switching active drive to ${accountIdOrEmail}...`);
         try {
-            await driveAdminAPI.switchAccount(accountIdOrEmail);
+            const res = await driveAdminAPI.switchAccount(accountIdOrEmail);
+            if (res.data?.requiresAuth && res.data?.authUrl) {
+                toast.dismiss(toastId);
+                toast(`Redirecting to Google to authorize ${accountIdOrEmail}...`, { icon: '🔐' });
+                window.location.href = res.data.authUrl;
+                return;
+            }
             toast.success(`Active Google Drive switched to ${accountIdOrEmail}!`, { id: toastId });
             await loadCloudDriveSettings();
         } catch (error) {
             console.error('Failed to switch drive account:', error);
-            toast.error(error.response?.data?.message || 'Failed to switch drive account', { id: toastId });
+            const errData = error.response?.data;
+            if (errData?.requiresAuth && errData?.authUrl) {
+                toast.dismiss(toastId);
+                toast(`Redirecting to Google to authorize ${accountIdOrEmail}...`, { icon: '🔐' });
+                window.location.href = errData.authUrl;
+                return;
+            }
+            if (errData?.message?.includes('not authorized') || errData?.message?.includes('OAuth')) {
+                toast.dismiss(toastId);
+                toast(`Redirecting to Google to authorize ${accountIdOrEmail}...`, { icon: '🔐' });
+                try {
+                    const authRes = await googleDriveAPI.getAuthUrl({ prompt: 'select_account consent', login_hint: accountIdOrEmail });
+                    if (authRes.data?.data?.authUrl) {
+                        window.location.href = authRes.data.data.authUrl;
+                        return;
+                    }
+                } catch (e) {}
+            }
+            toast.error(errData?.message || 'Failed to switch drive account', { id: toastId });
         }
     };
 
@@ -1623,8 +1647,8 @@ export default function SettingsPage() {
                                                                 </span>
                                                             </div>
                                                             <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-3">
-                                                                <span>Plan / Quota: <strong className="text-slate-700">{acc.plan || acc.quota || '5 TB Active'}</strong></span>
-                                                                <span>Status: <strong className="text-emerald-700">● {acc.status || 'Active'}</strong></span>
+                                                                <span>Account / Plan: <strong className="text-slate-700">{acc.plan || acc.quota || 'Google Drive'}</strong></span>
+                                                                <span>Status: <strong className={acc.status === 'needs_reconnect' || acc.hasTokens === false ? 'text-amber-600' : 'text-emerald-700'}>● {acc.status === 'needs_reconnect' || acc.hasTokens === false ? 'Requires Auth' : (acc.status || 'Active')}</strong></span>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1638,7 +1662,7 @@ export default function SettingsPage() {
                                                                 title="Set this account as the active Google Drive"
                                                             >
                                                                 <Check className="w-3.5 h-3.5" />
-                                                                <span>Switch to Active</span>
+                                                                <span>{(acc.status === 'needs_reconnect' || acc.hasTokens === false) ? 'Connect / Authorize' : 'Switch to Active'}</span>
                                                             </button>
                                                         )}
                                                         <button

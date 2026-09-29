@@ -30,7 +30,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const [connectedAccounts, setConnectedAccounts] = useState([]);
     const [selectedAccountId, setSelectedAccountId] = useState('primary');
     const [providersList, setProvidersList] = useState([]);
-    const [driveSearchMode, setDriveSearchMode] = useState('folder'); // 'folder' | 'all' (recursive 5TB search)
+    const [driveSearchMode, setDriveSearchMode] = useState('folder'); // 'folder' | 'all' (recursive drive search)
     const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
     const [switchingAccount, setSwitchingAccount] = useState(false);
     const accountDropdownRef = useRef(null);
@@ -175,7 +175,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         const oauthMessage = urlParams.get('message');
 
         if (oauthStatus === 'success') {
-            toast.success('Successfully connected to 5TB Google Drive!');
+            toast.success('Successfully connected to Google Drive!');
             refreshStatus();
             fetchFiles();
             urlParams.delete('oauth');
@@ -191,9 +191,10 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         }
     }, [fetchFiles, refreshStatus]);
 
-    // Connect Personal Google Drive via OAuth 2.0 (with account chooser)
+    // Connect Google Drive via OAuth 2.0 (with account chooser)
     const handleConnectOAuth = async (promptSelect = true, loginHint = null) => {
         setConnectingOAuth(true);
+        const toastId = toast.loading(`Connecting to Google${loginHint ? ` (${loginHint})` : ''}...`);
         try {
             const returnTo = typeof window !== 'undefined' ? window.location.origin : undefined;
             const res = await googleDriveAPI.getAuthUrl({ 
@@ -201,13 +202,17 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                 ...(loginHint ? { login_hint: loginHint } : {}),
                 returnTo 
             });
-            if (res.data?.data?.authUrl) {
-                window.location.href = res.data.data.authUrl;
+            const authUrl = res.data?.data?.authUrl || res.data?.authUrl;
+            if (authUrl) {
+                toast.dismiss(toastId);
+                toast('Redirecting to Google for authorization...', { icon: '🔐' });
+                window.location.href = authUrl;
             } else {
-                toast.error('Google OAuth credentials not configured. Please set Client ID & Secret in Admin Settings > Cloud Storage & Drives.', { duration: 6000 });
+                toast.error('Google OAuth credentials not configured. Please set Client ID & Secret in Admin Settings > Cloud Storage & Drives.', { id: toastId, duration: 6000 });
             }
         } catch (err) {
-            toast.error(err.response?.data?.message || 'Google OAuth is not configured yet. Configure Client ID and Secret in Admin Settings > Cloud Storage & Drives.', { duration: 6000 });
+            console.error('Google OAuth authUrl error:', err);
+            toast.error(err.response?.data?.message || 'Google OAuth is not configured yet. Configure Client ID and Secret in Admin Settings > Cloud Storage & Drives.', { id: toastId, duration: 6000 });
         } finally {
             setConnectingOAuth(false);
         }
@@ -218,16 +223,24 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         const emailOrId = typeof account === 'string' ? account : (account.email || account.id);
         if (!emailOrId) return;
 
-        if (typeof account === 'object' && account.status === 'needs_reconnect') {
+        // If account explicitly needs authentication
+        if (typeof account === 'object' && (account.status === 'needs_reconnect' || account.hasTokens === false)) {
             setIsAccountDropdownOpen(false);
-            handleConnectOAuth(true, account.email);
+            await handleConnectOAuth(true, account.email);
             return;
         }
 
         setSwitchingAccount(true);
         const toastId = toast.loading(`Switching to ${emailOrId}...`);
         try {
-            await googleDriveAPI.switchAccount(emailOrId);
+            const res = await googleDriveAPI.switchAccount(emailOrId);
+            if (res.data?.requiresAuth && res.data?.authUrl) {
+                toast.dismiss(toastId);
+                toast(`Redirecting to Google to authorize ${emailOrId}...`, { icon: '🔐' });
+                setIsAccountDropdownOpen(false);
+                window.location.href = res.data.authUrl;
+                return;
+            }
             setIsAccountDropdownOpen(false);
             toast.success(`Active Google Drive switched to ${emailOrId}!`, { id: toastId });
             setCurrentFolderId(null);
@@ -236,7 +249,21 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
             await fetchFiles();
         } catch (err) {
             console.error('Failed to switch Google account:', err);
-            toast.error(err.response?.data?.message || 'Failed to switch Google account', { id: toastId });
+            const errData = err.response?.data;
+            if (errData?.requiresAuth && errData?.authUrl) {
+                toast.dismiss(toastId);
+                toast(`Redirecting to Google to authorize ${emailOrId}...`, { icon: '🔐' });
+                setIsAccountDropdownOpen(false);
+                window.location.href = errData.authUrl;
+                return;
+            }
+            if (errData?.message?.includes('not authorized') || errData?.message?.includes('OAuth')) {
+                toast.dismiss(toastId);
+                setIsAccountDropdownOpen(false);
+                await handleConnectOAuth(true, emailOrId);
+                return;
+            }
+            toast.error(errData?.message || 'Failed to switch Google account', { id: toastId });
         } finally {
             setSwitchingAccount(false);
         }
@@ -280,9 +307,9 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                     displayName: status.user.displayName || norm,
                     photoLink: status.user.photoLink || null,
                     provider: 'google',
-                    plan: status.quota?.limitFormatted ? `${status.quota.limitFormatted} Google One` : '5.0 TB Google AI Pro',
                     isActive: true,
-                    status: 'connected'
+                    status: 'connected',
+                    hasTokens: true
                 });
             }
         }
@@ -298,8 +325,8 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                     email: norm,
                     displayName: norm.split('@')[0],
                     provider: 'google',
-                    plan: 'Google Drive Account',
                     status: 'needs_reconnect',
+                    hasTokens: false,
                     isActive: false
                 });
             }
@@ -322,7 +349,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
             }
             const res = await googleDriveAPI.upload(formData);
             if (res.data?.isLiveGoogleDrive) {
-                toast.success(`"${file.name}" uploaded directly to your 5TB Google Drive!`, { id: toastId });
+                toast.success(`"${file.name}" uploaded to Google Drive!`, { id: toastId });
             } else {
                 toast.success(`"${file.name}" uploaded to Google Drive sync!`, { id: toastId });
             }
@@ -337,12 +364,12 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         }
     };
 
-    // Switch between ULRMS workspace and entire 5TB Google Drive
+    // Switch between ULRMS workspace and entire Google Drive
     const handleSwitchScope = (scope) => {
         setDriveScope(scope);
         if (scope === 'all') {
             setCurrentFolderId('root');
-            setBreadcrumbs([{ id: 'root', name: 'My Drive (All 5 TB)' }]);
+            setBreadcrumbs([{ id: 'root', name: 'My Drive (All Files)' }]);
         } else {
             setCurrentFolderId(null);
             setBreadcrumbs([{ id: null, name: 'ULRMS Workspace' }]);
@@ -580,349 +607,186 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                 className="hidden"
             />
 
-            {/* Google Drive Status & 5TB Quota Banner */}
+            {/* Google Drive Status & Account Bar */}
             {status?.isOAuthConnected ? (
-                <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-200 rounded-2xl p-4 shadow-xs">
-                    <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-                        {/* Account & Status Details */}
-                        <div className="flex items-start gap-3 min-w-0">
-                            {status.user?.photoLink ? (
-                                /* eslint-disable-next-line @next/next/no-img-element */
-                                <img
-                                    src={status.user.photoLink}
-                                    alt="User"
-                                    className="w-10 h-10 rounded-full border-2 border-emerald-500 flex-shrink-0 shadow-xs object-cover"
-                                />
-                            ) : (
-                                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
-                                    <HardDrive className="w-5 h-5" />
-                                </div>
-                            )}
-                            <div className="min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-bold text-slate-800 text-sm">Personal Google Drive</span>
-                                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
-                                        <Check className="w-2.5 h-2.5" /> 5 TB Google One AI Pro Active
-                                    </span>
-
-                                    {/* Clean Provider Icons with Tooltips */}
-                                    <div className="flex items-center gap-1 ml-1">
-                                        <div
-                                            className="w-6 h-6 rounded-lg bg-emerald-100 border border-emerald-300 flex items-center justify-center text-xs font-bold text-emerald-800 cursor-pointer hover:bg-emerald-200 transition"
-                                            title={`Google Drive: Connected as ${status.user?.emailAddress || 'charan881130@gmail.com'} (5 TB Google One AI Pro Active)`}
-                                        >
-                                            G
-                                        </div>
-                                        <div
-                                            className="w-6 h-6 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-xs font-bold text-blue-700 cursor-pointer hover:bg-blue-100 transition"
-                                            title="Microsoft OneDrive / SharePoint: Multi-Account Ready (Configure in Admin Settings)"
-                                        >
-                                            M
-                                        </div>
-                                        <div
-                                            className="w-6 h-6 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-700 cursor-pointer hover:bg-slate-200 transition"
-                                            title="Apple iCloud Drive: Ready for sync via App-Specific Password (Configure in Admin Settings)"
-                                        >
-                                            
-                                        </div>
-                                        <div
-                                            className="w-6 h-6 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-center text-xs font-bold text-indigo-700 cursor-pointer hover:bg-indigo-100 transition"
-                                            title="Dropbox: Ready for workspace sync (Configure in Admin Settings)"
-                                        >
-                                            D
-                                        </div>
-                                        <div
-                                            className="w-6 h-6 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-[10px] font-bold text-amber-700 cursor-pointer hover:bg-amber-100 transition"
-                                            title="AWS S3: Enterprise Storage Ready (Configure in Admin Settings)"
-                                        >
-                                            S3
-                                        </div>
+                <div className="bg-white rounded-2xl border border-slate-200 p-2.5 sm:p-3 shadow-xs flex items-center justify-between gap-3">
+                    {/* Account Icon Dropdown Trigger (Icon Only with Active Status Badge & Tooltip) */}
+                    <div className="relative inline-block text-left" ref={accountDropdownRef}>
+                        <button
+                            type="button"
+                            onClick={() => setIsAccountDropdownOpen(prev => !prev)}
+                            disabled={switchingAccount}
+                            className="relative p-1 rounded-full hover:ring-2 hover:ring-emerald-400 focus:outline-none transition group cursor-pointer flex items-center gap-1"
+                            title={`Google Account: ${status.user?.emailAddress || 'Connected'} (Click to switch account)`}
+                            aria-label={`Switch Google Account: ${status.user?.emailAddress || 'Connected'}`}
+                        >
+                            <div className="relative">
+                                {status.user?.photoLink ? (
+                                    /* eslint-disable-next-line @next/next/no-img-element */
+                                    <img
+                                        src={status.user.photoLink}
+                                        alt={status.user.emailAddress || 'User'}
+                                        className="w-9 h-9 rounded-full object-cover border-2 border-emerald-500 shadow-2xs group-hover:scale-105 transition"
+                                    />
+                                ) : (
+                                    <div className="w-9 h-9 rounded-full bg-emerald-600 text-white flex items-center justify-center text-sm font-bold shadow-2xs group-hover:scale-105 transition">
+                                        {(status.user?.displayName || status.user?.emailAddress || 'G').charAt(0).toUpperCase()}
                                     </div>
+                                )}
+                                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
+                            </div>
+                            <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 transition-transform duration-200 ${isAccountDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {/* Account Switcher Dropdown */}
+                        {isAccountDropdownOpen && (
+                            <div className="absolute left-0 mt-2 w-72 sm:w-80 rounded-2xl bg-white border border-slate-200 shadow-2xl z-50 p-2 divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-150">
+                                <div className="px-3 py-2">
+                                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Switch Google Account</span>
                                 </div>
 
-                                <div className="text-slate-600 text-xs mt-1.5 font-medium flex items-center gap-2 flex-wrap">
-                                    {/* Prominent Google Drive Account Dropdown Selector */}
-                                    <div className="relative inline-block text-left" ref={accountDropdownRef}>
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsAccountDropdownOpen(prev => !prev)}
-                                            disabled={switchingAccount}
-                                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/95 hover:bg-white border border-emerald-300 shadow-xs hover:shadow-sm text-slate-800 transition group cursor-pointer"
-                                            title="Click to switch between connected Google accounts (e.g. charan881130@gmail.com and charan117@gmail.com)"
-                                        >
-                                            <div className="relative flex items-center">
-                                                {status.user?.photoLink ? (
-                                                    <img
-                                                        src={status.user.photoLink}
-                                                        alt="Avatar"
-                                                        className="w-5 h-5 rounded-full object-cover border border-emerald-400"
-                                                    />
-                                                ) : (
-                                                    <div className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold">
-                                                        {(status.user?.displayName || status.user?.emailAddress || 'G').charAt(0).toUpperCase()}
+                                <div className="py-1 space-y-1 max-h-60 overflow-y-auto">
+                                    {googleAccounts.map((acc) => {
+                                        const isCurrent = acc.isActive || (status.user?.emailAddress && acc.email?.toLowerCase() === status.user.emailAddress.toLowerCase());
+                                        const needsAuth = acc.status === 'needs_reconnect' || acc.hasTokens === false;
+                                        return (
+                                            <button
+                                                key={acc.email || acc.id}
+                                                type="button"
+                                                onClick={() => handleSwitchAccount(acc)}
+                                                disabled={switchingAccount}
+                                                className={`w-full text-left px-3 py-2 rounded-xl transition flex items-center justify-between gap-2.5 ${
+                                                    isCurrent
+                                                        ? 'bg-emerald-50 text-slate-900 border border-emerald-200'
+                                                        : 'hover:bg-slate-50 text-slate-700 border border-transparent'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                    {acc.photoLink ? (
+                                                        <img src={acc.photoLink} alt={acc.email} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                                                    ) : (
+                                                        <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 ${
+                                                            isCurrent ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'
+                                                        }`}>
+                                                            {(acc.displayName || acc.email || 'G').charAt(0).toUpperCase()}
+                                                        </div>
+                                                    )}
+                                                    <div className="min-w-0">
+                                                        <p className="text-xs font-semibold text-slate-900 truncate">
+                                                            {acc.email}
+                                                        </p>
+                                                        {acc.displayName && acc.displayName !== acc.email && (
+                                                            <p className="text-[10px] text-slate-400 truncate">
+                                                                {acc.displayName}
+                                                            </p>
+                                                        )}
                                                     </div>
-                                                )}
-                                                <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-1 ring-white" />
-                                            </div>
-
-                                            <div className="flex flex-col text-left">
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="text-[12px] font-bold text-slate-900 leading-tight">
-                                                        {status.user?.emailAddress || 'charan881130@gmail.com'}
-                                                    </span>
-                                                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase">
-                                                        Active
-                                                    </span>
                                                 </div>
-                                                {status.user?.displayName && (
-                                                    <span className="text-[10px] text-slate-500 font-medium leading-tight">
-                                                        {status.user.displayName}
-                                                    </span>
-                                                )}
-                                            </div>
 
-                                            <ChevronDown className={`w-3.5 h-3.5 text-slate-500 group-hover:text-slate-800 transition-transform duration-200 ${isAccountDropdownOpen ? 'rotate-180' : ''}`} />
-                                        </button>
-
-                                        {/* Dropdown Menu */}
-                                        {isAccountDropdownOpen && (
-                                            <div className="absolute left-0 mt-2 w-80 sm:w-88 rounded-2xl bg-white border border-slate-200 shadow-2xl z-50 p-2 divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-150">
-                                                <div className="px-3 py-2">
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">Switch Google Drive Account</span>
-                                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
-                                                            {googleAccounts.length} Connected
+                                                <div className="flex items-center gap-1 flex-shrink-0">
+                                                    {isCurrent ? (
+                                                        <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200">
+                                                            <Check className="w-3 h-3 text-emerald-600 stroke-[3]" />
+                                                            Active
                                                         </span>
-                                                    </div>
-                                                    <p className="text-[11px] text-slate-500 mt-0.5">
-                                                        Select which Google Drive account to browse and import from:
-                                                    </p>
+                                                    ) : needsAuth ? (
+                                                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                                                            Connect
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[10px] font-medium text-slate-500 hover:text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                                                            Switch
+                                                        </span>
+                                                    )}
                                                 </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
 
-                                                {/* Account list */}
-                                                <div className="py-1.5 space-y-1 max-h-64 overflow-y-auto">
-                                                    {googleAccounts.map((acc) => {
-                                                        const isCurrent = acc.isActive || (status.user?.emailAddress && acc.email?.toLowerCase() === status.user.emailAddress.toLowerCase());
-                                                        const isNeedsAuth = acc.status === 'needs_reconnect';
-                                                        return (
-                                                            <button
-                                                                key={acc.email || acc.id}
-                                                                type="button"
-                                                                onClick={() => handleSwitchAccount(acc)}
-                                                                disabled={switchingAccount}
-                                                                className={`w-full text-left px-3 py-2.5 rounded-xl transition flex items-center justify-between gap-3 ${
-                                                                    isCurrent
-                                                                        ? 'bg-emerald-50/80 border border-emerald-200 text-slate-900 shadow-xs'
-                                                                        : 'hover:bg-slate-50 text-slate-700 border border-transparent'
-                                                                }`}
-                                                            >
-                                                                <div className="flex items-center gap-2.5 min-w-0">
-                                                                    {acc.photoLink ? (
-                                                                        <img src={acc.photoLink} alt={acc.email} className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-slate-200" />
-                                                                    ) : (
-                                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 ${
-                                                                            isCurrent ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-200 text-slate-700'
-                                                                        }`}>
-                                                                            {(acc.displayName || acc.email || 'G').charAt(0).toUpperCase()}
-                                                                        </div>
-                                                                    )}
-                                                                    <div className="min-w-0">
-                                                                        <div className="flex items-center gap-1.5">
-                                                                            <p className="text-xs font-bold text-slate-900 truncate">
-                                                                                {acc.email}
-                                                                            </p>
-                                                                            {isNeedsAuth && (
-                                                                                <span className="px-1.5 py-0.2 rounded-md bg-amber-100 text-amber-800 text-[9px] font-bold">
-                                                                                    Authorize
-                                                                                </span>
-                                                                            )}
-                                                                        </div>
-                                                                        <p className="text-[10px] text-slate-500 truncate flex items-center gap-1">
-                                                                            <span>{acc.displayName || 'Google Account'}</span>
-                                                                            {acc.plan && <span>• {acc.plan}</span>}
-                                                                        </p>
-                                                                    </div>
-                                                                </div>
-
-                                                                <div className="flex items-center gap-1.5 flex-shrink-0">
-                                                                    {isCurrent ? (
-                                                                        <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-md shadow-xs border border-emerald-200">
-                                                                            <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
-                                                                            Active
-                                                                        </span>
-                                                                    ) : (
-                                                                        <span className="text-[11px] font-semibold text-slate-500 hover:text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-slate-200">
-                                                                            {isNeedsAuth ? 'Connect' : 'Switch'}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-
-                                                {/* Footer Action: Connect another Google account */}
-                                                <div className="pt-2 px-1 space-y-1">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setIsAccountDropdownOpen(false);
-                                                            handleConnectOAuth(true);
-                                                        }}
-                                                        className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition flex items-center gap-2"
-                                                    >
-                                                        <span className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center font-bold text-sm text-emerald-700">+</span>
-                                                        <span>+ Connect Another Google Account</span>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Direct quick action to link another account */}
+                                <div className="pt-1.5 px-1">
                                     <button
                                         type="button"
-                                        onClick={() => handleConnectOAuth(true)}
-                                        className="text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold hover:underline inline-flex items-center gap-1 bg-white/70 hover:bg-white px-2.5 py-1.5 rounded-xl border border-emerald-200/80 transition shadow-2xs cursor-pointer"
-                                        title="Link charan117@gmail.com, charan881130@gmail.com or another Google Drive account"
+                                        onClick={() => {
+                                            setIsAccountDropdownOpen(false);
+                                            handleConnectOAuth(true);
+                                        }}
+                                        className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition flex items-center gap-2"
                                     >
-                                        <span>+ Add Account</span>
+                                        <span className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center font-bold text-xs text-emerald-700">+</span>
+                                        <span>Add Google Account</span>
                                     </button>
                                 </div>
                             </div>
-                        </div>
+                        )}
+                    </div>
 
-                        {/* Storage Meter & Actions */}
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
-                            {/* Storage Gauge */}
-                            <div className="bg-white/80 backdrop-blur-xs border border-emerald-200/80 rounded-xl px-3 py-2 text-xs flex flex-col justify-center min-w-[210px]">
-                                <div className="flex justify-between items-center text-[11px] mb-1">
-                                    <span className="font-semibold text-slate-700">Storage Used</span>
-                                    <span className="font-bold text-emerald-700">{status.quota?.percentUsed || 0}%</span>
-                                </div>
-                                <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mb-1">
-                                    <div
-                                        className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                                        style={{ width: `${Math.max(2, status.quota?.percentUsed || 0)}%` }}
-                                    />
-                                </div>
-                                <div className="flex justify-between items-center text-[10px] text-slate-500">
-                                    <span>{status.quota?.usageFormatted || '0 GB'} used</span>
-                                    <span>{status.quota?.limitFormatted || '5.0 TB'} total</span>
-                                </div>
-                            </div>
+                    {/* Right: Icon-Only Action Buttons with Tooltips */}
+                    <div className="flex items-center gap-2">
+                        {/* Upload File */}
+                        <button
+                            type="button"
+                            onClick={() => fileUploadRef.current?.click()}
+                            disabled={uploading}
+                            className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition shadow-xs disabled:opacity-50 flex items-center justify-center cursor-pointer"
+                            title={uploading ? "Uploading file to Google Drive..." : "Upload File to Google Drive"}
+                            aria-label="Upload File to Google Drive"
+                        >
+                            <Upload className={`w-4 h-4 ${uploading ? 'animate-bounce' : ''}`} />
+                        </button>
 
-                            {/* Actions */}
-                            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                                <button
-                                    type="button"
-                                    onClick={() => fileUploadRef.current?.click()}
-                                    disabled={uploading}
-                                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition shadow-xs text-xs disabled:opacity-50"
-                                    title="Upload a file directly to Google Drive"
-                                >
-                                    <Upload className={`w-3.5 h-3.5 ${uploading ? 'animate-bounce' : ''}`} />
-                                    <span>{uploading ? 'Uploading...' : 'Upload File'}</span>
-                                </button>
-                                <a
-                                    href={currentFolderId ? `https://drive.google.com/drive/folders/${currentFolderId}` : "https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp"}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-semibold transition shadow-xs text-xs"
-                                    title="Open Google Drive folder in a new tab"
-                                >
-                                    <span>Drive</span>
-                                    <ExternalLink className="w-3.5 h-3.5" />
-                                </a>
+                        {/* Open in Drive Web */}
+                        <a
+                            href={currentFolderId ? `https://drive.google.com/drive/folders/${currentFolderId}` : "https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp"}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition shadow-xs flex items-center justify-center cursor-pointer"
+                            title="Open Google Drive folder in a new tab"
+                            aria-label="Open in Google Drive"
+                        >
+                            <ExternalLink className="w-4 h-4" />
+                        </a>
 
-                                {/* Prominently Highlighted Disconnect/Logout Button */}
-                                <button
-                                    type="button"
-                                    onClick={() => handleDisconnectOAuth()}
-                                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border-2 border-rose-300 hover:border-rose-400 font-bold transition shadow-xs text-xs"
-                                    title="Disconnect Google account and log out of Drive session"
-                                >
-                                    <LogOut className="w-4 h-4 text-rose-600" />
-                                    <span>Disconnect</span>
-                                </button>
-                            </div>
-                        </div>
+                        {/* Logout / Disconnect */}
+                        <button
+                            type="button"
+                            onClick={() => handleDisconnectOAuth()}
+                            className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 hover:border-rose-300 transition shadow-xs flex items-center justify-center cursor-pointer"
+                            title="Disconnect Google Drive session / Logout"
+                            aria-label="Disconnect Google Drive"
+                        >
+                            <LogOut className="w-4 h-4 text-rose-600" />
+                        </button>
                     </div>
                 </div>
             ) : (
-                <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-200 rounded-2xl p-4 shadow-xs">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                        <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
-                                <Sparkles className="w-5 h-5" />
-                            </div>
-                            <div className="min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-bold text-slate-800 text-sm">
-                                        Connect 5TB Personal Google Drive
-                                    </span>
-                                    {/* Clean Provider Icons with Tooltips */}
-                                    <div className="flex items-center gap-1 ml-1">
-                                        <div
-                                            className="w-5 h-5 rounded-md bg-emerald-100 border border-emerald-300 flex items-center justify-center text-[10px] font-bold text-emerald-800 cursor-pointer"
-                                            title="Google Drive: Ready to connect"
-                                        >
-                                            G
-                                        </div>
-                                        <div
-                                            className="w-5 h-5 rounded-md bg-blue-50 border border-blue-200 flex items-center justify-center text-[10px] font-bold text-blue-700 cursor-pointer"
-                                            title="Microsoft OneDrive: Configurable in Admin Settings"
-                                        >
-                                            M
-                                        </div>
-                                        <div
-                                            className="w-5 h-5 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-700 cursor-pointer"
-                                            title="Apple iCloud: Configurable in Admin Settings"
-                                        >
-                                            
-                                        </div>
-                                        <div
-                                            className="w-5 h-5 rounded-md bg-indigo-50 border border-indigo-200 flex items-center justify-center text-[10px] font-bold text-indigo-700 cursor-pointer"
-                                            title="Dropbox: Configurable in Admin Settings"
-                                        >
-                                            D
-                                        </div>
-                                    </div>
-                                </div>
-                                <p className="text-slate-600 text-[11px] mt-0.5">
-                                    Connect your @gmail.com account to unlock your full 5 TB Google One AI Pro quota, upload files directly, and sync records.
-                                </p>
-                            </div>
+                <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-xs flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 font-bold text-sm">
+                            <HardDrive className="w-4 h-4 text-slate-600" />
                         </div>
-                        <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
-                            <button
-                                type="button"
-                                onClick={() => handleConnectOAuth(false)}
-                                disabled={connectingOAuth}
-                                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition shadow-xs text-xs disabled:opacity-50"
-                            >
-                                <Sparkles className="w-3.5 h-3.5" />
-                                <span>{connectingOAuth ? 'Connecting...' : 'Connect 5TB Drive'}</span>
-                            </button>
-                            <a
-                                href="/settings?tab=cloud_drives"
-                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-semibold transition shadow-xs text-xs"
-                                title="Configure Cloud Storage & Drives in Admin Settings"
-                            >
-                                <Settings className="w-3.5 h-3.5 text-slate-500" />
-                                <span>Admin Settings</span>
-                            </a>
-                            <a
-                                href={currentFolderId ? `https://drive.google.com/drive/folders/${currentFolderId}` : "https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp"}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-semibold transition shadow-xs text-xs"
-                                title="Open Google Drive folder in a new tab"
-                            >
-                                <span>Open Drive</span>
-                                <ExternalLink className="w-3.5 h-3.5" />
-                            </a>
-                        </div>
+                        <span className="text-xs font-semibold text-slate-700">Google Drive Disconnected</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => handleConnectOAuth(true)}
+                            disabled={connectingOAuth}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition shadow-xs text-xs disabled:opacity-50 cursor-pointer"
+                            title="Connect Google Drive account"
+                        >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>{connectingOAuth ? 'Connecting...' : 'Connect Drive'}</span>
+                        </button>
+                        <a
+                            href="/settings?tab=cloud_drives"
+                            className="p-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition shadow-xs flex items-center justify-center"
+                            title="Configure Cloud Storage & Drives in Admin Settings"
+                            aria-label="Admin Settings"
+                        >
+                            <Settings className="w-4 h-4 text-slate-500" />
+                        </a>
                     </div>
                 </div>
             )}
@@ -949,9 +813,9 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                             className={`px-2.5 py-1 rounded-md font-semibold transition ${
                                 driveScope === 'all' ? 'bg-white shadow-xs text-indigo-700' : 'text-slate-500 hover:text-slate-800'
                             }`}
-                            title="Browse all folders across your 5TB Google Drive"
+                            title="Browse all folders across your Google Drive"
                         >
-                            All 5TB Drive
+                            My Drive
                         </button>
                     </div>
 
@@ -1032,7 +896,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                     </div>
 
                     {/* View Scope Toggle: Current Folder vs All Folders Recursive */}
-                    <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-xs" title="Search scope: current folder or all 5TB drive folders recursively">
+                    <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-xs" title="Search scope: current folder or all drive folders recursively">
                         <button
                             type="button"
                             onClick={() => setDriveSearchMode('folder')}
@@ -1055,7 +919,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                             }`}
                         >
                             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                            5TB All Files
+                            All Files
                         </button>
                     </div>
 
