@@ -1468,7 +1468,7 @@ export default function DocumentsPage() {
                     className={`h-10 w-10 rounded-xl flex items-center justify-center transition shadow-2xs ${activeTab === 'drive'
                         ? 'bg-emerald-600 text-white shadow-xs'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
-                    title="Google Drive Cloud"
+                    title="Cloud Storage & Drives (Google Drive, Apple iCloud, OneDrive)"
                 >
                     <HardDrive className="w-5 h-5" />
                 </button>

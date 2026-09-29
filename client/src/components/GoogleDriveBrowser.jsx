@@ -336,6 +336,11 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         return list;
     }, [connectedAccounts, status]);
 
+    // Filter other connected cloud accounts (Apple iCloud, OneDrive, Dropbox, S3)
+    const otherCloudAccounts = React.useMemo(() => {
+        return (connectedAccounts || []).filter(acc => acc.provider && acc.provider !== 'google');
+    }, [connectedAccounts]);
+
     // Direct Upload to current Google Drive folder
     const handleDirectUpload = async (e) => {
         const file = e.target.files?.[0];
@@ -705,6 +710,63 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                     })}
                                 </div>
 
+                                {otherCloudAccounts.length > 0 && (
+                                    <div className="pt-2">
+                                        <div className="px-3 py-1.5">
+                                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Other Connected Cloud Drives</span>
+                                        </div>
+                                        <div className="py-1 space-y-1">
+                                            {otherCloudAccounts.map((acc) => (
+                                                <div
+                                                    key={acc.id}
+                                                    className="px-3 py-2 rounded-xl border border-slate-100 bg-slate-50/80 hover:bg-slate-50 transition flex items-center justify-between gap-2.5"
+                                                >
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                        <div className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                                                            {acc.provider === 'icloud' ? '' : acc.provider === 'onedrive' ? '🟦' : acc.provider === 'dropbox' ? '📦' : '☁️'}
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="text-xs font-semibold text-slate-900 truncate">
+                                                                {acc.email || acc.displayName || acc.name}
+                                                            </p>
+                                                            <p className="text-[10px] text-slate-400 truncate">
+                                                                {acc.providerName || acc.provider} &bull; <span className="text-emerald-600 font-semibold">Configured</span>
+                                                            </p>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        {acc.provider === 'icloud' && (
+                                                            <a
+                                                                href="https://www.icloud.com/iclouddrive"
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 flex items-center gap-1 shadow-2xs hover:text-slate-900"
+                                                                title="Open Apple iCloud Drive web"
+                                                            >
+                                                                <ExternalLink className="w-3 h-3 text-slate-400" />
+                                                                <span>iCloud</span>
+                                                            </a>
+                                                        )}
+                                                        {acc.provider === 'onedrive' && (
+                                                            <a
+                                                                href="https://onedrive.live.com"
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-[10px] font-bold text-blue-700 flex items-center gap-1 shadow-2xs hover:text-blue-900"
+                                                                title="Open Microsoft OneDrive web"
+                                                            >
+                                                                <ExternalLink className="w-3 h-3 text-blue-400" />
+                                                                <span>OneDrive</span>
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="pt-1.5 px-1">
                                     <button
                                         type="button"
@@ -721,6 +783,34 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                             </div>
                         )}
                     </div>
+
+                    {/* Middle: Quick Status Chip for other connected drives */}
+                    {otherCloudAccounts.length > 0 && (
+                        <div className="hidden sm:flex items-center gap-2">
+                            {otherCloudAccounts.map(acc => (
+                                <div
+                                    key={acc.id}
+                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 shadow-2xs"
+                                    title={`${acc.name || acc.providerName}: ${acc.email || acc.displayName}`}
+                                >
+                                    <span className="text-sm">{acc.provider === 'icloud' ? '' : acc.provider === 'onedrive' ? '🟦' : acc.provider === 'dropbox' ? '📦' : '☁️'}</span>
+                                    <span className="font-semibold text-slate-800">{acc.provider === 'icloud' ? 'iCloud' : acc.provider === 'onedrive' ? 'OneDrive' : acc.name}</span>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Configured"></span>
+                                    {acc.provider === 'icloud' && (
+                                        <a
+                                            href="https://www.icloud.com/iclouddrive"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="ml-0.5 text-slate-400 hover:text-slate-700"
+                                            title="Open iCloud Drive in new tab"
+                                        >
+                                            <ExternalLink className="w-3 h-3" />
+                                        </a>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
 
                     {/* Right: Icon-Only Action Buttons with Tooltips */}
                     <div className="flex items-center gap-2">
@@ -761,15 +851,40 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                     </div>
                 </div>
             ) : (
-                <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-xs flex items-center justify-between gap-3">
+                <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 font-bold text-sm">
                             <HardDrive className="w-4 h-4 text-slate-600" />
                         </div>
-                        <span className="text-xs font-semibold text-slate-700">Google Drive Disconnected</span>
+                        <div>
+                            <span className="text-xs font-semibold text-slate-700">Google Drive Disconnected</span>
+                            {otherCloudAccounts.length > 0 && (
+                                <div className="flex items-center gap-2 mt-1">
+                                    {otherCloudAccounts.map(acc => (
+                                        <span key={acc.id} className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md">
+                                            <span>{acc.provider === 'icloud' ? '' : acc.provider === 'onedrive' ? '🟦' : '☁️'}</span>
+                                            <span>{acc.provider === 'icloud' ? 'iCloud' : acc.name}: {acc.email || acc.displayName}</span>
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Configured"></span>
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {otherCloudAccounts.find(a => a.provider === 'icloud') && (
+                            <a
+                                href="https://www.icloud.com/iclouddrive"
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold transition shadow-xs text-xs cursor-pointer"
+                                title="Open Apple iCloud Drive web"
+                            >
+                                <span> Open iCloud</span>
+                                <ExternalLink className="w-3 h-3 text-slate-300" />
+                            </a>
+                        )}
                         <button
                             type="button"
                             onClick={() => handleConnectOAuth(true)}
