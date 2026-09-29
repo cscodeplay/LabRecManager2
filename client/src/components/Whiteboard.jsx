@@ -563,6 +563,7 @@ export default function Whiteboard({
     const spotlightOverlayRef = useRef(null);
     const [tool, setTool] = useState('pen'); // pen, eraser, select, highlighter, shape, laser, text, image
     const [color, setColor] = useState('#000000');
+    const [fillColor, setFillColor] = useState('transparent');
     const [strokeWidth, setStrokeWidth] = useState(2);
     const [eraserSize, setEraserSize] = useState(20); // Separate eraser size
     const [strokeStyle, setStrokeStyle] = useState('solid'); // solid, dashed, dotted
@@ -1510,6 +1511,7 @@ export default function Whiteboard({
     // Persistence: track if state has been loaded from localStorage
     const [isStateLoaded, setIsStateLoaded] = useState(false);
     const saveTimeoutRef = useRef(null);
+    const pageThumbnailsRef = useRef([]);
     
     useEffect(() => {
         isDrawingRef.current = isDrawing;
@@ -1572,10 +1574,12 @@ export default function Whiteboard({
                     if (state.pageGraphObjects) setPageGraphObjects(state.pageGraphObjects);
                     if (state.whiteboardTasks) setWhiteboardTasks(state.whiteboardTasks);
                     if (state.color) setColor(state.color);
+                    if (state.fillColor) setFillColor(state.fillColor);
                     if (state.strokeWidth) setStrokeWidth(state.strokeWidth);
                     if (state.eraserSize) setEraserSize(state.eraserSize);
                     if (state.strokeStyle) setStrokeStyle(state.strokeStyle);
                     if (state.tool) setTool(state.tool);
+                    if (Array.isArray(state.pageThumbnails)) pageThumbnailsRef.current = [...state.pageThumbnails];
 
                     // Restore canvas content for current page
                     if (state.pages && state.pages[state.currentPage || 0]) {
@@ -1641,33 +1645,134 @@ export default function Whiteboard({
                     pageGraphObjects,
                     whiteboardTasks,
                     color,
+                    fillColor,
                     strokeWidth,
                     eraserSize,
                     strokeStyle,
                     tool,
                     savedAt: Date.now()
                 };
-                
+
+                // Generate crisp thumbnails on solid white background (prevents black transparent JPEG)
+                const renderPageThumbnail = (pIndex) => {
+                    try {
+                        const tempCanvas = document.createElement('canvas');
+                        const tempCtx = tempCanvas.getContext('2d');
+                        if (!tempCtx) return null;
+
+                        const w = 320;
+                        const h = Math.round(320 * ((canvas?.height || 700) / (canvas?.width || 1200)));
+                        tempCanvas.width = w;
+                        tempCanvas.height = h;
+
+                        // 1. Fill solid white/page background (CRITICAL: prevents black output in JPEG)
+                        const currentBg = pageBackgrounds?.[pIndex] || { color: '#ffffff', pattern: 'plain' };
+                        const bgCol = currentBg.color || bgColor || '#ffffff';
+                        tempCtx.fillStyle = (!bgCol || bgCol === 'transparent') ? '#ffffff' : bgCol;
+                        tempCtx.fillRect(0, 0, w, h);
+
+                        // Subtle grid pattern if selected
+                        if (currentBg.pattern === 'grid') {
+                            tempCtx.save();
+                            tempCtx.strokeStyle = '#e2e8f0';
+                            tempCtx.lineWidth = 0.5;
+                            for (let gx = 0; gx <= w; gx += 16) {
+                                tempCtx.beginPath();
+                                tempCtx.moveTo(gx, 0);
+                                tempCtx.lineTo(gx, h);
+                                tempCtx.stroke();
+                            }
+                            for (let gy = 0; gy <= h; gy += 16) {
+                                tempCtx.beginPath();
+                                tempCtx.moveTo(0, gy);
+                                tempCtx.lineTo(w, gy);
+                                tempCtx.stroke();
+                            }
+                            tempCtx.restore();
+                        }
+
+                        const scaleX = w / (canvas?.width || 1200);
+                        const scaleY = h / (canvas?.height || 700);
+
+                        // 2. Draw canvas drawings
+                        if (pIndex === currentPage && canvas) {
+                            tempCtx.drawImage(canvas, 0, 0, w, h);
+                        } else if (pages?.[pIndex]) {
+                            const img = new Image();
+                            img.src = pages[pIndex];
+                            if (img.complete && img.naturalWidth > 0) {
+                                tempCtx.drawImage(img, 0, 0, w, h);
+                            }
+                        }
+
+                        // 3. Draw shapes for this page
+                        const shapes = pageShapeObjects?.[pIndex] || [];
+                        shapes.forEach(shp => {
+                            if (!shp) return;
+                            tempCtx.save();
+                            const sx = (shp.x || 0) * scaleX;
+                            const sy = (shp.y || 0) * scaleY;
+                            const sw = (shp.width || 40) * scaleX;
+                            const sh = (shp.height || 40) * scaleY;
+                            const stroke = shp.color || '#3b82f6';
+                            const fill = shp.fillColor && shp.fillColor !== 'transparent' ? shp.fillColor : (shp.type === 'sticky_note' ? '#fef08a' : 'transparent');
+
+                            tempCtx.strokeStyle = stroke;
+                            tempCtx.lineWidth = Math.max(1, (shp.strokeWidth || 2) * scaleX);
+
+                            if (shp.type === 'rectangle' || shp.type === 'square' || shp.type === 'sticky_note') {
+                                if (fill !== 'transparent') {
+                                    tempCtx.fillStyle = fill;
+                                    tempCtx.fillRect(sx, sy, sw, sh);
+                                }
+                                tempCtx.strokeRect(sx, sy, sw, sh);
+                            } else if (shp.type === 'circle' || shp.type === 'ellipse') {
+                                tempCtx.beginPath();
+                                tempCtx.ellipse(sx + sw / 2, sy + sh / 2, Math.abs(sw / 2), Math.abs(sh / 2), 0, 0, Math.PI * 2);
+                                if (fill !== 'transparent') {
+                                    tempCtx.fillStyle = fill;
+                                    tempCtx.fill();
+                                }
+                                tempCtx.stroke();
+                            }
+                            tempCtx.restore();
+                        });
+
+                        return tempCanvas.toDataURL('image/jpeg', 0.85);
+                    } catch (err) {
+                        console.warn('Failed to render page thumbnail:', err);
+                        return null;
+                    }
+                };
+
+                const currentThumb = renderPageThumbnail(currentPage);
+                if (currentThumb) {
+                    pageThumbnailsRef.current[currentPage] = currentThumb;
+                }
+
+                const allPageThumbnails = [];
+                for (let i = 0; i < totalPages; i++) {
+                    if (i === currentPage && currentThumb) {
+                        allPageThumbnails.push(currentThumb);
+                    } else if (pageThumbnailsRef.current[i]) {
+                        allPageThumbnails.push(pageThumbnailsRef.current[i]);
+                    } else if (updatedPages[i]) {
+                        allPageThumbnails.push(renderPageThumbnail(i) || updatedPages[i]);
+                    } else {
+                        allPageThumbnails.push(renderPageThumbnail(i));
+                    }
+                }
+
+                // Add thumbnails array to persisted state
+                state.pageThumbnails = allPageThumbnails;
                 const stateStr = JSON.stringify(state);
                 
                 if (whiteboardId && whiteboardId !== 'admin-standalone' && !whiteboardId.startsWith('standalone_')) {
-                    // Generate thumbnail from current page
-                    let thumbnailUrl = null;
-                    if (canvas) {
-                        // Scale down canvas for thumbnail
-                        const tempCanvas = document.createElement('canvas');
-                        const tempCtx = tempCanvas.getContext('2d');
-                        tempCanvas.width = 300;
-                        tempCanvas.height = 300 * (canvas.height / canvas.width);
-                        tempCtx.drawImage(canvas, 0, 0, tempCanvas.width, tempCanvas.height);
-                        thumbnailUrl = tempCanvas.toDataURL('image/jpeg', 0.5);
-                    }
-
                     if (!isMeetingMode) {
                         api.put(`/whiteboard/files/${whiteboardId}/save`, { 
                             canvasData: stateStr,
                             pageCount: totalPages,
-                            thumbnailUrl: thumbnailUrl
+                            thumbnailUrl: JSON.stringify(allPageThumbnails)
                         }).catch(e => console.warn('Whiteboard auto-save deferred:', e?.message));
                     }
                 } else if (whiteboardId === 'admin-standalone') {
@@ -1684,7 +1789,7 @@ export default function Whiteboard({
         return () => {
             if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         };
-    }, [STORAGE_KEY, pages, currentPage, totalPages, pageBackgrounds, pageImageObjects, pageTextObjects, pageShapeObjects, pageMediaObjects, pagePdfObjects, page3DObjects, pageGraphObjects, whiteboardTasks, color, strokeWidth, eraserSize, strokeStyle, tool]);
+    }, [STORAGE_KEY, pages, currentPage, totalPages, pageBackgrounds, pageImageObjects, pageTextObjects, pageShapeObjects, pageMediaObjects, pagePdfObjects, page3DObjects, pageGraphObjects, whiteboardTasks, color, fillColor, strokeWidth, eraserSize, strokeStyle, tool]);
 
     // Initialize canvas - keep transparent to show CSS background patterns
     useEffect(() => {

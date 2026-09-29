@@ -89,10 +89,50 @@ router.get('/files', authenticate, authorize('admin', 'principal', 'instructor')
             pageCount: true,
             lastOpenedAt: true,
             createdAt: true,
-            updatedAt: true
+            updatedAt: true,
+            canvasData: true
         }
     });
-    res.json({ success: true, data: files });
+
+    const enrichedFiles = files.map(file => {
+        let sizeBytes = 0;
+        let pageThumbnails = [];
+
+        if (file.canvasData) {
+            sizeBytes = Buffer.byteLength(file.canvasData, 'utf8');
+            try {
+                const parsed = JSON.parse(file.canvasData);
+                if (Array.isArray(parsed.pageThumbnails) && parsed.pageThumbnails.length > 0) {
+                    pageThumbnails = parsed.pageThumbnails.filter(Boolean);
+                } else if (Array.isArray(parsed.pages) && parsed.pages.length > 0) {
+                    pageThumbnails = parsed.pages.filter(Boolean);
+                }
+            } catch (e) {}
+        }
+
+        if (pageThumbnails.length === 0 && file.thumbnailUrl) {
+            try {
+                if (file.thumbnailUrl.startsWith('[') || file.thumbnailUrl.startsWith('{')) {
+                    const parsed = JSON.parse(file.thumbnailUrl);
+                    if (Array.isArray(parsed)) pageThumbnails = parsed.filter(Boolean);
+                }
+            } catch (e) {}
+            if (pageThumbnails.length === 0 && file.thumbnailUrl) {
+                pageThumbnails = [file.thumbnailUrl];
+            }
+        }
+
+        const { canvasData, ...rest } = file;
+        return {
+            ...rest,
+            sizeBytes,
+            thumbnailUrl: pageThumbnails[0] || file.thumbnailUrl || null,
+            pageThumbnails,
+            pageCount: Math.max(file.pageCount || 1, pageThumbnails.length || 1)
+        };
+    });
+
+    res.json({ success: true, data: enrichedFiles });
 }));
 
 /**
@@ -167,7 +207,7 @@ router.put('/files/:id', authenticate, authorize('admin', 'principal', 'instruct
  * @access  Admin/Instructor
  */
 router.put('/files/:id/save', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
-    const { canvasData, thumbnailUrl, pageCount } = req.body;
+    let { canvasData, thumbnailUrl, pageCount, pageThumbnails } = req.body;
     
     const file = await prisma.whiteboardFile.findUnique({
         where: { id: req.params.id }
@@ -176,10 +216,20 @@ router.put('/files/:id/save', authenticate, authorize('admin', 'principal', 'ins
     if (!file || file.ownerId !== req.user.id) {
         return res.status(404).json({ success: false, message: 'Whiteboard not found' });
     }
+
+    if (Array.isArray(pageThumbnails) && pageThumbnails.length > 0) {
+        thumbnailUrl = JSON.stringify(pageThumbnails);
+    } else if (typeof thumbnailUrl === 'object' && thumbnailUrl !== null) {
+        thumbnailUrl = JSON.stringify(thumbnailUrl);
+    }
     
     const updated = await prisma.whiteboardFile.update({
         where: { id: file.id },
-        data: { canvasData, thumbnailUrl, pageCount }
+        data: { 
+            canvasData, 
+            thumbnailUrl: thumbnailUrl || null, 
+            pageCount: pageCount || 1 
+        }
     });
     
     res.json({ success: true, message: 'Saved successfully' });
