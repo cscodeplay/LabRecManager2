@@ -121,6 +121,33 @@ function RotationDial3D({ cx, cy, radius, rotation }) {
 
 
 /* ─── Built-in 3D Geometric & Science Mesh Generators ─── */
+function createSphereMesh(latBands = 10, lonBands = 14, radius = 1.0, color = '#10b981', customFaceColorFn = null) {
+    const v = [];
+    const f = [];
+    const faceColors = customFaceColorFn ? [] : null;
+
+    for (let lat = 0; lat <= latBands; lat++) {
+        const theta = (lat * Math.PI) / latBands;
+        const sinTheta = Math.sin(theta);
+        const cosTheta = Math.cos(theta);
+        for (let lon = 0; lon <= lonBands; lon++) {
+            const phi = (lon * 2 * Math.PI) / lonBands;
+            v.push([Math.cos(phi) * sinTheta * radius, -cosTheta * radius, Math.sin(phi) * sinTheta * radius]);
+        }
+    }
+    for (let lat = 0; lat < latBands; lat++) {
+        for (let lon = 0; lon < lonBands; lon++) {
+            const first = lat * (lonBands + 1) + lon;
+            const second = first + lonBands + 1;
+            f.push([first, second, second + 1, first + 1]);
+            if (customFaceColorFn) {
+                faceColors.push(customFaceColorFn(lat, lon, latBands, lonBands));
+            }
+        }
+    }
+    return { vertices: v, faces: f, color, faceColors };
+}
+
 export function get3DModelMesh(modelType = 'cube') {
     switch (modelType.toLowerCase()) {
         case 'cube': {
@@ -153,21 +180,22 @@ export function get3DModelMesh(modelType = 'cube') {
             return { vertices: v, faces: f, color: '#f59e0b' };
         }
         case 'prism': {
+            // Symmetrical, uniform triangular prism with congruent bases
             const v = [
-                [-1, 1, -0.8], [1, 1, -0.8], [0, -1, -0.8], // Front triangle
-                [-1, 1, 0.8], [1, 1, 0.8], [0, -1, 0.8]     // Back triangle
+                [-1, 1, -0.7], [1, 1, -0.7], [0, -0.732, -0.7], // Front equilateral-style triangle
+                [-1, 1, 0.7], [1, 1, 0.7], [0, -0.732, 0.7]     // Back congruent identical triangle
             ];
             const f = [
-                [0, 1, 2],
-                [5, 4, 3],
-                [0, 3, 4, 1],
-                [1, 4, 5, 2],
-                [2, 5, 3, 0]
+                [0, 1, 2],       // Front triangle
+                [5, 4, 3],       // Back triangle (same size)
+                [0, 3, 4, 1],    // Bottom rectangular base
+                [1, 4, 5, 2],    // Right rectangular face
+                [2, 5, 3, 0]     // Left rectangular face
             ];
             return { vertices: v, faces: f, color: '#8b5cf6' };
         }
         case 'cylinder': {
-            const segments = 36;
+            const segments = 16;
             const v = [];
             const f = [];
             for (let i = 0; i < segments; i++) {
@@ -194,7 +222,7 @@ export function get3DModelMesh(modelType = 'cube') {
             return { vertices: v, faces: f, color: '#06b6d4' };
         }
         case 'cone': {
-            const segments = 36;
+            const segments = 16;
             const v = [[0, -1.2, 0]]; // Apex (index 0)
             const f = [];
             for (let i = 0; i < segments; i++) {
@@ -214,27 +242,97 @@ export function get3DModelMesh(modelType = 'cube') {
             return { vertices: v, faces: f, color: '#ec4899' };
         }
         case 'sphere': {
-            const latBands = 26;
-            const lonBands = 36;
-            const v = [];
-            const f = [];
-            for (let lat = 0; lat <= latBands; lat++) {
-                const theta = (lat * Math.PI) / latBands;
-                const sinTheta = Math.sin(theta);
-                const cosTheta = Math.cos(theta);
-                for (let lon = 0; lon <= lonBands; lon++) {
-                    const phi = (lon * 2 * Math.PI) / lonBands;
-                    v.push([Math.cos(phi) * sinTheta, -cosTheta, Math.sin(phi) * sinTheta]);
-                }
+            return createSphereMesh(10, 14, 1.0, '#10b981');
+        }
+        case 'sun': {
+            const sphere = createSphereMesh(10, 14, 0.9, '#f59e0b', (lat, lon) => {
+                return (lat + lon) % 2 === 0 ? '#fbbf24' : '#f59e0b';
+            });
+            // 8 Corona Solar Flares radiating outward in 3D
+            const flareCount = 8;
+            for (let i = 0; i < flareCount; i++) {
+                const angle = (i / flareCount) * Math.PI * 2;
+                const nextAngle = ((i + 0.5) / flareCount) * Math.PI * 2;
+                const baseIdx1 = sphere.vertices.length;
+                const x1 = Math.cos(angle) * 0.92;
+                const z1 = Math.sin(angle) * 0.92;
+                const x2 = Math.cos(nextAngle) * 0.92;
+                const z2 = Math.sin(nextAngle) * 0.92;
+                const tipAngle = ((i + 0.25) / flareCount) * Math.PI * 2;
+                const tipX = Math.cos(tipAngle) * 1.35;
+                const tipZ = Math.sin(tipAngle) * 1.35;
+                const tipY = (i % 2 === 0 ? 0.15 : -0.15);
+                sphere.vertices.push([x1, 0, z1]);
+                sphere.vertices.push([tipX, tipY, tipZ]);
+                sphere.vertices.push([x2, 0, z2]);
+                sphere.faces.push([baseIdx1, baseIdx1 + 1, baseIdx1 + 2]);
+                if (sphere.faceColors) sphere.faceColors.push('#ea580c');
             }
-            for (let lat = 0; lat < latBands; lat++) {
-                for (let lon = 0; lon < lonBands; lon++) {
-                    const first = lat * (lonBands + 1) + lon;
-                    const second = first + lonBands + 1;
-                    f.push([first, second, second + 1, first + 1]);
-                }
+            return sphere;
+        }
+        case 'earth': {
+            return createSphereMesh(10, 14, 1.0, '#0284c7', (lat, lon, latBands) => {
+                if (lat === 0 || lat === latBands - 1) return '#f8fafc'; // Polar ice caps
+                const isLand = (lat >= 2 && lat <= 4 && (lon >= 2 && lon <= 5)) ||
+                               (lat >= 5 && lat <= 8 && (lon >= 3 && lon <= 6)) ||
+                               (lat >= 2 && lat <= 4 && (lon >= 8 && lon <= 12)) ||
+                               (lat >= 5 && lat <= 7 && (lon >= 9 && lon <= 12));
+                return isLand ? (lat % 2 === 0 ? '#16a34a' : '#22c55e') : '#0284c7';
+            });
+        }
+        case 'moon': {
+            return createSphereMesh(10, 14, 0.95, '#94a3b8', (lat, lon) => {
+                const isCrater = (lat * 3 + lon * 5) % 7 === 0;
+                return isCrater ? '#64748b' : '#94a3b8';
+            });
+        }
+        case 'mars': {
+            return createSphereMesh(10, 14, 0.95, '#ea580c', (lat, lon) => {
+                if (lat === 0) return '#ffffff'; // North polar ice cap
+                const isDark = (lat + lon * 2) % 5 === 0;
+                return isDark ? '#9a3412' : '#ea580c';
+            });
+        }
+        case 'jupiter': {
+            return createSphereMesh(10, 14, 1.1, '#d97706', (lat, lon) => {
+                // Great Red Spot
+                if (lat === 5 && (lon === 7 || lon === 8)) return '#dc2626';
+                if (lat <= 1 || lat >= 8) return '#78350f'; // Dark polar zones
+                if (lat === 2 || lat === 6) return '#fef3c7'; // Light zones
+                if (lat === 3 || lat === 7) return '#fed7aa'; // Warm belts
+                return '#d97706';
+            });
+        }
+        case 'saturn': {
+            const planet = createSphereMesh(10, 14, 0.85, '#eab308', (lat) => {
+                return lat % 2 === 0 ? '#ca8a04' : '#eab308';
+            });
+            // 3D Concentric Ring System
+            const ringSegs = 16;
+            const rInner = 1.25;
+            const rOuter = 1.95;
+            const ringStartIdx = planet.vertices.length;
+            const tilt = 0.35;
+            for (let i = 0; i <= ringSegs; i++) {
+                const a = (i / ringSegs) * Math.PI * 2;
+                const cosA = Math.cos(a), sinA = Math.sin(a);
+                planet.vertices.push([cosA * rInner, sinA * rInner * tilt, sinA * rInner]);
+                planet.vertices.push([cosA * rOuter, sinA * rOuter * tilt, sinA * rOuter]);
             }
-            return { vertices: v, faces: f, color: '#10b981' };
+            for (let i = 0; i < ringSegs; i++) {
+                const i1 = ringStartIdx + i * 2;
+                const o1 = i1 + 1;
+                const i2 = ringStartIdx + ((i + 1) % ringSegs) * 2;
+                const o2 = i2 + 1;
+                planet.faces.push([i1, o1, o2, i2]);
+                if (planet.faceColors) planet.faceColors.push(i % 2 === 0 ? '#fde047' : '#eab308');
+            }
+            return planet;
+        }
+        case 'neptune': {
+            return createSphereMesh(10, 14, 0.95, '#0284c7', (lat, lon) => {
+                return (lat === 4 || lat === 5) && lon % 3 === 0 ? '#bae6fd' : '#0284c7';
+            });
         }
         case 'dna_double_helix': {
             const steps = 14;
@@ -510,9 +608,9 @@ export function render3DObjectSVG(obj) {
         let y3 = x2 * sinZ + y2 * cosZ;
         let z3 = z2;
 
-        const distance = 4;
+        const distance = 10;
         const factor = distance / (distance + z3);
-        const scale = (Math.min(w, h) / 2) * 0.75;
+        const scale = (Math.min(w, h) / 2) * 0.8;
         const px = w / 2 + x3 * factor * scale;
         const py = h / 2 + y3 * factor * scale;
         return { px, py, pz: z3, x3, y3, z3 };
@@ -524,7 +622,13 @@ export function render3DObjectSVG(obj) {
     const isFlat = obj.materialStyle === 'flat';
     const userOpacity = obj.opacity !== undefined ? obj.opacity : 1;
 
-    const renderedFaces = mesh.faces.map((faceIndices) => {
+    const mType = (obj.modelType || 'cube').toLowerCase();
+    const isSpherical = ['sphere', 'sun', 'earth', 'moon', 'mars', 'jupiter', 'saturn', 'neptune'].includes(mType);
+    const isCone = mType === 'cone';
+    const isCylinder = mType === 'cylinder';
+    const isCurved = isSpherical || isCone || isCylinder;
+
+    const renderedFaces = mesh.faces.map((faceIndices, faceIdx) => {
         if (faceIndices.length < 3) return null;
         const v0 = transformedVertices[faceIndices[0]];
         const v1 = transformedVertices[faceIndices[1]];
@@ -548,7 +652,8 @@ export function render3DObjectSVG(obj) {
             .map(idx => `${transformedVertices[idx].px.toFixed(1)},${transformedVertices[idx].py.toFixed(1)}`)
             .join(' ');
 
-        let faceFill = shadeColor(baseColor, intensity, obj.materialStyle);
+        const specificColor = (mesh.faceColors && mesh.faceColors[faceIdx]) || baseColor;
+        let faceFill = shadeColor(specificColor, intensity, obj.materialStyle);
         let faceOpacity = userOpacity;
         if (isWireframe) {
             faceFill = 'transparent';
@@ -562,28 +667,78 @@ export function render3DObjectSVG(obj) {
 
     renderedFaces.sort((a, b) => b.avgZ - a.avgZ);
 
-    const isCurved = obj.modelType === 'sphere' || obj.modelType === 'cylinder' || obj.modelType === 'cone';
     const strokeDash = obj.edgeStyle === 'dashed' ? '4,3' : (obj.edgeStyle === 'dotted' ? '2,2' : undefined);
     const rot = obj.rotation ? `transform="rotate(${obj.rotation} ${w / 2} ${h / 2})"` : '';
+    const strokeColor = isWireframe ? (obj.edgeColor || baseColor) : (obj.edgeColor || '#ffffff');
+    const strokeW = obj.edgeWidth !== undefined ? obj.edgeWidth : (isWireframe ? 1.5 : 1);
+    const dashAttr = strokeDash ? `stroke-dasharray="${strokeDash}"` : '';
 
-    const polygons = renderedFaces.map(face => {
-        const strokeColor = isWireframe
-            ? (obj.edgeColor || baseColor)
-            : (isCurved ? face.faceFill : (obj.edgeColor || (obj.edgeWidth ? '#ffffff' : face.faceFill)));
-        const strokeW = isWireframe
-            ? (obj.edgeWidth !== undefined ? obj.edgeWidth : 1)
-            : (isCurved ? 0.5 : (obj.edgeWidth !== undefined ? obj.edgeWidth : 0.8));
-        const strokeOp = isWireframe
-            ? 1
-            : (isCurved ? face.faceOpacity : (obj.edgeWidth === 0 ? 0 : (obj.materialStyle === 'glass' ? 0.9 : 0.6)));
-        const dashAttr = strokeDash ? `stroke-dasharray="${strokeDash}"` : '';
+    let polygons = '';
+    if (!isWireframe || !isCurved) {
+        polygons = renderedFaces.map(face => {
+            const fStrokeColor = isWireframe
+                ? (obj.edgeColor || baseColor)
+                : (isCurved ? face.faceFill : (obj.edgeColor || (obj.edgeWidth ? '#ffffff' : face.faceFill)));
+            const fStrokeW = isWireframe
+                ? (obj.edgeWidth !== undefined ? obj.edgeWidth : 1)
+                : (isCurved ? 0.5 : (obj.edgeWidth !== undefined ? obj.edgeWidth : 0.8));
+            const fStrokeOp = isWireframe
+                ? 1
+                : (isCurved ? face.faceOpacity : (obj.edgeWidth === 0 ? 0 : (obj.materialStyle === 'glass' ? 0.9 : 0.6)));
 
-        return `<polygon points="${face.pointsStr}" fill="${face.faceFill}" fill-opacity="${face.faceOpacity}" stroke="${strokeColor}" stroke-width="${strokeW}" stroke-opacity="${strokeOp}" ${dashAttr} stroke-linecap="round" stroke-linejoin="round" />`;
-    }).join('\n        ');
+            return `<polygon points="${face.pointsStr}" fill="${face.faceFill}" fill-opacity="${face.faceOpacity}" stroke="${fStrokeColor}" stroke-width="${fStrokeW}" stroke-opacity="${fStrokeOp}" ${dashAttr} stroke-linecap="round" stroke-linejoin="round" />`;
+        }).join('\n        ');
+    }
+
+    // Clean aesthetic 3D contours for curved shapes
+    let contourElements = '';
+    const cx = w / 2;
+    const cy = h / 2;
+    const r = (Math.min(w, h) / 2) * 0.8;
+
+    if (isSpherical) {
+        if (isWireframe || (obj.edgeWidth !== undefined ? obj.edgeWidth > 0 : false)) {
+            const rxTilt = Math.max(4, r * Math.abs(Math.sin((rotX || -25) * Math.PI / 180)));
+            const ryTilt = Math.max(4, r * Math.abs(Math.sin((rotY || 45) * Math.PI / 180)));
+            contourElements = `
+            <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${strokeColor}" stroke-width="${strokeW}" ${dashAttr} />
+            <ellipse cx="${cx}" cy="${cy}" rx="${r}" ry="${rxTilt.toFixed(1)}" fill="none" stroke="${strokeColor}" stroke-width="${strokeW}" stroke-opacity="0.8" ${dashAttr} />
+            <ellipse cx="${cx}" cy="${cy}" rx="${ryTilt.toFixed(1)}" ry="${r}" fill="none" stroke="${strokeColor}" stroke-width="${strokeW}" stroke-opacity="0.8" ${dashAttr} />`;
+            if (mType === 'saturn') {
+                contourElements += `
+            <ellipse cx="${cx}" cy="${cy}" rx="${(r * 1.55).toFixed(1)}" ry="${(rxTilt * 1.55).toFixed(1)}" fill="none" stroke="#fde047" stroke-width="${strokeW}" stroke-opacity="0.9" />
+            <ellipse cx="${cx}" cy="${cy}" rx="${(r * 1.9).toFixed(1)}" ry="${(rxTilt * 1.9).toFixed(1)}" fill="none" stroke="#ca8a04" stroke-width="${strokeW}" stroke-opacity="0.9" />`;
+            }
+        }
+    } else if (isCone) {
+        if (isWireframe || (obj.edgeWidth !== undefined ? obj.edgeWidth > 0 : false)) {
+            const apex = transformedVertices[0];
+            const baseCenter = transformedVertices[transformedVertices.length - 1];
+            const baseRx = r * 0.9;
+            const baseRy = Math.max(6, baseRx * 0.35);
+            contourElements = `
+            <ellipse cx="${baseCenter?.px || cx}" cy="${baseCenter?.py || (cy + r * 0.6)}" rx="${baseRx.toFixed(1)}" ry="${baseRy.toFixed(1)}" fill="none" stroke="${strokeColor}" stroke-width="${strokeW}" ${dashAttr} />
+            <line x1="${apex?.px || cx}" y1="${apex?.py || (cy - r)}" x2="${(baseCenter?.px || cx) - baseRx}" y2="${baseCenter?.py || (cy + r * 0.6)}" stroke="${strokeColor}" stroke-width="${strokeW}" stroke-linecap="round" />
+            <line x1="${apex?.px || cx}" y1="${apex?.py || (cy - r)}" x2="${(baseCenter?.px || cx) + baseRx}" y2="${baseCenter?.py || (cy + r * 0.6)}" stroke="${strokeColor}" stroke-width="${strokeW}" stroke-linecap="round" />`;
+        }
+    } else if (isCylinder) {
+        if (isWireframe || (obj.edgeWidth !== undefined ? obj.edgeWidth > 0 : false)) {
+            const rx = r * 0.85;
+            const ry = Math.max(6, rx * 0.35);
+            const topY = cy - r * 0.65;
+            const botY = cy + r * 0.65;
+            contourElements = `
+            <ellipse cx="${cx}" cy="${topY}" rx="${rx.toFixed(1)}" ry="${ry.toFixed(1)}" fill="none" stroke="${strokeColor}" stroke-width="${strokeW}" ${dashAttr} />
+            <ellipse cx="${cx}" cy="${botY}" rx="${rx.toFixed(1)}" ry="${ry.toFixed(1)}" fill="none" stroke="${strokeColor}" stroke-width="${strokeW}" ${dashAttr} />
+            <line x1="${cx - rx}" y1="${topY}" x2="${cx - rx}" y2="${botY}" stroke="${strokeColor}" stroke-width="${strokeW}" stroke-linecap="round" />
+            <line x1="${cx + rx}" y1="${topY}" x2="${cx + rx}" y2="${botY}" stroke="${strokeColor}" stroke-width="${strokeW}" stroke-linecap="round" />`;
+        }
+    }
 
     return `<g transform="translate(${obj.x || 0}, ${obj.y || 0}) ${rot}">
     <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
         ${polygons}
+        ${contourElements}
     </svg>
 </g>`;
 }
@@ -695,9 +850,9 @@ export default function Whiteboard3DObject({
             let z3 = z2;
 
             // Perspective division
-            const distance = 4;
+            const distance = 10;
             const factor = distance / (distance + z3);
-            const scale = (Math.min(obj.width || 220, obj.height || 220) / 2) * 0.75;
+            const scale = (Math.min(obj.width || 220, obj.height || 220) / 2) * 0.8;
 
             const px = (obj.width || 220) / 2 + x3 * factor * scale;
             const py = (obj.height || 220) / 2 + y3 * factor * scale;
@@ -712,7 +867,7 @@ export default function Whiteboard3DObject({
         const isFlat = obj.materialStyle === 'flat';
         const userOpacity = obj.opacity !== undefined ? obj.opacity : 1;
 
-        const renderedFaces = mesh.faces.map((faceIndices) => {
+        const renderedFaces = mesh.faces.map((faceIndices, faceIdx) => {
             if (faceIndices.length < 3) return null;
             const v0 = transformedVertices[faceIndices[0]];
             const v1 = transformedVertices[faceIndices[1]];
@@ -738,7 +893,8 @@ export default function Whiteboard3DObject({
                 .map(idx => `${transformedVertices[idx].px.toFixed(1)},${transformedVertices[idx].py.toFixed(1)}`)
                 .join(' ');
 
-            let faceFill = shadeColor(baseColor, intensity, obj.materialStyle);
+            const specificColor = (mesh.faceColors && mesh.faceColors[faceIdx]) || baseColor;
+            let faceFill = shadeColor(specificColor, intensity, obj.materialStyle);
             let faceOpacity = userOpacity;
 
             if (isWireframe) {
@@ -760,7 +916,7 @@ export default function Whiteboard3DObject({
         // Painter's algorithm depth sorting (draw furthest first)
         renderedFaces.sort((a, b) => b.avgZ - a.avgZ);
 
-        return { renderedFaces, baseColor };
+        return { renderedFaces, baseColor, transformedVertices };
     }, [rotX, rotY, rotZ, mesh, obj.width, obj.height, obj.color, obj.materialStyle, obj.wireframeOnly, obj.opacity, obj.lightPreset]);
 
     // 3D Trackball Rotation Gestures
@@ -813,6 +969,7 @@ export default function Whiteboard3DObject({
         if (obj.isLocked) return;
         e.stopPropagation();
         if (e.cancelable) e.preventDefault();
+        onSelect && onSelect(obj.id, e);
 
         // Infinite Cloner drag-to-clone: only when switched ON!
         // When switched OFF, parent object is dragged normally and NOT copied.
@@ -825,11 +982,17 @@ export default function Whiteboard3DObject({
         const startY = e.clientY;
         const initialX = obj.x || 0;
         const initialY = obj.y || 0;
+        let lastDx = 0;
+        let lastDy = 0;
 
         const onMove = (moveEvt) => {
             const dx = moveEvt.clientX - startX;
             const dy = moveEvt.clientY - startY;
-            onUpdate && onUpdate({ x: initialX + dx, y: initialY + dy });
+            const stepDx = dx - lastDx;
+            const stepDy = dy - lastDy;
+            lastDx = dx;
+            lastDy = dy;
+            onUpdate && onUpdate({ x: initialX + dx, y: initialY + dy }, { stepDx, stepDy, totalDx: dx, totalDy: dy });
         };
 
         const onUp = () => {
@@ -944,11 +1107,24 @@ export default function Whiteboard3DObject({
         return undefined;
     }, [obj.edgeStyle, obj.edgeWidth]);
 
+    const mType = (obj.modelType || 'cube').toLowerCase();
+    const isSpherical = ['sphere', 'sun', 'earth', 'moon', 'mars', 'jupiter', 'saturn', 'neptune'].includes(mType);
+    const isCone = mType === 'cone';
+    const isCylinder = mType === 'cylinder';
+    const isCurved = isSpherical || isCone || isCylinder;
+    const isWireframe = obj.materialStyle === 'wireframe' || !!obj.wireframeOnly;
+
+    const compCx = (obj.width || 220) / 2;
+    const compCy = (obj.height || 220) / 2;
+    const compR = (Math.min(obj.width || 220, obj.height || 220) / 2) * 0.8;
+    const compStrokeColor = isWireframe ? (obj.edgeColor || projectedFaces.baseColor) : (obj.edgeColor || '#ffffff');
+    const compStrokeW = obj.edgeWidth !== undefined ? obj.edgeWidth : (isWireframe ? 1.5 : 1);
+
     return (
         <div
             onClick={(e) => {
                 e.stopPropagation();
-                onSelect && onSelect(obj.id);
+                onSelect && onSelect(obj.id, e);
             }}
             onPointerDown={handleMoveStart}
             style={{
@@ -971,9 +1147,7 @@ export default function Whiteboard3DObject({
                 viewBox={`0 0 ${obj.width || 220} ${obj.height || 220}`}
                 className="w-full h-full pointer-events-none drop-shadow-md overflow-visible"
             >
-                {projectedFaces.renderedFaces.map((face, fIdx) => {
-                    const isCurved = obj.modelType === 'sphere' || obj.modelType === 'cylinder' || obj.modelType === 'cone';
-                    const isWireframe = obj.materialStyle === 'wireframe' || !!obj.wireframeOnly;
+                {(!isWireframe || !isCurved) && projectedFaces.renderedFaces.map((face, fIdx) => {
                     const strokeColor = isWireframe
                         ? (obj.edgeColor || projectedFaces.baseColor)
                         : (isCurved
@@ -1003,17 +1177,141 @@ export default function Whiteboard3DObject({
                     );
                 })}
 
-                {/* Outer silhouette border for sphere when edge border is requested */}
-                {obj.modelType === 'sphere' && (obj.edgeWidth !== undefined ? obj.edgeWidth > 0 : false) && obj.materialStyle !== 'wireframe' && (
-                    <circle
-                        cx={(obj.width || 220) / 2}
-                        cy={(obj.height || 220) / 2}
-                        r={((Math.min(obj.width || 220, obj.height || 220) / 2) * 0.75)}
-                        fill="none"
-                        stroke={obj.edgeColor || projectedFaces.baseColor}
-                        strokeWidth={obj.edgeWidth}
-                        strokeDasharray={strokeDash}
-                    />
+                {/* Clean aesthetic 3D contours for curved shapes */}
+                {isSpherical && (isWireframe || (obj.edgeWidth !== undefined ? obj.edgeWidth > 0 : false)) && (
+                    <g>
+                        <circle
+                            cx={compCx}
+                            cy={compCy}
+                            r={compR}
+                            fill="none"
+                            stroke={compStrokeColor}
+                            strokeWidth={compStrokeW}
+                            strokeDasharray={strokeDash}
+                        />
+                        <ellipse
+                            cx={compCx}
+                            cy={compCy}
+                            rx={compR}
+                            ry={Math.max(4, compR * Math.abs(Math.sin((rotX || -25) * Math.PI / 180)))}
+                            fill="none"
+                            stroke={compStrokeColor}
+                            strokeWidth={compStrokeW}
+                            strokeOpacity={0.8}
+                            strokeDasharray={strokeDash}
+                        />
+                        <ellipse
+                            cx={compCx}
+                            cy={compCy}
+                            rx={Math.max(4, compR * Math.abs(Math.sin((rotY || 45) * Math.PI / 180)))}
+                            ry={compR}
+                            fill="none"
+                            stroke={compStrokeColor}
+                            strokeWidth={compStrokeW}
+                            strokeOpacity={0.8}
+                            strokeDasharray={strokeDash}
+                        />
+                        {mType === 'saturn' && (
+                            <>
+                                <ellipse
+                                    cx={compCx}
+                                    cy={compCy}
+                                    rx={compR * 1.55}
+                                    ry={Math.max(6, compR * 1.55 * Math.abs(Math.sin((rotX || -25) * Math.PI / 180)))}
+                                    fill="none"
+                                    stroke="#fde047"
+                                    strokeWidth={compStrokeW}
+                                    strokeOpacity={0.9}
+                                />
+                                <ellipse
+                                    cx={compCx}
+                                    cy={compCy}
+                                    rx={compR * 1.9}
+                                    ry={Math.max(8, compR * 1.9 * Math.abs(Math.sin((rotX || -25) * Math.PI / 180)))}
+                                    fill="none"
+                                    stroke="#ca8a04"
+                                    strokeWidth={compStrokeW}
+                                    strokeOpacity={0.9}
+                                />
+                            </>
+                        )}
+                    </g>
+                )}
+
+                {isCone && (isWireframe || (obj.edgeWidth !== undefined ? obj.edgeWidth > 0 : false)) && (
+                    <g>
+                        <ellipse
+                            cx={projectedFaces.transformedVertices?.[projectedFaces.transformedVertices.length - 1]?.px || compCx}
+                            cy={projectedFaces.transformedVertices?.[projectedFaces.transformedVertices.length - 1]?.py || (compCy + compR * 0.6)}
+                            rx={compR * 0.9}
+                            ry={Math.max(6, compR * 0.9 * 0.35)}
+                            fill="none"
+                            stroke={compStrokeColor}
+                            strokeWidth={compStrokeW}
+                            strokeDasharray={strokeDash}
+                        />
+                        <line
+                            x1={projectedFaces.transformedVertices?.[0]?.px || compCx}
+                            y1={projectedFaces.transformedVertices?.[0]?.py || (compCy - compR)}
+                            x2={(projectedFaces.transformedVertices?.[projectedFaces.transformedVertices.length - 1]?.px || compCx) - compR * 0.9}
+                            y2={projectedFaces.transformedVertices?.[projectedFaces.transformedVertices.length - 1]?.py || (compCy + compR * 0.6)}
+                            stroke={compStrokeColor}
+                            strokeWidth={compStrokeW}
+                            strokeLinecap="round"
+                        />
+                        <line
+                            x1={projectedFaces.transformedVertices?.[0]?.px || compCx}
+                            y1={projectedFaces.transformedVertices?.[0]?.py || (compCy - compR)}
+                            x2={(projectedFaces.transformedVertices?.[projectedFaces.transformedVertices.length - 1]?.px || compCx) + compR * 0.9}
+                            y2={projectedFaces.transformedVertices?.[projectedFaces.transformedVertices.length - 1]?.py || (compCy + compR * 0.6)}
+                            stroke={compStrokeColor}
+                            strokeWidth={compStrokeW}
+                            strokeLinecap="round"
+                        />
+                    </g>
+                )}
+
+                {isCylinder && (isWireframe || (obj.edgeWidth !== undefined ? obj.edgeWidth > 0 : false)) && (
+                    <g>
+                        <ellipse
+                            cx={compCx}
+                            cy={compCy - compR * 0.65}
+                            rx={compR * 0.85}
+                            ry={Math.max(6, compR * 0.85 * 0.35)}
+                            fill="none"
+                            stroke={compStrokeColor}
+                            strokeWidth={compStrokeW}
+                            strokeDasharray={strokeDash}
+                        />
+                        <ellipse
+                            cx={compCx}
+                            cy={compCy + compR * 0.65}
+                            rx={compR * 0.85}
+                            ry={Math.max(6, compR * 0.85 * 0.35)}
+                            fill="none"
+                            stroke={compStrokeColor}
+                            strokeWidth={compStrokeW}
+                            strokeDasharray={strokeDash}
+                        />
+                        <line
+                            x1={compCx - compR * 0.85}
+                            y1={compCy - compR * 0.65}
+                            x2={compCx - compR * 0.85}
+                            y2={compCy + compR * 0.65}
+                            stroke={compStrokeColor}
+                            strokeWidth={compStrokeW}
+                            strokeLinecap="round"
+                        />
+                        <line
+                            x1={compCx + compR * 0.85}
+                            y1={compCy - compR * 0.65}
+                            x2={compCx + compR * 0.85}
+                            y2={compCy + compR * 0.65}
+                            stroke={compStrokeColor}
+                            strokeWidth={compStrokeW}
+                            strokeLinecap="round"
+                        />
+                    </g>
                 )}
             </svg>
 

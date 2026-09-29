@@ -1286,10 +1286,146 @@ export const DOMAIN_SHAPES = {
         defaultHeight: 160,
         renderSVG: (w, h) => (
             <g stroke="#8b5cf6" strokeWidth={2} fill="none">
-                <polygon points={`${w*0.2},${h*0.65} ${w*0.45},${h*0.2} ${w*0.65},${h*0.65}`} fill="#8b5cf6" fillOpacity={0.2} />
-                <line x1={w*0.45} y1={h*0.2} x2={w*0.8} y2={h*0.3} />
-                <line x1={w*0.65} y1={h*0.65} x2={w*0.95} y2={h*0.72} />
-                <polygon points={`${w*0.45},${h*0.2} ${w*0.8},${h*0.3} ${w*0.95},${h*0.72} ${w*0.65},${h*0.65}`} fill="#8b5cf6" fillOpacity={0.15} />
+                {/* Back Congruent Triangle */}
+                <polygon points={`${w*0.35},${h*0.62} ${w*0.55},${h*0.22} ${w*0.75},${h*0.62}`} fill="#8b5cf6" fillOpacity={0.12} strokeDasharray="3 3" opacity={0.6} />
+                {/* Connecting Edges */}
+                <line x1={w*0.18} y1={h*0.75} x2={w*0.35} y2={h*0.62} stroke="#8b5cf6" strokeWidth={1.5} />
+                <line x1={w*0.38} y1={h*0.35} x2={w*0.55} y2={h*0.22} stroke="#8b5cf6" strokeWidth={1.5} />
+                <line x1={w*0.58} y1={h*0.75} x2={w*0.75} y2={h*0.62} stroke="#8b5cf6" strokeWidth={1.5} />
+                {/* Front Congruent Triangle (Identical Size) */}
+                <polygon points={`${w*0.18},${h*0.75} ${w*0.38},${h*0.35} ${w*0.58},${h*0.75}`} fill="#8b5cf6" fillOpacity={0.25} />
+                {/* Side Face Fill */}
+                <polygon points={`${w*0.38},${h*0.35} ${w*0.55},${h*0.22} ${w*0.75},${h*0.62} ${w*0.58},${h*0.75}`} fill="#8b5cf6" fillOpacity={0.15} />
+            </g>
+        )
+    },
+    sun_3d: {
+        id: 'sun_3d',
+        name: '3D Sun (Star & Flares)',
+        category: '3d',
+        is3D: true,
+        modelType: 'sun',
+        defaultWidth: 180,
+        defaultHeight: 180,
+        renderSVG: (w, h) => (
+            <g stroke="#f59e0b" strokeWidth={1.8} fill="none">
+                <circle cx={w/2} cy={h/2} r={w*0.28} fill="#f59e0b" fillOpacity={0.3} />
+                <ellipse cx={w/2} cy={h/2} rx={w*0.28} ry={h*0.1} />
+                <ellipse cx={w/2} cy={h/2} rx={w*0.1} ry={h*0.28} strokeDasharray="3 3" opacity={0.6} />
+                <line x1={w/2} y1={h*0.1} x2={w/2} y2={h*0.18} stroke="#ea580c" strokeWidth={2.5} strokeLinecap="round" />
+                <line x1={w/2} y1={h*0.82} x2={w/2} y2={h*0.9} stroke="#ea580c" strokeWidth={2.5} strokeLinecap="round" />
+                <line x1={w*0.1} y1={h/2} x2={w*0.18} y2={h/2} stroke="#ea580c" strokeWidth={2.5} strokeLinecap="round" />
+                <line x1={w*0.82} y1={h/2} x2={w*0.9} y2={h/2} stroke="#ea580c" strokeWidth={2.5} strokeLinecap="round" />
+                <line x1={w*0.22} y1={h*0.22} x2={w*0.28} y2={h*0.28} stroke="#f59e0b" strokeWidth={2} strokeLinecap="round" />
+                <line x1={w*0.72} y1={h*0.72} x2={w*0.78} y2={h*0.78} stroke="#f59e0b" strokeWidth={2} strokeLinecap="round" />
+                <line x1={w*0.78} y1={h*0.22} x2={w*0.72} y2={h*0.28} stroke="#f59e0b" strokeWidth={2} strokeLinecap="round" />
+                <line x1={w*0.28} y1={h*0.72} x2={w*0.22} y2={h*0.78} stroke="#f59e0b" strokeWidth={2} strokeLinecap="round" />
+            </g>
+        )
+    },
+    earth_3d: {
+        id: 'earth_3d',
+        name: '3D Planet Earth',
+        category: '3d',
+        is3D: true,
+        modelType: 'earth',
+        defaultWidth: 160,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g stroke="#0284c7" strokeWidth={2} fill="none">
+                <circle cx={w/2} cy={h/2} r={w*0.35} fill="#0284c7" fillOpacity={0.2} />
+                <ellipse cx={w/2} cy={h/2} rx={w*0.35} ry={h*0.14} stroke="#38bdf8" />
+                <ellipse cx={w/2} cy={h/2} rx={w*0.14} ry={h*0.35} strokeDasharray="3 3" opacity={0.6} />
+                <path d={`M ${w*0.38} ${h*0.35} Q ${w*0.48} ${h*0.38} ${w*0.52} ${h*0.5} Q ${w*0.42} ${h*0.55} ${w*0.38} ${h*0.45} Z`} fill="#16a34a" fillOpacity={0.6} stroke="none" />
+                <path d={`M ${w*0.58} ${h*0.4} Q ${w*0.7} ${h*0.45} ${w*0.65} ${h*0.65} Q ${w*0.55} ${h*0.6} ${w*0.58} ${h*0.4} Z`} fill="#22c55e" fillOpacity={0.6} stroke="none" />
+            </g>
+        )
+    },
+    moon_3d: {
+        id: 'moon_3d',
+        name: '3D The Moon',
+        category: '3d',
+        is3D: true,
+        modelType: 'moon',
+        defaultWidth: 160,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g stroke="#94a3b8" strokeWidth={1.8} fill="none">
+                <circle cx={w/2} cy={h/2} r={w*0.35} fill="#94a3b8" fillOpacity={0.2} />
+                <circle cx={w*0.42} cy={h*0.38} r={w*0.07} fill="#64748b" fillOpacity={0.4} stroke="#64748b" strokeWidth={1} />
+                <circle cx={w*0.6} cy={h*0.48} r={w*0.09} fill="#64748b" fillOpacity={0.4} stroke="#64748b" strokeWidth={1} />
+                <circle cx={w*0.45} cy={h*0.65} r={w*0.05} fill="#64748b" fillOpacity={0.4} stroke="#64748b" strokeWidth={1} />
+                <ellipse cx={w/2} cy={h/2} rx={w*0.35} ry={h*0.12} strokeDasharray="3 3" opacity={0.5} />
+            </g>
+        )
+    },
+    mars_3d: {
+        id: 'mars_3d',
+        name: '3D Planet Mars',
+        category: '3d',
+        is3D: true,
+        modelType: 'mars',
+        defaultWidth: 160,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g stroke="#ea580c" strokeWidth={2} fill="none">
+                <circle cx={w/2} cy={h/2} r={w*0.35} fill="#ea580c" fillOpacity={0.25} />
+                <ellipse cx={w/2} cy={h*0.18} rx={w*0.12} ry={h*0.04} fill="#ffffff" fillOpacity={0.8} stroke="#ffffff" strokeWidth={1} />
+                <ellipse cx={w/2} cy={h/2} rx={w*0.35} ry={h*0.12} stroke="#c2410c" />
+                <path d={`M ${w*0.32} ${h*0.48} Q ${w*0.5} ${h*0.55} ${w*0.68} ${h*0.45}`} stroke="#9a3412" strokeWidth={2} />
+            </g>
+        )
+    },
+    jupiter_3d: {
+        id: 'jupiter_3d',
+        name: '3D Planet Jupiter',
+        category: '3d',
+        is3D: true,
+        modelType: 'jupiter',
+        defaultWidth: 170,
+        defaultHeight: 170,
+        renderSVG: (w, h) => (
+            <g stroke="#d97706" strokeWidth={2} fill="none">
+                <circle cx={w/2} cy={h/2} r={w*0.36} fill="#d97706" fillOpacity={0.2} />
+                <path d={`M ${w*0.18} ${h*0.38} Q ${w/2} ${h*0.42} ${w*0.82} ${h*0.38}`} stroke="#b45309" strokeWidth={2.5} />
+                <path d={`M ${w*0.15} ${h*0.5} Q ${w/2} ${h*0.54} ${w*0.85} ${h*0.5}`} stroke="#fde68a" strokeWidth={3} />
+                <path d={`M ${w*0.18} ${h*0.62} Q ${w/2} ${h*0.66} ${w*0.82} ${h*0.62}`} stroke="#b45309" strokeWidth={2.5} />
+                <ellipse cx={w*0.64} cy={h*0.58} rx={w*0.07} ry={h*0.045} fill="#dc2626" fillOpacity={0.8} stroke="#991b1b" strokeWidth={1} />
+            </g>
+        )
+    },
+    saturn_3d: {
+        id: 'saturn_3d',
+        name: '3D Planet Saturn (with Rings)',
+        category: '3d',
+        is3D: true,
+        modelType: 'saturn',
+        defaultWidth: 180,
+        defaultHeight: 180,
+        renderSVG: (w, h) => (
+            <g fill="none">
+                <ellipse cx={w/2} cy={h/2} rx={w*0.46} ry={h*0.18} stroke="#ca8a04" strokeWidth={2} strokeDasharray="3 3" opacity={0.6} />
+                <circle cx={w/2} cy={h/2} r={w*0.26} fill="#eab308" fillOpacity={0.3} stroke="#eab308" strokeWidth={2} />
+                <ellipse cx={w/2} cy={h/2} rx={w*0.26} ry={h*0.08} stroke="#ca8a04" strokeWidth={1.5} />
+                <path d={`M ${w*0.04} ${h/2} A ${w*0.46} ${h*0.18} 0 0 0 ${w*0.96} ${h/2}`} stroke="#fde047" strokeWidth={3} />
+                <path d={`M ${w*0.12} ${h/2} A ${w*0.38} ${h*0.14} 0 0 0 ${w*0.88} ${h/2}`} stroke="#ca8a04" strokeWidth={2} />
+            </g>
+        )
+    },
+    neptune_3d: {
+        id: 'neptune_3d',
+        name: '3D Planet Neptune',
+        category: '3d',
+        is3D: true,
+        modelType: 'neptune',
+        defaultWidth: 160,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g stroke="#0284c7" strokeWidth={2} fill="none">
+                <circle cx={w/2} cy={h/2} r={w*0.35} fill="#0284c7" fillOpacity={0.25} />
+                <ellipse cx={w/2} cy={h/2} rx={w*0.35} ry={h*0.12} stroke="#38bdf8" />
+                <ellipse cx={w/2} cy={h/2} rx={w*0.12} ry={h*0.35} strokeDasharray="3 3" opacity={0.6} />
+                <path d={`M ${w*0.25} ${h*0.42} Q ${w*0.4} ${h*0.45} ${w*0.65} ${h*0.41}`} stroke="#e0f2fe" strokeWidth={2} strokeLinecap="round" />
             </g>
         )
     },

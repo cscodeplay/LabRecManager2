@@ -1288,7 +1288,18 @@ export default function Whiteboard({
     // ─── 3D Objects State ───
     const [page3DObjects, setPage3DObjects] = useState({ 0: [] });
     const threeDObjects = page3DObjects[currentPage] || [];
-    const [selected3DId, setSelected3DId] = useState(null);
+    const [selected3DIds, setSelected3DIds] = useState([]);
+    const selected3DId = selected3DIds[0] || null;
+    const setSelected3DId = useCallback((idOrUpdater) => {
+        if (typeof idOrUpdater === 'function') {
+            setSelected3DIds(prev => {
+                const res = idOrUpdater(prev[0] || null);
+                return res ? [res] : [];
+            });
+        } else {
+            setSelected3DIds(idOrUpdater ? [idOrUpdater] : []);
+        }
+    }, []);
 
     // ─── Graph Plotter / Equation Graphing Objects State ───
     const [pageGraphObjects, setPageGraphObjects] = useState({ 0: [] });
@@ -1314,17 +1325,17 @@ export default function Whiteboard({
 
     // Outside pointer click/tap listener to deselect 3D object and graph object when clicking outside
     useEffect(() => {
-        if (!selected3DId && !selectedGraphId) return;
+        if (selected3DIds.length === 0 && !selectedGraphId) return;
         const handleOutsidePointer = (e) => {
             if (e.target?.closest?.('.whiteboard-3d-object')) return;
             if (e.target?.closest?.('[data-graph-id]')) return;
-            if (e.target?.closest?.('[data-color-picker]')) return;
-            if (selected3DId) setSelected3DId(null);
-            if (selectedGraphId) setSelectedGraphId(null);
+            if (e.target?.closest?.('.radial-toolbar') || e.target?.closest?.('.fixed') || e.target?.closest?.('button')) return;
+            setSelected3DIds([]);
+            setSelectedGraphId(null);
         };
         window.addEventListener('pointerdown', handleOutsidePointer);
         return () => window.removeEventListener('pointerdown', handleOutsidePointer);
-    }, [selected3DId, selectedGraphId]);
+    }, [selected3DIds.length, selectedGraphId]);
 
     // ─── Whiteboard Tasks Checklist State ───
     const [whiteboardTasks, setWhiteboardTasks] = useState([]);
@@ -2136,6 +2147,7 @@ export default function Whiteboard({
         const currentTexts = pageTextObjects[currentPage] ? [...pageTextObjects[currentPage]] : [];
         const currentShapes = pageShapeObjects[currentPage] ? [...pageShapeObjects[currentPage]] : [];
         const currentGraphs = pageGraphObjects[currentPage] ? [...pageGraphObjects[currentPage]] : [];
+        const current3D = page3DObjects[currentPage] ? [...page3DObjects[currentPage]] : [];
 
         setPageHistories(prev => {
             const currentHistory = prev[currentPage] || [];
@@ -2146,11 +2158,12 @@ export default function Whiteboard({
                 imageObjects: currentImages,
                 textObjects: currentTexts,
                 shapeObjects: currentShapes,
-                graphObjects: currentGraphs
+                graphObjects: currentGraphs,
+                threeDObjects: current3D
             });
             return {
                 ...prev,
-                [currentPage]: newHistory.slice(-50) // Keep last 50 states
+                [currentPage]: newHistory.slice(-25) // Keep last 25 states to prevent memory bloat/snap
             };
         });
         
@@ -2158,10 +2171,10 @@ export default function Whiteboard({
             const currentIndex = prev[currentPage] !== undefined ? prev[currentPage] : -1;
             return {
                 ...prev,
-                [currentPage]: Math.min(currentIndex + 1, 49)
+                [currentPage]: Math.min(currentIndex + 1, 24)
             };
         });
-    }, [pageHistoryIndices, pageImageObjects, pageTextObjects, pageShapeObjects, pageGraphObjects, currentPage]);
+    }, [pageHistoryIndices, pageImageObjects, pageTextObjects, pageShapeObjects, pageGraphObjects, page3DObjects, currentPage]);
 
     // Restore state from history
     const restoreFromHistory = useCallback((index) => {
@@ -2188,11 +2201,14 @@ export default function Whiteboard({
         img.src = imgData;
 
         if (typeof stateSnapshot === 'object') {
-            setPageImageObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.imageObjects }));
-            setPageTextObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.textObjects }));
-            setPageShapeObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.shapeObjects }));
+            setPageImageObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.imageObjects || [] }));
+            setPageTextObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.textObjects || [] }));
+            setPageShapeObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.shapeObjects || [] }));
             if (stateSnapshot.graphObjects) {
-                setPageGraphObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.graphObjects }));
+                setPageGraphObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.graphObjects || [] }));
+            }
+            if (stateSnapshot.threeDObjects) {
+                setPage3DObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.threeDObjects || [] }));
             }
             
             if (socket && sessionId) {
@@ -3002,12 +3018,12 @@ export default function Whiteboard({
             setSelectedMediaId(null);
             hasDeleted = true;
         }
-        if (selected3DId) {
+        if (selected3DIds.length > 0) {
             setPage3DObjects(prev => ({
                 ...prev,
-                [currentPage]: (prev[currentPage] || []).filter(o => o.id !== selected3DId)
+                [currentPage]: (prev[currentPage] || []).filter(o => !selected3DIds.includes(o.id))
             }));
-            setSelected3DId(null);
+            setSelected3DIds([]);
             hasDeleted = true;
         }
         if (selectedGraphId) {
@@ -3033,7 +3049,7 @@ export default function Whiteboard({
         if (hasDeleted) {
             saveToHistory();
         }
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, selectedGraphId, selectedPdfId, selection, handleDeleteSelection, saveToHistory, currentPage]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DIds, selectedGraphId, selectedPdfId, selection, handleDeleteSelection, saveToHistory, currentPage]);
 
     // Unified Copy
     const handleCopy = useCallback(() => {
@@ -3049,7 +3065,7 @@ export default function Whiteboard({
         const selectedTexts = textObjects.filter(t => selectedTextIds.includes(t.id));
         const selectedImages = imageObjects.filter(img => selectedImageIds.includes(img.id));
         const selectedMedia = mediaObjects.filter(m => m.id === selectedMediaId);
-        const selected3D = threeDObjects.filter(o => o.id === selected3DId);
+        const selected3D = threeDObjects.filter(o => selected3DIds.includes(o.id));
         const selectedGraphs = graphObjects.filter(g => g.id === selectedGraphId);
 
         const totalKinds = (allSelectedShapes.length > 0 ? 1 : 0) + 
@@ -3117,7 +3133,7 @@ export default function Whiteboard({
             toast.success('Copied graph object');
             return;
         }
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, selectedGraphId, imageObjects, textObjects, shapeObjects, mediaObjects, threeDObjects, graphObjects, selection, handleCopySelection]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DIds, selectedGraphId, imageObjects, textObjects, shapeObjects, mediaObjects, threeDObjects, graphObjects, selection, handleCopySelection]);
 
     // Unified Cut
     const handleCut = useCallback(() => {
@@ -3140,7 +3156,7 @@ export default function Whiteboard({
         const shapeTargets = targetId ? (shapeObjects.some(s => s.id === targetId) ? [targetId] : []) : selectedShapeIds;
         const textTargets = targetId ? (textObjects.some(t => t.id === targetId) ? [targetId] : []) : selectedTextIds;
         const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
-        const threeDTarget = targetId ? (threeDObjects.some(o => o.id === targetId) ? targetId : null) : selected3DId;
+        const threeDTargets = targetId ? (threeDObjects.some(o => o.id === targetId) ? [targetId] : []) : selected3DIds;
         const graphTarget = targetId ? (graphObjects.some(g => g.id === targetId) ? targetId : null) : selectedGraphId;
 
         const allObjects = [
@@ -3162,20 +3178,20 @@ export default function Whiteboard({
         if (imgTarget) {
             setImageObjects(prev => prev.map(i => i.id === imgTarget ? { ...i, zIndex: newZ } : i));
         }
-        if (threeDTarget) {
-            setThreeDObjects(prev => prev.map(o => o.id === threeDTarget ? { ...o, zIndex: newZ } : o));
+        if (threeDTargets.length > 0) {
+            setThreeDObjects(prev => prev.map(o => threeDTargets.includes(o.id) ? { ...o, zIndex: newZ } : o));
         }
         if (graphTarget) {
             setGraphObjects(prev => prev.map(g => g.id === graphTarget ? { ...g, zIndex: newZ } : g));
         }
         saveToHistory();
-    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, selectedGraphId, saveToHistory]);
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DIds, selectedGraphId, saveToHistory]);
 
     const handleBringForward = useCallback((targetId = null) => {
         const shapeTargets = targetId ? (shapeObjects.some(s => s.id === targetId) ? [targetId] : []) : selectedShapeIds;
         const textTargets = targetId ? (textObjects.some(t => t.id === targetId) ? [targetId] : []) : selectedTextIds;
         const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
-        const threeDTarget = targetId ? (threeDObjects.some(o => o.id === targetId) ? targetId : null) : selected3DId;
+        const threeDTargets = targetId ? (threeDObjects.some(o => o.id === targetId) ? [targetId] : []) : selected3DIds;
         const graphTarget = targetId ? (graphObjects.some(g => g.id === targetId) ? targetId : null) : selectedGraphId;
 
         if (shapeTargets.length > 0) {
@@ -3187,20 +3203,20 @@ export default function Whiteboard({
         if (imgTarget) {
             setImageObjects(prev => prev.map(i => i.id === imgTarget ? { ...i, zIndex: (i.zIndex || 10) + 1 } : i));
         }
-        if (threeDTarget) {
-            setThreeDObjects(prev => prev.map(o => o.id === threeDTarget ? { ...o, zIndex: (o.zIndex || 15) + 1 } : o));
+        if (threeDTargets.length > 0) {
+            setThreeDObjects(prev => prev.map(o => threeDTargets.includes(o.id) ? { ...o, zIndex: (o.zIndex || 15) + 1 } : o));
         }
         if (graphTarget) {
             setGraphObjects(prev => prev.map(g => g.id === graphTarget ? { ...g, zIndex: (g.zIndex || 25) + 1 } : g));
         }
         saveToHistory();
-    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, selectedGraphId, saveToHistory]);
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DIds, selectedGraphId, saveToHistory]);
 
     const handleSendBackward = useCallback((targetId = null) => {
         const shapeTargets = targetId ? (shapeObjects.some(s => s.id === targetId) ? [targetId] : []) : selectedShapeIds;
         const textTargets = targetId ? (textObjects.some(t => t.id === targetId) ? [targetId] : []) : selectedTextIds;
         const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
-        const threeDTarget = targetId ? (threeDObjects.some(o => o.id === targetId) ? targetId : null) : selected3DId;
+        const threeDTargets = targetId ? (threeDObjects.some(o => o.id === targetId) ? [targetId] : []) : selected3DIds;
         const graphTarget = targetId ? (graphObjects.some(g => g.id === targetId) ? targetId : null) : selectedGraphId;
 
         if (shapeTargets.length > 0) {
@@ -3212,20 +3228,20 @@ export default function Whiteboard({
         if (imgTarget) {
             setImageObjects(prev => prev.map(i => i.id === imgTarget ? { ...i, zIndex: Math.max(1, (i.zIndex || 10) - 1) } : i));
         }
-        if (threeDTarget) {
-            setThreeDObjects(prev => prev.map(o => o.id === threeDTarget ? { ...o, zIndex: Math.max(1, (o.zIndex || 15) - 1) } : o));
+        if (threeDTargets.length > 0) {
+            setThreeDObjects(prev => prev.map(o => threeDTargets.includes(o.id) ? { ...o, zIndex: Math.max(1, (o.zIndex || 15) - 1) } : o));
         }
         if (graphTarget) {
             setGraphObjects(prev => prev.map(g => g.id === graphTarget ? { ...g, zIndex: Math.max(1, (g.zIndex || 25) - 1) } : g));
         }
         saveToHistory();
-    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, selectedGraphId, saveToHistory]);
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DIds, selectedGraphId, saveToHistory]);
 
     const handleSendToBack = useCallback((targetId = null) => {
         const shapeTargets = targetId ? (shapeObjects.some(s => s.id === targetId) ? [targetId] : []) : selectedShapeIds;
         const textTargets = targetId ? (textObjects.some(t => t.id === targetId) ? [targetId] : []) : selectedTextIds;
         const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
-        const threeDTarget = targetId ? (threeDObjects.some(o => o.id === targetId) ? targetId : null) : selected3DId;
+        const threeDTargets = targetId ? (threeDObjects.some(o => o.id === targetId) ? [targetId] : []) : selected3DIds;
         const graphTarget = targetId ? (graphObjects.some(g => g.id === targetId) ? targetId : null) : selectedGraphId;
 
         const allObjects = [
@@ -3247,14 +3263,14 @@ export default function Whiteboard({
         if (imgTarget) {
             setImageObjects(prev => prev.map(i => i.id === imgTarget ? { ...i, zIndex: newZ } : i));
         }
-        if (threeDTarget) {
-            setThreeDObjects(prev => prev.map(o => o.id === threeDTarget ? { ...o, zIndex: newZ } : o));
+        if (threeDTargets.length > 0) {
+            setThreeDObjects(prev => prev.map(o => threeDTargets.includes(o.id) ? { ...o, zIndex: newZ } : o));
         }
         if (graphTarget) {
             setGraphObjects(prev => prev.map(g => g.id === graphTarget ? { ...g, zIndex: newZ } : g));
         }
         saveToHistory();
-    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DId, selectedGraphId, saveToHistory]);
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DIds, selectedGraphId, saveToHistory]);
 
     // Alignment tools
     const handleAlign = useCallback((alignment) => {
@@ -3365,14 +3381,18 @@ export default function Whiteboard({
         if (selectedImageId) {
             setImageObjects(prev => prev.map(i => i.id === selectedImageId ? { ...i, isLocked: !i.isLocked } : i));
         }
-        if (selected3DId) {
-            setThreeDObjects(prev => prev.map(o => o.id === selected3DId ? { ...o, isLocked: !o.isLocked } : o));
+        if (selected3DIds.length > 0) {
+            setThreeDObjects(prev => {
+                const anyUnlocked = prev.some(o => selected3DIds.includes(o.id) && !o.isLocked);
+                const shouldLock = anyUnlocked;
+                return prev.map(o => selected3DIds.includes(o.id) ? { ...o, isLocked: shouldLock } : o);
+            });
         }
         if (selectedGraphId) {
             setGraphObjects(prev => prev.map(g => g.id === selectedGraphId ? { ...g, isLocked: !g.isLocked } : g));
         }
         saveToHistory();
-    }, [selectedShapeIds, selectedImageId, selected3DId, selectedGraphId, saveToHistory]);
+    }, [selectedShapeIds, selectedImageId, selected3DIds, selectedGraphId, saveToHistory]);
 
     // Floatable Main Toolbar Drag Start (Zero-lag, 120fps direct DOM manipulation)
     const handleToolbarDragStart = (e) => {
@@ -3618,9 +3638,11 @@ export default function Whiteboard({
         } else if (toolId === 'shapes') {
             if (options.shapeType === 'sticky_note') {
                 const wrapper = canvasWrapperRef.current;
-                const cx = wrapper ? wrapper.clientWidth / 2 - 100 : 200;
-                const cy = wrapper ? wrapper.clientHeight / 2 - 100 : 200;
-                const newNote = createStickyNoteObject(cx, cy, 'yellow');
+                const baseCx = wrapper ? wrapper.clientWidth / 2 - 100 : 200;
+                const baseCy = wrapper ? wrapper.clientHeight / 2 - 100 : 200;
+                const existingCount = (pageShapeObjects[currentPage] || []).length;
+                const offset = (existingCount % 7) * 32;
+                const newNote = createStickyNoteObject(baseCx + offset, baseCy + offset, 'yellow');
                 setPageShapeObjects(prev => ({
                     ...prev,
                     [currentPage]: [...(prev[currentPage] || []), newNote]
@@ -3664,8 +3686,12 @@ export default function Whiteboard({
             if (options.action === 'select_all') {
                 const allShapes = (pageShapeObjects[currentPage] || []).map(s => s.id);
                 const allTexts = (pageTextObjects[currentPage] || []).map(t => t.id);
+                const allImages = (pageImageObjects[currentPage] || []).map(i => i.id);
+                const all3D = (page3DObjects[currentPage] || []).map(o => o.id);
                 setSelectedShapeIds(allShapes);
                 setSelectedTextIds(allTexts);
+                setSelectedImageIds(allImages);
+                setSelected3DIds(all3D);
                 toast.success('Selected all objects', { icon: '☑️' });
             } else if (options.selectMode) {
                 setSelectMode(options.selectMode);
@@ -3892,13 +3918,14 @@ export default function Whiteboard({
 
             if (isInput) return; // let default inputs work
 
-            // Arrow keys to nudge selected images, shapes, and texts
+            // Arrow keys to nudge selected images, shapes, texts, and 3D objects
             if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
                 const hasSelectedImages = selectedImageIds.length > 0;
                 const hasSelectedShapes = selectedShapeIds.length > 0;
                 const hasSelectedTexts = selectedTextIds.length > 0;
+                const hasSelected3D = selected3DIds.length > 0;
 
-                if (hasSelectedImages || hasSelectedShapes || hasSelectedTexts) {
+                if (hasSelectedImages || hasSelectedShapes || hasSelectedTexts || hasSelected3D) {
                     e.preventDefault();
                     const step = e.shiftKey ? 10 : 1;
                     let dx = 0;
@@ -3940,9 +3967,31 @@ export default function Whiteboard({
                                 : txt
                         ));
                     }
+                    if (hasSelected3D) {
+                        setThreeDObjects(prev => prev.map(obj =>
+                            selected3DIds.includes(obj.id) && !obj.isLocked
+                                ? { ...obj, x: (obj.x || 0) + dx, y: (obj.y || 0) + dy }
+                                : obj
+                        ));
+                    }
                     saveToHistory();
                     return;
                 }
+            }
+
+            // Select All (Cmd+A or Ctrl+A)
+            if (modKey && e.key.toLowerCase() === 'a') {
+                e.preventDefault();
+                const allShapes = (pageShapeObjects[currentPage] || []).map(s => s.id);
+                const allTexts = (pageTextObjects[currentPage] || []).map(t => t.id);
+                const allImages = (pageImageObjects[currentPage] || []).map(i => i.id);
+                const all3D = (page3DObjects[currentPage] || []).map(o => o.id);
+                setSelectedShapeIds(allShapes);
+                setSelectedTextIds(allTexts);
+                setSelectedImageIds(allImages);
+                setSelected3DIds(all3D);
+                toast.success('Selected all objects', { icon: '☑️' });
+                return;
             }
 
             // Shortcuts modal trigger (? or Cmd+/)
@@ -4071,7 +4120,7 @@ export default function Whiteboard({
                 setSelectedTextIds([]);
                 setSelectedShapeIds([]);
                 setSelectedMediaId(null);
-                setSelected3DId(null);
+                setSelected3DIds([]);
                 setSelectedGraphId(null);
                 setSelectedPdfId(null);
             } else if (e.key === '`' || e.key === '~') {
@@ -4087,7 +4136,7 @@ export default function Whiteboard({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DId, selectedGraphId, selectedPdfId, selection, showRadialMenu, showTemplateGallery, showShortcutsModal, showTasksPanel, showMediaModal, showDomainLibrary, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack, handleUndo, handleRedo, handleGroup, handleUngroup, handleToggleLock, onToggleFullscreen, saveToHistory, clipboardHistory, canvasWidth, canvasHeight]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DIds, selectedGraphId, selectedPdfId, selection, showRadialMenu, showTemplateGallery, showShortcutsModal, showTasksPanel, showMediaModal, showDomainLibrary, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack, handleUndo, handleRedo, handleGroup, handleUngroup, handleToggleLock, onToggleFullscreen, saveToHistory, clipboardHistory, canvasWidth, canvasHeight, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, currentPage]);
 
     // Global clipboard paste listener for pasting images from websites (HTML <img>, URLs, bitmaps) and 3D files
     useEffect(() => {
@@ -6060,7 +6109,7 @@ export default function Whiteboard({
             setSelectedTextIds([]);
             setSelectedImageId(null);
             setSelectedImageIds([]);
-            setSelected3DId(null);
+            setSelected3DIds([]);
             setSelectedMediaId(null);
             setEditingTextId(null);
             setEditingShapeTextId(null);
@@ -6068,7 +6117,7 @@ export default function Whiteboard({
                 setLassoPath([{ x: pos.x, y: pos.y }]);
             }
         } else {
-            setSelected3DId(null);
+            setSelected3DIds([]);
             setSelectedMediaId(null);
         }
 
@@ -7336,6 +7385,10 @@ export default function Whiteboard({
                             !img.isLocked && isObjInLasso(img)
                         ).map(s => s.id);
 
+                        let selected3D = threeDObjects.filter(obj => 
+                            !obj.isLocked && isObjInLasso(obj)
+                        ).map(o => o.id);
+
                         const groupIdsToSelect = new Set([
                             ...shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId),
                             ...textObjects.filter(s => selectedTexts.includes(s.id) && s.groupId).map(s => s.groupId),
@@ -7351,10 +7404,11 @@ export default function Whiteboard({
                             selectedImages = Array.from(new Set([...selectedImages, ...groupImageIds]));
                         }
 
-                        if (selectedShapes.length > 0 || selectedTexts.length > 0 || selectedImages.length > 0) {
+                        if (selectedShapes.length > 0 || selectedTexts.length > 0 || selectedImages.length > 0 || selected3D.length > 0) {
                             setSelectedShapeIds(selectedShapes);
                             setSelectedTextIds(selectedTexts);
                             setSelectedImageIds(selectedImages);
+                            setSelected3DIds(selected3D);
                             setSelection(null);
 
                             // Auto-convert selected ink strokes if OCR tool is active
@@ -7368,11 +7422,15 @@ export default function Whiteboard({
                             setSelectedShapeIds([]);
                             setSelectedTextIds([]);
                             setSelectedImageIds([]);
+                            setSelected3DIds([]);
+                            setSelectedMediaId(null);
                             setSelection(null);
                         } else {
                             setSelectedShapeIds([]);
                             setSelectedTextIds([]);
                             setSelectedImageIds([]);
+                            setSelected3DIds([]);
+                            setSelectedMediaId(null);
                             setSelection(null);
                             setEditingTextId(null);
                         }
@@ -7380,6 +7438,8 @@ export default function Whiteboard({
                         setSelectedShapeIds([]);
                         setSelectedTextIds([]);
                         setSelectedImageIds([]);
+                        setSelected3DIds([]);
+                        setSelectedMediaId(null);
                         setSelection(null);
                         setEditingTextId(null);
                     }
@@ -7387,6 +7447,8 @@ export default function Whiteboard({
                     setSelectedShapeIds([]);
                     setSelectedTextIds([]);
                     setSelectedImageIds([]);
+                    setSelected3DIds([]);
+                    setSelectedMediaId(null);
                     setSelection(null);
                     setEditingTextId(null);
                 }
@@ -7422,6 +7484,14 @@ export default function Whiteboard({
                         img.y + img.height > y
                     ).map(s => s.id);
 
+                    let selected3D = threeDObjects.filter(obj => 
+                        !obj.isLocked &&
+                        (obj.x || 0) < x + selWidth && 
+                        (obj.x || 0) + (obj.width || 220) > x && 
+                        (obj.y || 0) < y + selHeight && 
+                        (obj.y || 0) + (obj.height || 220) > y
+                    ).map(o => o.id);
+
                     const groupIdsToSelect = new Set([
                         ...shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId),
                         ...textObjects.filter(s => selectedTexts.includes(s.id) && s.groupId).map(s => s.groupId),
@@ -7437,10 +7507,11 @@ export default function Whiteboard({
                         selectedImages = Array.from(new Set([...selectedImages, ...groupImageIds]));
                     }
 
-                    if (selectedShapes.length > 0 || selectedTexts.length > 0 || selectedImages.length > 0) {
+                    if (selectedShapes.length > 0 || selectedTexts.length > 0 || selectedImages.length > 0 || selected3D.length > 0) {
                         setSelectedShapeIds(selectedShapes);
                         setSelectedTextIds(selectedTexts);
                         setSelectedImageIds(selectedImages);
+                        setSelected3DIds(selected3D);
                         setSelection(null);
 
                         // Auto-convert selected ink strokes if OCR tool is active
@@ -7454,14 +7525,14 @@ export default function Whiteboard({
                         setSelectedShapeIds([]);
                         setSelectedTextIds([]);
                         setSelectedImageIds([]);
-                        setSelected3DId(null);
+                        setSelected3DIds([]);
                         setSelectedMediaId(null);
                         setSelection(null);
                     } else {
                         setSelectedShapeIds([]);
                         setSelectedTextIds([]);
                         setSelectedImageIds([]);
-                        setSelected3DId(null);
+                        setSelected3DIds([]);
                         setSelectedMediaId(null);
                         setSelection(null);
                         setEditingTextId(null);
@@ -7471,7 +7542,7 @@ export default function Whiteboard({
                     setSelectedShapeIds([]);
                     setSelectedTextIds([]);
                     setSelectedImageIds([]);
-                    setSelected3DId(null);
+                    setSelected3DIds([]);
                     setSelectedMediaId(null);
                     setSelection(null);
                     setEditingTextId(null);
@@ -11035,9 +11106,11 @@ export default function Whiteboard({
                                                 onClick={() => {
                                                     if (s.id === 'sticky_note') {
                                                         const wrapper = canvasWrapperRef.current;
-                                                        const cx = wrapper ? wrapper.clientWidth / 2 - 100 : 200;
-                                                        const cy = wrapper ? wrapper.clientHeight / 2 - 100 : 200;
-                                                        const newNote = createStickyNoteObject(cx, cy, 'yellow');
+                                                        const baseCx = wrapper ? wrapper.clientWidth / 2 - 100 : 200;
+                                                        const baseCy = wrapper ? wrapper.clientHeight / 2 - 100 : 200;
+                                                        const existingCount = (pageShapeObjects[currentPage] || []).length;
+                                                        const offset = (existingCount % 7) * 32;
+                                                        const newNote = createStickyNoteObject(baseCx + offset, baseCy + offset, 'yellow');
                                                         setPageShapeObjects(prev => ({
                                                             ...prev,
                                                             [currentPage]: [...(prev[currentPage] || []), newNote]
@@ -16700,21 +16773,35 @@ export default function Whiteboard({
                         <Whiteboard3DObject
                             key={obj3d.id}
                             obj={obj3d}
-                            isSelected={selected3DId === obj3d.id}
+                            isSelected={selected3DIds.includes(obj3d.id)}
                             scale={currentZoom}
-                            onSelect={(id) => {
-                                setSelected3DId(id);
-                                setSelectedShapeIds([]);
-                                setSelectedTextIds([]);
-                                setSelectedImageId(null);
-                                setSelectedMediaId(null);
+                            onSelect={(id, e) => {
+                                if (e?.shiftKey || e?.ctrlKey || e?.metaKey || isShiftDown) {
+                                    setSelected3DIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+                                } else {
+                                    setSelected3DIds([id]);
+                                    setSelectedShapeIds([]);
+                                    setSelectedTextIds([]);
+                                    setSelectedImageId(null);
+                                    setSelectedImageIds([]);
+                                    setSelectedMediaId(null);
+                                }
                             }}
-                            onUpdate={(updates) => {
-                                setThreeDObjects(prev => prev.map(o => o.id === obj3d.id ? { ...o, ...updates } : o));
+                            onUpdate={(updates, dragMeta) => {
+                                if (dragMeta?.stepDx !== undefined && selected3DIds.length > 1 && selected3DIds.includes(obj3d.id)) {
+                                    setThreeDObjects(prev => prev.map(o => {
+                                        if (selected3DIds.includes(o.id)) {
+                                            return { ...o, x: (o.x || 0) + dragMeta.stepDx, y: (o.y || 0) + dragMeta.stepDy };
+                                        }
+                                        return o;
+                                    }));
+                                } else {
+                                    setThreeDObjects(prev => prev.map(o => o.id === obj3d.id ? { ...o, ...updates } : o));
+                                }
                             }}
                             onDelete={(id) => {
                                 setThreeDObjects(prev => prev.filter(o => o.id !== id));
-                                if (selected3DId === id) setSelected3DId(null);
+                                setSelected3DIds(prev => prev.filter(x => x !== id));
                             }}
                             onDuplicate={(id) => {
                                 const orig = (page3DObjects[currentPage] || []).find(o => o.id === id);
@@ -16727,7 +16814,7 @@ export default function Whiteboard({
                                     isInfiniteCloner: false
                                 };
                                 setThreeDObjects(prev => [...prev, clone]);
-                                setSelected3DId(clone.id);
+                                setSelected3DIds([clone.id]);
                             }}
                         />
                     ))}
@@ -17082,8 +17169,17 @@ export default function Whiteboard({
                 onClose={() => setShowDomainLibrary(false)}
                 onSelectShape={(symbol) => {
                     const wrapper = canvasWrapperRef.current;
-                    const cx = wrapper ? (wrapper.clientWidth / 2 - (symbol.defaultWidth || 120) / 2) : 200;
-                    const cy = wrapper ? (wrapper.clientHeight / 2 - (symbol.defaultHeight || 120) / 2) : 200;
+                    const defaultW = symbol.defaultWidth || (symbol.is3D || symbol.category === '3d' ? 220 : 120);
+                    const defaultH = symbol.defaultHeight || (symbol.is3D || symbol.category === '3d' ? 220 : 120);
+                    const baseCx = wrapper ? (wrapper.clientWidth / 2 - defaultW / 2) : 200;
+                    const baseCy = wrapper ? (wrapper.clientHeight / 2 - defaultH / 2) : 200;
+
+                    // Stagger position diagonally to avoid shapes stacking directly on top of each other
+                    const existingCount = (pageShapeObjects[currentPage] || []).length + (page3DObjects[currentPage] || []).length;
+                    const offsetStep = 36;
+                    const cascade = (existingCount % 7) * offsetStep;
+                    const cx = Math.max(30, baseCx + cascade);
+                    const cy = Math.max(30, baseCy + cascade);
 
                     if (symbol.is3D || symbol.category === '3d') {
                         const new3D = {
@@ -17102,13 +17198,15 @@ export default function Whiteboard({
                             rotation: 0
                         };
                         setThreeDObjects(prev => [...prev, new3D]);
-                        setSelected3DId(new3D.id);
+                        setSelected3DIds([new3D.id]);
                         setSelectedShapeIds([]);
                         setSelectedTextIds([]);
                         setSelectedImageId(null);
+                        setSelectedImageIds([]);
                         setSelectedMediaId(null);
                         setTool('select');
                         setShowDomainLibrary(false);
+                        saveToHistory();
                         toast.success(`Added 3D ${symbol.name}`, { icon: '📦' });
                         return;
                     }
@@ -17134,6 +17232,7 @@ export default function Whiteboard({
                     setTool('select');
                     setSelectedShapeIds([newShape.id]);
                     setShowDomainLibrary(false);
+                    saveToHistory();
                     toast.success(`Added ${symbol.name}`, { icon: '📐' });
                 }}
             />
