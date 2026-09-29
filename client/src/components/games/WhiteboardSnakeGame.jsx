@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { X, Play, RotateCcw, Trophy, Pause } from 'lucide-react';
+import { X, Play, RotateCcw, Trophy, Pause, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // ─── Level Configuration ─────────────────────────────────────────────────────
 const LEVELS = [
@@ -26,7 +26,9 @@ export default function WhiteboardSnakeGame({ obstacles: initObstacles, collecti
     const dirBufferRef = useRef(null); // buffered next direction
     const keysRef = useRef(new Set());
     const goldenTimerRef = useRef(null);
+    const touchStartRef = useRef(null);
 
+    const [isTouchDevice, setIsTouchDevice] = useState(false);
     const [gameState, setGameState] = useState('ready');
     const [displayScore, setDisplayScore] = useState(0);
     const [displayLevel, setDisplayLevel] = useState(1);
@@ -603,6 +605,90 @@ export default function WhiteboardSnakeGame({ obstacles: initObstacles, collecti
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [gameState, startPlaying]);
 
+    // Detect Touch Capability
+    useEffect(() => {
+        if (typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0)) {
+            setIsTouchDevice(true);
+        }
+    }, []);
+
+    // Swipe controls on canvas
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const onTouchStart = (e) => {
+            setIsTouchDevice(true);
+            if (gameState === 'ready') {
+                startPlaying();
+                return;
+            }
+            if (e.touches.length > 0) {
+                touchStartRef.current = {
+                    x: e.touches[0].clientX,
+                    y: e.touches[0].clientY,
+                };
+            }
+        };
+
+        const onTouchMove = (e) => {
+            if (!touchStartRef.current || e.touches.length === 0 || gameState !== 'playing') return;
+            const curX = e.touches[0].clientX;
+            const curY = e.touches[0].clientY;
+            const diffX = curX - touchStartRef.current.x;
+            const diffY = curY - touchStartRef.current.y;
+            const threshold = 20;
+
+            if (Math.abs(diffX) > threshold || Math.abs(diffY) > threshold) {
+                if (Math.abs(diffX) > Math.abs(diffY)) {
+                    // Horizontal swipe
+                    if (diffX > 0) {
+                        dirBufferRef.current = { dc: 1, dr: 0 };
+                    } else {
+                        dirBufferRef.current = { dc: -1, dr: 0 };
+                    }
+                } else {
+                    // Vertical swipe
+                    if (diffY > 0) {
+                        dirBufferRef.current = { dc: 0, dr: 1 };
+                    } else {
+                        dirBufferRef.current = { dc: 0, dr: -1 };
+                    }
+                }
+                // Continuous fluid steering
+                touchStartRef.current = { x: curX, y: curY };
+            }
+        };
+
+        const onTouchEnd = () => {
+            touchStartRef.current = null;
+        };
+
+        canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+        canvas.addEventListener('touchend', onTouchEnd);
+        canvas.addEventListener('touchcancel', onTouchEnd);
+
+        return () => {
+            canvas.removeEventListener('touchstart', onTouchStart);
+            canvas.removeEventListener('touchmove', onTouchMove);
+            canvas.removeEventListener('touchend', onTouchEnd);
+            canvas.removeEventListener('touchcancel', onTouchEnd);
+        };
+    }, [gameState, startPlaying]);
+
+    // D-Pad direction changer
+    const setDirection = useCallback((dc, dr) => {
+        setIsTouchDevice(true);
+        if (gameState === 'ready') {
+            startPlaying();
+            return;
+        }
+        if (gameState === 'playing') {
+            dirBufferRef.current = { dc, dr };
+        }
+    }, [gameState, startPlaying]);
+
     // ─── Draw initial frame for non-playing states ───────────────────────
     useEffect(() => {
         if (gameState === 'ready') drawGame();
@@ -644,6 +730,51 @@ export default function WhiteboardSnakeGame({ obstacles: initObstacles, collecti
                 </button>
             )}
 
+            {/* On-screen D-Pad for Touch/Mobile */}
+            {gameState === 'playing' && (
+                <div
+                    className={`fixed bottom-6 right-6 z-30 select-none touch-none ${!isTouchDevice ? 'hidden pointer-events-none' : 'flex'} flex-col items-center gap-1.5`}
+                >
+                    <div className="relative w-36 h-36 bg-slate-900/80 backdrop-blur-md rounded-2xl border-2 border-green-500/40 p-2 shadow-2xl shadow-green-950/60 flex items-center justify-center">
+                        {/* Up */}
+                        <button
+                            type="button"
+                            onClick={() => setDirection(0, -1)}
+                            className="absolute top-1.5 left-1/2 -translate-x-1/2 w-11 h-11 rounded-xl bg-slate-800/90 active:bg-green-600 text-green-400 active:text-white flex items-center justify-center shadow-md border border-green-500/30 active:scale-95 transition"
+                        >
+                            <ChevronUp className="w-7 h-7" />
+                        </button>
+                        {/* Down */}
+                        <button
+                            type="button"
+                            onClick={() => setDirection(0, 1)}
+                            className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-11 h-11 rounded-xl bg-slate-800/90 active:bg-green-600 text-green-400 active:text-white flex items-center justify-center shadow-md border border-green-500/30 active:scale-95 transition"
+                        >
+                            <ChevronDown className="w-7 h-7" />
+                        </button>
+                        {/* Left */}
+                        <button
+                            type="button"
+                            onClick={() => setDirection(-1, 0)}
+                            className="absolute left-1.5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-xl bg-slate-800/90 active:bg-green-600 text-green-400 active:text-white flex items-center justify-center shadow-md border border-green-500/30 active:scale-95 transition"
+                        >
+                            <ChevronLeft className="w-7 h-7" />
+                        </button>
+                        {/* Right */}
+                        <button
+                            type="button"
+                            onClick={() => setDirection(1, 0)}
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-xl bg-slate-800/90 active:bg-green-600 text-green-400 active:text-white flex items-center justify-center shadow-md border border-green-500/30 active:scale-95 transition"
+                        >
+                            <ChevronRight className="w-7 h-7" />
+                        </button>
+                        {/* Center Indicator */}
+                        <div className="w-4 h-4 rounded-full bg-green-500/30 border border-green-400/50" />
+                    </div>
+                    <span className="text-[11px] text-green-400 font-bold tracking-wider uppercase opacity-80 drop-shadow">D-Pad / Swipe</span>
+                </div>
+            )}
+
             {/* Ready Screen */}
             {gameState === 'ready' && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 z-10">
@@ -656,7 +787,9 @@ export default function WhiteboardSnakeGame({ obstacles: initObstacles, collecti
                     <button onClick={startPlaying} className="flex items-center gap-2 px-8 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl transition text-lg">
                         <Play className="w-5 h-5" /> Start
                     </button>
-                    <p className="text-slate-600 text-xs mt-4">Arrow keys / WASD to steer · Esc to pause</p>
+                    <p className="text-slate-500 text-xs mt-4">
+                        {isTouchDevice ? 'Swipe anywhere on screen or use D-Pad · Tap anywhere to start' : 'Arrow keys / WASD to steer · Esc to pause'}
+                    </p>
                     <button onClick={onExit} className="mt-6 text-slate-500 hover:text-white text-sm transition">← Back to Whiteboard</button>
                 </div>
             )}

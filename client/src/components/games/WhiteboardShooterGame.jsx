@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Heart, X, Play, RotateCcw, Trophy, Pause } from 'lucide-react';
+import { Heart, X, Play, RotateCcw, Trophy, Pause, Crosshair } from 'lucide-react';
 
 // ─── Level Configuration ─────────────────────────────────────────────────────
 const LEVELS = [
@@ -33,6 +33,10 @@ export default function WhiteboardShooterGame({ obstacles: initObstacles, collec
     const mouseRef = useRef({ x: 0, y: 0, down: false });
     const lastShotRef = useRef(0);
     const shakeRef = useRef({ x: 0, y: 0, t: 0 });
+    const touchJoystickRef = useRef({ active: false, startX: 0, startY: 0, dx: 0, dy: 0 });
+    const touchFireRef = useRef(false);
+    const [isTouchDevice, setIsTouchDevice] = useState(false);
+    const [joystickVisual, setJoystickVisual] = useState({ x: 0, y: 0, active: false });
 
     const [gameState, setGameState] = useState('ready');  // ready, playing, paused, levelComplete, gameOver, victory
     const [displayScore, setDisplayScore] = useState(0);
@@ -182,19 +186,44 @@ export default function WhiteboardShooterGame({ obstacles: initObstacles, collec
         if (keys.has('s') || keys.has('arrowdown'))  dy += PLAYER_SPEED;
         if (keys.has('a') || keys.has('arrowleft'))  dx -= PLAYER_SPEED;
         if (keys.has('d') || keys.has('arrowright')) dx += PLAYER_SPEED;
+
+        // Touch joystick movement
+        const tj = touchJoystickRef.current;
+        if (tj.active && (Math.abs(tj.dx) > 8 || Math.abs(tj.dy) > 8)) {
+            const mag = Math.hypot(tj.dx, tj.dy);
+            const norm = Math.min(mag, 50) / 50; // clamp to max radius
+            dx += (tj.dx / mag) * PLAYER_SPEED * norm;
+            dy += (tj.dy / mag) * PLAYER_SPEED * norm;
+        }
+
         if (dx && dy) { dx *= 0.707; dy *= 0.707; }
 
         if (dx && canMove(p.x + dx, p.y, PLAYER_SIZE, PLAYER_SIZE, g.obstacles)) p.x += dx;
         if (dy && canMove(p.x, p.y + dy, PLAYER_SIZE, PLAYER_SIZE, g.obstacles)) p.y += dy;
 
         // Player shooting
-        if ((mouseRef.current.down || keys.has(' ')) && now - lastShotRef.current > 200) {
+        if ((mouseRef.current.down || keys.has(' ') || touchFireRef.current) && now - lastShotRef.current > 200) {
             lastShotRef.current = now;
-            const mx = mouseRef.current.x / scale;
-            const my = mouseRef.current.y / scale;
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const offsetX = (vw - canvasWidth * scale) / 2;
+            const offsetY = (vh - canvasHeight * scale) / 2;
+            const mx = (mouseRef.current.x - offsetX) / scale;
+            const my = (mouseRef.current.y - offsetY) / scale;
             const pcx = p.x + PLAYER_SIZE / 2;
             const pcy = p.y + PLAYER_SIZE / 2;
-            const angle = Math.atan2(my - pcy, mx - pcx);
+            // For touch auto-fire, shoot toward nearest enemy
+            let angle;
+            if (touchFireRef.current && g.enemies.length > 0) {
+                let nearest = g.enemies[0], nd = Infinity;
+                for (const e of g.enemies) {
+                    const d = Math.hypot(e.x - pcx, e.y - pcy);
+                    if (d < nd) { nd = d; nearest = e; }
+                }
+                angle = Math.atan2(nearest.y - pcy, nearest.x - pcx);
+            } else {
+                angle = Math.atan2(my - pcy, mx - pcx);
+            }
             g.playerBullets.push({
                 x: pcx, y: pcy,
                 vx: Math.cos(angle) * BULLET_SPEED,
@@ -691,6 +720,116 @@ export default function WhiteboardShooterGame({ obstacles: initObstacles, collec
         };
     }, [gameState, startPlaying]);
 
+    // Detect Touch Capability
+    useEffect(() => {
+        if (typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0)) {
+            setIsTouchDevice(true);
+        }
+    }, []);
+
+    // Direct touch aiming on Canvas
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const onTouchStart = (e) => {
+            setIsTouchDevice(true);
+            if (gameState === 'ready') {
+                startPlaying();
+                return;
+            }
+            if (e.touches.length > 0) {
+                const touch = e.touches[0];
+                mouseRef.current.x = touch.clientX;
+                mouseRef.current.y = touch.clientY;
+                mouseRef.current.down = true;
+            }
+        };
+
+        const onTouchMove = (e) => {
+            if (e.touches.length > 0) {
+                const touch = e.touches[0];
+                mouseRef.current.x = touch.clientX;
+                mouseRef.current.y = touch.clientY;
+            }
+        };
+
+        const onTouchEnd = () => {
+            mouseRef.current.down = false;
+        };
+
+        canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+        canvas.addEventListener('touchend', onTouchEnd);
+        canvas.addEventListener('touchcancel', onTouchEnd);
+
+        return () => {
+            canvas.removeEventListener('touchstart', onTouchStart);
+            canvas.removeEventListener('touchmove', onTouchMove);
+            canvas.removeEventListener('touchend', onTouchEnd);
+            canvas.removeEventListener('touchcancel', onTouchEnd);
+        };
+    }, [gameState, startPlaying]);
+
+    // Touch Joystick Handlers
+    const handleJoystickStart = useCallback((e) => {
+        e.stopPropagation();
+        setIsTouchDevice(true);
+        const touch = e.touches ? e.touches[0] : e;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const rawDx = touch.clientX - centerX;
+        const rawDy = touch.clientY - centerY;
+        const dist = Math.hypot(rawDx, rawDy);
+        const maxR = 36;
+        const clampedDist = Math.min(dist, maxR);
+        const angle = Math.atan2(rawDy, rawDx);
+        const stickX = Math.cos(angle) * clampedDist;
+        const stickY = Math.sin(angle) * clampedDist;
+
+        touchJoystickRef.current = { active: true, startX: centerX, startY: centerY, dx: rawDx, dy: rawDy };
+        setJoystickVisual({ x: stickX, y: stickY, active: true });
+    }, []);
+
+    const handleJoystickMove = useCallback((e) => {
+        e.stopPropagation();
+        if (!touchJoystickRef.current.active) return;
+        const touch = e.touches ? e.touches[0] : e;
+        const centerX = touchJoystickRef.current.startX;
+        const centerY = touchJoystickRef.current.startY;
+        const rawDx = touch.clientX - centerX;
+        const rawDy = touch.clientY - centerY;
+        const dist = Math.hypot(rawDx, rawDy);
+        const maxR = 36;
+        const clampedDist = Math.min(dist, maxR);
+        const angle = Math.atan2(rawDy, rawDx);
+        const stickX = Math.cos(angle) * clampedDist;
+        const stickY = Math.sin(angle) * clampedDist;
+
+        touchJoystickRef.current.dx = rawDx;
+        touchJoystickRef.current.dy = rawDy;
+        setJoystickVisual({ x: stickX, y: stickY, active: true });
+    }, []);
+
+    const handleJoystickEnd = useCallback((e) => {
+        if (e && e.stopPropagation) e.stopPropagation();
+        touchJoystickRef.current = { active: false, startX: 0, startY: 0, dx: 0, dy: 0 };
+        setJoystickVisual({ x: 0, y: 0, active: false });
+    }, []);
+
+    // Touch Fire Handlers
+    const handleFireStart = useCallback((e) => {
+        e.stopPropagation();
+        setIsTouchDevice(true);
+        touchFireRef.current = true;
+    }, []);
+
+    const handleFireEnd = useCallback((e) => {
+        if (e && e.stopPropagation) e.stopPropagation();
+        touchFireRef.current = false;
+    }, []);
+
     // ─── Render ──────────────────────────────────────────────────────────
     const hearts = [];
     for (let i = 0; i < 3; i++) {
@@ -725,6 +864,53 @@ export default function WhiteboardShooterGame({ obstacles: initObstacles, collec
                 </button>
             )}
 
+            {/* Touch Controls (Virtual Joystick & Fire Button) */}
+            {gameState === 'playing' && (
+                <>
+                    {/* Left Joystick */}
+                    <div
+                        className={`absolute bottom-6 left-6 z-30 select-none touch-none ${!isTouchDevice ? 'hidden pointer-events-none' : 'flex'} flex-col items-center gap-1.5`}
+                        onTouchStart={handleJoystickStart}
+                        onTouchMove={handleJoystickMove}
+                        onTouchEnd={handleJoystickEnd}
+                        onTouchCancel={handleJoystickEnd}
+                    >
+                        <div className="w-28 h-28 rounded-full border-2 border-cyan-500/50 bg-slate-900/80 backdrop-blur-md relative flex items-center justify-center shadow-xl shadow-cyan-950/60 active:border-cyan-400">
+                            <div className="absolute inset-0 rounded-full border border-dashed border-cyan-400/20 m-2.5" />
+                            <div
+                                className="w-12 h-12 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 shadow-md shadow-cyan-500/50 flex items-center justify-center pointer-events-none"
+                                style={{
+                                    transform: `translate(${joystickVisual.x}px, ${joystickVisual.y}px)`,
+                                    transition: joystickVisual.active ? 'none' : 'transform 0.15s ease-out',
+                                }}
+                            >
+                                <div className="w-4 h-4 rounded-full bg-white/40" />
+                            </div>
+                        </div>
+                        <span className="text-[11px] text-cyan-300 font-bold tracking-wider uppercase opacity-80 drop-shadow">Move</span>
+                    </div>
+
+                    {/* Right Fire Button */}
+                    <div
+                        className={`absolute bottom-6 right-6 z-30 select-none touch-none ${!isTouchDevice ? 'hidden pointer-events-none' : 'flex'} flex-col items-center gap-1.5`}
+                    >
+                        <button
+                            type="button"
+                            onTouchStart={handleFireStart}
+                            onTouchEnd={handleFireEnd}
+                            onTouchCancel={handleFireEnd}
+                            onMouseDown={handleFireStart}
+                            onMouseUp={handleFireEnd}
+                            className="w-24 h-24 rounded-full bg-gradient-to-tr from-rose-600 to-amber-500 active:scale-90 text-white font-black uppercase shadow-2xl shadow-red-600/50 flex flex-col items-center justify-center border-2 border-amber-300/40 transition-transform active:brightness-125 cursor-pointer"
+                        >
+                            <Crosshair className="w-8 h-8 mb-0.5 text-white animate-pulse" />
+                            <span className="text-xs tracking-wider">FIRE</span>
+                        </button>
+                        <span className="text-[11px] text-rose-300 font-bold tracking-wider uppercase opacity-80 drop-shadow">Auto-Aim</span>
+                    </div>
+                </>
+            )}
+
             {/* Ready Screen */}
             {gameState === 'ready' && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 z-10">
@@ -737,7 +923,9 @@ export default function WhiteboardShooterGame({ obstacles: initObstacles, collec
                     <button onClick={startPlaying} className="flex items-center gap-2 px-8 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl transition text-lg">
                         <Play className="w-5 h-5" /> Start
                     </button>
-                    <p className="text-slate-600 text-xs mt-4">WASD/Arrows to move · Click/Space to shoot · Esc to pause</p>
+                    <p className="text-slate-500 text-xs mt-4">
+                        {isTouchDevice ? 'Joystick to move · Tap FIRE to auto-aim or tap anywhere to shoot' : 'WASD/Arrows to move · Click/Space to shoot · Esc to pause'}
+                    </p>
                     <button onClick={onExit} className="mt-6 text-slate-500 hover:text-white text-sm transition">← Back to Whiteboard</button>
                 </div>
             )}
