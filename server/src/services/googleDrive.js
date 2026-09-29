@@ -40,8 +40,11 @@ class GoogleDriveService {
         this.folderId = process.env.GOOGLE_DRIVE_FOLDER_ID || '1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp';
         this.localSyncDir = path.join(__dirname, '../../uploads/google_drive');
         this.tokenPath = path.join(__dirname, '../../uploads/google_oauth_tokens.json');
+        this.accountsPath = path.join(__dirname, '../../uploads/google_oauth_accounts.json');
         this.configPath = path.join(__dirname, '../../uploads/google_oauth_client_config.json');
         this.cloudConfigPath = path.join(__dirname, '../../uploads/cloud_providers_config.json');
+        this.connectedGoogleAccounts = {};
+        this.activeAccountEmail = null;
         this._cachedTokens = null;
         this._cachedConfig = null;
         this._initializingPromise = null;
@@ -85,9 +88,143 @@ class GoogleDriveService {
     }
 
     /**
-     * Extract user identity from cached or saved OAuth tokens (id_token JWT)
+     * Synchronously load multi-account store from disk and/or existing single-token file
+     */
+    loadAccountsStore() {
+        let accounts = {};
+        let activeEmail = null;
+
+        if (fs.existsSync(this.accountsPath)) {
+            try {
+                const parsed = JSON.parse(fs.readFileSync(this.accountsPath, 'utf8'));
+                if (parsed && typeof parsed === 'object') {
+                    accounts = parsed.accounts || {};
+                    activeEmail = parsed.activeEmail || null;
+                }
+            } catch (e) {
+                console.warn('[GoogleDrive] Failed to read accounts file:', e.message);
+            }
+        }
+
+        // Migrate or seed from single tokens file if accounts is empty
+        const singleTokens = this.loadTokens();
+        if (singleTokens && (singleTokens.id_token || singleTokens.access_token || singleTokens.refresh_token)) {
+            let userEmail = null;
+            let userName = null;
+            let userPic = null;
+            let givenName = null;
+            if (singleTokens.id_token) {
+                const payload = decodeJwtPayload(singleTokens.id_token);
+                if (payload?.email) {
+                    userEmail = payload.email.toLowerCase().trim();
+                    userName = payload.name;
+                    userPic = payload.picture;
+                    givenName = payload.given_name;
+                }
+            }
+            if (!userEmail && singleTokens.email) {
+                userEmail = singleTokens.email.toLowerCase().trim();
+                userName = singleTokens.name;
+                userPic = singleTokens.picture;
+            }
+            if (userEmail) {
+                if (!accounts[userEmail]) {
+                    accounts[userEmail] = {
+                        id: userEmail,
+                        email: userEmail,
+                        displayName: userName || userEmail,
+                        givenName: givenName || null,
+                        photoLink: userPic || null,
+                        tokens: singleTokens,
+                        plan: '5.0 TB Google AI Pro',
+                        status: 'connected',
+                        isDefault: true,
+                        updatedAt: Date.now()
+                    };
+                }
+                if (!activeEmail) activeEmail = userEmail;
+            }
+        }
+
+        this.connectedGoogleAccounts = accounts;
+        if (activeEmail && accounts[activeEmail]) {
+            this.activeAccountEmail = activeEmail;
+        } else {
+            const keys = Object.keys(accounts);
+            this.activeAccountEmail = keys.length > 0 ? keys[0] : null;
+        }
+
+        return { accounts: this.connectedGoogleAccounts, activeEmail: this.activeAccountEmail };
+    }
+
+    /**
+     * Restore multi-account store from persistent DB
+     */
+    async loadAccountsStoreFromDb() {
+        await this.ensureSettingsTable();
+        try {
+            const rows = await prisma.$queryRawUnsafe(`
+                SELECT "value" FROM "system_settings" WHERE "key" = 'google_drive_connected_accounts' LIMIT 1
+            `);
+            if (rows && rows.length > 0 && rows[0].value) {
+                const dbData = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
+                if (dbData && dbData.accounts && typeof dbData.accounts === 'object') {
+                    this.connectedGoogleAccounts = { ...this.connectedGoogleAccounts, ...dbData.accounts };
+                    if (dbData.activeEmail && this.connectedGoogleAccounts[dbData.activeEmail]) {
+                        this.activeAccountEmail = dbData.activeEmail;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[GoogleDrive] loadAccountsStoreFromDb notice:', e.message);
+        }
+    }
+
+    /**
+     * Save multi-account store to disk and database
+     */
+    async saveAccountsStore() {
+        const dataToSave = {
+            accounts: this.connectedGoogleAccounts,
+            activeEmail: this.activeAccountEmail,
+            updatedAt: Date.now()
+        };
+
+        // 1. Save to local accounts file
+        try {
+            const dir = path.dirname(this.accountsPath);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(this.accountsPath, JSON.stringify(dataToSave, null, 2), 'utf8');
+        } catch (e) {
+            console.warn('[GoogleDrive] Failed to write accounts file:', e.message);
+        }
+
+        // 2. Persist to PostgreSQL database
+        try {
+            await prisma.$executeRawUnsafe(`
+                INSERT INTO "system_settings" ("key", "value", "updated_at")
+                VALUES ('google_drive_connected_accounts', $1::jsonb, CURRENT_TIMESTAMP)
+                ON CONFLICT ("key")
+                DO UPDATE SET "value" = $1::jsonb, "updated_at" = CURRENT_TIMESTAMP
+            `, JSON.stringify(dataToSave));
+        } catch (dbErr) {
+            console.warn('[GoogleDrive] Failed to save accounts to DB:', dbErr.message);
+        }
+    }
+
+    /**
+     * Extract user identity from active account, cached tokens, or saved OAuth tokens
      */
     getConnectedUser() {
+        if (this.activeAccountEmail && this.connectedGoogleAccounts[this.activeAccountEmail]) {
+            const acc = this.connectedGoogleAccounts[this.activeAccountEmail];
+            return {
+                emailAddress: acc.email,
+                displayName: acc.displayName || acc.email,
+                photoLink: acc.photoLink || null,
+                givenName: acc.givenName || null
+            };
+        }
         const tokens = this._cachedTokens || this.loadTokens();
         if (tokens?.id_token) {
             const payload = decodeJwtPayload(tokens.id_token);
@@ -455,14 +592,48 @@ class GoogleDriveService {
      * Get all connected cloud accounts across Google, Microsoft, Apple, Dropbox, and AWS S3
      */
     async getConnectedAccounts() {
+        this.loadAccountsStore();
+        await this.loadAccountsStoreFromDb();
+
         const quotaData = await this.getStorageQuota();
         const user = this.getConnectedUser() || quotaData.user;
         const isOAuthConnected = (quotaData.authType || this.authType) === 'oauth_user' || Boolean(user?.emailAddress);
 
         const accounts = [];
-        if (isOAuthConnected && user?.emailAddress) {
+        const seenGoogleEmails = new Set();
+
+        const googleEmails = Object.keys(this.connectedGoogleAccounts);
+        if (googleEmails.length > 0) {
+            for (const email of googleEmails) {
+                const acc = this.connectedGoogleAccounts[email];
+                const isActive = (email.toLowerCase() === (this.activeAccountEmail || '').toLowerCase());
+                const userQuota = isActive ? quotaData.quota : null;
+                seenGoogleEmails.add(email.toLowerCase());
+
+                accounts.push({
+                    id: email,
+                    accountId: email,
+                    provider: 'google',
+                    providerName: 'Google Drive',
+                    name: `Google Drive (${acc.displayName || email})`,
+                    email: acc.email,
+                    displayName: acc.displayName || acc.email,
+                    photoLink: acc.photoLink || null,
+                    plan: userQuota?.limitFormatted ? `${userQuota.limitFormatted} Google One` : (acc.plan || '5.0 TB Google AI Pro'),
+                    percentUsed: userQuota?.percentUsed || 0,
+                    usageFormatted: userQuota?.usageFormatted || '0 GB',
+                    limitFormatted: userQuota?.limitFormatted || '5.0 TB',
+                    status: acc.status || 'connected',
+                    isActive: isActive,
+                    isDefault: isActive
+                });
+            }
+        } else if (isOAuthConnected && user?.emailAddress) {
+            const email = user.emailAddress.toLowerCase();
+            seenGoogleEmails.add(email);
             accounts.push({
-                id: 'google_primary',
+                id: email,
+                accountId: email,
                 provider: 'google',
                 providerName: 'Google Drive',
                 name: 'Google Drive (Primary)',
@@ -474,31 +645,35 @@ class GoogleDriveService {
                 usageFormatted: quotaData.quota?.usageFormatted || '0 GB',
                 limitFormatted: quotaData.quota?.limitFormatted || '5.0 TB',
                 status: 'connected',
+                isActive: true,
                 isDefault: true
             });
         }
 
-        // Secondary Google Account if stored in DB
+        // Secondary Google Account if stored in DB (backward-compat)
         try {
             const rows = await prisma.$queryRawUnsafe(`
                 SELECT "value" FROM "system_settings" WHERE "key" = 'secondary_google_account' LIMIT 1
             `);
             if (rows && rows.length > 0 && rows[0].value) {
                 const sec = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
-                if (sec && sec.email) {
+                if (sec && sec.email && !seenGoogleEmails.has(sec.email.toLowerCase())) {
+                    seenGoogleEmails.add(sec.email.toLowerCase());
                     accounts.push({
-                        id: 'google_secondary',
+                        id: sec.email,
+                        accountId: sec.email,
                         provider: 'google',
                         providerName: 'Google Drive',
-                        name: 'Google Drive (Secondary)',
+                        name: `Google Drive (${sec.displayName || sec.name || sec.email})`,
                         email: sec.email,
-                        displayName: sec.name || sec.email,
+                        displayName: sec.displayName || sec.name || sec.email,
                         photoLink: null,
                         plan: sec.plan || '100 GB Google Account',
                         percentUsed: sec.percentUsed || 5,
                         usageFormatted: sec.usageFormatted || '5 GB',
                         limitFormatted: sec.limitFormatted || '100 GB',
                         status: 'connected',
+                        isActive: false,
                         isDefault: false
                     });
                 }
@@ -651,10 +826,107 @@ class GoogleDriveService {
     }
 
     /**
+     * Switch the active Google Drive account dynamically
+     */
+    async switchAccount(accountIdOrEmail) {
+        if (!accountIdOrEmail) {
+            throw new Error('Account email or ID is required');
+        }
+        this.loadAccountsStore();
+        await this.loadAccountsStoreFromDb();
+
+        const norm = accountIdOrEmail.toLowerCase().trim();
+        let target = this.connectedGoogleAccounts[norm];
+        if (!target) {
+            target = Object.values(this.connectedGoogleAccounts).find(a => 
+                a.email?.toLowerCase() === norm || a.id?.toLowerCase() === norm
+            );
+        }
+
+        if (!target || !target.tokens) {
+            throw new Error(`Account "${accountIdOrEmail}" is not authorized with saved tokens. Please connect via OAuth first.`);
+        }
+
+        const config = this.getOAuthConfig();
+        if (!config.clientId || !config.clientSecret) {
+            throw new Error('Google OAuth Client credentials not configured');
+        }
+
+        const oauth2Client = new google.auth.OAuth2(
+            config.clientId,
+            config.clientSecret,
+            config.redirectUri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5001/api/drive/auth/callback'
+        );
+        oauth2Client.setCredentials(target.tokens);
+
+        const email = target.email;
+        oauth2Client.on('tokens', async (newTokens) => {
+            if (this.connectedGoogleAccounts[email]) {
+                this.connectedGoogleAccounts[email].tokens = {
+                    ...this.connectedGoogleAccounts[email].tokens,
+                    ...newTokens,
+                    refresh_token: newTokens.refresh_token || this.connectedGoogleAccounts[email].tokens.refresh_token
+                };
+                if (this.activeAccountEmail === email) {
+                    this._cachedTokens = this.connectedGoogleAccounts[email].tokens;
+                    await this.saveTokens(this._cachedTokens);
+                }
+                await this.saveAccountsStore();
+            }
+        });
+
+        this.oauth2Client = oauth2Client;
+        this.drive = google.drive({ version: 'v3', auth: oauth2Client });
+        this.authType = 'oauth_user';
+        this.activeAccountEmail = email;
+        this._cachedTokens = target.tokens;
+
+        await this.saveAccountsStore();
+        await this.saveTokens(target.tokens);
+
+        console.log(`✅ [GoogleDrive] Switched active Google Drive account to ${email}`);
+        const quota = await this.getStorageQuota();
+        return {
+            success: true,
+            activeEmail: email,
+            account: {
+                id: target.id || email,
+                email: target.email,
+                displayName: target.displayName || email,
+                photoLink: target.photoLink || null,
+                status: target.status || 'connected',
+                isActive: true
+            },
+            quota
+        };
+    }
+
+    /**
      * Disconnect a specific connected cloud account
      */
     async disconnectAccount(accountId) {
         await this.ensureSettingsTable();
+        this.loadAccountsStore();
+        await this.loadAccountsStoreFromDb();
+
+        const norm = (accountId || '').toLowerCase().trim();
+        // Check if matching any connected Google account
+        const googleMatch = Object.keys(this.connectedGoogleAccounts).find(e => 
+            e.toLowerCase() === norm || (norm === 'google_primary' && e.toLowerCase() === (this.activeAccountEmail || '').toLowerCase())
+        );
+
+        if (googleMatch) {
+            delete this.connectedGoogleAccounts[googleMatch];
+            const remaining = Object.keys(this.connectedGoogleAccounts);
+            if (remaining.length > 0) {
+                await this.switchAccount(remaining[0]);
+            } else {
+                await this.disconnectOAuth();
+            }
+            await this.saveAccountsStore();
+            return { success: true, message: `Google account ${googleMatch} disconnected` };
+        }
+
         if (accountId === 'google_primary' || !accountId) {
             await this.disconnectOAuth();
             return { success: true, message: 'Google Primary account disconnected' };
@@ -703,6 +975,43 @@ class GoogleDriveService {
             refresh_token: tokens.refresh_token || current.refresh_token
         };
         this._cachedTokens = merged;
+
+        let userEmail = null;
+        let userName = null;
+        let userPic = null;
+        let userGiven = null;
+        if (merged.id_token) {
+            const payload = decodeJwtPayload(merged.id_token);
+            if (payload?.email) {
+                userEmail = payload.email.toLowerCase().trim();
+                userName = payload.name;
+                userPic = payload.picture;
+                userGiven = payload.given_name;
+            }
+        }
+        if (!userEmail && this.activeAccountEmail) {
+            userEmail = this.activeAccountEmail.toLowerCase().trim();
+        }
+
+        if (userEmail) {
+            const existing = this.connectedGoogleAccounts[userEmail] || {};
+            this.connectedGoogleAccounts[userEmail] = {
+                id: userEmail,
+                email: userEmail,
+                displayName: userName || existing.displayName || userEmail,
+                givenName: userGiven || existing.givenName || null,
+                photoLink: userPic || existing.photoLink || null,
+                tokens: merged,
+                plan: existing.plan || '5.0 TB Google AI Pro',
+                status: 'connected',
+                isDefault: (userEmail === (this.activeAccountEmail || userEmail)),
+                updatedAt: Date.now()
+            };
+            if (!this.activeAccountEmail) {
+                this.activeAccountEmail = userEmail;
+            }
+            await this.saveAccountsStore();
+        }
 
         // 1. Save to local file
         try {
@@ -829,9 +1138,9 @@ class GoogleDriveService {
         if (!client) {
             throw new Error('Google OAuth Client ID and Secret are not configured. Please configure them in Admin Settings.');
         }
-        return client.generateAuthUrl({
+        const params = {
             access_type: 'offline',
-            prompt: opts.prompt || 'consent', // guarantees refresh_token on consent
+            prompt: opts.prompt || 'select_account consent', // guarantees account chooser and refresh_token
             include_granted_scopes: true,
             state: opts.state || undefined,
             scope: [
@@ -840,7 +1149,11 @@ class GoogleDriveService {
                 'https://www.googleapis.com/auth/userinfo.email',
                 'https://www.googleapis.com/auth/userinfo.profile'
             ]
-        });
+        };
+        if (opts.login_hint) {
+            params.login_hint = opts.login_hint;
+        }
+        return client.generateAuthUrl(params);
     }
 
     /**
@@ -854,22 +1167,85 @@ class GoogleDriveService {
         const { tokens } = await client.getToken(code);
         client.setCredentials(tokens);
 
-        await this.saveTokens(tokens);
+        let email = null;
+        let name = null;
+        let picture = null;
+        let givenName = null;
+
+        if (tokens.id_token) {
+            const payload = decodeJwtPayload(tokens.id_token);
+            if (payload?.email) {
+                email = payload.email.toLowerCase().trim();
+                name = payload.name;
+                picture = payload.picture;
+                givenName = payload.given_name;
+            }
+        }
+
+        if (!email) {
+            try {
+                const oauth2 = google.oauth2({ version: 'v2', auth: client });
+                const res = await oauth2.userinfo.get();
+                if (res.data?.email) {
+                    email = res.data.email.toLowerCase().trim();
+                    name = res.data.name;
+                    picture = res.data.picture;
+                    givenName = res.data.given_name;
+                }
+            } catch (e) {
+                console.warn('[GoogleDrive] Could not fetch userinfo:', e.message);
+            }
+        }
+
+        if (!email) {
+            email = this.activeAccountEmail || 'charan881130@gmail.com';
+        }
+
+        const existingAcc = this.connectedGoogleAccounts[email] || {};
+        const mergedTokens = {
+            ...(existingAcc.tokens || {}),
+            ...tokens,
+            refresh_token: tokens.refresh_token || existingAcc.tokens?.refresh_token
+        };
+
+        this.connectedGoogleAccounts[email] = {
+            id: email,
+            email,
+            displayName: name || existingAcc.displayName || email,
+            givenName: givenName || existingAcc.givenName || null,
+            photoLink: picture || existingAcc.photoLink || null,
+            tokens: mergedTokens,
+            plan: '5.0 TB Google AI Pro',
+            status: 'connected',
+            isDefault: true,
+            updatedAt: Date.now()
+        };
+
+        this.activeAccountEmail = email;
         this.drive = google.drive({ version: 'v3', auth: client });
         this.authType = 'oauth_user';
         this.oauth2Client = client;
+        this._cachedTokens = mergedTokens;
 
         client.on('tokens', async (newTokens) => {
-            const current = (await this.loadTokensFromDb()) || this.loadTokens() || {};
-            const merged = {
-                ...current,
-                ...newTokens,
-                refresh_token: newTokens.refresh_token || current.refresh_token
-            };
-            await this.saveTokens(merged);
+            if (this.connectedGoogleAccounts[email]) {
+                this.connectedGoogleAccounts[email].tokens = {
+                    ...this.connectedGoogleAccounts[email].tokens,
+                    ...newTokens,
+                    refresh_token: newTokens.refresh_token || this.connectedGoogleAccounts[email].tokens.refresh_token
+                };
+                if (this.activeAccountEmail === email) {
+                    this._cachedTokens = this.connectedGoogleAccounts[email].tokens;
+                    await this.saveTokens(this._cachedTokens);
+                }
+                await this.saveAccountsStore();
+            }
         });
 
-        console.log('✅ Google Drive OAuth 2.0 user authorization successful (5TB personal quota unlocked)');
+        await this.saveAccountsStore();
+        await this.saveTokens(mergedTokens);
+
+        console.log(`✅ [GoogleDrive] OAuth user authorized and saved for ${email} (5TB quota active)`);
         return await this.getStorageQuota();
     }
 
@@ -878,29 +1254,49 @@ class GoogleDriveService {
      */
     initialize() {
         try {
-            // 1. Check for saved OAuth 2.0 User Tokens
-            const savedTokens = this.loadTokens();
+            this.loadAccountsStore();
             const config = this.getOAuthConfig();
-            if (config.clientId && config.clientSecret && savedTokens && (savedTokens.refresh_token || savedTokens.access_token)) {
+            let tokens = null;
+            if (this.activeAccountEmail && this.connectedGoogleAccounts[this.activeAccountEmail]) {
+                tokens = this.connectedGoogleAccounts[this.activeAccountEmail].tokens;
+            }
+            if (!tokens) {
+                tokens = this.loadTokens();
+            }
+
+            if (config.clientId && config.clientSecret && tokens && (tokens.refresh_token || tokens.access_token)) {
                 const oauth2Client = new google.auth.OAuth2(
                     config.clientId,
                     config.clientSecret,
                     config.redirectUri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5001/api/drive/auth/callback'
                 );
-                oauth2Client.setCredentials(savedTokens);
+                oauth2Client.setCredentials(tokens);
+                const currentEmail = this.activeAccountEmail;
                 oauth2Client.on('tokens', async (newTokens) => {
-                    const current = (await this.loadTokensFromDb()) || this.loadTokens() || {};
-                    const merged = {
-                        ...current,
-                        ...newTokens,
-                        refresh_token: newTokens.refresh_token || current.refresh_token
-                    };
-                    await this.saveTokens(merged);
+                    if (currentEmail && this.connectedGoogleAccounts[currentEmail]) {
+                        this.connectedGoogleAccounts[currentEmail].tokens = {
+                            ...this.connectedGoogleAccounts[currentEmail].tokens,
+                            ...newTokens,
+                            refresh_token: newTokens.refresh_token || this.connectedGoogleAccounts[currentEmail].tokens.refresh_token
+                        };
+                        this._cachedTokens = this.connectedGoogleAccounts[currentEmail].tokens;
+                        await this.saveTokens(this._cachedTokens);
+                        await this.saveAccountsStore();
+                    } else {
+                        const current = (await this.loadTokensFromDb()) || this.loadTokens() || {};
+                        const merged = {
+                            ...current,
+                            ...newTokens,
+                            refresh_token: newTokens.refresh_token || current.refresh_token
+                        };
+                        await this.saveTokens(merged);
+                    }
                 });
                 this.drive = google.drive({ version: 'v3', auth: oauth2Client });
                 this.authType = 'oauth_user';
                 this.oauth2Client = oauth2Client;
-                console.log('✅ Google Drive initialized with OAuth 2.0 User Token (5TB personal quota active)');
+                this._cachedTokens = tokens;
+                console.log(`✅ Google Drive initialized with OAuth 2.0 User Token for ${this.activeAccountEmail || 'primary'} (5TB personal quota active)`);
                 return;
             }
 
@@ -936,28 +1332,49 @@ class GoogleDriveService {
      */
     async initFromDb() {
         try {
-            const dbTokens = (await this.loadTokensFromDb()) || this.loadTokens();
+            await this.loadAccountsStoreFromDb();
             const config = this.getOAuthConfig();
-            if (config.clientId && config.clientSecret && dbTokens && (dbTokens.refresh_token || dbTokens.access_token)) {
+            let tokens = null;
+            if (this.activeAccountEmail && this.connectedGoogleAccounts[this.activeAccountEmail]) {
+                tokens = this.connectedGoogleAccounts[this.activeAccountEmail].tokens;
+            }
+            if (!tokens) {
+                tokens = (await this.loadTokensFromDb()) || this.loadTokens();
+            }
+
+            if (config.clientId && config.clientSecret && tokens && (tokens.refresh_token || tokens.access_token)) {
                 const oauth2Client = new google.auth.OAuth2(
                     config.clientId,
                     config.clientSecret,
                     config.redirectUri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5001/api/drive/auth/callback'
                 );
-                oauth2Client.setCredentials(dbTokens);
+                oauth2Client.setCredentials(tokens);
+                const currentEmail = this.activeAccountEmail;
                 oauth2Client.on('tokens', async (newTokens) => {
-                    const current = (await this.loadTokensFromDb()) || this.loadTokens() || {};
-                    const merged = {
-                        ...current,
-                        ...newTokens,
-                        refresh_token: newTokens.refresh_token || current.refresh_token
-                    };
-                    await this.saveTokens(merged);
+                    if (currentEmail && this.connectedGoogleAccounts[currentEmail]) {
+                        this.connectedGoogleAccounts[currentEmail].tokens = {
+                            ...this.connectedGoogleAccounts[currentEmail].tokens,
+                            ...newTokens,
+                            refresh_token: newTokens.refresh_token || this.connectedGoogleAccounts[currentEmail].tokens.refresh_token
+                        };
+                        this._cachedTokens = this.connectedGoogleAccounts[currentEmail].tokens;
+                        await this.saveTokens(this._cachedTokens);
+                        await this.saveAccountsStore();
+                    } else {
+                        const current = (await this.loadTokensFromDb()) || this.loadTokens() || {};
+                        const merged = {
+                            ...current,
+                            ...newTokens,
+                            refresh_token: newTokens.refresh_token || current.refresh_token
+                        };
+                        await this.saveTokens(merged);
+                    }
                 });
                 this.drive = google.drive({ version: 'v3', auth: oauth2Client });
                 this.authType = 'oauth_user';
                 this.oauth2Client = oauth2Client;
-                console.log('✅ Google Drive restored with OAuth 2.0 User Token from PostgreSQL (5TB quota active)');
+                this._cachedTokens = tokens;
+                console.log(`✅ Google Drive restored with OAuth 2.0 User Token from PostgreSQL for ${this.activeAccountEmail || 'primary'} (5TB quota active)`);
                 return true;
             }
         } catch (e) {

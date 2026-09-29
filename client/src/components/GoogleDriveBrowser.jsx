@@ -5,7 +5,8 @@ import {
     HardDrive, Folder, FileText, FileSpreadsheet, File, Search, RefreshCw,
     Download, Eye, ExternalLink, ChevronRight, CornerUpLeft, Grid3X3, List,
     FolderPlus, Loader2, Check, AlertCircle, X, Clock, Database, Sparkles,
-    Upload, LogOut, Settings, Key, ShieldCheck, User, Bot, CheckSquare, Square
+    Upload, LogOut, Settings, Key, ShieldCheck, User, Bot, CheckSquare, Square,
+    ChevronDown
 } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { googleDriveAPI, foldersAPI } from '@/lib/api';
@@ -30,6 +31,9 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const [selectedAccountId, setSelectedAccountId] = useState('primary');
     const [providersList, setProvidersList] = useState([]);
     const [driveSearchMode, setDriveSearchMode] = useState('folder'); // 'folder' | 'all' (recursive 5TB search)
+    const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
+    const [switchingAccount, setSwitchingAccount] = useState(false);
+    const accountDropdownRef = useRef(null);
 
     // Local Destination Folders state
     const [localFoldersList, setLocalFoldersList] = useState(availableFolders);
@@ -106,8 +110,11 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
             ]);
             const s = statusRes.data?.data || null;
             setStatus(s);
+            const accounts = s?.connectedAccounts || providersRes?.data?.data?.connectedAccounts || [];
+            if (accounts.length > 0) {
+                setConnectedAccounts(accounts);
+            }
             if (providersRes?.data?.data) {
-                setConnectedAccounts(providersRes.data.data.connectedAccounts || []);
                 setProvidersList(providersRes.data.data.providers || []);
             }
         } catch (err) {
@@ -118,6 +125,17 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     useEffect(() => {
         refreshStatus();
     }, [refreshStatus]);
+
+    // Outside click listener for Account Dropdown
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (accountDropdownRef.current && !accountDropdownRef.current.contains(e.target)) {
+                setIsAccountDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     // Load files for current folder / search
     const fetchFiles = useCallback(async () => {
@@ -173,12 +191,16 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         }
     }, [fetchFiles, refreshStatus]);
 
-    // Connect Personal Google Drive via OAuth 2.0
-    const handleConnectOAuth = async (promptSelect = false) => {
+    // Connect Personal Google Drive via OAuth 2.0 (with account chooser)
+    const handleConnectOAuth = async (promptSelect = true, loginHint = null) => {
         setConnectingOAuth(true);
         try {
             const returnTo = typeof window !== 'undefined' ? window.location.origin : undefined;
-            const res = await googleDriveAPI.getAuthUrl({ ...(promptSelect ? { prompt: 'select_account' } : {}), returnTo });
+            const res = await googleDriveAPI.getAuthUrl({ 
+                prompt: promptSelect ? 'select_account consent' : 'consent', 
+                ...(loginHint ? { login_hint: loginHint } : {}),
+                returnTo 
+            });
             if (res.data?.data?.authUrl) {
                 window.location.href = res.data.data.authUrl;
             } else {
@@ -188,6 +210,35 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
             toast.error(err.response?.data?.message || 'Google OAuth is not configured yet. Configure Client ID and Secret in Admin Settings > Cloud Storage & Drives.', { duration: 6000 });
         } finally {
             setConnectingOAuth(false);
+        }
+    };
+
+    // Switch active Google Drive account
+    const handleSwitchAccount = async (account) => {
+        const emailOrId = typeof account === 'string' ? account : (account.email || account.id);
+        if (!emailOrId) return;
+
+        if (typeof account === 'object' && account.status === 'needs_reconnect') {
+            setIsAccountDropdownOpen(false);
+            handleConnectOAuth(true, account.email);
+            return;
+        }
+
+        setSwitchingAccount(true);
+        const toastId = toast.loading(`Switching to ${emailOrId}...`);
+        try {
+            await googleDriveAPI.switchAccount(emailOrId);
+            setIsAccountDropdownOpen(false);
+            toast.success(`Active Google Drive switched to ${emailOrId}!`, { id: toastId });
+            setCurrentFolderId(null);
+            setBreadcrumbs([{ id: null, name: 'Google Drive' }]);
+            await refreshStatus();
+            await fetchFiles();
+        } catch (err) {
+            console.error('Failed to switch Google account:', err);
+            toast.error(err.response?.data?.message || 'Failed to switch Google account', { id: toastId });
+        } finally {
+            setSwitchingAccount(false);
         }
     };
 
@@ -203,6 +254,59 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
             toast.error('Failed to disconnect Google account');
         }
     };
+
+    // Filter and normalize Google accounts for dropdown
+    const googleAccounts = React.useMemo(() => {
+        const list = [];
+        const seen = new Set();
+
+        (connectedAccounts || []).forEach(acc => {
+            if (acc.provider === 'google' || acc.id?.includes('@') || acc.email?.includes('@')) {
+                const norm = acc.email?.toLowerCase().trim();
+                if (norm && !seen.has(norm)) {
+                    seen.add(norm);
+                    list.push(acc);
+                }
+            }
+        });
+
+        if (status?.user?.emailAddress) {
+            const norm = status.user.emailAddress.toLowerCase().trim();
+            if (!seen.has(norm)) {
+                seen.add(norm);
+                list.unshift({
+                    id: norm,
+                    email: norm,
+                    displayName: status.user.displayName || norm,
+                    photoLink: status.user.photoLink || null,
+                    provider: 'google',
+                    plan: status.quota?.limitFormatted ? `${status.quota.limitFormatted} Google One` : '5.0 TB Google AI Pro',
+                    isActive: true,
+                    status: 'connected'
+                });
+            }
+        }
+
+        // Support both user accounts (charan881130@gmail.com and charan117@gmail.com)
+        const knownEmails = ['charan881130@gmail.com', 'charan117@gmail.com'];
+        knownEmails.forEach(e => {
+            const norm = e.toLowerCase();
+            if (!seen.has(norm)) {
+                seen.add(norm);
+                list.push({
+                    id: norm,
+                    email: norm,
+                    displayName: norm.split('@')[0],
+                    provider: 'google',
+                    plan: 'Google Drive Account',
+                    status: 'needs_reconnect',
+                    isActive: false
+                });
+            }
+        });
+
+        return list;
+    }, [connectedAccounts, status]);
 
     // Direct Upload to current Google Drive folder
     const handleDirectUpload = async (e) => {
@@ -536,49 +640,154 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                     </div>
                                 </div>
 
-                                <div className="text-slate-600 text-xs mt-1 font-medium flex items-center gap-2 flex-wrap">
-                                    <span className="font-semibold text-slate-800 flex items-center gap-1">
-                                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-                                        {status.user?.emailAddress || 'charan881130@gmail.com'}
-                                    </span>
-                                    {status.user?.displayName && <span className="text-slate-400">• {status.user.displayName}</span>}
-
-                                    {/* Multi-Account Switcher */}
-                                    {connectedAccounts && connectedAccounts.length > 1 ? (
-                                        <div className="inline-flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-[11px]">
-                                            {connectedAccounts.map((acc) => (
-                                                <button
-                                                    key={acc.id}
-                                                    type="button"
-                                                    onClick={() => setSelectedAccountId(acc.id)}
-                                                    className={`px-2 py-0.5 rounded-md font-medium transition ${
-                                                        selectedAccountId === acc.id
-                                                            ? 'bg-white text-emerald-700 shadow-xs font-bold'
-                                                            : 'text-slate-600 hover:text-slate-900'
-                                                    }`}
-                                                >
-                                                    {acc.displayName || acc.email?.split('@')[0] || acc.provider}
-                                                </button>
-                                            ))}
-                                            <button
-                                                type="button"
-                                                onClick={() => handleConnectOAuth(true)}
-                                                className="px-2 py-0.5 text-emerald-600 hover:text-emerald-700 font-bold hover:underline"
-                                                title="Link another account"
-                                            >
-                                                +
-                                            </button>
-                                        </div>
-                                    ) : (
+                                <div className="text-slate-600 text-xs mt-1.5 font-medium flex items-center gap-2 flex-wrap">
+                                    {/* Prominent Google Drive Account Dropdown Selector */}
+                                    <div className="relative inline-block text-left" ref={accountDropdownRef}>
                                         <button
                                             type="button"
-                                            onClick={() => handleConnectOAuth(true)}
-                                            className="text-[11px] text-emerald-600 hover:text-emerald-700 font-semibold hover:underline inline-flex items-center gap-0.5"
-                                            title="Link a secondary or institutional Google account"
+                                            onClick={() => setIsAccountDropdownOpen(prev => !prev)}
+                                            disabled={switchingAccount}
+                                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/95 hover:bg-white border border-emerald-300 shadow-xs hover:shadow-sm text-slate-800 transition group cursor-pointer"
+                                            title="Click to switch between connected Google accounts (e.g. charan881130@gmail.com and charan117@gmail.com)"
                                         >
-                                            + Link Another Account
+                                            <div className="relative flex items-center">
+                                                {status.user?.photoLink ? (
+                                                    <img
+                                                        src={status.user.photoLink}
+                                                        alt="Avatar"
+                                                        className="w-5 h-5 rounded-full object-cover border border-emerald-400"
+                                                    />
+                                                ) : (
+                                                    <div className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold">
+                                                        {(status.user?.displayName || status.user?.emailAddress || 'G').charAt(0).toUpperCase()}
+                                                    </div>
+                                                )}
+                                                <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-1 ring-white" />
+                                            </div>
+
+                                            <div className="flex flex-col text-left">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[12px] font-bold text-slate-900 leading-tight">
+                                                        {status.user?.emailAddress || 'charan881130@gmail.com'}
+                                                    </span>
+                                                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase">
+                                                        Active
+                                                    </span>
+                                                </div>
+                                                {status.user?.displayName && (
+                                                    <span className="text-[10px] text-slate-500 font-medium leading-tight">
+                                                        {status.user.displayName}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <ChevronDown className={`w-3.5 h-3.5 text-slate-500 group-hover:text-slate-800 transition-transform duration-200 ${isAccountDropdownOpen ? 'rotate-180' : ''}`} />
                                         </button>
-                                    )}
+
+                                        {/* Dropdown Menu */}
+                                        {isAccountDropdownOpen && (
+                                            <div className="absolute left-0 mt-2 w-80 sm:w-88 rounded-2xl bg-white border border-slate-200 shadow-2xl z-50 p-2 divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-150">
+                                                <div className="px-3 py-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">Switch Google Drive Account</span>
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+                                                            {googleAccounts.length} Connected
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[11px] text-slate-500 mt-0.5">
+                                                        Select which Google Drive account to browse and import from:
+                                                    </p>
+                                                </div>
+
+                                                {/* Account list */}
+                                                <div className="py-1.5 space-y-1 max-h-64 overflow-y-auto">
+                                                    {googleAccounts.map((acc) => {
+                                                        const isCurrent = acc.isActive || (status.user?.emailAddress && acc.email?.toLowerCase() === status.user.emailAddress.toLowerCase());
+                                                        const isNeedsAuth = acc.status === 'needs_reconnect';
+                                                        return (
+                                                            <button
+                                                                key={acc.email || acc.id}
+                                                                type="button"
+                                                                onClick={() => handleSwitchAccount(acc)}
+                                                                disabled={switchingAccount}
+                                                                className={`w-full text-left px-3 py-2.5 rounded-xl transition flex items-center justify-between gap-3 ${
+                                                                    isCurrent
+                                                                        ? 'bg-emerald-50/80 border border-emerald-200 text-slate-900 shadow-xs'
+                                                                        : 'hover:bg-slate-50 text-slate-700 border border-transparent'
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                                    {acc.photoLink ? (
+                                                                        <img src={acc.photoLink} alt={acc.email} className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-slate-200" />
+                                                                    ) : (
+                                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 ${
+                                                                            isCurrent ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-200 text-slate-700'
+                                                                        }`}>
+                                                                            {(acc.displayName || acc.email || 'G').charAt(0).toUpperCase()}
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="min-w-0">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <p className="text-xs font-bold text-slate-900 truncate">
+                                                                                {acc.email}
+                                                                            </p>
+                                                                            {isNeedsAuth && (
+                                                                                <span className="px-1.5 py-0.2 rounded-md bg-amber-100 text-amber-800 text-[9px] font-bold">
+                                                                                    Authorize
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="text-[10px] text-slate-500 truncate flex items-center gap-1">
+                                                                            <span>{acc.displayName || 'Google Account'}</span>
+                                                                            {acc.plan && <span>• {acc.plan}</span>}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                                    {isCurrent ? (
+                                                                        <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-md shadow-xs border border-emerald-200">
+                                                                            <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                                                                            Active
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-[11px] font-semibold text-slate-500 hover:text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                                                                            {isNeedsAuth ? 'Connect' : 'Switch'}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+
+                                                {/* Footer Action: Connect another Google account */}
+                                                <div className="pt-2 px-1 space-y-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setIsAccountDropdownOpen(false);
+                                                            handleConnectOAuth(true);
+                                                        }}
+                                                        className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition flex items-center gap-2"
+                                                    >
+                                                        <span className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center font-bold text-sm text-emerald-700">+</span>
+                                                        <span>+ Connect Another Google Account</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Direct quick action to link another account */}
+                                    <button
+                                        type="button"
+                                        onClick={() => handleConnectOAuth(true)}
+                                        className="text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold hover:underline inline-flex items-center gap-1 bg-white/70 hover:bg-white px-2.5 py-1.5 rounded-xl border border-emerald-200/80 transition shadow-2xs cursor-pointer"
+                                        title="Link charan117@gmail.com, charan881130@gmail.com or another Google Drive account"
+                                    >
+                                        <span>+ Add Account</span>
+                                    </button>
                                 </div>
                             </div>
                         </div>

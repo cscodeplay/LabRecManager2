@@ -172,6 +172,7 @@ router.get('/status', asyncHandler(async (req, res) => {
     const effectiveAuthType = quotaData.authType || googleDriveService.authType;
     const isOAuthConnected = effectiveAuthType === 'oauth_user' || Boolean(connectedUser?.emailAddress);
     const resolvedUser = quotaData.user || connectedUser || null;
+    const connectedAccounts = await googleDriveService.getConnectedAccounts();
 
     res.json({
         success: true,
@@ -179,6 +180,8 @@ router.get('/status', asyncHandler(async (req, res) => {
             isConfigured: googleDriveService.isConfigured() || Boolean(connectedUser),
             authType: effectiveAuthType,
             isOAuthConnected,
+            activeAccountEmail: googleDriveService.activeAccountEmail || resolvedUser?.emailAddress || null,
+            connectedAccounts,
             authError: quotaData.error || null,
             scopeNotice: quotaData.scopeNotice || null,
             hasOAuthConfig: Boolean(oauthConfig.clientId && oauthConfig.clientSecret),
@@ -212,7 +215,7 @@ router.get('/providers', asyncHandler(async (req, res) => {
     res.json({
         success: true,
         data: {
-            activeProvider: 'google_drive_primary',
+            activeProvider: googleDriveService.activeAccountEmail || 'google_drive_primary',
             connectedAccounts,
             providers: [
                 {
@@ -272,6 +275,39 @@ router.get('/providers', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * @route   POST /api/drive/switch-account
+ * @desc    Switch active Google Drive account dynamically
+ */
+router.post('/switch-account', asyncHandler(async (req, res) => {
+    const { accountId, email } = req.body || {};
+    const target = accountId || email;
+    if (!target) {
+        return res.status(400).json({ success: false, message: 'Account identifier is required' });
+    }
+    const result = await googleDriveService.switchAccount(target);
+    res.json({
+        success: true,
+        message: `Switched active Google Drive account to ${result.activeEmail}`,
+        data: result
+    });
+}));
+
+/**
+ * @route   GET /api/drive/accounts
+ * @desc    Get all connected cloud drive accounts with active indicator
+ */
+router.get('/accounts', asyncHandler(async (req, res) => {
+    const accounts = await googleDriveService.getConnectedAccounts();
+    res.json({
+        success: true,
+        data: {
+            accounts,
+            activeAccountEmail: googleDriveService.activeAccountEmail
+        }
+    });
+}));
+
+/**
  * @route   GET /api/drive/auth/url
  * @desc    Generate Google OAuth consent URL for user authorization
  */
@@ -279,10 +315,11 @@ router.get('/auth/url', asyncHandler(async (req, res) => {
     const callbackUrl = getCallbackUrl(req);
     const clientBase = getClientBaseUrl(req);
     const returnTo = req.query.returnTo || clientBase;
-    const prompt = req.query.prompt || 'consent';
+    const prompt = req.query.prompt || 'select_account consent';
+    const loginHint = req.query.login_hint || req.query.loginHint || undefined;
     const state = Buffer.from(JSON.stringify({ returnTo, t: Date.now() })).toString('base64');
 
-    const authUrl = googleDriveService.generateAuthUrl(callbackUrl, { prompt, state });
+    const authUrl = googleDriveService.generateAuthUrl(callbackUrl, { prompt, state, login_hint: loginHint });
     res.json({
         success: true,
         data: {

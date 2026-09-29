@@ -508,10 +508,22 @@ export default function SettingsPage() {
         setTimeout(() => setCopiedUrlKey(null), 2500);
     };
 
+    const handleSwitchDriveAccount = async (accountIdOrEmail) => {
+        const toastId = toast.loading(`Switching active drive to ${accountIdOrEmail}...`);
+        try {
+            await driveAdminAPI.switchAccount(accountIdOrEmail);
+            toast.success(`Active Google Drive switched to ${accountIdOrEmail}!`, { id: toastId });
+            await loadCloudDriveSettings();
+        } catch (error) {
+            console.error('Failed to switch drive account:', error);
+            toast.error(error.response?.data?.message || 'Failed to switch drive account', { id: toastId });
+        }
+    };
+
     const handleConnectNewGoogleAccount = async () => {
         try {
             const returnTo = typeof window !== 'undefined' ? window.location.origin : undefined;
-            const res = await googleDriveAPI.getAuthUrl({ prompt: 'select_account', returnTo });
+            const res = await googleDriveAPI.getAuthUrl({ prompt: 'select_account consent', returnTo });
             if (res.data?.data?.authUrl) {
                 window.location.href = res.data.data.authUrl;
             } else {
@@ -1599,8 +1611,12 @@ export default function SettingsPage() {
                                                         <div>
                                                             <div className="flex items-center gap-2">
                                                                 <span className="font-bold text-slate-900 text-sm">{acc.email || acc.displayName || acc.id}</span>
-                                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                                                    {acc.isDefault ? 'Primary Active' : 'Connected'}
+                                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                                    acc.isActive || acc.isDefault
+                                                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                                                        : 'bg-slate-200 text-slate-700'
+                                                                }`}>
+                                                                    {acc.isActive || acc.isDefault ? 'Active Drive' : 'Connected'}
                                                                 </span>
                                                                 <span className="text-[10px] font-semibold text-slate-500 uppercase">
                                                                     {acc.provider}
@@ -1613,15 +1629,28 @@ export default function SettingsPage() {
                                                         </div>
                                                     </div>
 
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleDisconnectDriveAccount(acc.id, acc.provider)}
-                                                        className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition flex items-center gap-1.5 self-start sm:self-center"
-                                                        title="Disconnect this account"
-                                                    >
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                        <span>Disconnect</span>
-                                                    </button>
+                                                    <div className="flex items-center gap-2 self-start sm:self-center">
+                                                        {acc.provider === 'google' && !acc.isActive && !acc.isDefault && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSwitchDriveAccount(acc.email || acc.id)}
+                                                                className="px-3 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                                                                title="Set this account as the active Google Drive"
+                                                            >
+                                                                <Check className="w-3.5 h-3.5" />
+                                                                <span>Switch to Active</span>
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDisconnectDriveAccount(acc.id, acc.provider)}
+                                                            className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                                                            title="Disconnect this account"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                            <span>Disconnect</span>
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>

@@ -741,6 +741,8 @@ export const implementationPlansAPI = {
 export const googleDriveAPI = {
     getStatus: () => api.get('/drive/status'),
     getProviders: () => api.get('/drive/providers'),
+    getAccounts: () => api.get('/drive/accounts'),
+    switchAccount: (accountIdOrEmail) => api.post('/drive/switch-account', { accountId: accountIdOrEmail, email: accountIdOrEmail }),
     listFiles: (params) => api.get('/drive/files', { params }),
     getFile: (id) => api.get(`/drive/files/${id}`),
     getFileText: (id) => api.get(`/drive/files/${id}/text`),
@@ -767,8 +769,10 @@ export const driveAdminAPI = {
     getConfigs: () => api.get('/drive/admin/config'),
     saveConfig: (data) => api.post('/drive/admin/config', data),
     getAccounts: () => api.get('/drive/admin/accounts'),
+    switchAccount: (accountIdOrEmail) => api.post('/drive/switch-account', { accountId: accountIdOrEmail, email: accountIdOrEmail }),
     disconnectAccount: (accountId) => api.post('/drive/admin/accounts/disconnect', { accountId }),
 };
+
 
 
 
