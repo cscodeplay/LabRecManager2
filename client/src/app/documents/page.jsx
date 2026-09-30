@@ -2430,7 +2430,7 @@ export default function DocumentsPage() {
                                     </div>
                                 </div>
                                 <div className="flex items-center justify-between mt-3 pt-3 border-t border-indigo-100/60 text-xs text-indigo-600 font-medium">
-                                    <span>Browse & Embed</span>
+                                    <span>Browse Recordings</span>
                                     <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
                                 </div>
                             </div>
@@ -4226,12 +4226,13 @@ export default function DocumentsPage() {
                                     onClick={() => {
                                         const rec = previewRecording;
                                         setPreviewRecording(null);
-                                        handleEmbedInWhiteboard(rec);
+                                        handleOpenEditRecording(rec);
                                     }}
                                     className="btn btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3 rounded-xl"
+                                    title="Edit Recording Details"
                                 >
-                                    <Pencil className="w-3.5 h-3.5" />
-                                    <span>Embed in Whiteboard</span>
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                    <span>Edit</span>
                                 </button>
                                 <button
                                     type="button"
@@ -4257,16 +4258,22 @@ export default function DocumentsPage() {
                 </div>
             )}
 
-            {/* Delete Recording Confirmation Modal */}
+            {/* Delete Recording Confirmation Modal (Supports Single & Bulk) */}
             {deleteRecordingConfirm && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
                     <div className="bg-white dark:bg-slate-850 p-6 rounded-2xl max-w-sm w-full border border-slate-200 dark:border-slate-800 shadow-2xl">
                         <div className="flex items-center gap-3 text-rose-600 mb-3">
                             <Trash2 className="w-6 h-6" />
-                            <h3 className="text-base font-bold text-slate-900 dark:text-white">Delete Recording?</h3>
+                            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                                {deleteRecordingConfirm === 'BULK' || Array.isArray(deleteRecordingConfirm)
+                                    ? `Delete ${Array.isArray(deleteRecordingConfirm) ? deleteRecordingConfirm.length : selectedRecordings.size} Recordings?`
+                                    : 'Delete Recording?'}
+                            </h3>
                         </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
-                            Are you sure you want to permanently delete this whiteboard recording? This action cannot be undone.
+                            {deleteRecordingConfirm === 'BULK' || Array.isArray(deleteRecordingConfirm)
+                                ? `Are you sure you want to permanently delete these ${Array.isArray(deleteRecordingConfirm) ? deleteRecordingConfirm.length : selectedRecordings.size} selected recordings? This action cannot be undone.`
+                                : 'Are you sure you want to permanently delete this whiteboard recording? This action cannot be undone.'}
                         </p>
                         <div className="flex justify-end gap-2.5">
                             <button
@@ -4284,6 +4291,94 @@ export default function DocumentsPage() {
                                 Delete
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Recording Modal */}
+            {editingRecording && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-850 rounded-2xl max-w-md w-full border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
+                            <div className="flex items-center gap-2">
+                                <Edit2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                                <h3 className="text-base font-bold text-slate-900 dark:text-white">Edit Recording</h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setEditingRecording(null)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleSaveRecordingEdit} className="p-4 space-y-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                    Recording Title <span className="text-rose-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={editRecordingTitle}
+                                    onChange={(e) => setEditRecordingTitle(e.target.value)}
+                                    placeholder="e.g. Physics Chapter 3 Lecture"
+                                    className="w-full px-3 py-2 text-sm rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                    Description
+                                </label>
+                                <textarea
+                                    rows={3}
+                                    value={editRecordingDescription}
+                                    onChange={(e) => setEditRecordingDescription(e.target.value)}
+                                    placeholder="Optional notes or description about this session..."
+                                    className="w-full px-3 py-2 text-sm rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                                />
+                            </div>
+                            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-800 dark:text-white">Public Visibility</p>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                        {editRecordingIsPublic ? 'Anyone with the share link can watch' : 'Private (only invited or school users)'}
+                                    </p>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={editRecordingIsPublic}
+                                        onChange={(e) => setEditRecordingIsPublic(e.target.checked)}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
+                                </label>
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingRecording(null)}
+                                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={editRecordingSaving}
+                                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition shadow-xs disabled:opacity-50 flex items-center gap-1.5"
+                                >
+                                    {editRecordingSaving ? (
+                                        <>
+                                            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            <span>Saving...</span>
+                                        </>
+                                    ) : (
+                                        <span>Save Changes</span>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}
