@@ -55,7 +55,7 @@ import WhiteboardShortcutsModal from './WhiteboardShortcutsModal';
 import WhiteboardClipboardPanel from './WhiteboardClipboardPanel';
 import WhiteboardMediaPlayer from './WhiteboardMediaPlayer';
 import WhiteboardPdfViewer from './WhiteboardPdfViewer';
-import Whiteboard3DObject, { get3DModelMesh, parseOBJ, parseSTL, parseJSON3D, shadeColor, render3DObjectSVG } from './Whiteboard3DObject';
+import Whiteboard3DObject, { get3DModelMesh, parseOBJ, parseSTL, parseJSON3D, shadeColor, render3DObjectSVG, getDefaultDimensions } from './Whiteboard3DObject';
 import { WhiteboardGraphObject, getEquationColor } from './graphPlotter';
 import TorchIcon from './TorchIcon';
 import GameSelectorModal from './games/GameSelectorModal';
@@ -8835,7 +8835,7 @@ export default function Whiteboard({
                 if (!rendered3D) {
                     const mesh = (obj3d.meshData && obj3d.meshData.vertices && obj3d.meshData.faces)
                         ? obj3d.meshData
-                        : get3DModelMesh(obj3d.modelType || 'cube');
+                        : get3DModelMesh(obj3d.modelType || 'cube', obj3d.dimensions);
                     if (!mesh || !mesh.vertices || !mesh.faces) continue;
 
                     const rotX = obj3d.rotX ?? -25;
@@ -8868,8 +8868,9 @@ export default function Whiteboard({
                         let y3 = x2 * sinZ + y2 * cosZ;
                         let z3 = z2;
 
+                        const isIsometric = (obj3d.projectionMode || 'isometric') === 'isometric';
                         const distance = 4;
-                        const factor = distance / (distance + z3);
+                        const factor = isIsometric ? 1.0 : (distance / (distance + z3));
                         const scale = (Math.min(w, h) / 2) * 0.75;
                         const px = w / 2 + x3 * factor * scale;
                         const py = h / 2 + y3 * factor * scale;
@@ -17182,9 +17183,10 @@ export default function Whiteboard({
                     const cy = Math.max(30, baseCy + cascade);
 
                     if (symbol.is3D || symbol.category === '3d') {
+                        const mType = symbol.modelType || symbol.id.replace('_3d', '');
                         const new3D = {
                             id: `3d_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-                            modelType: symbol.modelType || symbol.id.replace('_3d', ''),
+                            modelType: mType,
                             meshData: symbol.meshData || null,
                             name: symbol.name,
                             x: Math.max(20, cx),
@@ -17195,7 +17197,11 @@ export default function Whiteboard({
                             rotX: -25,
                             rotY: 45,
                             rotZ: 0,
-                            rotation: 0
+                            rotation: 0,
+                            dimensions: getDefaultDimensions(mType),
+                            unit: 'cm',
+                            showDimensions: false,
+                            projectionMode: 'isometric'
                         };
                         setThreeDObjects(prev => [...prev, new3D]);
                         setSelected3DIds([new3D.id]);

@@ -5,8 +5,9 @@ import {
     Box, Rotate3d, Lock, Unlock, Trash2, Copy,
     Infinity as InfinityIcon, Sliders, RotateCcw, RotateCw,
     ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
-    ChevronsUp, ChevronsDown, Palette, Sun, Eye, X
+    ChevronsUp, ChevronsDown, Palette, Sun, Eye, X, Ruler
 } from 'lucide-react';
+import PlanetRenderer3D from './PlanetRenderer3D';
 
 // Snap angle to nearest 45 degree cardinal/diagonal within 3.5 deg threshold
 const snapRotationAngle = (rawAngle) => {
@@ -120,6 +121,193 @@ function RotationDial3D({ cx, cy, radius, rotation }) {
 }
 
 
+/* ─── Default Dimensions and Units Helper ─── */
+export function getDefaultDimensions(modelType = 'cube') {
+    switch ((modelType || '').toLowerCase()) {
+        case 'prism':
+            return { base: 10, height: 10, depth: 12 };
+        case 'cylinder':
+            return { radius: 5, height: 12 };
+        case 'cone':
+            return { radius: 5, height: 12 };
+        case 'cube':
+            return { width: 10, height: 10, depth: 10 };
+        case 'pyramid':
+            return { width: 10, depth: 10, height: 12 };
+        case 'sphere':
+        case 'sun':
+        case 'earth':
+        case 'moon':
+        case 'mars':
+        case 'jupiter':
+        case 'saturn':
+        case 'neptune':
+            return { radius: 6 };
+        default:
+            return { width: 10, height: 10, depth: 10 };
+    }
+}
+
+/* ─── Dimension Annotations Calculator for 3D Shapes ─── */
+export function getDimensionAnnotations(obj, transformedVertices, w, h) {
+    if (!obj || !obj.showDimensions || !transformedVertices || transformedVertices.length === 0) {
+        return [];
+    }
+    const mType = (obj.modelType || 'cube').toLowerCase();
+    const dims = { ...getDefaultDimensions(mType), ...(obj.dimensions || {}) };
+    const unit = obj.unit || 'cm';
+    const annotations = [];
+
+    if (mType === 'prism') {
+        const v0 = transformedVertices[0]; // front-bottom-left
+        const v1 = transformedVertices[1]; // front-bottom-right
+        const v2 = transformedVertices[2]; // front-apex
+        const v3 = transformedVertices[3]; // back-bottom-left
+        if (v0 && v1 && v2) {
+            // Base dimension line below front base
+            const bx1 = v0.px;
+            const by1 = v0.py + 16;
+            const bx2 = v1.px;
+            const by2 = v1.py + 16;
+            annotations.push({
+                type: 'line',
+                x1: bx1, y1: by1, x2: bx2, y2: by2,
+                label: `b = ${dims.base} ${unit}`,
+                midX: (bx1 + bx2) / 2, midY: (by1 + by2) / 2 + 12
+            });
+
+            // Height dimension line from base center to apex
+            const baseMidX = (v0.px + v1.px) / 2;
+            const baseMidY = (v0.py + v1.py) / 2;
+            annotations.push({
+                type: 'dashed-line',
+                x1: baseMidX, y1: baseMidY, x2: v2.px, y2: v2.py,
+                label: `h = ${dims.height} ${unit}`,
+                midX: (baseMidX + v2.px) / 2 - 28, midY: (baseMidY + v2.py) / 2
+            });
+
+            // Depth / length dimension line from v0 to v3
+            if (v3) {
+                annotations.push({
+                    type: 'line',
+                    x1: v0.px - 14, y1: v0.py, x2: v3.px - 14, y2: v3.py,
+                    label: `l = ${dims.depth} ${unit}`,
+                    midX: (v0.px + v3.px) / 2 - 32, midY: (v0.py + v3.py) / 2
+                });
+            }
+        }
+    } else if (mType === 'cylinder') {
+        const topCenter = transformedVertices[transformedVertices.length - 2];
+        const botCenter = transformedVertices[transformedVertices.length - 1];
+        const topRim0 = transformedVertices[0];
+        if (topCenter && topRim0 && botCenter) {
+            // Radius on top circular face
+            annotations.push({
+                type: 'line',
+                x1: topCenter.px, y1: topCenter.py, x2: topRim0.px, y2: topRim0.py,
+                label: `r = ${dims.radius} ${unit}`,
+                midX: (topCenter.px + topRim0.px) / 2, midY: (topCenter.py + topRim0.py) / 2 - 12
+            });
+            // Height along vertical side
+            const offX = 24;
+            annotations.push({
+                type: 'line',
+                x1: botCenter.px + offX, y1: botCenter.py, x2: topCenter.px + offX, y2: topCenter.py,
+                label: `h = ${dims.height} ${unit}`,
+                midX: topCenter.px + offX + 16, midY: (topCenter.py + botCenter.py) / 2
+            });
+        }
+    } else if (mType === 'cone') {
+        const apex = transformedVertices[0];
+        const baseCenter = transformedVertices[transformedVertices.length - 1];
+        const baseRim0 = transformedVertices[1];
+        if (apex && baseCenter && baseRim0) {
+            // Radius on base circle
+            annotations.push({
+                type: 'line',
+                x1: baseCenter.px, y1: baseCenter.py, x2: baseRim0.px, y2: baseRim0.py,
+                label: `r = ${dims.radius} ${unit}`,
+                midX: (baseCenter.px + baseRim0.px) / 2, midY: (baseCenter.py + baseRim0.py) / 2 + 14
+            });
+            // Height from apex to base center
+            annotations.push({
+                type: 'dashed-line',
+                x1: baseCenter.px, y1: baseCenter.py, x2: apex.px, y2: apex.py,
+                label: `h = ${dims.height} ${unit}`,
+                midX: (baseCenter.px + apex.px) / 2 - 30, midY: (baseCenter.py + apex.py) / 2
+            });
+        }
+    } else if (mType === 'cube') {
+        const v0 = transformedVertices[0]; // [-w, -h, -d]
+        const v1 = transformedVertices[1]; // [w, -h, -d]
+        const v2 = transformedVertices[2]; // [w, h, -d]
+        const v5 = transformedVertices[5]; // [w, -h, d]
+        if (v0 && v1 && v2) {
+            annotations.push({
+                type: 'line',
+                x1: v0.px, y1: v0.py - 16, x2: v1.px, y2: v1.py - 16,
+                label: `w = ${dims.width} ${unit}`,
+                midX: (v0.px + v1.px) / 2, midY: (v0.py + v1.py) / 2 - 12
+            });
+            annotations.push({
+                type: 'line',
+                x1: v1.px + 16, y1: v1.py, x2: v2.px + 16, y2: v2.py,
+                label: `h = ${dims.height} ${unit}`,
+                midX: (v1.px + v2.px) / 2 + 28, midY: (v1.py + v2.py) / 2
+            });
+            if (v5) {
+                annotations.push({
+                    type: 'line',
+                    x1: v1.px, y1: v1.py, x2: v5.px, y2: v5.py,
+                    label: `d = ${dims.depth} ${unit}`,
+                    midX: (v1.px + v5.px) / 2 + 22, midY: (v1.py + v5.py) / 2 - 10
+                });
+            }
+        }
+    } else if (mType === 'pyramid') {
+        const v0 = transformedVertices[0];
+        const v1 = transformedVertices[1];
+        const v2 = transformedVertices[2];
+        const apex = transformedVertices[4];
+        if (v0 && v1 && apex) {
+            annotations.push({
+                type: 'line',
+                x1: v0.px, y1: v0.py + 16, x2: v1.px, y2: v1.py + 16,
+                label: `w = ${dims.width} ${unit}`,
+                midX: (v0.px + v1.px) / 2, midY: (v0.py + v1.py) / 2 + 12
+            });
+            if (v2) {
+                annotations.push({
+                    type: 'line',
+                    x1: v1.px + 14, y1: v1.py, x2: v2.px + 14, y2: v2.py,
+                    label: `d = ${dims.depth} ${unit}`,
+                    midX: (v1.px + v2.px) / 2 + 24, midY: (v1.py + v2.py) / 2
+                });
+            }
+            const baseMidX = (v0.px + (v2 ? v2.px : v1.px)) / 2;
+            const baseMidY = (v0.py + (v2 ? v2.py : v1.py)) / 2;
+            annotations.push({
+                type: 'dashed-line',
+                x1: baseMidX, y1: baseMidY, x2: apex.px, y2: apex.py,
+                label: `h = ${dims.height} ${unit}`,
+                midX: (baseMidX + apex.px) / 2 - 32, midY: (baseMidY + apex.py) / 2
+            });
+        }
+    } else if (['sphere', 'sun', 'earth', 'moon', 'mars', 'jupiter', 'saturn', 'neptune'].includes(mType)) {
+        const cx = w / 2;
+        const cy = h / 2;
+        const r = (Math.min(w, h) / 2) * 0.76;
+        annotations.push({
+            type: 'line',
+            x1: cx, y1: cy, x2: cx + r, y2: cy,
+            label: `r = ${dims.radius} ${unit}`,
+            midX: cx + r / 2, midY: cy - 12
+        });
+    }
+
+    return annotations;
+}
+
 /* ─── Built-in 3D Geometric & Science Mesh Generators ─── */
 function createSphereMesh(latBands = 10, lonBands = 14, radius = 1.0, color = '#10b981', customFaceColorFn = null) {
     const v = [];
@@ -148,12 +336,18 @@ function createSphereMesh(latBands = 10, lonBands = 14, radius = 1.0, color = '#
     return { vertices: v, faces: f, color, faceColors };
 }
 
-export function get3DModelMesh(modelType = 'cube') {
-    switch (modelType.toLowerCase()) {
+export function get3DModelMesh(modelType = 'cube', dimensions = null) {
+    const mType = (modelType || 'cube').toLowerCase();
+    const dims = { ...getDefaultDimensions(mType), ...(dimensions || {}) };
+
+    switch (mType) {
         case 'cube': {
+            const halfW = (dims.width || 10) / 10;
+            const halfH = (dims.height || 10) / 10;
+            const halfD = (dims.depth || 10) / 10;
             const v = [
-                [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
-                [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]
+                [-halfW, -halfH, -halfD], [halfW, -halfH, -halfD], [halfW, halfH, -halfD], [-halfW, halfH, -halfD],
+                [-halfW, -halfH, halfD], [halfW, -halfH, halfD], [halfW, halfH, halfD], [-halfW, halfH, halfD]
             ];
             const f = [
                 [0, 1, 2, 3], // Front
@@ -166,9 +360,12 @@ export function get3DModelMesh(modelType = 'cube') {
             return { vertices: v, faces: f, color: '#3b82f6' };
         }
         case 'pyramid': {
+            const halfW = (dims.width || 10) / 10;
+            const halfD = (dims.depth || 10) / 10;
+            const halfH = (dims.height || 12) / 10;
             const v = [
-                [-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1],
-                [0, -1.2, 0] // Apex
+                [-halfW, halfH, -halfD], [halfW, halfH, -halfD], [halfW, halfH, halfD], [-halfW, halfH, halfD],
+                [0, -halfH, 0] // Apex
             ];
             const f = [
                 [3, 2, 1, 0], // Base
@@ -180,35 +377,41 @@ export function get3DModelMesh(modelType = 'cube') {
             return { vertices: v, faces: f, color: '#f59e0b' };
         }
         case 'prism': {
-            // Symmetrical, uniform triangular prism with congruent bases
+            // Symmetrical uniform triangular prism with congruent bases
+            const halfB = (dims.base || 10) / 10;
+            const halfH = (dims.height || 10) / 10;
+            const halfD = (dims.depth || 12) / 10;
+
             const v = [
-                [-1, 1, -0.7], [1, 1, -0.7], [0, -0.732, -0.7], // Front equilateral-style triangle
-                [-1, 1, 0.7], [1, 1, 0.7], [0, -0.732, 0.7]     // Back congruent identical triangle
+                [-halfB, halfH, -halfD], [halfB, halfH, -halfD], [0, -halfH, -halfD], // Front triangle
+                [-halfB, halfH, halfD],  [halfB, halfH, halfD],  [0, -halfH, halfD]   // Back identical congruent triangle
             ];
             const f = [
                 [0, 1, 2],       // Front triangle
-                [5, 4, 3],       // Back triangle (same size)
+                [4, 3, 5],       // Back congruent triangle
                 [0, 3, 4, 1],    // Bottom rectangular base
-                [1, 4, 5, 2],    // Right rectangular face
-                [2, 5, 3, 0]     // Left rectangular face
+                [1, 4, 5, 2],    // Right inclined face
+                [2, 5, 3, 0]     // Left inclined face
             ];
             return { vertices: v, faces: f, color: '#8b5cf6' };
         }
         case 'cylinder': {
+            const r = (dims.radius || 5) / 5;
+            const halfH = (dims.height || 12) / 10;
             const segments = 16;
             const v = [];
             const f = [];
             for (let i = 0; i < segments; i++) {
                 const angle = (i / segments) * Math.PI * 2;
-                const x = Math.cos(angle);
-                const z = Math.sin(angle);
-                v.push([x, -1, z]); // Top rim (2*i)
-                v.push([x, 1, z]);  // Bottom rim (2*i + 1)
+                const x = Math.cos(angle) * r;
+                const z = Math.sin(angle) * r;
+                v.push([x, -halfH, z]); // Top rim (2*i)
+                v.push([x, halfH, z]);  // Bottom rim (2*i + 1)
             }
             const topCenter = v.length;
-            v.push([0, -1, 0]);
+            v.push([0, -halfH, 0]);
             const bottomCenter = v.length;
-            v.push([0, 1, 0]);
+            v.push([0, halfH, 0]);
 
             for (let i = 0; i < segments; i++) {
                 const next = (i + 1) % segments;
@@ -222,15 +425,17 @@ export function get3DModelMesh(modelType = 'cube') {
             return { vertices: v, faces: f, color: '#06b6d4' };
         }
         case 'cone': {
+            const r = (dims.radius || 5) / 5;
+            const halfH = (dims.height || 12) / 10;
             const segments = 16;
-            const v = [[0, -1.2, 0]]; // Apex (index 0)
+            const v = [[0, -halfH, 0]]; // Apex (index 0)
             const f = [];
             for (let i = 0; i < segments; i++) {
                 const angle = (i / segments) * Math.PI * 2;
-                v.push([Math.cos(angle), 1, Math.sin(angle)]);
+                v.push([Math.cos(angle) * r, halfH, Math.sin(angle) * r]);
             }
             const baseCenter = v.length;
-            v.push([0, 1, 0]); // Base center
+            v.push([0, halfH, 0]); // Base center
 
             for (let i = 1; i <= segments; i++) {
                 const next = i === segments ? 1 : i + 1;
@@ -242,10 +447,12 @@ export function get3DModelMesh(modelType = 'cube') {
             return { vertices: v, faces: f, color: '#ec4899' };
         }
         case 'sphere': {
-            return createSphereMesh(10, 14, 1.0, '#10b981');
+            const r = (dims.radius || 6) / 6;
+            return createSphereMesh(10, 14, r, '#10b981');
         }
         case 'sun': {
-            const sphere = createSphereMesh(10, 14, 0.9, '#f59e0b', (lat, lon) => {
+            const r = (dims.radius || 6) / 6;
+            const sphere = createSphereMesh(10, 14, r * 0.9, '#f59e0b', (lat, lon) => {
                 return (lat + lon) % 2 === 0 ? '#fbbf24' : '#f59e0b';
             });
             // 8 Corona Solar Flares radiating outward in 3D
@@ -379,6 +586,96 @@ export function get3DModelMesh(modelType = 'cube') {
                 }
             }
             return { vertices: v, faces: f, color: '#0ea5e9' };
+        }
+        case 'rocket': {
+            // High-detail 3D Rocket with Nosecone, Fuselage, 4 Aerodynamic Fins, and Nozzle
+            const v = [];
+            const f = [];
+            const faceColors = [];
+            v.push([0, -1.3, 0]); // Apex (0)
+            const segs = 12;
+            const rBody = 0.45;
+            for (let i = 0; i < segs; i++) {
+                const a = (i / segs) * Math.PI * 2;
+                v.push([Math.cos(a) * rBody, -0.6, Math.sin(a) * rBody]);
+            }
+            for (let i = 0; i < segs; i++) {
+                const a = (i / segs) * Math.PI * 2;
+                v.push([Math.cos(a) * rBody, 0.7, Math.sin(a) * rBody]);
+            }
+            for (let i = 0; i < segs; i++) {
+                const a = (i / segs) * Math.PI * 2;
+                v.push([Math.cos(a) * (rBody * 0.65), 1.1, Math.sin(a) * (rBody * 0.65)]);
+            }
+            for (let i = 0; i < segs; i++) {
+                const nxt = (i + 1) % segs;
+                f.push([0, 1 + i, 1 + nxt]);
+                faceColors.push('#ef4444');
+            }
+            for (let i = 0; i < segs; i++) {
+                const nxt = (i + 1) % segs;
+                f.push([1 + i, 1 + nxt, segs + 1 + nxt, segs + 1 + i]);
+                faceColors.push(i % 3 === 0 ? '#38bdf8' : '#f8fafc');
+            }
+            for (let i = 0; i < segs; i++) {
+                const nxt = (i + 1) % segs;
+                f.push([segs + 1 + i, segs + 1 + nxt, 2 * segs + 1 + nxt, 2 * segs + 1 + i]);
+                faceColors.push('#475569');
+            }
+            const finDist = 0.95;
+            const finAngles = [0, Math.PI / 2, Math.PI, Math.PI * 1.5];
+            finAngles.forEach((fa) => {
+                const fx = Math.cos(fa);
+                const fz = Math.sin(fa);
+                const baseV = v.length;
+                v.push([fx * rBody, 0.2, fz * rBody]);
+                v.push([fx * finDist, 0.85, fz * finDist]);
+                v.push([fx * rBody, 0.85, fz * rBody]);
+                f.push([baseV, baseV + 1, baseV + 2]);
+                faceColors.push('#ef4444');
+            });
+            return { vertices: v, faces: f, color: '#f8fafc', faceColors };
+        }
+        case 'satellite': {
+            // Central bus core + 2 solar arrays + communications dish
+            const v = [
+                [-0.35, -0.35, -0.35], [0.35, -0.35, -0.35], [0.35, 0.35, -0.35], [-0.35, 0.35, -0.35],
+                [-0.35, -0.35, 0.35],  [0.35, -0.35, 0.35],  [0.35, 0.35, 0.35],  [-0.35, 0.35, 0.35],
+                [-1.35, -0.3, -0.05], [-0.45, -0.3, -0.05], [-0.45, 0.3, -0.05], [-1.35, 0.3, -0.05],
+                [0.45, -0.3, -0.05],  [1.35, -0.3, -0.05],  [1.35, 0.3, -0.05],  [0.45, 0.3, -0.05],
+                [0, -0.85, 0]
+            ];
+            const f = [
+                [0, 1, 2, 3], [5, 4, 7, 6], [4, 0, 3, 7], [1, 5, 6, 2], [4, 5, 1, 0], [3, 2, 6, 7],
+                [8, 9, 10, 11],
+                [12, 13, 14, 15],
+                [0, 1, 16], [1, 5, 16], [5, 4, 16], [4, 0, 16]
+            ];
+            const faceColors = [
+                '#e2e8f0', '#e2e8f0', '#cbd5e1', '#cbd5e1', '#94a3b8', '#94a3b8',
+                '#0284c7',
+                '#0284c7',
+                '#f59e0b', '#f59e0b', '#f59e0b', '#f59e0b'
+            ];
+            return { vertices: v, faces: f, color: '#0284c7', faceColors };
+        }
+        case 'molecule': {
+            const v = [
+                [0, 0, 0],
+                [0.75, 0.75, 0.75],
+                [-0.75, -0.75, 0.75],
+                [-0.75, 0.75, -0.75],
+                [0.75, -0.75, -0.75]
+            ];
+            const f = [
+                [0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1],
+                [1, 2, 3], [2, 3, 4], [3, 4, 1], [4, 1, 2]
+            ];
+            const faceColors = [
+                '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
+                '#6366f1', '#8b5cf6', '#ec4899', '#14b8a6'
+            ];
+            return { vertices: v, faces: f, color: '#3b82f6', faceColors };
         }
         default:
             return get3DModelMesh('cube');
@@ -574,7 +871,7 @@ export function render3DObjectSVG(obj) {
     if (!obj) return '';
     const mesh = (obj.meshData && obj.meshData.vertices && obj.meshData.faces)
         ? obj.meshData
-        : get3DModelMesh(obj.modelType || 'cube');
+        : get3DModelMesh(obj.modelType || 'cube', obj.dimensions);
     if (!mesh || !mesh.vertices || !mesh.faces) return '';
 
     const rotX = obj.rotX ?? -25;
@@ -608,8 +905,9 @@ export function render3DObjectSVG(obj) {
         let y3 = x2 * sinZ + y2 * cosZ;
         let z3 = z2;
 
+        const isIsometric = (obj.projectionMode || 'isometric') === 'isometric';
         const distance = 10;
-        const factor = distance / (distance + z3);
+        const factor = isIsometric ? 1.0 : (distance / (distance + z3));
         const scale = (Math.min(w, h) / 2) * 0.8;
         const px = w / 2 + x3 * factor * scale;
         const py = h / 2 + y3 * factor * scale;
@@ -735,10 +1033,32 @@ export function render3DObjectSVG(obj) {
         }
     }
 
+    // Dimension labels and arrows in static SVG export
+    let dimensionElements = '';
+    if (obj.showDimensions) {
+        const annotations = getDimensionAnnotations(obj, transformedVertices, w, h);
+        if (annotations.length > 0) {
+            dimensionElements = `
+            <defs>
+                <marker id="dim-arrow-${obj.id || 'svg'}" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 1 L 8 5 L 0 9 z" fill="#38bdf8" />
+                </marker>
+            </defs>` + annotations.map(a => {
+                const markerAttr = `marker-start="url(#dim-arrow-${obj.id || 'svg'})" marker-end="url(#dim-arrow-${obj.id || 'svg'})"`;
+                const lineDash = a.type === 'dashed-line' ? 'stroke-dasharray="3,3"' : '';
+                return `
+                <line x1="${a.x1.toFixed(1)}" y1="${a.y1.toFixed(1)}" x2="${a.x2.toFixed(1)}" y2="${a.y2.toFixed(1)}" stroke="#38bdf8" stroke-width="1.5" ${lineDash} ${markerAttr} />
+                <rect x="${(a.midX - 32).toFixed(1)}" y="${(a.midY - 9).toFixed(1)}" width="64" height="18" rx="4" fill="#0f172a" fill-opacity="0.88" stroke="#38bdf8" stroke-width="1" />
+                <text x="${a.midX.toFixed(1)}" y="${(a.midY + 3.5).toFixed(1)}" text-anchor="middle" fill="#38bdf8" font-size="10" font-weight="bold" font-family="monospace">${a.label}</text>`;
+            }).join('');
+        }
+    }
+
     return `<g transform="translate(${obj.x || 0}, ${obj.y || 0}) ${rot}">
     <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
         ${polygons}
         ${contourElements}
+        ${dimensionElements}
     </svg>
 </g>`;
 }
@@ -763,6 +1083,7 @@ export default function Whiteboard3DObject({
     const [is3DDragging, setIs3DDragging] = useState(false);
     const [isRotating2D, setIsRotating2D] = useState(false);
     const [liveRotation, setLiveRotation] = useState(obj.rotation || 0);
+    const [showDimensionsPopover, setShowDimensionsPopover] = useState(false);
     const lastPointerRef = useRef({ x: 0, y: 0 });
 
     useEffect(() => {
@@ -811,8 +1132,8 @@ export default function Whiteboard3DObject({
         if (obj.meshData && obj.meshData.vertices && obj.meshData.faces) {
             return obj.meshData;
         }
-        return get3DModelMesh(obj.modelType || 'cube');
-    }, [obj.meshData, obj.modelType]);
+        return get3DModelMesh(obj.modelType || 'cube', obj.dimensions);
+    }, [obj.meshData, obj.modelType, obj.dimensions]);
 
     // 3D Matrix Rotation & Perspective Projection
     const projectedFaces = useMemo(() => {
@@ -849,9 +1170,10 @@ export default function Whiteboard3DObject({
             let y3 = x2 * sinZ + y2 * cosZ;
             let z3 = z2;
 
-            // Perspective division
+            // Perspective division / Isometric
+            const isIsometric = (obj.projectionMode || 'isometric') === 'isometric';
             const distance = 10;
-            const factor = distance / (distance + z3);
+            const factor = isIsometric ? 1.0 : (distance / (distance + z3));
             const scale = (Math.min(obj.width || 220, obj.height || 220) / 2) * 0.8;
 
             const px = (obj.width || 220) / 2 + x3 * factor * scale;
@@ -917,7 +1239,64 @@ export default function Whiteboard3DObject({
         renderedFaces.sort((a, b) => b.avgZ - a.avgZ);
 
         return { renderedFaces, baseColor, transformedVertices };
-    }, [rotX, rotY, rotZ, mesh, obj.width, obj.height, obj.color, obj.materialStyle, obj.wireframeOnly, obj.opacity, obj.lightPreset]);
+    }, [rotX, rotY, rotZ, mesh, obj.width, obj.height, obj.color, obj.materialStyle, obj.wireframeOnly, obj.opacity, obj.lightPreset, obj.projectionMode, obj.dimensions]);
+
+    // Dimension Annotations Memo
+    const dimensionAnnotations = useMemo(() => {
+        if (!obj.showDimensions) return [];
+        return getDimensionAnnotations(obj, projectedFaces.transformedVertices, obj.width || 220, obj.height || 220);
+    }, [obj.showDimensions, obj.modelType, obj.dimensions, obj.unit, projectedFaces.transformedVertices, obj.width, obj.height]);
+
+    // Dimension fields config helper per model type
+    const getDimensionFieldsForType = useCallback((modelType) => {
+        switch ((modelType || '').toLowerCase()) {
+            case 'prism':
+                return [
+                    { key: 'base', label: 'Base Width (b)', default: 10, min: 2, max: 30, step: 0.5 },
+                    { key: 'height', label: 'Triangle Height (h)', default: 10, min: 2, max: 30, step: 0.5 },
+                    { key: 'depth', label: 'Prism Length (l)', default: 12, min: 2, max: 30, step: 0.5 }
+                ];
+            case 'cylinder':
+                return [
+                    { key: 'radius', label: 'Base Radius (r)', default: 5, min: 1, max: 20, step: 0.5 },
+                    { key: 'height', label: 'Cylinder Height (h)', default: 12, min: 2, max: 30, step: 0.5 }
+                ];
+            case 'cone':
+                return [
+                    { key: 'radius', label: 'Base Radius (r)', default: 5, min: 1, max: 20, step: 0.5 },
+                    { key: 'height', label: 'Cone Height (h)', default: 12, min: 2, max: 30, step: 0.5 }
+                ];
+            case 'cube':
+                return [
+                    { key: 'width', label: 'Width (w)', default: 10, min: 2, max: 30, step: 0.5 },
+                    { key: 'height', label: 'Height (h)', default: 10, min: 2, max: 30, step: 0.5 },
+                    { key: 'depth', label: 'Depth (d)', default: 10, min: 2, max: 30, step: 0.5 }
+                ];
+            case 'pyramid':
+                return [
+                    { key: 'width', label: 'Base Width (w)', default: 10, min: 2, max: 30, step: 0.5 },
+                    { key: 'depth', label: 'Base Depth (d)', default: 10, min: 2, max: 30, step: 0.5 },
+                    { key: 'height', label: 'Apex Height (h)', default: 12, min: 2, max: 30, step: 0.5 }
+                ];
+            case 'sphere':
+            case 'sun':
+            case 'earth':
+            case 'moon':
+            case 'mars':
+            case 'jupiter':
+            case 'saturn':
+            case 'neptune':
+                return [
+                    { key: 'radius', label: 'Radius (r)', default: 6, min: 1, max: 25, step: 0.5 }
+                ];
+            default:
+                return [
+                    { key: 'width', label: 'Width (w)', default: 10, min: 2, max: 30, step: 0.5 },
+                    { key: 'height', label: 'Height (h)', default: 10, min: 2, max: 30, step: 0.5 },
+                    { key: 'depth', label: 'Depth (d)', default: 10, min: 2, max: 30, step: 0.5 }
+                ];
+        }
+    }, []);
 
     // 3D Trackball Rotation Gestures
     const handle3DPointerDown = (e) => {
@@ -1108,7 +1487,8 @@ export default function Whiteboard3DObject({
     }, [obj.edgeStyle, obj.edgeWidth]);
 
     const mType = (obj.modelType || 'cube').toLowerCase();
-    const isSpherical = ['sphere', 'sun', 'earth', 'moon', 'mars', 'jupiter', 'saturn', 'neptune'].includes(mType);
+    const isPlanet = ['sun', 'earth', 'moon', 'mars', 'jupiter', 'saturn', 'neptune'].includes(mType);
+    const isSpherical = isPlanet || mType === 'sphere';
     const isCone = mType === 'cone';
     const isCylinder = mType === 'cylinder';
     const isCurved = isSpherical || isCone || isCylinder;
@@ -1142,12 +1522,27 @@ export default function Whiteboard3DObject({
                 isSelected ? 'ring-2 ring-sky-500 rounded-xl shadow-2xl' : ''
             }`}
         >
-            {/* SVG 3D Perspective Canvas */}
+            {/* Real 3D Planet Surface Renderer (for celestial bodies in solid/realistic mode) */}
+            {isPlanet && !isWireframe && (
+                <div className="absolute inset-0 pointer-events-none overflow-visible rounded-full">
+                    <PlanetRenderer3D
+                        modelType={mType}
+                        width={obj.width || 220}
+                        height={obj.height || 220}
+                        rotX={rotX}
+                        rotY={rotY}
+                        rotZ={rotZ}
+                        lightPreset={obj.lightPreset}
+                    />
+                </div>
+            )}
+
+            {/* SVG 3D Canvas */}
             <svg
                 viewBox={`0 0 ${obj.width || 220} ${obj.height || 220}`}
                 className="w-full h-full pointer-events-none drop-shadow-md overflow-visible"
             >
-                {(!isWireframe || !isCurved) && projectedFaces.renderedFaces.map((face, fIdx) => {
+                {(!isPlanet || isWireframe) && (!isWireframe || !isCurved) && projectedFaces.renderedFaces.map((face, fIdx) => {
                     const strokeColor = isWireframe
                         ? (obj.edgeColor || projectedFaces.baseColor)
                         : (isCurved
@@ -1311,6 +1706,59 @@ export default function Whiteboard3DObject({
                             strokeWidth={compStrokeW}
                             strokeLinecap="round"
                         />
+                    </g>
+                )}
+
+                {/* SVG Dimension Lines, Arrows, and Badges Overlay */}
+                {obj.showDimensions && dimensionAnnotations.length > 0 && (
+                    <g className="dimension-annotations pointer-events-none select-none">
+                        <defs>
+                            <marker id={`dim-arrow-${obj.id}`} viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                <path d="M 0 1 L 8 5 L 0 9 z" fill="#38bdf8" />
+                            </marker>
+                        </defs>
+                        {dimensionAnnotations.map((a, aIdx) => {
+                            const markerAttr = {
+                                markerStart: `url(#dim-arrow-${obj.id})`,
+                                markerEnd: `url(#dim-arrow-${obj.id})`
+                            };
+                            return (
+                                <g key={aIdx}>
+                                    <line
+                                        x1={a.x1}
+                                        y1={a.y1}
+                                        x2={a.x2}
+                                        y2={a.y2}
+                                        stroke="#38bdf8"
+                                        strokeWidth="1.5"
+                                        strokeDasharray={a.type === 'dashed-line' ? '3,3' : undefined}
+                                        {...markerAttr}
+                                    />
+                                    <rect
+                                        x={a.midX - 32}
+                                        y={a.midY - 9}
+                                        width="64"
+                                        height="18"
+                                        rx="4"
+                                        fill="#0f172a"
+                                        fillOpacity="0.88"
+                                        stroke="#38bdf8"
+                                        strokeWidth="1"
+                                    />
+                                    <text
+                                        x={a.midX}
+                                        y={a.midY + 3.5}
+                                        textAnchor="middle"
+                                        fill="#38bdf8"
+                                        fontSize="10"
+                                        fontWeight="bold"
+                                        fontFamily="monospace"
+                                    >
+                                        {a.label}
+                                    </text>
+                                </g>
+                            );
+                        })}
                     </g>
                 )}
             </svg>
@@ -1551,6 +1999,174 @@ export default function Whiteboard3DObject({
                             </button>
                         ))}
                     </div>
+
+                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
+
+                    {/* Dimension Parametric Popover Dialog */}
+                    {showDimensionsPopover && (
+                        <div 
+                            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 bg-slate-950/95 border border-slate-700/80 shadow-2xl rounded-2xl p-3.5 z-50 text-slate-200 pointer-events-auto backdrop-blur-md animate-in fade-in zoom-in-95 duration-150"
+                            onPointerDown={e => e.stopPropagation()}
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-3">
+                                <div className="flex items-center gap-1.5 text-xs font-bold text-sky-400">
+                                    <Sliders className="w-3.5 h-3.5" />
+                                    <span className="capitalize">{mType} Dimensions</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowDimensionsPopover(false)}
+                                    className="text-slate-400 hover:text-white p-0.5 rounded hover:bg-slate-800 transition"
+                                >
+                                    <X size={13} />
+                                </button>
+                            </div>
+
+                            {/* Sliders & Numeric inputs */}
+                            <div className="space-y-3">
+                                {getDimensionFieldsForType(mType).map(field => {
+                                    const currentVal = (obj.dimensions && obj.dimensions[field.key] !== undefined)
+                                        ? obj.dimensions[field.key]
+                                        : field.default;
+                                    return (
+                                        <div key={field.key} className="space-y-1">
+                                            <div className="flex items-center justify-between text-[11px]">
+                                                <span className="text-slate-300 font-medium">{field.label}</span>
+                                                <div className="flex items-center gap-1">
+                                                    <input
+                                                        type="number"
+                                                        min={field.min}
+                                                        max={field.max * 2}
+                                                        step={field.step}
+                                                        value={currentVal}
+                                                        onChange={(e) => {
+                                                            const nextVal = Math.max(field.min, parseFloat(e.target.value) || field.min);
+                                                            const nextDims = {
+                                                                ...getDefaultDimensions(mType),
+                                                                ...(obj.dimensions || {}),
+                                                                [field.key]: nextVal
+                                                            };
+                                                            onUpdate && onUpdate({ dimensions: nextDims });
+                                                        }}
+                                                        className="w-14 px-1.5 py-0.5 text-right font-mono text-xs bg-slate-900 border border-slate-700 rounded text-white focus:border-sky-500 focus:outline-none"
+                                                    />
+                                                    <span className="text-[10px] text-sky-400 font-mono select-none">{obj.unit || 'cm'}</span>
+                                                </div>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min={field.min}
+                                                max={field.max}
+                                                step={field.step}
+                                                value={currentVal}
+                                                onChange={(e) => {
+                                                    const nextVal = parseFloat(e.target.value);
+                                                    const nextDims = {
+                                                        ...getDefaultDimensions(mType),
+                                                        ...(obj.dimensions || {}),
+                                                        [field.key]: nextVal
+                                                    };
+                                                    onUpdate && onUpdate({ dimensions: nextDims });
+                                                }}
+                                                className="w-full accent-sky-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
+                                            />
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Units Selector & Show Dimensions on Shape Toggle */}
+                            <div className="pt-2.5 border-t border-slate-800 mt-3 space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[11px] text-slate-300 font-medium flex items-center gap-1">
+                                        <Ruler size={11} className="text-sky-400" /> Unit:
+                                    </span>
+                                    <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+                                        {['cm', 'mm', 'm', 'in', 'px'].map(u => (
+                                            <button
+                                                key={u}
+                                                type="button"
+                                                onClick={() => onUpdate && onUpdate({ unit: u })}
+                                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${
+                                                    (obj.unit || 'cm') === u ? 'bg-sky-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                                                }`}
+                                            >
+                                                {u}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => onUpdate && onUpdate({ showDimensions: !obj.showDimensions })}
+                                    className={`w-full py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
+                                        obj.showDimensions ? 'bg-sky-600 text-white shadow-md' : 'bg-slate-800 text-slate-300 hover:bg-slate-750 hover:text-white border border-slate-700'
+                                    }`}
+                                >
+                                    <Ruler size={13} />
+                                    <span>{obj.showDimensions ? 'Hide Dimension Labels on Shape' : 'Show Dimension Labels on Shape'}</span>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Dimensions Popover Toggle Button */}
+                    <button
+                        type="button"
+                        onClick={() => setShowDimensionsPopover(prev => !prev)}
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition ${
+                            showDimensionsPopover ? 'bg-sky-600 text-white shadow' : 'bg-slate-800 text-slate-300 hover:text-white'
+                        }`}
+                        title="Edit Shape Dimensions (Base, Height, Radius, Depth, etc.)"
+                    >
+                        <Sliders className="w-3 h-3 text-sky-400" />
+                        <span>Dims</span>
+                    </button>
+
+                    {/* Units Display Toggle Button */}
+                    <button
+                        type="button"
+                        onClick={() => onUpdate && onUpdate({ showDimensions: !obj.showDimensions })}
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition ${
+                            obj.showDimensions ? 'bg-indigo-600 text-white shadow' : 'bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        title="Toggle Dimension Lines & Measurement Units on Shape"
+                    >
+                        <Ruler className="w-3 h-3 text-indigo-300" />
+                        <span>Units: {obj.showDimensions ? 'ON' : 'OFF'}</span>
+                    </button>
+
+                    {/* Unit Cycle Pill (cm -> mm -> m -> in -> px) */}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const units = ['cm', 'mm', 'm', 'in', 'px'];
+                            const curIdx = units.indexOf(obj.unit || 'cm');
+                            const nextUnit = units[(curIdx + 1) % units.length];
+                            onUpdate && onUpdate({ unit: nextUnit });
+                        }}
+                        className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-750 text-[10px] font-mono text-sky-300 border border-slate-700 hover:border-sky-500 transition"
+                        title="Click to Cycle Measurement Unit (cm, mm, m, in, px)"
+                    >
+                        {obj.unit || 'cm'}
+                    </button>
+
+                    {/* Isometric vs Perspective Mode Toggle */}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const nextMode = (obj.projectionMode || 'isometric') === 'isometric' ? 'perspective' : 'isometric';
+                            onUpdate && onUpdate({ projectionMode: nextMode });
+                        }}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition ${
+                            (obj.projectionMode || 'isometric') === 'isometric' ? 'bg-slate-800 text-sky-300 border border-sky-500/40' : 'bg-slate-800 text-slate-400'
+                        }`}
+                        title={(obj.projectionMode || 'isometric') === 'isometric' ? "Isometric Mode (Congruent faces, parallel geometry). Click for Perspective." : "Perspective Mode (Camera vanishing point). Click for Isometric."}
+                    >
+                        {(obj.projectionMode || 'isometric') === 'isometric' ? 'Isometric' : 'Perspective'}
+                    </button>
 
                     <div className="w-px h-4 bg-slate-700 mx-0.5" />
 

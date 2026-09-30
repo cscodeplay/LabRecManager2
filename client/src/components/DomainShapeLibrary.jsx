@@ -1463,6 +1463,65 @@ export const DOMAIN_SHAPES = {
                 <ellipse cx={w/2} cy={h/2} rx={w*0.38} ry={h*0.14} transform={`rotate(120 ${w/2} ${h/2})`} stroke="#10b981" />
             </g>
         )
+    },
+    rocket_3d: {
+        id: 'rocket_3d',
+        name: '3D Space Rocket',
+        category: '3d',
+        is3D: true,
+        modelType: 'rocket',
+        defaultWidth: 160,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g stroke="#ef4444" strokeWidth={1.8} fill="none">
+                <path d={`M ${w/2} ${h*0.15} L ${w*0.62} ${h*0.4} L ${w*0.38} ${h*0.4} Z`} fill="#ef4444" fillOpacity={0.8} />
+                <rect x={w*0.38} y={h*0.4} width={w*0.24} height={h*0.35} fill="#f8fafc" stroke="#38bdf8" />
+                <path d={`M ${w*0.38} ${h*0.6} L ${w*0.22} ${h*0.75} L ${w*0.38} ${h*0.75} Z`} fill="#ef4444" />
+                <path d={`M ${w*0.62} ${h*0.6} L ${w*0.78} ${h*0.75} L ${w*0.62} ${h*0.75} Z`} fill="#ef4444" />
+                <path d={`M ${w*0.42} ${h*0.75} L ${w*0.4} ${h*0.85} L ${w*0.6} ${h*0.85} L ${w*0.58} ${h*0.75} Z`} fill="#475569" stroke="#334155" />
+            </g>
+        )
+    },
+    satellite_3d: {
+        id: 'satellite_3d',
+        name: '3D Orbital Satellite',
+        category: '3d',
+        is3D: true,
+        modelType: 'satellite',
+        defaultWidth: 170,
+        defaultHeight: 170,
+        renderSVG: (w, h) => (
+            <g stroke="#0284c7" strokeWidth={1.8} fill="none">
+                <rect x={w*0.4} y={h*0.38} width={w*0.2} height={h*0.24} fill="#e2e8f0" stroke="#cbd5e1" />
+                <rect x={w*0.1} y={h*0.42} width={w*0.25} height={h*0.16} fill="#0284c7" fillOpacity={0.7} stroke="#38bdf8" />
+                <rect x={w*0.65} y={h*0.42} width={w*0.25} height={h*0.16} fill="#0284c7" fillOpacity={0.7} stroke="#38bdf8" />
+                <line x1={w*0.35} y1={h/2} x2={w*0.4} y2={h/2} stroke="#94a3b8" strokeWidth={2} />
+                <line x1={w*0.6} y1={h/2} x2={w*0.65} y2={h/2} stroke="#94a3b8" strokeWidth={2} />
+                <path d={`M ${w*0.45} ${h*0.38} Q ${w/2} ${h*0.26} ${w*0.55} ${h*0.38}`} stroke="#f59e0b" strokeWidth={2} />
+            </g>
+        )
+    },
+    molecule_3d: {
+        id: 'molecule_3d',
+        name: '3D Molecule Lattice',
+        category: '3d',
+        is3D: true,
+        modelType: 'molecule',
+        defaultWidth: 160,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g stroke="#6366f1" strokeWidth={2} fill="none">
+                <circle cx={w/2} cy={h/2} r={9} fill="#3b82f6" stroke="#1d4ed8" />
+                <line x1={w/2} y1={h/2} x2={w*0.75} y2={h*0.28} />
+                <circle cx={w*0.75} cy={h*0.28} r={6} fill="#10b981" stroke="#059669" />
+                <line x1={w/2} y1={h/2} x2={w*0.25} y2={h*0.28} />
+                <circle cx={w*0.25} cy={h*0.28} r={6} fill="#f59e0b" stroke="#d97706" />
+                <line x1={w/2} y1={h/2} x2={w*0.25} y2={h*0.72} />
+                <circle cx={w*0.25} cy={h*0.72} r={6} fill="#ef4444" stroke="#b91c1c" />
+                <line x1={w/2} y1={h/2} x2={w*0.75} y2={h*0.72} />
+                <circle cx={w*0.75} cy={h*0.72} r={6} fill="#a855f7" stroke="#7e22ce" />
+            </g>
+        )
     }
 };
 
