@@ -5,8 +5,12 @@ import {
     Box, Rotate3d, Lock, Unlock, Trash2, Copy,
     Infinity as InfinityIcon, Sliders, RotateCcw, RotateCw,
     ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
-    ChevronsUp, ChevronsDown, Palette, Sun, Eye, X, Ruler
+    ChevronsUp, ChevronsDown, Palette, Sun, Eye, X, Ruler,
+    Download
 } from 'lucide-react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
+import toast from 'react-hot-toast';
 import PlanetRenderer3D from './PlanetRenderer3D';
 
 // Snap angle to nearest 45 degree cardinal/diagonal within 3.5 deg threshold
@@ -150,7 +154,7 @@ export function getDefaultDimensions(modelType = 'cube') {
 
 /* ─── Dimension Annotations Calculator for 3D Shapes ─── */
 export function getDimensionAnnotations(obj, transformedVertices, w, h) {
-    if (!obj || !obj.showDimensions || !transformedVertices || transformedVertices.length === 0) {
+    if (!obj || !transformedVertices || transformedVertices.length === 0) {
         return [];
     }
     const mType = (obj.modelType || 'cube').toLowerCase();
@@ -166,14 +170,15 @@ export function getDimensionAnnotations(obj, transformedVertices, w, h) {
         if (v0 && v1 && v2) {
             // Base dimension line below front base
             const bx1 = v0.px;
-            const by1 = v0.py + 16;
+            const by1 = v0.py;
             const bx2 = v1.px;
-            const by2 = v1.py + 16;
+            const by2 = v1.py;
             annotations.push({
                 type: 'line',
+                dimensionKey: 'base',
                 x1: bx1, y1: by1, x2: bx2, y2: by2,
                 label: `b = ${dims.base} ${unit}`,
-                midX: (bx1 + bx2) / 2, midY: (by1 + by2) / 2 + 12
+                midX: (bx1 + bx2) / 2, midY: (by1 + by2) / 2 + 14
             });
 
             // Height dimension line from base center to apex
@@ -181,6 +186,7 @@ export function getDimensionAnnotations(obj, transformedVertices, w, h) {
             const baseMidY = (v0.py + v1.py) / 2;
             annotations.push({
                 type: 'dashed-line',
+                dimensionKey: 'height',
                 x1: baseMidX, y1: baseMidY, x2: v2.px, y2: v2.py,
                 label: `h = ${dims.height} ${unit}`,
                 midX: (baseMidX + v2.px) / 2 - 28, midY: (baseMidY + v2.py) / 2
@@ -190,9 +196,10 @@ export function getDimensionAnnotations(obj, transformedVertices, w, h) {
             if (v3) {
                 annotations.push({
                     type: 'line',
-                    x1: v0.px - 14, y1: v0.py, x2: v3.px - 14, y2: v3.py,
+                    dimensionKey: 'depth',
+                    x1: v0.px, y1: v0.py, x2: v3.px, y2: v3.py,
                     label: `l = ${dims.depth} ${unit}`,
-                    midX: (v0.px + v3.px) / 2 - 32, midY: (v0.py + v3.py) / 2
+                    midX: (v0.px + v3.px) / 2 - 24, midY: (v0.py + v3.py) / 2 - 8
                 });
             }
         }
@@ -204,17 +211,19 @@ export function getDimensionAnnotations(obj, transformedVertices, w, h) {
             // Radius on top circular face
             annotations.push({
                 type: 'line',
+                dimensionKey: 'radius',
                 x1: topCenter.px, y1: topCenter.py, x2: topRim0.px, y2: topRim0.py,
                 label: `r = ${dims.radius} ${unit}`,
-                midX: (topCenter.px + topRim0.px) / 2, midY: (topCenter.py + topRim0.py) / 2 - 12
+                midX: (topCenter.px + topRim0.px) / 2, midY: (topCenter.py + topRim0.py) / 2 - 14
             });
             // Height along vertical side
-            const offX = 24;
+            const offX = 18;
             annotations.push({
                 type: 'line',
+                dimensionKey: 'height',
                 x1: botCenter.px + offX, y1: botCenter.py, x2: topCenter.px + offX, y2: topCenter.py,
                 label: `h = ${dims.height} ${unit}`,
-                midX: topCenter.px + offX + 16, midY: (topCenter.py + botCenter.py) / 2
+                midX: topCenter.px + offX + 22, midY: (topCenter.py + botCenter.py) / 2
             });
         }
     } else if (mType === 'cone') {
@@ -225,13 +234,15 @@ export function getDimensionAnnotations(obj, transformedVertices, w, h) {
             // Radius on base circle
             annotations.push({
                 type: 'line',
+                dimensionKey: 'radius',
                 x1: baseCenter.px, y1: baseCenter.py, x2: baseRim0.px, y2: baseRim0.py,
                 label: `r = ${dims.radius} ${unit}`,
-                midX: (baseCenter.px + baseRim0.px) / 2, midY: (baseCenter.py + baseRim0.py) / 2 + 14
+                midX: (baseCenter.px + baseRim0.px) / 2, midY: (baseCenter.py + baseRim0.py) / 2 + 16
             });
             // Height from apex to base center
             annotations.push({
                 type: 'dashed-line',
+                dimensionKey: 'height',
                 x1: baseCenter.px, y1: baseCenter.py, x2: apex.px, y2: apex.py,
                 label: `h = ${dims.height} ${unit}`,
                 midX: (baseCenter.px + apex.px) / 2 - 30, midY: (baseCenter.py + apex.py) / 2
@@ -245,22 +256,25 @@ export function getDimensionAnnotations(obj, transformedVertices, w, h) {
         if (v0 && v1 && v2) {
             annotations.push({
                 type: 'line',
-                x1: v0.px, y1: v0.py - 16, x2: v1.px, y2: v1.py - 16,
+                dimensionKey: 'width',
+                x1: v0.px, y1: v0.py, x2: v1.px, y2: v1.py,
                 label: `w = ${dims.width} ${unit}`,
-                midX: (v0.px + v1.px) / 2, midY: (v0.py + v1.py) / 2 - 12
+                midX: (v0.px + v1.px) / 2, midY: (v0.py + v1.py) / 2 - 14
             });
             annotations.push({
                 type: 'line',
-                x1: v1.px + 16, y1: v1.py, x2: v2.px + 16, y2: v2.py,
+                dimensionKey: 'height',
+                x1: v1.px, y1: v1.py, x2: v2.px, y2: v2.py,
                 label: `h = ${dims.height} ${unit}`,
                 midX: (v1.px + v2.px) / 2 + 28, midY: (v1.py + v2.py) / 2
             });
             if (v5) {
                 annotations.push({
                     type: 'line',
+                    dimensionKey: 'depth',
                     x1: v1.px, y1: v1.py, x2: v5.px, y2: v5.py,
                     label: `d = ${dims.depth} ${unit}`,
-                    midX: (v1.px + v5.px) / 2 + 22, midY: (v1.py + v5.py) / 2 - 10
+                    midX: (v1.px + v5.px) / 2 + 24, midY: (v1.py + v5.py) / 2 - 12
                 });
             }
         }
@@ -272,14 +286,16 @@ export function getDimensionAnnotations(obj, transformedVertices, w, h) {
         if (v0 && v1 && apex) {
             annotations.push({
                 type: 'line',
-                x1: v0.px, y1: v0.py + 16, x2: v1.px, y2: v1.py + 16,
+                dimensionKey: 'width',
+                x1: v0.px, y1: v0.py, x2: v1.px, y2: v1.py,
                 label: `w = ${dims.width} ${unit}`,
-                midX: (v0.px + v1.px) / 2, midY: (v0.py + v1.py) / 2 + 12
+                midX: (v0.px + v1.px) / 2, midY: (v0.py + v1.py) / 2 + 14
             });
             if (v2) {
                 annotations.push({
                     type: 'line',
-                    x1: v1.px + 14, y1: v1.py, x2: v2.px + 14, y2: v2.py,
+                    dimensionKey: 'depth',
+                    x1: v1.px, y1: v1.py, x2: v2.px, y2: v2.py,
                     label: `d = ${dims.depth} ${unit}`,
                     midX: (v1.px + v2.px) / 2 + 24, midY: (v1.py + v2.py) / 2
                 });
@@ -288,20 +304,41 @@ export function getDimensionAnnotations(obj, transformedVertices, w, h) {
             const baseMidY = (v0.py + (v2 ? v2.py : v1.py)) / 2;
             annotations.push({
                 type: 'dashed-line',
+                dimensionKey: 'height',
                 x1: baseMidX, y1: baseMidY, x2: apex.px, y2: apex.py,
                 label: `h = ${dims.height} ${unit}`,
                 midX: (baseMidX + apex.px) / 2 - 32, midY: (baseMidY + apex.py) / 2
             });
         }
-    } else if (['sphere', 'sun', 'earth', 'moon', 'mars', 'jupiter', 'saturn', 'neptune'].includes(mType)) {
+    } else if (['sphere', 'sun', 'earth', 'moon', 'mars', 'jupiter', 'saturn', 'neptune'].includes(mType) || (obj.name && /earth|planet|sphere/i.test(obj.name))) {
         const cx = w / 2;
         const cy = h / 2;
         const r = (Math.min(w, h) / 2) * 0.76;
         annotations.push({
             type: 'line',
+            dimensionKey: 'radius',
             x1: cx, y1: cy, x2: cx + r, y2: cy,
-            label: `r = ${dims.radius} ${unit}`,
-            midX: cx + r / 2, midY: cy - 12
+            label: `r = ${dims.radius || 6} ${unit}`,
+            midX: cx + r / 2, midY: cy - 14
+        });
+    } else {
+        const cx = w / 2;
+        const cy = h / 2;
+        const hw = (w / 2) * 0.7;
+        const hh = (h / 2) * 0.7;
+        annotations.push({
+            type: 'line',
+            dimensionKey: 'width',
+            x1: cx - hw, y1: cy + hh, x2: cx + hw, y2: cy + hh,
+            label: `w = ${dims.width || 10} ${unit}`,
+            midX: cx, midY: cy + hh + 14
+        });
+        annotations.push({
+            type: 'line',
+            dimensionKey: 'height',
+            x1: cx + hw, y1: cy - hh, x2: cx + hw, y2: cy + hh,
+            label: `h = ${dims.height || 10} ${unit}`,
+            midX: cx + hw + 24, midY: cy
         });
     }
 
@@ -683,26 +720,72 @@ export function get3DModelMesh(modelType = 'cube', dimensions = null) {
 }
 
 /* ─── External 3D File Parsers (.OBJ, .STL, .JSON) ─── */
-export function parseOBJ(text) {
+export function parseOBJ(text, mtlText = null) {
+    if (!text || typeof text !== 'string') return null;
     const lines = text.split('\n');
     const vertices = [];
     const faces = [];
+    const vertexColors = [];
+    let detectedColor = null;
+
+    // Check if mtlText was provided with diffuse Kd color
+    if (mtlText) {
+        const kdMatch = mtlText.match(/Kd\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.]+)/);
+        if (kdMatch) {
+            const r = Math.round(parseFloat(kdMatch[1]) * 255);
+            const g = Math.round(parseFloat(kdMatch[2]) * 255);
+            const b = Math.round(parseFloat(kdMatch[3]) * 255);
+            detectedColor = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+        }
+    }
 
     for (let line of lines) {
         line = line.trim();
         if (line.startsWith('v ')) {
             const parts = line.split(/\s+/).slice(1).map(Number);
-            if (parts.length >= 3) vertices.push([parts[0], -parts[1], parts[2]]);
+            if (parts.length >= 3) {
+                vertices.push([parts[0], -parts[1], parts[2]]);
+                // If line has vertex colors: v x y z r g b
+                if (parts.length >= 6) {
+                    const r = parts[3] <= 1.0 ? Math.round(parts[3] * 255) : Math.min(255, parts[3]);
+                    const g = parts[4] <= 1.0 ? Math.round(parts[4] * 255) : Math.min(255, parts[4]);
+                    const b = parts[5] <= 1.0 ? Math.round(parts[5] * 255) : Math.min(255, parts[5]);
+                    vertexColors.push([r, g, b]);
+                }
+            }
         } else if (line.startsWith('f ')) {
             const parts = line.split(/\s+/).slice(1).map(p => {
                 const idx = parseInt(p.split('/')[0], 10);
                 return idx > 0 ? idx - 1 : vertices.length + idx;
             });
             if (parts.length >= 3) faces.push(parts);
+        } else if (line.startsWith('Kd ') && !detectedColor) {
+            const parts = line.split(/\s+/).slice(1).map(Number);
+            if (parts.length >= 3) {
+                const r = Math.round(parts[0] * 255);
+                const g = Math.round(parts[1] * 255);
+                const b = Math.round(parts[2] * 255);
+                detectedColor = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+            }
         }
     }
 
     if (vertices.length === 0) return null;
+
+    if (!detectedColor && vertexColors.length > 0) {
+        const avgR = Math.round(vertexColors.reduce((s, c) => s + c[0], 0) / vertexColors.length);
+        const avgG = Math.round(vertexColors.reduce((s, c) => s + c[1], 0) / vertexColors.length);
+        const avgB = Math.round(vertexColors.reduce((s, c) => s + c[2], 0) / vertexColors.length);
+        if (avgR + avgG + avgB > 30) {
+            detectedColor = `#${((1 << 24) + (avgR << 16) + (avgG << 8) + avgB).toString(16).slice(1)}`;
+        }
+    }
+
+    // Default vibrant color if unlit or black
+    if (!detectedColor || detectedColor === '#000000' || detectedColor === '#111111') {
+        const isEarth = /earth/i.test(text);
+        detectedColor = isEarth ? '#38bdf8' : '#38bdf8';
+    }
 
     // Normalize coordinates to [-1, 1] bounding box
     let minX = Infinity, maxX = -Infinity;
@@ -727,7 +810,99 @@ export function parseOBJ(text) {
         (z - cz) * scale
     ]);
 
-    return { vertices: normV, faces, color: '#38bdf8' };
+    return { vertices: normV, faces, color: detectedColor };
+}
+
+// ─── Export 3D Model Package (.OBJ + .MTL + JSON metadata) ───
+export async function export3DModelPackage(obj, mesh) {
+    const rawName = (obj.name || obj.modelType || 'model_3d').toLowerCase().replace(/\s+/g, '_');
+    const safeMesh = mesh || get3DModelMesh(obj.modelType || 'cube', obj.dimensions);
+    if (!safeMesh || !safeMesh.vertices || safeMesh.vertices.length === 0) {
+        toast.error('No 3D geometry available to export');
+        return;
+    }
+
+    const hexColor = obj.color || safeMesh.color || '#38bdf8';
+    let r = 0.22, g = 0.74, b = 0.97;
+    if (hexColor.startsWith('#') && hexColor.length >= 7) {
+        r = (parseInt(hexColor.slice(1, 3), 16) / 255) || 0.22;
+        g = (parseInt(hexColor.slice(3, 5), 16) / 255) || 0.74;
+        b = (parseInt(hexColor.slice(5, 7), 16) / 255) || 0.97;
+    }
+
+    // 1. Generate OBJ file
+    let objText = `# Wavefront OBJ file exported from Whiteboard\n`;
+    objText += `# Model: ${obj.name || obj.modelType || '3D Object'}\n`;
+    objText += `mtllib ${rawName}.mtl\n`;
+    objText += `o ${rawName}\n\n`;
+
+    // Vertices
+    safeMesh.vertices.forEach(([x, y, z]) => {
+        objText += `v ${x.toFixed(4)} ${(-y).toFixed(4)} ${z.toFixed(4)}\n`;
+    });
+
+    // Texture Coordinates (UV mapping)
+    safeMesh.vertices.forEach(([x, y, z]) => {
+        const u = (Math.atan2(z, x) / (2 * Math.PI) + 0.5).toFixed(4);
+        const v = (y / 2 + 0.5).toFixed(4);
+        objText += `vt ${u} ${v}\n`;
+    });
+
+    // Normals
+    objText += `\nvn 0.0000 1.0000 0.0000\n`;
+    objText += `vn 0.0000 -1.0000 0.0000\n`;
+    objText += `vn 1.0000 0.0000 0.0000\n`;
+    objText += `vn -1.0000 0.0000 0.0000\n`;
+    objText += `vn 0.0000 0.0000 1.0000\n`;
+    objText += `vn 0.0000 0.0000 -1.0000\n\n`;
+
+    objText += `usemtl Material_${rawName}\n`;
+    objText += `s 1\n`;
+
+    // Faces (1-indexed)
+    safeMesh.faces.forEach((face) => {
+        if (face.length >= 3) {
+            const fStr = face.map(idx => `${idx + 1}/${idx + 1}`).join(' ');
+            objText += `f ${fStr}\n`;
+        }
+    });
+
+    // 2. Generate MTL file
+    let mtlText = `# Material Library for ${rawName}.obj\n`;
+    mtlText += `newmtl Material_${rawName}\n`;
+    mtlText += `Ka 0.2500 0.2500 0.2500\n`;
+    mtlText += `Kd ${r.toFixed(4)} ${g.toFixed(4)} ${b.toFixed(4)}\n`;
+    mtlText += `Ks 0.5000 0.5000 0.5000\n`;
+    mtlText += `Ns 65.0\n`;
+    mtlText += `d ${(obj.opacity !== undefined ? obj.opacity : 1.0).toFixed(2)}\n`;
+    mtlText += `illum 2\n`;
+
+    // 3. Package into ZIP with JSZip
+    try {
+        const zip = new JSZip();
+        zip.file(`${rawName}.obj`, objText);
+        zip.file(`${rawName}.mtl`, mtlText);
+        zip.file(`metadata.json`, JSON.stringify({
+            name: obj.name || obj.modelType,
+            modelType: obj.modelType,
+            dimensions: obj.dimensions || getDefaultDimensions(obj.modelType),
+            unit: obj.unit || 'cm',
+            color: hexColor,
+            materialStyle: obj.materialStyle || 'shaded',
+            isPlanet: ['earth', 'sun', 'moon', 'mars', 'jupiter', 'saturn', 'neptune'].includes((obj.modelType || '').toLowerCase()),
+            exportedAt: new Date().toISOString()
+        }, null, 2));
+
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        saveAs(zipBlob, `${rawName}_3d_package.zip`);
+        toast.success(`Downloaded 3D Package (.OBJ + .MTL + JSON)!`, { icon: '📦' });
+    } catch (err) {
+        console.error('Failed to create 3D zip package:', err);
+        // Fallback: direct OBJ download
+        const blob = new Blob([objText], { type: 'text/plain;charset=utf-8' });
+        saveAs(blob, `${rawName}.obj`);
+        toast.success(`Downloaded ${rawName}.obj!`, { icon: '📄' });
+    }
 }
 
 export function parseSTL(textOrBuffer) {
@@ -821,8 +996,10 @@ export function parseJSON3D(jsonString) {
 
 /* ─── Color Shading & Realistic 3D Lighting ─── */
 export function shadeColor(colorStr, intensity, materialStyle) {
-    if (!colorStr) return '#3b82f6';
-    let r = 59, g = 130, b = 246;
+    if (!colorStr || colorStr === '#000000' || colorStr === 'black' || colorStr === 'rgb(0,0,0)' || colorStr === '#111111') {
+        colorStr = '#38bdf8';
+    }
+    let r = 56, g = 189, b = 248;
     if (colorStr.startsWith('#')) {
         let hex = colorStr.slice(1);
         if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -838,6 +1015,10 @@ export function shadeColor(colorStr, intensity, materialStyle) {
             g = parseInt(parts[1], 10);
             b = parseInt(parts[2], 10);
         }
+    }
+
+    if (r === 0 && g === 0 && b === 0) {
+        r = 56; g = 189; b = 248;
     }
 
     if (materialStyle === 'flat') {
@@ -1084,6 +1265,7 @@ export default function Whiteboard3DObject({
     const [isRotating2D, setIsRotating2D] = useState(false);
     const [liveRotation, setLiveRotation] = useState(obj.rotation || 0);
     const [showDimensionsPopover, setShowDimensionsPopover] = useState(false);
+    const [activeEdgeDrag, setActiveEdgeDrag] = useState(null);
     const lastPointerRef = useRef({ x: 0, y: 0 });
 
     useEffect(() => {
@@ -1243,9 +1425,9 @@ export default function Whiteboard3DObject({
 
     // Dimension Annotations Memo
     const dimensionAnnotations = useMemo(() => {
-        if (!obj.showDimensions) return [];
+        if (!obj.showDimensions && !isSelected) return [];
         return getDimensionAnnotations(obj, projectedFaces.transformedVertices, obj.width || 220, obj.height || 220);
-    }, [obj.showDimensions, obj.modelType, obj.dimensions, obj.unit, projectedFaces.transformedVertices, obj.width, obj.height]);
+    }, [obj.showDimensions, isSelected, obj.modelType, obj.name, obj.dimensions, obj.unit, projectedFaces.transformedVertices, obj.width, obj.height]);
 
     // Dimension fields config helper per model type
     const getDimensionFieldsForType = useCallback((modelType) => {
@@ -1480,6 +1662,70 @@ export default function Whiteboard3DObject({
         window.addEventListener('touchend', onUp);
     };
 
+    // 3D Parametric Edge Hold-and-Drag Resizing
+    const handleEdgeDragStart = (dimKey, p1, p2, e) => {
+        if (obj.isLocked) return;
+        e.stopPropagation();
+        if (e.cancelable) e.preventDefault();
+
+        const startClientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+        const startClientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+
+        const currentDims = { ...getDefaultDimensions(mType), ...(obj.dimensions || {}) };
+        const startVal = currentDims[dimKey] !== undefined ? currentDims[dimKey] : 10;
+
+        const edgeDx = p2.x - p1.x;
+        const edgeDy = p2.y - p1.y;
+        const edgeLen = Math.hypot(edgeDx, edgeDy) || 1;
+        const ux = edgeDx / edgeLen;
+        const uy = edgeDy / edgeLen;
+
+        setActiveEdgeDrag({
+            dimKey,
+            currentVal: startVal,
+            label: `${dimKey}: ${startVal} ${obj.unit || 'cm'}`
+        });
+
+        const onMove = (moveEvt) => {
+            const clientX = moveEvt.clientX !== undefined ? moveEvt.clientX : (moveEvt.touches && moveEvt.touches[0] ? moveEvt.touches[0].clientX : startClientX);
+            const clientY = moveEvt.clientY !== undefined ? moveEvt.clientY : (moveEvt.touches && moveEvt.touches[0] ? moveEvt.touches[0].clientY : startClientY);
+
+            const dx = (clientX - startClientX) / (scale || 1);
+            const dy = (clientY - startClientY) / (scale || 1);
+
+            const proj = (dx * ux + dy * uy);
+            const deltaUnits = proj * 0.12;
+
+            const nextVal = Math.max(1, Math.min(100, +(startVal + deltaUnits).toFixed(1)));
+
+            setActiveEdgeDrag({
+                dimKey,
+                currentVal: nextVal,
+                label: `${dimKey}: ${nextVal} ${obj.unit || 'cm'}`
+            });
+
+            const nextDims = {
+                ...getDefaultDimensions(mType),
+                ...(obj.dimensions || {}),
+                [dimKey]: nextVal
+            };
+            onUpdate && onUpdate({ dimensions: nextDims });
+        };
+
+        const onUp = () => {
+            setActiveEdgeDrag(null);
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('touchmove', onMove);
+            window.removeEventListener('touchend', onUp);
+        };
+
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('touchmove', onMove, { passive: false });
+        window.addEventListener('touchend', onUp);
+    };
+
     // Stroke Dasharray resolution for edges
     const strokeDash = useMemo(() => {
         const sw = obj.edgeWidth !== undefined ? obj.edgeWidth : 0.8;
@@ -1489,7 +1735,10 @@ export default function Whiteboard3DObject({
     }, [obj.edgeStyle, obj.edgeWidth]);
 
     const mType = (obj.modelType || 'cube').toLowerCase();
-    const isPlanet = ['sun', 'earth', 'moon', 'mars', 'jupiter', 'saturn', 'neptune'].includes(mType);
+    const planetType = ['sun', 'earth', 'moon', 'mars', 'jupiter', 'saturn', 'neptune'].find(
+        p => mType.includes(p) || (obj.name && obj.name.toLowerCase().includes(p))
+    );
+    const isPlanet = !!planetType;
     const isSpherical = isPlanet || mType === 'sphere';
     const isCone = mType === 'cone';
     const isCylinder = mType === 'cylinder';
@@ -1528,7 +1777,7 @@ export default function Whiteboard3DObject({
             {isPlanet && !isWireframe && (
                 <div className="absolute inset-0 pointer-events-none overflow-visible rounded-full">
                     <PlanetRenderer3D
-                        modelType={mType}
+                        modelType={planetType || mType}
                         width={obj.width || 220}
                         height={obj.height || 220}
                         rotX={rotX}
@@ -1711,53 +1960,88 @@ export default function Whiteboard3DObject({
                     </g>
                 )}
 
-                {/* SVG Dimension Lines, Arrows, and Badges Overlay */}
-                {obj.showDimensions && dimensionAnnotations.length > 0 && (
-                    <g className="dimension-annotations pointer-events-none select-none">
+                {/* SVG Dimension Lines, Arrows, and Interactive Hold-and-Drag Edge Handles */}
+                {(obj.showDimensions || isSelected) && dimensionAnnotations.length > 0 && (
+                    <g className="dimension-annotations select-none">
                         <defs>
                             <marker id={`dim-arrow-${obj.id}`} viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                                 <path d="M 0 1 L 8 5 L 0 9 z" fill="#38bdf8" />
                             </marker>
                         </defs>
                         {dimensionAnnotations.map((a, aIdx) => {
-                            const markerAttr = {
-                                markerStart: `url(#dim-arrow-${obj.id})`,
-                                markerEnd: `url(#dim-arrow-${obj.id})`
-                            };
+                            const isDraggingThis = activeEdgeDrag?.dimKey === a.dimensionKey;
+                            const p1 = { x: a.x1, y: a.y1 };
+                            const p2 = { x: a.x2, y: a.y2 };
+
+                            const angle = Math.abs(Math.atan2(a.y2 - a.y1, a.x2 - a.x1) * (180 / Math.PI));
+                            let cursor = 'grab';
+                            if (angle < 25 || angle > 155) cursor = 'ew-resize';
+                            else if (angle > 65 && angle < 115) cursor = 'ns-resize';
+                            else cursor = 'nwse-resize';
+
                             return (
-                                <g key={aIdx}>
+                                <g
+                                    key={aIdx}
+                                    className="group/edge cursor-pointer"
+                                    onPointerDown={(e) => handleEdgeDragStart(a.dimensionKey, p1, p2, e)}
+                                    onTouchStart={(e) => handleEdgeDragStart(a.dimensionKey, p1, p2, e)}
+                                    style={{ pointerEvents: isSelected && !obj.isLocked ? 'auto' : 'none' }}
+                                >
+                                    {/* Invisible Wide Hit Area for Easy Touch / Drag */}
                                     <line
                                         x1={a.x1}
                                         y1={a.y1}
                                         x2={a.x2}
                                         y2={a.y2}
-                                        stroke="#38bdf8"
-                                        strokeWidth="1.5"
+                                        stroke="transparent"
+                                        strokeWidth="24"
+                                        style={{ cursor: isDraggingThis ? 'grabbing' : cursor }}
+                                    />
+
+                                    {/* Visible Dimension Line */}
+                                    <line
+                                        x1={a.x1}
+                                        y1={a.y1}
+                                        x2={a.x2}
+                                        y2={a.y2}
+                                        stroke={isDraggingThis ? '#38bdf8' : (isSelected ? '#0284c7' : '#38bdf8')}
+                                        strokeWidth={isDraggingThis ? '2.5' : (isSelected ? '2' : '1.5')}
                                         strokeDasharray={a.type === 'dashed-line' ? '3,3' : undefined}
-                                        {...markerAttr}
+                                        markerStart={`url(#dim-arrow-${obj.id})`}
+                                        markerEnd={`url(#dim-arrow-${obj.id})`}
+                                        className="transition-colors group-hover/edge:stroke-sky-300"
                                     />
-                                    <rect
-                                        x={a.midX - 32}
-                                        y={a.midY - 9}
-                                        width="64"
-                                        height="18"
-                                        rx="4"
-                                        fill="#0f172a"
-                                        fillOpacity="0.88"
-                                        stroke="#38bdf8"
-                                        strokeWidth="1"
-                                    />
-                                    <text
-                                        x={a.midX}
-                                        y={a.midY + 3.5}
-                                        textAnchor="middle"
-                                        fill="#38bdf8"
-                                        fontSize="10"
-                                        fontWeight="bold"
-                                        fontFamily="monospace"
+
+                                    {/* Midpoint Interactive Handle Badge */}
+                                    <g
+                                        transform={`translate(${a.midX}, ${a.midY})`}
+                                        style={{ cursor: isDraggingThis ? 'grabbing' : cursor }}
                                     >
-                                        {a.label}
-                                    </text>
+                                        <rect
+                                            x="-35"
+                                            y="-11"
+                                            width="70"
+                                            height="22"
+                                            rx="5"
+                                            fill={isDraggingThis ? '#0284c7' : '#0f172a'}
+                                            fillOpacity="0.95"
+                                            stroke={isDraggingThis ? '#ffffff' : (isSelected ? '#38bdf8' : '#0284c7')}
+                                            strokeWidth={isDraggingThis ? '2' : '1.2'}
+                                            className="shadow-lg transition-transform group-hover/edge:scale-110"
+                                        />
+                                        <text
+                                            x="0"
+                                            y="4"
+                                            textAnchor="middle"
+                                            fill={isDraggingThis ? '#ffffff' : '#38bdf8'}
+                                            fontSize="10"
+                                            fontWeight="bold"
+                                            fontFamily="monospace"
+                                            className="select-none pointer-events-none"
+                                        >
+                                            {isDraggingThis ? activeEdgeDrag.label : a.label}
+                                        </text>
+                                    </g>
                                 </g>
                             );
                         })}
@@ -1830,7 +2114,7 @@ export default function Whiteboard3DObject({
             {/* Top-Right Corner Lock Hook: Dims by default, lightens on hover, acts on click */}
             {isSelected && (
                 <div
-                    className="absolute -top-2.5 -right-2.5 z-35"
+                    className="absolute -top-2.5 -right-2.5 z-[85]"
                     onPointerDown={e => e.stopPropagation()}
                     onClick={e => e.stopPropagation()}
                 >
@@ -1852,7 +2136,7 @@ export default function Whiteboard3DObject({
             {/* East-Side 4 Layer Hooks (Bring to Front, Forward, Backward, Send to Back) */}
             {isSelected && (
                 <div 
-                    className="absolute left-full top-1/2 -translate-y-1/2 ml-1.5 flex flex-col gap-1 z-35"
+                    className="absolute left-full top-1/2 -translate-y-1/2 ml-1.5 flex flex-col gap-1 z-[85]"
                     onPointerDown={e => e.stopPropagation()}
                     onClick={e => e.stopPropagation()}
                 >
@@ -1894,7 +2178,7 @@ export default function Whiteboard3DObject({
             {/* Sleek Horizontal Floating 3D Format Bar (matches Whiteboard main toolbar design) */}
             {isSelected && (
                 <div
-                    className="absolute left-1/2 bg-slate-900/95 border border-slate-700/80 shadow-2xl rounded-2xl px-2 py-1 flex items-center gap-1 z-40 text-slate-200 pointer-events-auto select-none backdrop-blur-md whitespace-nowrap"
+                    className="absolute left-1/2 bg-slate-900/95 border border-slate-700/80 shadow-2xl rounded-2xl px-2 py-1 flex items-center gap-1 z-[90] text-slate-200 pointer-events-auto select-none backdrop-blur-md whitespace-nowrap"
                     style={{
                         top: `-${48 / (scale || 1)}px`,
                         transform: `translateX(-50%) rotate(-${obj.rotation || 0}deg) scale(${1 / (scale || 1)})`,
@@ -2007,7 +2291,7 @@ export default function Whiteboard3DObject({
                     {/* Dimension Parametric Popover Dialog */}
                     {showDimensionsPopover && (
                         <div 
-                            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 bg-slate-950/95 border border-slate-700/80 shadow-2xl rounded-2xl p-3.5 z-50 text-slate-200 pointer-events-auto backdrop-blur-md animate-in fade-in zoom-in-95 duration-150"
+                            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 bg-slate-950/95 border border-slate-700/80 shadow-2xl rounded-2xl p-3.5 z-[95] text-slate-200 pointer-events-auto backdrop-blur-md animate-in fade-in zoom-in-95 duration-150"
                             onPointerDown={e => e.stopPropagation()}
                             onClick={e => e.stopPropagation()}
                         >
@@ -2192,6 +2476,16 @@ export default function Whiteboard3DObject({
                         <InfinityIcon className="w-3.5 h-3.5" />
                     </button>
 
+                    {/* Download 3D Package (.OBJ + .MTL + JSON) */}
+                    <button
+                        type="button"
+                        onClick={() => export3DModelPackage(obj, mesh)}
+                        className="p-1 rounded-full hover:bg-slate-800 text-sky-400 hover:text-sky-200 transition flex items-center justify-center"
+                        title="Download 3D Package (.OBJ + .MTL + JSON)"
+                    >
+                        <Download className="w-3.5 h-3.5" />
+                    </button>
+
                     {/* Duplicate */}
                     {onDuplicate && (
                         <button
@@ -2241,7 +2535,7 @@ export default function Whiteboard3DObject({
                 <>
                     {/* Rotate Handle with Angle Badge (Same UI as 2D shapes) */}
                     <div
-                        className="absolute left-1/2 -translate-x-1/2 flex flex-col-reverse items-center z-30"
+                        className="absolute left-1/2 -translate-x-1/2 flex flex-col-reverse items-center z-[85]"
                         style={{ top: -42, pointerEvents: 'auto' }}
                         onPointerDown={e => e.stopPropagation()}
                     >
@@ -2276,7 +2570,7 @@ export default function Whiteboard3DObject({
                         <div
                             key={handle}
                             onPointerDown={(e) => handleResizeStart(handle, e)}
-                            className="absolute bg-white border-2 border-sky-500 rounded-xs shadow-md z-30 pointer-events-auto"
+                            className="absolute bg-white border-2 border-sky-500 rounded-xs shadow-md z-[85] pointer-events-auto"
                             style={{ width: handleSize + 2, height: handleSize + 2, ...style }}
                         />
                     ))}
@@ -2291,7 +2585,7 @@ export default function Whiteboard3DObject({
                         <div
                             key={handle}
                             onPointerDown={(e) => handleResizeStart(handle, e)}
-                            className="absolute bg-white border-2 border-sky-500 rounded-xs shadow-md z-30 pointer-events-auto"
+                            className="absolute bg-white border-2 border-sky-500 rounded-xs shadow-md z-[85] pointer-events-auto"
                             style={{ width: handleSize, height: handleSize, ...style }}
                         />
                     ))}

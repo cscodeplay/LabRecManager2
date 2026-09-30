@@ -12544,7 +12544,7 @@ export default function Whiteboard({
                                                     {/* Hover Style Popover */}
                                                     {hoveredHook?.shapeId === imgObj.id && hoveredHook?.anchor === anchor && (
                                                         <div
-                                                            className={`connector-hover-popover absolute z-50 flex items-center gap-1 bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-2xl rounded-xl p-1 text-white animate-in fade-in zoom-in-95 duration-150 before:content-[''] before:absolute before:-inset-3 before:z-[-1] ${
+                                                            className={`connector-hover-popover absolute z-[95] flex items-center gap-1 bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-2xl rounded-xl p-1 text-white animate-in fade-in zoom-in-95 duration-150 before:content-[''] before:absolute before:-inset-3 before:z-[-1] ${
                                                                 anchor === 'top' ? 'bottom-full mb-2 left-1/2 -translate-x-1/2' :
                                                                 anchor === 'bottom' ? 'top-full mt-2 left-1/2 -translate-x-1/2' :
                                                                 anchor === 'left' ? 'right-full mr-2 top-1/2 -translate-y-1/2' :
@@ -12835,7 +12835,7 @@ export default function Whiteboard({
                                             top: imgMinY - 14 * invZoom,
                                             transform: `translate(-50%, -100%) scale(${invZoom})`,
                                             transformOrigin: 'center bottom',
-                                            zIndex: 60,
+                                            zIndex: 90,
                                         }}
                                         onClick={(e) => e.stopPropagation()}
                                         onMouseDown={(e) => e.stopPropagation()}
@@ -13595,7 +13595,7 @@ export default function Whiteboard({
                                             top: textMinY - (txtObj.isLocked ? 14 : 44) * invZoom,
                                             transform: `translate(-50%, -100%) scale(${invZoom})`,
                                             transformOrigin: 'center bottom',
-                                            zIndex: 70,
+                                            zIndex: 90,
                                         }}
                                         onClick={(e) => e.stopPropagation()}
                                         onMouseDown={(e) => e.stopPropagation()}
@@ -15162,7 +15162,7 @@ export default function Whiteboard({
                                                 {/* Hover Style Popover */}
                                                 {hoveredHook?.shapeId === shpObj.id && hoveredHook?.anchor === anchor && (
                                                     <div
-                                                        className={`connector-hover-popover absolute z-50 flex items-center gap-1 bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-2xl rounded-xl p-1 text-white animate-in fade-in zoom-in-95 duration-150 before:content-[''] before:absolute before:-inset-3 before:z-[-1] ${
+                                                        className={`connector-hover-popover absolute z-[95] flex items-center gap-1 bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-2xl rounded-xl p-1 text-white animate-in fade-in zoom-in-95 duration-150 before:content-[''] before:absolute before:-inset-3 before:z-[-1] ${
                                                             anchor === 'top' ? 'bottom-full mb-2 left-1/2 -translate-x-1/2' :
                                                             anchor === 'bottom' ? 'top-full mt-2 left-1/2 -translate-x-1/2' :
                                                             anchor === 'left' ? 'right-full mr-2 top-1/2 -translate-y-1/2' :
@@ -15575,7 +15575,7 @@ export default function Whiteboard({
                                         top: shapeMinY - (shpObj.isLocked ? 14 : 44) * invZoom,
                                         transform: `translate(-50%, -100%) scale(${invZoom})`,
                                         transformOrigin: 'center bottom',
-                                        zIndex: 70,
+                                        zIndex: 90,
                                     }}
                                     onClick={(e) => e.stopPropagation()}
                                     onMouseDown={(e) => e.stopPropagation()}
@@ -16000,7 +16000,7 @@ export default function Whiteboard({
                                     top: groupTop,
                                     transform: `translate(-50%, -100%) scale(${invZoom})`,
                                     transformOrigin: 'center bottom',
-                                    zIndex: 70,
+                                    zIndex: 90,
                                 }}
                                 onClick={(e) => e.stopPropagation()}
                                 onMouseDown={(e) => e.stopPropagation()}
@@ -16596,7 +16596,7 @@ export default function Whiteboard({
                             transform: `scale(${invZoom})`,
                             transformOrigin: 'top left'
                         }}
-                        className="z-40 pointer-events-auto select-none"
+                        className="z-[90] pointer-events-auto select-none"
                     >
                         <button
                             type="button"
@@ -17006,6 +17006,17 @@ export default function Whiteboard({
                                     [currentPage]: (prev[currentPage] || []).map(p => p.id === pdfObj.id ? { ...p, ...updates } : p)
                                 }));
                             }}
+                            onCenter={(pdfToCenter) => {
+                                const cw = canvasWrapperRef.current?.clientWidth || window.innerWidth;
+                                const ch = canvasWrapperRef.current?.clientHeight || window.innerHeight;
+                                const targetX = Math.round(Math.max(40, (cw / (currentZoom || 1) - (pdfToCenter.width || 480)) / 2 - panOffset.x));
+                                const targetY = Math.round(Math.max(40, (ch / (currentZoom || 1) - (pdfToCenter.height || 540)) / 2 - panOffset.y));
+                                setPagePdfObjects(prev => ({
+                                    ...prev,
+                                    [currentPage]: (prev[currentPage] || []).map(p => p.id === pdfToCenter.id ? { ...p, x: targetX, y: targetY } : p)
+                                }));
+                                toast.success('Centered PDF on canvas', { icon: '🎯' });
+                            }}
                             onDelete={(id) => {
                                 setPagePdfObjects(prev => ({
                                     ...prev,
@@ -17137,7 +17148,7 @@ export default function Whiteboard({
                 {/* Contextual Eraser Floating Toolbar */}
                 {tool === 'eraser' && (
                     <div
-                        className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-3 py-1.5 flex items-center gap-1.5 text-slate-200 animate-in fade-in slide-in-from-bottom-2 duration-150 select-none pointer-events-auto"
+                        className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[90] bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-3 py-1.5 flex items-center gap-1.5 text-slate-200 animate-in fade-in slide-in-from-bottom-2 duration-150 select-none pointer-events-auto"
                         onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => e.stopPropagation()}
                     >
@@ -17348,7 +17359,10 @@ export default function Whiteboard({
                     const cy = Math.max(30, baseCy + cascade);
 
                     if (symbol.is3D || symbol.category === '3d') {
-                        const mType = symbol.modelType || symbol.id.replace('_3d', '');
+                        const rawType = symbol.modelType || symbol.id.replace('_3d', '');
+                        const isEarth = /earth/i.test(symbol.name || rawType || '') || rawType === 'earth';
+                        const mType = isEarth ? 'earth' : rawType;
+                        const resolvedColor = symbol.color || symbol.meshData?.color || (isEarth ? '#38bdf8' : (color && color !== '#000000' && color !== '#111111' ? color : '#3b82f6'));
                         const new3D = {
                             id: `3d_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
                             modelType: mType,
@@ -17358,13 +17372,13 @@ export default function Whiteboard({
                             y: Math.max(20, cy),
                             width: symbol.defaultWidth || 220,
                             height: symbol.defaultHeight || 220,
-                            color: color || '#3b82f6',
+                            color: resolvedColor,
                             rotX: -25,
                             rotY: 45,
                             rotZ: 0,
                             rotation: 0,
-                            dimensions: getDefaultDimensions(mType),
-                            unit: 'cm',
+                            dimensions: symbol.dimensions || getDefaultDimensions(mType),
+                            unit: symbol.unit || 'cm',
                             showDimensions: false,
                             projectionMode: 'isometric'
                         };

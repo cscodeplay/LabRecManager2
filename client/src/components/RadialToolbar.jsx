@@ -284,7 +284,7 @@ export default function RadialToolbar({
     return (
         <div
             ref={containerRef}
-            className="radial-toolbar-container absolute z-50 pointer-events-auto select-none animate-in zoom-in-95 duration-150"
+            className="radial-toolbar-container absolute z-[95] pointer-events-auto select-none animate-in zoom-in-95 duration-150"
             style={{
                 left: clampedPos.x,
                 top: clampedPos.y,

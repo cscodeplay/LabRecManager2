@@ -7,6 +7,7 @@ import {
     Sparkles, Wand2, Network, Server, Wifi, Box, Upload
 } from 'lucide-react';
 import { parseOBJ, parseSTL, parseJSON3D } from './Whiteboard3DObject';
+import JSZip from 'jszip';
 
 /**
  * Domain-Specific Shape Library for Education & Technical Diagrams
@@ -1561,18 +1562,85 @@ export default function DomainShapeLibraryModal({
 
     if (!isOpen) return null;
 
-    const handle3DFileUpload = (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+    const handle3DFileUpload = async (e) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
+
+        // Check if user uploaded a zip package (like one exported from Whiteboard)
+        const zipFile = files.find(f => f.name.toLowerCase().endsWith('.zip'));
+        if (zipFile) {
+            try {
+                const zip = await JSZip.loadAsync(zipFile);
+                let objText = null;
+                let mtlText = null;
+                let metaJson = null;
+
+                for (const [filename, fileEntry] of Object.entries(zip.files)) {
+                    if (filename.toLowerCase().endsWith('.obj')) {
+                        objText = await fileEntry.async('string');
+                    } else if (filename.toLowerCase().endsWith('.mtl')) {
+                        mtlText = await fileEntry.async('string');
+                    } else if (filename.toLowerCase().endsWith('.json')) {
+                        try {
+                            metaJson = JSON.parse(await fileEntry.async('string'));
+                        } catch (err) {}
+                    }
+                }
+
+                if (objText) {
+                    const parsedMesh = parseOBJ(objText, mtlText);
+                    if (parsedMesh) {
+                        const isEarth = /earth/i.test(zipFile.name) || (metaJson && metaJson.modelType === 'earth');
+                        const finalColor = (metaJson && metaJson.color) || parsedMesh.color || (isEarth ? '#38bdf8' : '#38bdf8');
+                        const new3DObj = {
+                            id: `mesh_3d_${Date.now()}`,
+                            name: (metaJson && metaJson.name) || zipFile.name.replace(/\.[^/.]+$/, ""),
+                            category: '3d',
+                            is3D: true,
+                            modelType: (metaJson && metaJson.modelType) || (isEarth ? 'earth' : 'mesh'),
+                            color: finalColor,
+                            dimensions: (metaJson && metaJson.dimensions) || undefined,
+                            unit: (metaJson && metaJson.unit) || 'cm',
+                            meshData: {
+                                ...parsedMesh,
+                                color: finalColor
+                            },
+                            defaultWidth: 220,
+                            defaultHeight: 220
+                        };
+                        onSelectShape(new3DObj);
+                        onClose();
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to parse 3D zip package:", err);
+            }
+        }
+
+        // Check for .obj and potential companion .mtl among selected files
+        const objFile = files.find(f => f.name.toLowerCase().endsWith('.obj'));
+        const mtlFile = files.find(f => f.name.toLowerCase().endsWith('.mtl'));
+        const otherFile = files.find(f => f.name.toLowerCase().endsWith('.stl') || f.name.toLowerCase().endsWith('.json'));
+
+        const targetFile = objFile || otherFile || files[0];
+        if (!targetFile) return;
+
+        let mtlContent = null;
+        if (mtlFile) {
+            try {
+                mtlContent = await mtlFile.text();
+            } catch (err) {}
+        }
 
         const reader = new FileReader();
         reader.onload = (event) => {
             const content = event.target.result;
-            const ext = file.name.split('.').pop().toLowerCase();
+            const ext = targetFile.name.split('.').pop().toLowerCase();
             let parsedMesh = null;
 
             if (ext === 'obj') {
-                parsedMesh = parseOBJ(content);
+                parsedMesh = parseOBJ(content, mtlContent);
             } else if (ext === 'stl') {
                 parsedMesh = parseSTL(content);
             } else if (ext === 'json') {
@@ -1580,22 +1648,31 @@ export default function DomainShapeLibraryModal({
             }
 
             if (parsedMesh) {
+                const isEarth = /earth/i.test(targetFile.name);
+                const finalColor = parsedMesh.color && parsedMesh.color !== '#000000' && parsedMesh.color !== '#111111'
+                    ? parsedMesh.color
+                    : (isEarth ? '#38bdf8' : '#38bdf8');
                 const new3DObj = {
                     id: `mesh_3d_${Date.now()}`,
-                    name: file.name.replace(/\.[^/.]+$/, ""),
+                    name: targetFile.name.replace(/\.[^/.]+$/, ""),
                     category: '3d',
                     is3D: true,
-                    meshData: parsedMesh,
-                    defaultWidth: 200,
-                    defaultHeight: 200
+                    modelType: isEarth ? 'earth' : 'mesh',
+                    color: finalColor,
+                    meshData: {
+                        ...parsedMesh,
+                        color: finalColor
+                    },
+                    defaultWidth: 220,
+                    defaultHeight: 220
                 };
                 onSelectShape(new3DObj);
                 onClose();
             } else {
-                alert('Could not parse 3D file. Please ensure it is a valid .obj, .stl, or .json mesh file.');
+                alert('Could not parse 3D file. Please ensure it is a valid .obj, .stl, .json, or .zip 3D package.');
             }
         };
-        reader.readAsText(file);
+        reader.readAsText(targetFile);
     };
 
     const shapesList = Object.values(DOMAIN_SHAPES).filter(s => {
@@ -1799,7 +1876,8 @@ export default function DomainShapeLibraryModal({
                     <input 
                         ref={fileInput3DRef} 
                         type="file" 
-                        accept=".obj,.stl,.json" 
+                        accept=".obj,.mtl,.stl,.json,.zip" 
+                        multiple
                         className="hidden" 
                         onChange={handle3DFileUpload} 
                     />
@@ -1817,11 +1895,11 @@ export default function DomainShapeLibraryModal({
                             </div>
                             <div className="w-20 h-20 flex flex-col items-center justify-center p-2 rounded-lg bg-indigo-950/60 border border-indigo-800/80 group-hover:border-indigo-400/60 transition text-indigo-400 group-hover:text-indigo-300">
                                 <Upload className="w-8 h-8 mb-1" />
-                                <span className="text-[10px] font-bold">.OBJ / .STL / .JSON</span>
+                                <span className="text-[10px] font-bold">.OBJ / .MTL / .ZIP</span>
                             </div>
                             <div className="w-full">
                                 <span className="text-xs font-semibold text-indigo-200 group-hover:text-indigo-100 transition line-clamp-1">
-                                    Import 3D Mesh
+                                    Import 3D Mesh / Package
                                 </span>
                                 <span className="text-[10px] text-indigo-400 uppercase tracking-wider block mt-0.5">
                                     From Computer

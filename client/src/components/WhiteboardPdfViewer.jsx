@@ -3,8 +3,106 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     FileText, ChevronLeft, ChevronRight, Maximize2, Minimize2,
-    Lock, Unlock, Trash2, ExternalLink, GripHorizontal, RotateCcw
+    Lock, Unlock, Trash2, ExternalLink, GripHorizontal, RotateCcw,
+    ZoomIn, ZoomOut, Crosshair, Target
 } from 'lucide-react';
+
+// Robust multi-strategy PDF page count detector
+async function detectPdfTotalPages(pdfUrl) {
+    if (!pdfUrl) return 1;
+    try {
+        const res = await fetch(pdfUrl);
+        const arrayBuf = await res.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuf);
+        let text = '';
+        const chunk = 32768;
+        for (let i = 0; i < bytes.length; i += chunk) {
+            text += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + chunk, bytes.length)));
+        }
+
+        // 1. Linearized PDF check (/Linearized ... /N <pages>)
+        const linMatch = text.match(/\/Linearized[\s\S]*?\/N\s+(\d+)/);
+        if (linMatch && parseInt(linMatch[1], 10) > 0) {
+            return parseInt(linMatch[1], 10);
+        }
+
+        // 2. Find all /Type /Pages or /Type/Pages objects and get maximum /Count
+        let maxPagesCount = 0;
+        const objRegex = /(\d+)\s+(\d+)\s+obj([\s\S]*?)endobj/g;
+        let match;
+        while ((match = objRegex.exec(text)) !== null) {
+            const content = match[3];
+            if (/\/Type\s*\/Pages\b/.test(content)) {
+                const c = content.match(/\/Count\s+(\d+)/);
+                if (c) {
+                    const val = parseInt(c[1], 10);
+                    if (val > maxPagesCount) maxPagesCount = val;
+                }
+            }
+        }
+        if (maxPagesCount > 0) return maxPagesCount;
+
+        // 3. Fallback: match any /Type /Page (singular)
+        const singlePages = text.match(/\/Type\s*\/Page(?![a-zA-Z])/g);
+        if (singlePages && singlePages.length > 0) {
+            return singlePages.length;
+        }
+
+        // 4. Decompress FlateDecode object streams (/ObjStm) using browser DecompressionStream
+        if (typeof window !== 'undefined' && window.DecompressionStream) {
+            const streamRegex = /<<[^>]*?\/Filter\s*\/FlateDecode[^>]*?>>\s*stream\r?\n([\s\S]*?)\r?\nendstream/g;
+            let streamMatch;
+            while ((streamMatch = streamRegex.exec(text)) !== null) {
+                try {
+                    const streamBytes = new Uint8Array(streamMatch[1].length);
+                    for (let j = 0; j < streamMatch[1].length; j++) {
+                        streamBytes[j] = streamMatch[1].charCodeAt(j);
+                    }
+                    const ds = new DecompressionStream('deflate');
+                    const writer = ds.writable.getWriter();
+                    writer.write(streamBytes);
+                    writer.close();
+                    const reader = ds.readable.getReader();
+                    const chunks = [];
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        chunks.push(value);
+                    }
+                    let totalLen = 0;
+                    for (const c of chunks) totalLen += c.length;
+                    const combined = new Uint8Array(totalLen);
+                    let offset = 0;
+                    for (const c of chunks) {
+                        combined.set(c, offset);
+                        offset += c.length;
+                    }
+                    let decompStr = '';
+                    for (let k = 0; k < combined.length; k += chunk) {
+                        decompStr += String.fromCharCode.apply(null, combined.subarray(k, Math.min(k + chunk, combined.length)));
+                    }
+                    if (decompStr.includes('/Pages') || decompStr.includes('/Page')) {
+                        const cm = decompStr.match(/\/Count\s+(\d+)/);
+                        if (cm) {
+                            const val = parseInt(cm[1], 10);
+                            if (val > maxPagesCount) maxPagesCount = val;
+                        }
+                        const pMatches = decompStr.match(/\/Type\s*\/Page(?![a-zA-Z])/g);
+                        if (pMatches && pMatches.length > maxPagesCount) {
+                            maxPagesCount = pMatches.length;
+                        }
+                    }
+                } catch (e) {
+                    // Ignore non-zlib streams
+                }
+            }
+        }
+        return maxPagesCount > 0 ? maxPagesCount : 1;
+    } catch (err) {
+        console.warn('PDF page count detection warning:', err);
+        return 1;
+    }
+}
 
 export default function WhiteboardPdfViewer({
     pdf,
@@ -13,6 +111,7 @@ export default function WhiteboardPdfViewer({
     onUpdate,
     onDelete,
     onDuplicate,
+    onCenter,
     scale = 1
 }) {
     const [currentPage, setCurrentPage] = useState(pdf.page || 1);
@@ -23,7 +122,13 @@ export default function WhiteboardPdfViewer({
     const [isResizing, setIsResizing] = useState(false);
     const [activeHandle, setActiveHandle] = useState(null);
 
+    // Zoom & Centering State for Inset PDF
+    const [pdfZoom, setPdfZoom] = useState(pdf.zoomLevel || 1.0);
+    const [isEditingPage, setIsEditingPage] = useState(false);
+    const [pageInputValue, setPageInputValue] = useState(String(pdf.page || 1));
+
     const containerRef = useRef(null);
+    const scrollContainerRef = useRef(null);
     const dragStartRef = useRef({ x: 0, y: 0, objX: 0, objY: 0 });
     const resizeStartRef = useRef({ x: 0, y: 0, w: 0, h: 0, objX: 0, objY: 0 });
 
@@ -35,34 +140,17 @@ export default function WhiteboardPdfViewer({
         if (!rawPdfUrl) return;
         let isMounted = true;
         (async () => {
-            try {
-                const res = await fetch(rawPdfUrl);
-                const text = await res.text();
-                let count = 1;
-                // PDF catalog /Pages /Count regex
-                const countMatch = text.match(/\/Type\s*\/Pages[\s\S]*?\/Count\s+(\d+)/);
-                if (countMatch && parseInt(countMatch[1], 10) > 0) {
-                    count = parseInt(countMatch[1], 10);
-                } else {
-                    // Fallback: match individual /Type /Page (excluding /Pages)
-                    const matches = text.match(/\/Type\s*\/Page\b/g);
-                    if (matches && matches.length > 0) {
-                        count = matches.length;
+            const count = await detectPdfTotalPages(rawPdfUrl);
+            if (isMounted && count > 0) {
+                setTotalPages(count);
+                onUpdate?.({ totalPages: count });
+                setCurrentPage(prev => {
+                    if (prev > count) {
+                        onUpdate?.({ page: count, totalPages: count });
+                        return count;
                     }
-                }
-                if (isMounted && count > 0) {
-                    setTotalPages(count);
-                    onUpdate?.({ totalPages: count });
-                    setCurrentPage(prev => {
-                        if (prev > count) {
-                            onUpdate?.({ page: count, totalPages: count });
-                            return count;
-                        }
-                        return prev;
-                    });
-                }
-            } catch (err) {
-                // Ignore network/CORS errors on third-party links
+                    return prev;
+                });
             }
         })();
         return () => { isMounted = false; };
@@ -71,13 +159,18 @@ export default function WhiteboardPdfViewer({
     useEffect(() => {
         if (typeof pdf.isCollapsed === 'boolean') setIsCollapsed(pdf.isCollapsed);
         if (typeof pdf.isLocked === 'boolean') setIsLocked(pdf.isLocked);
-        const resolvedTotal = pdf.totalPages || totalPages || 1;
-        if (pdf.totalPages) setTotalPages(pdf.totalPages);
-        if (pdf.page) {
-            const clamped = Math.min(Math.max(1, pdf.page), Math.max(1, resolvedTotal));
-            setCurrentPage(clamped);
+        if (pdf.totalPages && pdf.totalPages > 1) {
+            setTotalPages(pdf.totalPages);
         }
-    }, [pdf.isCollapsed, pdf.isLocked, pdf.page, pdf.totalPages]);
+        if (pdf.page) {
+            const clamped = Math.max(1, pdf.page);
+            setCurrentPage(clamped);
+            setPageInputValue(String(clamped));
+        }
+        if (pdf.zoomLevel !== undefined) {
+            setPdfZoom(pdf.zoomLevel);
+        }
+    }, [pdf.isCollapsed, pdf.isLocked, pdf.page, pdf.totalPages, pdf.zoomLevel]);
 
     // Keyboard Delete / Backspace listener when PDF is selected
     useEffect(() => {
@@ -95,12 +188,13 @@ export default function WhiteboardPdfViewer({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isSelected, pdf.id, onDelete]);
 
-    // Page navigation with strict boundary enforcement
+    // Page navigation with boundary enforcement and unblocking
     const handlePrevPage = (e) => {
         e.stopPropagation();
         if (currentPage > 1) {
             const next = currentPage - 1;
             setCurrentPage(next);
+            setPageInputValue(String(next));
             onUpdate?.({ page: next });
         }
     };
@@ -111,8 +205,70 @@ export default function WhiteboardPdfViewer({
         if (currentPage < max) {
             const next = currentPage + 1;
             setCurrentPage(next);
+            setPageInputValue(String(next));
             onUpdate?.({ page: next });
+        } else if (totalPages <= 1) {
+            // Unblock user if totalPages was stuck at 1 - allow advancing to page 2+
+            const next = currentPage + 1;
+            setCurrentPage(next);
+            setTotalPages(next);
+            setPageInputValue(String(next));
+            onUpdate?.({ page: next, totalPages: next });
         }
+    };
+
+    const handlePageSubmit = (e) => {
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+        const targetPage = parseInt(pageInputValue, 10);
+        if (!isNaN(targetPage) && targetPage >= 1) {
+            const next = targetPage;
+            setCurrentPage(next);
+            if (next > totalPages) {
+                setTotalPages(next);
+                onUpdate?.({ page: next, totalPages: next });
+            } else {
+                onUpdate?.({ page: next });
+            }
+        } else {
+            setPageInputValue(String(currentPage));
+        }
+        setIsEditingPage(false);
+    };
+
+    // Zoom Controls
+    const handleZoomIn = (e) => {
+        e?.stopPropagation?.();
+        const next = Math.min(3.0, +(pdfZoom + 0.25).toFixed(2));
+        setPdfZoom(next);
+        onUpdate?.({ zoomLevel: next });
+    };
+
+    const handleZoomOut = (e) => {
+        e?.stopPropagation?.();
+        const next = Math.max(0.5, +(pdfZoom - 0.25).toFixed(2));
+        setPdfZoom(next);
+        onUpdate?.({ zoomLevel: next });
+    };
+
+    const handleResetZoom = (e) => {
+        e?.stopPropagation?.();
+        setPdfZoom(1.0);
+        onUpdate?.({ zoomLevel: 1.0 });
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTo({ left: 0, top: 0, behavior: 'smooth' });
+        }
+    };
+
+    // Center button: centers PDF view inside container and centers PDF on whiteboard canvas
+    const handleCenter = (e) => {
+        e?.stopPropagation?.();
+        setPdfZoom(1.0);
+        onUpdate?.({ zoomLevel: 1.0 });
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTo({ left: 0, top: 0, behavior: 'smooth' });
+        }
+        onCenter?.(pdf);
     };
 
     // Dragging
@@ -221,7 +377,7 @@ export default function WhiteboardPdfViewer({
         };
     }, [isDragging, isResizing, activeHandle, scale, onUpdate]);
 
-    const pdfSrc = rawPdfUrl ? `${rawPdfUrl}#page=${currentPage}&view=Fit&toolbar=0&navpanes=0` : '';
+    const pdfSrc = rawPdfUrl ? `${rawPdfUrl}#page=${currentPage}&zoom=${Math.round(pdfZoom * 100)}&view=Fit&toolbar=0&navpanes=0` : '';
 
     return (
         <div
@@ -255,37 +411,102 @@ export default function WhiteboardPdfViewer({
                         <div className="p-1 rounded-md bg-red-600/20 text-red-400 border border-red-500/30">
                             <FileText className="w-3.5 h-3.5" />
                         </div>
-                        <span className="text-xs font-semibold truncate max-w-[150px] sm:max-w-[200px]" title={pdf.title || 'PDF Document'}>
+                        <span className="text-xs font-semibold truncate max-w-[120px] sm:max-w-[170px]" title={pdf.title || 'PDF Document'}>
                             {pdf.title || 'PDF Document'}
                         </span>
                     </div>
 
-                    {/* PDF Page Navigation & Actions */}
+                    {/* PDF Page Navigation, Zoom, Center & Actions */}
                     <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                         {!isCollapsed && (
-                            <div className="flex items-center bg-slate-900/90 rounded-lg px-2 py-0.5 border border-slate-700/70 mr-1 text-[11px] font-mono text-slate-300 shadow-inner">
+                            <>
+                                {/* Page Navigator */}
+                                <div className="flex items-center bg-slate-900/90 rounded-lg px-1.5 py-0.5 border border-slate-700/70 mr-0.5 text-[11px] font-mono text-slate-300 shadow-inner">
+                                    <button
+                                        type="button"
+                                        onClick={handlePrevPage}
+                                        disabled={currentPage <= 1}
+                                        className="p-0.5 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+                                        title="Previous Page"
+                                    >
+                                        <ChevronLeft className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {isEditingPage ? (
+                                        <form onSubmit={handlePageSubmit} className="inline-flex items-center mx-1">
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max={totalPages > 1 ? totalPages : 999}
+                                                value={pageInputValue}
+                                                onChange={(e) => setPageInputValue(e.target.value)}
+                                                onBlur={handlePageSubmit}
+                                                autoFocus
+                                                className="w-8 text-center text-[10.5px] font-bold bg-slate-800 text-white rounded px-0.5 border border-red-500 outline-none"
+                                            />
+                                            <span className="text-[10px] text-slate-400 ml-1">/ {totalPages || 1}</span>
+                                        </form>
+                                    ) : (
+                                        <span
+                                            onClick={() => setIsEditingPage(true)}
+                                            className="px-1 text-[10.5px] font-semibold tracking-tight text-slate-200 cursor-pointer hover:text-sky-300 hover:underline select-none"
+                                            title="Click to jump to a specific page"
+                                        >
+                                            {currentPage} / {totalPages || 1}
+                                        </span>
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        onClick={handleNextPage}
+                                        disabled={totalPages > 1 && currentPage >= totalPages}
+                                        className="p-0.5 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+                                        title="Next Page"
+                                    >
+                                        <ChevronRight className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+
+                                {/* Zoom Controls: Out, Badge/Reset, In */}
+                                <div className="flex items-center bg-slate-900/90 rounded-lg px-1 py-0.5 border border-slate-700/70 mr-0.5 text-[10.5px] font-mono text-slate-300 shadow-inner">
+                                    <button
+                                        type="button"
+                                        onClick={handleZoomOut}
+                                        disabled={pdfZoom <= 0.5}
+                                        className="p-0.5 text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+                                        title="Zoom Out (-25%)"
+                                    >
+                                        <ZoomOut className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleResetZoom}
+                                        className="px-1 text-[10px] font-semibold text-sky-400 hover:text-sky-200 transition"
+                                        title="Click to reset zoom to 100%"
+                                    >
+                                        {Math.round(pdfZoom * 100)}%
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleZoomIn}
+                                        disabled={pdfZoom >= 3.0}
+                                        className="p-0.5 text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+                                        title="Zoom In (+25%)"
+                                    >
+                                        <ZoomIn className="w-3 h-3" />
+                                    </button>
+                                </div>
+
+                                {/* Center Button */}
                                 <button
                                     type="button"
-                                    onClick={handlePrevPage}
-                                    disabled={currentPage <= 1}
-                                    className="p-0.5 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
-                                    title="Previous Page"
+                                    onClick={handleCenter}
+                                    className="p-1 hover:bg-slate-700/60 text-slate-400 hover:text-sky-300 rounded transition"
+                                    title="Center PDF View and Center on Canvas"
                                 >
-                                    <ChevronLeft className="w-3.5 h-3.5" />
+                                    <Crosshair className="w-3.5 h-3.5" />
                                 </button>
-                                <span className="px-1.5 text-[10.5px] font-semibold tracking-tight text-slate-200 select-none">
-                                    {currentPage} / {totalPages || 1}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={handleNextPage}
-                                    disabled={currentPage >= Math.max(1, totalPages || 1)}
-                                    className="p-0.5 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
-                                    title="Next Page"
-                                >
-                                    <ChevronRight className="w-3.5 h-3.5" />
-                                </button>
-                            </div>
+                            </>
                         )}
 
                         {/* Open in new tab */}
@@ -333,23 +554,35 @@ export default function WhiteboardPdfViewer({
                     </div>
                 </div>
 
-                {/* PDF Viewer Body with Keyed Embed to force re-render on page update */}
+                {/* PDF Viewer Body with Keyed Embed to force re-render on page/zoom update */}
                 {!isCollapsed && (
-                    <div className="relative flex-1 w-full bg-slate-950 overflow-hidden">
+                    <div
+                        ref={scrollContainerRef}
+                        className="relative flex-1 w-full bg-slate-950 overflow-auto"
+                    >
                         {rawPdfUrl ? (
-                            <object
-                                key={`pdf-obj-${pdf.id}-p${currentPage}-${isResizing ? 'resizing' : 'settled'}`}
-                                data={pdfSrc}
-                                type="application/pdf"
-                                className="w-full h-full border-0 pointer-events-auto bg-white"
+                            <div
+                                style={{
+                                    transform: `scale(${pdfZoom})`,
+                                    transformOrigin: 'top center',
+                                    transition: 'transform 0.15s ease-out'
+                                }}
+                                className="w-full h-full min-w-full min-h-full"
                             >
-                                <iframe
-                                    key={`pdf-frame-${pdf.id}-p${currentPage}-${isResizing ? 'resizing' : 'settled'}`}
-                                    src={pdfSrc}
-                                    title={pdf.title || 'PDF Preview'}
+                                <object
+                                    key={`pdf-obj-${pdf.id}-p${currentPage}-z${pdfZoom}-${isResizing ? 'resizing' : 'settled'}`}
+                                    data={pdfSrc}
+                                    type="application/pdf"
                                     className="w-full h-full border-0 pointer-events-auto bg-white"
-                                />
-                            </object>
+                                >
+                                    <iframe
+                                        key={`pdf-frame-${pdf.id}-p${currentPage}-z${pdfZoom}-${isResizing ? 'resizing' : 'settled'}`}
+                                        src={pdfSrc}
+                                        title={pdf.title || 'PDF Preview'}
+                                        className="w-full h-full border-0 pointer-events-auto bg-white"
+                                    />
+                                </object>
+                            </div>
                         ) : (
                             <div className="flex flex-col items-center justify-center h-full p-6 text-center text-slate-400 text-xs">
                                 <FileText className="w-8 h-8 text-red-400 mb-2 opacity-60" />
