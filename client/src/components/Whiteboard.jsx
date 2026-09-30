@@ -1014,21 +1014,30 @@ export default function Whiteboard({
     const startCapturePreview = useCallback(async (mode = captureMode) => {
         try {
             stopCaptureStream();
-            const constraints = mode === 'video'
-                ? { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true }
+            const constraints = (mode === 'video' || mode === 'photo')
+                ? { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: mode === 'video' }
                 : { audio: true, video: false };
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
             captureStreamRef.current = stream;
-            if (mode === 'video' && captureVideoPreviewRef.current) {
+            if ((mode === 'video' || mode === 'photo') && captureVideoPreviewRef.current) {
                 captureVideoPreviewRef.current.srcObject = stream;
             }
             setHasCaptureStream(true);
         } catch (err) {
             console.error("Capture device access error:", err);
-            toast.error(`Unable to access ${mode === 'video' ? 'camera/microphone' : 'microphone'}`);
+            toast.error(`Unable to access ${mode === 'audio' ? 'microphone' : 'camera/microphone'}`);
             setHasCaptureStream(false);
         }
     }, [captureMode, stopCaptureStream]);
+
+    // Keep video element attached to stream whenever it mounts or mode changes
+    useEffect(() => {
+        if (captureVideoPreviewRef.current && captureStreamRef.current && (captureMode === 'video' || captureMode === 'photo')) {
+            if (captureVideoPreviewRef.current.srcObject !== captureStreamRef.current) {
+                captureVideoPreviewRef.current.srcObject = captureStreamRef.current;
+            }
+        }
+    }, [hasCaptureStream, captureMode, showMediaModal, mediaInputTab]);
 
     // Discard capture recording
     const handleDiscardCapture = useCallback(() => {
@@ -1043,10 +1052,12 @@ export default function Whiteboard({
         setIsCapturePaused(false);
     }, []);
 
-    // Manage capture stream lifecycle with media modal & tab
+    // Manage capture stream lifecycle with media modal & tab (safe from capturing state resets)
     useEffect(() => {
         if (showMediaModal && mediaInputTab === 'record') {
-            startCapturePreview(captureMode);
+            if (!captureStreamRef.current) {
+                startCapturePreview(captureMode);
+            }
         } else {
             if (isCapturing) {
                 handleDiscardCapture();
@@ -1056,7 +1067,32 @@ export default function Whiteboard({
         return () => {
             stopCaptureStream();
         };
-    }, [showMediaModal, mediaInputTab, captureMode, startCapturePreview, stopCaptureStream, isCapturing, handleDiscardCapture]);
+    }, [showMediaModal, mediaInputTab, captureMode, startCapturePreview, stopCaptureStream]);
+
+    // Take photo snapshot directly from active camera stream and place onto canvas
+    const handleTakePhoto = () => {
+        const video = captureVideoPreviewRef.current;
+        if (!video || !video.videoWidth || !video.videoHeight) {
+            toast.error('Camera stream is not ready yet');
+            return;
+        }
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL('image/png');
+            insertImageFromSrc(dataUrl);
+            stopCaptureStream();
+            setShowMediaModal(false);
+            setMediaInputTitle('');
+            toast.success('Photo captured and placed on canvas!', { icon: '📸' });
+        } catch (err) {
+            console.error('Failed to take photo snapshot:', err);
+            toast.error('Failed to capture photo from camera');
+        }
+    };
 
     const handleStartCapture = async () => {
         try {
@@ -1073,13 +1109,18 @@ export default function Whiteboard({
             setCaptureTime(0);
             setIsCapturePaused(false);
 
-            const mimeType = captureMode === 'video'
-                ? (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-                    ? 'video/webm;codecs=vp9,opus'
-                    : (MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : ''))
-                : (MediaRecorder.isTypeSupported('audio/webm')
-                    ? 'audio/webm'
-                    : (MediaRecorder.isTypeSupported('audio/ogg') ? 'audio/ogg' : ''));
+            let mimeType = '';
+            if (captureMode === 'video') {
+                if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) mimeType = 'video/webm;codecs=vp9,opus';
+                else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) mimeType = 'video/webm;codecs=vp8,opus';
+                else if (MediaRecorder.isTypeSupported('video/webm')) mimeType = 'video/webm';
+                else if (MediaRecorder.isTypeSupported('video/mp4')) mimeType = 'video/mp4';
+            } else {
+                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
+                else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
+                else if (MediaRecorder.isTypeSupported('audio/ogg')) mimeType = 'audio/ogg';
+                else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
+            }
 
             const recorder = new MediaRecorder(captureStreamRef.current, mimeType ? { mimeType } : undefined);
             recorder.ondataavailable = (e) => {
@@ -1104,40 +1145,67 @@ export default function Whiteboard({
     };
 
     const handlePauseResumeCapture = () => {
-        if (!captureRecorderRef.current) return;
+        const recorder = captureRecorderRef.current;
+        if (!recorder) return;
         if (isCapturePaused) {
-            captureRecorderRef.current.resume();
+            try {
+                if (recorder.state === 'paused') {
+                    recorder.resume();
+                }
+            } catch (err) {
+                console.warn('Resume error:', err);
+            }
             setIsCapturePaused(false);
+            if (captureTimerRef.current) clearInterval(captureTimerRef.current);
             captureTimerRef.current = setInterval(() => {
                 captureTimeRef.current += 1;
                 setCaptureTime(captureTimeRef.current);
             }, 1000);
         } else {
-            captureRecorderRef.current.pause();
+            try {
+                if (recorder.state === 'recording') {
+                    recorder.pause();
+                }
+            } catch (err) {
+                console.warn('Pause error:', err);
+            }
             setIsCapturePaused(true);
             if (captureTimerRef.current) clearInterval(captureTimerRef.current);
         }
     };
 
     const handleStopAndInsertCapture = () => {
-        if (!captureRecorderRef.current) return;
+        const recorder = captureRecorderRef.current;
+        if (!recorder) {
+            toast.error('No active recording found');
+            return;
+        }
         if (captureTimerRef.current) clearInterval(captureTimerRef.current);
 
         const durationSec = captureTimeRef.current;
         const currentMode = captureMode;
         const title = mediaInputTitle.trim() || `${currentMode === 'audio' ? 'Audio' : 'Video'} Clip (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
 
-        captureRecorderRef.current.onstop = async () => {
+        const finalizeAndInsert = async () => {
             try {
-                const rawBlob = new Blob(captureChunksRef.current, {
-                    type: currentMode === 'video' ? 'video/webm' : 'audio/webm'
-                });
+                if (!captureChunksRef.current || captureChunksRef.current.length === 0) {
+                    toast.error('No recorded data captured');
+                    setIsCapturing(false);
+                    setIsCapturePaused(false);
+                    return;
+                }
+                const mimeType = currentMode === 'video' ? 'video/webm' : 'audio/webm';
+                const rawBlob = new Blob(captureChunksRef.current, { type: mimeType });
 
                 let finalBlob = rawBlob;
-                if (durationSec > 0 && currentMode === 'video') {
+                if (durationSec > 0 && currentMode === 'video' && typeof fixWebmDuration === 'function') {
                     try {
                         finalBlob = await new Promise((resolve) => {
-                            fixWebmDuration(rawBlob, durationSec * 1000, (fixed) => resolve(fixed || rawBlob));
+                            const timer = setTimeout(() => resolve(rawBlob), 1000);
+                            fixWebmDuration(rawBlob, durationSec * 1000, (fixed) => {
+                                clearTimeout(timer);
+                                resolve(fixed || rawBlob);
+                            });
                         });
                     } catch (e) {
                         finalBlob = rawBlob;
@@ -1171,15 +1239,31 @@ export default function Whiteboard({
                 setMediaInputTitle('');
                 setIsCapturing(false);
                 setIsCapturePaused(false);
+                captureChunksRef.current = [];
                 toast.success(`${currentMode === 'audio' ? 'Audio' : 'Video'} clip inserted to canvas!`, { icon: '🎬' });
             } catch (err) {
                 console.error('Error finalizing capture:', err);
                 toast.error('Failed to create media clip');
+                setIsCapturing(false);
+                setIsCapturePaused(false);
             }
         };
 
-        if (captureRecorderRef.current.state !== 'inactive') {
-            captureRecorderRef.current.stop();
+        if (recorder.state === 'inactive') {
+            finalizeAndInsert();
+        } else {
+            recorder.onstop = finalizeAndInsert;
+            try {
+                if (recorder.state === 'recording' || recorder.state === 'paused') {
+                    if (typeof recorder.requestData === 'function') {
+                        recorder.requestData();
+                    }
+                    recorder.stop();
+                }
+            } catch (e) {
+                console.warn('Error stopping recorder:', e);
+                finalizeAndInsert();
+            }
         }
     };
 
@@ -4585,6 +4669,12 @@ export default function Whiteboard({
                             return tObj ? { ...txt, x: (tObj.x || 0) + canvasDx, y: (tObj.y || 0) + canvasDy } : txt;
                         }));
                     }
+                    if (imageDragState.start3DObjs && imageDragState.start3DObjs.length > 0) {
+                        setThreeDObjects(prev => prev.map(obj => {
+                            const oObj = imageDragState.start3DObjs.find(o => o.id === obj.id);
+                            return oObj ? { ...obj, x: (oObj.x || 0) + canvasDx, y: (oObj.y || 0) + canvasDy } : obj;
+                        }));
+                    }
                 } else if (startObj.groupId) {
                     moveGroup(startObj.groupId, deltaX, deltaY);
                 } else {
@@ -4706,6 +4796,12 @@ export default function Whiteboard({
                             setImageObjects(prev => prev.map(img => {
                                 const iObj = textDragState.startImageObjs.find(i => i.id === img.id);
                                 return iObj ? { ...img, x: iObj.x + canvasDx, y: iObj.y + canvasDy } : img;
+                            }));
+                        }
+                        if (textDragState.start3DObjs && textDragState.start3DObjs.length > 0) {
+                            setThreeDObjects(prev => prev.map(obj => {
+                                const oObj = textDragState.start3DObjs.find(o => o.id === obj.id);
+                                return oObj ? { ...obj, x: (oObj.x || 0) + canvasDx, y: (oObj.y || 0) + canvasDy } : obj;
                             }));
                         }
                     } else {
@@ -4845,6 +4941,12 @@ export default function Whiteboard({
                             setImageObjects(prev => prev.map(img => {
                                 const iObj = shapeDragState.startImageObjs.find(i => i.id === img.id);
                                 return iObj ? { ...img, x: iObj.x + canvasDx, y: iObj.y + canvasDy } : img;
+                            }));
+                        }
+                        if (shapeDragState.start3DObjs && shapeDragState.start3DObjs.length > 0) {
+                            setThreeDObjects(prev => prev.map(obj => {
+                                const oObj = shapeDragState.start3DObjs.find(o => o.id === obj.id);
+                                return oObj ? { ...obj, x: oObj.x + canvasDx, y: oObj.y + canvasDy } : obj;
                             }));
                         }
                     } else {
@@ -12286,7 +12388,7 @@ export default function Whiteboard({
                             e.stopPropagation();
                             if (e.target.dataset?.handle) return;
                             
-                            const isMulti = e.ctrlKey || e.metaKey;
+                            const isMulti = e.ctrlKey || e.metaKey || e.shiftKey || isShiftDown;
                             let activeImageIds = selectedImageIds;
                             if (isMulti) {
                                 if (selectedImageIds.includes(imgObj.id)) {
@@ -12302,6 +12404,7 @@ export default function Whiteboard({
                                     setSelectedShapeIds([]);
                                     setSelectedTextIds([]);
                                     setSelected3DId(null);
+                                    setSelected3DIds([]);
                                     setSelectedMediaId(null);
                                 }
                             }
@@ -12322,7 +12425,8 @@ export default function Whiteboard({
                                     startObj: { ...imgObj },
                                     startImageObjs: [imgObj],
                                     startShapeObjs: [],
-                                    startTextObjs: []
+                                    startTextObjs: [],
+                                    start3DObjs: []
                                 });
                                 return;
                             }
@@ -12335,7 +12439,8 @@ export default function Whiteboard({
                                 startObj: { ...imgObj },
                                 startImageObjs: imageObjects.filter(img => activeImageIds.includes(img.id) && !img.isLocked),
                                 startShapeObjs: shapeObjects.filter(shp => selectedShapeIds.includes(shp.id) && !shp.isLocked),
-                                startTextObjs: textObjects.filter(txt => selectedTextIds.includes(txt.id) && !txt.isLocked)
+                                startTextObjs: textObjects.filter(txt => selectedTextIds.includes(txt.id) && !txt.isLocked),
+                                start3DObjs: threeDObjects.filter(o => selected3DIds.includes(o.id) && !o.isLocked)
                             });
                         };
 
@@ -13120,14 +13225,19 @@ export default function Whiteboard({
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         if (!isEditing) {
-                                            if (e.ctrlKey || e.metaKey) {
+                                            const isMulti = e.ctrlKey || e.metaKey || e.shiftKey || isShiftDown;
+                                            if (isMulti) {
                                                 setSelectedTextIds(prev => prev.includes(txtObj.id) ? prev.filter(id => id !== txtObj.id) : [...prev, txtObj.id]);
                                             } else {
-                                                setSelectedTextIds([txtObj.id]);
-                                                setSelectedImageId(null);
-                                                setSelectedShapeIds([]);
-                                                setSelected3DId(null);
-                                                setSelectedMediaId(null);
+                                                if (!selectedTextIds.includes(txtObj.id)) {
+                                                    setSelectedTextIds([txtObj.id]);
+                                                    setSelectedImageId(null);
+                                                    setSelectedImageIds([]);
+                                                    setSelectedShapeIds([]);
+                                                    setSelected3DId(null);
+                                                    setSelected3DIds([]);
+                                                    setSelectedMediaId(null);
+                                                }
                                             }
                                         }
                                     }}
@@ -13136,6 +13246,7 @@ export default function Whiteboard({
                                         setEditingTextId(txtObj.id);
                                         setSelectedTextIds([txtObj.id]);
                                         setSelected3DId(null);
+                                        setSelected3DIds([]);
                                         setSelectedMediaId(null);
                                     }}
                                     onMouseDown={(e) => {
@@ -13144,13 +13255,16 @@ export default function Whiteboard({
                                         }
                                         if (!isSelected) {
                                             e.stopPropagation();
-                                            if (tool === 'select' && (e.ctrlKey || e.metaKey)) {
+                                            const isMulti = e.ctrlKey || e.metaKey || e.shiftKey || isShiftDown;
+                                            if (tool === 'select' && isMulti) {
                                                 setSelectedTextIds(prev => prev.includes(txtObj.id) ? prev.filter(id => id !== txtObj.id) : [...prev, txtObj.id]);
                                             } else {
                                                 setSelectedTextIds([txtObj.id]);
                                                 setSelectedImageId(null);
+                                                setSelectedImageIds([]);
                                                 setSelectedShapeIds([]);
                                                 setSelected3DId(null);
+                                                setSelected3DIds([]);
                                                 setSelectedMediaId(null);
                                             }
                                             // allow drag state to be set
@@ -13165,7 +13279,9 @@ export default function Whiteboard({
                                             startY: e.clientY,
                                             startObj: { ...txtObj },
                                             startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id) || t.id === txtObj.id),
-                                            startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id))
+                                            startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)),
+                                            startImageObjs: imageObjects.filter(i => selectedImageIds.includes(i.id)),
+                                            start3DObjs: threeDObjects.filter(o => selected3DIds.includes(o.id) && !o.isLocked)
                                         });
                                     }}
                                 >
@@ -14688,7 +14804,8 @@ export default function Whiteboard({
                                     let activeSelectionIds = selectedShapeIds;
                                     if (tool === 'select') {
                                         e.stopPropagation();
-                                        if (e.ctrlKey || e.metaKey) {
+                                        const isMulti = e.ctrlKey || e.metaKey || e.shiftKey || isShiftDown;
+                                        if (isMulti) {
                                             if (shpObj.groupId) {
                                                 const groupIds = shapeObjects.filter(s => s.groupId === shpObj.groupId).map(s => s.id);
                                                 const isGroupSelected = groupIds.every(id => selectedShapeIds.includes(id));
@@ -14709,16 +14826,20 @@ export default function Whiteboard({
                                                     activeSelectionIds = [shpObj.id];
                                                 }
                                                 setSelectedShapeIds(activeSelectionIds);
+                                                setSelectedImageId(null);
+                                                setSelectedImageIds([]);
+                                                setSelectedTextIds([]);
+                                                setEditingTextId(null);
+                                                setSelected3DId(null);
+                                                setSelected3DIds([]);
+                                                setSelectedMediaId(null);
                                             }
-                                            setSelectedImageId(null);
-                                            setSelectedTextIds([]);
-                                            setEditingTextId(null);
-                                            setSelected3DId(null);
-                                            setSelectedMediaId(null);
                                         }
                                     } else if (tool === 'laser') {
                                         setSelectedImageId(null);
+                                        setSelectedImageIds([]);
                                         setSelectedTextIds([]);
+                                        setSelected3DIds([]);
                                         setEditingTextId(null);
                                         return;
                                     }
@@ -14740,7 +14861,9 @@ export default function Whiteboard({
                                             startY: clientY,
                                             startObj: { ...shpObj },
                                             startObjs: [shpObj],
-                                            startTextObjs: []
+                                            startTextObjs: [],
+                                            startImageObjs: [],
+                                            start3DObjs: []
                                         });
                                         return;
                                     }
@@ -14752,7 +14875,9 @@ export default function Whiteboard({
                                         startY: clientY,
                                         startObj: { ...shpObj },
                                         startObjs: shapeObjects.filter(s => activeSelectionIds.includes(s.id) && !s.isLocked),
-                                        startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id))
+                                        startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)),
+                                        startImageObjs: imageObjects.filter(i => selectedImageIds.includes(i.id)),
+                                        start3DObjs: threeDObjects.filter(o => selected3DIds.includes(o.id) && !o.isLocked)
                                     });
                                 }}
                             >
@@ -15115,7 +15240,9 @@ export default function Whiteboard({
                                                         startY: clientY,
                                                         startObj: { ...shpObj },
                                                         startObjs: [shpObj],
-                                                        startTextObjs: []
+                                                        startTextObjs: [],
+                                                        startImageObjs: [],
+                                                        start3DObjs: []
                                                     });
                                                     return;
                                                 }
@@ -15127,7 +15254,9 @@ export default function Whiteboard({
                                                     startY: clientY, 
                                                     startObj: { ...shpObj }, 
                                                     startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)), 
-                                                    startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)) 
+                                                    startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)),
+                                                    startImageObjs: imageObjects.filter(i => selectedImageIds.includes(i.id)),
+                                                    start3DObjs: threeDObjects.filter(o => selected3DIds.includes(o.id) && !o.isLocked)
                                                 }); 
                                             }} 
                                         />
@@ -16777,25 +16906,61 @@ export default function Whiteboard({
                             isSelected={selected3DIds.includes(obj3d.id)}
                             scale={currentZoom}
                             onSelect={(id, e) => {
-                                if (e?.shiftKey || e?.ctrlKey || e?.metaKey || isShiftDown) {
+                                const isMulti = e?.shiftKey || e?.ctrlKey || e?.metaKey || isShiftDown;
+                                if (isMulti) {
                                     setSelected3DIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
                                 } else {
-                                    setSelected3DIds([id]);
-                                    setSelectedShapeIds([]);
-                                    setSelectedTextIds([]);
-                                    setSelectedImageId(null);
-                                    setSelectedImageIds([]);
-                                    setSelectedMediaId(null);
+                                    if (!selected3DIds.includes(id)) {
+                                        setSelected3DIds([id]);
+                                        setSelectedShapeIds([]);
+                                        setSelectedTextIds([]);
+                                        setSelectedImageId(null);
+                                        setSelectedImageIds([]);
+                                        setSelectedMediaId(null);
+                                    }
                                 }
                             }}
                             onUpdate={(updates, dragMeta) => {
-                                if (dragMeta?.stepDx !== undefined && selected3DIds.length > 1 && selected3DIds.includes(obj3d.id)) {
+                                if (dragMeta?.stepDx !== undefined && (selected3DIds.length > 1 || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedImageIds.length > 0)) {
+                                    const { stepDx, stepDy } = dragMeta;
                                     setThreeDObjects(prev => prev.map(o => {
                                         if (selected3DIds.includes(o.id)) {
-                                            return { ...o, x: (o.x || 0) + dragMeta.stepDx, y: (o.y || 0) + dragMeta.stepDy };
+                                            return { ...o, x: (o.x || 0) + stepDx, y: (o.y || 0) + stepDy };
                                         }
                                         return o;
                                     }));
+                                    if (selectedShapeIds.length > 0) {
+                                        setShapeObjects(prev => prev.map(s => {
+                                            if (selectedShapeIds.includes(s.id)) {
+                                                return {
+                                                    ...s,
+                                                    x: (s.x || 0) + stepDx,
+                                                    y: (s.y || 0) + stepDy,
+                                                    startX: s.startX !== undefined ? s.startX + stepDx : s.startX,
+                                                    startY: s.startY !== undefined ? s.startY + stepDy : s.startY,
+                                                    endX: s.endX !== undefined ? s.endX + stepDx : s.endX,
+                                                    endY: s.endY !== undefined ? s.endY + stepDy : s.endY
+                                                };
+                                            }
+                                            return s;
+                                        }));
+                                    }
+                                    if (selectedTextIds.length > 0) {
+                                        setTextObjects(prev => prev.map(t => {
+                                            if (selectedTextIds.includes(t.id)) {
+                                                return { ...t, x: (t.x || 0) + stepDx, y: (t.y || 0) + stepDy };
+                                            }
+                                            return t;
+                                        }));
+                                    }
+                                    if (selectedImageIds.length > 0) {
+                                        setImageObjects(prev => prev.map(i => {
+                                            if (selectedImageIds.includes(i.id)) {
+                                                return { ...i, x: (i.x || 0) + stepDx, y: (i.y || 0) + stepDy };
+                                            }
+                                            return i;
+                                        }));
+                                    }
                                 } else {
                                     setThreeDObjects(prev => prev.map(o => o.id === obj3d.id ? { ...o, ...updates } : o));
                                 }
@@ -17461,7 +17626,7 @@ export default function Whiteboard({
                         {/* Content by tab */}
                         {mediaInputTab === 'record' && (
                             <div className="flex flex-col gap-3">
-                                {/* Mode Selector (Video / Audio) - Icons only with tooltips */}
+                                {/* Mode Selector (Video / Audio / Photo) */}
                                 <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-lg border border-slate-700/60">
                                     <div className="flex items-center gap-1.5">
                                         <button
@@ -17496,6 +17661,22 @@ export default function Whiteboard({
                                         >
                                             <Mic className="w-4 h-4" />
                                         </button>
+                                        <button
+                                            type="button"
+                                            disabled={isCapturing}
+                                            onClick={() => {
+                                                setCaptureMode('photo');
+                                                startCapturePreview('photo');
+                                            }}
+                                            title="Take Photo Snapshot (Camera)"
+                                            className={`p-2 rounded-md transition ${
+                                                captureMode === 'photo'
+                                                    ? 'bg-indigo-600 text-white shadow'
+                                                    : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                                            } ${isCapturing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        >
+                                            <Camera className="w-4 h-4" />
+                                        </button>
                                     </div>
                                     
                                     {/* Timer display */}
@@ -17511,7 +17692,7 @@ export default function Whiteboard({
 
                                 {/* Preview Viewport */}
                                 <div className="relative w-full h-52 bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center">
-                                    {captureMode === 'video' ? (
+                                    {(captureMode === 'video' || captureMode === 'photo') ? (
                                         <video
                                             ref={captureVideoPreviewRef}
                                             autoPlay
@@ -17539,19 +17720,54 @@ export default function Whiteboard({
                                     )}
                                 </div>
 
-                                {/* Capture Controls Bar - Icons only with tooltips */}
+                                {/* Capture Controls Bar */}
                                 <div className="flex items-center justify-center gap-3 py-1">
                                     {!isCapturing ? (
-                                        <button
-                                            type="button"
-                                            onClick={handleStartCapture}
-                                            title="Start Recording"
-                                            className="w-11 h-11 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition"
-                                        >
-                                            <Circle className="w-5 h-5 fill-white text-white" />
-                                        </button>
+                                        captureMode === 'photo' ? (
+                                            <button
+                                                type="button"
+                                                onClick={handleTakePhoto}
+                                                title="Take Photo & Insert to Canvas"
+                                                className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-lg hover:scale-105 active:scale-95 transition"
+                                            >
+                                                <Camera className="w-4 h-4" />
+                                                <span>Snap Photo & Place on Canvas</span>
+                                            </button>
+                                        ) : (
+                                            <div className="flex items-center gap-3">
+                                                {captureMode === 'video' && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleTakePhoto}
+                                                        title="Snap Photo Snapshot (Camera)"
+                                                        className="w-10 h-10 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-400 hover:text-white flex items-center justify-center shadow transition hover:scale-105 active:scale-95"
+                                                    >
+                                                        <Camera className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    onClick={handleStartCapture}
+                                                    title={`Start ${captureMode === 'audio' ? 'Audio' : 'Video'} Recording`}
+                                                    className="w-11 h-11 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition"
+                                                >
+                                                    <Circle className="w-5 h-5 fill-white text-white" />
+                                                </button>
+                                            </div>
+                                        )
                                     ) : (
                                         <div className="flex items-center gap-3">
+                                            {captureMode === 'video' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleTakePhoto}
+                                                    title="Snap Photo Snapshot during recording"
+                                                    className="w-10 h-10 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-400 hover:text-white flex items-center justify-center shadow transition"
+                                                >
+                                                    <Camera className="w-4 h-4" />
+                                                </button>
+                                            )}
+
                                             <button
                                                 type="button"
                                                 onClick={handlePauseResumeCapture}

@@ -550,10 +550,18 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
             snapTargetRef.current = null;
         };
 
+        const prevCursor = document.body.style.cursor;
+        if (draggingEndpoint === 'waypoint') {
+            document.body.style.cursor = 'grabbing';
+        } else if (draggingEndpoint) {
+            document.body.style.cursor = 'move';
+        }
+
         window.addEventListener('pointermove', handlePointerMove);
         window.addEventListener('pointerup', handlePointerUp);
 
         return () => {
+            document.body.style.cursor = prevCursor;
             window.removeEventListener('pointermove', handlePointerMove);
             window.removeEventListener('pointerup', handlePointerUp);
         };
@@ -562,6 +570,9 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
     const handlePointerDown = (endpoint, e) => {
         e.stopPropagation();
         e.preventDefault();
+        try {
+            e.currentTarget?.setPointerCapture?.(e.pointerId);
+        } catch (_) {}
         setDraggingEndpoint(endpoint);
         draggingEndpointRef.current = endpoint;
         let startPt = actualSourcePoint;
@@ -940,25 +951,39 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                     {/* Draggable Midpoint / Waypoint Handle (Lucidchart bend tool to change curve/elbow shape) */}
                     {(!draggingEndpoint || draggingEndpoint === 'waypoint') && (
                         <g 
-                            className="cursor-grab active:cursor-grabbing hover:scale-125 transition-transform"
-                            style={{ pointerEvents: 'auto' }}
+                            data-handle="elbow-midpoint"
+                            style={{ 
+                                cursor: draggingEndpoint === 'waypoint' ? 'grabbing' : 'grab',
+                                pointerEvents: 'auto'
+                            }}
                             onPointerDown={(e) => handlePointerDown('waypoint', e)}
                             onDoubleClick={(e) => {
                                 e.stopPropagation();
                                 onUpdate(id, { waypoint: null });
                             }}
                         >
+                            {/* Generous invisible hit zone so the hand cursor never flickers or drops */}
+                            <circle
+                                cx={actualWaypoint.x}
+                                cy={actualWaypoint.y}
+                                r={24 / scale}
+                                fill="transparent"
+                                style={{ 
+                                    cursor: draggingEndpoint === 'waypoint' ? 'grabbing' : 'grab',
+                                    pointerEvents: 'all' 
+                                }}
+                            />
                             {/* Halo / drag indicator when actively bending */}
                             {draggingEndpoint === 'waypoint' && (
                                 <circle
                                     cx={actualWaypoint.x}
                                     cy={actualWaypoint.y}
-                                    r={14 / scale}
+                                    r={16 / scale}
                                     fill="rgba(245, 158, 11, 0.25)"
                                     stroke="#f59e0b"
                                     strokeWidth={1.5 / scale}
                                     strokeDasharray="3,3"
-                                    className="animate-spin"
+                                    className="animate-spin pointer-events-none"
                                     style={{ animationDuration: '5s' }}
                                 />
                             )}
@@ -966,17 +991,21 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
                             <circle
                                 cx={actualWaypoint.x}
                                 cy={actualWaypoint.y}
-                                r={7.5 / scale}
+                                r={8 / scale}
                                 fill="#f59e0b"
                                 stroke="#ffffff"
                                 strokeWidth={2.5 / scale}
-                                style={{ pointerEvents: 'auto', filter: 'drop-shadow(0 2px 5px rgba(0,0,0,0.4))' }}
+                                style={{ 
+                                    cursor: draggingEndpoint === 'waypoint' ? 'grabbing' : 'grab',
+                                    pointerEvents: 'auto', 
+                                    filter: 'drop-shadow(0 2px 5px rgba(0,0,0,0.4))' 
+                                }}
                             />
                             {/* Inner white core dot */}
                             <circle
                                 cx={actualWaypoint.x}
                                 cy={actualWaypoint.y}
-                                r={2.5 / scale}
+                                r={3 / scale}
                                 fill="#ffffff"
                                 className="pointer-events-none"
                             />

@@ -1348,7 +1348,9 @@ export default function Whiteboard3DObject({
         if (obj.isLocked) return;
         e.stopPropagation();
         if (e.cancelable) e.preventDefault();
-        onSelect && onSelect(obj.id, e);
+        if (!isSelected || e.shiftKey || e.ctrlKey || e.metaKey) {
+            onSelect && onSelect(obj.id, e);
+        }
 
         // Infinite Cloner drag-to-clone: only when switched ON!
         // When switched OFF, parent object is dragged normally and NOT copied.
@@ -1365,8 +1367,8 @@ export default function Whiteboard3DObject({
         let lastDy = 0;
 
         const onMove = (moveEvt) => {
-            const dx = moveEvt.clientX - startX;
-            const dy = moveEvt.clientY - startY;
+            const dx = (moveEvt.clientX - startX) / (scale || 1);
+            const dy = (moveEvt.clientY - startY) / (scale || 1);
             const stepDx = dx - lastDx;
             const stepDy = dy - lastDy;
             lastDx = dx;
@@ -1397,8 +1399,8 @@ export default function Whiteboard3DObject({
         const initialY = obj.y || 0;
 
         const onMove = (moveEvt) => {
-            const dx = moveEvt.clientX - startX;
-            const dy = moveEvt.clientY - startY;
+            const dx = (moveEvt.clientX - startX) / (scale || 1);
+            const dy = (moveEvt.clientY - startY) / (scale || 1);
             let newW = initialW;
             let newH = initialH;
             let newX = initialX;
