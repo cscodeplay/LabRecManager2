@@ -345,17 +345,87 @@ router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
 }));
 
 /**
+ * @route   POST /api/recordings/bulk-delete
+ * @desc    Bulk delete recordings
+ * @access  Owner or Admin
+ */
+router.post('/bulk-delete', authenticate, asyncHandler(async (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ success: false, error: 'IDs array is required' });
+    }
+    const userId = req.user.id;
+    const schoolId = req.user.schoolId;
+    const isAdmin = ['admin', 'principal'].includes(req.user.role);
+
+    const recordings = await prisma.whiteboardRecording.findMany({
+        where: {
+            id: { in: ids },
+            ...(isAdmin ? (schoolId ? { schoolId } : {}) : { userId })
+        }
+    });
+
+    if (recordings.length === 0) {
+        return res.status(404).json({ success: false, error: 'No matching recordings found' });
+    }
+
+    const cloudinary = require('cloudinary').v2;
+    for (const rec of recordings) {
+        if (rec.cloudinaryId) {
+            try {
+                await cloudinary.uploader.destroy(rec.cloudinaryId, { resource_type: 'video' });
+            } catch (e) {
+                console.error('Failed to destroy Cloudinary video:', e.message);
+            }
+        }
+    }
+
+    // Decrement storage for each owner
+    for (const rec of recordings) {
+        if (rec.fileSize && rec.userId) {
+            try {
+                const owner = await prisma.user.findUnique({
+                    where: { id: rec.userId },
+                    select: { storageUsedBytes: true }
+                });
+                if (owner) {
+                    const newUsed = Math.max(0, Number(owner.storageUsedBytes || 0) - rec.fileSize);
+                    await prisma.user.update({
+                        where: { id: rec.userId },
+                        data: { storageUsedBytes: newUsed }
+                    });
+                }
+            } catch (e) {
+                console.error('Failed to update storage for user:', e.message);
+            }
+        }
+    }
+
+    const validIds = recordings.map(r => r.id);
+    await prisma.whiteboardRecording.deleteMany({
+        where: { id: { in: validIds } }
+    });
+
+    res.json({ success: true, count: validIds.length, message: `${validIds.length} recordings deleted` });
+}));
+
+/**
  * @route   PATCH /api/recordings/:id
  * @desc    Update recording metadata (title, description, isPublic)
- * @access  Owner
+ * @access  Owner or Admin
  */
 router.patch('/:id', authenticate, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { title, description, isPublic } = req.body;
     const userId = req.user.id;
+    const schoolId = req.user.schoolId;
+    const isAdmin = ['admin', 'principal'].includes(req.user.role);
 
     const recording = await prisma.whiteboardRecording.findFirst({
-        where: { id, userId }
+        where: {
+            id,
+            ...(isAdmin ? (schoolId ? { schoolId } : {}) : { userId })
+        }
     });
 
     if (!recording) {

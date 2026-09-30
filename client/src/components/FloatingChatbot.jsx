@@ -24,6 +24,7 @@ import GenericDataImportConfirmCard from './GenericDataImportConfirmCard';
 import TrainingModuleConfirmCard from './TrainingModuleConfirmCard';
 import ThinkingStepsCollapsible from './ThinkingStepsCollapsible';
 import { DocumentSaveToFolderCard, DocumentMoveFolderCard } from './DocumentFolderActionCards';
+import MathRenderer from './MathRenderer';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -906,18 +907,14 @@ function RenderMessage({ content, hasQueryResult, model, provider, defaultOpenTh
                     return <ThinkingStepsCollapsible key={i} thinkContent={part} model={model} provider={provider} defaultOpen={defaultOpenThinking} />;
                 }
 
-                const html = part
-                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-indigo-600 underline font-semibold hover:text-indigo-800">$1</a>')
-                    .replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 bg-slate-100 rounded text-[11px] font-mono text-pink-600">$1</code>')
-                    .replace(/^### (.+)$/gm, '<h4 class="font-semibold mt-2 mb-0.5 text-[13px]">$1</h4>')
-                    .replace(/^## (.+)$/gm, '<h3 class="font-semibold mt-3 mb-1 text-sm">$1</h3>')
-                    .replace(/^- (.+)$/gm, '<li class="ml-3 list-disc text-[13px]">$1</li>')
-                    .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-3 list-decimal text-[13px]">$2</li>')
-                    .replace(/\n{2,}/g, '</p><p class="mb-1.5">')
-                    .replace(/\n/g, '<br/>');
-                return <div key={i} dangerouslySetInnerHTML={{ __html: `<p class="mb-1.5">${html}</p>` }} />;
+                return (
+                    <MathRenderer
+                        key={i}
+                        content={part}
+                        size="sm"
+                        textClassName="text-slate-800 dark:text-slate-200"
+                    />
+                );
             })}
         </div>
     );
@@ -1777,7 +1774,11 @@ function UserMessageContent({ content, referencedFiles = [] }) {
     if (!content) return null;
     const parts = content.split(/(\\[a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]{2,5})/g);
     if (parts.length === 1 && (!referencedFiles || referencedFiles.length === 0)) {
-        return <p className="text-[13px] whitespace-pre-wrap">{content}</p>;
+        return (
+            <div className="text-[13px] leading-relaxed">
+                <MathRenderer content={content} inline textClassName="text-white" />
+            </div>
+        );
     }
     return (
         <div className="space-y-1.5">
@@ -1788,7 +1789,7 @@ function UserMessageContent({ content, referencedFiles = [] }) {
                     ))}
                 </div>
             )}
-            <p className="text-[13px] whitespace-pre-wrap leading-relaxed">
+            <div className="text-[13px] leading-relaxed">
                 {parts.map((part, i) => {
                     if (part.startsWith('\\') && part.includes('.')) {
                         return (
@@ -1798,9 +1799,9 @@ function UserMessageContent({ content, referencedFiles = [] }) {
                             </span>
                         );
                     }
-                    return part;
+                    return <MathRenderer key={i} content={part} inline textClassName="text-white" />;
                 })}
-            </p>
+            </div>
         </div>
     );
 }

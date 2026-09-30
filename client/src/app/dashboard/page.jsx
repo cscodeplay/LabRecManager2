@@ -57,7 +57,7 @@ export default function DashboardPage() {
         // Live & Collaboration
         { title: 'Live Meetings & Viva', href: '/meetings', icon: Video, category: 'live', color: 'text-rose-600 bg-rose-50 group-hover:bg-rose-100' },
         { title: t('nav.whiteboard', 'Interactive Whiteboard'), href: '/whiteboard', icon: Pencil, category: 'live', color: 'text-purple-600 bg-purple-50 group-hover:bg-purple-100' },
-        { title: 'Session Recordings', href: '/admin/recordings', icon: Layers, category: 'live', color: 'text-fuchsia-600 bg-fuchsia-50 group-hover:bg-fuchsia-100' },
+        { title: 'Session Recordings', href: (user?.role === 'admin' || user?.role === 'principal') ? '/admin/documents?tab=recordings' : '/documents?tab=recordings', icon: Layers, category: 'live', color: 'text-fuchsia-600 bg-fuchsia-50 group-hover:bg-fuchsia-100' },
         { title: 'Documents Hub & Share', href: '/documents', icon: Folder, category: 'live', color: 'text-violet-600 bg-violet-50 group-hover:bg-violet-100' },
 
         // Operations & Admin

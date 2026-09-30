@@ -2,6 +2,7 @@
 
 import React, { useMemo } from 'react';
 import katex from 'katex';
+import 'katex/dist/contrib/mhchem';
 
 /**
  * Robust LaTeX, Physics, Chemistry, and Markdown renderer.
@@ -50,7 +51,8 @@ function renderKatexToString(mathStr, displayMode = false) {
             strict: false,
             trust: true,
             macros: {
-                "\\ce": "\\text{#1}"
+                "\\ce": "\\text{#1}",
+                "\\pu": "\\text{#1}"
             }
         });
     } catch (err) {
@@ -75,7 +77,7 @@ function parseContent(text, textClassName = '', size = 'base', inline = false) {
     }
 
     // 1. First tokenize code blocks (```...```) and block math ($$...$$ or \[...\])
-    const blockRegex = /(?:```([a-zA-Z0-9_-]*)\n([\s\S]*?)```)|(?:\$\$([\s\S]*?)\$\$)|(?:\\\[([\s\S]*?)\\\])/g;
+    const blockRegex = /(?:```([a-zA-Z0-9_-]*)[^\S\r\n]*\r?\n([\s\S]*?)```)|(?:\$\$([\s\S]*?)\$\$)|(?:\\\[([\s\S]*?)\\\])/g;
     const blocks = [];
     let lastIdx = 0;
     let match;
@@ -137,7 +139,7 @@ function parseContent(text, textClassName = '', size = 'base', inline = false) {
             return (
                 <div
                     key={`mb-${bIdx}`}
-                    className="my-4 px-4 py-3 bg-slate-900/60 dark:bg-slate-900/90 border border-indigo-500/20 rounded-2xl overflow-x-auto text-center shadow-inner"
+                    className="my-3 px-4 py-2.5 bg-slate-50/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto text-center shadow-2xs text-slate-900 dark:text-slate-100"
                     dangerouslySetInnerHTML={{ __html: mathHtml }}
                 />
             );
@@ -200,15 +202,15 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = '
 
     const flushParagraph = (pKey) => {
         if (currentParagraph.length > 0) {
-            const joinedText = currentParagraph.join(' ');
+            const joinedText = currentParagraph.join('\n');
             let cleanText = joinedText.trim();
             // Clean any stray markdown hash prefixes that slipped into paragraph lines
             cleanText = cleanText.replace(/^(#{1,6})\s*/, '');
             if (cleanText) {
                 elements.push(
-                    <p key={pKey} className={`my-2 ${s.p} ${textClassName || 'text-slate-800 dark:text-slate-200'}`}>
+                    <div key={pKey} className={`my-1.5 ${s.p} ${textClassName || 'text-slate-800 dark:text-slate-200'}`}>
                         {renderInlineFormattedText(cleanText, size, textClassName)}
-                    </p>
+                    </div>
                 );
             }
             currentParagraph = [];
@@ -436,11 +438,11 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = '
  * 3. Bold `**...**`
  * 4. Italic `*...*`
  */
-function renderInlineFormattedText(rawText, size = 'base') {
+function renderInlineFormattedText(rawText, size = 'base', textClassName = '') {
     if (!rawText) return null;
 
-    // Tokenize inline code (`...`) and inline math ($...$ or \(...\))
-    const tokenRegex = /(?:`([^`\n]+)`)|(?:\$([^\$\n]+?)\$)|(?:\\\(([\s\S]*?)\\\))/g;
+    // Tokenize inline code (`...`), inline math ($...$ or \(...\)), and standalone LaTeX commands (\rightleftharpoons, \Delta, etc.)
+    const tokenRegex = /(?:`([^`\n]+)`)|(?:\$([^\$\n]+?)\$)|(?:\\\(([\s\S]*?)\\\))|(?:(\\(?:rightleftharpoons|leftarrow|rightarrow|Leftarrow|Rightarrow|Leftrightarrow|Delta|nabla|infty|alpha|beta|gamma|theta|lambda|mu|pi|sigma|omega|times|pm|approx|neq|le|ge|frac\{[^{}]*\}\{[^{}]*\}|ce\{[^{}]*\})))/g;
     const tokens = [];
     let lastIdx = 0;
     let match;
@@ -459,9 +461,9 @@ function renderInlineFormattedText(rawText, size = 'base') {
                 type: 'inline_code',
                 content: match[1]
             });
-        } else if (match[2] !== undefined || match[3] !== undefined) {
+        } else if (match[2] !== undefined || match[3] !== undefined || match[4] !== undefined) {
             // Inline Math
-            const mathExpr = match[2] !== undefined ? match[2] : match[3];
+            const mathExpr = match[2] !== undefined ? match[2] : (match[3] !== undefined ? match[3] : match[4]);
             tokens.push({
                 type: 'inline_math',
                 content: mathExpr
@@ -483,7 +485,7 @@ function renderInlineFormattedText(rawText, size = 'base') {
             return (
                 <code
                     key={`ic-${tIdx}`}
-                    className="px-2 py-0.5 mx-0.5 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-cyan-300 font-mono text-[12px] sm:text-[13px] rounded-lg border border-slate-300/80 dark:border-slate-700 font-semibold select-all"
+                    className="px-1.5 py-0.5 mx-0.5 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-cyan-300 font-mono text-[12px] sm:text-[13px] rounded border border-slate-300/80 dark:border-slate-700 font-semibold select-all"
                 >
                     {token.content}
                 </code>
@@ -495,45 +497,89 @@ function renderInlineFormattedText(rawText, size = 'base') {
             return (
                 <span
                     key={`im-${tIdx}`}
-                    className="inline-math px-1 select-all"
+                    className="inline-math px-0.5 select-all text-slate-900 dark:text-slate-100 align-baseline"
                     dangerouslySetInnerHTML={{ __html: mathHtml }}
                 />
             );
         }
 
-        // Render basic bold & italic within pure text segment
-        return renderSimpleTypography(token.content, `st-${tIdx}`);
+        // Render basic bold, italic, links, and chemistry subscripts within pure text segment
+        return renderSimpleTypography(token.content, `st-${tIdx}`, textClassName);
     });
 }
 
 /**
- * Handles basic markdown bold (**text**) and italic (*text*).
+ * Handles basic markdown bold (**text**), italic (*text*), links ([label](url)), 
+ * chemical subscripts (e.g. N_2, H_2, K_c, CO_2), and intra-paragraph line breaks.
  */
-function renderSimpleTypography(text, keyPrefix) {
+function renderSimpleTypography(text, keyPrefix, textClassName = '') {
     if (!text) return null;
 
-    // Bold (**...**)
-    const parts = text.split(/(\*\*.*?\*\*)/g);
-    return parts.map((part, pIdx) => {
-        if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
-            return (
-                <strong key={`${keyPrefix}-b-${pIdx}`} className="font-extrabold text-slate-900 dark:text-white">
-                    {part.slice(2, -2)}
-                </strong>
-            );
-        }
-
-        // Italic (*...*)
-        const italicParts = part.split(/(\*.*?\*)/g);
-        return italicParts.map((subPart, sIdx) => {
-            if (subPart.startsWith('*') && subPart.endsWith('*') && subPart.length >= 3) {
+    // Handle newlines as <br />
+    const lines = text.split('\n');
+    return lines.map((line, lIdx) => {
+        // Handle Links [label](url)
+        const linkParts = line.split(/(\[[^\]]+\]\([^)]+\))/g);
+        const lineContent = linkParts.map((lPart, lpIdx) => {
+            const linkMatch = lPart.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+            if (linkMatch) {
                 return (
-                    <em key={`${keyPrefix}-i-${pIdx}-${sIdx}`} className="italic text-slate-800 dark:text-slate-200">
-                        {subPart.slice(1, -1)}
-                    </em>
+                    <a
+                        key={`${keyPrefix}-link-${lIdx}-${lpIdx}`}
+                        href={linkMatch[2]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-indigo-600 dark:text-indigo-400 underline font-semibold hover:text-indigo-800 dark:hover:text-indigo-300 transition"
+                    >
+                        {linkMatch[1]}
+                    </a>
                 );
             }
-            return subPart;
+
+            // Bold (**...**)
+            const boldParts = lPart.split(/(\*\*.*?\*\*)/g);
+            return boldParts.map((bPart, bpIdx) => {
+                if (bPart.startsWith('**') && bPart.endsWith('**') && bPart.length >= 4) {
+                    return (
+                        <strong key={`${keyPrefix}-b-${lIdx}-${lpIdx}-${bpIdx}`} className="font-extrabold text-slate-900 dark:text-white">
+                            {bPart.slice(2, -2)}
+                        </strong>
+                    );
+                }
+
+                // Italic (*...*)
+                const italicParts = bPart.split(/(\*.*?\*)/g);
+                return italicParts.map((iPart, ipIdx) => {
+                    if (iPart.startsWith('*') && iPart.endsWith('*') && iPart.length >= 3) {
+                        return (
+                            <em key={`${keyPrefix}-i-${lIdx}-${lpIdx}-${bpIdx}-${ipIdx}`} className="italic text-slate-800 dark:text-slate-200">
+                                {iPart.slice(1, -1)}
+                            </em>
+                        );
+                    }
+
+                    // Chemical / Mathematical Subscripts without explicit dollar signs (e.g. N_2, H_2, K_c, K_p, CO_2)
+                    const chemParts = iPart.split(/(\b[A-Z][a-z]?_[0-9a-zA-Z+-]+\b)/g);
+                    return chemParts.map((cPart, cpIdx) => {
+                        const chemMatch = cPart.match(/^([A-Z][a-z]?)_([0-9a-zA-Z+-]+)$/);
+                        if (chemMatch) {
+                            return (
+                                <span key={`${keyPrefix}-chem-${lIdx}-${lpIdx}-${bpIdx}-${ipIdx}-${cpIdx}`} className="font-serif">
+                                    {chemMatch[1]}<sub>{chemMatch[2]}</sub>
+                                </span>
+                            );
+                        }
+                        return cPart;
+                    });
+                });
+            });
         });
+
+        return (
+            <React.Fragment key={`${keyPrefix}-line-${lIdx}`}>
+                {lIdx > 0 && <br />}
+                {lineContent}
+            </React.Fragment>
+        );
     });
 }

@@ -18,6 +18,7 @@ import TrainingModuleConfirmCard from '@/components/TrainingModuleConfirmCard';
 import { DocumentSaveToFolderCard, DocumentMoveFolderCard } from '@/components/DocumentFolderActionCards';
 import ThinkingStepsCollapsible from '@/components/ThinkingStepsCollapsible';
 import { ChatChart, BotSettingsModal, loadBotSettings, getActivePaletteColors, DEFAULT_BOT_SETTINGS, GRAPH_PALETTES } from '@/components/FloatingChatbot';
+import MathRenderer from '@/components/MathRenderer';
 import { formatTime } from '@/lib/dateUtils';
 
 // Markdown-like renderer for AI messages
@@ -47,20 +48,14 @@ function RenderMessage({ content, model, provider, defaultOpenThinking = false, 
                 if (part.startsWith('<think>')) {
                     return <ThinkingStepsCollapsible key={i} thinkContent={part} model={model} provider={provider} defaultOpen={defaultOpenThinking} />;
                 }
-                // Convert basic markdown
-                const html = part
-                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                    .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 rounded text-xs font-mono text-pink-600 dark:text-pink-400">$1</code>')
-                    .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold mt-3 mb-1">$1</h3>')
-                    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-semibold mt-4 mb-2">$1</h2>')
-                    .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-4 mb-2">$1</h1>')
-                    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-                    .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 list-decimal">$2</li>')
-                    .replace(/\n{2,}/g, '</p><p class="mb-2">')
-                    .replace(/\n/g, '<br/>');
-
-                return <div key={i} dangerouslySetInnerHTML={{ __html: `<p class="mb-2">${html}</p>` }} />;
+                return (
+                    <MathRenderer
+                        key={i}
+                        content={part}
+                        size="sm"
+                        textClassName="text-slate-800 dark:text-slate-200"
+                    />
+                );
             })}
         </div>
     );
@@ -118,7 +113,11 @@ function UserMessageContent({ content, referencedFiles = [] }) {
     if (!content) return null;
     const parts = content.split(/(\\[a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]{2,5})/g);
     if (parts.length === 1 && (!referencedFiles || referencedFiles.length === 0)) {
-        return <p className="text-sm whitespace-pre-wrap">{content}</p>;
+        return (
+            <div className="text-sm leading-relaxed">
+                <MathRenderer content={content} inline textClassName="text-white" />
+            </div>
+        );
     }
     return (
         <div className="space-y-1.5">
@@ -129,7 +128,7 @@ function UserMessageContent({ content, referencedFiles = [] }) {
                     ))}
                 </div>
             )}
-            <p className="text-sm whitespace-pre-wrap leading-relaxed">
+            <div className="text-sm leading-relaxed">
                 {parts.map((part, i) => {
                     if (part.startsWith('\\') && part.includes('.')) {
                         return (
@@ -139,9 +138,9 @@ function UserMessageContent({ content, referencedFiles = [] }) {
                             </span>
                         );
                     }
-                    return part;
+                    return <MathRenderer key={i} content={part} inline textClassName="text-white" />;
                 })}
-            </p>
+            </div>
         </div>
     );
 }
