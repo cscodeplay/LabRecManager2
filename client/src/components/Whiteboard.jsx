@@ -935,6 +935,7 @@ export default function Whiteboard({
     // ─── Canvas Zoom & Minimap Navigation State ──────────────────────────
     const [zoomLevel, setZoomLevel] = useState(1);
     const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+    const [showMinimap, setShowMinimap] = useState(true);
 
     // ─── Export & Interactive Panel Sharing Modal State ──────────────────
     const [showExportModal, setShowExportModal] = useState(false);
@@ -10235,30 +10236,208 @@ export default function Whiteboard({
             }
         }
 
-        // 3. Tools & Modes
-        if (txt.includes('pen') && !txt.includes('sparkle')) {
+        // 3A. Smart Shape Recognition Toggle
+        if (
+            txt.includes('turn on smart shape') ||
+            txt.includes('smart shape on') ||
+            txt.includes('enable smart shape') ||
+            txt.includes('activate smart shape') ||
+            txt.includes('turn on auto shape') ||
+            txt.includes('auto shape on')
+        ) {
+            setIsAutoShape(true);
+            setVoiceFeedback('✨ Smart Shape Recognition turned ON');
+            toast.success('Smart Shape Recognition ON', { icon: '✨' });
+            return;
+        }
+        if (
+            txt.includes('turn off smart shape') ||
+            txt.includes('smart shape off') ||
+            txt.includes('disable smart shape') ||
+            txt.includes('deactivate smart shape') ||
+            txt.includes('turn off auto shape') ||
+            txt.includes('auto shape off')
+        ) {
+            setIsAutoShape(false);
+            setVoiceFeedback('⚪ Smart Shape Recognition turned OFF');
+            toast('Smart Shape Recognition OFF', { icon: '⚪' });
+            return;
+        }
+        if (txt.includes('toggle smart shape') || txt.includes('toggle auto shape')) {
+            setIsAutoShape(prev => {
+                const next = !prev;
+                setVoiceFeedback(`✨ Smart Shape Recognition ${next ? 'ON' : 'OFF'}`);
+                toast(`Smart Shape Recognition ${next ? 'ON' : 'OFF'}`, { icon: next ? '✨' : '⚪' });
+                return next;
+            });
+            return;
+        }
+
+        // 3B. Smart Ink & Handwriting Recognition
+        if (
+            txt.includes('turn on smart ink') ||
+            txt.includes('smart ink on') ||
+            txt.includes('enable smart ink') ||
+            txt.includes('activate smart ink') ||
+            txt.includes('handwriting recognition on')
+        ) {
+            setIsOcrActive(true);
+            setVoiceFeedback('🪄 Smart Ink Recognition turned ON');
+            toast.success('Smart Ink Recognition ON', { icon: '🪄' });
+            return;
+        }
+        if (
+            txt.includes('turn off smart ink') ||
+            txt.includes('smart ink off') ||
+            txt.includes('disable smart ink') ||
+            txt.includes('deactivate smart ink') ||
+            txt.includes('handwriting recognition off')
+        ) {
+            setIsOcrActive(false);
+            setVoiceFeedback('⚪ Smart Ink Recognition turned OFF');
+            toast('Smart Ink Recognition OFF', { icon: '⚪' });
+            return;
+        }
+        if (txt.includes('toggle smart ink') || txt.includes('toggle handwriting recognition')) {
+            setIsOcrActive(prev => {
+                const next = !prev;
+                setVoiceFeedback(`🪄 Smart Ink Recognition ${next ? 'ON' : 'OFF'}`);
+                toast(`Smart Ink Recognition ${next ? 'ON' : 'OFF'}`, { icon: next ? '🪄' : '⚪' });
+                return next;
+            });
+            return;
+        }
+        if (
+            txt.includes('convert ink') ||
+            txt.includes('convert handwriting') ||
+            txt.includes('recognize ink') ||
+            txt.includes('ink to text') ||
+            txt.includes('ink to math')
+        ) {
+            handleConvertSelectedInkToText();
+            setVoiceFeedback('🪄 Converting handwriting to text/math');
+            return;
+        }
+
+        // 3C. Pen Brushes, Sparkle Themes & Opacity
+        if (txt.includes('calligraphy')) {
             setTool('pen');
             setPenMode('normal');
-            setVoiceFeedback('✏️ Switched to Pen');
-            toast.success('Switched to Pen', { icon: '✏️' });
+            setBrushType('calligraphy');
+            setVoiceFeedback('✒️ Switched to Calligraphy Pen');
+            toast.success('Switched to Calligraphy Pen', { icon: '✒️' });
+            return;
+        }
+        if (txt.includes('crayon')) {
+            setTool('pen');
+            setPenMode('normal');
+            setBrushType('crayon');
+            setVoiceFeedback('🖍️ Switched to Crayon Brush');
+            toast.success('Switched to Crayon Brush', { icon: '🖍️' });
+            return;
+        }
+        if (txt.includes('watercolor')) {
+            setTool('pen');
+            setPenMode('normal');
+            setBrushType('watercolor');
+            setVoiceFeedback('🎨 Switched to Watercolor Brush');
+            toast.success('Switched to Watercolor Brush', { icon: '🎨' });
+            return;
+        }
+        if (txt.includes('fountain')) {
+            setTool('pen');
+            setPenMode('normal');
+            setBrushType('fountain');
+            setVoiceFeedback('🖋️ Switched to Fountain Pen');
+            toast.success('Switched to Fountain Pen', { icon: '🖋️' });
             return;
         }
         if (txt.includes('sparkle')) {
             setTool('pen');
             setPenMode('sparkle');
-            if (txt.includes('galaxy')) setSparkleTheme('galaxy');
-            else if (txt.includes('rainbow')) setSparkleTheme('rainbow');
+            if (txt.includes('rainbow')) setSparkleTheme('rainbow');
             else if (txt.includes('gold')) setSparkleTheme('gold');
             else if (txt.includes('emerald')) setSparkleTheme('emerald');
+            else setSparkleTheme('galaxy');
             setVoiceFeedback('✨ Switched to Sparkle Pen');
             toast.success('Switched to Sparkle Pen', { icon: '✨' });
             return;
         }
+        if (txt.includes('pen opacity') || (txt.includes('opacity') && (txt.includes('percent') || txt.includes('%')))) {
+            const opMatch = txt.match(/(\d+)\s*(?:percent|%)?/i);
+            if (opMatch) {
+                const op = Math.max(10, Math.min(100, parseInt(opMatch[1], 10)));
+                setPenOpacity(op);
+                setVoiceFeedback(`💧 Pen opacity set to ${op}%`);
+                toast.success(`Pen opacity set to ${op}%`, { icon: '💧' });
+                return;
+            }
+        }
+        if (txt.includes('pressure sensitivity on') || txt.includes('enable pressure')) {
+            setPressureSensitivity(true);
+            setVoiceFeedback('🖊️ Pressure sensitivity ON');
+            toast.success('Pressure sensitivity ON', { icon: '🖊️' });
+            return;
+        }
+        if (txt.includes('pressure sensitivity off') || txt.includes('disable pressure')) {
+            setPressureSensitivity(false);
+            setVoiceFeedback('⚪ Pressure sensitivity OFF');
+            toast('Pressure sensitivity OFF', { icon: '⚪' });
+            return;
+        }
+        if (txt.includes('pen') || txt.includes('pencil') || txt.includes('drawing mode')) {
+            setTool('pen');
+            setPenMode('normal');
+            setBrushType('normal');
+            setVoiceFeedback('✏️ Switched to Standard Pen');
+            toast.success('Switched to Standard Pen', { icon: '✏️' });
+            return;
+        }
+
+        // 3D. Highlighter Tool, Colors & Sizes
         if (txt.includes('highlighter') || txt.includes('marker')) {
             setTool('highlighter');
+            if (txt.includes('green')) setHighlighterColor(HIGHLIGHTER_COLORS[1]);
+            else if (txt.includes('blue')) setHighlighterColor(HIGHLIGHTER_COLORS[2]);
+            else if (txt.includes('pink')) setHighlighterColor(HIGHLIGHTER_COLORS[3]);
+            else if (txt.includes('orange')) setHighlighterColor(HIGHLIGHTER_COLORS[4]);
+            else if (txt.includes('yellow')) setHighlighterColor(HIGHLIGHTER_COLORS[0]);
+
+            const szMatch = txt.match(/(?:size|width)\s*(\d+)/i);
+            if (szMatch) {
+                const sz = Math.max(2, Math.min(60, parseInt(szMatch[1], 10)));
+                setStrokeWidth(sz);
+            }
             setVoiceFeedback('🖊️ Switched to Highlighter');
             toast.success('Switched to Highlighter', { icon: '🖊️' });
             return;
+        }
+
+        // 3E. Eraser Modes & Sizes
+        if (txt.includes('object eraser') || txt.includes('eraser mode object') || txt.includes('stroke eraser')) {
+            setTool('eraser');
+            setEraserMode('object');
+            setVoiceFeedback('🧹 Switched to Object / Stroke Eraser');
+            toast.success('Object Eraser active', { icon: '🧹' });
+            return;
+        }
+        if (txt.includes('pixel eraser') || txt.includes('rub eraser') || txt.includes('eraser mode rub')) {
+            setTool('eraser');
+            setEraserMode('rub');
+            setVoiceFeedback('🧹 Switched to Standard Pixel Eraser');
+            toast.success('Pixel Eraser active', { icon: '🧹' });
+            return;
+        }
+        if (txt.includes('eraser size') || (txt.includes('eraser') && txt.match(/(?:size)?\s*(\d+)\s*(?:px)?/))) {
+            const szMatch = txt.match(/(?:size)?\s*(\d+)\s*(?:px)?/);
+            if (szMatch && szMatch[1]) {
+                const sz = Math.max(5, Math.min(100, parseInt(szMatch[1], 10)));
+                setTool('eraser');
+                setEraserSize(sz);
+                setVoiceFeedback(`🧹 Eraser size set to ${sz}px`);
+                toast.success(`Eraser size set to ${sz}px`, { icon: '🧹' });
+                return;
+            }
         }
         if (txt.includes('eraser')) {
             setTool('eraser');
@@ -10266,12 +10445,124 @@ export default function Whiteboard({
             toast.success('Switched to Eraser', { icon: '🧹' });
             return;
         }
-        if (txt.includes('select') || txt.includes('lasso') || txt.includes('pointer tool') || txt === 'pointer') {
+
+        // 3F. Selection Modes, Infinite Cloner & Select All
+        if (txt.includes('lasso select') || txt.includes('lasso tool')) {
+            setTool('select');
+            setSelectMode('lasso');
+            setVoiceFeedback('➰ Lasso selection tool active');
+            toast.success('Lasso select active', { icon: '➰' });
+            return;
+        }
+        if (txt.includes('box select') || txt.includes('rectangle select')) {
+            setTool('select');
+            setSelectMode('rectangle');
+            setVoiceFeedback('⬚ Box selection tool active');
+            toast.success('Box select active', { icon: '⬚' });
+            return;
+        }
+        if (txt.includes('select all') || txt.includes('select everything')) {
+            const allShapes = (pageShapeObjects[currentPage] || []).map(s => s.id);
+            const allTexts = (pageTextObjects[currentPage] || []).map(t => t.id);
+            const allImages = (pageImageObjects[currentPage] || []).map(i => i.id);
+            const all3D = (page3DObjects[currentPage] || []).map(o => o.id);
+            setSelectedShapeIds(allShapes);
+            setSelectedTextIds(allTexts);
+            setSelectedImageIds(allImages);
+            setSelected3DIds(all3D);
+            setTool('select');
+            setVoiceFeedback('☑️ Selected all objects on canvas');
+            toast.success('Selected all objects', { icon: '☑️' });
+            return;
+        }
+        if (txt.includes('deselect all') || txt.includes('clear selection') || txt.includes('unselect all')) {
+            setSelectedShapeIds([]);
+            setSelectedTextIds([]);
+            setSelectedImageIds([]);
+            setSelectedImageId(null);
+            setSelected3DIds([]);
+            setSelected3DId(null);
+            setSelectedMediaId(null);
+            setVoiceFeedback('⚪ Cleared selection');
+            toast('Cleared selection', { icon: '⚪' });
+            return;
+        }
+        if (
+            txt.includes('infinite cloner on') ||
+            txt.includes('turn on infinite cloner') ||
+            txt.includes('infinite copy on') ||
+            txt.includes('enable infinite cloner')
+        ) {
+            setIsSelectionInfiniteCloner(true);
+            setVoiceFeedback('♾️ Infinite Cloner ON');
+            toast.success('Infinite Cloner ON', { icon: '♾️' });
+            return;
+        }
+        if (
+            txt.includes('infinite cloner off') ||
+            txt.includes('turn off infinite cloner') ||
+            txt.includes('infinite copy off') ||
+            txt.includes('disable infinite cloner')
+        ) {
+            setIsSelectionInfiniteCloner(false);
+            setVoiceFeedback('⚪ Infinite Cloner OFF');
+            toast('Infinite Cloner OFF', { icon: '⚪' });
+            return;
+        }
+        if (txt.includes('toggle infinite cloner') || txt.includes('toggle infinite copy')) {
+            setIsSelectionInfiniteCloner(prev => {
+                const next = !prev;
+                setVoiceFeedback(`♾️ Infinite Cloner ${next ? 'ON' : 'OFF'}`);
+                toast(`Infinite Cloner ${next ? 'ON' : 'OFF'}`, { icon: next ? '♾️' : '⚪' });
+                return next;
+            });
+            return;
+        }
+        if (txt.includes('select') || txt.includes('pointer tool') || txt === 'pointer') {
             setTool('select');
             setVoiceFeedback('👆 Switched to Selection tool');
             toast.success('Switched to Selection tool', { icon: '👆' });
             return;
         }
+
+        // 3G. Connectors & Lines
+        if (txt.includes('double arrow')) {
+            setTool('line');
+            setLineType('double_arrow');
+            setVoiceFeedback('↔️ Double Arrow tool active');
+            toast.success('Double Arrow tool active', { icon: '↔️' });
+            return;
+        }
+        if (txt.includes('straight connector')) {
+            setTool('line');
+            setLineType('connector_straight');
+            setVoiceFeedback('🔗 Straight Connector active');
+            toast.success('Straight Connector active', { icon: '🔗' });
+            return;
+        }
+        if (txt.includes('elbow connector') || txt.includes('orthogonal connector')) {
+            setTool('line');
+            setLineType('connector_elbow');
+            setVoiceFeedback('↳ Elbow Connector active');
+            toast.success('Elbow Connector active', { icon: '↳' });
+            return;
+        }
+        if (txt.includes('curved connector')) {
+            setTool('line');
+            setLineType('connector_curved');
+            setVoiceFeedback('⤴ Curved Connector active');
+            toast.success('Curved Connector active', { icon: '⤴' });
+            return;
+        }
+        if (txt.includes('curved arc') || txt.includes('arc tool')) {
+            setTool('line');
+            setLineType('arc');
+            setVoiceFeedback('⌒ Curved Arc tool active');
+            toast.success('Curved Arc tool active', { icon: '⌒' });
+            return;
+        }
+
+        // 3H. Laser, Ruler, Protractor, Hand Tool
         if (txt.includes('hand tool') || txt.includes('pan tool') || txt.includes('pan canvas') || txt === 'hand' || txt === 'pan') {
             setTool('select');
             setVoiceFeedback('✋ Hand / Pan tool: Hold Spacebar or 2-finger drag to pan viewport');
@@ -10478,6 +10769,77 @@ export default function Whiteboard({
             return;
         }
 
+        // 4G. Text Font & Typography Styling
+        if (txt.includes('font bold') || txt.includes('make bold') || txt.includes('bold text') || txt.includes('toggle bold')) {
+            if (selectedTextIds.length > 0) {
+                setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, fontWeight: t.fontWeight === 'bold' ? 'normal' : 'bold' } : t));
+            }
+            if (selectedShapeIds.length > 0) {
+                setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontWeight: s.fontWeight === 'bold' ? 'normal' : 'bold' } : s));
+            }
+            saveToHistory();
+            setVoiceFeedback('𝗕 Toggled Bold font weight');
+            toast.success('Toggled Bold', { icon: '𝗕' });
+            return;
+        }
+        if (txt.includes('font italic') || txt.includes('make italic') || txt.includes('italic text') || txt.includes('toggle italic')) {
+            if (selectedTextIds.length > 0) {
+                setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, fontStyle: t.fontStyle === 'italic' ? 'normal' : 'italic' } : t));
+            }
+            if (selectedShapeIds.length > 0) {
+                setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontStyle: s.fontStyle === 'italic' ? 'normal' : 'italic' } : s));
+            }
+            saveToHistory();
+            setVoiceFeedback('𝘐 Toggled Italic font style');
+            toast.success('Toggled Italic', { icon: '𝘐' });
+            return;
+        }
+        if (txt.includes('font underline') || txt.includes('underline text') || txt.includes('toggle underline')) {
+            if (selectedTextIds.length > 0) {
+                setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, textDecoration: t.textDecoration === 'underline' ? 'none' : 'underline' } : t));
+            }
+            if (selectedShapeIds.length > 0) {
+                setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, textDecoration: s.textDecoration === 'underline' ? 'none' : 'underline' } : s));
+            }
+            saveToHistory();
+            setVoiceFeedback('U̲ Toggled Underline');
+            toast.success('Toggled Underline', { icon: 'U̲' });
+            return;
+        }
+        if (txt.includes('font size') || (txt.includes('font') && txt.match(/\d+/))) {
+            const fsMatch = txt.match(/font\s*(?:size)?\s*(\d+)/i) || txt.match(/size\s*(\d+)/i);
+            if (fsMatch) {
+                const fs = Math.max(10, Math.min(120, parseInt(fsMatch[1], 10)));
+                if (selectedTextIds.length > 0) {
+                    setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, fontSize: fs } : t));
+                }
+                if (selectedShapeIds.length > 0) {
+                    setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontSize: fs } : s));
+                }
+                saveToHistory();
+                setVoiceFeedback(`🔠 Set font size to ${fs}px`);
+                toast.success(`Font size: ${fs}px`, { icon: '🔠' });
+                return;
+            }
+        }
+        if (txt.includes('font sans') || txt.includes('font serif') || txt.includes('font mono') || txt.includes('font cursive')) {
+            let fam = 'sans-serif';
+            if (txt.includes('serif')) fam = 'serif';
+            else if (txt.includes('mono')) fam = 'monospace';
+            else if (txt.includes('cursive')) fam = 'cursive';
+
+            if (selectedTextIds.length > 0) {
+                setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, fontFamily: fam } : t));
+            }
+            if (selectedShapeIds.length > 0) {
+                setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontFamily: fam } : s));
+            }
+            saveToHistory();
+            setVoiceFeedback(`🔤 Set font family to ${fam}`);
+            toast.success(`Font family: ${fam}`, { icon: '🔤' });
+            return;
+        }
+
         // 5. Global Drawing Color Palette
         for (const [name, hex] of Object.entries(colorMap)) {
             if (txt.includes(`color ${name}`) || txt === name) {
@@ -10548,17 +10910,89 @@ export default function Whiteboard({
             setVoiceFeedback('⛶ Toggled Fullscreen');
             return;
         }
-        if (txt.includes('grid') || txt.includes('toggle grid')) {
-            setBgPattern(prev => (prev === 'grid' ? 'none' : 'grid'));
-            setVoiceFeedback('▦ Toggled canvas grid');
-            toast.success('Toggled canvas grid', { icon: '▦' });
+        // Background Patterns & Colors
+        if (txt.includes('background grid') || txt.includes('canvas grid') || txt === 'grid' || txt.includes('toggle grid')) {
+            setBgPattern(prev => (prev === 'grid' ? 'plain' : 'grid'));
+            setVoiceFeedback('▦ Background Grid toggled');
+            toast.success('Background Grid toggled', { icon: '▦' });
+            return;
+        }
+        if (txt.includes('background dots') || txt.includes('background dotted') || txt.includes('canvas dots')) {
+            setBgPattern('dotted');
+            setVoiceFeedback('••• Background set to Dots');
+            toast.success('Background set to Dots', { icon: '•••' });
+            return;
+        }
+        if (txt.includes('background lines') || txt.includes('background lined') || txt.includes('ruled canvas') || txt.includes('ruled background')) {
+            setBgPattern('lined');
+            setVoiceFeedback('📋 Background set to Ruled Lines');
+            toast.success('Background set to Ruled Lines', { icon: '📋' });
+            return;
+        }
+        if (txt.includes('background graph') || txt.includes('graph paper background') || txt.includes('graph paper')) {
+            setBgPattern('graph');
+            setVoiceFeedback('📈 Background set to Graph Paper');
+            toast.success('Background set to Graph Paper', { icon: '📈' });
+            return;
+        }
+        if (txt.includes('background music') || txt.includes('sheet music background')) {
+            setBgPattern('music');
+            setVoiceFeedback('🎵 Background set to Music Staff');
+            toast.success('Background set to Music Staff', { icon: '🎵' });
+            return;
+        }
+        if (txt.includes('background isometric') || txt.includes('isometric background')) {
+            setBgPattern('iso');
+            setVoiceFeedback('📐 Background set to Isometric');
+            toast.success('Background set to Isometric', { icon: '📐' });
+            return;
+        }
+        if (txt.includes('background hex') || txt.includes('hexagonal background')) {
+            setBgPattern('hex');
+            setVoiceFeedback('⬡ Background set to Hexagons');
+            toast.success('Background set to Hexagons', { icon: '⬡' });
+            return;
+        }
+        if (txt.includes('background plain') || txt.includes('background blank') || txt.includes('background white') || txt.includes('white background')) {
+            setBgPattern('plain');
+            setBgColor('#ffffff');
+            setVoiceFeedback('⬜ Background set to Plain White');
+            toast.success('Background set to Plain White', { icon: '⬜' });
+            return;
+        }
+        if (txt.includes('background black') || txt.includes('blackboard') || txt.includes('dark canvas') || txt.includes('black background')) {
+            setBgColor('#000000');
+            setVoiceFeedback('⬛ Background color set to Black');
+            toast.success('Background set to Black', { icon: '⬛' });
+            return;
+        }
+        if (txt.includes('chalkboard') || txt.includes('green chalkboard') || txt.includes('background green')) {
+            setBgColor('#1b4332');
+            setVoiceFeedback('🟩 Background set to Green Chalkboard');
+            toast.success('Chalkboard Green background', { icon: '🟩' });
+            return;
+        }
+        if (txt.includes('navy background') || txt.includes('dark blue background')) {
+            setBgColor('#0f172a');
+            setVoiceFeedback('🟦 Background set to Navy Slate');
+            toast.success('Navy Slate background', { icon: '🟦' });
             return;
         }
 
-        // 7. Multi-Page Navigation
+        // 7. Multi-Page Navigation & Page Actions
         if (txt.includes('new page') || txt.includes('add page')) {
             addNewPage();
             setVoiceFeedback('📄 Added new page');
+            return;
+        }
+        if (txt.includes('duplicate page') || txt.includes('clone page')) {
+            duplicateCurrentPage();
+            setVoiceFeedback(`📋 Duplicated page ${currentPage + 1}`);
+            return;
+        }
+        if (txt.includes('delete page') || txt.includes('remove page')) {
+            deletePage(currentPage);
+            setVoiceFeedback(`🗑️ Deleted current page`);
             return;
         }
         if (txt.includes('next page')) {
@@ -10579,8 +11013,74 @@ export default function Whiteboard({
             }
             return;
         }
+        const jumpMatch = txt.match(/(?:jump to|go to|page)\s*(?:page)?\s*(\d+)/i);
+        if (jumpMatch && !txt.includes('new page') && !txt.includes('next page') && !txt.includes('previous page') && !txt.includes('duplicate page') && !txt.includes('delete page')) {
+            const pNum = parseInt(jumpMatch[1], 10);
+            if (pNum >= 1 && pNum <= totalPages) {
+                loadPage(pNum - 1);
+                setVoiceFeedback(`📄 Switched to Page ${pNum}`);
+                toast.success(`Switched to Page ${pNum}`, { icon: '📄' });
+                return;
+            } else {
+                toast.error(`Page ${pNum} does not exist (1 - ${totalPages})`);
+                return;
+            }
+        }
 
         // 8. Tool Menu Panels, Dialogs & Modals
+        if (txt.includes('sticky note') || txt.includes('add note') || txt.includes('sticky')) {
+            let noteColor = 'yellow';
+            if (txt.includes('blue')) noteColor = 'blue';
+            else if (txt.includes('green')) noteColor = 'green';
+            else if (txt.includes('pink')) noteColor = 'pink';
+            else if (txt.includes('purple')) noteColor = 'purple';
+            else if (txt.includes('orange')) noteColor = 'orange';
+
+            const newNote = createStickyNoteObject(cx - 100, cy - 100, noteColor);
+            setPageShapeObjects(prev => ({
+                ...prev,
+                [currentPage]: [...(prev[currentPage] || []), newNote]
+            }));
+            setTool('select');
+            setSelectedShapeIds([newNote.id]);
+            saveToHistory();
+            setVoiceFeedback(`📌 Added ${noteColor} sticky note`);
+            toast.success(`Added ${noteColor} sticky note`, { icon: '📌' });
+            return;
+        }
+        if (txt.includes('minimap') || txt.includes('navigation map') || txt.includes('viewport map')) {
+            setShowMinimap(prev => {
+                const next = !prev;
+                setVoiceFeedback(`🗺️ Minimap ${next ? 'Shown' : 'Hidden'}`);
+                toast(`Minimap ${next ? 'Shown' : 'Hidden'}`, { icon: '🗺️' });
+                return next;
+            });
+            return;
+        }
+        if (txt.includes('clipboard') || txt.includes('clipboard history')) {
+            setShowClipboard(prev => {
+                const next = !prev;
+                setVoiceFeedback(`📋 Clipboard panel ${next ? 'Opened' : 'Closed'}`);
+                toast(`Clipboard panel ${next ? 'Opened' : 'Closed'}`, { icon: '📋' });
+                return next;
+            });
+            return;
+        }
+        if (txt.includes('chat') || txt.includes('messages')) {
+            setIsChatOpen(prev => {
+                const next = !prev;
+                setVoiceFeedback(`💬 Chat ${next ? 'Opened' : 'Closed'}`);
+                toast(`Chat ${next ? 'Opened' : 'Closed'}`, { icon: '💬' });
+                return next;
+            });
+            return;
+        }
+        if (txt.includes('permission') || txt.includes('manage participants') || txt.includes('student permissions')) {
+            setShowPermissions(true);
+            setVoiceFeedback('👥 Opened Permissions Management');
+            toast.success('Permissions Management opened', { icon: '👥' });
+            return;
+        }
         if (txt.includes('help') || txt.includes('cheatsheet') || txt.includes('commands') || txt.includes('shortcut')) {
             setShortcutsModalTab('voice');
             setShowShortcutsModal(true);
@@ -10663,7 +11163,100 @@ export default function Whiteboard({
             return;
         }
 
-        // 9. Object Manipulation & Clipboard
+        // 9. Object Manipulation, Alignment, Transformation & Image Filters
+        if (txt.includes('align left')) {
+            handleAlign('left');
+            setVoiceFeedback('⇤ Aligned left');
+            return;
+        }
+        if (txt.includes('align center') || txt.includes('center horizontally')) {
+            handleAlign('center');
+            setVoiceFeedback('⇹ Aligned center');
+            return;
+        }
+        if (txt.includes('align right')) {
+            handleAlign('right');
+            setVoiceFeedback('⇥ Aligned right');
+            return;
+        }
+        if (txt.includes('align top')) {
+            handleAlign('top');
+            setVoiceFeedback('⤒ Aligned top');
+            return;
+        }
+        if (txt.includes('align middle') || txt.includes('center vertically')) {
+            handleAlign('middle');
+            setVoiceFeedback('⇳ Aligned middle');
+            return;
+        }
+        if (txt.includes('align bottom')) {
+            handleAlign('bottom');
+            setVoiceFeedback('⤓ Aligned bottom');
+            return;
+        }
+        if (txt.includes('distribute horizontally') || txt.includes('horizontal space')) {
+            handleDistribute('horizontal');
+            setVoiceFeedback('⋯ Distributed horizontally');
+            return;
+        }
+        if (txt.includes('distribute vertically') || txt.includes('vertical space')) {
+            handleDistribute('vertical');
+            setVoiceFeedback('⋮ Distributed vertically');
+            return;
+        }
+        if (txt.includes('flip horizontal') || txt.includes('flip horizontally')) {
+            flipSelection(true);
+            setVoiceFeedback('⇄ Flipped horizontally');
+            return;
+        }
+        if (txt.includes('flip vertical') || txt.includes('flip vertically')) {
+            flipSelection(false);
+            setVoiceFeedback('⇅ Flipped vertically');
+            return;
+        }
+        if (txt.includes('rotate')) {
+            const degMatch = txt.match(/rotate\s*(?:by)?\s*(-?\d+)/i);
+            let deg = 90;
+            if (degMatch) deg = parseInt(degMatch[1], 10);
+            else if (txt.includes('left') || txt.includes('counterclockwise')) deg = -90;
+
+            if (selectedShapeIds.length > 0) {
+                setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, rotation: ((s.rotation || 0) + deg) % 360 } : s));
+            }
+            if (selectedImageId) {
+                setImageObjects(prev => prev.map(img => img.id === selectedImageId ? { ...img, rotation: ((img.rotation || 0) + deg) % 360 } : img));
+            }
+            if (selectedTextIds.length > 0) {
+                setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, rotation: ((t.rotation || 0) + deg) % 360 } : t));
+            }
+            saveToHistory();
+            const msg = `🔄 Rotated by ${deg}°`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '🔄' });
+            return;
+        }
+
+        // Image Tools & Filters
+        if (txt.includes('remove background') || txt.includes('remove image background') || txt.includes('transparent background image')) {
+            handleRemoveImageBackground();
+            setVoiceFeedback('🪄 Removing image background');
+            return;
+        }
+        if (txt.includes('grayscale image') || txt.includes('black and white image')) {
+            updateSelectedImageFilters({ saturation: 0 });
+            saveToHistory();
+            setVoiceFeedback('🖼️ Applied grayscale filter to image');
+            toast.success('Applied grayscale filter', { icon: '🖼️' });
+            return;
+        }
+        if (txt.includes('reset image filters') || txt.includes('reset image')) {
+            updateSelectedImageFilters({ brightness: 100, contrast: 100, saturation: 100, blur: 0, opacity: 100 });
+            saveToHistory();
+            setVoiceFeedback('🖼️ Reset image filters');
+            toast.success('Reset image filters', { icon: '🖼️' });
+            return;
+        }
+
         if (txt.includes('delete') || txt.includes('remove')) {
             handleDelete();
             setVoiceFeedback('🗑️ Deleted selected item(s)');
@@ -10734,7 +11327,7 @@ export default function Whiteboard({
 
         setVoiceFeedback(`Unrecognized: "${rawText}" - say "help" for commands`);
         toast(`Command not recognized: "${rawText}"`, { icon: '❓' });
-    }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, loadPage, currentPage, totalPages, selectedShapeIds, setBgPattern, onToggleFullscreen, handleInsertGraph, handleInsertDateTime, handleDelete, handleCopy, handlePaste, handleDuplicate, handleToggleLock, handleGroup, handleUngroup, handleBringToFront, handleSendToBack]);
+    }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, duplicateCurrentPage, deletePage, loadPage, currentPage, totalPages, selectedShapeIds, selectedTextIds, selectedImageId, selectedImageIds, selected3DIds, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, setBgPattern, setBgColor, onToggleFullscreen, handleInsertGraph, handleInsertDateTime, handleDelete, handleCopy, handlePaste, handleDuplicate, handleToggleLock, handleGroup, handleUngroup, handleBringToFront, handleSendToBack, handleAlign, handleDistribute, flipSelection, handleRemoveImageBackground, updateSelectedImageFilters, setIsAutoShape, setIsOcrActive, handleConvertSelectedInkToText, setBrushType, setPenMode, setSparkleTheme, setPenOpacity, setPressureSensitivity, setHighlighterColor, setEraserMode, setEraserSize, setSelectMode, setIsSelectionInfiniteCloner, setLineType, setShowMinimap, setShowClipboard, setIsChatOpen, setShowPermissions]);
 
     const toggleVoiceListening = useCallback(() => {
         const SpeechRecognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -17506,27 +18099,29 @@ export default function Whiteboard({
                 </div>
 
                 {/* Interactive 16:9 Canvas Minimap with Zoom & Viewport Navigation */}
-                <WhiteboardMinimap
-                    canvasWidth={canvasWidth}
-                    canvasHeight={canvasHeight}
-                    shapes={shapeObjects}
-                    shapeObjects={shapeObjects}
-                    texts={textObjects}
-                    textObjects={textObjects}
-                    images={imageObjects}
-                    imageObjects={imageObjects}
-                    connectors={(pageShapeObjects[currentPage] || []).filter(s => s.type === 'connector')}
-                    zoomLevel={zoomLevel}
-                    setZoomLevel={setZoomLevel}
-                    onZoomChange={setZoomLevel}
-                    panOffset={panOffset}
-                    setPanOffset={setPanOffset}
-                    onPanChange={setPanOffset}
-                    containerRef={canvasWrapperRef}
-                    viewportWidth={canvasWrapperRef.current?.clientWidth || canvasWidth}
-                    viewportHeight={canvasWrapperRef.current?.clientHeight || canvasHeight}
-                    isDrawing={isDrawing}
-                />
+                {showMinimap && (
+                    <WhiteboardMinimap
+                        canvasWidth={canvasWidth}
+                        canvasHeight={canvasHeight}
+                        shapes={shapeObjects}
+                        shapeObjects={shapeObjects}
+                        texts={textObjects}
+                        textObjects={textObjects}
+                        images={imageObjects}
+                        imageObjects={imageObjects}
+                        connectors={(pageShapeObjects[currentPage] || []).filter(s => s.type === 'connector')}
+                        zoomLevel={zoomLevel}
+                        setZoomLevel={setZoomLevel}
+                        onZoomChange={setZoomLevel}
+                        panOffset={panOffset}
+                        setPanOffset={setPanOffset}
+                        onPanChange={setPanOffset}
+                        containerRef={canvasWrapperRef}
+                        viewportWidth={canvasWrapperRef.current?.clientWidth || canvasWidth}
+                        viewportHeight={canvasWrapperRef.current?.clientHeight || canvasHeight}
+                        isDrawing={isDrawing}
+                    />
+                )}
 
                 {/* Contextual Eraser Floating Toolbar */}
                 {tool === 'eraser' && (

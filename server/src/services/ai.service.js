@@ -1410,7 +1410,7 @@ Output MUST be ONLY valid JSON matching this schema:
 Users speak natural, conversational, or imprecise commands (e.g., "wipe the whole board clean", "can you draw a round red circle of size 80", "put a dashed box around here", "zoom closer into the canvas", "switch over to highlighting mode", "let's see the keyboard shortcuts", "hide the measurements", "bring the selected item forward", etc.).
 Translate the user's spoken input into the single best standardized Whiteboard voice command string from this supported grammar:
 
-1. DRAW SHAPES:
+1. DRAW SHAPES & CONNECTORS:
    - "draw circle [radius N]" (e.g. "draw circle radius 60")
    - "draw square [side N]" (e.g. "draw square side 100")
    - "draw rectangle [W by H]" (e.g. "draw rectangle 200 by 120")
@@ -1419,10 +1419,28 @@ Translate the user's spoken input into the single best standardized Whiteboard v
    - "draw hexagon [size N]"
    - "draw star [size N]"
    - "draw diamond [size N]"
-   - "draw arrow"
-   - "draw line"
+   - "draw arrow" | "double arrow"
+   - "draw line" | "straight connector" | "elbow connector" | "curved connector" | "curved arc"
+   - "sticky note [yellow|blue|green|pink|purple|orange]" | "add sticky note"
 
-2. STYLING & SHAPE PROPERTIES:
+2. SMART SHAPES & SMART INK:
+   - "turn on smart shape" | "turn off smart shape" | "toggle smart shape"
+   - "turn on smart ink" | "turn off smart ink" | "toggle smart ink"
+   - "convert ink" | "convert handwriting" | "ink to text" | "ink to math"
+
+3. PEN BRUSHES, MODES & HIGHLIGHTER:
+   - "pen" | "calligraphy" | "crayon" | "watercolor" | "fountain"
+   - "sparkle pen [galaxy|rainbow|gold|emerald]"
+   - "pen opacity [10-100]%"
+   - "pressure sensitivity on" | "pressure sensitivity off"
+   - "highlighter [yellow|green|blue|pink|orange]" | "highlighter size [N]"
+
+4. ERASER & SELECTION MODES:
+   - "eraser" | "object eraser" | "pixel eraser" | "eraser size [N]"
+   - "select" | "lasso select" | "box select" | "select all" | "deselect all"
+   - "infinite cloner on" | "infinite cloner off" | "toggle infinite cloner"
+
+5. STYLING & SHAPE PROPERTIES:
    - "color [red|blue|green|yellow|orange|purple|violet|black|white|pink|cyan|emerald]"
    - "border [color]"
    - "border width [1-40]" | "thicker border" | "thinner border"
@@ -1431,26 +1449,35 @@ Translate the user's spoken input into the single best standardized Whiteboard v
    - "corner radius [0-60]"
    - "display units" | "hide units" | "toggle units"
 
-3. TOOLS:
-   - "pen" | "sparkle pen" | "highlighter" | "eraser" | "select" | "hand tool" | "laser" | "ruler" | "protractor"
+6. ALIGNMENT, ROTATION & TRANSFORMATION:
+   - "align left" | "align center" | "align right" | "align top" | "align middle" | "align bottom"
+   - "distribute horizontally" | "distribute vertically"
+   - "flip horizontal" | "flip vertical"
+   - "rotate [90|-90|N] degrees" | "rotate left" | "rotate right"
 
-4. CANVAS ACTIONS:
-   - "clear the board" | "undo" | "redo" | "zoom in" | "zoom out" | "reset zoom" | "fit to screen" | "fullscreen" | "grid"
+7. IMAGE TOOLS:
+   - "remove image background" | "grayscale image" | "reset image filters"
 
-5. PANELS & MODALS:
-   - "help" | "export" | "tasks" | "template" | "timer" | "spotlight" | "curtain" | "equation" | "math solver" | "3d" | "graph" | "game" | "record" | "insert image" | "media" | "datetime"
+8. CANVAS ACTIONS & BACKGROUND STYLING:
+   - "clear the board" | "undo" | "redo" | "zoom in" | "zoom out" | "reset zoom" | "fit to screen" | "fullscreen"
+   - "background [grid|dots|lines|graph|music|isometric|hex|plain]"
+   - "background color [black|chalkboard|navy|white]"
 
-6. CLIPBOARD & SELECTION:
-   - "delete" | "copy" | "paste" | "duplicate" | "lock" | "group" | "ungroup" | "bring to front" | "send to back"
+9. MULTI-PAGE:
+   - "new page" | "duplicate page" | "delete page" | "next page" | "previous page" | "jump to page [N]"
 
-7. MULTI-PAGE:
-   - "new page" | "next page" | "previous page"
+10. TEXT & TYPOGRAPHY:
+    - "type [text to type]"
+    - "font bold" | "font italic" | "font underline" | "font size [N]" | "font [sans|serif|mono|cursive]"
 
-8. VOICE CONTROLS:
-   - "voice mode off" | "voice mode on"
+11. PANELS, MODALS & TOOLS:
+    - "help" | "export" | "tasks" | "template" | "timer" | "spotlight" | "curtain" | "equation" | "math solver" | "3d" | "graph" | "game" | "record" | "insert image" | "media" | "datetime" | "minimap" | "clipboard" | "chat" | "permissions"
 
-9. TEXT INPUT:
-   - "type [text to type]"
+12. CLIPBOARD & OBJECT ACTIONS:
+    - "delete" | "copy" | "paste" | "duplicate" | "lock" | "group" | "ungroup" | "bring to front" | "send to back"
+
+13. VOICE CONTROLS:
+    - "voice mode off" | "voice mode on"
 
 Spoken input: "${text}"
 
@@ -1672,25 +1699,413 @@ If completely unrelated:
                 spokenFeedback = `Border set to ${color}`;
             }
             // Tools
+            // Smart Shapes & Smart Ink
+            else if ((low.includes('smart shape') || low.includes('auto shape')) && (low.includes('off') || low.includes('disable') || low.includes('deactivate'))) {
+                translatedCommand = 'turn off smart shape';
+                intent = 'smart_shape_off';
+                spokenFeedback = 'Disabling smart shape auto-recognition';
+            }
+            else if ((low.includes('smart shape') || low.includes('auto shape')) && (low.includes('on') || low.includes('enable') || low.includes('activate'))) {
+                translatedCommand = 'turn on smart shape';
+                intent = 'smart_shape_on';
+                spokenFeedback = 'Enabling smart shape auto-recognition';
+            }
+            else if (low.includes('toggle smart shape') || low.includes('toggle auto shape')) {
+                translatedCommand = 'toggle smart shape';
+                intent = 'smart_shape_toggle';
+                spokenFeedback = 'Toggling smart shape recognition';
+            }
+            else if ((low.includes('smart ink') || low.includes('handwriting recognition')) && (low.includes('off') || low.includes('disable'))) {
+                translatedCommand = 'turn off smart ink';
+                intent = 'smart_ink_off';
+                spokenFeedback = 'Disabling smart ink handwriting recognition';
+            }
+            else if ((low.includes('smart ink') || low.includes('handwriting recognition')) && (low.includes('on') || low.includes('enable'))) {
+                translatedCommand = 'turn on smart ink';
+                intent = 'smart_ink_on';
+                spokenFeedback = 'Enabling smart ink handwriting recognition';
+            }
+            else if (low.includes('toggle smart ink') || low.includes('toggle handwriting')) {
+                translatedCommand = 'toggle smart ink';
+                intent = 'smart_ink_toggle';
+                spokenFeedback = 'Toggling smart ink handwriting recognition';
+            }
+            else if (low.includes('convert ink') || low.includes('convert handwriting') || low.includes('recognize ink') || low.includes('ink to text') || low.includes('ink to math')) {
+                translatedCommand = 'convert ink';
+                intent = 'convert_ink';
+                spokenFeedback = 'Converting handwritten ink to digital text / math';
+            }
+            // Brushes & Pen Styles
+            else if (low.includes('calligraphy')) {
+                translatedCommand = 'calligraphy';
+                intent = 'brush_calligraphy';
+                spokenFeedback = 'Switched to Calligraphy Pen';
+            }
+            else if (low.includes('crayon')) {
+                translatedCommand = 'crayon';
+                intent = 'brush_crayon';
+                spokenFeedback = 'Switched to Crayon Brush';
+            }
+            else if (low.includes('watercolor')) {
+                translatedCommand = 'watercolor';
+                intent = 'brush_watercolor';
+                spokenFeedback = 'Switched to Watercolor Brush';
+            }
+            else if (low.includes('fountain')) {
+                translatedCommand = 'fountain';
+                intent = 'brush_fountain';
+                spokenFeedback = 'Switched to Fountain Pen';
+            }
+            else if (low.includes('sparkle')) {
+                let theme = 'galaxy';
+                if (low.includes('rainbow')) theme = 'rainbow';
+                else if (low.includes('gold')) theme = 'gold';
+                else if (low.includes('emerald')) theme = 'emerald';
+                translatedCommand = `sparkle pen ${theme}`;
+                intent = 'tool_sparkle';
+                spokenFeedback = `Switched to ${theme} Sparkle Pen`;
+            }
+            else if (low.includes('opacity') && (low.includes('percent') || low.includes('%') || low.match(/\d+/))) {
+                const op = (low.match(/\d+/) || [100])[0];
+                translatedCommand = `pen opacity ${op} percent`;
+                intent = 'pen_opacity';
+                spokenFeedback = `Setting pen opacity to ${op}%`;
+            }
+            else if (low.includes('pressure') && (low.includes('on') || low.includes('enable'))) {
+                translatedCommand = 'pressure sensitivity on';
+                intent = 'pressure_on';
+                spokenFeedback = 'Enabling pen pressure sensitivity';
+            }
+            else if (low.includes('pressure') && (low.includes('off') || low.includes('disable'))) {
+                translatedCommand = 'pressure sensitivity off';
+                intent = 'pressure_off';
+                spokenFeedback = 'Disabling pen pressure sensitivity';
+            }
             else if (low.includes('pencil') || low.includes('pen') || low.includes('draw with pen') || low.includes('drawing mode')) {
                 translatedCommand = 'pen';
                 intent = 'tool_pen';
                 spokenFeedback = 'Switched to Pen tool';
             }
+            // Highlighter & Eraser
             else if (low.includes('highlighter') || low.includes('marker') || low.includes('highlight')) {
-                translatedCommand = 'highlighter';
+                let clr = '';
+                if (low.includes('green')) clr = ' green';
+                else if (low.includes('blue')) clr = ' blue';
+                else if (low.includes('pink')) clr = ' pink';
+                else if (low.includes('orange')) clr = ' orange';
+                else if (low.includes('yellow')) clr = ' yellow';
+                translatedCommand = `highlighter${clr}`;
                 intent = 'tool_highlighter';
-                spokenFeedback = 'Switched to Highlighter';
+                spokenFeedback = `Switched to Highlighter${clr}`;
+            }
+            else if (low.includes('object eraser') || low.includes('stroke eraser')) {
+                translatedCommand = 'object eraser';
+                intent = 'tool_eraser_object';
+                spokenFeedback = 'Switched to Object Eraser';
+            }
+            else if (low.includes('pixel eraser') || low.includes('rub eraser')) {
+                translatedCommand = 'pixel eraser';
+                intent = 'tool_eraser_rub';
+                spokenFeedback = 'Switched to Pixel Eraser';
+            }
+            else if (low.includes('eraser') && low.match(/\d+/)) {
+                const sz = (low.match(/\d+/) || [20])[0];
+                translatedCommand = `eraser size ${sz}`;
+                intent = 'eraser_size';
+                spokenFeedback = `Eraser size set to ${sz}px`;
             }
             else if (low.includes('eraser') || low.includes('rub') || low.includes('erase')) {
                 translatedCommand = 'eraser';
                 intent = 'tool_eraser';
                 spokenFeedback = 'Switched to Eraser';
             }
+            // Selection & Infinite Cloner
+            else if (low.includes('lasso')) {
+                translatedCommand = 'lasso select';
+                intent = 'tool_lasso';
+                spokenFeedback = 'Switched to Lasso selection';
+            }
+            else if (low.includes('box select') || low.includes('rectangle select')) {
+                translatedCommand = 'box select';
+                intent = 'tool_box_select';
+                spokenFeedback = 'Switched to Box selection';
+            }
+            else if (low.includes('select all') || low.includes('select everything')) {
+                translatedCommand = 'select all';
+                intent = 'select_all';
+                spokenFeedback = 'Selected all objects';
+            }
+            else if (low.includes('deselect') || low.includes('unselect') || low.includes('clear selection')) {
+                translatedCommand = 'deselect all';
+                intent = 'deselect_all';
+                spokenFeedback = 'Cleared selection';
+            }
+            else if (low.includes('infinite') && (low.includes('on') || low.includes('enable'))) {
+                translatedCommand = 'infinite cloner on';
+                intent = 'infinite_cloner_on';
+                spokenFeedback = 'Enabled Infinite Cloner';
+            }
+            else if (low.includes('infinite') && (low.includes('off') || low.includes('disable'))) {
+                translatedCommand = 'infinite cloner off';
+                intent = 'infinite_cloner_off';
+                spokenFeedback = 'Disabled Infinite Cloner';
+            }
+            else if (low.includes('toggle infinite')) {
+                translatedCommand = 'toggle infinite cloner';
+                intent = 'infinite_cloner_toggle';
+                spokenFeedback = 'Toggled Infinite Cloner';
+            }
             else if (low.includes('select') || low.includes('pointer') || low.includes('cursor')) {
                 translatedCommand = 'select';
                 intent = 'tool_select';
                 spokenFeedback = 'Switched to Selection tool';
+            }
+            // Connectors & Lines
+            else if (low.includes('double arrow')) {
+                translatedCommand = 'double arrow';
+                intent = 'tool_double_arrow';
+                spokenFeedback = 'Double Arrow tool active';
+            }
+            else if (low.includes('straight connector')) {
+                translatedCommand = 'straight connector';
+                intent = 'tool_straight_connector';
+                spokenFeedback = 'Straight Connector active';
+            }
+            else if (low.includes('elbow connector') || low.includes('orthogonal connector')) {
+                translatedCommand = 'elbow connector';
+                intent = 'tool_elbow_connector';
+                spokenFeedback = 'Elbow Connector active';
+            }
+            else if (low.includes('curved connector')) {
+                translatedCommand = 'curved connector';
+                intent = 'tool_curved_connector';
+                spokenFeedback = 'Curved Connector active';
+            }
+            else if (low.includes('curved arc') || low.includes('arc tool')) {
+                translatedCommand = 'curved arc';
+                intent = 'tool_arc';
+                spokenFeedback = 'Curved Arc tool active';
+            }
+            // Alignment, Distribution, Flipping & Rotation
+            else if (low.includes('align left')) {
+                translatedCommand = 'align left';
+                intent = 'align_left';
+                spokenFeedback = 'Aligned items to the left';
+            }
+            else if (low.includes('align center') || low.includes('center horizontally')) {
+                translatedCommand = 'align center';
+                intent = 'align_center';
+                spokenFeedback = 'Aligned items horizontally centered';
+            }
+            else if (low.includes('align right')) {
+                translatedCommand = 'align right';
+                intent = 'align_right';
+                spokenFeedback = 'Aligned items to the right';
+            }
+            else if (low.includes('align top')) {
+                translatedCommand = 'align top';
+                intent = 'align_top';
+                spokenFeedback = 'Aligned items to the top';
+            }
+            else if (low.includes('align middle') || low.includes('center vertically')) {
+                translatedCommand = 'align middle';
+                intent = 'align_middle';
+                spokenFeedback = 'Aligned items vertically middle';
+            }
+            else if (low.includes('align bottom')) {
+                translatedCommand = 'align bottom';
+                intent = 'align_bottom';
+                spokenFeedback = 'Aligned items to the bottom';
+            }
+            else if (low.includes('distribute horizontal') || low.includes('horizontal space')) {
+                translatedCommand = 'distribute horizontally';
+                intent = 'distribute_horiz';
+                spokenFeedback = 'Distributed items horizontally';
+            }
+            else if (low.includes('distribute vertical') || low.includes('vertical space')) {
+                translatedCommand = 'distribute vertically';
+                intent = 'distribute_vert';
+                spokenFeedback = 'Distributed items vertically';
+            }
+            else if (low.includes('flip horizontal') || low.includes('flip horizontally')) {
+                translatedCommand = 'flip horizontal';
+                intent = 'flip_horiz';
+                spokenFeedback = 'Flipped selection horizontally';
+            }
+            else if (low.includes('flip vertical') || low.includes('flip vertically')) {
+                translatedCommand = 'flip vertical';
+                intent = 'flip_vert';
+                spokenFeedback = 'Flipped selection vertically';
+            }
+            else if (low.includes('rotate')) {
+                const deg = (low.match(/-?\d+/) || [90])[0];
+                translatedCommand = `rotate ${deg} degrees`;
+                intent = 'rotate_selection';
+                spokenFeedback = `Rotating selection by ${deg}°`;
+            }
+            // Image Tools
+            else if (low.includes('remove background') || low.includes('transparent background') || low.includes('cutout image')) {
+                translatedCommand = 'remove image background';
+                intent = 'remove_image_bg';
+                spokenFeedback = 'Removing image background';
+            }
+            else if (low.includes('grayscale') || low.includes('black and white image')) {
+                translatedCommand = 'grayscale image';
+                intent = 'grayscale_image';
+                spokenFeedback = 'Applied grayscale filter';
+            }
+            else if (low.includes('reset image')) {
+                translatedCommand = 'reset image filters';
+                intent = 'reset_image_filters';
+                spokenFeedback = 'Reset image filters';
+            }
+            // Background Patterns & Colors
+            else if (low.includes('background dot') || low.includes('canvas dot') || low.includes('dotted background')) {
+                translatedCommand = 'background dots';
+                intent = 'bg_dots';
+                spokenFeedback = 'Setting background to dots';
+            }
+            else if (low.includes('ruled') || low.includes('lined background') || low.includes('background lines')) {
+                translatedCommand = 'background lines';
+                intent = 'bg_lines';
+                spokenFeedback = 'Setting background to ruled lines';
+            }
+            else if (low.includes('music') && (low.includes('background') || low.includes('sheet') || low.includes('canvas'))) {
+                translatedCommand = 'background music';
+                intent = 'bg_music';
+                spokenFeedback = 'Setting background to music staff';
+            }
+            else if (low.includes('isometric') && (low.includes('background') || low.includes('canvas'))) {
+                translatedCommand = 'background isometric';
+                intent = 'bg_iso';
+                spokenFeedback = 'Setting background to isometric';
+            }
+            else if (low.includes('hex') && (low.includes('background') || low.includes('canvas'))) {
+                translatedCommand = 'background hex';
+                intent = 'bg_hex';
+                spokenFeedback = 'Setting background to hexagons';
+            }
+            else if (low.includes('chalkboard') || (low.includes('green') && (low.includes('board') || low.includes('background')))) {
+                translatedCommand = 'chalkboard';
+                intent = 'bg_chalkboard';
+                spokenFeedback = 'Setting chalkboard green background';
+            }
+            else if (low.includes('navy') && (low.includes('background') || low.includes('canvas'))) {
+                translatedCommand = 'navy background';
+                intent = 'bg_navy';
+                spokenFeedback = 'Setting navy dark background';
+            }
+            else if (low.includes('black') && (low.includes('background') || low.includes('board') || low.includes('canvas'))) {
+                translatedCommand = 'background black';
+                intent = 'bg_black';
+                spokenFeedback = 'Setting black canvas background';
+            }
+            else if (low.includes('white') && (low.includes('background') || low.includes('board') || low.includes('canvas'))) {
+                translatedCommand = 'background white';
+                intent = 'bg_white';
+                spokenFeedback = 'Setting white canvas background';
+            }
+            // Multi-Page
+            else if (low.includes('duplicate page') || low.includes('clone page')) {
+                translatedCommand = 'duplicate page';
+                intent = 'duplicate_page';
+                spokenFeedback = 'Duplicated current page';
+            }
+            else if (low.includes('delete page') || low.includes('remove page')) {
+                translatedCommand = 'delete page';
+                intent = 'delete_page';
+                spokenFeedback = 'Deleted current page';
+            }
+            else if (low.match(/(?:jump to|go to|open)\s*page\s*(\d+)/)) {
+                const pNum = low.match(/(?:jump to|go to|open)\s*page\s*(\d+)/)[1];
+                translatedCommand = `jump to page ${pNum}`;
+                intent = 'jump_page';
+                spokenFeedback = `Navigating to page ${pNum}`;
+            }
+            else if (low.includes('new page') || low.includes('add page')) {
+                translatedCommand = 'new page';
+                intent = 'new_page';
+                spokenFeedback = 'Created new page';
+            }
+            else if (low.includes('next page')) {
+                translatedCommand = 'next page';
+                intent = 'next_page';
+                spokenFeedback = 'Navigating to next page';
+            }
+            else if (low.includes('previous page') || low.includes('prev page')) {
+                translatedCommand = 'previous page';
+                intent = 'prev_page';
+                spokenFeedback = 'Navigating to previous page';
+            }
+            // Text Formatting & Typography
+            else if (low.includes('bold')) {
+                translatedCommand = 'font bold';
+                intent = 'font_bold';
+                spokenFeedback = 'Toggled Bold text';
+            }
+            else if (low.includes('italic')) {
+                translatedCommand = 'font italic';
+                intent = 'font_italic';
+                spokenFeedback = 'Toggled Italic text';
+            }
+            else if (low.includes('underline')) {
+                translatedCommand = 'font underline';
+                intent = 'font_underline';
+                spokenFeedback = 'Toggled Underline text';
+            }
+            else if (low.match(/font\s*(?:size)?\s*(\d+)/)) {
+                const fs = low.match(/font\s*(?:size)?\s*(\d+)/)[1];
+                translatedCommand = `font size ${fs}`;
+                intent = 'font_size';
+                spokenFeedback = `Font size set to ${fs}px`;
+            }
+            else if (low.includes('serif')) {
+                translatedCommand = 'font serif';
+                intent = 'font_family';
+                spokenFeedback = 'Font family set to serif';
+            }
+            else if (low.includes('mono')) {
+                translatedCommand = 'font mono';
+                intent = 'font_family';
+                spokenFeedback = 'Font family set to monospace';
+            }
+            else if (low.includes('cursive')) {
+                translatedCommand = 'font cursive';
+                intent = 'font_family';
+                spokenFeedback = 'Font family set to cursive';
+            }
+            // Sticky Note
+            else if (low.includes('sticky note') || low.includes('add note') || low.includes('sticky')) {
+                let clr = 'yellow';
+                if (low.includes('blue')) clr = 'blue';
+                else if (low.includes('green')) clr = 'green';
+                else if (low.includes('pink')) clr = 'pink';
+                else if (low.includes('purple')) clr = 'purple';
+                else if (low.includes('orange')) clr = 'orange';
+                translatedCommand = `sticky note ${clr}`;
+                intent = 'sticky_note';
+                spokenFeedback = `Added ${clr} sticky note`;
+            }
+            // Overlays & Panels
+            else if (low.includes('minimap') || low.includes('navigation map')) {
+                translatedCommand = 'minimap';
+                intent = 'toggle_minimap';
+                spokenFeedback = 'Toggled minimap navigation';
+            }
+            else if (low.includes('clipboard')) {
+                translatedCommand = 'clipboard';
+                intent = 'toggle_clipboard';
+                spokenFeedback = 'Toggled clipboard history';
+            }
+            else if (low.includes('chat') || low.includes('message')) {
+                translatedCommand = 'chat';
+                intent = 'toggle_chat';
+                spokenFeedback = 'Toggled chat panel';
+            }
+            else if (low.includes('permission') || low.includes('participant')) {
+                translatedCommand = 'permissions';
+                intent = 'open_permissions';
+                spokenFeedback = 'Opened participants permissions';
             }
             else if (low.includes('hand tool') || low.includes('pan tool') || low.includes('move board')) {
                 translatedCommand = 'hand tool';

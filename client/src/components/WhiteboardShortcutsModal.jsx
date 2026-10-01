@@ -145,7 +145,20 @@ export default function WhiteboardShortcutsModal({
             ]
         },
         {
-            category: 'Board & Canvas Actions',
+            category: 'Smart Shapes & Smart Ink',
+            icon: '✨',
+            description: 'AI-assisted shape snapping and handwriting math OCR',
+            commands: [
+                { phrase: 'turn on smart shape / smart shape on', action: 'turn on smart shape', desc: 'Auto-snap ink strokes into 10 geometric shapes' },
+                { phrase: 'turn off smart shape / smart shape off', action: 'turn off smart shape', desc: 'Disable automatic shape recognition' },
+                { phrase: 'toggle smart shape', action: 'toggle smart shape', desc: 'Toggle smart shape recognition' },
+                { phrase: 'turn on smart ink / handwriting on', action: 'turn on smart ink', desc: 'Enable handwriting-to-text & math OCR' },
+                { phrase: 'turn off smart ink / handwriting off', action: 'turn off smart ink', desc: 'Disable automatic handwriting recognition' },
+                { phrase: 'convert ink / recognize ink', action: 'convert ink', desc: 'Convert selected ink strokes to LaTeX or text' }
+            ]
+        },
+        {
+            category: 'Board & Canvas View',
             icon: '🧹',
             description: 'Canvas resets, viewport zooming, and board history',
             commands: [
@@ -160,35 +173,88 @@ export default function WhiteboardShortcutsModal({
             ]
         },
         {
-            category: 'Tool Menu & Drawing Tools',
-            icon: '🛠️',
-            description: 'Instant switching between whiteboard toolbar instruments',
+            category: 'Backgrounds & Canvas Styling',
+            icon: '▦',
+            description: 'Grid overlays, dot matrix, ruled lines, and chalkboard colors',
             commands: [
-                { phrase: 'pen / pencil', action: 'pen', desc: 'Switch to freehand drawing pen' },
-                { phrase: 'sparkle / sparkle pen', action: 'sparkle pen', desc: 'Switch to glitter sparkle pen brush' },
-                { phrase: 'highlighter / marker', action: 'highlighter', desc: 'Switch to transparent highlighter tool' },
-                { phrase: 'eraser', action: 'eraser', desc: 'Switch to ink and object eraser' },
-                { phrase: 'select / pointer / lasso', action: 'select', desc: 'Switch to element selection and marquee tool' },
-                { phrase: 'hand tool / pan canvas', action: 'hand tool', desc: 'Activate hand tool to pan across canvas' },
-                { phrase: 'laser pointer / laser', action: 'laser pointer', desc: 'Activate laser pointer for presentations' },
-                { phrase: 'ruler / ruler tool', action: 'ruler', desc: 'Place interactive measurement ruler on board' },
-                { phrase: 'protractor / compass', action: 'protractor', desc: 'Place 180° / 360° angle protractor' }
+                { phrase: 'background grid / toggle grid', action: 'background grid', desc: 'Toggle canvas grid pattern' },
+                { phrase: 'background dots / dotted canvas', action: 'background dots', desc: 'Set subtle dot matrix background' },
+                { phrase: 'background lines / ruled canvas', action: 'background lines', desc: 'Set ruled notebook lines background' },
+                { phrase: 'background graph / graph paper', action: 'background graph', desc: 'Set Cartesian graph paper background' },
+                { phrase: 'background music / music staff', action: 'background music', desc: 'Set musical stave lines background' },
+                { phrase: 'background isometric', action: 'background isometric', desc: 'Set 3D isometric projection grid' },
+                { phrase: 'background hex', action: 'background hex', desc: 'Set hexagonal honeycomb grid' },
+                { phrase: 'chalkboard / green chalkboard', action: 'chalkboard', desc: 'Switch to classroom chalkboard green' },
+                { phrase: 'background black / dark canvas', action: 'background black', desc: 'Switch to dark slate/black canvas' },
+                { phrase: 'background white / plain background', action: 'background plain', desc: 'Switch to standard clean white canvas' }
             ]
         },
         {
-            category: 'Shapes & Geometry',
+            category: 'Pen Brushes & Sparkle Modes',
+            icon: '🖌️',
+            description: 'Calligraphy, crayon, watercolor, sparkle effects & opacity',
+            commands: [
+                { phrase: 'pen / regular pen', action: 'pen', desc: 'Switch to standard freehand ink pen' },
+                { phrase: 'calligraphy / calligraphy brush', action: 'calligraphy', desc: 'Smooth angle-sensitive calligraphy pen' },
+                { phrase: 'crayon / crayon brush', action: 'crayon', desc: 'Textured wax crayon brush' },
+                { phrase: 'watercolor / watercolor brush', action: 'watercolor', desc: 'Soft blending watercolor wash brush' },
+                { phrase: 'fountain pen', action: 'fountain', desc: 'Elegant fountain pen stroke' },
+                { phrase: 'sparkle pen [galaxy|rainbow|gold|emerald]', action: 'sparkle pen galaxy', desc: 'Animated particle sparkle pen' },
+                { phrase: 'pen opacity [10-100] percent', action: 'pen opacity 50 percent', desc: 'Set pen transparency (10% to 100%)' },
+                { phrase: 'pressure sensitivity on / off', action: 'pressure sensitivity on', desc: 'Toggle stylus pressure sensitivity' }
+            ]
+        },
+        {
+            category: 'Highlighter & Eraser Modes',
+            icon: '🖊️',
+            description: 'Translucent highlighter colors and object vs pixel erasers',
+            commands: [
+                { phrase: 'highlighter [yellow|green|blue|pink|orange]', action: 'highlighter yellow', desc: 'Switch to translucent highlighter' },
+                { phrase: 'highlighter size [N]', action: 'highlighter size 24', desc: 'Change highlighter stroke thickness' },
+                { phrase: 'object eraser / stroke eraser', action: 'object eraser', desc: 'Erase entire strokes or shapes on touch' },
+                { phrase: 'pixel eraser / rub eraser', action: 'pixel eraser', desc: 'Classic pixel-by-pixel ink eraser' },
+                { phrase: 'eraser size [N]', action: 'eraser size 30', desc: 'Set eraser radius in pixels' }
+            ]
+        },
+        {
+            category: 'Selection & Infinite Cloner',
+            icon: '👆',
+            description: 'Marquee selection, lasso tool, infinite cloner & select all',
+            commands: [
+                { phrase: 'select tool / pointer', action: 'select', desc: 'Switch to selection arrow tool' },
+                { phrase: 'lasso select / lasso tool', action: 'lasso select', desc: 'Freeform polygonal lasso selection' },
+                { phrase: 'box select / rectangle select', action: 'box select', desc: 'Standard marquee box selector' },
+                { phrase: 'select all / select everything', action: 'select all', desc: 'Select all elements across current page' },
+                { phrase: 'deselect all / clear selection', action: 'deselect all', desc: 'Clear all active selection boxes' },
+                { phrase: 'infinite cloner on / off / toggle', action: 'infinite cloner on', desc: 'Dragging creates endless duplicates' }
+            ]
+        },
+        {
+            category: 'Shapes, Connectors & Sticky Notes',
             icon: '🔷',
-            description: 'Draw geometric and smart shapes centered at viewport',
+            description: 'Geometric polygons, magnetic connectors, and sticky notes',
             commands: [
                 { phrase: 'draw circle [radius 80]', action: 'draw circle radius 80', desc: 'Draws circle with optional pixel radius (default 60)' },
                 { phrase: 'draw square [size 100]', action: 'draw square size 100', desc: 'Draws square with optional side length (default 100)' },
                 { phrase: 'draw rectangle [200 by 120]', action: 'draw rectangle 200 by 120', desc: 'Draws rectangle with width and height in pixels' },
-                { phrase: 'draw triangle', action: 'draw triangle', desc: 'Draws equilateral triangle' },
-                { phrase: 'draw star', action: 'draw star', desc: 'Draws 5-point star' },
-                { phrase: 'draw diamond / rhombus', action: 'draw diamond', desc: 'Draws diamond decision polygon' },
-                { phrase: 'draw pentagon / hexagon', action: 'draw hexagon', desc: 'Draws regular 5 or 6-sided polygon' },
+                { phrase: 'draw triangle / star / diamond / hexagon', action: 'draw triangle', desc: 'Draws geometric decision polygons' },
                 { phrase: 'draw line / straight line', action: 'draw line', desc: 'Draws straight horizontal line' },
-                { phrase: 'draw arrow', action: 'draw arrow', desc: 'Draws directional arrow' }
+                { phrase: 'draw arrow / double arrow', action: 'draw arrow', desc: 'Draws directional or double-ended arrow' },
+                { phrase: 'straight / elbow / curved connector', action: 'straight connector', desc: 'Magnetic shape-to-shape connectors' },
+                { phrase: 'curved arc', action: 'curved arc', desc: 'Curved arc shape tool' },
+                { phrase: 'sticky note [yellow|blue|green|pink|purple|orange]', action: 'sticky note yellow', desc: 'Place colored sticky note' }
+            ]
+        },
+        {
+            category: 'Alignment, Flipping & Rotation',
+            icon: '🔄',
+            description: 'Positioning, vertical/horizontal alignment, flip, and rotation',
+            commands: [
+                { phrase: 'align left / center / right', action: 'align left', desc: 'Align selected elements horizontally' },
+                { phrase: 'align top / middle / bottom', action: 'align top', desc: 'Align selected elements vertically' },
+                { phrase: 'distribute horizontally / vertically', action: 'distribute horizontally', desc: 'Space selected items evenly' },
+                { phrase: 'flip horizontal / vertical', action: 'flip horizontal', desc: 'Mirror selection across axis' },
+                { phrase: 'rotate 90 degrees / rotate [N] degrees', action: 'rotate 90 degrees', desc: 'Rotate selected item(s) by degrees' }
             ]
         },
         {
@@ -213,18 +279,44 @@ export default function WhiteboardShortcutsModal({
             commands: [
                 { phrase: 'type [message]', action: 'type Antigravity Whiteboard', desc: 'Inserts typed text directly on board' },
                 { phrase: 'type [message] font size [32]', action: 'type Chapter 1 font size 32', desc: 'Types text with specified font size' },
-                { phrase: 'write [message]', action: 'write Important Note', desc: 'Alternative phrasing to type notes' },
+                { phrase: 'font bold / font italic / font underline', action: 'font bold', desc: 'Toggle bold, italic, or underline on text/shape' },
+                { phrase: 'font size [N] (e.g. font size 36)', action: 'font size 36', desc: 'Change font size of selected text/shape' },
+                { phrase: 'font sans / font serif / font mono / font cursive', action: 'font serif', desc: 'Change typography font family' },
                 { phrase: 'equation / math editor', action: 'equation', desc: 'Open LaTeX Math Equation Editor' },
                 { phrase: 'math solver / math tablet', action: 'math tablet', desc: 'Open handwriting math input tablet' }
             ]
         },
         {
-            category: 'Multi-Page & Panels',
+            category: 'Image Tools & Filters',
+            icon: '🖼️',
+            description: 'Background removal, monochrome filter, and adjustments',
+            commands: [
+                { phrase: 'remove image background', action: 'remove image background', desc: 'AI background removal transparency' },
+                { phrase: 'grayscale image / black and white', action: 'grayscale image', desc: 'Apply monochrome filter to image' },
+                { phrase: 'reset image filters', action: 'reset image filters', desc: 'Restore original image contrast and saturation' }
+            ]
+        },
+        {
+            category: 'Multi-Page & Navigation',
             icon: '🧭',
-            description: 'Page pagination and collaborative teaching panels',
+            description: 'Page pagination, duplication, deletion, and jumping',
             commands: [
                 { phrase: 'new page / add page', action: 'new page', desc: 'Create new blank whiteboard page' },
+                { phrase: 'duplicate page / clone page', action: 'duplicate page', desc: 'Clone active page with all objects' },
+                { phrase: 'delete page / remove page', action: 'delete page', desc: 'Delete current whiteboard page' },
                 { phrase: 'next page / previous page', action: 'next page', desc: 'Navigate between existing board pages' },
+                { phrase: 'jump to page [N] / go to page [N]', action: 'jump to page 2', desc: 'Directly navigate to page number' }
+            ]
+        },
+        {
+            category: 'Panels & Classroom Tools',
+            icon: '📦',
+            description: 'Minimap, clipboard, chat, permissions, and classroom tools',
+            commands: [
+                { phrase: 'minimap / toggle minimap', action: 'minimap', desc: 'Toggle interactive viewport minimap' },
+                { phrase: 'clipboard / clipboard history', action: 'clipboard', desc: 'Open multi-object clipboard panel' },
+                { phrase: 'chat / messages', action: 'chat', desc: 'Open live session chat panel' },
+                { phrase: 'permissions / manage participants', action: 'permissions', desc: 'Instructor participant controls' },
                 { phrase: 'timer / stopwatch', action: 'timer', desc: 'Toggle classroom countdown timer' },
                 { phrase: 'spotlight / torch', action: 'spotlight', desc: 'Toggle audience spotlight focus' },
                 { phrase: 'screen curtain / shade', action: 'screen curtain', desc: 'Toggle privacy shade curtain' },
@@ -233,9 +325,7 @@ export default function WhiteboardShortcutsModal({
                 { phrase: '3d models / domain library', action: '3d models', desc: 'Open 3D and scientific library' },
                 { phrase: 'graph plotter / plot graph', action: 'graph plotter', desc: 'Insert Cartesian equation plot' },
                 { phrase: 'record / screen recorder', action: 'recorder', desc: 'Open screen & audio recording studio' },
-                { phrase: 'games', action: 'games', desc: 'Open educational mini-games' },
-                { phrase: 'grid / toggle grid', action: 'grid', desc: 'Cycle background grid overlay' },
-                { phrase: 'minimap / toggle minimap', action: 'minimap', desc: 'Toggle interactive canvas minimap' }
+                { phrase: 'games', action: 'games', desc: 'Open educational mini-games' }
             ]
         }
     ], []);
