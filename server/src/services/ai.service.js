@@ -1401,6 +1401,397 @@ Output MUST be ONLY valid JSON matching this schema:
         const text = (speechText || '').trim();
         const low = text.toLowerCase();
 
+        const isWhiteboard = context.module === 'whiteboard' ||
+            context.currentRoute?.includes('whiteboard') ||
+            context.currentRoute?.includes('live-board');
+
+        if (isWhiteboard) {
+            const whiteboardSystemPrompt = `You are a voice command interpreter for an interactive collaborative Whiteboard canvas.
+Users speak natural, conversational, or imprecise commands (e.g., "wipe the whole board clean", "can you draw a round red circle of size 80", "put a dashed box around here", "zoom closer into the canvas", "switch over to highlighting mode", "let's see the keyboard shortcuts", "hide the measurements", "bring the selected item forward", etc.).
+Translate the user's spoken input into the single best standardized Whiteboard voice command string from this supported grammar:
+
+1. DRAW SHAPES:
+   - "draw circle [radius N]" (e.g. "draw circle radius 60")
+   - "draw square [side N]" (e.g. "draw square side 100")
+   - "draw rectangle [W by H]" (e.g. "draw rectangle 200 by 120")
+   - "draw triangle [size N]"
+   - "draw pentagon [size N]"
+   - "draw hexagon [size N]"
+   - "draw star [size N]"
+   - "draw diamond [size N]"
+   - "draw arrow"
+   - "draw line"
+
+2. STYLING & SHAPE PROPERTIES:
+   - "color [red|blue|green|yellow|orange|purple|violet|black|white|pink|cyan|emerald]"
+   - "border [color]"
+   - "border width [1-40]" | "thicker border" | "thinner border"
+   - "dashed border" | "dotted border" | "solid border" | "double border"
+   - "fill [color]" | "no fill"
+   - "corner radius [0-60]"
+   - "display units" | "hide units" | "toggle units"
+
+3. TOOLS:
+   - "pen" | "sparkle pen" | "highlighter" | "eraser" | "select" | "hand tool" | "laser" | "ruler" | "protractor"
+
+4. CANVAS ACTIONS:
+   - "clear the board" | "undo" | "redo" | "zoom in" | "zoom out" | "reset zoom" | "fit to screen" | "fullscreen" | "grid"
+
+5. PANELS & MODALS:
+   - "help" | "export" | "tasks" | "template" | "timer" | "spotlight" | "curtain" | "equation" | "math solver" | "3d" | "graph" | "game" | "record" | "insert image" | "media" | "datetime"
+
+6. CLIPBOARD & SELECTION:
+   - "delete" | "copy" | "paste" | "duplicate" | "lock" | "group" | "ungroup" | "bring to front" | "send to back"
+
+7. MULTI-PAGE:
+   - "new page" | "next page" | "previous page"
+
+8. VOICE CONTROLS:
+   - "voice mode off" | "voice mode on"
+
+9. TEXT INPUT:
+   - "type [text to type]"
+
+Spoken input: "${text}"
+
+Output ONLY a JSON object:
+{
+  "recognized": true,
+  "translatedCommand": "<standardized command from above>",
+  "intent": "<intent_name>",
+  "spokenFeedback": "<brief confirmation message>"
+}
+If completely unrelated:
+{
+  "recognized": false,
+  "spokenFeedback": "Command not recognized"
+}`;
+
+            if (this.groq) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: ACTIVE_GROQ_MODELS[0],
+                        messages: [
+                            { role: 'system', content: 'Output ONLY valid JSON. No markdown wrappers or explanation.' },
+                            { role: 'user', content: whiteboardSystemPrompt }
+                        ],
+                        temperature: 0.1
+                    });
+                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                    if (parsed && (parsed.translatedCommand || parsed.recognized)) {
+                        return {
+                            ...parsed,
+                            recognized: parsed.recognized !== false
+                        };
+                    }
+                } catch (e) {
+                    console.warn('[AIService] Groq whiteboard voice parser failed:', e.message);
+                }
+            }
+
+            if (this.genAI) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: ACTIVE_GEMINI_MODELS[0] });
+                    const result = await model.generateContent(whiteboardSystemPrompt);
+                    const parsed = this.parseJSONResponse(result.response?.text() || '{}');
+                    if (parsed && (parsed.translatedCommand || parsed.recognized)) {
+                        return {
+                            ...parsed,
+                            recognized: parsed.recognized !== false
+                        };
+                    }
+                } catch (e) {
+                    console.warn('[AIService] Gemini whiteboard voice parser failed:', e.message);
+                }
+            }
+
+            // High-coverage Rule-based Fallback for Whiteboard Voice Commands
+            let translatedCommand = null;
+            let intent = 'unknown';
+            let spokenFeedback = `Interpreted: "${text}"`;
+
+            // Canvas & Board Wipe
+            if (low.includes('clear') || low.includes('wipe') || low.includes('clean') || low.includes('empty board') || low.includes('blank board') || low.includes('erase all') || low.includes('rub all')) {
+                translatedCommand = 'clear the board';
+                intent = 'clear_canvas';
+                spokenFeedback = 'Clearing the canvas';
+            }
+            // Voice controls
+            else if (low.includes('stop listening') || low.includes('turn off voice') || low.includes('voice mode off') || low.includes('shut up') || low.includes('mute mic') || low.includes('be quiet') || low.includes('voice off')) {
+                translatedCommand = 'voice mode off';
+                intent = 'voice_off';
+                spokenFeedback = 'Turned off voice control';
+            }
+            else if (low.includes('start listening') || low.includes('turn on voice') || low.includes('voice mode on') || low.includes('unmute mic') || low.includes('listen to me') || low.includes('voice on')) {
+                translatedCommand = 'voice mode on';
+                intent = 'voice_on';
+                spokenFeedback = 'Voice mode is active';
+            }
+            // Zoom & Canvas View
+            else if (low.includes('zoom in') || low.includes('magnify') || low.includes('closer') || low.includes('enlarge view')) {
+                translatedCommand = 'zoom in';
+                intent = 'zoom_in';
+                spokenFeedback = 'Zooming in';
+            }
+            else if (low.includes('zoom out') || low.includes('shrink') || low.includes('farther') || low.includes('zoom away')) {
+                translatedCommand = 'zoom out';
+                intent = 'zoom_out';
+                spokenFeedback = 'Zooming out';
+            }
+            else if (low.includes('reset zoom') || low.includes('normal view') || low.includes('default zoom') || low.includes('zoom 100') || low.includes('fit screen') || low.includes('fit canvas')) {
+                translatedCommand = 'reset zoom';
+                intent = 'reset_zoom';
+                spokenFeedback = 'Resetting zoom';
+            }
+            else if (low.includes('fullscreen') || low.includes('full screen')) {
+                translatedCommand = 'fullscreen';
+                intent = 'fullscreen';
+                spokenFeedback = 'Toggling fullscreen';
+            }
+            else if (low.includes('grid') || low.includes('graph paper') || low.includes('lines background')) {
+                translatedCommand = 'grid';
+                intent = 'grid';
+                spokenFeedback = 'Toggling grid background';
+            }
+            // Shapes Drawing
+            else if (low.includes('circle') || low.includes('round') || low.includes('disc') || low.includes('ring')) {
+                const num = (low.match(/\d+/) || [60])[0];
+                translatedCommand = `draw circle radius ${num}`;
+                intent = 'draw_circle';
+                spokenFeedback = `Drawing circle with radius ${num}px`;
+            }
+            else if (low.includes('square')) {
+                const num = (low.match(/\d+/) || [100])[0];
+                translatedCommand = `draw square side ${num}`;
+                intent = 'draw_square';
+                spokenFeedback = `Drawing square with side ${num}px`;
+            }
+            else if (low.includes('rectangle') || low.includes('box') || low.includes('quadrilateral') || low.includes('rect')) {
+                const byMatch = low.match(/(\d+)\s*(?:by|x|\*)\s*(\d+)/);
+                if (byMatch) {
+                    translatedCommand = `draw rectangle ${byMatch[1]} by ${byMatch[2]}`;
+                } else {
+                    const num = (low.match(/\d+/) || [160])[0];
+                    translatedCommand = `draw rectangle ${num} by 100`;
+                }
+                intent = 'draw_rectangle';
+                spokenFeedback = 'Drawing rectangle';
+            }
+            else if (low.includes('triangle')) {
+                const num = (low.match(/\d+/) || [120])[0];
+                translatedCommand = `draw triangle size ${num}`;
+                intent = 'draw_triangle';
+                spokenFeedback = 'Drawing triangle';
+            }
+            else if (low.includes('star')) {
+                translatedCommand = 'draw star';
+                intent = 'draw_star';
+                spokenFeedback = 'Drawing star';
+            }
+            else if (low.includes('diamond') || low.includes('rhombus')) {
+                translatedCommand = 'draw diamond';
+                intent = 'draw_diamond';
+                spokenFeedback = 'Drawing diamond';
+            }
+            else if (low.includes('pentagon')) {
+                translatedCommand = 'draw pentagon';
+                intent = 'draw_pentagon';
+                spokenFeedback = 'Drawing pentagon';
+            }
+            else if (low.includes('hexagon')) {
+                translatedCommand = 'draw hexagon';
+                intent = 'draw_hexagon';
+                spokenFeedback = 'Drawing hexagon';
+            }
+            else if (low.includes('arrow')) {
+                translatedCommand = 'draw arrow';
+                intent = 'draw_arrow';
+                spokenFeedback = 'Drawing arrow';
+            }
+            else if (low.includes('line') || low.includes('rule') || low.includes('straight line')) {
+                translatedCommand = 'draw line';
+                intent = 'draw_line';
+                spokenFeedback = 'Drawing straight line';
+            }
+            // Shape styling & units
+            else if (low.includes('show units') || low.includes('display units') || low.includes('show dimensions') || low.includes('measurements on')) {
+                translatedCommand = 'display units';
+                intent = 'display_units';
+                spokenFeedback = 'Displaying dimensions and units';
+            }
+            else if (low.includes('hide units') || low.includes('remove units') || low.includes('hide dimensions') || low.includes('measurements off')) {
+                translatedCommand = 'hide units';
+                intent = 'hide_units';
+                spokenFeedback = 'Hiding dimensions and units';
+            }
+            else if (low.includes('dashed border') || low.includes('dashed line') || low.includes('dashed outline')) {
+                translatedCommand = 'dashed border';
+                intent = 'border_style';
+                spokenFeedback = 'Setting border to dashed';
+            }
+            else if (low.includes('dotted border') || low.includes('dotted line') || low.includes('dotted outline') || low.includes('dots')) {
+                translatedCommand = 'dotted border';
+                intent = 'border_style';
+                spokenFeedback = 'Setting border to dotted';
+            }
+            else if (low.includes('solid border') || low.includes('solid line')) {
+                translatedCommand = 'solid border';
+                intent = 'border_style';
+                spokenFeedback = 'Setting border to solid';
+            }
+            else if (low.includes('double border')) {
+                translatedCommand = 'double border';
+                intent = 'border_style';
+                spokenFeedback = 'Setting border to double';
+            }
+            else if (low.includes('thicker border') || low.includes('increase border') || low.includes('thicker outline')) {
+                translatedCommand = 'thicker border';
+                intent = 'border_thickness';
+                spokenFeedback = 'Increased border thickness';
+            }
+            else if (low.includes('thinner border') || low.includes('decrease border') || low.includes('thinner outline')) {
+                translatedCommand = 'thinner border';
+                intent = 'border_thickness';
+                spokenFeedback = 'Decreased border thickness';
+            }
+            else if (low.includes('no fill') || low.includes('transparent fill') || low.includes('remove fill') || low.includes('clear fill')) {
+                translatedCommand = 'no fill';
+                intent = 'fill_transparent';
+                spokenFeedback = 'Shape fill set to transparent';
+            }
+            else if (low.match(/(?:fill|interior|inside)\s+(red|blue|green|yellow|orange|purple|violet|black|white|pink|cyan)/)) {
+                const color = low.match(/(?:fill|interior|inside)\s+(red|blue|green|yellow|orange|purple|violet|black|white|pink|cyan)/)[1];
+                translatedCommand = `fill ${color}`;
+                intent = 'fill_color';
+                spokenFeedback = `Filled with ${color}`;
+            }
+            else if (low.match(/(?:border|stroke|outline)\s+(red|blue|green|yellow|orange|purple|violet|black|white|pink|cyan)/)) {
+                const color = low.match(/(?:border|stroke|outline)\s+(red|blue|green|yellow|orange|purple|violet|black|white|pink|cyan)/)[1];
+                translatedCommand = `border ${color}`;
+                intent = 'border_color';
+                spokenFeedback = `Border set to ${color}`;
+            }
+            // Tools
+            else if (low.includes('pencil') || low.includes('pen') || low.includes('draw with pen') || low.includes('drawing mode')) {
+                translatedCommand = 'pen';
+                intent = 'tool_pen';
+                spokenFeedback = 'Switched to Pen tool';
+            }
+            else if (low.includes('highlighter') || low.includes('marker') || low.includes('highlight')) {
+                translatedCommand = 'highlighter';
+                intent = 'tool_highlighter';
+                spokenFeedback = 'Switched to Highlighter';
+            }
+            else if (low.includes('eraser') || low.includes('rub') || low.includes('erase')) {
+                translatedCommand = 'eraser';
+                intent = 'tool_eraser';
+                spokenFeedback = 'Switched to Eraser';
+            }
+            else if (low.includes('select') || low.includes('pointer') || low.includes('cursor')) {
+                translatedCommand = 'select';
+                intent = 'tool_select';
+                spokenFeedback = 'Switched to Selection tool';
+            }
+            else if (low.includes('hand tool') || low.includes('pan tool') || low.includes('move board')) {
+                translatedCommand = 'hand tool';
+                intent = 'tool_hand';
+                spokenFeedback = 'Switched to Hand tool';
+            }
+            else if (low.includes('laser') || low.includes('pointer dot')) {
+                translatedCommand = 'laser';
+                intent = 'tool_laser';
+                spokenFeedback = 'Switched to Laser Pointer';
+            }
+            else if (low.includes('ruler')) {
+                translatedCommand = 'ruler';
+                intent = 'tool_ruler';
+                spokenFeedback = 'Added Measuring Ruler';
+            }
+            else if (low.includes('protractor')) {
+                translatedCommand = 'protractor';
+                intent = 'tool_protractor';
+                spokenFeedback = 'Added Protractor';
+            }
+            // Clipboard & actions
+            else if (low.includes('delete') || low.includes('trash') || low.includes('remove item') || low.includes('discard')) {
+                translatedCommand = 'delete';
+                intent = 'delete_item';
+                spokenFeedback = 'Deleted selection';
+            }
+            else if (low.includes('undo') || low.includes('step back') || low.includes('revert')) {
+                translatedCommand = 'undo';
+                intent = 'undo';
+                spokenFeedback = 'Undone previous action';
+            }
+            else if (low.includes('redo') || low.includes('step forward')) {
+                translatedCommand = 'redo';
+                intent = 'redo';
+                spokenFeedback = 'Redone action';
+            }
+            else if (low.includes('copy')) {
+                translatedCommand = 'copy';
+                intent = 'copy';
+                spokenFeedback = 'Copied to clipboard';
+            }
+            else if (low.includes('paste')) {
+                translatedCommand = 'paste';
+                intent = 'paste';
+                spokenFeedback = 'Pasted from clipboard';
+            }
+            else if (low.includes('duplicate') || low.includes('clone')) {
+                translatedCommand = 'duplicate';
+                intent = 'duplicate';
+                spokenFeedback = 'Duplicated selection';
+            }
+            else if (low.includes('lock') || low.includes('freeze') || low.includes('unlock')) {
+                translatedCommand = 'lock';
+                intent = 'lock';
+                spokenFeedback = 'Toggled object lock';
+            }
+            // Modals & Panels
+            else if (low.includes('help') || low.includes('cheat sheet') || low.includes('commands') || low.includes('shortcuts')) {
+                translatedCommand = 'help';
+                intent = 'help_modal';
+                spokenFeedback = 'Opened Voice Commands and Shortcuts Help';
+            }
+            else if (low.includes('export') || low.includes('download') || low.includes('save board')) {
+                translatedCommand = 'export';
+                intent = 'export_modal';
+                spokenFeedback = 'Opened Export dialog';
+            }
+            else if (low.includes('timer') || low.includes('stopwatch') || low.includes('countdown')) {
+                translatedCommand = 'timer';
+                intent = 'timer';
+                spokenFeedback = 'Toggled Classroom Timer';
+            }
+            else if (low.includes('math tablet') || low.includes('math solver') || low.includes('solve math')) {
+                translatedCommand = 'math solver';
+                intent = 'math_tablet';
+                spokenFeedback = 'Opened Math Tablet Solver';
+            }
+            else if (low.includes('equation') || low.includes('latex') || low.includes('formula')) {
+                translatedCommand = 'equation';
+                intent = 'equation_editor';
+                spokenFeedback = 'Opened LaTeX Equation Editor';
+            }
+
+            if (translatedCommand) {
+                return {
+                    recognized: true,
+                    translatedCommand,
+                    intent,
+                    spokenFeedback
+                };
+            }
+
+            return {
+                recognized: false,
+                translatedCommand: null,
+                intent: 'unrecognized',
+                spokenFeedback: `Could not match voice command: "${text}"`
+            };
+        }
+
         const systemPrompt = `You are a voice command parser for a school and lab management web app.
 Parse the spoken voice input into a structured actionable intent.
 POSSIBLE INTENTS:

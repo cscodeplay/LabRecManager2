@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, optionalAuth } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const prisma = require('../config/database');
 const aiService = require('../services/ai.service');
@@ -398,7 +398,7 @@ router.post('/card-assist', authenticate, asyncHandler(async (req, res) => {
  * @desc    Parse natural language voice commands into structured actions
  * @access  Private
  */
-router.post('/voice-command', authenticate, asyncHandler(async (req, res) => {
+router.post('/voice-command', optionalAuth, asyncHandler(async (req, res) => {
     const { speechText, context = {} } = req.body;
 
     if (!speechText || !speechText.trim()) {

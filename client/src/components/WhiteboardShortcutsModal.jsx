@@ -451,6 +451,19 @@ export default function WhiteboardShortcutsModal({
                             </button>
                         </div>
 
+                        {/* AI Support Info Banner */}
+                        <div className="bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-blue-950/40 border border-purple-500/30 rounded-xl p-3.5 flex items-center justify-between gap-3 text-xs">
+                            <div className="flex items-center gap-2.5">
+                                <span className="p-1.5 rounded-lg bg-purple-500/20 text-purple-300 ring-1 ring-purple-500/30 text-base select-none">✨</span>
+                                <div>
+                                    <span className="font-semibold text-purple-200">AI Natural Language Translation Active:</span>{' '}
+                                    <span className="text-slate-300">
+                                        Voice commands aren't restricted to exact phrases. Speak conversationally (e.g. <em>"can you wipe the board clean"</em>, <em>"draw a round blue circle of size 80"</em>, <em>"make outline dashed"</em>, <em>"zoom closer"</em>) and AI will interpret and execute the action automatically.
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Categorized Voice Commands Grid */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                             {filteredVoiceGroups.map((group, gIdx) => (

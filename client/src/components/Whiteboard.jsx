@@ -62,7 +62,7 @@ import GameSelectorModal from './games/GameSelectorModal';
 import WhiteboardShooterGame from './games/WhiteboardShooterGame';
 import WhiteboardSnakeGame from './games/WhiteboardSnakeGame';
 import { convertToGameObjects, generateRandomObstacles } from './games/obstacleConverter';
-import api from '@/lib/api';
+import api, { aiAPI } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/lib/store';
 import { formatDate, formatTime } from '@/lib/dateUtils';
@@ -9927,7 +9927,7 @@ export default function Whiteboard({
     }, []);
 
     // ─── Voice Control & Speech Recognition Engine ──────────────────────
-    const executeVoiceCommand = useCallback((rawText) => {
+    const executeVoiceCommand = useCallback(async (rawText, isAiRetry = false) => {
         if (!rawText || typeof rawText !== 'string') return;
         const txt = rawText.trim().toLowerCase();
         setVoiceTranscript(rawText);
@@ -9941,6 +9941,8 @@ export default function Whiteboard({
             txt.includes('stop voice') ||
             txt.includes('mute microphone') ||
             txt.includes('voice control off') ||
+            txt.includes('be quiet') ||
+            txt.includes('shut up') ||
             txt === 'voice off'
         ) {
             if (isVoiceListeningRef.current) {
@@ -9961,6 +9963,7 @@ export default function Whiteboard({
             txt.includes('start listening') ||
             txt.includes('enable voice') ||
             txt.includes('voice control on') ||
+            txt.includes('listen to me') ||
             txt === 'voice on'
         ) {
             setVoiceFeedback('🎙️ Voice mode is active and listening');
@@ -9975,27 +9978,50 @@ export default function Whiteboard({
         const cx = Math.round((cWidth / 2 - panOffset.x) / zoomLevel);
         const cy = Math.round((cHeight / 2 - panOffset.y) / zoomLevel);
 
-        // 1. Shapes with Dimensions & Radii
-        // Circle: "draw circle radius 80", "draw circle of radius 60", "circle 50"
-        if (txt.includes('circle')) {
-            const match = txt.match(/(?:radius|size|of)?\s*(\d+)/i);
-            const radius = match ? parseInt(match[1], 10) : 60;
-            const newShape = {
-                id: Date.now(),
-                type: 'circle',
-                x: Math.round(cx - radius),
-                y: Math.round(cy - radius),
-                width: radius * 2,
-                height: radius * 2,
+        // Helper to spawn shape with full text editing, measurement, and selection support
+        const spawnVoiceShape = (shapeProps) => {
+            const id = Date.now().toString();
+            const created = {
+                id,
+                rotation: 0,
                 color: color || '#3b82f6',
                 strokeWidth: strokeWidth || 3,
                 fillColor: fillColor || 'transparent',
                 strokeStyle: strokeStyle || 'solid',
-                rotation: 0
+                text: '',
+                fontSize: 20,
+                fontFamily: 'sans-serif',
+                ...shapeProps
             };
-            setShapeObjects(prev => [...prev, newShape]);
-            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
+            setShapeObjects(prev => [...prev, created]);
+            if (socket && sessionId) {
+                socket.emit('whiteboard:shape-add', { sessionId, shape: created });
+            }
             saveToHistory();
+            setTool('select');
+            justCreatedShapeRef.current = true;
+            setSelectedShapeIds([id]);
+            setSelectedTextIds([]);
+            setSelectedImageId(null);
+            setSelectedImageIds([]);
+            setSelected3DId(null);
+            setSelected3DIds([]);
+            setSelectedMediaId(null);
+            return created;
+        };
+
+        // 1. Shapes with Dimensions & Radii
+        // Circle: "draw circle radius 80", "draw circle of radius 60", "circle 50", "round 70"
+        if (txt.includes('circle') || txt.includes('round') || txt.includes('disc') || txt.includes('ring')) {
+            const match = txt.match(/(?:radius|size|of)?\s*(\d+)/i);
+            const radius = match ? parseInt(match[1], 10) : 60;
+            spawnVoiceShape({
+                type: 'circle',
+                x: Math.round(cx - radius),
+                y: Math.round(cy - radius),
+                width: radius * 2,
+                height: radius * 2
+            });
             const msg = `⭕ Drew circle with radius ${radius}px`;
             setVoiceFeedback(msg);
             toast.success(msg, { icon: '⭕' });
@@ -10006,30 +10032,21 @@ export default function Whiteboard({
         if (txt.includes('square')) {
             const match = txt.match(/(?:side|size|of)?\s*(\d+)/i);
             const side = match ? parseInt(match[1], 10) : 100;
-            const newShape = {
-                id: Date.now(),
+            spawnVoiceShape({
                 type: 'rectangle',
                 x: Math.round(cx - side / 2),
                 y: Math.round(cy - side / 2),
                 width: side,
-                height: side,
-                color: color || '#3b82f6',
-                strokeWidth: strokeWidth || 3,
-                fillColor: fillColor || 'transparent',
-                strokeStyle: strokeStyle || 'solid',
-                rotation: 0
-            };
-            setShapeObjects(prev => [...prev, newShape]);
-            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
-            saveToHistory();
+                height: side
+            });
             const msg = `⏹️ Drew square with side ${side}px`;
             setVoiceFeedback(msg);
             toast.success(msg, { icon: '⏹️' });
             return;
         }
 
-        // Rectangle: "draw rectangle 200 by 120", "draw rectangle width 160 height 90", "draw rectangle"
-        if (txt.includes('rectangle') || txt.includes('box')) {
+        // Rectangle / Box: "draw rectangle 200 by 120", "draw box 160 by 90", "rectangle"
+        if (txt.includes('rectangle') || txt.includes('box') || txt.includes('quadrilateral') || txt.includes('rect')) {
             const byMatch = txt.match(/(\d+)\s*(?:by|x|\*)\s*(\d+)/i);
             let w = 160, h = 100;
             if (byMatch) {
@@ -10041,22 +10058,13 @@ export default function Whiteboard({
                 if (wMatch) w = parseInt(wMatch[1], 10);
                 if (hMatch) h = parseInt(hMatch[1], 10);
             }
-            const newShape = {
-                id: Date.now(),
+            spawnVoiceShape({
                 type: 'rectangle',
                 x: Math.round(cx - w / 2),
                 y: Math.round(cy - h / 2),
                 width: w,
-                height: h,
-                color: color || '#3b82f6',
-                strokeWidth: strokeWidth || 3,
-                fillColor: fillColor || 'transparent',
-                strokeStyle: strokeStyle || 'solid',
-                rotation: 0
-            };
-            setShapeObjects(prev => [...prev, newShape]);
-            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
-            saveToHistory();
+                height: h
+            });
             const msg = `▭ Drew rectangle (${w} × ${h}px)`;
             setVoiceFeedback(msg);
             toast.success(msg, { icon: '▭' });
@@ -10067,22 +10075,13 @@ export default function Whiteboard({
         if (txt.includes('triangle')) {
             const match = txt.match(/(?:size|of)?\s*(\d+)/i);
             const s = match ? parseInt(match[1], 10) : 120;
-            const newShape = {
-                id: Date.now(),
+            spawnVoiceShape({
                 type: 'triangle',
                 x: Math.round(cx - s / 2),
                 y: Math.round(cy - s / 2),
                 width: s,
-                height: Math.round(s * 0.9),
-                color: color || '#3b82f6',
-                strokeWidth: strokeWidth || 3,
-                fillColor: fillColor || 'transparent',
-                strokeStyle: strokeStyle || 'solid',
-                rotation: 0
-            };
-            setShapeObjects(prev => [...prev, newShape]);
-            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
-            saveToHistory();
+                height: Math.round(s * 0.9)
+            });
             const msg = `🔺 Drew triangle (${s}px)`;
             setVoiceFeedback(msg);
             toast.success(msg, { icon: '🔺' });
@@ -10093,22 +10092,13 @@ export default function Whiteboard({
         if (txt.includes('pentagon')) {
             const match = txt.match(/(?:size|of)?\s*(\d+)/i);
             const s = match ? parseInt(match[1], 10) : 120;
-            const newShape = {
-                id: Date.now(),
+            spawnVoiceShape({
                 type: 'pentagon',
                 x: Math.round(cx - s / 2),
                 y: Math.round(cy - s / 2),
                 width: s,
-                height: s,
-                color: color || '#3b82f6',
-                strokeWidth: strokeWidth || 3,
-                fillColor: fillColor || 'transparent',
-                strokeStyle: strokeStyle || 'solid',
-                rotation: 0
-            };
-            setShapeObjects(prev => [...prev, newShape]);
-            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
-            saveToHistory();
+                height: s
+            });
             const msg = `⬠ Drew 5-sided pentagon (${s}px)`;
             setVoiceFeedback(msg);
             toast.success(msg, { icon: '⬠' });
@@ -10119,22 +10109,13 @@ export default function Whiteboard({
         if (txt.includes('hexagon')) {
             const match = txt.match(/(?:size|of)?\s*(\d+)/i);
             const s = match ? parseInt(match[1], 10) : 120;
-            const newShape = {
-                id: Date.now(),
+            spawnVoiceShape({
                 type: 'hexagon',
                 x: Math.round(cx - s / 2),
                 y: Math.round(cy - s / 2),
                 width: s,
-                height: Math.round(s * 0.9),
-                color: color || '#3b82f6',
-                strokeWidth: strokeWidth || 3,
-                fillColor: fillColor || 'transparent',
-                strokeStyle: strokeStyle || 'solid',
-                rotation: 0
-            };
-            setShapeObjects(prev => [...prev, newShape]);
-            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
-            saveToHistory();
+                height: Math.round(s * 0.9)
+            });
             const msg = `⬡ Drew 6-sided hexagon (${s}px)`;
             setVoiceFeedback(msg);
             toast.success(msg, { icon: '⬡' });
@@ -10145,48 +10126,31 @@ export default function Whiteboard({
         if (txt.includes('star')) {
             const match = txt.match(/(?:size|of)?\s*(\d+)/i);
             const s = match ? parseInt(match[1], 10) : 120;
-            const newShape = {
-                id: Date.now(),
+            spawnVoiceShape({
                 type: 'star',
                 x: Math.round(cx - s / 2),
                 y: Math.round(cy - s / 2),
                 width: s,
                 height: s,
-                color: color || '#eab308',
-                strokeWidth: strokeWidth || 3,
-                fillColor: fillColor || 'transparent',
-                strokeStyle: strokeStyle || 'solid',
-                rotation: 0
-            };
-            setShapeObjects(prev => [...prev, newShape]);
-            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
-            saveToHistory();
+                color: color || '#eab308'
+            });
             const msg = `⭐ Drew 5-point star (${s}px)`;
             setVoiceFeedback(msg);
             toast.success(msg, { icon: '⭐' });
             return;
         }
 
-        // Diamond
+        // Diamond / Rhombus
         if (txt.includes('diamond') || txt.includes('rhombus')) {
             const match = txt.match(/(?:size|of)?\s*(\d+)/i);
             const s = match ? parseInt(match[1], 10) : 110;
-            const newShape = {
-                id: Date.now(),
+            spawnVoiceShape({
                 type: 'diamond',
                 x: Math.round(cx - s / 2),
                 y: Math.round(cy - s / 2),
                 width: s,
-                height: s,
-                color: color || '#3b82f6',
-                strokeWidth: strokeWidth || 3,
-                fillColor: fillColor || 'transparent',
-                strokeStyle: strokeStyle || 'solid',
-                rotation: 0
-            };
-            setShapeObjects(prev => [...prev, newShape]);
-            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
-            saveToHistory();
+                height: s
+            });
             const msg = `💠 Drew diamond (${s}px)`;
             setVoiceFeedback(msg);
             toast.success(msg, { icon: '💠' });
@@ -10195,8 +10159,7 @@ export default function Whiteboard({
 
         // Arrow / Line
         if (txt.includes('arrow')) {
-            const newShape = {
-                id: Date.now(),
+            spawnVoiceShape({
                 type: 'arrow',
                 x: cx - 80,
                 y: cy,
@@ -10205,21 +10168,15 @@ export default function Whiteboard({
                 startX: 0,
                 startY: 0,
                 endX: 160,
-                endY: 0,
-                color: color || '#3b82f6',
-                strokeWidth: strokeWidth || 3
-            };
-            setShapeObjects(prev => [...prev, newShape]);
-            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
-            saveToHistory();
+                endY: 0
+            });
             const msg = '➡️ Drew directional arrow';
             setVoiceFeedback(msg);
             toast.success(msg, { icon: '➡️' });
             return;
         }
-        if (txt.includes('line')) {
-            const newShape = {
-                id: Date.now(),
+        if (txt.includes('line') || txt.includes('rule') || txt.includes('straight line')) {
+            spawnVoiceShape({
                 type: 'line',
                 x: cx - 80,
                 y: cy,
@@ -10228,13 +10185,8 @@ export default function Whiteboard({
                 startX: 0,
                 startY: 0,
                 endX: 160,
-                endY: 0,
-                color: color || '#3b82f6',
-                strokeWidth: strokeWidth || 3
-            };
-            setShapeObjects(prev => [...prev, newShape]);
-            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
-            saveToHistory();
+                endY: 0
+            });
             const msg = '━ Drew straight line';
             setVoiceFeedback(msg);
             toast.success(msg, { icon: '━' });
@@ -10756,6 +10708,28 @@ export default function Whiteboard({
             handleSendToBack();
             setVoiceFeedback('⬇️ Sent to back');
             return;
+        }
+
+        // 10. AI-Powered Fallback Translation for Conversational / Rigid Speech
+        if (!isAiRetry) {
+            setVoiceFeedback(`🤖 Asking AI to interpret: "${rawText}"...`);
+            try {
+                const response = await aiAPI.voiceCommand({
+                    speechText: rawText,
+                    context: {
+                        module: 'whiteboard',
+                        currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard'
+                    }
+                });
+
+                const data = response?.data?.data;
+                if (data?.recognized && data?.translatedCommand) {
+                    toast.success(`✨ AI interpreted: "${data.translatedCommand}"`, { icon: '✨' });
+                    return await executeVoiceCommand(data.translatedCommand, true);
+                }
+            } catch (err) {
+                console.warn('[Whiteboard Voice AI] Translation error:', err.message);
+            }
         }
 
         setVoiceFeedback(`Unrecognized: "${rawText}" - say "help" for commands`);
@@ -15161,6 +15135,9 @@ export default function Whiteboard({
                                 onDoubleClick={(e) => {
                                     e.stopPropagation();
                                     if (!shpObj.isLocked && shpObj.type !== 'ruler' && shpObj.type !== 'protractor') {
+                                        if (shpObj.text === undefined) {
+                                            setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, text: '' } : s));
+                                        }
                                         setEditingShapeTextId(shpObj.id);
                                     }
                                 }}
@@ -15436,58 +15413,56 @@ export default function Whiteboard({
                                             </div>
                                         );
                                     })() : (
-                                        shpObj.text !== undefined && (
-                                            <div 
-                                                className="absolute inset-0 flex items-center justify-center p-2"
-                                                style={{
-                                                    pointerEvents: editingShapeTextId === shpObj.id ? 'auto' : 'none'
-                                                }}
-                                            >
-                                                {editingShapeTextId === shpObj.id ? (
-                                                    <textarea
-                                                        autoFocus
-                                                        value={shpObj.text}
-                                                        onChange={(e) => {
-                                                            setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, text: e.target.value } : s));
-                                                        }}
-                                                        onBlur={() => {
+                                        <div 
+                                            className="absolute inset-0 flex items-center justify-center p-2"
+                                            style={{
+                                                pointerEvents: editingShapeTextId === shpObj.id ? 'auto' : 'none'
+                                            }}
+                                        >
+                                            {editingShapeTextId === shpObj.id ? (
+                                                <textarea
+                                                    autoFocus
+                                                    value={shpObj.text || ''}
+                                                    onChange={(e) => {
+                                                        setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, text: e.target.value } : s));
+                                                    }}
+                                                    onBlur={() => {
+                                                        setEditingShapeTextId(null);
+                                                        saveToHistory();
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Escape') {
                                                             setEditingShapeTextId(null);
-                                                            saveToHistory();
-                                                        }}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Escape') {
-                                                                setEditingShapeTextId(null);
-                                                            }
-                                                            e.stopPropagation();
-                                                        }}
-                                                        onMouseDown={e => e.stopPropagation()}
-                                                        onPointerDown={e => e.stopPropagation()}
-                                                        placeholder="Type text..."
-                                                        className="w-full text-center bg-white/60 dark:bg-black/60 backdrop-blur-xs border border-indigo-500 rounded outline-none resize-none overflow-hidden p-1 shadow-inner text-slate-800 dark:text-slate-100"
-                                                        style={{ 
-                                                            color: shpObj.textColor || shpObj.color, 
-                                                            fontSize: shpObj.fontSize || 20,
-                                                            fontFamily: shpObj.fontFamily || 'sans-serif',
-                                                            fontWeight: shpObj.fontWeight || 'normal',
-                                                            fontStyle: shpObj.fontStyle || 'normal',
-                                                        }}
-                                                    />
-                                                ) : (
-                                                    <div
-                                                        className="w-full text-center select-none whitespace-pre-wrap break-words pointer-events-none"
-                                                        style={{ 
-                                                            color: shpObj.textColor || shpObj.color, 
-                                                            fontSize: shpObj.fontSize || 20,
-                                                            fontFamily: shpObj.fontFamily || 'sans-serif',
-                                                            fontWeight: shpObj.fontWeight || 'normal',
-                                                            fontStyle: shpObj.fontStyle || 'normal',
-                                                        }}
-                                                    >
-                                                        {shpObj.text || (isSelected ? <span className="text-slate-400 italic text-[11px] block select-none">Double-click to type</span> : '')}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )
+                                                        }
+                                                        e.stopPropagation();
+                                                    }}
+                                                    onMouseDown={e => e.stopPropagation()}
+                                                    onPointerDown={e => e.stopPropagation()}
+                                                    placeholder="Type text..."
+                                                    className="w-full text-center bg-white/60 dark:bg-black/60 backdrop-blur-xs border border-indigo-500 rounded outline-none resize-none overflow-hidden p-1 shadow-inner text-slate-800 dark:text-slate-100"
+                                                    style={{ 
+                                                        color: shpObj.textColor || shpObj.color, 
+                                                        fontSize: shpObj.fontSize || 20,
+                                                        fontFamily: shpObj.fontFamily || 'sans-serif',
+                                                        fontWeight: shpObj.fontWeight || 'normal',
+                                                        fontStyle: shpObj.fontStyle || 'normal',
+                                                    }}
+                                                />
+                                            ) : (
+                                                <div
+                                                    className="w-full text-center select-none whitespace-pre-wrap break-words pointer-events-none"
+                                                    style={{ 
+                                                        color: shpObj.textColor || shpObj.color, 
+                                                        fontSize: shpObj.fontSize || 20,
+                                                        fontFamily: shpObj.fontFamily || 'sans-serif',
+                                                        fontWeight: shpObj.fontWeight || 'normal',
+                                                        fontStyle: shpObj.fontStyle || 'normal',
+                                                    }}
+                                                >
+                                                    {shpObj.text || (isSelected ? <span className="text-slate-400 italic text-[11px] block select-none">Double-click to type</span> : '')}
+                                                </div>
+                                            )}
+                                        </div>
                                     )
                                 )}
 
