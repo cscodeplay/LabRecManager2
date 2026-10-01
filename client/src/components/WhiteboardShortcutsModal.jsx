@@ -327,6 +327,19 @@ export default function WhiteboardShortcutsModal({
                 { phrase: 'record / screen recorder', action: 'recorder', desc: 'Open screen & audio recording studio' },
                 { phrase: 'games', action: 'games', desc: 'Open educational mini-games' }
             ]
+        },
+        {
+            category: 'Closed Captions & Speech AI Tutor',
+            icon: '🎙️',
+            description: 'Live captions, audio device settings, and speech synthesis solutions',
+            commands: [
+                { phrase: 'closed captions on / off', action: 'closed captions on', desc: 'Toggle real-time streaming speech captions overlay' },
+                { phrase: 'ai voice on / mute ai voice', action: 'ai voice on', desc: 'Enable/disable spoken AI voice answers' },
+                { phrase: 'ai tutor / ai assistant', action: 'ai tutor', desc: 'Open interactive AI solutions & tutoring dialog' },
+                { phrase: 'solve [equation]', action: 'solve 2x + 6 = 18', desc: 'Ask AI to solve math equations and speak steps aloud' },
+                { phrase: 'explain [concept / theorem]', action: 'explain Pythagorean theorem', desc: 'Get voice explanation and LaTeX formula card' },
+                { phrase: 'how to [feature]', action: 'how to duplicate page', desc: 'Ask for spoken guidance on whiteboard tools' }
+            ]
         }
     ], []);
 

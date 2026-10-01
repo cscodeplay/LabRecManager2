@@ -50,6 +50,10 @@ import WhiteboardImagePickerModal from './WhiteboardImagePickerModal';
 import WhiteboardExportModal from './WhiteboardExportModal';
 import WhiteboardVoiceControlModal from './WhiteboardVoiceControlModal';
 import WhiteboardMinimap from './WhiteboardMinimap';
+import useSpeechSynthesis, { cleanTextForSpeech } from '../hooks/useSpeechSynthesis';
+import WhiteboardMicSelector from './WhiteboardMicSelector';
+import WhiteboardClosedCaptions from './WhiteboardClosedCaptions';
+import WhiteboardAIAssistantModal from './WhiteboardAIAssistantModal';
 import DomainShapeLibraryModal, { DOMAIN_SHAPES } from './DomainShapeLibrary';
 import WhiteboardShortcutsModal from './WhiteboardShortcutsModal';
 import WhiteboardClipboardPanel from './WhiteboardClipboardPanel';
@@ -915,13 +919,165 @@ export default function Whiteboard({
     // OCR toggle
     const [isOcrActive, setIsOcrActive] = useState(false);
 
-    // Voice Control State
+    // Voice Control State, Audio Devices & Speech AI Synthesizer
     const [isVoiceListening, setIsVoiceListening] = useState(false);
     const [voiceTranscript, setVoiceTranscript] = useState('');
+    const [interimVoiceTranscript, setInterimVoiceTranscript] = useState('');
     const [voiceFeedback, setVoiceFeedback] = useState('');
     const [shortcutsModalTab, setShortcutsModalTab] = useState('shortcuts');
+    const [showMicSelector, setShowMicSelector] = useState(false);
+    const [showClosedCaptions, setShowClosedCaptions] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('wb_show_cc') !== 'false';
+        }
+        return true;
+    });
+    const [selectedMicDeviceId, setSelectedMicDeviceId] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('wb_selected_mic_id') || '';
+        }
+        return '';
+    });
+    const [aiSpeechEnabled, setAiSpeechEnabled] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('wb_ai_speech') !== 'false';
+        }
+        return true;
+    });
+    const [speechRate, setSpeechRate] = useState(1.0);
+    const [audioInputLevel, setAudioInputLevel] = useState(0);
+    const [isAiThinking, setIsAiThinking] = useState(false);
+    const [aiSolutionData, setAiSolutionData] = useState(null);
+    const [showAiAssistantModal, setShowAiAssistantModal] = useState(false);
+
     const voiceRecognitionRef = useRef(null);
     const isVoiceListeningRef = useRef(false);
+    const micStreamRef = useRef(null);
+    const micAudioCtxRef = useRef(null);
+    const micAnalyserRef = useRef(null);
+    const micAnimFrameRef = useRef(null);
+
+    // Speech AI Synthesizer (TTS) Engine
+    const {
+        isSupported: isTtsSupported,
+        isSpeaking: isAiSpeaking,
+        speakingText: aiSpeakingText,
+        voices: ttsVoices,
+        selectedVoice: ttsSelectedVoice,
+        setSelectedVoice: setTtsSelectedVoice,
+        speak: speakAiResponse,
+        stop: stopAiSpeech
+    } = useSpeechSynthesis({
+        defaultRate: speechRate,
+        enabledByDefault: aiSpeechEnabled
+    });
+
+    // Start microphone audio analyzer for live volume level meter
+    const startMicAudioAnalyzer = useCallback(async (deviceId) => {
+        if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) return;
+
+        if (micAnimFrameRef.current) {
+            cancelAnimationFrame(micAnimFrameRef.current);
+            micAnimFrameRef.current = null;
+        }
+        if (micStreamRef.current) {
+            micStreamRef.current.getTracks().forEach(t => t.stop());
+            micStreamRef.current = null;
+        }
+        if (micAudioCtxRef.current && micAudioCtxRef.current.state !== 'closed') {
+            micAudioCtxRef.current.close().catch(() => {});
+            micAudioCtxRef.current = null;
+        }
+
+        try {
+            const constraints = {
+                audio: deviceId ? { deviceId: { exact: deviceId } } : true
+            };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            micStreamRef.current = stream;
+
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            const audioCtx = new AudioContext();
+            micAudioCtxRef.current = audioCtx;
+
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 64;
+            micAnalyserRef.current = analyser;
+
+            const source = audioCtx.createMediaStreamSource(stream);
+            source.connect(analyser);
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            const updateLevel = () => {
+                if (!micAnalyserRef.current) return;
+                micAnalyserRef.current.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                    sum += dataArray[i];
+                }
+                const avg = sum / dataArray.length;
+                const normalized = Math.min(100, Math.round((avg / 128) * 100));
+                setAudioInputLevel(normalized);
+                micAnimFrameRef.current = requestAnimationFrame(updateLevel);
+            };
+
+            updateLevel();
+        } catch (e) {
+            console.warn('[Whiteboard] Mic audio analyzer skipped:', e.message);
+        }
+    }, []);
+
+    const stopMicAudioAnalyzer = useCallback(() => {
+        if (micAnimFrameRef.current) {
+            cancelAnimationFrame(micAnimFrameRef.current);
+            micAnimFrameRef.current = null;
+        }
+        if (micStreamRef.current) {
+            micStreamRef.current.getTracks().forEach(t => t.stop());
+            micStreamRef.current = null;
+        }
+        if (micAudioCtxRef.current && micAudioCtxRef.current.state !== 'closed') {
+            micAudioCtxRef.current.close().catch(() => {});
+            micAudioCtxRef.current = null;
+        }
+        setAudioInputLevel(0);
+    }, []);
+
+    const handleSelectMicDevice = useCallback((deviceId) => {
+        setSelectedMicDeviceId(deviceId);
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('wb_selected_mic_id', deviceId);
+        }
+        if (isVoiceListeningRef.current) {
+            startMicAudioAnalyzer(deviceId);
+        }
+        toast.success('Microphone device updated', { icon: '🎙️' });
+    }, [startMicAudioAnalyzer]);
+
+    // Handle inserting generated AI solution as a note onto whiteboard canvas
+    const handleInsertAiSolutionToBoard = useCallback((solution) => {
+        if (!solution) return;
+        const baseCx = Math.round((-panOffset.x + (containerRef.current?.clientWidth || 1200) / 2) / zoomLevel);
+        const baseCy = Math.round((-panOffset.y + (containerRef.current?.clientHeight || 800) / 2) / zoomLevel);
+
+        const titleText = solution.question ? `Q: ${solution.question}\n` : '';
+        const rawContent = cleanTextForSpeech(solution.speechResponse || solution.solutionMarkdown || 'AI Solution');
+        const displayText = `${titleText}${rawContent}`.slice(0, 320);
+
+        const newNote = createStickyNoteObject(baseCx - 140, baseCy - 120, 'purple');
+        newNote.text = displayText;
+        newNote.title = solution.question ? `Q: ${solution.question.slice(0, 30)}...` : 'AI Solution';
+
+        setPageShapeObjects(prev => ({
+            ...prev,
+            [currentPage]: [...(prev[currentPage] || []), newNote]
+        }));
+        setTool('select');
+        setSelectedShapeIds([newNote.id]);
+        saveToHistory();
+        toast.success('Inserted AI Solution note to board', { icon: '📌' });
+    }, [panOffset, zoomLevel, currentPage, saveToHistory]);
 
     // ─── Radial Toolbar & Draggable Ball State ──────────────────────────
     const [showRadialMenu, setShowRadialMenu] = useState(false);
@@ -11087,6 +11243,52 @@ export default function Whiteboard({
             setVoiceFeedback('🎙️ Opened Voice Commands & Help reference');
             return;
         }
+        if (txt.includes('closed caption') || txt.includes('caption') || txt.includes('subtitles')) {
+            if (txt.includes('off') || txt.includes('hide') || txt.includes('disable')) {
+                setShowClosedCaptions(false);
+                if (typeof window !== 'undefined') localStorage.setItem('wb_show_cc', 'false');
+                setVoiceFeedback('⚪ Closed captions turned off');
+                toast('Closed captions hidden', { icon: '⚪' });
+                return;
+            }
+            if (txt.includes('on') || txt.includes('show') || txt.includes('enable')) {
+                setShowClosedCaptions(true);
+                if (typeof window !== 'undefined') localStorage.setItem('wb_show_cc', 'true');
+                setVoiceFeedback('💬 Closed captions turned on');
+                toast.success('Closed captions visible', { icon: '💬' });
+                return;
+            }
+            setShowClosedCaptions(prev => {
+                const next = !prev;
+                if (typeof window !== 'undefined') localStorage.setItem('wb_show_cc', String(next));
+                setVoiceFeedback(`💬 Closed captions ${next ? 'Shown' : 'Hidden'}`);
+                toast(`Closed captions ${next ? 'Shown' : 'Hidden'}`, { icon: '💬' });
+                return next;
+            });
+            return;
+        }
+        if (txt.includes('ai voice') || txt.includes('speech response') || txt.includes('ai speech')) {
+            if (txt.includes('off') || txt.includes('mute') || txt.includes('disable')) {
+                setAiSpeechEnabled(false);
+                stopAiSpeech();
+                if (typeof window !== 'undefined') localStorage.setItem('wb_ai_speech', 'false');
+                setVoiceFeedback('🔇 AI speech synthesizer muted');
+                toast('AI speech response muted', { icon: '🔇' });
+                return;
+            }
+            if (txt.includes('on') || txt.includes('unmute') || txt.includes('enable')) {
+                setAiSpeechEnabled(true);
+                if (typeof window !== 'undefined') localStorage.setItem('wb_ai_speech', 'true');
+                setVoiceFeedback('🔊 AI speech synthesizer active');
+                toast.success('AI speech response enabled', { icon: '🔊' });
+                return;
+            }
+        }
+        if (txt.includes('ai tutor') || txt.includes('ai assistant')) {
+            setShowAiAssistantModal(true);
+            setVoiceFeedback('🤖 Opened AI Assistant & Tutor');
+            return;
+        }
         if (txt.includes('export') || txt.includes('download board') || txt.includes('save board')) {
             setShowExportModal(true);
             setVoiceFeedback('💾 Opened Export modal');
@@ -11303,9 +11505,10 @@ export default function Whiteboard({
             return;
         }
 
-        // 10. AI-Powered Fallback Translation for Conversational / Rigid Speech
+        // 10. AI-Powered Assistant, Solutions & Fallback Translation
         if (!isAiRetry) {
-            setVoiceFeedback(`🤖 Asking AI to interpret: "${rawText}"...`);
+            setVoiceFeedback(`🤖 Asking AI: "${rawText}"...`);
+            setIsAiThinking(true);
             try {
                 const response = await aiAPI.voiceCommand({
                     speechText: rawText,
@@ -11316,18 +11519,44 @@ export default function Whiteboard({
                 });
 
                 const data = response?.data?.data;
-                if (data?.recognized && data?.translatedCommand) {
-                    toast.success(`✨ AI interpreted: "${data.translatedCommand}"`, { icon: '✨' });
-                    return await executeVoiceCommand(data.translatedCommand, true);
+                setIsAiThinking(false);
+
+                if (data?.recognized) {
+                    // Check if it's an educational question, math problem, or solution
+                    if (data.type === 'solution' || data.solutionMarkdown || data.intent === 'solve_or_explain') {
+                        setAiSolutionData({
+                            question: rawText,
+                            speechResponse: data.speechResponse || data.spokenFeedback,
+                            solutionMarkdown: data.solutionMarkdown,
+                            canvasAction: data.canvasAction
+                        });
+                        setVoiceFeedback(data.spokenFeedback || '✨ AI Solution Ready');
+                        toast.success(data.spokenFeedback || 'AI Solution Ready', { icon: '✨' });
+
+                        if (aiSpeechEnabled && (data.speechResponse || data.spokenFeedback)) {
+                            speakAiResponse(data.speechResponse || data.spokenFeedback);
+                        }
+                        return;
+                    }
+
+                    // Otherwise if it's a translated whiteboard command
+                    if (data.translatedCommand) {
+                        toast.success(`✨ AI interpreted: "${data.translatedCommand}"`, { icon: '✨' });
+                        if (aiSpeechEnabled && data.speechResponse) {
+                            speakAiResponse(data.speechResponse);
+                        }
+                        return await executeVoiceCommand(data.translatedCommand, true);
+                    }
                 }
             } catch (err) {
                 console.warn('[Whiteboard Voice AI] Translation error:', err.message);
+                setIsAiThinking(false);
             }
         }
 
         setVoiceFeedback(`Unrecognized: "${rawText}" - say "help" for commands`);
         toast(`Command not recognized: "${rawText}"`, { icon: '❓' });
-    }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, duplicateCurrentPage, deletePage, loadPage, currentPage, totalPages, selectedShapeIds, selectedTextIds, selectedImageId, selectedImageIds, selected3DIds, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, setBgPattern, setBgColor, onToggleFullscreen, handleInsertGraph, handleInsertDateTime, handleDelete, handleCopy, handlePaste, handleDuplicate, handleToggleLock, handleGroup, handleUngroup, handleBringToFront, handleSendToBack, handleAlign, handleDistribute, handleFlipSelection, handleRemoveImageBackground, updateSelectedImageFilters, setIsAutoShape, setIsOcrActive, handleConvertSelectedInkToText, setBrushType, setPenMode, setSparkleTheme, setPenOpacity, setPressureSensitivity, setHighlighterColor, setEraserMode, setEraserSize, setSelectMode, setIsSelectionInfiniteCloner, setLineType, setShowMinimap, setShowClipboard, setIsChatOpen, setShowPermissions]);
+    }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, duplicateCurrentPage, deletePage, loadPage, currentPage, totalPages, selectedShapeIds, selectedTextIds, selectedImageId, selectedImageIds, selected3DIds, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, setBgPattern, setBgColor, onToggleFullscreen, handleInsertGraph, handleInsertDateTime, handleDelete, handleCopy, handlePaste, handleDuplicate, handleToggleLock, handleGroup, handleUngroup, handleBringToFront, handleSendToBack, handleAlign, handleDistribute, handleFlipSelection, handleRemoveImageBackground, updateSelectedImageFilters, setIsAutoShape, setIsOcrActive, handleConvertSelectedInkToText, setBrushType, setPenMode, setSparkleTheme, setPenOpacity, setPressureSensitivity, setHighlighterColor, setEraserMode, setEraserSize, setSelectMode, setIsSelectionInfiniteCloner, setLineType, setShowMinimap, setShowClipboard, setIsChatOpen, setShowPermissions, aiSpeechEnabled, speakAiResponse]);
 
     const toggleVoiceListening = useCallback(() => {
         const SpeechRecognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -11344,8 +11573,14 @@ export default function Whiteboard({
             }
             setIsVoiceListening(false);
             isVoiceListeningRef.current = false;
+            stopMicAudioAnalyzer();
+            setInterimVoiceTranscript('');
             toast('🎙️ Voice Control stopped', { icon: '⏹️' });
         } else {
+            // Stop any ongoing AI speech so microphone doesn't pick up speaker audio
+            stopAiSpeech();
+            startMicAudioAnalyzer(selectedMicDeviceId);
+
             try {
                 const recognition = new SpeechRecognition();
                 recognition.continuous = true;
@@ -11371,10 +11606,11 @@ export default function Whiteboard({
                     }
 
                     if (interim) {
-                        setVoiceTranscript(interim);
+                        setInterimVoiceTranscript(interim);
                     }
 
                     if (finalTranscript) {
+                        setInterimVoiceTranscript('');
                         setVoiceTranscript(finalTranscript);
                         executeVoiceCommand(finalTranscript);
                     }
@@ -11386,6 +11622,7 @@ export default function Whiteboard({
                         toast.error('Microphone access denied. Please allow microphone permissions.', { icon: '🚫' });
                         setIsVoiceListening(false);
                         isVoiceListeningRef.current = false;
+                        stopMicAudioAnalyzer();
                     }
                 };
 
@@ -11396,9 +11633,11 @@ export default function Whiteboard({
                         } catch (e) {
                             setIsVoiceListening(false);
                             isVoiceListeningRef.current = false;
+                            stopMicAudioAnalyzer();
                         }
                     } else {
                         setIsVoiceListening(false);
+                        stopMicAudioAnalyzer();
                     }
                 };
 
@@ -11409,9 +11648,23 @@ export default function Whiteboard({
                 toast.error('Failed to start microphone: ' + err.message);
                 setIsVoiceListening(false);
                 isVoiceListeningRef.current = false;
+                stopMicAudioAnalyzer();
             }
         }
-    }, [executeVoiceCommand]);
+    }, [executeVoiceCommand, selectedMicDeviceId, startMicAudioAnalyzer, stopMicAudioAnalyzer, stopAiSpeech]);
+
+    useEffect(() => {
+        return () => {
+            if (voiceRecognitionRef.current) {
+                isVoiceListeningRef.current = false;
+                try {
+                    voiceRecognitionRef.current.stop();
+                } catch (e) {}
+            }
+            stopMicAudioAnalyzer();
+            stopAiSpeech();
+        };
+    }, [stopMicAudioAnalyzer, stopAiSpeech]);
 
     useEffect(() => {
         return () => {
@@ -12661,20 +12914,64 @@ export default function Whiteboard({
                         )}
                     </div>
 
-                    {/* Voice Control Toolbar Tool */}
+                    {/* Voice Control Toolbar Tool with Mic Selector & CC */}
                     <div className="relative flex items-center">
-                        <button
-                            type="button"
-                            onClick={toggleVoiceListening}
-                            className={`p-1 rounded-full transition-colors flex items-center justify-center ${
-                                isVoiceListening 
-                                    ? 'bg-red-500 text-white shadow-lg animate-pulse ring-2 ring-red-400/70' 
-                                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                            }`}
-                            title={isVoiceListening ? 'Voice Control Active (Listening to commands) - Click to Stop' : 'Start Voice Control (Listen to voice commands)'}
-                        >
-                            {isVoiceListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                        </button>
+                        <div className="flex items-center rounded-full bg-slate-800/80 p-0.5 border border-slate-700/60 shadow-inner">
+                            <button
+                                type="button"
+                                onClick={toggleVoiceListening}
+                                className={`p-1 rounded-full transition-colors flex items-center justify-center ${
+                                    isVoiceListening 
+                                        ? 'bg-rose-500 text-white shadow-lg animate-pulse ring-2 ring-rose-400/70' 
+                                        : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                                }`}
+                                title={isVoiceListening ? 'Voice Control Active (Listening to commands) - Click to Stop' : 'Start Voice Control (Listen to voice commands)'}
+                            >
+                                {isVoiceListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
+                                type="button"
+                                data-mic-selector-trigger="true"
+                                onClick={() => setShowMicSelector(prev => !prev)}
+                                className={`p-0.5 pr-1 rounded-full text-slate-400 hover:text-white hover:bg-slate-700/60 transition ${
+                                    showMicSelector ? 'text-indigo-400 bg-slate-700' : ''
+                                }`}
+                                title="Microphone Selector, Live Meter & Speech AI Voice Settings"
+                            >
+                                <ChevronDown className="w-2.5 h-2.5" />
+                            </button>
+                        </div>
+
+                        {/* Microphone & Audio Settings Popover */}
+                        <WhiteboardMicSelector
+                            isOpen={showMicSelector}
+                            onClose={() => setShowMicSelector(false)}
+                            selectedDeviceId={selectedMicDeviceId}
+                            onSelectDevice={handleSelectMicDevice}
+                            showClosedCaptions={showClosedCaptions}
+                            onToggleClosedCaptions={() => {
+                                setShowClosedCaptions(prev => {
+                                    const next = !prev;
+                                    if (typeof window !== 'undefined') localStorage.setItem('wb_show_cc', String(next));
+                                    return next;
+                                });
+                            }}
+                            aiSpeechEnabled={aiSpeechEnabled}
+                            onToggleAiSpeech={() => {
+                                setAiSpeechEnabled(prev => {
+                                    const next = !prev;
+                                    if (typeof window !== 'undefined') localStorage.setItem('wb_ai_speech', String(next));
+                                    return next;
+                                });
+                            }}
+                            audioLevel={audioInputLevel}
+                            isListening={isVoiceListening}
+                            voices={ttsVoices}
+                            selectedVoice={ttsSelectedVoice}
+                            onSelectVoice={setTtsSelectedVoice}
+                            speechRate={speechRate}
+                            onChangeSpeechRate={setSpeechRate}
+                        />
                     </div>
 
                     {/* Divider */}
@@ -18553,6 +18850,40 @@ export default function Whiteboard({
                 isListening={isVoiceListening}
                 onToggleListen={toggleVoiceListening}
                 onExecuteCommand={executeVoiceCommand}
+            />
+
+            {/* Live Real-Time Closed Captions (CC) Overlay */}
+            <WhiteboardClosedCaptions
+                isVisible={showClosedCaptions && (isVoiceListening || Boolean(interimVoiceTranscript || voiceTranscript || voiceFeedback || isAiSpeaking || isAiThinking))}
+                isListening={isVoiceListening}
+                transcript={voiceTranscript}
+                interimTranscript={interimVoiceTranscript}
+                feedback={voiceFeedback}
+                isAiThinking={isAiThinking}
+                isAiSpeaking={isAiSpeaking}
+                aiSpeakingText={aiSpeakingText}
+                aiSolution={aiSolutionData}
+                onOpenAiSolution={() => setShowAiAssistantModal(true)}
+                onStopSpeaking={stopAiSpeech}
+                onClose={() => setShowClosedCaptions(false)}
+                audioLevel={audioInputLevel}
+            />
+
+            {/* Interactive AI Assistant & Problem Solving Modal */}
+            <WhiteboardAIAssistantModal
+                isOpen={showAiAssistantModal}
+                onClose={() => setShowAiAssistantModal(false)}
+                question={aiSolutionData?.question}
+                speechResponse={aiSolutionData?.speechResponse}
+                solutionMarkdown={aiSolutionData?.solutionMarkdown}
+                canvasAction={aiSolutionData?.canvasAction}
+                isSpeaking={isAiSpeaking}
+                onSpeak={speakAiResponse}
+                onStopSpeak={stopAiSpeech}
+                onInsertToBoard={handleInsertAiSolutionToBoard}
+                onAskFollowUp={(query) => {
+                    executeVoiceCommand(query);
+                }}
             />
 
             {/* Embedded Media Player Insertion Modal */}

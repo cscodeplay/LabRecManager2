@@ -1479,18 +1479,42 @@ Translate the user's spoken input into the single best standardized Whiteboard v
 13. VOICE CONTROLS:
     - "voice mode off" | "voice mode on"
 
+14. QUESTIONS, PROBLEMS & EDUCATIONAL ASSISTANCE:
+    - Users can ask math questions, science queries, formulas, or how-to guidance (e.g. "solve 3x + 12 = 36", "explain Pythagorean theorem", "calculate area of circle radius 7", "what is Ohm's law", "how do I duplicate a page?").
+
 Spoken input: "${text}"
 
-Output ONLY a JSON object:
+Determine whether the user is issuing a canvas command OR asking a question/requesting a solution:
+
+If Canvas Command:
 {
   "recognized": true,
-  "translatedCommand": "<standardized command from above>",
+  "type": "command",
+  "translatedCommand": "<standardized command from above grammar>",
   "intent": "<intent_name>",
-  "spokenFeedback": "<brief confirmation message>"
+  "spokenFeedback": "<brief confirmation message>",
+  "speechResponse": "<short natural voice reply for TTS>"
 }
-If completely unrelated:
+
+If Question, Problem to Solve, or Explanation:
+{
+  "recognized": true,
+  "type": "solution",
+  "intent": "solve_or_explain",
+  "speechResponse": "<1-3 natural, conversational sentences formulated for Speech Synthesis audio playback>",
+  "solutionMarkdown": "<Step-by-step clear solution and LaTeX formulas using $$...$$ format for math/science>",
+  "spokenFeedback": "<Brief status, e.g. 'Solved: 3x + 12 = 36'>",
+  "canvasAction": {
+    "type": "insert_solution_card",
+    "title": "<Concise title of solution or concept>",
+    "summary": "<1-line summary of answer>"
+  }
+}
+
+If completely gibberish:
 {
   "recognized": false,
+  "type": "unrecognized",
   "spokenFeedback": "Command not recognized"
 }`;
 
@@ -2193,14 +2217,28 @@ If completely unrelated:
             if (translatedCommand) {
                 return {
                     recognized: true,
+                    type: 'command',
                     translatedCommand,
                     intent,
-                    spokenFeedback
+                    spokenFeedback,
+                    speechResponse: spokenFeedback
+                };
+            }
+
+            // Intelligent Local Solution / Math / Educational Solver Fallback
+            const localAssist = this.solveMathOrHelpQueryLocally(text);
+            if (localAssist) {
+                return {
+                    recognized: true,
+                    type: 'solution',
+                    intent: 'solve_or_explain',
+                    ...localAssist
                 };
             }
 
             return {
                 recognized: false,
+                type: 'unrecognized',
                 translatedCommand: null,
                 intent: 'unrecognized',
                 spokenFeedback: `Could not match voice command: "${text}"`
@@ -2287,6 +2325,213 @@ Output ONLY a valid JSON object matching this schema:
             parameters: { dictatedText: text },
             spokenFeedback
         };
+    }
+
+    /**
+     * Intelligent local fallback for math problems, science queries, and whiteboard assistance
+     */
+    solveMathOrHelpQueryLocally(text = '') {
+        const raw = (text || '').trim();
+        const low = raw.toLowerCase();
+
+        // 1. Linear Equation: e.g. "solve 2x + 6 = 18", "3x - 5 = 10", "4x = 28"
+        const linearEqMatch = raw.match(/(?:solve)?\s*(-?\d*)\s*x\s*([+-])\s*(\d+)\s*=\s*(-?\d+)/i);
+        if (linearEqMatch) {
+            let a = linearEqMatch[1] === '' || linearEqMatch[1] === '+' ? 1 : linearEqMatch[1] === '-' ? -1 : parseInt(linearEqMatch[1], 10);
+            const op = linearEqMatch[2];
+            let b = parseInt(linearEqMatch[3], 10);
+            if (op === '-') b = -b;
+            const c = parseInt(linearEqMatch[4], 10);
+
+            const cMinusB = c - b;
+            const ans = Number((cMinusB / a).toFixed(2));
+
+            const signStr = b >= 0 ? `+ ${b}` : `- ${Math.abs(b)}`;
+            const step1Op = b >= 0 ? `Subtract ${b}` : `Add ${Math.abs(b)}`;
+            const step1Result = c - b;
+
+            return {
+                speechResponse: `The solution to ${a === 1 ? '' : a}x ${signStr} equals ${c} is x equals ${ans}. First, ${step1Op.toLowerCase()} from both sides to get ${a === 1 ? '' : a}x equals ${step1Result}, then divide by ${a} to get x equals ${ans}.`,
+                solutionMarkdown: `### Solving Linear Equation: $${a === 1 ? '' : a}x ${signStr} = ${c}$\n\n` +
+                    `**Step 1:** ${step1Op} from both sides:\n` +
+                    `$$${a === 1 ? '' : a}x = ${c} ${b >= 0 ? `- ${b}` : `+ ${Math.abs(b)}`} = ${step1Result}$$\n\n` +
+                    `**Step 2:** Divide both sides by $${a}$:\n` +
+                    `$$x = \\frac{${step1Result}}{${a}} = ${ans}$$\n\n` +
+                    `**Final Answer:** **$x = ${ans}$**`,
+                spokenFeedback: `Solved: x = ${ans}`,
+                canvasAction: {
+                    type: 'insert_solution_card',
+                    title: `Equation: ${a === 1 ? '' : a}x ${signStr} = ${c}`,
+                    summary: `Solution: x = ${ans}`
+                }
+            };
+        }
+
+        const simpleEqMatch = raw.match(/(?:solve)?\s*(-?\d+)\s*x\s*=\s*(-?\d+)/i);
+        if (simpleEqMatch) {
+            const a = parseInt(simpleEqMatch[1], 10);
+            const b = parseInt(simpleEqMatch[2], 10);
+            const ans = Number((b / a).toFixed(2));
+
+            return {
+                speechResponse: `The solution to ${a}x equals ${b} is x equals ${ans}. Divide both sides by ${a} to get x equals ${ans}.`,
+                solutionMarkdown: `### Solving Equation: $${a}x = ${b}$\n\n` +
+                    `**Step 1:** Divide both sides by $${a}$:\n` +
+                    `$$x = \\frac{${b}}{${a}} = ${ans}$$\n\n` +
+                    `**Final Answer:** **$x = ${ans}$**`,
+                spokenFeedback: `Solved: x = ${ans}`,
+                canvasAction: {
+                    type: 'insert_solution_card',
+                    title: `Equation: ${a}x = ${b}`,
+                    summary: `Solution: x = ${ans}`
+                }
+            };
+        }
+
+        // 2. Arithmetic / Percentage calculations: e.g. "what is 25 * 14", "15 percent of 200"
+        const pctMatch = low.match(/(\d+)\s*(?:%|percent)\s*(?:of)?\s*(\d+)/i);
+        if (pctMatch) {
+            const p = parseFloat(pctMatch[1]);
+            const val = parseFloat(pctMatch[2]);
+            const res = Number(((p / 100) * val).toFixed(2));
+            return {
+                speechResponse: `${p} percent of ${val} is ${res}.`,
+                solutionMarkdown: `### Percentage Calculation\n\n$$\\text{Value} = \\frac{${p}}{100} \\times ${val} = ${res}$$\n\n**Answer:** **$${res}$**`,
+                spokenFeedback: `${p}% of ${val} = ${res}`,
+                canvasAction: {
+                    type: 'insert_solution_card',
+                    title: `${p}% of ${val}`,
+                    summary: `Result = ${res}`
+                }
+            };
+        }
+
+        // 3. Pythagorean Theorem
+        if (low.includes('pythagor') || (low.includes('right') && low.includes('triangle') && low.includes('theorem'))) {
+            return {
+                speechResponse: 'The Pythagorean theorem states that in a right-angled triangle, the square of the hypotenuse is equal to the sum of the squares of the other two sides: a squared plus b squared equals c squared.',
+                solutionMarkdown: `### Pythagorean Theorem\n\nIn any right-angled triangle with legs $a$ and $b$, and hypotenuse $c$:\n\n$$a^2 + b^2 = c^2$$\n\n**Formulas:**\n- Hypotenuse: $$c = \\sqrt{a^2 + b^2}$$\n- Leg $a$: $$a = \\sqrt{c^2 - b^2}$$\n- Leg $b$: $$b = \\sqrt{c^2 - a^2}$$\n\n*Example:* If $a = 3$ and $b = 4$:\n$$c = \\sqrt{3^2 + 4^2} = \\sqrt{9 + 16} = \\sqrt{25} = 5$$`,
+                spokenFeedback: 'Explained Pythagorean Theorem',
+                canvasAction: {
+                    type: 'insert_solution_card',
+                    title: 'Pythagorean Theorem',
+                    summary: 'a² + b² = c²'
+                }
+            };
+        }
+
+        // 4. Circle Area & Circumference
+        if (low.includes('circle') && (low.includes('area') || low.includes('circumference') || low.includes('perimeter'))) {
+            const rMatch = low.match(/(?:radius|r)\s*(?:of|is|=)?\s*(\d+)/);
+            const r = rMatch ? parseFloat(rMatch[1]) : null;
+
+            if (r) {
+                const area = Number((Math.PI * r * r).toFixed(2));
+                const circ = Number((2 * Math.PI * r).toFixed(2));
+                return {
+                    speechResponse: `For a circle with radius ${r}, the area is pi times r squared, which equals approximately ${area} square units, and the circumference is 2 pi r, which is approximately ${circ} units.`,
+                    solutionMarkdown: `### Circle Dimensions (Radius $r = ${r}$)\n\n` +
+                        `**1. Area ($A$):**\n` +
+                        `$$A = \\pi r^2 = \\pi \\times ${r}^2 = ${r * r}\\pi \\approx ${area}$$\n\n` +
+                        `**2. Circumference ($C$):**\n` +
+                        `$$C = 2\\pi r = 2 \\times \\pi \\times ${r} = ${2 * r}\\pi \\approx ${circ}$$\n\n` +
+                        `**Results:** Area $\\approx ${area}$, Circumference $\\approx ${circ}$`,
+                    spokenFeedback: `Circle: Area ≈ ${area}, Circ ≈ ${circ}`,
+                    canvasAction: {
+                        type: 'insert_solution_card',
+                        title: `Circle (r = ${r})`,
+                        summary: `Area ≈ ${area}, C ≈ ${circ}`
+                    }
+                };
+            } else {
+                return {
+                    speechResponse: 'For a circle with radius r, the area is given by the formula A equals pi times r squared, and the circumference is 2 times pi times r.',
+                    solutionMarkdown: `### Circle Formulas\n\n- **Area:** $$A = \\pi r^2$$\n- **Circumference:** $$C = 2\\pi r$$\n- **Diameter:** $$d = 2r$$\n\nWhere $\\pi \\approx 3.14159$ and $r$ is the circle radius.`,
+                    spokenFeedback: 'Explained Circle formulas',
+                    canvasAction: {
+                        type: 'insert_solution_card',
+                        title: 'Circle Formulas',
+                        summary: 'A = πr², C = 2πr'
+                    }
+                };
+            }
+        }
+
+        // 5. Physics: Ohm's Law
+        if (low.includes('ohm') || low.includes('ohms law') || (low.includes('voltage') && low.includes('current') && low.includes('resistance'))) {
+            return {
+                speechResponse: "Ohm's law states that electric current is directly proportional to voltage and inversely proportional to resistance: V equals I times R.",
+                solutionMarkdown: `### Ohm's Law\n\n$$V = I \\cdot R$$\n\n- **$V$**: Voltage in Volts (V)\n- **$I$**: Current in Amperes (A)\n- **$R$**: Resistance in Ohms ($\\Omega$)\n\n**Derived Relationships:**\n$$I = \\frac{V}{R} \\quad , \\quad R = \\frac{V}{I}$$\n\n**Electric Power:**\n$$P = V \\cdot I = I^2 \\cdot R = \\frac{V^2}{R}$$`,
+                spokenFeedback: "Explained Ohm's Law",
+                canvasAction: {
+                    type: 'insert_solution_card',
+                    title: "Ohm's Law",
+                    summary: 'V = I · R'
+                }
+            };
+        }
+
+        // 6. Physics: Newton's Second Law
+        if (low.includes('newton') && (low.includes('second') || low.includes('force') || low.includes('acceleration'))) {
+            return {
+                speechResponse: "Newton's second law of motion states that force equals mass multiplied by acceleration: F equals m times a.",
+                solutionMarkdown: `### Newton's Second Law of Motion\n\n$$\\vec{F} = m \\cdot \\vec{a}$$\n\n- **$F$**: Force in Newtons (N or $\\text{kg}\\cdot\\text{m}/\\text{s}^2$)\n- **$m$**: Mass in kilograms (kg)\n- **$a$**: Acceleration in meters per second squared ($\\text{m}/\\text{s}^2$)\n\n**Key Inferences:**\n- Doubling force doubles acceleration for a constant mass.\n- Greater mass requires more force to accelerate.`,
+                spokenFeedback: "Explained Newton's Second Law",
+                canvasAction: {
+                    type: 'insert_solution_card',
+                    title: "Newton's Second Law",
+                    summary: 'F = m · a'
+                }
+            };
+        }
+
+        // 7. Biology / Science: Photosynthesis
+        if (low.includes('photosynthesis')) {
+            return {
+                speechResponse: 'Photosynthesis is the process by which green plants convert carbon dioxide and water into glucose and oxygen using light energy absorbed by chlorophyll.',
+                solutionMarkdown: `### Chemical Equation of Photosynthesis\n\n$$6\\text{CO}_2 + 6\\text{H}_2\\text{O} \\xrightarrow{\\text{Light energy}} \\text{C}_6\\text{H}_{12}\\text{O}_6 + 6\\text{O}_2$$\n\n- **Reactants:** Carbon Dioxide ($6\\text{CO}_2$) + Water ($6\\text{H}_2\\text{O}$)\n- **Products:** Glucose ($\\text{C}_6\\text{H}_{12}\\text{O}_6$) + Oxygen ($6\\text{O}_2$)\n- **Catalyst:** Chlorophyll inside chloroplasts absorbs solar photons.`,
+                spokenFeedback: 'Explained Photosynthesis',
+                canvasAction: {
+                    type: 'insert_solution_card',
+                    title: 'Photosynthesis',
+                    summary: '6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂'
+                }
+            };
+        }
+
+        // 8. Whiteboard Feature & How-To Guidance
+        if (low.includes('how to') || low.includes('how do i') || low.includes('how can i') || low.includes('help')) {
+            if (low.includes('duplicate') && low.includes('page')) {
+                return {
+                    speechResponse: "To duplicate a page, click the Page Manager button at the top-right toolbar or say 'duplicate page'. An exact clone of your canvas will be created.",
+                    solutionMarkdown: `### How to Duplicate a Whiteboard Page\n\n1. Say **"duplicate page"** using voice commands, OR\n2. Open the **Page Manager** button at the top right of the canvas.\n3. Click the **Duplicate** icon next to the active page.\n\n*All drawings, shapes, and notes are preserved in the clone.*`,
+                    spokenFeedback: 'Guide: Duplicate Page'
+                };
+            }
+            if (low.includes('export') || low.includes('save') || low.includes('pdf')) {
+                return {
+                    speechResponse: "To export your whiteboard, click the Export button or say 'export'. You can download high-resolution vector PDF, PNG images, SVG, or JSON backup files.",
+                    solutionMarkdown: `### How to Export the Whiteboard\n\n1. Say **"export"** or click the **Export** icon in the toolbar.\n2. Choose your preferred export format:\n   - **High-DPI Vector PDF**: Multi-page document for printing/sharing\n   - **PNG Image**: Crisp raster image\n   - **SVG**: Scalable vector graphics\n   - **JSON**: Complete project backup`,
+                    spokenFeedback: 'Guide: Export Whiteboard'
+                };
+            }
+            if (low.includes('smart shape')) {
+                return {
+                    speechResponse: "To use Smart Shape recognition, toggle the magic wand button in the toolbar or say 'turn on smart shape'. Hand-drawn rough shapes will automatically snap into perfect geometric shapes.",
+                    solutionMarkdown: `### How to Use Smart Shape Recognition\n\n1. Say **"turn on smart shape"** or click the wand icon.\n2. Draw any rough circle, triangle, rectangle, or star freehand.\n3. The whiteboard will instantly recognize the contour and convert it into a crisp vector shape!`,
+                    spokenFeedback: 'Guide: Smart Shape Recognition'
+                };
+            }
+            if (low.includes('laser')) {
+                return {
+                    speechResponse: "The Laser Pointer lets you highlight details temporarily during lectures without leaving permanent ink. Select the Laser tool or say 'laser pointer'.",
+                    solutionMarkdown: `### How to Use the Laser Pointer\n\n1. Say **"laser pointer"** or pick the laser tool from the toolbar.\n2. Click and drag across the canvas. A glowing laser dot and disappearing trail will guide your audience's attention!`,
+                    spokenFeedback: 'Guide: Laser Pointer'
+                };
+            }
+        }
+
+        return null;
     }
 
     /**
