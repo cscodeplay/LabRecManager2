@@ -919,7 +919,7 @@ export default function Whiteboard({
     const [isVoiceListening, setIsVoiceListening] = useState(false);
     const [voiceTranscript, setVoiceTranscript] = useState('');
     const [voiceFeedback, setVoiceFeedback] = useState('');
-    const [showVoiceHelpModal, setShowVoiceHelpModal] = useState(false);
+    const [shortcutsModalTab, setShortcutsModalTab] = useState('shortcuts');
     const voiceRecognitionRef = useRef(null);
     const isVoiceListeningRef = useRef(false);
 
@@ -4081,6 +4081,7 @@ export default function Whiteboard({
             // Shortcuts modal trigger (? or Cmd+/)
             if (e.key === '?' || (modKey && e.key === '/')) {
                 e.preventDefault();
+                setShortcutsModalTab('shortcuts');
                 setShowShortcutsModal(prev => !prev);
                 return;
             }
@@ -9931,6 +9932,42 @@ export default function Whiteboard({
         const txt = rawText.trim().toLowerCase();
         setVoiceTranscript(rawText);
 
+        // 0. Voice Mode On / Off Controls
+        if (
+            txt.includes('voice mode off') ||
+            txt.includes('stop listening') ||
+            txt.includes('turn off voice') ||
+            txt.includes('disable voice') ||
+            txt.includes('stop voice') ||
+            txt.includes('mute microphone') ||
+            txt.includes('voice control off') ||
+            txt === 'voice off'
+        ) {
+            if (isVoiceListeningRef.current) {
+                try {
+                    voiceRecognitionRef.current?.stop();
+                } catch (e) {}
+                setIsVoiceListening(false);
+                isVoiceListeningRef.current = false;
+            }
+            setVoiceFeedback('🔇 Voice mode turned off');
+            toast('🎙️ Voice mode turned off', { icon: '⏹️' });
+            return;
+        }
+
+        if (
+            txt.includes('voice mode on') ||
+            txt.includes('turn on voice') ||
+            txt.includes('start listening') ||
+            txt.includes('enable voice') ||
+            txt.includes('voice control on') ||
+            txt === 'voice on'
+        ) {
+            setVoiceFeedback('🎙️ Voice mode is active and listening');
+            toast.success('Voice mode is active and listening', { icon: '🎙️' });
+            return;
+        }
+
         // Center calculation in current canvas coordinate space
         const canvas = canvasRef.current;
         const cWidth = canvas?.width || 1200;
@@ -10265,7 +10302,7 @@ export default function Whiteboard({
             toast.success('Switched to Sparkle Pen', { icon: '✨' });
             return;
         }
-        if (txt.includes('highlighter')) {
+        if (txt.includes('highlighter') || txt.includes('marker')) {
             setTool('highlighter');
             setVoiceFeedback('🖊️ Switched to Highlighter');
             toast.success('Switched to Highlighter', { icon: '🖊️' });
@@ -10277,10 +10314,16 @@ export default function Whiteboard({
             toast.success('Switched to Eraser', { icon: '🧹' });
             return;
         }
-        if (txt.includes('select') || txt.includes('lasso') || txt.includes('pointer tool')) {
+        if (txt.includes('select') || txt.includes('lasso') || txt.includes('pointer tool') || txt === 'pointer') {
             setTool('select');
             setVoiceFeedback('👆 Switched to Selection tool');
             toast.success('Switched to Selection tool', { icon: '👆' });
+            return;
+        }
+        if (txt.includes('hand tool') || txt.includes('pan tool') || txt.includes('pan canvas') || txt === 'hand' || txt === 'pan') {
+            setTool('select');
+            setVoiceFeedback('✋ Hand / Pan tool: Hold Spacebar or 2-finger drag to pan viewport');
+            toast.success('Hand tool active (Hold Spacebar to pan)', { icon: '✋' });
             return;
         }
         if (txt.includes('laser')) {
@@ -10304,7 +10347,7 @@ export default function Whiteboard({
             return;
         }
 
-        // 4. Color Palette
+        // 4. Shape Properties (Border Color, Border Width, Border Style, Fill Color, Display Units, Corner Radius)
         const colorMap = {
             'red': '#ef4444',
             'blue': '#3b82f6',
@@ -10319,6 +10362,171 @@ export default function Whiteboard({
             'cyan': '#06b6d4',
             'emerald': '#10b981'
         };
+
+        // 4A. Border Color
+        const borderMatch = txt.match(/(?:set\s+)?(?:shape\s+)?(?:border|stroke|outline)(?:\s+color)?\s+(red|blue|green|yellow|orange|purple|violet|black|white|pink|cyan|emerald)/i);
+        if (borderMatch) {
+            const clrName = borderMatch[1].toLowerCase();
+            const hex = colorMap[clrName] || '#3b82f6';
+            if (selectedShapeIds.length > 0) {
+                setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, color: hex } : s));
+            } else {
+                setShapeObjects(prev => {
+                    if (prev.length === 0) return prev;
+                    const next = [...prev];
+                    next[next.length - 1] = { ...next[next.length - 1], color: hex };
+                    return next;
+                });
+                setColor(hex);
+            }
+            saveToHistory();
+            const msg = `🎨 Set border color to ${clrName}`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '🎨' });
+            return;
+        }
+
+        // 4B. Border Width / Thickness
+        const bwMatch = txt.match(/(?:border|stroke)(?:\s*(?:width|size|thickness))?\s*(\d+)/i);
+        if (bwMatch) {
+            const bw = Math.max(1, Math.min(40, parseInt(bwMatch[1], 10)));
+            if (selectedShapeIds.length > 0) {
+                setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, strokeWidth: bw } : s));
+            } else {
+                setShapeObjects(prev => {
+                    if (prev.length === 0) return prev;
+                    const next = [...prev];
+                    next[next.length - 1] = { ...next[next.length - 1], strokeWidth: bw };
+                    return next;
+                });
+                setStrokeWidth(bw);
+            }
+            saveToHistory();
+            const msg = `📏 Set border width to ${bw}px`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '📏' });
+            return;
+        }
+        if (txt.includes('thicker border') || txt.includes('increase border')) {
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.length === 0 || selectedShapeIds.includes(s.id) ? { ...s, strokeWidth: Math.min(40, (s.strokeWidth || 2) + 2) } : s));
+            saveToHistory();
+            setVoiceFeedback('📏 Increased border thickness');
+            return;
+        }
+        if (txt.includes('thinner border') || txt.includes('decrease border')) {
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.length === 0 || selectedShapeIds.includes(s.id) ? { ...s, strokeWidth: Math.max(1, (s.strokeWidth || 2) - 2) } : s));
+            saveToHistory();
+            setVoiceFeedback('📏 Decreased border thickness');
+            return;
+        }
+
+        // 4C. Border Style
+        if (txt.includes('dashed border') || txt.includes('border dashed')) {
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.length === 0 || selectedShapeIds.includes(s.id) ? { ...s, borderStyle: 'dashed', strokeStyle: 'dashed' } : s));
+            setStrokeStyle('dashed');
+            saveToHistory();
+            setVoiceFeedback('〰️ Border set to dashed');
+            toast.success('Border set to dashed', { icon: '〰️' });
+            return;
+        }
+        if (txt.includes('dotted border') || txt.includes('border dotted')) {
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.length === 0 || selectedShapeIds.includes(s.id) ? { ...s, borderStyle: 'dotted', strokeStyle: 'dotted' } : s));
+            setStrokeStyle('dotted');
+            saveToHistory();
+            setVoiceFeedback('••• Border set to dotted');
+            toast.success('Border set to dotted', { icon: '•••' });
+            return;
+        }
+        if (txt.includes('solid border') || txt.includes('border solid')) {
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.length === 0 || selectedShapeIds.includes(s.id) ? { ...s, borderStyle: 'solid', strokeStyle: 'solid' } : s));
+            setStrokeStyle('solid');
+            saveToHistory();
+            setVoiceFeedback('━ Border set to solid');
+            toast.success('Border set to solid', { icon: '━' });
+            return;
+        }
+        if (txt.includes('double border') || txt.includes('border double')) {
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.length === 0 || selectedShapeIds.includes(s.id) ? { ...s, borderStyle: 'double' } : s));
+            saveToHistory();
+            setVoiceFeedback('═ Border set to double');
+            toast.success('Border set to double', { icon: '═' });
+            return;
+        }
+
+        // 4D. Shape Fill Color
+        if (txt.includes('no fill') || txt.includes('fill transparent') || txt.includes('fill none') || txt.includes('remove fill') || txt.includes('transparent fill')) {
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.length === 0 || selectedShapeIds.includes(s.id) ? { ...s, fillColor: 'transparent' } : s));
+            setFillColor('transparent');
+            saveToHistory();
+            setVoiceFeedback('🚫 Shape fill set to transparent');
+            toast.success('Shape fill set to transparent', { icon: '🚫' });
+            return;
+        }
+        const fillMatch = txt.match(/(?:set\s+)?(?:shape\s+)?fill(?:\s+color)?\s+(red|blue|green|yellow|orange|purple|violet|black|white|pink|cyan|emerald)/i);
+        if (fillMatch) {
+            const clrName = fillMatch[1].toLowerCase();
+            const hex = colorMap[clrName] || '#3b82f6';
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.length === 0 || selectedShapeIds.includes(s.id) ? { ...s, fillColor: hex } : s));
+            setFillColor(hex);
+            saveToHistory();
+            const msg = `🎨 Set shape fill color to ${clrName}`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '🎨' });
+            return;
+        }
+
+        // 4E. Display Units Toggle on Shapes
+        if (
+            txt.includes('display units') ||
+            txt.includes('show units') ||
+            txt.includes('show dimensions') ||
+            txt.includes('enable units') ||
+            txt.includes('turn on units') ||
+            txt.includes('show measurements')
+        ) {
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.length === 0 || selectedShapeIds.includes(s.id) ? { ...s, showUnits: true } : s));
+            saveToHistory();
+            setVoiceFeedback('📏 Displayed dimensions and units on shape(s)');
+            toast.success('Dimensions & Units displayed', { icon: '📏' });
+            return;
+        }
+        if (
+            txt.includes('hide units') ||
+            txt.includes('hide dimensions') ||
+            txt.includes('remove units') ||
+            txt.includes('disable units') ||
+            txt.includes('turn off units') ||
+            txt.includes('hide measurements')
+        ) {
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.length === 0 || selectedShapeIds.includes(s.id) ? { ...s, showUnits: false } : s));
+            saveToHistory();
+            setVoiceFeedback('📏 Hidden dimensions and units on shape(s)');
+            toast('Dimensions & Units hidden', { icon: '📏' });
+            return;
+        }
+        if (txt.includes('toggle units') || txt.includes('toggle dimensions')) {
+            setShapeObjects(prev => {
+                const anyOn = prev.some(s => (selectedShapeIds.length === 0 || selectedShapeIds.includes(s.id)) && s.showUnits);
+                return prev.map(s => selectedShapeIds.length === 0 || selectedShapeIds.includes(s.id) ? { ...s, showUnits: !anyOn } : s);
+            });
+            saveToHistory();
+            setVoiceFeedback('📏 Toggled shape dimensions and units');
+            toast('Toggled units display', { icon: '📏' });
+            return;
+        }
+
+        // 4F. Corner Radius on Rectangles/Shapes
+        const crMatch = txt.match(/(?:corner\s*radius|rounded\s*corners|round\s*corners)\s*(\d+)/i);
+        if (crMatch) {
+            const rad = Math.max(0, Math.min(60, parseInt(crMatch[1], 10)));
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.length === 0 || selectedShapeIds.includes(s.id) ? { ...s, borderRadius: rad } : s));
+            saveToHistory();
+            setVoiceFeedback(`🔲 Corner radius set to ${rad}px`);
+            toast.success(`Corner radius set to ${rad}px`, { icon: '🔲' });
+            return;
+        }
+
+        // 5. Global Drawing Color Palette
         for (const [name, hex] of Object.entries(colorMap)) {
             if (txt.includes(`color ${name}`) || txt === name) {
                 setColor(hex);
@@ -10328,10 +10536,23 @@ export default function Whiteboard({
             }
         }
 
-        // 5. Canvas Navigation & Actions
-        if (txt.includes('clear board') || txt.includes('clear whiteboard') || txt === 'clear') {
+        // 6. Canvas Navigation, Clear Board & Actions
+        if (
+            txt.includes('clear the board') ||
+            txt.includes('clear board') ||
+            txt.includes('clear whiteboard') ||
+            txt.includes('clear canvas') ||
+            txt.includes('clear all') ||
+            txt.includes('erase all') ||
+            txt.includes('erase the board') ||
+            txt.includes('erase board') ||
+            txt.includes('clean the board') ||
+            txt.includes('clean board') ||
+            txt === 'clear'
+        ) {
             handleClear();
             setVoiceFeedback('🗑️ Canvas cleared');
+            toast.success('Canvas cleared', { icon: '🗑️' });
             return;
         }
         if (txt.includes('undo')) {
@@ -10356,13 +10577,33 @@ export default function Whiteboard({
             toast.success('Zoomed out', { icon: '🔍' });
             return;
         }
-        if (txt.includes('reset zoom') || txt.includes('zoom reset')) {
+        if (txt.includes('reset zoom') || txt.includes('zoom reset') || txt.includes('zoom 100')) {
             setZoomLevel(1);
             setPanOffset({ x: 0, y: 0 });
             setVoiceFeedback('🎯 Zoom reset to 100%');
             toast.success('Zoom reset to 100%', { icon: '🎯' });
             return;
         }
+        if (txt.includes('fit to screen') || txt.includes('fit screen') || txt.includes('fit canvas')) {
+            setZoomLevel(1);
+            setPanOffset({ x: 0, y: 0 });
+            setVoiceFeedback('📐 Fit canvas to screen');
+            toast.success('Fit to screen', { icon: '📐' });
+            return;
+        }
+        if (txt.includes('fullscreen') || txt.includes('toggle fullscreen') || txt.includes('exit fullscreen')) {
+            onToggleFullscreen?.();
+            setVoiceFeedback('⛶ Toggled Fullscreen');
+            return;
+        }
+        if (txt.includes('grid') || txt.includes('toggle grid')) {
+            setBgPattern(prev => (prev === 'grid' ? 'none' : 'grid'));
+            setVoiceFeedback('▦ Toggled canvas grid');
+            toast.success('Toggled canvas grid', { icon: '▦' });
+            return;
+        }
+
+        // 7. Multi-Page Navigation
         if (txt.includes('new page') || txt.includes('add page')) {
             addNewPage();
             setVoiceFeedback('📄 Added new page');
@@ -10386,15 +10627,140 @@ export default function Whiteboard({
             }
             return;
         }
-        if (txt.includes('help') || txt.includes('cheatsheet') || txt.includes('commands')) {
-            setShowVoiceHelpModal(true);
-            setVoiceFeedback('🎙️ Opened Voice Commands list');
+
+        // 8. Tool Menu Panels, Dialogs & Modals
+        if (txt.includes('help') || txt.includes('cheatsheet') || txt.includes('commands') || txt.includes('shortcut')) {
+            setShortcutsModalTab('voice');
+            setShowShortcutsModal(true);
+            setVoiceFeedback('🎙️ Opened Voice Commands & Help reference');
+            return;
+        }
+        if (txt.includes('export') || txt.includes('download board') || txt.includes('save board')) {
+            setShowExportModal(true);
+            setVoiceFeedback('💾 Opened Export modal');
+            return;
+        }
+        if (txt.includes('tasks') || txt.includes('task list') || txt.includes('checklist') || txt.includes('todo')) {
+            setShowTasksPanel(prev => !prev);
+            setVoiceFeedback('☑️ Toggled Tasks Checklist');
+            return;
+        }
+        if (txt.includes('template') || txt.includes('smartart') || txt.includes('smart art')) {
+            setShowTemplateGallery(true);
+            setVoiceFeedback('📋 Opened Templates Gallery');
+            return;
+        }
+        if (txt.includes('timer') || txt.includes('stopwatch')) {
+            setShowClassroomTimer(prev => !prev);
+            setVoiceFeedback('⏱️ Toggled Classroom Timer');
+            return;
+        }
+        if (txt.includes('spotlight') || txt.includes('torch')) {
+            setIsSpotlightActive(prev => !prev);
+            setVoiceFeedback('🔦 Toggled Spotlight Focus');
+            return;
+        }
+        if (txt.includes('screen curtain') || txt.includes('curtain') || txt.includes('shade')) {
+            setIsCurtainActive(prev => !prev);
+            setVoiceFeedback('🪟 Toggled Screen Curtain');
+            return;
+        }
+        if (txt.includes('equation') || txt.includes('math editor') || txt.includes('latex')) {
+            setShowEquationModal(true);
+            setVoiceFeedback('∑ Opened LaTeX Equation Editor');
+            return;
+        }
+        if (txt.includes('math solver') || txt.includes('math tablet') || txt.includes('handwrite math')) {
+            setShowMathTablet(true);
+            setVoiceFeedback('✏️ Opened Handwriting Math Tablet');
+            return;
+        }
+        if (txt.includes('3d') || txt.includes('domain library') || txt.includes('3d models')) {
+            setShowDomainLibrary(true);
+            setVoiceFeedback('📦 Opened 3D & Domain Library');
+            return;
+        }
+        if (txt.includes('graph') || txt.includes('plot graph')) {
+            handleInsertGraph();
+            setVoiceFeedback('📈 Inserted Graph Plotter');
+            return;
+        }
+        if (txt.includes('game') || txt.includes('games')) {
+            setShowGameSelector(true);
+            setVoiceFeedback('🎮 Opened Whiteboard Games');
+            return;
+        }
+        if (txt.includes('record') || txt.includes('recorder')) {
+            setShowRecorder(prev => !prev);
+            setVoiceFeedback('🎥 Toggled Screen Recorder');
+            return;
+        }
+        if (txt.includes('insert image') || txt.includes('upload image') || txt.includes('add image')) {
+            imageInputRef.current?.click();
+            setVoiceFeedback('🖼️ Opened Image Upload');
+            return;
+        }
+        if (txt.includes('media') || txt.includes('document') || txt.includes('pdf') || txt.includes('video') || txt.includes('audio')) {
+            setShowMediaModal(true);
+            setVoiceFeedback('🎬 Opened Media & Documents Modal');
+            return;
+        }
+        if (txt.includes('datetime') || txt.includes('date time') || txt.includes('insert date') || txt.includes('insert time')) {
+            handleInsertDateTime();
+            setVoiceFeedback('📅 Inserted Date & Time');
+            return;
+        }
+
+        // 9. Object Manipulation & Clipboard
+        if (txt.includes('delete') || txt.includes('remove')) {
+            handleDelete();
+            setVoiceFeedback('🗑️ Deleted selected item(s)');
+            return;
+        }
+        if (txt.includes('copy')) {
+            handleCopy();
+            setVoiceFeedback('📋 Copied to clipboard');
+            return;
+        }
+        if (txt.includes('paste')) {
+            handlePaste();
+            setVoiceFeedback('📋 Pasted clipboard item');
+            return;
+        }
+        if (txt.includes('duplicate')) {
+            handleDuplicate();
+            setVoiceFeedback('📑 Duplicated selected item');
+            return;
+        }
+        if (txt.includes('lock') || txt.includes('unlock')) {
+            handleToggleLock();
+            setVoiceFeedback('🔒 Toggled object lock');
+            return;
+        }
+        if (txt.includes('group') && !txt.includes('ungroup')) {
+            handleGroup();
+            setVoiceFeedback('🔗 Grouped selected items');
+            return;
+        }
+        if (txt.includes('ungroup')) {
+            handleUngroup();
+            setVoiceFeedback('🔓 Ungrouped selected items');
+            return;
+        }
+        if (txt.includes('bring to front')) {
+            handleBringToFront();
+            setVoiceFeedback('⬆️ Brought to front');
+            return;
+        }
+        if (txt.includes('send to back')) {
+            handleSendToBack();
+            setVoiceFeedback('⬇️ Sent to back');
             return;
         }
 
         setVoiceFeedback(`Unrecognized: "${rawText}" - say "help" for commands`);
         toast(`Command not recognized: "${rawText}"`, { icon: '❓' });
-    }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, loadPage, currentPage, totalPages]);
+    }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, loadPage, currentPage, totalPages, selectedShapeIds, setBgPattern, onToggleFullscreen, handleInsertGraph, handleInsertDateTime, handleDelete, handleCopy, handlePaste, handleDuplicate, handleToggleLock, handleGroup, handleUngroup, handleBringToFront, handleSendToBack]);
 
     const toggleVoiceListening = useCallback(() => {
         const SpeechRecognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -10628,6 +10994,7 @@ export default function Whiteboard({
                                             return;
                                         }
                                         if (t.id === 'shortcuts') {
+                                            setShortcutsModalTab('shortcuts');
                                             setShowShortcutsModal(true);
                                             return;
                                         }
@@ -11727,8 +12094,8 @@ export default function Whiteboard({
                         )}
                     </div>
 
-                    {/* Voice Control Toolbar Tool & Statement List Modal Launcher */}
-                    <div className="relative flex items-center gap-0.5">
+                    {/* Voice Control Toolbar Tool */}
+                    <div className="relative flex items-center">
                         <button
                             type="button"
                             onClick={toggleVoiceListening}
@@ -11740,14 +12107,6 @@ export default function Whiteboard({
                             title={isVoiceListening ? 'Voice Control Active (Listening to commands) - Click to Stop' : 'Start Voice Control (Listen to voice commands)'}
                         >
                             {isVoiceListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setShowVoiceHelpModal(true)}
-                            className="p-1 rounded-full transition-colors flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800"
-                            title="Voice Control Statements & Cheatsheet"
-                        >
-                            <Volume2 className="w-3 h-3" />
                         </button>
                     </div>
 
@@ -13602,7 +13961,7 @@ export default function Whiteboard({
                                         onPointerDown={(e) => e.stopPropagation()}
                                     >
                                         {/* Floating Toolbar Pill */}
-                                        <div className="flex items-center gap-0.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity">
+                                        <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 text-slate-200">
                                             {/* Font Family */}
                                             <select
                                                 value={txtObj.fontFamily || 'sans-serif'}
@@ -13874,7 +14233,8 @@ export default function Whiteboard({
                                         {/* Text Border & Frame Popover */}
                                         {activeTextBorderPopoverId === txtObj.id && (
                                             <div
-                                                className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-900/98 backdrop-blur-md border border-slate-700 rounded-xl shadow-2xl z-50 flex flex-col gap-2.5 text-slate-200 animate-in fade-in zoom-in-95 duration-150"
+                                                className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 flex flex-col gap-2.5 text-slate-200 animate-in fade-in zoom-in-95 duration-150"
+                                                style={{ backgroundColor: '#0f172a' }}
                                                 onClick={(e) => e.stopPropagation()}
                                                 onMouseDown={(e) => e.stopPropagation()}
                                             >
@@ -13955,20 +14315,24 @@ export default function Whiteboard({
                                                     </div>
                                                 </div>
 
-                                                {/* Corner Radius */}
-                                                <div className="flex flex-col gap-1">
-                                                    <div className="text-[10px] text-slate-400 font-medium">Corner Radius</div>
-                                                    <div className="flex items-center gap-1">
-                                                        {[0, 4, 8, 16, 24].map(cr => (
-                                                            <button
-                                                                key={cr}
-                                                                type="button"
-                                                                onClick={() => updateSelectedTextProps({ borderRadius: cr })}
-                                                                className={`flex-1 py-0.5 rounded text-[10px] transition ${(txtObj.borderRadius ?? 0) === cr ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
-                                                            >
-                                                                {cr === 0 ? '0' : `${cr}px`}
-                                                            </button>
-                                                        ))}
+                                                {/* Corner Radius Slider */}
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
+                                                        <span>Corner Radius</span>
+                                                        <span className="text-white font-mono bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700 text-[10px]">
+                                                            {txtObj.borderRadius ?? 0}px
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            type="range"
+                                                            min="0"
+                                                            max="40"
+                                                            step="1"
+                                                            value={txtObj.borderRadius ?? 0}
+                                                            onChange={(e) => updateSelectedTextProps({ borderRadius: parseInt(e.target.value, 10) || 0 })}
+                                                            className="w-full accent-indigo-500 h-1.5 bg-slate-700 rounded-lg cursor-pointer appearance-none"
+                                                        />
                                                     </div>
                                                 </div>
                                             </div>
@@ -15208,6 +15572,24 @@ export default function Whiteboard({
                                         ))}
                                     </>
                                 )}
+                                {/* Display Units & Dimensions Overlay */}
+                                {shpObj.showUnits && shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && (
+                                    <div
+                                        className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/95 text-indigo-300 border border-indigo-500/50 px-2 py-0.5 rounded-full text-[10px] font-mono whitespace-nowrap shadow-lg pointer-events-none z-35 flex items-center gap-1.5 backdrop-blur-xs select-none"
+                                    >
+                                        {isLineLike ? (
+                                            <span>L: {Math.round(Math.hypot((localEndX || 0) - (localStartX || 0), (localEndY || 0) - (localStartY || 0)) || shapeW)}px ({((Math.hypot((localEndX || 0) - (localStartX || 0), (localEndY || 0) - (localStartY || 0)) || shapeW) / 37.795).toFixed(1)}cm)</span>
+                                        ) : shpObj.type === 'circle' ? (
+                                            <span>⌀ {Math.round(shapeW)}px ({(shapeW / 37.795).toFixed(1)}cm) • R: {Math.round(shapeW / 2)}px</span>
+                                        ) : (
+                                            <>
+                                                <span>↔ {Math.round(shapeW)}px ({(shapeW / 37.795).toFixed(1)}cm)</span>
+                                                <span className="text-slate-500">•</span>
+                                                <span>↕ {Math.round(shapeH)}px ({(shapeH / 37.795).toFixed(1)}cm)</span>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* Selection Border & Handles */}
                                 {isSelected && (
@@ -15947,6 +16329,18 @@ export default function Whiteboard({
                                                 )}
                                             </div>
                                         )}
+                                        {/* Display Units Toggle */}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, showUnits: !s.showUnits } : s));
+                                                saveToHistory();
+                                            }}
+                                            className={`p-1 rounded-full transition flex items-center justify-center ${shpObj.showUnits ? 'bg-indigo-600 text-white shadow ring-1 ring-indigo-400' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                                            title={shpObj.showUnits ? "Hide Dimensions & Units" : "Display Dimensions & Units (px / cm)"}
+                                        >
+                                            <Ruler className="w-3.5 h-3.5" />
+                                        </button>
 
                                         {/* Lock */}
                                         <button
@@ -16200,6 +16594,20 @@ export default function Whiteboard({
                                         title="Group Selected Shapes"
                                     >
                                         <Group className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* Display Units Toggle (All) */}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const anyActive = selectedShapes.some(s => s.showUnits);
+                                            setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, showUnits: !anyActive } : s));
+                                            saveToHistory();
+                                        }}
+                                        className={`p-1 rounded-full transition flex items-center justify-center ${selectedShapes.every(s => s.showUnits) ? 'bg-indigo-600 text-white shadow ring-1 ring-indigo-400' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                                        title="Toggle Display Dimensions & Units (All Selected)"
+                                    >
+                                        <Ruler className="w-3.5 h-3.5" />
                                     </button>
 
                                     {/* Lock */}
@@ -17567,10 +17975,14 @@ export default function Whiteboard({
                 onClose={() => setShowPermissions(false)} 
             />
 
-            {/* Global Keyboard Shortcuts Semi-Transparent Modal */}
+            {/* Global Keyboard Shortcuts & Voice Commands Help Modal */}
             <WhiteboardShortcutsModal
                 isOpen={showShortcutsModal}
                 onClose={() => setShowShortcutsModal(false)}
+                initialTab={shortcutsModalTab}
+                isListening={isVoiceListening}
+                onToggleListen={toggleVoiceListening}
+                onExecuteCommand={executeVoiceCommand}
             />
 
             {/* Embedded Media Player Insertion Modal */}
@@ -18290,16 +18702,6 @@ export default function Whiteboard({
                 </div>
             )}
 
-            {/* Voice Control Statements Cheatsheet Modal */}
-            <WhiteboardVoiceControlModal
-                isOpen={showVoiceHelpModal}
-                onClose={() => setShowVoiceHelpModal(false)}
-                isListening={isVoiceListening}
-                onToggleListen={toggleVoiceListening}
-                transcript={voiceTranscript}
-                voiceFeedback={voiceFeedback}
-                onExecuteCommand={executeVoiceCommand}
-            />
 
             {/* ─── Whiteboard Games ─────────────────────────────────────── */}
             {showGameSelector && (
