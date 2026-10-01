@@ -11205,12 +11205,12 @@ export default function Whiteboard({
             return;
         }
         if (txt.includes('flip horizontal') || txt.includes('flip horizontally')) {
-            flipSelection(true);
+            handleFlipSelection(true);
             setVoiceFeedback('⇄ Flipped horizontally');
             return;
         }
         if (txt.includes('flip vertical') || txt.includes('flip vertically')) {
-            flipSelection(false);
+            handleFlipSelection(false);
             setVoiceFeedback('⇅ Flipped vertically');
             return;
         }
@@ -11327,7 +11327,7 @@ export default function Whiteboard({
 
         setVoiceFeedback(`Unrecognized: "${rawText}" - say "help" for commands`);
         toast(`Command not recognized: "${rawText}"`, { icon: '❓' });
-    }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, duplicateCurrentPage, deletePage, loadPage, currentPage, totalPages, selectedShapeIds, selectedTextIds, selectedImageId, selectedImageIds, selected3DIds, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, setBgPattern, setBgColor, onToggleFullscreen, handleInsertGraph, handleInsertDateTime, handleDelete, handleCopy, handlePaste, handleDuplicate, handleToggleLock, handleGroup, handleUngroup, handleBringToFront, handleSendToBack, handleAlign, handleDistribute, flipSelection, handleRemoveImageBackground, updateSelectedImageFilters, setIsAutoShape, setIsOcrActive, handleConvertSelectedInkToText, setBrushType, setPenMode, setSparkleTheme, setPenOpacity, setPressureSensitivity, setHighlighterColor, setEraserMode, setEraserSize, setSelectMode, setIsSelectionInfiniteCloner, setLineType, setShowMinimap, setShowClipboard, setIsChatOpen, setShowPermissions]);
+    }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, duplicateCurrentPage, deletePage, loadPage, currentPage, totalPages, selectedShapeIds, selectedTextIds, selectedImageId, selectedImageIds, selected3DIds, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, setBgPattern, setBgColor, onToggleFullscreen, handleInsertGraph, handleInsertDateTime, handleDelete, handleCopy, handlePaste, handleDuplicate, handleToggleLock, handleGroup, handleUngroup, handleBringToFront, handleSendToBack, handleAlign, handleDistribute, handleFlipSelection, handleRemoveImageBackground, updateSelectedImageFilters, setIsAutoShape, setIsOcrActive, handleConvertSelectedInkToText, setBrushType, setPenMode, setSparkleTheme, setPenOpacity, setPressureSensitivity, setHighlighterColor, setEraserMode, setEraserSize, setSelectMode, setIsSelectionInfiniteCloner, setLineType, setShowMinimap, setShowClipboard, setIsChatOpen, setShowPermissions]);
 
     const toggleVoiceListening = useCallback(() => {
         const SpeechRecognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
