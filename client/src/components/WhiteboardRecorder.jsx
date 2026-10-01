@@ -807,7 +807,7 @@ const WhiteboardRecorder = ({
                         const isFlat = obj3d.materialStyle === 'flat';
                         const userOpacity = obj3d.opacity !== undefined ? obj3d.opacity : 1;
 
-                        const renderedFaces = mesh.faces.map(faceIndices => {
+                        const renderedFaces = mesh.faces.map((faceIndices, faceIdx) => {
                             if (faceIndices.length < 3) return null;
                             const v0 = transformedVertices[faceIndices[0]];
                             const v1 = transformedVertices[faceIndices[1]];
@@ -827,7 +827,8 @@ const WhiteboardRecorder = ({
                             const intensity = isFlat ? 1.0 : Math.max(0.25, Math.min(1.0, effDot));
                             const avgZ = faceIndices.reduce((sum, idx) => sum + (transformedVertices[idx]?.pz || 0), 0) / faceIndices.length;
 
-                            let faceFill = shadeColor(baseColor, intensity, obj3d.materialStyle);
+                            const specificColor = (mesh.faceColors && mesh.faceColors[faceIdx]) || baseColor;
+                            let faceFill = shadeColor(specificColor, intensity, obj3d.materialStyle);
                             return { faceIndices, avgZ, faceFill, userOpacity };
                         }).filter(Boolean);
 

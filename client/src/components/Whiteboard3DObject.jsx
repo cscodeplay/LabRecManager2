@@ -6,12 +6,13 @@ import {
     Infinity as InfinityIcon, Sliders, RotateCcw, RotateCw,
     ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
     ChevronsUp, ChevronsDown, Palette, Sun, Eye, X, Ruler,
-    Download
+    Download, Image as ImageIcon
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import toast from 'react-hot-toast';
 import PlanetRenderer3D from './PlanetRenderer3D';
+import { getNetworkTexture, getTextureSVGDataUri, NETWORK_3D_TEXTURES } from './Network3DTextures';
 
 // Snap angle to nearest 45 degree cardinal/diagonal within 3.5 deg threshold
 const snapRotationAngle = (rawAngle) => {
@@ -147,6 +148,32 @@ export function getDefaultDimensions(modelType = 'cube') {
         case 'saturn':
         case 'neptune':
             return { radius: 6 };
+        case 'optical_fiber':
+        case 'fiber':
+        case 'fiber_optic':
+            return { outerRadius: 5, innerRadius: 2, length: 16 };
+        case 'twisted_cables':
+        case 'twisted_pair':
+        case 'utp':
+        case 'ethernet_cable':
+            return { radius: 5, length: 16 };
+        case 'multwan_router':
+        case 'multi_wan_router':
+        case 'multiwan':
+        case 'wan_router':
+            return { width: 14, height: 4, depth: 10 };
+        case 'network_switch':
+        case 'switch':
+        case 'managed_switch':
+            return { width: 16, height: 3.5, depth: 9 };
+        case 'laptop':
+        case 'cs_laptop':
+        case 'workstation_laptop':
+            return { width: 13, height: 9, depth: 10 };
+        case 'ip_panel':
+        case 'patch_panel':
+        case 'ip_patch_panel':
+            return { width: 16, height: 3.5, depth: 6 };
         default:
             return { width: 10, height: 10, depth: 10 };
     }
@@ -320,6 +347,70 @@ export function getDimensionAnnotations(obj, transformedVertices, w, h) {
             x1: cx, y1: cy, x2: cx + r, y2: cy,
             label: `r = ${dims.radius || 6} ${unit}`,
             midX: cx + r / 2, midY: cy - 14
+        });
+    } else if (['optical_fiber', 'fiber', 'fiber_optic', 'twisted_cables', 'twisted_pair', 'utp', 'ethernet_cable'].includes(mType)) {
+        const cx = w / 2;
+        const cy = h / 2;
+        const r = (Math.min(w, h) / 2) * 0.35;
+        const l = (Math.min(w, h) / 2) * 0.75;
+        annotations.push({
+            type: 'line',
+            dimensionKey: mType.includes('fiber') ? 'outerRadius' : 'radius',
+            x1: cx - r, y1: cy - l, x2: cx + r, y2: cy - l,
+            label: `r = ${dims.outerRadius || dims.radius || 5} ${unit}`,
+            midX: cx, midY: cy - l - 12
+        });
+        annotations.push({
+            type: 'line',
+            dimensionKey: 'length',
+            x1: cx + r + 15, y1: cy - l, x2: cx + r + 15, y2: cy + l,
+            label: `l = ${dims.length || 16} ${unit}`,
+            midX: cx + r + 30, midY: cy
+        });
+    } else if (['multwan_router', 'multi_wan_router', 'multiwan', 'wan_router', 'network_switch', 'switch', 'managed_switch', 'ip_panel', 'patch_panel', 'ip_patch_panel'].includes(mType)) {
+        const cx = w / 2;
+        const cy = h / 2;
+        const hw = (w / 2) * 0.75;
+        const hh = (h / 2) * 0.28;
+        annotations.push({
+            type: 'line',
+            dimensionKey: 'width',
+            x1: cx - hw, y1: cy + hh + 10, x2: cx + hw, y2: cy + hh + 10,
+            label: `w = ${dims.width || 16} ${unit}`,
+            midX: cx, midY: cy + hh + 24
+        });
+        annotations.push({
+            type: 'line',
+            dimensionKey: 'height',
+            x1: cx + hw + 14, y1: cy - hh, x2: cx + hw + 14, y2: cy + hh,
+            label: `h = ${dims.height || 3.5} ${unit}`,
+            midX: cx + hw + 28, midY: cy
+        });
+        annotations.push({
+            type: 'line',
+            dimensionKey: 'depth',
+            x1: cx - hw, y1: cy - hh - 8, x2: cx - hw + 24, y2: cy - hh - 22,
+            label: `d = ${dims.depth || 10} ${unit}`,
+            midX: cx - hw + 20, midY: cy - hh - 28
+        });
+    } else if (['laptop', 'cs_laptop', 'workstation_laptop'].includes(mType)) {
+        const cx = w / 2;
+        const cy = h / 2;
+        const hw = (w / 2) * 0.7;
+        const hh = (h / 2) * 0.6;
+        annotations.push({
+            type: 'line',
+            dimensionKey: 'width',
+            x1: cx - hw, y1: cy + hh * 0.5 + 10, x2: cx + hw, y2: cy + hh * 0.5 + 10,
+            label: `w = ${dims.width || 13} ${unit}`,
+            midX: cx, midY: cy + hh * 0.5 + 24
+        });
+        annotations.push({
+            type: 'line',
+            dimensionKey: 'height',
+            x1: cx + hw + 12, y1: cy - hh, x2: cx + hw + 12, y2: cy + hh * 0.5,
+            label: `h = ${dims.height || 9} ${unit}`,
+            midX: cx + hw + 26, midY: cy - hh * 0.25
         });
     } else {
         const cx = w / 2;
@@ -714,9 +805,353 @@ export function get3DModelMesh(modelType = 'cube', dimensions = null) {
             ];
             return { vertices: v, faces: f, color: '#3b82f6', faceColors };
         }
+        case 'optical_fiber':
+        case 'fiber':
+        case 'fiber_optic': {
+            return buildOpticalFiberMesh(dims);
+        }
+        case 'twisted_cables':
+        case 'twisted_pair':
+        case 'utp':
+        case 'ethernet_cable': {
+            return buildTwistedCablesMesh(dims);
+        }
+        case 'multwan_router':
+        case 'multi_wan_router':
+        case 'multiwan':
+        case 'wan_router': {
+            return buildMultiWanRouterMesh(dims);
+        }
+        case 'network_switch':
+        case 'switch':
+        case 'managed_switch': {
+            return buildNetworkSwitchMesh(dims);
+        }
+        case 'laptop':
+        case 'cs_laptop':
+        case 'workstation_laptop': {
+            return buildLaptopMesh(dims);
+        }
+        case 'ip_panel':
+        case 'patch_panel':
+        case 'ip_patch_panel': {
+            return buildIpPanelMesh(dims);
+        }
         default:
             return get3DModelMesh('cube');
     }
+}
+
+/* ─── Mesh Box Primitive Helper ─── */
+function addMeshBox(v, f, faceColors, minX, maxX, minY, maxY, minZ, maxZ, boxColor) {
+    const base = v.length;
+    v.push([minX, minY, minZ], [maxX, minY, minZ], [maxX, maxY, minZ], [minX, maxY, minZ]);
+    v.push([minX, minY, maxZ], [maxX, minY, maxZ], [maxX, maxY, maxZ], [minX, maxY, maxZ]);
+    const boxFaces = [
+        [base, base + 1, base + 2, base + 3],
+        [base + 5, base + 4, base + 7, base + 6],
+        [base + 4, base, base + 3, base + 7],
+        [base + 1, base + 5, base + 6, base + 2],
+        [base + 4, base + 5, base + 1, base],
+        [base + 3, base + 2, base + 6, base + 7]
+    ];
+    boxFaces.forEach(face => {
+        f.push(face);
+        if (faceColors) faceColors.push(boxColor);
+    });
+}
+
+/* ─── 1. Optical Fiber 3D Mesh ─── */
+function buildOpticalFiberMesh(dims) {
+    const v = [];
+    const f = [];
+    const faceColors = [];
+    const segs = 16;
+    const rJacket = ((dims?.outerRadius || 5) / 5) * 0.55;
+    const rBuffer = rJacket * 0.70;
+    const rClad = rJacket * 0.40;
+    const rCore = rJacket * 0.18;
+
+    // Jacket Cylinder
+    const vJacketStart = v.length;
+    for (let i = 0; i < segs; i++) {
+        const a = (i / segs) * Math.PI * 2;
+        v.push([Math.cos(a) * rJacket, Math.sin(a) * rJacket, -0.8]);
+        v.push([Math.cos(a) * rJacket, Math.sin(a) * rJacket, 0.2]);
+    }
+    for (let i = 0; i < segs; i++) {
+        const nxt = (i + 1) % segs;
+        f.push([vJacketStart + i * 2, vJacketStart + nxt * 2, vJacketStart + nxt * 2 + 1, vJacketStart + i * 2 + 1]);
+        faceColors.push('#eab308'); // Single-mode optical yellow
+    }
+
+    // Buffer Tube Cylinder
+    const vBufStart = v.length;
+    for (let i = 0; i < segs; i++) {
+        const a = (i / segs) * Math.PI * 2;
+        v.push([Math.cos(a) * rBuffer, Math.sin(a) * rBuffer, 0.2]);
+        v.push([Math.cos(a) * rBuffer, Math.sin(a) * rBuffer, 0.6]);
+    }
+    for (let i = 0; i < segs; i++) {
+        const nxt = (i + 1) % segs;
+        f.push([vBufStart + i * 2, vBufStart + nxt * 2, vBufStart + nxt * 2 + 1, vBufStart + i * 2 + 1]);
+        faceColors.push('#f1f5f9'); // Clean white buffer
+    }
+
+    // Silica Glass Cladding Cylinder
+    const vCladStart = v.length;
+    for (let i = 0; i < segs; i++) {
+        const a = (i / segs) * Math.PI * 2;
+        v.push([Math.cos(a) * rClad, Math.sin(a) * rClad, 0.6]);
+        v.push([Math.cos(a) * rClad, Math.sin(a) * rClad, 0.95]);
+    }
+    for (let i = 0; i < segs; i++) {
+        const nxt = (i + 1) % segs;
+        f.push([vCladStart + i * 2, vCladStart + nxt * 2, vCladStart + nxt * 2 + 1, vCladStart + i * 2 + 1]);
+        faceColors.push('#38bdf8'); // Translucent glass cladding
+    }
+
+    // Glowing Laser Core
+    const vCoreStart = v.length;
+    for (let i = 0; i < segs; i++) {
+        const a = (i / segs) * Math.PI * 2;
+        v.push([Math.cos(a) * rCore, Math.sin(a) * rCore, 0.95]);
+        v.push([Math.cos(a) * rCore, Math.sin(a) * rCore, 1.3]);
+    }
+    for (let i = 0; i < segs; i++) {
+        const nxt = (i + 1) % segs;
+        f.push([vCoreStart + i * 2, vCoreStart + nxt * 2, vCoreStart + nxt * 2 + 1, vCoreStart + i * 2 + 1]);
+        faceColors.push('#00f5ff'); // Glowing neon core
+    }
+    // Laser Tip Facet
+    const coreTip = v.length;
+    v.push([0, 0, 1.3]);
+    for (let i = 0; i < segs; i++) {
+        const nxt = (i + 1) % segs;
+        f.push([coreTip, vCoreStart + nxt * 2 + 1, vCoreStart + i * 2 + 1]);
+        faceColors.push('#ffffff');
+    }
+
+    // Duplex LC Optical Connector at rear
+    addMeshBox(v, f, faceColors, -0.45, -0.05, -0.22, 0.22, -1.3, -0.8, '#1d4ed8'); // LC Shell A (Blue)
+    addMeshBox(v, f, faceColors, 0.05, 0.45, -0.22, 0.22, -1.3, -0.8, '#1d4ed8');  // LC Shell B (Blue)
+    addMeshBox(v, f, faceColors, -0.35, -0.15, -0.12, 0.12, -1.6, -1.3, '#ffffff'); // Ferrule A
+    addMeshBox(v, f, faceColors, 0.15, 0.35, -0.12, 0.12, -1.6, -1.3, '#ffffff');  // Ferrule B
+    addMeshBox(v, f, faceColors, -0.35, 0.35, -0.38, -0.22, -1.15, -0.85, '#2563eb'); // Latch Clip
+
+    return { vertices: v, faces: f, color: '#eab308', faceColors };
+}
+
+/* ─── 2. Twisted Cables 3D Mesh ─── */
+function buildTwistedCablesMesh(dims) {
+    const v = [];
+    const f = [];
+    const faceColors = [];
+    const segs = 16;
+    const rJacket = ((dims?.radius || 5) / 5) * 0.52;
+
+    // Outer Jacket: z from 0.1 to 1.3
+    const vJacketStart = v.length;
+    for (let i = 0; i < segs; i++) {
+        const a = (i / segs) * Math.PI * 2;
+        v.push([Math.cos(a) * rJacket, Math.sin(a) * rJacket, 0.1]);
+        v.push([Math.cos(a) * rJacket, Math.sin(a) * rJacket, 1.3]);
+    }
+    for (let i = 0; i < segs; i++) {
+        const nxt = (i + 1) % segs;
+        f.push([vJacketStart + i * 2, vJacketStart + nxt * 2, vJacketStart + nxt * 2 + 1, vJacketStart + i * 2 + 1]);
+        faceColors.push('#2563eb'); // Cat6 network blue
+    }
+
+    // 4 Twisted Wire Pairs (Orange, Green, Blue, Brown)
+    const pairs = [
+        { color1: '#ea580c', color2: '#fed7aa', cx: -0.22, cy: -0.22 },
+        { color1: '#16a34a', color2: '#bbf7d0', cx: 0.22, cy: -0.22 },
+        { color1: '#0284c7', color2: '#bfdbfe', cx: -0.22, cy: 0.22 },
+        { color1: '#92400e', color2: '#fef3c7', cx: 0.22, cy: 0.22 }
+    ];
+    const spiralSteps = 8;
+    pairs.forEach(p => {
+        const vStart = v.length;
+        for (let s = 0; s <= spiralSteps; s++) {
+            const z = 0.1 - (s / spiralSteps) * 0.6;
+            const twistAngle = s * 0.9;
+            const ox = Math.cos(twistAngle) * 0.11;
+            const oy = Math.sin(twistAngle) * 0.11;
+            v.push([p.cx + ox, p.cy + oy, z]);
+            v.push([p.cx - ox, p.cy - oy, z]);
+        }
+        for (let s = 0; s < spiralSteps; s++) {
+            const i1 = vStart + s * 2;
+            const i2 = vStart + (s + 1) * 2;
+            f.push([i1, i2, i2 + 1, i1 + 1]);
+            faceColors.push(s % 2 === 0 ? p.color1 : p.color2);
+        }
+    });
+
+    // Clear Polycarbonate RJ-45 Plug
+    addMeshBox(v, f, faceColors, -0.42, 0.42, -0.28, 0.28, -1.35, -0.5, '#94a3b8'); // Body
+    addMeshBox(v, f, faceColors, -0.25, 0.25, 0.14, 0.28, -1.35, -0.9, '#475569');  // Key notch
+    addMeshBox(v, f, faceColors, -0.16, 0.16, -0.42, -0.28, -1.15, -0.6, '#38bdf8'); // Retention clip
+    // 8 Gold Contact Pins
+    for (let p = 0; p < 8; p++) {
+        const px = -0.32 + p * 0.09;
+        addMeshBox(v, f, faceColors, px - 0.025, px + 0.025, -0.15, 0.15, -1.4, -1.35, '#f59e0b');
+    }
+
+    return { vertices: v, faces: f, color: '#2563eb', faceColors };
+}
+
+/* ─── 3. Multi-WAN Router 3D Mesh ─── */
+function buildMultiWanRouterMesh(dims) {
+    const v = [];
+    const f = [];
+    const faceColors = [];
+    const w = ((dims?.width || 14) / 14) * 1.3;
+    const h = ((dims?.height || 4) / 4) * 0.25;
+    const d = ((dims?.depth || 10) / 10) * 0.85;
+
+    // Chassis Box
+    addMeshBox(v, f, faceColors, -w, w, -h, h, -d, d, '#0f172a');
+    // Top Plate / Bezel
+    addMeshBox(v, f, faceColors, -w * 0.94, w * 0.94, -h * 1.25, -h, -d * 0.94, d * 0.94, '#1e293b');
+
+    // Front OLED Diagnostic Display
+    addMeshBox(v, f, faceColors, -w * 0.88, -w * 0.35, -h * 0.7, h * 0.7, d, d + 0.03, '#0284c7');
+
+    // Dual Gigabit WAN Ports (Orange/Yellow bezel)
+    addMeshBox(v, f, faceColors, -w * 0.28, -w * 0.04, -h * 0.65, h * 0.65, d, d + 0.03, '#f59e0b');
+    addMeshBox(v, f, faceColors, w * 0.04, w * 0.28, -h * 0.65, h * 0.65, d, d + 0.03, '#f59e0b');
+
+    // 3 Gigabit LAN Ports
+    addMeshBox(v, f, faceColors, w * 0.36, w * 0.52, -h * 0.65, h * 0.65, d, d + 0.03, '#475569');
+    addMeshBox(v, f, faceColors, w * 0.56, w * 0.72, -h * 0.65, h * 0.65, d, d + 0.03, '#475569');
+    addMeshBox(v, f, faceColors, w * 0.76, w * 0.92, -h * 0.65, h * 0.65, d, d + 0.03, '#475569');
+
+    // 4 High-Gain Antennas
+    const antConfigs = [
+        { baseX: -w * 0.95, baseZ: -d * 0.88, tipX: -w * 1.28, tipY: -1.1, tipZ: -d * 1.35 },
+        { baseX: -w * 0.50, baseZ: -d * 0.98, tipX: -w * 0.65, tipY: -1.2, tipZ: -d * 1.45 },
+        { baseX: w * 0.50, baseZ: -d * 0.98, tipX: w * 0.65, tipY: -1.2, tipZ: -d * 1.45 },
+        { baseX: w * 0.95, baseZ: -d * 0.88, tipX: w * 1.28, tipY: -1.1, tipZ: -d * 1.35 }
+    ];
+    antConfigs.forEach(ant => {
+        addMeshBox(v, f, faceColors, ant.baseX - 0.06, ant.baseX + 0.06, -h * 1.5, -h, ant.baseZ - 0.06, ant.baseZ + 0.06, '#d97706');
+        const base = v.length;
+        const bw = 0.04;
+        v.push([ant.baseX - bw, -h * 1.5, ant.baseZ - bw]);
+        v.push([ant.baseX + bw, -h * 1.5, ant.baseZ - bw]);
+        v.push([ant.tipX + bw, ant.tipY, ant.tipZ - bw]);
+        v.push([ant.tipX - bw, ant.tipY, ant.tipZ - bw]);
+        f.push([base, base + 1, base + 2, base + 3]);
+        faceColors.push('#1e293b');
+    });
+
+    return { vertices: v, faces: f, color: '#0f172a', faceColors };
+}
+
+/* ─── 4. Network Switch 3D Mesh ─── */
+function buildNetworkSwitchMesh(dims) {
+    const v = [];
+    const f = [];
+    const faceColors = [];
+    const w = ((dims?.width || 16) / 16) * 1.35;
+    const h = ((dims?.height || 3.5) / 3.5) * 0.22;
+    const d = ((dims?.depth || 9) / 9) * 0.75;
+
+    // 1U Switch Chassis
+    addMeshBox(v, f, faceColors, -w, w, -h, h, -d, d, '#1e293b');
+
+    // Left and Right 19" Rack Mounting Ears
+    addMeshBox(v, f, faceColors, -w * 1.18, -w, -h * 1.18, h * 1.18, d * 0.6, d, '#475569'); // Left Ear
+    addMeshBox(v, f, faceColors, w, w * 1.18, -h * 1.18, h * 1.18, d * 0.6, d, '#475569');  // Right Ear
+
+    // Front Status LED & Management Console Port
+    addMeshBox(v, f, faceColors, -w * 0.92, -w * 0.78, -h * 0.7, h * 0.7, d, d + 0.03, '#0284c7');
+
+    // 24 Gigabit Ethernet Ports (3 blocks of 8)
+    for (let b = 0; b < 3; b++) {
+        const blockX = -w * 0.70 + b * (w * 0.48);
+        addMeshBox(v, f, faceColors, blockX, blockX + w * 0.42, -h * 0.75, -h * 0.1, d, d + 0.03, '#334155');
+        addMeshBox(v, f, faceColors, blockX, blockX + w * 0.42, h * 0.1, h * 0.75, d, d + 0.03, '#334155');
+        addMeshBox(v, f, faceColors, blockX, blockX + w * 0.42, -h * 0.95, -h * 0.8, d, d + 0.02, '#22c55e');
+    }
+
+    // Dual 10G SFP+ Optical Transceiver Cages
+    addMeshBox(v, f, faceColors, w * 0.78, w * 0.87, -h * 0.7, h * 0.7, d, d + 0.04, '#cbd5e1');
+    addMeshBox(v, f, faceColors, w * 0.90, w * 0.99, -h * 0.7, h * 0.7, d, d + 0.04, '#cbd5e1');
+
+    return { vertices: v, faces: f, color: '#1e293b', faceColors };
+}
+
+/* ─── 5. CS Laptop 3D Mesh ─── */
+function buildLaptopMesh(dims) {
+    const v = [];
+    const f = [];
+    const faceColors = [];
+    const w = ((dims?.width || 13) / 13) * 1.15;
+    const h = ((dims?.height || 9) / 9) * 0.9;
+    const d = ((dims?.depth || 10) / 10) * 0.85;
+
+    // Lower Base Deck (Chassis)
+    addMeshBox(v, f, faceColors, -w, w, 0.28, 0.38, -d, d, '#334155');
+    // Keyboard Deck
+    addMeshBox(v, f, faceColors, -w * 0.82, w * 0.82, 0.25, 0.28, -d * 0.75, d * 0.18, '#0f172a');
+    // Trackpad
+    addMeshBox(v, f, faceColors, -w * 0.30, w * 0.30, 0.26, 0.28, d * 0.35, d * 0.85, '#475569');
+
+    // Angled Display Lid (Tilted backwards in 3D at ~115°)
+    const lidBase = v.length;
+    v.push([-w, 0.28, -d]);
+    v.push([w, 0.28, -d]);
+    v.push([w, -h * 1.15, -d * 1.55]);
+    v.push([-w, -h * 1.15, -d * 1.55]);
+    f.push([lidBase, lidBase + 1, lidBase + 2, lidBase + 3]);
+    faceColors.push('#1e293b'); // Outer Lid Bezel
+
+    // Glowing Display Screen Face (Active Network Terminal)
+    const sw = w * 0.90;
+    const screenBase = v.length;
+    v.push([-sw, 0.18, -d * 1.05]);
+    v.push([sw, 0.18, -d * 1.05]);
+    v.push([sw, -h * 1.05, -d * 1.53]);
+    v.push([-sw, -h * 1.05, -d * 1.53]);
+    f.push([screenBase, screenBase + 1, screenBase + 2, screenBase + 3]);
+    faceColors.push('#0284c7'); // Active terminal screen
+
+    return { vertices: v, faces: f, color: '#334155', faceColors };
+}
+
+/* ─── 6. IP Patch Panel 3D Mesh ─── */
+function buildIpPanelMesh(dims) {
+    const v = [];
+    const f = [];
+    const faceColors = [];
+    const w = ((dims?.width || 16) / 16) * 1.35;
+    const h = ((dims?.height || 3.5) / 3.5) * 0.22;
+    const d = ((dims?.depth || 6) / 6) * 0.15;
+
+    // 1U Steel Patch Panel Faceplate
+    addMeshBox(v, f, faceColors, -w, w, -h, h, -d, d, '#0f172a');
+    // Left & Right Rack Ears
+    addMeshBox(v, f, faceColors, -w * 1.18, -w, -h * 1.18, h * 1.18, -d * 0.3, d, '#475569');
+    addMeshBox(v, f, faceColors, w, w * 1.18, -h * 1.18, h * 1.18, -d * 0.3, d, '#475569');
+    // Rear Cable Management Shelf Bar
+    addMeshBox(v, f, faceColors, -w * 0.92, w * 0.92, -h * 0.22, h * 0.22, -d * 3.8, -d, '#334155');
+
+    // 4 Modular Color-Coded Keystone Groups (6 Ports Each = 24 Ports Total)
+    const groups = [
+        { xStart: -w * 0.92, color: '#0284c7' }, // Blue - Servers
+        { xStart: -w * 0.44, color: '#16a34a' }, // Green - Workstations
+        { xStart: w * 0.04, color: '#9333ea' },  // Purple - APs
+        { xStart: w * 0.52, color: '#ea580c' }   // Orange - Management
+    ];
+    groups.forEach(g => {
+        addMeshBox(v, f, faceColors, g.xStart, g.xStart + w * 0.38, -h * 0.82, -h * 0.5, d, d + 0.02, '#f8fafc'); // Label strip
+        addMeshBox(v, f, faceColors, g.xStart, g.xStart + w * 0.38, -h * 0.35, h * 0.75, d, d + 0.03, g.color);   // Keystone jacks
+    });
+
+    return { vertices: v, faces: f, color: '#0f172a', faceColors };
 }
 
 /* ─── External 3D File Parsers (.OBJ, .STL, .JSON) ─── */
@@ -1050,6 +1485,19 @@ export function shadeColor(colorStr, intensity, materialStyle) {
 /* ─── Render 3D Object to Standalone SVG Element ─── */
 export function render3DObjectSVG(obj) {
     if (!obj) return '';
+    const w = obj.width || 220;
+    const h = obj.height || 220;
+    const userOpacity = obj.opacity !== undefined ? obj.opacity : 1;
+    const rot = obj.rotation ? `transform="rotate(${obj.rotation} ${w / 2} ${h / 2})"` : '';
+
+    const networkTexture = getNetworkTexture(obj.modelType);
+    const activeTextureUri = obj.textureUrl || (networkTexture ? getTextureSVGDataUri(networkTexture.svg) : null);
+    if ((obj.useImageTexture || obj.materialStyle === 'texture') && activeTextureUri) {
+        return `<g ${rot}>
+            <image href="${activeTextureUri}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet" opacity="${userOpacity}" />
+        </g>`;
+    }
+
     const mesh = (obj.meshData && obj.meshData.vertices && obj.meshData.faces)
         ? obj.meshData
         : get3DModelMesh(obj.modelType || 'cube', obj.dimensions);
@@ -1069,9 +1517,6 @@ export function render3DObjectSVG(obj) {
     let lx = 0.5, ly = -0.7, lz = 0.5;
     if (obj.lightPreset === 'top') { lx = 0.1; ly = -0.95; lz = 0.3; }
     else if (obj.lightPreset === 'flat') { lx = 0; ly = 0; lz = 1; }
-
-    const w = obj.width || 220;
-    const h = obj.height || 220;
 
     const transformedVertices = mesh.vertices.map(([vx, vy, vz]) => {
         let x1 = vx * cosY + vz * sinY;
@@ -1099,7 +1544,6 @@ export function render3DObjectSVG(obj) {
     const isWireframe = obj.materialStyle === 'wireframe' || !!obj.wireframeOnly;
     const isGlass = obj.materialStyle === 'glass';
     const isFlat = obj.materialStyle === 'flat';
-    const userOpacity = obj.opacity !== undefined ? obj.opacity : 1;
 
     const mType = (obj.modelType || 'cube').toLowerCase();
     const isSpherical = ['sphere', 'sun', 'earth', 'moon', 'mars', 'jupiter', 'saturn', 'neptune'].includes(mType);
@@ -1147,7 +1591,6 @@ export function render3DObjectSVG(obj) {
     renderedFaces.sort((a, b) => b.avgZ - a.avgZ);
 
     const strokeDash = obj.edgeStyle === 'dashed' ? '4,3' : (obj.edgeStyle === 'dotted' ? '2,2' : undefined);
-    const rot = obj.rotation ? `transform="rotate(${obj.rotation} ${w / 2} ${h / 2})"` : '';
     const strokeColor = isWireframe ? (obj.edgeColor || baseColor) : (obj.edgeColor || '#ffffff');
     const strokeW = obj.edgeWidth !== undefined ? obj.edgeWidth : (isWireframe ? 1.5 : 1);
     const dashAttr = strokeDash ? `stroke-dasharray="${strokeDash}"` : '';
@@ -1265,6 +1708,8 @@ export default function Whiteboard3DObject({
     const [isRotating2D, setIsRotating2D] = useState(false);
     const [liveRotation, setLiveRotation] = useState(obj.rotation || 0);
     const [showDimensionsPopover, setShowDimensionsPopover] = useState(false);
+    const [showTexturePopover, setShowTexturePopover] = useState(false);
+    const textureFileInputRef = useRef(null);
     const [activeEdgeDrag, setActiveEdgeDrag] = useState(null);
     const lastPointerRef = useRef({ x: 0, y: 0 });
 
@@ -1470,6 +1915,54 @@ export default function Whiteboard3DObject({
             case 'neptune':
                 return [
                     { key: 'radius', label: 'Radius (r)', default: 6, min: 1, max: 25, step: 0.5 }
+                ];
+            case 'optical_fiber':
+            case 'fiber':
+            case 'fiber_optic':
+                return [
+                    { key: 'outerRadius', label: 'Jacket Radius (r)', default: 5, min: 2, max: 20, step: 0.5 },
+                    { key: 'length', label: 'Cable Length (l)', default: 16, min: 4, max: 40, step: 0.5 }
+                ];
+            case 'twisted_cables':
+            case 'twisted_pair':
+            case 'utp':
+            case 'ethernet_cable':
+                return [
+                    { key: 'radius', label: 'Cable Radius (r)', default: 5, min: 2, max: 20, step: 0.5 },
+                    { key: 'length', label: 'Cable Length (l)', default: 16, min: 4, max: 40, step: 0.5 }
+                ];
+            case 'multwan_router':
+            case 'multi_wan_router':
+            case 'multiwan':
+            case 'wan_router':
+                return [
+                    { key: 'width', label: 'Chassis Width (w)', default: 14, min: 6, max: 30, step: 0.5 },
+                    { key: 'height', label: 'Chassis Height (h)', default: 4, min: 2, max: 15, step: 0.5 },
+                    { key: 'depth', label: 'Chassis Depth (d)', default: 10, min: 4, max: 25, step: 0.5 }
+                ];
+            case 'network_switch':
+            case 'switch':
+            case 'managed_switch':
+                return [
+                    { key: 'width', label: 'Rack Width (w)', default: 16, min: 8, max: 30, step: 0.5 },
+                    { key: 'height', label: '1U Height (h)', default: 3.5, min: 2, max: 15, step: 0.5 },
+                    { key: 'depth', label: 'Chassis Depth (d)', default: 9, min: 4, max: 25, step: 0.5 }
+                ];
+            case 'laptop':
+            case 'cs_laptop':
+            case 'workstation_laptop':
+                return [
+                    { key: 'width', label: 'Width (w)', default: 13, min: 6, max: 30, step: 0.5 },
+                    { key: 'height', label: 'Screen Height (h)', default: 9, min: 3, max: 25, step: 0.5 },
+                    { key: 'depth', label: 'Base Depth (d)', default: 10, min: 4, max: 25, step: 0.5 }
+                ];
+            case 'ip_panel':
+            case 'patch_panel':
+            case 'ip_patch_panel':
+                return [
+                    { key: 'width', label: '19" Panel Width (w)', default: 16, min: 8, max: 30, step: 0.5 },
+                    { key: 'height', label: '1U Height (h)', default: 3.5, min: 2, max: 15, step: 0.5 },
+                    { key: 'depth', label: 'Shelf Depth (d)', default: 6, min: 2, max: 20, step: 0.5 }
                 ];
             default:
                 return [
@@ -1745,6 +2238,12 @@ export default function Whiteboard3DObject({
     const isCurved = isSpherical || isCone || isCylinder;
     const isWireframe = obj.materialStyle === 'wireframe' || !!obj.wireframeOnly;
 
+    // Network & Computer Science Image Texture Decal Resolution
+    const networkTexture = getNetworkTexture(obj.modelType);
+    const activeTextureUri = obj.textureUrl || (networkTexture ? getTextureSVGDataUri(networkTexture.svg) : null);
+    const hasTexture = !!activeTextureUri;
+    const isTextureMode = (obj.useImageTexture || obj.materialStyle === 'texture') && hasTexture;
+
     const compCx = (obj.width || 220) / 2;
     const compCy = (obj.height || 220) / 2;
     const compR = (Math.min(obj.width || 220, obj.height || 220) / 2) * 0.8;
@@ -1793,7 +2292,25 @@ export default function Whiteboard3DObject({
                 viewBox={`0 0 ${obj.width || 220} ${obj.height || 220}`}
                 className="w-full h-full pointer-events-none drop-shadow-md overflow-visible"
             >
-                {(!isPlanet || isWireframe) && (!isWireframe || !isCurved) && projectedFaces.renderedFaces.map((face, fIdx) => {
+                {/* Photorealistic 3D Image Decal / Texture Layer */}
+                {isTextureMode && !isWireframe && (
+                    <image
+                        href={activeTextureUri}
+                        x={0}
+                        y={0}
+                        width={obj.width || 220}
+                        height={obj.height || 220}
+                        preserveAspectRatio="xMidYMid meet"
+                        opacity={obj.opacity !== undefined ? obj.opacity : 1}
+                        style={{
+                            filter: obj.materialStyle === 'glass'
+                                ? 'opacity(0.7) drop-shadow(0 4px 6px rgba(0,0,0,0.3))'
+                                : 'drop-shadow(0 8px 16px rgba(0,0,0,0.45))'
+                        }}
+                    />
+                )}
+
+                {!isTextureMode && (!isPlanet || isWireframe) && (!isWireframe || !isCurved) && projectedFaces.renderedFaces.map((face, fIdx) => {
                     const strokeColor = isWireframe
                         ? (obj.edgeColor || projectedFaces.baseColor)
                         : (isCurved
@@ -2206,10 +2723,11 @@ export default function Whiteboard3DObject({
                         />
                     </div>
 
-                    {/* Material Shading Pills: Solid, Glass, Wire, Flat */}
+                    {/* Material Shading Pills: Solid, Image/Decal, Glass, Wire, Flat */}
                     <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/60" title="Material Shading">
                         {[
                             { id: 'shaded', label: 'Solid' },
+                            { id: 'texture', label: 'Image' },
                             { id: 'glass', label: 'Glass' },
                             { id: 'wireframe', label: 'Wire' },
                             { id: 'flat', label: 'Flat' }
@@ -2217,7 +2735,10 @@ export default function Whiteboard3DObject({
                             <button
                                 key={mat.id}
                                 type="button"
-                                onClick={() => onUpdate && onUpdate({ materialStyle: mat.id })}
+                                onClick={() => onUpdate && onUpdate({
+                                    materialStyle: mat.id,
+                                    useImageTexture: mat.id === 'texture'
+                                })}
                                 className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition ${
                                     (obj.materialStyle || 'shaded') === mat.id ? 'bg-sky-600 text-white font-bold shadow' : 'text-slate-400 hover:text-white'
                                 }`}
@@ -2227,6 +2748,21 @@ export default function Whiteboard3DObject({
                             </button>
                         ))}
                     </div>
+
+                    {/* Image Texture & Decal Popover Toggle */}
+                    <button
+                        type="button"
+                        onClick={() => setShowTexturePopover(prev => !prev)}
+                        className={`px-1.5 py-0.5 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition ${
+                            showTexturePopover || obj.useImageTexture || obj.materialStyle === 'texture'
+                                ? 'bg-sky-600 text-white shadow'
+                                : 'bg-slate-800 text-slate-300 hover:text-white'
+                        }`}
+                        title="Configure Photorealistic Image Texture or Upload Custom Decal"
+                    >
+                        <ImageIcon className="w-3 h-3 text-sky-300" />
+                        <span>Texture</span>
+                    </button>
 
                     <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
@@ -2394,6 +2930,164 @@ export default function Whiteboard3DObject({
                                     <Ruler size={13} />
                                     <span>{obj.showDimensions ? 'Hide Dimension Labels on Shape' : 'Show Dimension Labels on Shape'}</span>
                                 </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Image Texture & Custom Decal Popover Dialog */}
+                    {showTexturePopover && (
+                        <div 
+                            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 bg-slate-950/95 border border-slate-700/80 shadow-2xl rounded-2xl p-3.5 z-[95] text-slate-200 pointer-events-auto backdrop-blur-md animate-in fade-in zoom-in-95 duration-150"
+                            onPointerDown={e => e.stopPropagation()}
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-3">
+                                <div className="flex items-center gap-1.5 text-xs font-bold text-sky-400">
+                                    <ImageIcon className="w-3.5 h-3.5" />
+                                    <span>3D Texture & Decal</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowTexturePopover(false)}
+                                    className="text-slate-400 hover:text-white p-0.5 rounded hover:bg-slate-800 transition"
+                                >
+                                    <X size={13} />
+                                </button>
+                            </div>
+
+                            <div className="space-y-3">
+                                {/* Toggle Active Mode */}
+                                <div className="flex items-center justify-between p-2 rounded-xl bg-slate-900 border border-slate-800">
+                                    <div>
+                                        <div className="text-xs font-semibold text-white">Photorealistic Decal</div>
+                                        <div className="text-[10px] text-slate-400">Render texture onto 3D shape</div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const nextVal = !obj.useImageTexture;
+                                            onUpdate && onUpdate({
+                                                useImageTexture: nextVal,
+                                                materialStyle: nextVal ? 'texture' : 'standard'
+                                            });
+                                        }}
+                                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                                            obj.useImageTexture ? 'bg-sky-600 text-white shadow' : 'bg-slate-800 text-slate-400 hover:text-white'
+                                        }`}
+                                    >
+                                        {obj.useImageTexture ? 'ACTIVE' : 'OFF'}
+                                    </button>
+                                </div>
+
+                                {/* Network Presets Grid */}
+                                <div>
+                                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">
+                                        Network Hardware Presets
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                        {[
+                                            { key: 'optical_fiber', label: 'Fiber Cable', type: 'optical_fiber' },
+                                            { key: 'twisted_cables', label: 'Twisted Pair', type: 'twisted_cables' },
+                                            { key: 'multwan_router', label: 'Multi-WAN Router', type: 'multwan_router' },
+                                            { key: 'network_switch', label: 'Network Switch', type: 'network_switch' },
+                                            { key: 'laptop', label: 'CS Laptop', type: 'laptop' },
+                                            { key: 'ip_panel', label: 'IP Patch Panel', type: 'ip_panel' },
+                                        ].map(preset => (
+                                            <button
+                                                key={preset.key}
+                                                type="button"
+                                                onClick={() => {
+                                                    const uri = getTextureSVGDataUri(preset.key);
+                                                    onUpdate && onUpdate({
+                                                        textureUrl: uri,
+                                                        useImageTexture: true,
+                                                        materialStyle: 'texture',
+                                                        modelType: preset.type
+                                                    });
+                                                }}
+                                                className={`px-2 py-1.5 rounded-lg text-[11px] font-medium text-left truncate border transition ${
+                                                    mType === preset.type && obj.useImageTexture
+                                                        ? 'bg-sky-950/60 border-sky-500 text-sky-200 shadow-sm'
+                                                        : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white hover:border-slate-700'
+                                                }`}
+                                            >
+                                                {preset.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Custom Upload & Custom URL */}
+                                <div className="space-y-2 pt-1 border-t border-slate-800">
+                                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                                        Custom Image Texture
+                                    </label>
+                                    <input
+                                        type="file"
+                                        ref={textureFileInputRef}
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                const reader = new FileReader();
+                                                reader.onload = (uploadEvt) => {
+                                                    const result = uploadEvt.target?.result;
+                                                    if (result) {
+                                                        onUpdate && onUpdate({
+                                                            textureUrl: result,
+                                                            useImageTexture: true,
+                                                            materialStyle: 'texture'
+                                                        });
+                                                        toast.success('Custom texture applied to 3D model!');
+                                                    }
+                                                };
+                                                reader.readAsDataURL(file);
+                                            }
+                                        }}
+                                    />
+                                    <div className="flex gap-1.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => textureFileInputRef.current?.click()}
+                                            className="flex-1 py-1.5 px-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white border border-slate-700 flex items-center justify-center gap-1.5 transition"
+                                        >
+                                            <ImageIcon size={13} className="text-sky-400" />
+                                            <span>Upload Image</span>
+                                        </button>
+                                        {obj.textureUrl && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    onUpdate && onUpdate({
+                                                        textureUrl: null,
+                                                        useImageTexture: false,
+                                                        materialStyle: 'standard'
+                                                    });
+                                                    toast.success('Texture cleared, reverted to 3D geometry');
+                                                }}
+                                                className="py-1.5 px-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-red-950/60 text-slate-300 hover:text-red-300 border border-slate-700 hover:border-red-500/50 transition"
+                                                title="Reset to 3D Mesh Geometry"
+                                            >
+                                                Reset
+                                            </button>
+                                        )}
+                                    </div>
+                                    <input
+                                        type="text"
+                                        placeholder="Paste image URL (https://... or data:)"
+                                        value={obj.textureUrl?.startsWith('data:image/svg+xml') ? '' : (obj.textureUrl || '')}
+                                        onChange={(e) => {
+                                            const val = e.target.value.trim();
+                                            onUpdate && onUpdate({
+                                                textureUrl: val || null,
+                                                useImageTexture: !!val,
+                                                materialStyle: val ? 'texture' : 'standard'
+                                            });
+                                        }}
+                                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono"
+                                    />
+                                </div>
                             </div>
                         </div>
                     )}

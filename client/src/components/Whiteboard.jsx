@@ -17380,7 +17380,10 @@ export default function Whiteboard({
                             dimensions: symbol.dimensions || getDefaultDimensions(mType),
                             unit: symbol.unit || 'cm',
                             showDimensions: false,
-                            projectionMode: 'isometric'
+                            projectionMode: 'isometric',
+                            textureUrl: symbol.textureUrl || symbol.imageUrl || null,
+                            useImageTexture: !!(symbol.textureUrl || symbol.imageUrl || symbol.useImageTexture),
+                            materialStyle: symbol.materialStyle || (symbol.useImageTexture ? 'texture' : 'shaded')
                         };
                         setThreeDObjects(prev => [...prev, new3D]);
                         setSelected3DIds([new3D.id]);

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { parseOBJ, parseSTL, parseJSON3D } from './Whiteboard3DObject';
 import JSZip from 'jszip';
+import { getTextureSVGDataUri } from './Network3DTextures';
 
 /**
  * Domain-Specific Shape Library for Education & Technical Diagrams
@@ -220,6 +221,191 @@ export const DOMAIN_SHAPES = {
                     <g key={i}>
                         <rect x={w*0.11 + i * (w*0.065)} y={h*0.3} width={w*0.048} height={h*0.4} rx={1} fill="#1e293b" stroke="#64748b" strokeWidth={0.8} />
                         <rect x={w*0.116 + i * (w*0.065)} y={h*0.42} width={w*0.036} height={h*0.22} fill="#0f172a" />
+                    </g>
+                ))}
+            </g>
+        )
+    },
+    net_optical_fiber: {
+        id: 'net_optical_fiber',
+        name: 'Optical Fiber Cable (Multi-Core)',
+        category: 'networking',
+        isNetworking: true,
+        isCS: true,
+        defaultWidth: 125,
+        defaultHeight: 65,
+        renderSVG: (w, h, stroke, sw, fill) => (
+            <g>
+                {/* Yellow Outer Protective Jacket */}
+                <rect x={w*0.04} y={h*0.22} width={w*0.45} height={h*0.56} rx={4} fill="#f59e0b" stroke="#d97706" strokeWidth={sw || 2} />
+                <text x={w*0.25} y={h*0.55} textAnchor="middle" fontSize={7} fontWeight="bold" fill="#78350f" fontFamily="sans-serif">OS2 FIBER</text>
+                {/* Kevlar Yarn & Aramid Buffer */}
+                <rect x={w*0.48} y={h*0.28} width={w*0.16} height={h*0.44} rx={2} fill="#e2e8f0" stroke="#94a3b8" strokeWidth={1} />
+                {/* Inner Buffer Loose Tube */}
+                <rect x={w*0.62} y={h*0.34} width={w*0.14} height={h*0.32} rx={2} fill="#0ea5e9" stroke="#0284c7" strokeWidth={1} />
+                {/* Glass Optical Fiber Cores Glowing with Data Pulses */}
+                <line x1={w*0.74} y1={h*0.38} x2={w*0.94} y2={h*0.38} stroke="#38bdf8" strokeWidth={2.5} strokeLinecap="round" />
+                <circle cx={w*0.94} cy={h*0.38} r={3} fill="#0284c7" stroke="#ffffff" strokeWidth={1} />
+                <line x1={w*0.74} y1={h*0.5} x2={w*0.95} y2={h*0.5} stroke="#22c55e" strokeWidth={2.5} strokeLinecap="round" />
+                <circle cx={w*0.95} cy={h*0.5} r={3} fill="#16a34a" stroke="#ffffff" strokeWidth={1} />
+                <line x1={w*0.74} y1={h*0.62} x2={w*0.94} y2={h*0.62} stroke="#ec4899" strokeWidth={2.5} strokeLinecap="round" />
+                <circle cx={w*0.94} cy={h*0.62} r={3} fill="#db2777" stroke="#ffffff" strokeWidth={1} />
+            </g>
+        )
+    },
+    net_twisted_pair: {
+        id: 'net_twisted_pair',
+        name: 'Twisted Pair Cable (Cat6 UTP)',
+        category: 'networking',
+        isNetworking: true,
+        isCS: true,
+        defaultWidth: 120,
+        defaultHeight: 65,
+        renderSVG: (w, h, stroke, sw, fill) => (
+            <g>
+                {/* Blue PVC Outer Jacket */}
+                <rect x={w*0.04} y={h*0.2} width={w*0.48} height={h*0.6} rx={5} fill="#2563eb" stroke="#1d4ed8" strokeWidth={sw || 2} />
+                <text x={w*0.27} y={h*0.54} textAnchor="middle" fontSize={7} fontWeight="bold" fill="#ffffff" fontFamily="sans-serif">CAT6 UTP 550MHz</text>
+                {/* 4 Color-Coded Twisted Pairs Extending Out */}
+                <path d={`M ${w*0.5} ${h*0.3} Q ${w*0.65} ${h*0.22} ${w*0.8} ${h*0.3} T ${w*0.94} ${h*0.3}`} fill="none" stroke="#3b82f6" strokeWidth={2.2} strokeLinecap="round" />
+                <path d={`M ${w*0.5} ${h*0.3} Q ${w*0.65} ${h*0.38} ${w*0.8} ${h*0.3} T ${w*0.94} ${h*0.3}`} fill="none" stroke="#93c5fd" strokeWidth={1.8} strokeDasharray="3 2" strokeLinecap="round" />
+                <path d={`M ${w*0.5} ${h*0.44} Q ${w*0.65} ${h*0.36} ${w*0.8} ${h*0.44} T ${w*0.94} ${h*0.44}`} fill="none" stroke="#ea580c" strokeWidth={2.2} strokeLinecap="round" />
+                <path d={`M ${w*0.5} ${h*0.44} Q ${w*0.65} ${h*0.52} ${w*0.8} ${h*0.44} T ${w*0.94} ${h*0.44}`} fill="none" stroke="#fed7aa" strokeWidth={1.8} strokeDasharray="3 2" strokeLinecap="round" />
+                <path d={`M ${w*0.5} ${h*0.58} Q ${w*0.65} ${h*0.5} ${w*0.8} ${h*0.58} T ${w*0.94} ${h*0.58}`} fill="none" stroke="#16a34a" strokeWidth={2.2} strokeLinecap="round" />
+                <path d={`M ${w*0.5} ${h*0.58} Q ${w*0.65} ${h*0.66} ${w*0.8} ${h*0.58} T ${w*0.94} ${h*0.58}`} fill="none" stroke="#bbf7d0" strokeWidth={1.8} strokeDasharray="3 2" strokeLinecap="round" />
+                <path d={`M ${w*0.5} ${h*0.7} Q ${w*0.65} ${h*0.64} ${w*0.8} ${h*0.7} T ${w*0.94} ${h*0.7}`} fill="none" stroke="#854d0e" strokeWidth={2.2} strokeLinecap="round" />
+                <path d={`M ${w*0.5} ${h*0.7} Q ${w*0.65} ${h*0.76} ${w*0.8} ${h*0.7} T ${w*0.94} ${h*0.7}`} fill="none" stroke="#fef08a" strokeWidth={1.8} strokeDasharray="3 2" strokeLinecap="round" />
+            </g>
+        )
+    },
+    net_multi_wan_router: {
+        id: 'net_multi_wan_router',
+        name: 'Multi-WAN Gateway Router',
+        category: 'networking',
+        isNetworking: true,
+        isCS: true,
+        defaultWidth: 125,
+        defaultHeight: 70,
+        renderSVG: (w, h, stroke, sw, fill) => (
+            <g>
+                {/* Dual Antennas */}
+                <line x1={w*0.14} y1={h*0.22} x2={w*0.08} y2={h*0.05} stroke="#475569" strokeWidth={3} strokeLinecap="round" />
+                <line x1={w*0.86} y1={h*0.22} x2={w*0.92} y2={h*0.05} stroke="#475569" strokeWidth={3} strokeLinecap="round" />
+                {/* Router Body */}
+                <rect x={w*0.04} y={h*0.22} width={w*0.92} height={h*0.68} rx={6} fill="#0f172a" stroke="#0ea5e9" strokeWidth={sw || 2} />
+                <rect x={w*0.08} y={h*0.3} width={w*0.84} height={h*0.52} rx={3} fill="#1e293b" />
+                {/* WAN1 / WAN2 Port Indicators */}
+                <rect x={w*0.12} y={h*0.38} width={w*0.16} height={h*0.34} rx={2} fill="#0284c7" stroke="#38bdf8" strokeWidth={1} />
+                <text x={w*0.2} y={h*0.6} textAnchor="middle" fontSize={6} fontWeight="bold" fill="#ffffff" fontFamily="monospace">WAN1</text>
+                <circle cx={w*0.2} cy={h*0.44} r={2} fill="#22c55e" />
+                <rect x={w*0.31} y={h*0.38} width={w*0.16} height={h*0.34} rx={2} fill="#0284c7" stroke="#38bdf8" strokeWidth={1} />
+                <text x={w*0.39} y={h*0.6} textAnchor="middle" fontSize={6} fontWeight="bold" fill="#ffffff" fontFamily="monospace">WAN2</text>
+                <circle cx={w*0.39} cy={h*0.44} r={2} fill="#22c55e" />
+                {/* Load Balancing & Firewall Icon */}
+                <path d={`M ${w*0.52} ${h*0.42} L ${w*0.62} ${h*0.54} L ${w*0.52} ${h*0.66}`} stroke="#38bdf8" strokeWidth={1.5} fill="none" strokeLinecap="round" />
+                <path d={`M ${w*0.56} ${h*0.54} L ${w*0.68} ${h*0.54}`} stroke="#38bdf8" strokeWidth={1.5} />
+                <circle cx={w*0.78} cy={h*0.48} r={2} fill="#22c55e" />
+                <circle cx={w*0.84} cy={h*0.48} r={2} fill="#3b82f6" />
+                <circle cx={w*0.78} cy={h*0.6} r={2} fill="#eab308" />
+                <circle cx={w*0.84} cy={h*0.6} r={2} fill="#22c55e" />
+            </g>
+        )
+    },
+    net_managed_switch: {
+        id: 'net_managed_switch',
+        name: '24-Port 1U Managed Switch',
+        category: 'networking',
+        isNetworking: true,
+        isCS: true,
+        defaultWidth: 140,
+        defaultHeight: 50,
+        renderSVG: (w, h, stroke, sw, fill) => (
+            <g>
+                {/* 1U Rackmount Chassis */}
+                <rect x={w*0.01} y={h*0.15} width={w*0.98} height={h*0.7} rx={3} fill="#1e293b" stroke="#64748b" strokeWidth={sw || 2} />
+                {/* Rack Mounting Ear Brackets */}
+                <rect x={w*0.01} y={h*0.15} width={w*0.04} height={h*0.7} fill="#334155" />
+                <circle cx={w*0.03} cy={h*0.5} r={1.5} fill="#0f172a" />
+                <rect x={w*0.95} y={h*0.15} width={w*0.04} height={h*0.7} fill="#334155" />
+                <circle cx={w*0.97} cy={h*0.5} r={1.5} fill="#0f172a" />
+                {/* Front Port Bezel */}
+                <rect x={w*0.06} y={h*0.22} width={w*0.88} height={h*0.56} rx={2} fill="#0f172a" />
+                {/* Status LED Dashboard */}
+                <circle cx={w*0.09} cy={h*0.38} r={1.8} fill="#22c55e" />
+                <circle cx={w*0.09} cy={h*0.62} r={1.8} fill="#3b82f6" />
+                {/* 10 Dual-Stacked GigE Ports (20 Ports total) */}
+                {Array.from({ length: 10 }).map((_, i) => (
+                    <g key={i}>
+                        <rect x={w*0.13 + i * (w*0.06)} y={h*0.28} width={w*0.048} height={h*0.44} rx={1} fill="#334155" stroke="#475569" strokeWidth={0.6} />
+                        <rect x={w*0.135 + i * (w*0.06)} y={h*0.38} width={w*0.038} height={h*0.26} fill="#090d16" />
+                        <circle cx={w*0.154 + i * (w*0.06)} cy={h*0.32} r={1.2} fill={i % 2 === 0 ? '#22c55e' : '#eab308'} />
+                    </g>
+                ))}
+                {/* Dual 10G SFP+ Uplinks */}
+                <rect x={w*0.76} y={h*0.28} width={w*0.06} height={h*0.44} rx={1} fill="#0284c7" stroke="#38bdf8" strokeWidth={0.8} />
+                <circle cx={w*0.79} cy={h*0.5} r={1.5} fill="#ffffff" />
+                <rect x={w*0.84} y={h*0.28} width={w*0.06} height={h*0.44} rx={1} fill="#0284c7" stroke="#38bdf8" strokeWidth={0.8} />
+                <circle cx={w*0.87} cy={h*0.5} r={1.5} fill="#ffffff" />
+            </g>
+        )
+    },
+    cs_laptop_workstation: {
+        id: 'cs_laptop_workstation',
+        name: 'CS Diagnostic Workstation (Laptop)',
+        category: 'cs',
+        isNetworking: true,
+        isCS: true,
+        defaultWidth: 110,
+        defaultHeight: 85,
+        renderSVG: (w, h, stroke, sw, fill) => (
+            <g>
+                {/* Screen Lid */}
+                <rect x={w*0.15} y={h*0.08} width={w*0.7} height={h*0.52} rx={4} fill="#0f172a" stroke="#475569" strokeWidth={sw || 2} />
+                {/* Screen Display */}
+                <rect x={w*0.18} y={h*0.12} width={w*0.64} height={h*0.44} rx={2} fill="#020617" />
+                {/* Terminal Prompt & Network Diagnostics */}
+                <circle cx={w*0.22} cy={h*0.17} r={1.5} fill="#ef4444" />
+                <circle cx={w*0.26} cy={h*0.17} r={1.5} fill="#eab308" />
+                <circle cx={w*0.3} cy={h*0.17} r={1.5} fill="#22c55e" />
+                <line x1={w*0.22} y1={h*0.24} x2={w*0.45} y2={h*0.24} stroke="#22c55e" strokeWidth={1.5} strokeLinecap="round" />
+                <line x1={w*0.22} y1={h*0.32} x2={w*0.6} y2={h*0.32} stroke="#38bdf8" strokeWidth={1.5} strokeLinecap="round" />
+                <line x1={w*0.22} y1={h*0.4} x2={w*0.52} y2={h*0.4} stroke="#a855f7" strokeWidth={1.5} strokeLinecap="round" />
+                <line x1={w*0.22} y1={h*0.48} x2={w*0.38} y2={h*0.48} stroke="#22c55e" strokeWidth={1.5} strokeLinecap="round" />
+                {/* Laptop Base & Keyboard */}
+                <polygon points={`${w*0.06},${h*0.88} ${w*0.94},${h*0.88} ${w*0.85},${h*0.6} ${w*0.15},${h*0.6}`} fill="#1e293b" stroke="#475569" strokeWidth={sw || 2} />
+                {/* Keyboard Grid */}
+                <polygon points={`${w*0.18},${h*0.62} ${w*0.82},${h*0.62} ${w*0.86},${h*0.75} ${w*0.14},${h*0.75}`} fill="#0f172a" />
+                {/* Trackpad */}
+                <rect x={w*0.4} y={h*0.78} width={w*0.2} height={h*0.08} rx={1} fill="#334155" />
+            </g>
+        )
+    },
+    net_ip_patch_panel: {
+        id: 'net_ip_patch_panel',
+        name: '24-Port 1U IP Patch Panel',
+        category: 'networking',
+        isNetworking: true,
+        isCS: true,
+        defaultWidth: 140,
+        defaultHeight: 45,
+        renderSVG: (w, h, stroke, sw, fill) => (
+            <g>
+                {/* 1U Metal Chassis */}
+                <rect x={w*0.01} y={h*0.15} width={w*0.98} height={h*0.7} rx={3} fill="#0f172a" stroke="#475569" strokeWidth={sw || 2} />
+                {/* Mounting Ears */}
+                <rect x={w*0.01} y={h*0.15} width={w*0.04} height={h*0.7} fill="#1e293b" />
+                <circle cx={w*0.03} cy={h*0.5} r={1.5} fill="#475569" />
+                <rect x={w*0.95} y={h*0.15} width={w*0.04} height={h*0.7} fill="#1e293b" />
+                <circle cx={w*0.97} cy={h*0.5} r={1.5} fill="#475569" />
+                {/* White Write-on Label Strip */}
+                <rect x={w*0.07} y={h*0.22} width={w*0.86} height={h*0.15} rx={1} fill="#f1f5f9" />
+                <text x={w*0.12} y={h*0.33} fontSize={5} fontWeight="bold" fill="#0f172a" fontFamily="monospace">PANEL-A: 1-24 IP DISTRIBUTION</text>
+                {/* 12 RJ45 Keystone Ports with Category Color Tags */}
+                {Array.from({ length: 12 }).map((_, i) => (
+                    <g key={i}>
+                        <rect x={w*0.08 + i * (w*0.071)} y={h*0.42} width={w*0.054} height={h*0.36} rx={1} fill="#1e293b" stroke="#64748b" strokeWidth={0.7} />
+                        <rect x={w*0.086 + i * (w*0.071)} y={h*0.5} width={w*0.042} height={h*0.22} fill="#090d16" />
+                        <line x1={w*0.08 + i * (w*0.071)} y1={h*0.42} x2={w*0.134 + i * (w*0.071)} y2={h*0.42} stroke={i < 6 ? '#38bdf8' : '#22c55e'} strokeWidth={1.5} />
                     </g>
                 ))}
             </g>
@@ -1523,6 +1709,199 @@ export const DOMAIN_SHAPES = {
                 <circle cx={w*0.75} cy={h*0.72} r={6} fill="#a855f7" stroke="#7e22ce" />
             </g>
         )
+    },
+    // ═══════════════════════════════════════════════════════════════════
+    // 3D COMPUTER SCIENCE & NETWORKING HARDWARE MODELS
+    // ═══════════════════════════════════════════════════════════════════
+    optical_fiber_3d: {
+        id: 'optical_fiber_3d',
+        name: '3D Optical Fiber Cable',
+        category: '3d',
+        is3D: true,
+        isCS: true,
+        isNetworking: true,
+        modelType: 'optical_fiber',
+        color: '#38bdf8',
+        useImageTexture: false,
+        textureUrl: getTextureSVGDataUri('optical_fiber'),
+        defaultWidth: 180,
+        defaultHeight: 180,
+        renderSVG: (w, h) => (
+            <g stroke="#38bdf8" strokeWidth={1.5} fill="none">
+                {/* Yellow Outer Buffer Jacket */}
+                <ellipse cx={w/2} cy={h*0.3} rx={w*0.38} ry={h*0.14} fill="#f59e0b" stroke="#d97706" strokeWidth={2} />
+                <path d={`M ${w*0.12} ${h*0.3} L ${w*0.12} ${h*0.7} A ${w*0.38} ${h*0.14} 0 0 0 ${w*0.88} ${h*0.7} L ${w*0.88} ${h*0.3}`} fill="#fbbf24" stroke="#d97706" strokeWidth={2} />
+                <ellipse cx={w/2} cy={h*0.7} rx={w*0.38} ry={h*0.14} fill="#f59e0b" stroke="#d97706" strokeWidth={2} />
+                {/* Kevlar & Inner Tube Layer */}
+                <ellipse cx={w/2} cy={h*0.5} rx={w*0.26} ry={h*0.1} fill="#e2e8f0" stroke="#94a3b8" strokeWidth={1.5} />
+                {/* Core Strands with Light Pulses */}
+                <circle cx={w*0.42} cy={h*0.5} r={w*0.045} fill="#0ea5e9" stroke="#38bdf8" strokeWidth={1.5} />
+                <circle cx={w*0.58} cy={h*0.5} r={w*0.045} fill="#0ea5e9" stroke="#38bdf8" strokeWidth={1.5} />
+                <circle cx={w/2} cy={h*0.45} r={w*0.045} fill="#22c55e" stroke="#4ade80" strokeWidth={1.5} />
+                <circle cx={w/2} cy={h*0.55} r={w*0.045} fill="#ec4899" stroke="#f472b6" strokeWidth={1.5} />
+                <circle cx={w*0.42} cy={h*0.5} r={1.5} fill="#ffffff" />
+                <circle cx={w*0.58} cy={h*0.5} r={1.5} fill="#ffffff" />
+                <circle cx={w/2} cy={h*0.45} r={1.5} fill="#ffffff" />
+                <circle cx={w/2} cy={h*0.55} r={1.5} fill="#ffffff" />
+            </g>
+        )
+    },
+    twisted_cables_3d: {
+        id: 'twisted_cables_3d',
+        name: '3D Twisted Pair Cables (Cat6 UTP)',
+        category: '3d',
+        is3D: true,
+        isCS: true,
+        isNetworking: true,
+        modelType: 'twisted_cables',
+        color: '#3b82f6',
+        useImageTexture: false,
+        textureUrl: getTextureSVGDataUri('twisted_cables'),
+        defaultWidth: 180,
+        defaultHeight: 180,
+        renderSVG: (w, h) => (
+            <g stroke="#3b82f6" strokeWidth={1.8} fill="none">
+                {/* Blue PVC Outer Jacket */}
+                <ellipse cx={w/2} cy={h*0.3} rx={w*0.38} ry={h*0.14} fill="#2563eb" stroke="#1d4ed8" strokeWidth={2} />
+                <path d={`M ${w*0.12} ${h*0.3} L ${w*0.12} ${h*0.7} A ${w*0.38} ${h*0.14} 0 0 0 ${w*0.88} ${h*0.7} L ${w*0.88} ${h*0.3}`} fill="#1d4ed8" stroke="#1e40af" strokeWidth={2} />
+                <ellipse cx={w/2} cy={h*0.7} rx={w*0.38} ry={h*0.14} fill="#2563eb" stroke="#1d4ed8" strokeWidth={2} />
+                {/* 4 Intertwined Color-Coded Wire Pairs */}
+                <circle cx={w*0.4} cy={h*0.44} r={w*0.065} fill="#3b82f6" stroke="#ffffff" strokeWidth={1.5} />
+                <circle cx={w*0.47} cy={h*0.4} r={w*0.065} fill="#93c5fd" stroke="#2563eb" strokeWidth={1.5} />
+                <circle cx={w*0.6} cy={h*0.44} r={w*0.065} fill="#ea580c" stroke="#ffffff" strokeWidth={1.5} />
+                <circle cx={w*0.53} cy={h*0.4} r={w*0.065} fill="#fed7aa" stroke="#ea580c" strokeWidth={1.5} />
+                <circle cx={w*0.4} cy={h*0.56} r={w*0.065} fill="#16a34a" stroke="#ffffff" strokeWidth={1.5} />
+                <circle cx={w*0.47} cy={h*0.6} r={w*0.065} fill="#bbf7d0" stroke="#16a34a" strokeWidth={1.5} />
+                <circle cx={w*0.6} cy={h*0.56} r={w*0.065} fill="#854d0e" stroke="#ffffff" strokeWidth={1.5} />
+                <circle cx={w*0.53} cy={h*0.6} r={w*0.065} fill="#fef08a" stroke="#854d0e" strokeWidth={1.5} />
+                {/* Central Spline Divider */}
+                <path d={`M ${w/2} ${h*0.46} L ${w/2} ${h*0.54} M ${w*0.46} ${h/2} L ${w*0.54} ${h/2}`} stroke="#e2e8f0" strokeWidth={2} strokeLinecap="round" />
+            </g>
+        )
+    },
+    multwan_router_3d: {
+        id: 'multwan_router_3d',
+        name: '3D Multi-WAN Gateway Router',
+        category: '3d',
+        is3D: true,
+        isCS: true,
+        isNetworking: true,
+        modelType: 'multwan_router',
+        color: '#0284c7',
+        useImageTexture: false,
+        textureUrl: getTextureSVGDataUri('multwan_router'),
+        defaultWidth: 200,
+        defaultHeight: 160,
+        renderSVG: (w, h) => (
+            <g>
+                {/* Dual Detachable High-Gain Antennas */}
+                <line x1={w*0.2} y1={h*0.3} x2={w*0.12} y2={h*0.06} stroke="#475569" strokeWidth={3} strokeLinecap="round" />
+                <line x1={w*0.8} y1={h*0.3} x2={w*0.88} y2={h*0.06} stroke="#475569" strokeWidth={3} strokeLinecap="round" />
+                {/* Router Chassis */}
+                <path d={`M ${w*0.1} ${h*0.35} L ${w*0.5} ${h*0.2} L ${w*0.9} ${h*0.35} L ${w*0.5} ${h*0.5} Z`} fill="#1e293b" stroke="#0ea5e9" strokeWidth={2} />
+                <path d={`M ${w*0.1} ${h*0.35} L ${w*0.5} ${h*0.5} L ${w*0.5} ${h*0.8} L ${w*0.1} ${h*0.65} Z`} fill="#0f172a" stroke="#0ea5e9" strokeWidth={2} />
+                <path d={`M ${w*0.5} ${h*0.5} L ${w*0.9} ${h*0.35} L ${w*0.9} ${h*0.65} L ${w*0.5} ${h*0.8} Z`} fill="#334155" stroke="#0ea5e9" strokeWidth={2} />
+                {/* Dual WAN Ports & Activity LEDs */}
+                <rect x={w*0.16} y={h*0.55} width={w*0.08} height={h*0.12} fill="#0284c7" stroke="#38bdf8" strokeWidth={1} rx={1} />
+                <rect x={w*0.28} y={h*0.58} width={w*0.08} height={h*0.12} fill="#0284c7" stroke="#38bdf8" strokeWidth={1} rx={1} />
+                <circle cx={w*0.2} cy={h*0.5} r={2} fill="#22c55e" />
+                <circle cx={w*0.32} cy={h*0.53} r={2} fill="#22c55e" />
+                <text x={w*0.24} y={h*0.75} fill="#38bdf8" fontSize={7} fontWeight="bold" fontFamily="monospace">WAN1/2</text>
+            </g>
+        )
+    },
+    network_switch_3d: {
+        id: 'network_switch_3d',
+        name: '3D 24-Port Managed Switch',
+        category: '3d',
+        is3D: true,
+        isCS: true,
+        isNetworking: true,
+        modelType: 'network_switch',
+        color: '#334155',
+        useImageTexture: false,
+        textureUrl: getTextureSVGDataUri('network_switch'),
+        defaultWidth: 220,
+        defaultHeight: 140,
+        renderSVG: (w, h) => (
+            <g>
+                {/* 1U Rackmount Chassis */}
+                <path d={`M ${w*0.05} ${h*0.35} L ${w*0.45} ${h*0.18} L ${w*0.95} ${h*0.28} L ${w*0.55} ${h*0.45} Z`} fill="#334155" stroke="#64748b" strokeWidth={2} />
+                <path d={`M ${w*0.05} ${h*0.35} L ${w*0.55} ${h*0.45} L ${w*0.55} ${h*0.75} L ${w*0.05} ${h*0.65} Z`} fill="#1e293b" stroke="#64748b" strokeWidth={2} />
+                <path d={`M ${w*0.55} ${h*0.45} L ${w*0.95} ${h*0.28} L ${w*0.95} ${h*0.58} L ${w*0.55} ${h*0.75} Z`} fill="#0f172a" stroke="#64748b" strokeWidth={2} />
+                {/* Rack Mounting Ear Brackets */}
+                <polygon points={`${w*0.02},${h*0.33} ${w*0.05},${h*0.35} ${w*0.05},${h*0.65} ${w*0.02},${h*0.63}`} fill="#475569" stroke="#64748b" strokeWidth={1} />
+                <circle cx={w*0.035} cy={h*0.48} r={1.5} fill="#0f172a" />
+                {/* Front Port Bank & Dual SFP Uplinks */}
+                {Array.from({ length: 8 }).map((_, i) => (
+                    <rect key={i} x={w*0.1 + i * (w*0.045)} y={h*0.44 + i * (h*0.015)} width={w*0.035} height={h*0.12} rx={1} fill="#090d16" stroke="#475569" strokeWidth={0.8} />
+                ))}
+                <rect x={w*0.48} y={h*0.57} width={w*0.05} height={h*0.14} rx={1} fill="#eab308" stroke="#ca8a04" strokeWidth={1} />
+            </g>
+        )
+    },
+    laptop_3d: {
+        id: 'laptop_3d',
+        name: '3D CS Laptop / Workstation',
+        category: '3d',
+        is3D: true,
+        isCS: true,
+        isNetworking: true,
+        modelType: 'laptop',
+        color: '#475569',
+        useImageTexture: false,
+        textureUrl: getTextureSVGDataUri('laptop'),
+        defaultWidth: 180,
+        defaultHeight: 170,
+        renderSVG: (w, h) => (
+            <g>
+                {/* Laptop Display Screen (Tilted Upright) */}
+                <path d={`M ${w*0.2} ${h*0.15} L ${w*0.8} ${h*0.15} L ${w*0.8} ${h*0.55} L ${w*0.2} ${h*0.55} Z`} fill="#0f172a" stroke="#475569" strokeWidth={2} />
+                {/* Active Terminal Screen */}
+                <rect x={w*0.23} y={h*0.18} width={w*0.54} height={h*0.34} fill="#020617" />
+                <circle cx={w*0.26} cy={h*0.21} r={1.5} fill="#ef4444" />
+                <circle cx={w*0.29} cy={h*0.21} r={1.5} fill="#eab308" />
+                <circle cx={w*0.32} cy={h*0.21} r={1.5} fill="#22c55e" />
+                <text x={w*0.25} y={h*0.28} fill="#22c55e" fontSize={6} fontFamily="monospace">&gt; ping -c 4 host</text>
+                <text x={w*0.25} y={h*0.34} fill="#38bdf8" fontSize={6} fontFamily="monospace">64 bytes: icmp=1</text>
+                <text x={w*0.25} y={h*0.4} fill="#38bdf8" fontSize={6} fontFamily="monospace">64 bytes: icmp=2</text>
+                <text x={w*0.25} y={h*0.46} fill="#a855f7" fontSize={6} fontFamily="monospace">0% packet loss</text>
+                {/* Base & Keyboard */}
+                <path d={`M ${w*0.2} ${h*0.55} L ${w*0.8} ${h*0.55} L ${w*0.9} ${h*0.82} L ${w*0.1} ${h*0.82} Z`} fill="#1e293b" stroke="#64748b" strokeWidth={2} />
+                <polygon points={`${w*0.22},${h*0.58} ${w*0.78},${h*0.58} ${w*0.83},${h*0.72} ${w*0.17},${h*0.72}`} fill="#090d16" />
+                <polygon points={`${w*0.4},${h*0.74} ${w*0.6},${h*0.74} ${w*0.62},${h*0.8} ${w*0.38},${h*0.8}`} fill="#334155" stroke="#475569" strokeWidth={0.8} />
+            </g>
+        )
+    },
+    ip_panel_3d: {
+        id: 'ip_panel_3d',
+        name: '3D IP Patch Distribution Panel',
+        category: '3d',
+        is3D: true,
+        isCS: true,
+        isNetworking: true,
+        modelType: 'ip_panel',
+        color: '#1e293b',
+        useImageTexture: false,
+        textureUrl: getTextureSVGDataUri('ip_panel'),
+        defaultWidth: 220,
+        defaultHeight: 140,
+        renderSVG: (w, h) => (
+            <g>
+                {/* 1U Rack Chassis */}
+                <path d={`M ${w*0.05} ${h*0.35} L ${w*0.45} ${h*0.18} L ${w*0.95} ${h*0.28} L ${w*0.55} ${h*0.45} Z`} fill="#1e293b" stroke="#475569" strokeWidth={2} />
+                <path d={`M ${w*0.05} ${h*0.35} L ${w*0.55} ${h*0.45} L ${w*0.55} ${h*0.75} L ${w*0.05} ${h*0.65} Z`} fill="#0f172a" stroke="#475569" strokeWidth={2} />
+                <path d={`M ${w*0.55} ${h*0.45} L ${w*0.95} ${h*0.28} L ${w*0.95} ${h*0.58} L ${w*0.55} ${h*0.75} Z`} fill="#1e293b" stroke="#475569" strokeWidth={2} />
+                {/* Numbered Port Blocks with Color Tags */}
+                {Array.from({ length: 6 }).map((_, i) => (
+                    <g key={i}>
+                        <rect x={w*0.1 + i * (w*0.065)} y={h*0.45 + i * (h*0.02)} width={w*0.05} height={h*0.12} rx={1} fill="#334155" stroke="#64748b" strokeWidth={0.8} />
+                        <rect x={w*0.105 + i * (w*0.065)} y={h*0.46 + i * (h*0.02)} width={w*0.04} height={h*0.03} fill={i % 2 === 0 ? '#38bdf8' : '#22c55e'} />
+                        <rect x={w*0.11 + i * (w*0.065)} y={h*0.51 + i * (h*0.02)} width={w*0.03} height={h*0.05} fill="#090d16" />
+                    </g>
+                ))}
+            </g>
+        )
     }
 };
 
@@ -1680,9 +2059,9 @@ export default function DomainShapeLibraryModal({
         if (selectedCategory === '3d') {
             matchesCategory = s.category === '3d' || s.is3D;
         } else if (selectedCategory === 'networking') {
-            matchesCategory = s.category === 'networking' || s.id.startsWith('net_');
+            matchesCategory = s.category === 'networking' || s.id.startsWith('net_') || s.isNetworking;
         } else if (selectedCategory === 'cs') {
-            matchesCategory = s.category === 'cs' || s.id.startsWith('cs_') || s.id.startsWith('net_');
+            matchesCategory = s.category === 'cs' || s.id.startsWith('cs_') || s.id.startsWith('net_') || s.isCS || s.isNetworking;
         } else if (selectedCategory !== 'all') {
             matchesCategory = s.category === selectedCategory;
         }
@@ -1924,6 +2303,15 @@ export default function DomainShapeLibraryModal({
                                 </span>
                             </div>
 
+                            {/* 3D Badge */}
+                            {shape.is3D && (
+                                <div className="absolute top-2 left-2 z-10 pointer-events-none">
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-500/90 text-white shadow-sm border border-sky-400/50 uppercase tracking-wider">
+                                        3D
+                                    </span>
+                                </div>
+                            )}
+
                             {/* Shape Preview SVG */}
                             <div className="w-20 h-20 flex items-center justify-center p-2 rounded-lg bg-slate-950/60 border border-slate-800/80 group-hover:border-indigo-500/30 transition">
                                 <svg 
@@ -1939,7 +2327,7 @@ export default function DomainShapeLibraryModal({
                                     {shape.name}
                                 </span>
                                 <span className="text-[10px] text-slate-400 uppercase tracking-wider block mt-0.5">
-                                    {shape.category === '3d' ? '3D Object' : shape.category}
+                                    {shape.is3D ? (shape.isNetworking ? '3D Network Model' : '3D Object') : shape.category}
                                 </span>
                             </div>
                         </div>
