@@ -57,11 +57,11 @@ export default function WhiteboardAIAssistantModal({
 
     return (
         <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+            className="dark fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
             onClick={onClose}
         >
             <div
-                className="bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col text-slate-100 overflow-hidden"
+                className="dark bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col text-slate-100 overflow-hidden"
                 style={{ backgroundColor: '#0f172a' }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -164,10 +164,10 @@ export default function WhiteboardAIAssistantModal({
                             <span>Step-by-Step Solution & Formulas</span>
                         </div>
 
-                        <div className="text-sm text-slate-200 leading-relaxed pt-1">
+                        <div className="text-sm text-slate-100 leading-relaxed pt-1">
                             <MathRenderer
                                 content={solutionMarkdown || speechResponse || 'No detailed solution available.'}
-                                textClassName="text-slate-200"
+                                textClassName="text-slate-100"
                             />
                         </div>
                     </div>

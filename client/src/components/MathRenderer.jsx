@@ -136,10 +136,22 @@ function parseContent(text, textClassName = '', size = 'base', inline = false) {
 
         if (block.type === 'math_block') {
             const mathHtml = renderKatexToString(block.content, true);
+            const isLightText = textClassName && (
+                textClassName.includes('slate-1') || 
+                textClassName.includes('slate-2') || 
+                textClassName.includes('white') || 
+                textClassName.includes('cyan') || 
+                textClassName.includes('purple') || 
+                textClassName.includes('amber')
+            );
             return (
                 <div
                     key={`mb-${bIdx}`}
-                    className="my-3 px-4 py-2.5 bg-slate-50/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto text-center shadow-2xs text-slate-900 dark:text-slate-100"
+                    className={`my-3 px-4 py-3 rounded-xl overflow-x-auto text-center shadow-xs transition-colors ${
+                        isLightText 
+                            ? 'bg-slate-900/90 border border-slate-800 text-slate-100' 
+                            : 'bg-slate-50/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100'
+                    }`}
                     dangerouslySetInnerHTML={{ __html: mathHtml }}
                 />
             );
@@ -266,7 +278,7 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = '
                                 <tr>
                                     {headerCells.map((h, hIdx) => (
                                         <th key={hIdx} className="p-3.5 border-b border-slate-200 dark:border-slate-700">
-                                            {renderInlineFormattedText(h, size)}
+                                            {renderInlineFormattedText(h, size, textClassName)}
                                         </th>
                                     ))}
                                 </tr>
@@ -275,8 +287,8 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = '
                                 {rows.map((row, rIdx) => (
                                     <tr key={rIdx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
                                         {row.map((cell, cIdx) => (
-                                            <td key={cIdx} className="p-3.5 text-slate-800 dark:text-slate-200">
-                                                {renderInlineFormattedText(cell, size)}
+                                            <td key={cIdx} className={`p-3.5 ${textClassName || 'text-slate-800 dark:text-slate-200'}`}>
+                                                {renderInlineFormattedText(cell, size, textClassName)}
                                             </td>
                                         ))}
                                     </tr>
@@ -298,27 +310,27 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = '
 
             if (level === 1) {
                 elements.push(
-                    <h1 key={`${keyPrefix}-h1-${i}`} className={s.h1}>
-                        {renderInlineFormattedText(headingContent, size)}
+                    <h1 key={`${keyPrefix}-h1-${i}`} className={`${s.h1} ${textClassName ? (textClassName.includes('slate-') || textClassName.includes('white') ? 'text-white' : textClassName) : ''}`}>
+                        {renderInlineFormattedText(headingContent, size, textClassName)}
                     </h1>
                 );
             } else if (level === 2) {
                 elements.push(
-                    <h2 key={`${keyPrefix}-h2-${i}`} className={`${s.h2} flex items-center gap-2`}>
-                        {renderInlineFormattedText(headingContent, size)}
+                    <h2 key={`${keyPrefix}-h2-${i}`} className={`${s.h2} flex items-center gap-2 ${textClassName ? (textClassName.includes('slate-') || textClassName.includes('white') ? 'text-white' : textClassName) : ''}`}>
+                        {renderInlineFormattedText(headingContent, size, textClassName)}
                     </h2>
                 );
             } else if (level === 3) {
                 elements.push(
-                    <h3 key={`${keyPrefix}-h3-${i}`} className={`${s.h3} flex items-center gap-2`}>
-                        {renderInlineFormattedText(headingContent, size)}
+                    <h3 key={`${keyPrefix}-h3-${i}`} className={`${s.h3} flex items-center gap-2 ${textClassName ? (textClassName.includes('slate-') || textClassName.includes('white') ? 'text-indigo-300' : textClassName) : ''}`}>
+                        {renderInlineFormattedText(headingContent, size, textClassName)}
                     </h3>
                 );
             } else {
                 elements.push(
-                    <h4 key={`${keyPrefix}-h${level}-${i}`} className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200 mt-3.5 mb-1.5 flex items-center gap-2">
+                    <h4 key={`${keyPrefix}-h${level}-${i}`} className={`text-sm sm:text-base font-bold mt-3.5 mb-1.5 flex items-center gap-2 ${textClassName || 'text-slate-800 dark:text-slate-200'}`}>
                         <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
-                        {renderInlineFormattedText(headingContent, size)}
+                        {renderInlineFormattedText(headingContent, size, textClassName)}
                     </h4>
                 );
             }
@@ -377,7 +389,7 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = '
                         <span>{style.label}</span>
                     </div>
                     <div className={`text-xs sm:text-sm leading-relaxed font-normal`}>
-                        {renderInlineFormattedText(alertContent, size)}
+                        {renderInlineFormattedText(alertContent, size, textClassName)}
                     </div>
                 </div>
             );
@@ -389,7 +401,7 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = '
             flushParagraph(`${keyPrefix}-p-before-quote-${i}`);
             elements.push(
                 <blockquote key={`${keyPrefix}-quote-${i}`} className="my-2.5 border-l-4 border-indigo-500 bg-indigo-500/10 dark:bg-indigo-950/40 px-4 py-2.5 rounded-r-xl text-xs sm:text-sm italic text-indigo-900 dark:text-indigo-200">
-                    {renderInlineFormattedText(trimmed.slice(2), size)}
+                    {renderInlineFormattedText(trimmed.slice(2), size, textClassName)}
                 </blockquote>
             );
             i++;
@@ -400,8 +412,8 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = '
         if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
             flushParagraph(`${keyPrefix}-p-before-li-${i}`);
             elements.push(
-                <li key={`${keyPrefix}-li-${i}`} className={`ml-4 list-disc ${s.li} text-slate-800 dark:text-slate-200 ${textClassName}`}>
-                    {renderInlineFormattedText(trimmed.slice(2), size)}
+                <li key={`${keyPrefix}-li-${i}`} className={`ml-4 list-disc ${s.li} ${textClassName || 'text-slate-800 dark:text-slate-200'}`}>
+                    {renderInlineFormattedText(trimmed.slice(2), size, textClassName)}
                 </li>
             );
             i++;
@@ -413,9 +425,9 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = '
         if (numMatch) {
             flushParagraph(`${keyPrefix}-p-before-num-${i}`);
             elements.push(
-                <div key={`${keyPrefix}-num-${i}`} className={`ml-3 flex items-start gap-2.5 ${s.li} text-slate-800 dark:text-slate-200 ${textClassName}`}>
-                    <span className="font-extrabold text-indigo-500 shrink-0">{numMatch[1]}.</span>
-                    <span>{renderInlineFormattedText(numMatch[2], size)}</span>
+                <div key={`${keyPrefix}-num-${i}`} className={`ml-3 flex items-start gap-2.5 ${s.li} ${textClassName || 'text-slate-800 dark:text-slate-200'}`}>
+                    <span className="font-extrabold text-indigo-500 dark:text-indigo-400 shrink-0">{numMatch[1]}.</span>
+                    <span className="flex-1">{renderInlineFormattedText(numMatch[2], size, textClassName)}</span>
                 </div>
             );
             i++;
@@ -497,7 +509,7 @@ function renderInlineFormattedText(rawText, size = 'base', textClassName = '') {
             return (
                 <span
                     key={`im-${tIdx}`}
-                    className="inline-math px-0.5 select-all text-slate-900 dark:text-slate-100 align-baseline"
+                    className={`inline-math px-0.5 select-all align-baseline font-normal ${textClassName || 'text-slate-900 dark:text-slate-100'}`}
                     dangerouslySetInnerHTML={{ __html: mathHtml }}
                 />
             );
@@ -514,6 +526,15 @@ function renderInlineFormattedText(rawText, size = 'base', textClassName = '') {
  */
 function renderSimpleTypography(text, keyPrefix, textClassName = '') {
     if (!text) return null;
+
+    const isLightText = textClassName && (
+        textClassName.includes('white') || 
+        textClassName.includes('slate-1') || 
+        textClassName.includes('slate-2') || 
+        textClassName.includes('cyan') || 
+        textClassName.includes('purple') || 
+        textClassName.includes('amber')
+    );
 
     // Handle newlines as <br />
     const lines = text.split('\n');
@@ -540,8 +561,11 @@ function renderSimpleTypography(text, keyPrefix, textClassName = '') {
             const boldParts = lPart.split(/(\*\*.*?\*\*)/g);
             return boldParts.map((bPart, bpIdx) => {
                 if (bPart.startsWith('**') && bPart.endsWith('**') && bPart.length >= 4) {
+                    const boldClass = isLightText 
+                        ? 'font-extrabold text-white' 
+                        : (textClassName ? `font-extrabold ${textClassName}` : 'font-extrabold text-slate-900 dark:text-white');
                     return (
-                        <strong key={`${keyPrefix}-b-${lIdx}-${lpIdx}-${bpIdx}`} className="font-extrabold text-slate-900 dark:text-white">
+                        <strong key={`${keyPrefix}-b-${lIdx}-${lpIdx}-${bpIdx}`} className={boldClass}>
                             {bPart.slice(2, -2)}
                         </strong>
                     );
@@ -552,7 +576,7 @@ function renderSimpleTypography(text, keyPrefix, textClassName = '') {
                 return italicParts.map((iPart, ipIdx) => {
                     if (iPart.startsWith('*') && iPart.endsWith('*') && iPart.length >= 3) {
                         return (
-                            <em key={`${keyPrefix}-i-${lIdx}-${lpIdx}-${bpIdx}-${ipIdx}`} className="italic text-slate-800 dark:text-slate-200">
+                            <em key={`${keyPrefix}-i-${lIdx}-${lpIdx}-${bpIdx}-${ipIdx}`} className={`italic ${textClassName || 'text-slate-800 dark:text-slate-200'}`}>
                                 {iPart.slice(1, -1)}
                             </em>
                         );
