@@ -1055,30 +1055,6 @@ export default function Whiteboard({
         toast.success('Microphone device updated', { icon: '🎙️' });
     }, [startMicAudioAnalyzer]);
 
-    // Handle inserting generated AI solution as a note onto whiteboard canvas
-    const handleInsertAiSolutionToBoard = useCallback((solution) => {
-        if (!solution) return;
-        const baseCx = Math.round((-panOffset.x + (containerRef.current?.clientWidth || 1200) / 2) / zoomLevel);
-        const baseCy = Math.round((-panOffset.y + (containerRef.current?.clientHeight || 800) / 2) / zoomLevel);
-
-        const titleText = solution.question ? `Q: ${solution.question}\n` : '';
-        const rawContent = cleanTextForSpeech(solution.speechResponse || solution.solutionMarkdown || 'AI Solution');
-        const displayText = `${titleText}${rawContent}`.slice(0, 320);
-
-        const newNote = createStickyNoteObject(baseCx - 140, baseCy - 120, 'purple');
-        newNote.text = displayText;
-        newNote.title = solution.question ? `Q: ${solution.question.slice(0, 30)}...` : 'AI Solution';
-
-        setPageShapeObjects(prev => ({
-            ...prev,
-            [currentPage]: [...(prev[currentPage] || []), newNote]
-        }));
-        setTool('select');
-        setSelectedShapeIds([newNote.id]);
-        saveToHistory();
-        toast.success('Inserted AI Solution note to board', { icon: '📌' });
-    }, [panOffset, zoomLevel, currentPage, saveToHistory]);
-
     // ─── Radial Toolbar & Draggable Ball State ──────────────────────────
     const [showRadialMenu, setShowRadialMenu] = useState(false);
     const [radialMenuPos, setRadialMenuPos] = useState({ x: 60, y: 600 });
@@ -10082,6 +10058,30 @@ export default function Whiteboard({
             setTool(toolId);
         }
     }, []);
+
+    // Handle inserting generated AI solution as a note onto whiteboard canvas
+    const handleInsertAiSolutionToBoard = useCallback((solution) => {
+        if (!solution) return;
+        const baseCx = Math.round((-panOffset.x + (containerRef.current?.clientWidth || 1200) / 2) / zoomLevel);
+        const baseCy = Math.round((-panOffset.y + (containerRef.current?.clientHeight || 800) / 2) / zoomLevel);
+
+        const titleText = solution.question ? `Q: ${solution.question}\n` : '';
+        const rawContent = cleanTextForSpeech(solution.speechResponse || solution.solutionMarkdown || 'AI Solution');
+        const displayText = `${titleText}${rawContent}`.slice(0, 320);
+
+        const newNote = createStickyNoteObject(baseCx - 140, baseCy - 120, 'purple');
+        newNote.text = displayText;
+        newNote.title = solution.question ? `Q: ${solution.question.slice(0, 30)}...` : 'AI Solution';
+
+        setPageShapeObjects(prev => ({
+            ...prev,
+            [currentPage]: [...(prev[currentPage] || []), newNote]
+        }));
+        setTool('select');
+        setSelectedShapeIds([newNote.id]);
+        saveToHistory();
+        toast.success('Inserted AI Solution note to board', { icon: '📌' });
+    }, [panOffset, zoomLevel, currentPage, saveToHistory]);
 
     // ─── Voice Control & Speech Recognition Engine ──────────────────────
     const executeVoiceCommand = useCallback(async (rawText, isAiRetry = false) => {
