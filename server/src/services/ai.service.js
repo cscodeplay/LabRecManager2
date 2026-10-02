@@ -1519,14 +1519,15 @@ If Generative Drawing, 3D Model, Flowchart, or Visual Diagram:
   "solutionMarkdown": "<Step-by-step clear notes and LaTeX formulas using $$...$$ format for math/science>",
   "canvasAction": {
     "type": "insert_3d_model" | "draw_flowchart" | "draw_diagram" | "create_lesson_board",
+    "layoutType": "cycle | branching | hierarchical",
     "modelType": "<earth | sun | moon | mars | jupiter | saturn | atom | dna_double_helix | molecule | rocket | satellite | laptop | router | switch | cube | sphere | pyramid | cylinder | cone>",
     "title": "<Concise title of diagram or visual>",
     "color": "<hex color code>",
     "nodes": [
-      { "id": "n1", "label": "<Step 1 text>", "shapeType": "pill | rectangle | diamond", "color": "#6366f1" }
+      { "id": "n1", "label": "<Step 1 text>", "shapeType": "terminator | rounded_rect | rectangle | diamond | parallelogram | cylinder | circle", "color": "#6366f1" }
     ],
     "connections": [
-      { "from": "n1", "to": "n2", "label": "<optional arrow label>" }
+      { "from": "n1", "to": "n2", "label": "<descriptive transition label, e.g. chemical step, reaction, condition, action>", "sourceAnchor": "top | bottom | left | right", "targetAnchor": "top | bottom | left | right" }
     ],
     "shapes": [
       { "type": "circle | rectangle | triangle | arrow", "label": "<text>", "color": "#6366f1" }
@@ -1536,6 +1537,18 @@ If Generative Drawing, 3D Model, Flowchart, or Visual Diagram:
     ]
   }
 }
+
+CRITICAL FLOWCHART & CYCLE GUIDELINES:
+- For any cyclic process (Krebs cycle, photosynthesis, Calvin cycle, nitrogen cycle, carbon cycle, cell cycle, rock cycle, water cycle, PDCA cycle, SDLC):
+  - Set "layoutType": "cycle"
+  - Arrange stages in sequential clockwise order.
+  - Connect the final stage back to the first stage with a meaningful loop label (e.g. "Continuous Cycle", "Regeneration", "Substrate Recycling").
+  - On EVERY connection, include a descriptive "label" (e.g. chemical enzyme, energy transfer, condition).
+  - Use "terminator" for major start/end/reservoir states, "rounded_rect" for processes, "diamond" for checkpoints.
+- For decision trees, algorithms, or sequential processes (binary search, auth, checkout, ML pipeline):
+  - Set "layoutType": "branching"
+  - Use "diamond" for decisions, "parallelogram" for input/output, "terminator" for start/end, "rectangle" for steps.
+  - Label branches clearly ("Yes/Match", "No/Mismatch", "Retry").
 
 If Question, Problem to Solve, or Explanation (e.g. "explain magnetic field with formula", "solve 3x + 12 = 36", "teach photosynthesis"):
 CRITICAL: NEVER return a tool modal command like "equation" or "math editor" when the user asks an educational explanation. ALWAYS return a "solution" with speechResponse and LaTeX formulas!
@@ -2882,9 +2895,314 @@ Output ONLY a valid JSON object matching this schema:
             }
         }
 
-        // 10. Generative Flowcharts & Process Diagrams
-        if (low.includes('flowchart') || (low.includes('flow') && low.includes('chart')) || (low.includes('diagram') && (low.includes('login') || low.includes('auth') || low.includes('process') || low.includes('cycle')))) {
-            // User Authentication / Login Flowchart
+        // 10. Generative Flowcharts, Biochemical Cycles & Process Diagrams
+        const isFlowchartOrCycle =
+            low.includes('flowchart') ||
+            (low.includes('flow') && low.includes('chart')) ||
+            low.includes('cycle') ||
+            low.includes('pipeline') ||
+            low.includes('decision tree') ||
+            (low.includes('diagram') && (low.includes('process') || low.includes('step') || low.includes('algorithm') || low.includes('krebs') || low.includes('calvin') || low.includes('nitrogen') || low.includes('carbon') || low.includes('pdca') || low.includes('sdlc') || low.includes('workflow')));
+
+        if (isFlowchartOrCycle) {
+            // 1. Krebs Cycle / Citric Acid Cycle / TCA Cycle
+            if (low.includes('kreb') || low.includes('citric') || low.includes('tca')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'draw_flowchart_krebs_cycle',
+                    speechResponse: "Drawing the Citric Acid Cycle (Krebs Cycle) in a circular layout with eight sequential enzymatic steps, detailing energy carriers NADH, FADH2, and GTP generation.",
+                    spokenFeedback: 'Drawn Krebs Cycle Flowchart',
+                    solutionMarkdown: `### The Citric Acid Cycle (Krebs Cycle / TCA Cycle)\n\n$$\\text{Acetyl-CoA} + 3\\text{NAD}^+ + \\text{FAD} + \\text{GDP} + \\text{P}_i + 2\\text{H}_2\\text{O} \\to 2\\text{CO}_2 + 3\\text{NADH} + \\text{FADH}_2 + \\text{GTP} + 2\\text{H}^+ + \\text{CoA}$$\n\n1. **Condensation:** Acetyl-CoA ($2\\text{C}$) combines with Oxaloacetate ($4\\text{C}$) to form Citrate ($6\\text{C}$).\n2. **Isomerization:** Citrate converts to Isocitrate via Aconitase.\n3. **Oxidative Decarboxylation:** Isocitrate produces $\\alpha$-Ketoglutarate and NADH + $\\text{CO}_2$.\n4. **Second Decarboxylation:** $\\alpha$-Ketoglutarate produces Succinyl-CoA, releasing NADH + $\\text{CO}_2$.\n5. **Substrate Phosphorylation:** Succinyl-CoA synthetase produces Succinate and $\\text{GTP}$ (or $\\text{ATP}$).\n6. **Dehydrogenation:** Succinate oxidizes to Fumarate yielding $\\text{FADH}_2$.\n7. **Hydration:** Fumarase catalyzes addition of $\\text{H}_2\\text{O}$ to form Malate.\n8. **Regeneration:** Malate dehydrogenase regenerates Oxaloacetate, producing NADH for the next cycle.`,
+                    canvasAction: {
+                        type: 'draw_flowchart',
+                        layoutType: 'cycle',
+                        title: 'The Citric Acid Cycle (Krebs Cycle)',
+                        nodes: [
+                            { id: 'kc_1', label: '1. Acetyl-CoA + Oxaloacetate\n(Citrate Synthase → Citrate 6C)', shapeType: 'terminator', color: '#10b981' },
+                            { id: 'kc_2', label: '2. Citrate → Isocitrate\n(Aconitase Isomerization)', shapeType: 'rounded_rect', color: '#3b82f6' },
+                            { id: 'kc_3', label: '3. α-Ketoglutarate (5C)\n(NAD+ → NADH + CO2)', shapeType: 'rounded_rect', color: '#8b5cf6' },
+                            { id: 'kc_4', label: '4. Succinyl-CoA (4C)\n(NAD+ → NADH + CO2)', shapeType: 'rounded_rect', color: '#ec4899' },
+                            { id: 'kc_5', label: '5. Succinate Synthesis\n(GDP + Pi → GTP / ATP Yield)', shapeType: 'rounded_rect', color: '#f59e0b' },
+                            { id: 'kc_6', label: '6. Fumarate Formation\n(FAD → FADH2 Oxidation)', shapeType: 'rounded_rect', color: '#06b6d4' },
+                            { id: 'kc_7', label: '7. L-Malate Synthesis\n(Fumarase Hydration + H2O)', shapeType: 'rounded_rect', color: '#6366f1' },
+                            { id: 'kc_8', label: '8. Oxaloacetate Recycled\n(NAD+ → NADH Regeneration)', shapeType: 'terminator', color: '#14b8a6' }
+                        ],
+                        connections: [
+                            { from: 'kc_1', to: 'kc_2', label: 'Aconitase Dehydration-Hydration' },
+                            { from: 'kc_2', to: 'kc_3', label: 'Isocitrate Dehydrogenase (CO2 Release)' },
+                            { from: 'kc_3', to: 'kc_4', label: 'α-Ketoglutarate Dehydrogenase (CO2 Release)' },
+                            { from: 'kc_4', to: 'kc_5', label: 'Succinyl-CoA Synthetase (GTP Yield)' },
+                            { from: 'kc_5', to: 'kc_6', label: 'Succinate Dehydrogenase (FADH2 Transfer)' },
+                            { from: 'kc_6', to: 'kc_7', label: 'Fumarase Stereospecific Hydration' },
+                            { from: 'kc_7', to: 'kc_8', label: 'Malate Dehydrogenase (NADH)' },
+                            { from: 'kc_8', to: 'kc_1', label: 'Continuous Cycle: Condensation with Acetyl-CoA' }
+                        ]
+                    }
+                };
+            }
+
+            // 2. Photosynthesis / Calvin Cycle
+            if (low.includes('photosynthesis') || low.includes('calvin')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'draw_flowchart_calvin_cycle',
+                    speechResponse: "Drawing the Calvin Cycle of photosynthesis in a circular format, illustrating carbon fixation by RuBisCO, reduction with ATP and NADPH, and RuBP regeneration.",
+                    spokenFeedback: 'Drawn Photosynthesis Calvin Cycle',
+                    solutionMarkdown: `### The Calvin Cycle (Light-Independent Reactions)\n\n$$3\\text{CO}_2 + 9\\text{ATP} + 6\\text{NADPH} + 6\\text{H}^+ \\to \\text{G3P} + 9\\text{ADP} + 8\\text{P}_i + 6\\text{NADP}^+ + 3\\text{H}_2\\text{O}$$\n\n1. **Carbon Fixation:** RuBisCO fixes atmospheric $\\text{CO}_2$ onto RuBP to yield 3-PGA.\n2. **Phosphorylation:** ATP phosphorylates 3-PGA into 1,3-Bisphosphoglycerate.\n3. **Reduction Phase:** NADPH reduces intermediate into Glyceraldehyde 3-phosphate (G3P).\n4. **Carbohydrate Output:** One net G3P exits to synthesize glucose, fructose, and starch.\n5. **RuBP Regeneration:** Remaining G3P molecules use ATP to regenerate RuBP acceptor.`,
+                    canvasAction: {
+                        type: 'draw_flowchart',
+                        layoutType: 'cycle',
+                        title: 'Photosynthesis: The Calvin Cycle',
+                        nodes: [
+                            { id: 'cc_1', label: '1. Carbon Fixation\n(3 CO2 + 3 RuBP via RuBisCO)', shapeType: 'terminator', color: '#10b981' },
+                            { id: 'cc_2', label: '2. 3-PGA Phosphorylation\n(6 ATP → 6 ADP)', shapeType: 'rounded_rect', color: '#3b82f6' },
+                            { id: 'cc_3', label: '3. Reduction Phase\n(6 NADPH → 6 NADP+)', shapeType: 'rounded_rect', color: '#8b5cf6' },
+                            { id: 'cc_4', label: '4. Sugar Output\n(Net 1 G3P to Glucose/Starch)', shapeType: 'parallelogram', color: '#f59e0b' },
+                            { id: 'cc_5', label: '5. RuBP Regeneration\n(5 G3P → 3 RuBP via 3 ATP)', shapeType: 'terminator', color: '#06b6d4' }
+                        ],
+                        connections: [
+                            { from: 'cc_1', to: 'cc_2', label: 'RuBisCO Enzyme Catalysis' },
+                            { from: 'cc_2', to: 'cc_3', label: 'Energy Transduction (ATP Used)' },
+                            { from: 'cc_3', to: 'cc_4', label: 'Electrons Donated by NADPH' },
+                            { from: 'cc_4', to: 'cc_5', label: 'Triose Phosphate Recycling' },
+                            { from: 'cc_5', to: 'cc_1', label: 'Continuous Fixation: RuBP Restored' }
+                        ]
+                    }
+                };
+            }
+
+            // 3. Nitrogen Cycle
+            if (low.includes('nitrogen')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'draw_flowchart_nitrogen_cycle',
+                    speechResponse: "Drawing the Nitrogen Cycle showing atmospheric nitrogen fixation, bacterial nitrification into nitrates, plant assimilation, and denitrification.",
+                    spokenFeedback: 'Drawn Nitrogen Cycle Flowchart',
+                    solutionMarkdown: `### The Biogeochemical Nitrogen Cycle\n\n1. **Atmospheric Nitrogen ($N_2$):** 78% of atmosphere, inert triple bond.\n2. **Nitrogen Fixation:** Diazotroph bacteria (*Rhizobium*, *Azotobacter*) and lightning fix $N_2 \\to NH_3/NH_4^+$.\n3. **Nitrification:** *Nitrosomonas* oxidize $NH_4^+ \\to NO_2^-$; *Nitrobacter* oxidize $NO_2^- \\to NO_3^-$.\n4. **Assimilation:** Plants absorb nitrates through roots to build amino acids and nucleic acids.\n5. **Ammonification:** Decomposers break down organic waste returning nitrogen as ammonium.\n6. **Denitrification:** *Pseudomonas* convert nitrates back to $N_2$ gas under anaerobic conditions.`,
+                    canvasAction: {
+                        type: 'draw_flowchart',
+                        layoutType: 'cycle',
+                        title: 'The Nitrogen Cycle',
+                        nodes: [
+                            { id: 'nc_1', label: '1. Atmospheric N2 Gas\n(Inert Atmospheric Reservoir)', shapeType: 'terminator', color: '#3b82f6' },
+                            { id: 'nc_2', label: '2. Nitrogen Fixation\n(Rhizobium in Root Nodules → NH4+)', shapeType: 'rounded_rect', color: '#10b981' },
+                            { id: 'nc_3', label: '3. Soil Nitrification\n(Nitrosomonas & Nitrobacter → NO3-)', shapeType: 'rounded_rect', color: '#8b5cf6' },
+                            { id: 'nc_4', label: '4. Plant Assimilation\n(Root Uptake → Proteins & DNA)', shapeType: 'rounded_rect', color: '#06b6d4' },
+                            { id: 'nc_5', label: '5. Ammonification\n(Fungi & Microbial Decay)', shapeType: 'rounded_rect', color: '#f59e0b' },
+                            { id: 'nc_6', label: '6. Denitrification\n(Pseudomonas → N2 Gas)', shapeType: 'terminator', color: '#ec4899' }
+                        ],
+                        connections: [
+                            { from: 'nc_1', to: 'nc_2', label: 'Biological & Lightning Fixation' },
+                            { from: 'nc_2', to: 'nc_3', label: 'Two-Step Aerobic Soil Oxidation' },
+                            { from: 'nc_3', to: 'nc_4', label: 'Active Transport Root Influx' },
+                            { from: 'nc_4', to: 'nc_5', label: 'Trophic Waste & Biomass Decay' },
+                            { from: 'nc_5', to: 'nc_6', label: 'Anaerobic Nitrate Respiration' },
+                            { from: 'nc_6', to: 'nc_1', label: 'Return of N2 Gas to Atmosphere' }
+                        ]
+                    }
+                };
+            }
+
+            // 4. Carbon Cycle
+            if (low.includes('carbon')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'draw_flowchart_carbon_cycle',
+                    speechResponse: "Drawing the Global Carbon Cycle showing photosynthetic fixation of carbon dioxide, trophic biomass transfer, fossil deposition, and respiration combustion efflux.",
+                    spokenFeedback: 'Drawn Carbon Cycle Flowchart',
+                    solutionMarkdown: `### The Global Carbon Cycle\n\n1. **Atmospheric Carbon ($CO_2$):** Key greenhouse gas regulating planetary heat balance.\n2. **Photosynthesis:** Plants and marine phytoplankton fix dissolved/air $CO_2$ into organic glucose.\n3. **Biosphere Consumption:** Trophic transfer throughout food webs into animal biomass.\n4. **Geologic Deposition:** Sedimentation creates limestone, humus, and deep fossil fuels.\n5. **Respiration & Combustion:** Cellular respiration, forest fires, volcanism, and fossil fuel combustion release $CO_2$ back to atmosphere.`,
+                    canvasAction: {
+                        type: 'draw_flowchart',
+                        layoutType: 'cycle',
+                        title: 'The Global Carbon Cycle',
+                        nodes: [
+                            { id: 'cc_1', label: '1. Atmospheric CO2 Reservoir\n(Atmospheric Carbon Pool)', shapeType: 'terminator', color: '#06b6d4' },
+                            { id: 'cc_2', label: '2. Photosynthetic Uptake\n(Chloroplasts Fix Carbon → Glucose)', shapeType: 'rounded_rect', color: '#10b981' },
+                            { id: 'cc_3', label: '3. Biosphere Biomass\n(Herbivores & Food Web Grazing)', shapeType: 'rounded_rect', color: '#f59e0b' },
+                            { id: 'cc_4', label: '4. Geological Sequestration\n(Sedimentation & Fossil Reserves)', shapeType: 'cylinder', color: '#8b5cf6' },
+                            { id: 'cc_5', label: '5. Respiration & Combustion\n(Biological & Industrial Emissions)', shapeType: 'rounded_rect', color: '#ef4444' }
+                        ],
+                        connections: [
+                            { from: 'cc_1', to: 'cc_2', label: 'Solar Photofixation' },
+                            { from: 'cc_2', to: 'cc_3', label: 'Trophic Ingestion & Assimilation' },
+                            { from: 'cc_3', to: 'cc_4', label: 'Decomposition & Deep Burial' },
+                            { from: 'cc_4', to: 'cc_5', label: 'Fossil Extraction & Volcanic Outgassing' },
+                            { from: 'cc_5', to: 'cc_1', label: 'Atmospheric Gas Re-equilibrium' }
+                        ]
+                    }
+                };
+            }
+
+            // 5. Cell Cycle
+            if (low.includes('cell cycle') || low.includes('mitosis')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'draw_flowchart_cell_cycle',
+                    speechResponse: "Drawing the eukaryotic cell cycle showing Interphase growth phases, the G1 checkpoint, S phase replication, Mitosis, and Cytokinesis.",
+                    spokenFeedback: 'Drawn Cell Cycle Flowchart',
+                    solutionMarkdown: `### The Eukaryotic Cell Cycle\n\n1. **G1 Phase (First Gap):** Rapid cell growth, RNA and protein synthesis.\n2. **G1/S Checkpoint:** Validates nutrient sufficiency, cell size, and DNA damage before replication.\n3. **S Phase (Synthesis):** Complete replication of nuclear DNA and centrosome duplication.\n4. **G2 Phase (Second Gap):** Tubulin synthesis, ATP accumulation, and preparation for spindle apparatus.\n5. **M Phase (Mitosis):** Nuclear division through Prophase, Metaphase, Anaphase, and Telophase.\n6. **Cytokinesis:** Cleavage furrow divides cytoplasm yielding two daughter cells.`,
+                    canvasAction: {
+                        type: 'draw_flowchart',
+                        layoutType: 'cycle',
+                        title: 'Eukaryotic Cell Cycle',
+                        nodes: [
+                            { id: 'cel_1', label: '1. G1 Phase (Growth)\n(Organelle Duplication & Protein Synthesis)', shapeType: 'terminator', color: '#3b82f6' },
+                            { id: 'cel_2', label: '2. G1/S Checkpoint\n(DNA Integrity Verification)', shapeType: 'diamond', color: '#f59e0b' },
+                            { id: 'cel_3', label: '3. S Phase (Synthesis)\n(Nuclear DNA Replication)', shapeType: 'rounded_rect', color: '#8b5cf6' },
+                            { id: 'cel_4', label: '4. G2 Phase (Mitotic Prep)\n(Spindle Protein Assembly)', shapeType: 'rounded_rect', color: '#06b6d4' },
+                            { id: 'cel_5', label: '5. M Phase (Mitosis)\n(Prophase, Metaphase, Anaphase)', shapeType: 'rounded_rect', color: '#ec4899' },
+                            { id: 'cel_6', label: '6. Cytokinesis\n(Cell Cleavage into 2 Daughter Cells)', shapeType: 'terminator', color: '#10b981' }
+                        ],
+                        connections: [
+                            { from: 'cel_1', to: 'cel_2', label: 'Cyclin D-CDK4 Activation' },
+                            { from: 'cel_2', to: 'cel_3', label: 'Pass: DNA Uncompromised' },
+                            { from: 'cel_3', to: 'cel_4', label: 'Sister Chromatids Completed' },
+                            { from: 'cel_4', to: 'cel_5', label: 'Cyclin B-CDK1 Trigger' },
+                            { from: 'cel_5', to: 'cel_6', label: 'Karyokinesis Complete' },
+                            { from: 'cel_6', to: 'cel_1', label: 'Daughter Cells Enter Interphase' }
+                        ]
+                    }
+                };
+            }
+
+            // 6. PDCA Cycle
+            if (low.includes('pdca') || low.includes('deming')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'draw_flowchart_pdca',
+                    speechResponse: "Drawing the Deming PDCA continuous improvement cycle, showing Plan, Do, Check, and Act loops.",
+                    spokenFeedback: 'Drawn PDCA Cycle Flowchart',
+                    solutionMarkdown: `### The Deming PDCA Cycle (Plan-Do-Check-Act)\n\n1. **Plan:** Establish objectives, risk metrics, and hypothesis.\n2. **Do:** Execute the plan on a controlled pilot scale.\n3. **Check:** Measure results against benchmark KPIs.\n4. **Act:** Standardize successful procedures and initiate next iteration.`,
+                    canvasAction: {
+                        type: 'draw_flowchart',
+                        layoutType: 'cycle',
+                        title: 'PDCA Continuous Improvement Cycle',
+                        nodes: [
+                            { id: 'pdca_1', label: '1. Plan (P)\n(Define Goals & Map Strategy)', shapeType: 'terminator', color: '#3b82f6' },
+                            { id: 'pdca_2', label: '2. Do (D)\n(Execute Pilot Implementation)', shapeType: 'rounded_rect', color: '#10b981' },
+                            { id: 'pdca_3', label: '3. Check (C)\n(Audit Metrics vs Benchmark)', shapeType: 'diamond', color: '#f59e0b' },
+                            { id: 'pdca_4', label: '4. Act (A)\n(Standardize & Scale Solution)', shapeType: 'rounded_rect', color: '#8b5cf6' }
+                        ],
+                        connections: [
+                            { from: 'pdca_1', to: 'pdca_2', label: 'Deploy Protocols' },
+                            { from: 'pdca_2', to: 'pdca_3', label: 'Collect Performance Telemetry' },
+                            { from: 'pdca_3', to: 'pdca_4', label: 'Verify Variance Within Limits' },
+                            { from: 'pdca_4', to: 'pdca_1', label: 'Re-baseline Continuous Quality Loop' }
+                        ]
+                    }
+                };
+            }
+
+            // 7. SDLC / Software Development Life Cycle
+            if (low.includes('sdlc') || (low.includes('software') && low.includes('development'))) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'draw_flowchart_sdlc',
+                    speechResponse: "Drawing the Software Development Life Cycle showing planning, system architecture, coding implementation, QA testing, deployment, and monitoring.",
+                    spokenFeedback: 'Drawn SDLC Cycle Flowchart',
+                    solutionMarkdown: `### Software Development Life Cycle (SDLC)\n\n1. **Requirements & Scope:** Stakeholder specifications and backlog prioritization.\n2. **Architecture & Design:** System architecture, database schema, and UI/UX wireframes.\n3. **Development:** Clean code implementation, unit tests, and code review.\n4. **QA & Validation:** Automated integration tests, security audits, and regression tests.\n5. **Deployment:** CI/CD automated staging and production deployment.\n6. **Maintenance & Telemetry:** Log observability, telemetry metrics, and user feedback.`,
+                    canvasAction: {
+                        type: 'draw_flowchart',
+                        layoutType: 'cycle',
+                        title: 'Software Development Life Cycle (SDLC)',
+                        nodes: [
+                            { id: 'sdlc_1', label: '1. Requirements & Planning\n(Scope & User Stories)', shapeType: 'terminator', color: '#3b82f6' },
+                            { id: 'sdlc_2', label: '2. System Design\n(Architecture & Wireframes)', shapeType: 'rounded_rect', color: '#06b6d4' },
+                            { id: 'sdlc_3', label: '3. Implementation\n(Code & Unit Tests)', shapeType: 'rounded_rect', color: '#8b5cf6' },
+                            { id: 'sdlc_4', label: '4. QA & Testing\n(CI Pipeline & End-to-End)', shapeType: 'diamond', color: '#f59e0b' },
+                            { id: 'sdlc_5', label: '5. Production Release\n(Automated Blue/Green Deploy)', shapeType: 'rounded_rect', color: '#10b981' },
+                            { id: 'sdlc_6', label: '6. Maintenance & Feedback\n(Observability & SRE)', shapeType: 'rounded_rect', color: '#ec4899' }
+                        ],
+                        connections: [
+                            { from: 'sdlc_1', to: 'sdlc_2', label: 'Spec Approved' },
+                            { from: 'sdlc_2', to: 'sdlc_3', label: 'Architecture Ready' },
+                            { from: 'sdlc_3', to: 'sdlc_4', label: 'Pull Request Merged' },
+                            { from: 'sdlc_4', to: 'sdlc_5', label: 'Tests 100% Green' },
+                            { from: 'sdlc_5', to: 'sdlc_6', label: 'Canary Rollout' },
+                            { from: 'sdlc_6', to: 'sdlc_1', label: 'Sprint Retrospective & Next Backlog' }
+                        ]
+                    }
+                };
+            }
+
+            // 8. Binary Search Algorithm Flowchart
+            if (low.includes('binary search') || (low.includes('search') && low.includes('algorithm'))) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'draw_flowchart_binary_search',
+                    speechResponse: "Drawing the Binary Search algorithm flowchart showing bound initialization, midpoint calculation, conditional branch comparisons, and target return.",
+                    spokenFeedback: 'Drawn Binary Search Flowchart',
+                    solutionMarkdown: `### Binary Search Algorithm ($O(\\log n)$)\n\n1. **Initialization:** Set \`low = 0\` and \`high = n - 1\`.\n2. **Loop Condition:** While \`low <= high\`, compute midpoint: $\\text{mid} = \\lfloor (\\text{low} + \\text{high}) / 2 \\rfloor$.\n3. **Evaluation:**\n   - If $\\text{arr}[\\text{mid}] == \\text{target}$, return index (Success).\n   - If $\\text{arr}[\\text{mid}] < \\text{target}$, set $\\text{low} = \\text{mid} + 1$.\n   - Else set $\\text{high} = \\text{mid} - 1$.\n4. **Termination:** If search range exhausted, return -1 (Not Found).`,
+                    canvasAction: {
+                        type: 'draw_flowchart',
+                        layoutType: 'branching',
+                        title: 'Binary Search Algorithm',
+                        nodes: [
+                            { id: 'bs_1', label: '1. Start: Sorted Array & Target Key', shapeType: 'terminator', color: '#3b82f6' },
+                            { id: 'bs_2', label: '2. Set low = 0, high = n - 1', shapeType: 'rectangle', color: '#6366f1' },
+                            { id: 'bs_3', label: '3. Is low <= high?', shapeType: 'diamond', color: '#f59e0b' },
+                            { id: 'bs_4', label: '4. mid = ⌊(low + high) / 2⌋', shapeType: 'rectangle', color: '#06b6d4' },
+                            { id: 'bs_5', label: '5. Is arr[mid] == target?', shapeType: 'diamond', color: '#f59e0b' },
+                            { id: 'bs_6', label: '6. Success: Return mid Index', shapeType: 'terminator', color: '#10b981' },
+                            { id: 'bs_7', label: '7. Not Found: Return -1', shapeType: 'terminator', color: '#ef4444' }
+                        ],
+                        connections: [
+                            { from: 'bs_1', to: 'bs_2' },
+                            { from: 'bs_2', to: 'bs_3' },
+                            { from: 'bs_3', to: 'bs_4', label: 'Yes (Valid Range)' },
+                            { from: 'bs_3', to: 'bs_7', label: 'No (Range Exhausted)' },
+                            { from: 'bs_4', to: 'bs_5' },
+                            { from: 'bs_5', to: 'bs_6', label: 'Yes (Match Found)' },
+                            { from: 'bs_5', to: 'bs_3', label: 'No (Halve Range & Repeat)' }
+                        ]
+                    }
+                };
+            }
+
+            // 9. Machine Learning Pipeline Flowchart
+            if (low.includes('machine learning') || low.includes('ml pipeline') || low.includes('data science pipeline')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'draw_flowchart_ml_pipeline',
+                    speechResponse: "Drawing an end-to-end Machine Learning pipeline with data ingestion, feature engineering, model training, metric evaluation, and production deployment.",
+                    spokenFeedback: 'Drawn Machine Learning Pipeline',
+                    solutionMarkdown: `### End-to-End Machine Learning Pipeline\n\n1. **Data Ingestion:** Extract raw structured/unstructured data from lakehouse storage.\n2. **Feature Engineering:** Imputation, categorical encoding, scaling, and dimensionality reduction.\n3. **Model Training:** Fitting model weights using cross-validation and loss minimization.\n4. **Model Evaluation:** Computing test metrics: ROC-AUC, F1-score, MAE, or RMSE.\n5. **Validation Threshold:** Check if candidate model exceeds production baseline.\n6. **Production Serving:** Packaging model container, deploying API endpoint, and monitoring drift.`,
+                    canvasAction: {
+                        type: 'draw_flowchart',
+                        layoutType: 'branching',
+                        title: 'Machine Learning Pipeline',
+                        nodes: [
+                            { id: 'ml_1', label: '1. Raw Data Ingestion\n(Lakehouse & Data Streams)', shapeType: 'cylinder', color: '#3b82f6' },
+                            { id: 'ml_2', label: '2. Feature Engineering\n(Scaling, One-Hot, PCA)', shapeType: 'rectangle', color: '#6366f1' },
+                            { id: 'ml_3', label: '3. Model Training\n(Cross-Validation & Loss Optimization)', shapeType: 'rectangle', color: '#8b5cf6' },
+                            { id: 'ml_4', label: '4. Evaluation & Metrics\n(ROC-AUC, F1 Score, Latency)', shapeType: 'rectangle', color: '#06b6d4' },
+                            { id: 'ml_5', label: '5. Exceeds Baseline Threshold?', shapeType: 'diamond', color: '#f59e0b' },
+                            { id: 'ml_6', label: '6. Production Serving\n(Docker & REST/gRPC Endpoint)', shapeType: 'terminator', color: '#10b981' },
+                            { id: 'ml_7', label: '7. Hyperparameter Tuning\n(Bayesian Search & Adjust)', shapeType: 'rectangle', color: '#ef4444' }
+                        ],
+                        connections: [
+                            { from: 'ml_1', to: 'ml_2', label: 'ETL Pipeline' },
+                            { from: 'ml_2', to: 'ml_3', label: 'Feature Matrix X, y' },
+                            { from: 'ml_3', to: 'ml_4', label: 'Model Artifact' },
+                            { from: 'ml_4', to: 'ml_5', label: 'Evaluate Metrics' },
+                            { from: 'ml_5', to: 'ml_6', label: 'Yes (Production Ready)' },
+                            { from: 'ml_5', to: 'ml_7', label: 'No (Underperforming)' },
+                            { from: 'ml_7', to: 'ml_3', label: 'Retrain Loop' }
+                        ]
+                    }
+                };
+            }
+
+            // 10. User Authentication / Login Flowchart
             if (low.includes('login') || low.includes('auth') || low.includes('sign in') || low.includes('password')) {
                 return {
                     recognized: true,
@@ -2895,72 +3213,111 @@ Output ONLY a valid JSON object matching this schema:
                     solutionMarkdown: `### User Authentication Architecture Flowchart\n\n1. **User Request:** Submits email & password via HTTPS POST.\n2. **Hash Verification:** Server compares hashed input against bcrypt salted hash in database.\n3. **Token Issuance:** On match, cryptographically signs JWT containing user claims.\n4. **Session Handshake:** Client stores token in secure HTTP-only cookie and enters authenticated state.`,
                     canvasAction: {
                         type: 'draw_flowchart',
+                        layoutType: 'branching',
                         title: 'User Authentication Flow',
                         nodes: [
-                            { id: 'auth_1', label: '1. User Enters Email & Password', shapeType: 'rectangle', color: '#6366f1' },
-                            { id: 'auth_2', label: '2. Server Validates Input & Hashes Password', shapeType: 'rectangle', color: '#3b82f6' },
+                            { id: 'auth_1', label: '1. User Enters Email & Password', shapeType: 'parallelogram', color: '#6366f1' },
+                            { id: 'auth_2', label: '2. Server Hashes & Queries DB', shapeType: 'rectangle', color: '#3b82f6' },
                             { id: 'auth_3', label: '3. Credentials Match in Database?', shapeType: 'diamond', color: '#f59e0b' },
-                            { id: 'auth_4', label: '4. Sign JWT Token & Authorize Session', shapeType: 'rectangle', color: '#10b981' },
-                            { id: 'auth_5', label: '5. Display 401 Unauthorized Error', shapeType: 'rectangle', color: '#ef4444' }
+                            { id: 'auth_4', label: '4. Sign JWT Token & Authorize Session', shapeType: 'terminator', color: '#10b981' },
+                            { id: 'auth_5', label: '5. Return 401 Unauthorized Error', shapeType: 'terminator', color: '#ef4444' }
                         ],
                         connections: [
-                            { from: 'auth_1', to: 'auth_2' },
-                            { from: 'auth_2', to: 'auth_3' },
-                            { from: 'auth_3', to: 'auth_4', label: 'Match' },
-                            { from: 'auth_3', to: 'auth_5', label: 'Mismatch' }
+                            { from: 'auth_1', to: 'auth_2', label: 'HTTPS POST' },
+                            { from: 'auth_2', to: 'auth_3', label: 'Bcrypt Compare' },
+                            { from: 'auth_3', to: 'auth_4', label: 'Match (200 OK)' },
+                            { from: 'auth_3', to: 'auth_5', label: 'Mismatch (401)' }
                         ]
                     }
                 };
             }
 
-            // Hydrological Water Cycle Flowchart
+            // 11. Hydrological Water Cycle Flowchart
             if (low.includes('water') || low.includes('rain') || low.includes('hydrolog')) {
                 return {
                     recognized: true,
                     type: 'canvas_generation',
                     intent: 'draw_flowchart_water_cycle',
-                    speechResponse: "Drawing the hydrological water cycle flowchart showing solar evaporation, atmospheric condensation, precipitation, and groundwater collection.",
+                    speechResponse: "Drawing the hydrological water cycle flowchart in a circular layout, showing solar evaporation, atmospheric condensation, precipitation, and groundwater runoff.",
                     spokenFeedback: 'Drawn Water Cycle Flowchart',
                     solutionMarkdown: `### The Water Cycle (Hydrological Process)\n\n$$\\text{Liquid Water} \\xrightarrow{\\text{Evaporation}} \\text{Vapor} \\xrightarrow{\\text{Condensation}} \\text{Clouds} \\xrightarrow{\\text{Precipitation}} \\text{Runoff}$$\n\n1. **Evaporation & Transpiration:** Solar thermal energy turns liquid water into vapor.\n2. **Condensation:** Rising vapor cools into cloud droplets.\n3. **Precipitation:** Condensed droplets fall as rain, hail, or snow.\n4. **Infiltration & Runoff:** Water filters through soil into aquifers and flows back to lakes and oceans.`,
                     canvasAction: {
                         type: 'draw_flowchart',
-                        title: 'The Water Cycle Process',
+                        layoutType: 'cycle',
+                        title: 'The Hydrological Water Cycle',
                         nodes: [
-                            { id: 'wc_1', label: '1. Solar Evaporation\n(Liquid → Water Vapor)', shapeType: 'rectangle', color: '#f59e0b' },
-                            { id: 'wc_2', label: '2. Cloud Condensation\n(Vapor → Cloud Droplets)', shapeType: 'rectangle', color: '#06b6d4' },
-                            { id: 'wc_3', label: '3. Precipitation\n(Rain / Snow / Hail)', shapeType: 'rectangle', color: '#3b82f6' },
-                            { id: 'wc_4', label: '4. Surface Runoff & Infiltration\n(Rivers, Oceans, Aquifers)', shapeType: 'rectangle', color: '#10b981' }
+                            { id: 'wc_1', label: '1. Solar Evaporation\n(Liquid → Water Vapor)', shapeType: 'terminator', color: '#f59e0b' },
+                            { id: 'wc_2', label: '2. Cloud Condensation\n(Vapor Cools into Droplets)', shapeType: 'rounded_rect', color: '#06b6d4' },
+                            { id: 'wc_3', label: '3. Precipitation\n(Rain / Snow / Hail Fall)', shapeType: 'rounded_rect', color: '#3b82f6' },
+                            { id: 'wc_4', label: '4. Groundwater & Runoff\n(Aquifer Flow into Oceans)', shapeType: 'terminator', color: '#10b981' }
                         ],
                         connections: [
-                            { from: 'wc_1', to: 'wc_2' },
-                            { from: 'wc_2', to: 'wc_3' },
-                            { from: 'wc_3', to: 'wc_4' },
-                            { from: 'wc_4', to: 'wc_1', label: 'Continuous Cycle' }
+                            { from: 'wc_1', to: 'wc_2', label: 'Thermal Phase Change' },
+                            { from: 'wc_2', to: 'wc_3', label: 'Droplet Coalescence' },
+                            { from: 'wc_3', to: 'wc_4', label: 'Gravity Deposition' },
+                            { from: 'wc_4', to: 'wc_1', label: 'Continuous Cycle: Ocean Reservoir' }
                         ]
                     }
                 };
             }
 
-            // Generic / Decision Tree Flowchart
+            // 12. Dynamic Generic Flowchart / Cycle Generator for ANY query
+            const isCustomCycle = /cycle|loop|circular/i.test(low);
+            const topicClean = text.replace(/^(draw|create|make|generate|show)\s+(a\s+|an\s+|the\s+)?(flowchart|diagram|cycle|workflow)?\s*(for|of|about)?\s*/i, '').trim() || 'Process';
+            const topicTitle = topicClean.charAt(0).toUpperCase() + topicClean.slice(1);
+
+            if (isCustomCycle) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'draw_flowchart_dynamic_cycle',
+                    speechResponse: `Drawing an interactive cyclical diagram for ${topicTitle} with connected stages and continuous loop transitions.`,
+                    spokenFeedback: `Drawn ${topicTitle} Cycle`,
+                    solutionMarkdown: `### ${topicTitle} (Cyclical Process)\n\n1. **Initial Stage:** Primary inputs and state initialization.\n2. **Transformation Phase:** Catalytic or energetic state transition.\n3. **Intermediate Processing:** Synthesis, reaction, or execution stage.\n4. **Output & Regeneration:** Final result extracted and continuous loop regenerated.`,
+                    canvasAction: {
+                        type: 'draw_flowchart',
+                        layoutType: 'cycle',
+                        title: `${topicTitle} Cycle`,
+                        nodes: [
+                            { id: 'dyn_1', label: `1. Stage 1: ${topicTitle} Initiation`, shapeType: 'terminator', color: '#10b981' },
+                            { id: 'dyn_2', label: '2. Stage 2: State Transformation', shapeType: 'rounded_rect', color: '#3b82f6' },
+                            { id: 'dyn_3', label: '3. Stage 3: Reaction & Synthesis', shapeType: 'rounded_rect', color: '#8b5cf6' },
+                            { id: 'dyn_4', label: '4. Stage 4: Output & Regeneration', shapeType: 'terminator', color: '#f59e0b' }
+                        ],
+                        connections: [
+                            { from: 'dyn_1', to: 'dyn_2', label: 'Activation & Influx' },
+                            { from: 'dyn_2', to: 'dyn_3', label: 'Enzymatic Transition' },
+                            { from: 'dyn_3', to: 'dyn_4', label: 'Product Formation' },
+                            { from: 'dyn_4', to: 'dyn_1', label: 'Continuous Cycle Loop' }
+                        ]
+                    }
+                };
+            }
+
+            // General Branching Flowchart Fallback
             return {
                 recognized: true,
                 type: 'canvas_generation',
                 intent: 'draw_flowchart_generic',
-                speechResponse: "Drawing a structured process flowchart with connected decision nodes and action steps.",
-                spokenFeedback: 'Drawn Flowchart',
+                speechResponse: `Drawing a structured process flowchart for ${topicTitle} with connected decision nodes and action steps.`,
+                spokenFeedback: `Drawn ${topicTitle} Flowchart`,
+                solutionMarkdown: `### ${topicTitle} Workflow\n\n1. **Start:** Initialize required inputs and parameters.\n2. **Computation:** Execute core transformation logic.\n3. **Verification:** Validate output criteria or constraints.\n4. **Completion:** Return success artifact or handle failure branch.`,
                 canvasAction: {
                     type: 'draw_flowchart',
-                    title: 'Process Workflow',
+                    layoutType: 'branching',
+                    title: `${topicTitle} Workflow`,
                     nodes: [
-                        { id: 'fl_1', label: '1. Start Process & Initialize Inputs', shapeType: 'rectangle', color: '#6366f1' },
+                        { id: 'fl_1', label: `1. Start: Initialize ${topicTitle}`, shapeType: 'terminator', color: '#6366f1' },
                         { id: 'fl_2', label: '2. Transform & Compute Step', shapeType: 'rectangle', color: '#3b82f6' },
-                        { id: 'fl_3', label: '3. Validation Condition Met?', shapeType: 'diamond', color: '#f59e0b' },
-                        { id: 'fl_4', label: '4. Execute Output & Complete', shapeType: 'rectangle', color: '#10b981' }
+                        { id: 'fl_3', label: '3. Validation Criteria Met?', shapeType: 'diamond', color: '#f59e0b' },
+                        { id: 'fl_4', label: '4. Success: Output Result', shapeType: 'terminator', color: '#10b981' },
+                        { id: 'fl_5', label: '5. Error: Log & Retry', shapeType: 'terminator', color: '#ef4444' }
                     ],
                     connections: [
                         { from: 'fl_1', to: 'fl_2' },
                         { from: 'fl_2', to: 'fl_3' },
-                        { from: 'fl_3', to: 'fl_4', label: 'Yes' }
+                        { from: 'fl_3', to: 'fl_4', label: 'Yes (Valid)' },
+                        { from: 'fl_3', to: 'fl_5', label: 'No (Failed)' }
                     ]
                 }
             };

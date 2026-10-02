@@ -3,6 +3,23 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Trash2, Minus, Spline } from 'lucide-react';
 
+export const NORM_ANCHOR_MAP = {
+    top: 'top',
+    north: 'top',
+    n: 'top',
+    bottom: 'bottom',
+    south: 'bottom',
+    s: 'bottom',
+    left: 'left',
+    west: 'left',
+    w: 'left',
+    right: 'right',
+    east: 'right',
+    e: 'right',
+    center: 'center',
+    auto: 'auto'
+};
+
 // Returns { x, y } for the anchor of a shape, synchronized with actual geometric edges, rotation, and flips
 export const getAnchorPoint = (shape, anchor, otherPoint = null) => {
     if (!shape) return { x: 0, y: 0 };
@@ -16,8 +33,9 @@ export const getAnchorPoint = (shape, anchor, otherPoint = null) => {
         y: sy + h / 2 
     };
     
-    let resolvedAnchor = anchor;
-    if (anchor === 'auto') {
+    const rawAnchor = (typeof anchor === 'string' ? anchor.toLowerCase().trim() : 'auto');
+    let resolvedAnchor = NORM_ANCHOR_MAP[rawAnchor] || rawAnchor;
+    if (resolvedAnchor === 'auto') {
         if (otherPoint) {
             const dx = otherPoint.x - center.x;
             const dy = otherPoint.y - center.y;
@@ -127,8 +145,10 @@ export const findNearestShape = (point, shapes, threshold = 30) => {
 
 // Calculates outward normal vector from an anchor considering parent shape rotation
 export const getAnchorNormal = (shape, anchor, fallbackDx = 1, fallbackDy = 0) => {
+    const rawAnchor = (typeof anchor === 'string' ? anchor.toLowerCase().trim() : 'auto');
+    const resolvedAnchor = NORM_ANCHOR_MAP[rawAnchor] || rawAnchor;
     let baseAngle = 0;
-    switch (anchor) {
+    switch (resolvedAnchor) {
         case 'top': baseAngle = -90; break;
         case 'bottom': baseAngle = 90; break;
         case 'left': baseAngle = 180; break;

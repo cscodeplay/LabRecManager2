@@ -43,7 +43,7 @@ import AdminPermissionsPanel from './AdminPermissionsPanel';
 import RadialToolbar from './RadialToolbar';
 import { BRUSH_TYPES, renderCalligraphy, renderCrayon, renderWatercolor, renderFountainPen, floodFill, sampleColor } from './WhiteboardBrushEngine';
 import StickyNoteRenderer, { createStickyNoteObject, STICKY_COLORS } from './StickyNote';
-import ConnectorLine, { findNearestShape, getAnchorPoint, getConnectorPath, renderArrowhead, calculateAngle, getConnectorArrowAngle, getCurvedControlPoints, getConnectorMidpoint } from './ConnectorLine';
+import ConnectorLine, { findNearestShape, getAnchorPoint, getConnectorPath, renderArrowhead, calculateAngle, getConnectorArrowAngle, getCurvedControlPoints, getConnectorMidpoint, NORM_ANCHOR_MAP } from './ConnectorLine';
 import TemplateGallery from './TemplateGallery';
 import ClassroomTimerModal from './ClassroomTimerModal';
 import WhiteboardImagePickerModal from './WhiteboardImagePickerModal';
@@ -9050,7 +9050,7 @@ export default function Whiteboard({
             ctx.beginPath();
             ctx.moveTo(startPt.x, startPt.y);
 
-            if (pathType === 'orthogonal') {
+            if (pathType === 'orthogonal' || pathType === 'elbow') {
                 const isVertical = Math.abs(endPt.y - startPt.y) > Math.abs(endPt.x - startPt.x);
                 if (isVertical) {
                     const stepY = conn.waypoint?.y !== undefined ? conn.waypoint.y : (startPt.y + endPt.y) / 2;
@@ -9143,11 +9143,12 @@ export default function Whiteboard({
             }
 
             // Connector midpoint label
-            if (conn.label) {
+            const connLabel = conn.label || conn.text;
+            if (connLabel) {
                 const mid = getConnectorMidpoint(startPt, endPt, pathType, conn.waypoint, conn.sourceAnchor, conn.targetAnchor);
                 ctx.save();
                 ctx.font = `${conn.fontSize || 12}px 'Inter', sans-serif`;
-                const metrics = ctx.measureText(conn.label);
+                const metrics = ctx.measureText(connLabel);
                 const textW = metrics.width;
                 const textH = conn.fontSize || 12;
                 const padX = 6, padY = 3;
@@ -9165,7 +9166,7 @@ export default function Whiteboard({
                 ctx.fillStyle = connColor;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(conn.label, mid.x, mid.y);
+                ctx.fillText(connLabel, mid.x, mid.y);
                 ctx.restore();
             }
 
@@ -10281,76 +10282,232 @@ export default function Whiteboard({
             return true;
         }
 
-        // 2. Draw Native Interactive Flowchart with Smart Connectors
+        // 2. Draw Native Interactive Flowchart & Biochemical Cycles with Smart Connectors
         if (canvasAction.type === 'draw_flowchart') {
             const nodes = canvasAction.nodes || [];
             const connections = canvasAction.connections || [];
             const nodeMap = new Map();
             const newShapes = [];
 
-            const isVertical = nodes.length >= 4;
-            const startX = isVertical ? baseCx - 110 : baseCx - (nodes.length * 210) / 2;
-            const startY = isVertical ? baseCy - (nodes.length * 105) / 2 : baseCy - 55;
+            // Detect if this diagram is a cyclic process
+            const isExplicitCycle = canvasAction.layoutType === 'cycle' ||
+                (canvasAction.title && /cycle|loop|circular|krebs|citric|calvin|nitrogen|carbon|pdca|sdlc|photosynthesis|water|cell cycle/i.test(canvasAction.title));
+            const hasLoopBack = connections.some(c => c.to === nodes[0]?.id || (nodes.length > 0 && c.to === nodes[0]?.label));
+            const isCycle = isExplicitCycle || (hasLoopBack && nodes.length >= 3);
 
-            nodes.forEach((n, idx) => {
-                const shapeId = `fl_node_${Date.now()}_${idx}`;
-                const isErrorNode = n.id.includes('5') || n.id.toLowerCase().includes('error') || n.id.toLowerCase().includes('fail');
-                const nx = isVertical ? (isErrorNode ? startX + 260 : startX) : startX + idx * 210;
-                const ny = isVertical ? (isErrorNode ? startY + (idx - 1) * 110 : startY + idx * 110) : startY;
-                const w = n.shapeType === 'diamond' ? 220 : 200;
-                const h = n.shapeType === 'diamond' ? 80 : 70;
+            if (isCycle && nodes.length >= 3) {
+                // Circular/Elliptical Quadrant Geometry for Continuous Cycles
+                const N = nodes.length;
+                const Rx = Math.max(260, N * 52);
+                const Ry = Math.max(185, N * 42);
+                const cyclePalette = ['#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4', '#6366f1', '#14b8a6', '#e11d48'];
 
-                const shape = {
-                    id: shapeId,
-                    type: n.shapeType || 'rectangle',
-                    x: nx,
-                    y: ny,
-                    width: w,
-                    height: h,
-                    rotation: 0,
-                    color: n.color || '#6366f1',
-                    strokeWidth: 2,
-                    fillColor: n.shapeType === 'diamond' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(99, 102, 241, 0.12)',
-                    strokeStyle: 'solid',
-                    text: n.label || '',
-                    fontSize: 14,
-                    fontFamily: 'Inter, sans-serif'
-                };
-                newShapes.push(shape);
-                nodeMap.set(n.id, shape);
-            });
+                nodes.forEach((n, idx) => {
+                    const shapeId = `fl_node_${Date.now()}_${idx}`;
+                    // Position along perimeter starting at 12 o'clock (-PI/2) moving clockwise
+                    const angle = (-Math.PI / 2) + (idx * (2 * Math.PI / N));
+                    const shapeType = n.shapeType || (idx === 0 ? 'terminator' : (n.label?.includes('?') ? 'diamond' : 'rounded_rect'));
+                    const w = shapeType === 'diamond' ? 220 : (shapeType === 'circle' ? 120 : 200);
+                    const h = shapeType === 'diamond' ? 85 : (shapeType === 'circle' ? 120 : 70);
 
-            connections.forEach((c, cIdx) => {
-                const sourceShape = nodeMap.get(c.from);
-                const targetShape = nodeMap.get(c.to);
-                if (sourceShape && targetShape) {
+                    const nx = Math.round(baseCx + Rx * Math.cos(angle) - w / 2);
+                    const ny = Math.round(baseCy + Ry * Math.sin(angle) - h / 2);
+                    const nodeColor = n.color || cyclePalette[idx % cyclePalette.length];
+
+                    const shape = {
+                        id: shapeId,
+                        type: shapeType,
+                        x: nx,
+                        y: ny,
+                        width: w,
+                        height: h,
+                        rotation: 0,
+                        color: nodeColor,
+                        strokeWidth: 2,
+                        fillColor: shapeType === 'diamond' ? 'rgba(245, 158, 11, 0.12)' : (n.fillColor || `${nodeColor}14`),
+                        strokeStyle: 'solid',
+                        text: n.label || '',
+                        textColor: nodeColor,
+                        fontSize: 13,
+                        fontFamily: 'Inter, sans-serif'
+                    };
+                    newShapes.push(shape);
+                    nodeMap.set(n.id, { ...shape, nodeIndex: idx, angle });
+                });
+
+                // Intelligent clockwise tangent-based NWES hook selection so connectors never cross shapes
+                connections.forEach((c, cIdx) => {
+                    const src = nodeMap.get(c.from);
+                    const tgt = nodeMap.get(c.to);
+                    if (!src || !tgt) return;
+
                     const connId = `fl_conn_${Date.now()}_${cIdx}`;
-                    const isErrorBranch = c.label && (c.label.toLowerCase().includes('mismatch') || c.label.toLowerCase().includes('invalid') || c.label.toLowerCase().includes('no'));
+                    const srcAngle = src.angle ?? 0;
+                    const tgtAngle = tgt.angle ?? 0;
+
+                    // Outward clockwise tangent at source node
+                    const Tx_src = -Math.sin(srcAngle);
+                    const Ty_src = Math.cos(srcAngle);
+
+                    let autoSourceAnchor = 'right';
+                    const srcScores = [
+                        { anchor: 'right', score: Tx_src },
+                        { anchor: 'bottom', score: Ty_src },
+                        { anchor: 'left', score: -Tx_src },
+                        { anchor: 'top', score: -Ty_src }
+                    ];
+                    srcScores.sort((a, b) => b.score - a.score);
+                    autoSourceAnchor = srcScores[0].anchor;
+
+                    // Incoming tangent at target node (arrival hook faces oncoming flow)
+                    const Tx_tgt = -Math.sin(tgtAngle);
+                    const Ty_tgt = Math.cos(tgtAngle);
+                    let autoTargetAnchor = 'left';
+                    const tgtScores = [
+                        { anchor: 'left', score: Tx_tgt },
+                        { anchor: 'top', score: Ty_tgt },
+                        { anchor: 'right', score: -Tx_tgt },
+                        { anchor: 'bottom', score: -Ty_tgt }
+                    ];
+                    tgtScores.sort((a, b) => b.score - a.score);
+                    autoTargetAnchor = tgtScores[0].anchor;
+
+                    const rawSrc = (c.sourceAnchor || '').toLowerCase();
+                    const rawTgt = (c.targetAnchor || '').toLowerCase();
+                    const sourceAnchor = rawSrc ? (NORM_ANCHOR_MAP[rawSrc] || rawSrc) : autoSourceAnchor;
+                    const targetAnchor = rawTgt ? (NORM_ANCHOR_MAP[rawTgt] || rawTgt) : autoTargetAnchor;
+
                     const conn = {
                         id: connId,
                         type: 'connector',
-                        sourceId: sourceShape.id,
-                        targetId: targetShape.id,
-                        sourceAnchor: isVertical ? (isErrorBranch ? 'right' : 'bottom') : 'right',
-                        targetAnchor: isVertical ? (isErrorBranch ? 'left' : 'top') : 'left',
-                        connectorType: 'elbow',
+                        sourceId: src.id,
+                        targetId: tgt.id,
+                        sourceAnchor,
+                        targetAnchor,
+                        connectorType: 'curved',
                         arrowEnd: 'arrow',
                         arrowStart: 'none',
-                        color: isErrorBranch ? '#ef4444' : '#6366f1',
+                        color: c.color || src.color || '#6366f1',
                         strokeWidth: 2,
-                        text: c.label || ''
+                        label: c.label || c.text || '',
+                        text: c.label || c.text || ''
                     };
                     newShapes.push(conn);
-                }
-            });
+                });
+            } else {
+                // Hierarchical Branching / Decision Flowchart Layout
+                const colWidth = 220;
+                const rowHeight = 115;
+                const totalHeight = nodes.length * rowHeight;
+                const startX = baseCx - colWidth / 2;
+                const startY = baseCy - totalHeight / 2;
 
+                nodes.forEach((n, idx) => {
+                    const shapeId = `fl_node_${Date.now()}_${idx}`;
+                    const isErrorOrAltNode = n.id.includes('error') || n.id.includes('fail') || 
+                        (n.label && (n.label.toLowerCase().includes('error') || n.label.toLowerCase().includes('fail') || n.label.toLowerCase().includes('invalid')));
+                    const shapeType = n.shapeType || (idx === 0 || idx === nodes.length - 1 ? 'terminator' : (n.label?.includes('?') ? 'diamond' : 'rounded_rect'));
+
+                    const w = shapeType === 'diamond' ? 220 : (shapeType === 'circle' ? 120 : (shapeType === 'parallelogram' ? 220 : 200));
+                    const h = shapeType === 'diamond' ? 85 : (shapeType === 'circle' ? 120 : 70);
+
+                    const nx = isErrorOrAltNode ? startX + 260 : startX;
+                    const ny = isErrorOrAltNode ? startY + (idx - 1) * rowHeight : startY + idx * rowHeight;
+                    const color = n.color || (isErrorOrAltNode ? '#ef4444' : (shapeType === 'diamond' ? '#f59e0b' : '#6366f1'));
+
+                    const shape = {
+                        id: shapeId,
+                        type: shapeType,
+                        x: nx,
+                        y: ny,
+                        width: w,
+                        height: h,
+                        rotation: 0,
+                        color,
+                        strokeWidth: 2,
+                        fillColor: shapeType === 'diamond' ? 'rgba(245, 158, 11, 0.12)' : (isErrorOrAltNode ? 'rgba(239, 68, 68, 0.12)' : `${color}14`),
+                        strokeStyle: 'solid',
+                        text: n.label || '',
+                        textColor: color,
+                        fontSize: 13,
+                        fontFamily: 'Inter, sans-serif'
+                    };
+                    newShapes.push(shape);
+                    nodeMap.set(n.id, { ...shape, nodeIndex: idx, isErrorOrAltNode });
+                });
+
+                connections.forEach((c, cIdx) => {
+                    const src = nodeMap.get(c.from);
+                    const tgt = nodeMap.get(c.to);
+                    if (!src || !tgt) return;
+
+                    const connId = `fl_conn_${Date.now()}_${cIdx}`;
+                    const labelLower = (c.label || '').toLowerCase();
+                    const isErrorOrAltBranch = tgt.isErrorOrAltNode || 
+                        labelLower.includes('no') || labelLower.includes('mismatch') || labelLower.includes('invalid') || labelLower.includes('fail');
+                    const isLoopBack = tgt.nodeIndex < src.nodeIndex;
+
+                    let srcAnchor = 'bottom';
+                    let tgtAnchor = 'top';
+
+                    if (isLoopBack) {
+                        srcAnchor = 'right';
+                        tgtAnchor = 'right';
+                    } else if (isErrorOrAltBranch) {
+                        srcAnchor = 'right';
+                        tgtAnchor = 'left';
+                    }
+
+                    const rawSrc = (c.sourceAnchor || '').toLowerCase();
+                    const rawTgt = (c.targetAnchor || '').toLowerCase();
+                    const finalSourceAnchor = rawSrc ? (NORM_ANCHOR_MAP[rawSrc] || rawSrc) : srcAnchor;
+                    const finalTargetAnchor = rawTgt ? (NORM_ANCHOR_MAP[rawTgt] || rawTgt) : tgtAnchor;
+
+                    const conn = {
+                        id: connId,
+                        type: 'connector',
+                        sourceId: src.id,
+                        targetId: tgt.id,
+                        sourceAnchor: finalSourceAnchor,
+                        targetAnchor: finalTargetAnchor,
+                        connectorType: isLoopBack ? 'orthogonal' : (c.connectorType || 'orthogonal'),
+                        arrowEnd: 'arrow',
+                        arrowStart: 'none',
+                        color: isErrorOrAltBranch ? '#ef4444' : (c.color || '#6366f1'),
+                        strokeWidth: 2,
+                        label: c.label || c.text || '',
+                        text: c.label || c.text || ''
+                    };
+                    newShapes.push(conn);
+                });
+            }
+
+            // Elegant title badge banner placed cleanly above the diagram (No sticky note behind shapes!)
             if (canvasAction.title) {
-                const titleNote = createStickyNoteObject(startX - 20, startY - 95, 'blue');
-                titleNote.width = 240;
-                titleNote.height = 70;
-                titleNote.title = 'Flowchart';
-                titleNote.text = canvasAction.title;
-                newShapes.unshift(titleNote);
+                let minY = Infinity;
+                newShapes.forEach(s => {
+                    if (s.y !== undefined && s.y < minY) minY = s.y;
+                });
+                if (!Number.isFinite(minY)) minY = baseCy - 200;
+
+                const titleBadge = {
+                    id: `fl_title_${Date.now()}`,
+                    type: 'rounded_rect',
+                    x: baseCx - 150,
+                    y: minY - 55,
+                    width: 300,
+                    height: 38,
+                    rotation: 0,
+                    color: '#6366f1',
+                    strokeWidth: 1.5,
+                    fillColor: 'rgba(99, 102, 241, 0.08)',
+                    strokeStyle: 'solid',
+                    text: canvasAction.title,
+                    textColor: '#4f46e5',
+                    fontSize: 13,
+                    fontFamily: 'Inter, sans-serif'
+                };
+                newShapes.unshift(titleBadge);
             }
 
             setPageShapeObjects(prev => ({
@@ -10396,13 +10553,24 @@ export default function Whiteboard({
                     text: 'Set B',
                     fontSize: 16
                 };
-                const intersectNote = createStickyNoteObject(baseCx - 70, baseCy + radius + 20, 'purple');
-                intersectNote.width = 200;
-                intersectNote.height = 80;
-                intersectNote.title = 'Venn Diagram';
-                intersectNote.text = 'Center: A ∩ B (Intersection)\nTotal: A ∪ B (Union)';
+                const intersectBadge = {
+                    id: `venn_lbl_${Date.now()}`,
+                    type: 'rounded_rect',
+                    x: baseCx - 90,
+                    y: baseCy + radius + 25,
+                    width: 180,
+                    height: 36,
+                    rotation: 0,
+                    color: '#8b5cf6',
+                    strokeWidth: 1.5,
+                    fillColor: 'rgba(139, 92, 246, 0.12)',
+                    strokeStyle: 'solid',
+                    text: 'Intersection A ∩ B',
+                    textColor: '#6d28d9',
+                    fontSize: 12
+                };
 
-                const shapes = [circleA, circleB, intersectNote];
+                const shapes = [circleA, circleB, intersectBadge];
                 setPageShapeObjects(prev => ({
                     ...prev,
                     [currentPage]: [...(prev[currentPage] || []), ...shapes]
@@ -10448,13 +10616,24 @@ export default function Whiteboard({
                     strokeWidth: 2.5,
                     text: 'Y Axis'
                 };
-                const originNote = createStickyNoteObject(baseCx + 15, baseCy + 15, 'yellow');
-                originNote.width = 160;
-                originNote.height = 70;
-                originNote.title = 'Origin (0,0)';
-                originNote.text = 'Intersection of X and Y';
+                const originLabel = {
+                    id: `axis_origin_${Date.now()}`,
+                    type: 'rounded_rect',
+                    x: baseCx + 12,
+                    y: baseCy + 12,
+                    width: 70,
+                    height: 28,
+                    rotation: 0,
+                    color: '#64748b',
+                    strokeWidth: 1,
+                    fillColor: 'rgba(100, 116, 139, 0.12)',
+                    strokeStyle: 'solid',
+                    text: '(0, 0)',
+                    textColor: '#334155',
+                    fontSize: 11
+                };
 
-                const shapes = [axisX, axisY, originNote];
+                const shapes = [axisX, axisY, originLabel];
                 setPageShapeObjects(prev => ({
                     ...prev,
                     [currentPage]: [...(prev[currentPage] || []), ...shapes]
@@ -10470,36 +10649,143 @@ export default function Whiteboard({
         return false;
     }, [panOffset, zoomLevel, currentPage, setThreeDObjects, setSelected3DIds, setPageShapeObjects, setTool, setSelectedShapeIds, saveToHistory]);
 
-    // Handle inserting generated AI solution as a note or visual action onto whiteboard canvas
-    const handleInsertAiSolutionToBoard = useCallback((solution) => {
+    // Helper: Convert AI step-by-step text/markdown into an interactive flowchart diagram action
+    const convertSolutionToFlowchart = useCallback((solution) => {
+        if (!solution) return null;
+        const text = solution.solutionMarkdown || solution.speechResponse || '';
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+        const stepRegex = /^(?:(?:\d+[\.\)]|Step\s+\d+[:\.]?|Stage\s+\d+[:\.]?|[-*•])\s*)(.+)$/i;
+        const parsedSteps = [];
+
+        lines.forEach(line => {
+            const m = line.match(stepRegex);
+            if (m && m[1]) {
+                const raw = m[1].replace(/^\*\*|\*\*$/g, '').trim();
+                if (raw.length > 3) {
+                    parsedSteps.push(raw);
+                }
+            }
+        });
+
+        // If not enough numbered lines, try sentence-level steps
+        if (parsedSteps.length < 2) {
+            const clean = cleanTextForSpeech(text);
+            const sentences = clean.split(/(?<=[.?!])\s+/).filter(s => s.trim().length > 15 && s.trim().length < 160);
+            if (sentences.length >= 2) {
+                parsedSteps.push(...sentences.slice(0, 6));
+            }
+        }
+
+        if (parsedSteps.length < 2) return null;
+
+        const isCycle = /cycle|loop|circular|reiterate|continuous|water|krebs|photosynthesis|calvin|nitrogen|carbon|pdca|sdlc/i.test(
+            `${solution.question || ''} ${text}`
+        );
+
+        const nodes = parsedSteps.slice(0, 8).map((stepText, idx) => {
+            let label = stepText;
+            const colonIdx = stepText.indexOf(':');
+            if (colonIdx > 0 && colonIdx < 35) {
+                const title = stepText.slice(0, colonIdx).trim();
+                const detail = stepText.slice(colonIdx + 1).trim();
+                label = `${title}\n(${detail.slice(0, 40)}${detail.length > 40 ? '...' : ''})`;
+            } else if (stepText.length > 45) {
+                label = `${stepText.slice(0, 42)}...`;
+            }
+
+            const isDecision = label.includes('?') || /verify|check|valid|condition/i.test(label);
+            const shapeType = isDecision ? 'diamond' : (idx === 0 || idx === parsedSteps.length - 1 ? 'terminator' : 'rounded_rect');
+
+            return {
+                id: `sol_node_${idx + 1}`,
+                label: `${idx + 1}. ${label.replace(/^\d+[\.\)]\s*/, '')}`,
+                shapeType
+            };
+        });
+
+        const connections = [];
+        for (let i = 0; i < nodes.length - 1; i++) {
+            connections.push({
+                from: nodes[i].id,
+                to: nodes[i + 1].id,
+                label: `Step ${i + 1} → ${i + 2}`
+            });
+        }
+        if (isCycle && nodes.length >= 3) {
+            connections.push({
+                from: nodes[nodes.length - 1].id,
+                to: nodes[0].id,
+                label: 'Continuous Cycle'
+            });
+        }
+
+        return {
+            type: 'draw_flowchart',
+            layoutType: isCycle ? 'cycle' : 'branching',
+            title: solution.question ? `Flowchart: ${solution.question.slice(0, 35)}` : 'AI Solution Flowchart',
+            nodes,
+            connections
+        };
+    }, []);
+
+    // Handle inserting generated AI solution as a flowchart diagram or clean card onto whiteboard canvas
+    const handleInsertAiSolutionToBoard = useCallback((solution, mode = 'auto') => {
         if (!solution) return;
 
-        // If the solution contains an interactive canvas action (3D model, flowchart, diagram), execute it directly!
+        // 1. If explicit visual canvas action exists (e.g. 3D model, pre-built flowchart, diagram), execute it directly!
         if (solution.canvasAction && solution.canvasAction.type && solution.canvasAction.type !== 'insert_solution_card') {
             const executed = executeAiCanvasAction(solution.canvasAction);
             if (executed) return;
         }
 
+        // 2. Build Flowchart from solution steps if requested or if structured steps exist
+        if (mode === 'flowchart' || mode === 'auto') {
+            const fcAction = convertSolutionToFlowchart(solution);
+            if (fcAction && fcAction.nodes.length >= 2) {
+                const executed = executeAiCanvasAction(fcAction);
+                if (executed) {
+                    toast.success('Generated flowchart diagram from AI solution!', { icon: '📊' });
+                    return;
+                }
+            }
+        }
+
+        // 3. Otherwise insert as a clean, structured Solution Card (NEVER a messy overlapping sticky note!)
         const baseCx = Math.round((-panOffset.x + (containerRef.current?.clientWidth || 1200) / 2) / zoomLevel);
         const baseCy = Math.round((-panOffset.y + (containerRef.current?.clientHeight || 800) / 2) / zoomLevel);
 
-        const titleText = solution.question ? `Q: ${solution.question}\n` : '';
-        const rawContent = cleanTextForSpeech(solution.speechResponse || solution.solutionMarkdown || 'AI Solution');
-        const displayText = `${titleText}${rawContent}`.slice(0, 320);
+        const cardTitle = solution.question ? `Q: ${solution.question}` : 'AI Solution';
+        const cardBody = cleanTextForSpeech(solution.speechResponse || solution.solutionMarkdown || '');
+        const cardFullText = `${cardTitle}\n\n${cardBody}`.slice(0, 500);
 
-        const newNote = createStickyNoteObject(baseCx - 140, baseCy - 120, 'purple');
-        newNote.text = displayText;
-        newNote.title = solution.question ? `Q: ${solution.question.slice(0, 30)}...` : 'AI Solution';
+        const cardShape = {
+            id: `sol_card_${Date.now()}`,
+            type: 'rounded_rect',
+            x: baseCx - 180,
+            y: baseCy - 110,
+            width: 360,
+            height: 220,
+            rotation: 0,
+            color: '#6366f1',
+            strokeWidth: 2,
+            fillColor: 'rgba(99, 102, 241, 0.08)',
+            strokeStyle: 'solid',
+            text: cardFullText,
+            textColor: '#1e293b',
+            fontSize: 13,
+            fontFamily: 'Inter, sans-serif'
+        };
 
         setPageShapeObjects(prev => ({
             ...prev,
-            [currentPage]: [...(prev[currentPage] || []), newNote]
+            [currentPage]: [...(prev[currentPage] || []), cardShape]
         }));
         setTool('select');
-        setSelectedShapeIds([newNote.id]);
+        setSelectedShapeIds([cardShape.id]);
         saveToHistory();
-        toast.success('Inserted AI Solution note to board', { icon: '📌' });
-    }, [panOffset, zoomLevel, currentPage, saveToHistory, executeAiCanvasAction]);
+        toast.success('Inserted AI Solution Card to board', { icon: '📋' });
+    }, [panOffset, zoomLevel, currentPage, saveToHistory, executeAiCanvasAction, convertSolutionToFlowchart]);
 
     // ─── Voice Control & Speech Recognition Engine ──────────────────────
     const executeVoiceCommand = useCallback(async (rawText, isAiRetry = false) => {
