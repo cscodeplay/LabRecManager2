@@ -6601,6 +6601,135 @@ OUTPUT RULES:
 
         return '';
     }
+
+    /**
+     * Recognize and transcribe text and mathematical formulas from an image
+     * Converts math expressions into LaTeX enclosed in $ ... $ or $$ ... $$ for whiteboard editing.
+     */
+    async recognizeImageTextAndMath(imageInput, preferredProvider = 'gemini') {
+        let mimeType = 'image/png';
+        let rawBase64 = '';
+
+        if (typeof imageInput === 'string') {
+            if (imageInput.startsWith('data:')) {
+                const matches = imageInput.match(/^data:([^;]+);base64,(.+)$/);
+                if (matches) {
+                    mimeType = matches[1];
+                    rawBase64 = matches[2];
+                }
+            } else if (imageInput.startsWith('http://') || imageInput.startsWith('https://')) {
+                try {
+                    const axios = require('axios');
+                    const imgResp = await axios.get(imageInput, { responseType: 'arraybuffer', timeout: 10000 });
+                    mimeType = imgResp.headers['content-type'] || 'image/png';
+                    rawBase64 = Buffer.from(imgResp.data, 'binary').toString('base64');
+                } catch (fetchErr) {
+                    console.warn('[AIService] Failed to download remote image for OCR:', fetchErr.message);
+                }
+            } else {
+                rawBase64 = imageInput;
+            }
+        }
+
+        if (!rawBase64) {
+            throw new Error('Valid image data or URL is required for text and math recognition.');
+        }
+
+        const dataUrl = `data:${mimeType};base64,${rawBase64}`;
+        const systemPrompt = `You are a high-precision multimodal document and mathematical OCR engine.
+Transcribe ALL text, formulas, equations, and diagrams present in the image into structured, editable text for a whiteboard.
+
+CORE RULES:
+1. MATHEMATICAL FORMULAS & SYMBOLS:
+   - Every mathematical expression, formula, equation, or variable MUST be transcribed into standard LaTeX syntax.
+   - Enclose inline mathematical formulas and single variables in single dollar signs: $ ... $ (e.g., $E = mc^2$, $f(x) = x^2 + 2x + 1$, $\\int_{a}^{b} f(x)\\,dx$).
+   - Enclose standalone or multiline displayed equations in double dollar signs: $$ ... $$ (e.g., $$\\int_{0}^{\\infty} \\frac{\\sin x}{x}\\,dx = \\frac{\\pi}{2}$$).
+   - Accurately transcribe complex symbols: integrals (\\int, \\iint, \\oint), limits (\\lim), sums (\\sum), fractions (\\frac{a}{b}), roots (\\sqrt{x}), Greek letters (\\alpha, \\beta, \\theta, \\pi), superscripts, subscripts, and matrices.
+2. PLAIN TEXT & LABELS:
+   - Preserve natural language words, explanations, headings, labels, punctuation, spaces, and line breaks exactly as they appear.
+   - Do NOT convert normal words into math italics.
+3. STRUCTURE:
+   - Maintain the original layout, bullet points, numbered lists, or paragraph structure.
+4. CLEAN OUTPUT:
+   - Output ONLY the transcribed content.
+   - Do NOT wrap in \`\`\`markdown or \`\`\`latex code blocks, and do NOT include conversational commentary or explanations.`;
+
+        const cleanResult = (text) => {
+            if (!text) return '';
+            let cleaned = text.trim();
+            cleaned = cleaned.replace(/^```(?:markdown|latex|text)?\s*/i, '').replace(/\s*```$/i, '').trim();
+            return cleaned;
+        };
+
+        // 1. Try Gemini Vision first
+        if (preferredProvider === 'gemini' && this.genAI) {
+            for (const modelName of ACTIVE_GEMINI_MODELS) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent([
+                        {
+                            inlineData: {
+                                data: rawBase64,
+                                mimeType: mimeType
+                            }
+                        },
+                        systemPrompt
+                    ]);
+                    const text = result?.response?.text?.() || '';
+                    if (text) return cleanResult(text);
+                } catch (err) {
+                    console.warn(`[AIService] Gemini ${modelName} image text recognition failed:`, err.message);
+                }
+            }
+        }
+
+        // 2. Try Groq Vision
+        if (this.groq) {
+            try {
+                const completion = await this.groq.chat.completions.create({
+                    model: 'llama-3.2-11b-vision-preview',
+                    messages: [
+                        {
+                            role: 'user',
+                            content: [
+                                { type: 'text', text: systemPrompt },
+                                { type: 'image_url', image_url: { url: dataUrl } }
+                            ]
+                        }
+                    ],
+                    temperature: 0.1
+                });
+                const text = completion.choices[0]?.message?.content || '';
+                if (text) return cleanResult(text);
+            } catch (err) {
+                console.warn(`[AIService] Groq vision text recognition failed:`, err.message);
+            }
+        }
+
+        // 3. Fallback to Gemini if groq was tried first
+        if (preferredProvider !== 'gemini' && this.genAI) {
+            for (const modelName of ACTIVE_GEMINI_MODELS) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent([
+                        {
+                            inlineData: {
+                                data: rawBase64,
+                                mimeType: mimeType
+                            }
+                        },
+                        systemPrompt
+                    ]);
+                    const text = result?.response?.text?.() || '';
+                    if (text) return cleanResult(text);
+                } catch (err) {
+                    console.warn(`[AIService] Gemini fallback image text recognition failed:`, err.message);
+                }
+            }
+        }
+
+        return '';
+    }
 }
 
 module.exports = new AIService();

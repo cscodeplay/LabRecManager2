@@ -16,7 +16,7 @@ import {
     Clock, GripHorizontal, GripVertical, LayoutTemplate, Flashlight, Library,
     Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX,
     ChevronUp, ChevronsUp, ChevronsDown, FileText, Check, Pause, Play, RotateCcw, Globe, Music,
-    Underline, Bold, Italic, Shapes, Database, MessageSquare, Sigma, Calculator, Layers,
+    Underline, Bold, Italic, Shapes, Database, MessageSquare, Sigma, Calculator, Layers, ScanText,
     ZoomIn, ZoomOut, BookOpen, Gamepad2, Bot
 } from 'lucide-react';
 import fixWebmDuration from 'fix-webm-duration';
@@ -80,6 +80,14 @@ export function renderRichMathText(text) {
     const escapeHtml = (str) =>
         str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+    // Helper to format plain text chunks: preserves consecutive spaces (&nbsp;) and line breaks (<br />)
+    const formatPlainTextChunk = (str) => {
+        if (!str) return '';
+        return escapeHtml(str)
+            .replace(/ {2,}/g, match => ' ' + '&nbsp;'.repeat(match.length - 1))
+            .replace(/\n/g, '<br />');
+    };
+
     // 1. Explicit math delimiters: $$...$$ (display mode) or $...$ (inline mode)
     if (text.includes('$')) {
         const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]+\$)/g);
@@ -89,23 +97,42 @@ export function renderRichMathText(text) {
                 try {
                     return `<span class="inline-block my-1 text-center w-full">${katex.renderToString(math, { displayMode: true, throwOnError: false })}</span>`;
                 } catch {
-                    return escapeHtml(part);
+                    return formatPlainTextChunk(part);
                 }
             } else if (part.startsWith('$') && part.endsWith('$')) {
                 const math = part.slice(1, -1).trim();
                 try {
                     return katex.renderToString(math, { displayMode: false, throwOnError: false });
                 } catch {
-                    return escapeHtml(part);
+                    return formatPlainTextChunk(part);
                 }
             } else {
-                return escapeHtml(part).replace(/\n/g, '<br />');
+                return formatPlainTextChunk(part);
             }
         }).join('');
     }
 
-    // 2. Pure LaTeX formula (e.g. \frac{a}{b} + \sqrt{c} or x^2 + y^2 = r^2)
-    const isPureFormula = /^[\s\d+\-*/=<>()[\]{}.,:;\\^_a-zA-Z]+$/.test(text) && /\\|[\^_{}]/.test(text) && !/[a-zA-Z]{5,}\s+[a-zA-Z]{5,}/.test(text);
+    // 2. Check if text is a PURE mathematical formula (no natural language words)
+    // Common LaTeX/math functions and variable names that can appear in pure formulas
+    const mathFuncs = new Set([
+        'sin', 'cos', 'tan', 'cot', 'sec', 'csc', 'arcsin', 'arccos', 'arctan',
+        'sinh', 'cosh', 'tanh', 'log', 'ln', 'lg', 'exp', 'lim', 'max', 'min',
+        'sup', 'inf', 'det', 'gcd', 'deg', 'dim', 'ker', 'hom', 'arg', 'mod',
+        'dx', 'dy', 'dt', 'dz', 'dr', 'dtheta'
+    ]);
+
+    // Extract any word-like tokens of 2+ letters (ignoring LaTeX commands)
+    const strippedText = text.replace(/\\[a-zA-Z]+/g, ' ');
+    const naturalWords = strippedText.match(/\b[a-zA-Z]{2,}\b/g) || [];
+    const hasNaturalWords = naturalWords.some(w => !mathFuncs.has(w.toLowerCase()));
+
+    // A pure formula must NOT have natural language words, must not contain sentence breaks,
+    // and must either start with "\" or contain math symbols
+    const isPureFormula = !hasNaturalWords &&
+        /^[\s\d+\-*/=<>()[\]{}.,:;\\^_a-zA-Z]+$/.test(text) &&
+        (/\\|[\^_{}]/.test(text) || /[=+\-*/]/.test(text)) &&
+        !text.includes('\n');
+
     if (isPureFormula) {
         try {
             return katex.renderToString(text.trim(), { displayMode: false, throwOnError: false });
@@ -124,15 +151,15 @@ export function renderRichMathText(text) {
                     try {
                         return katex.renderToString(part, { displayMode: false, throwOnError: false });
                     } catch {
-                        return escapeHtml(part);
+                        return formatPlainTextChunk(part);
                     }
                 }
-                return escapeHtml(part).replace(/\n/g, '<br />');
+                return formatPlainTextChunk(part);
             }).join('');
         }
     }
 
-    return escapeHtml(text).replace(/\n/g, '<br />');
+    return formatPlainTextChunk(text);
 }
 
 // Default colors (rainbow + black/white)
@@ -605,7 +632,8 @@ export default function Whiteboard({
     const [showMathKeyboard, setShowMathKeyboard] = useState(false);
     const [mathKeyboardAnchor, setMathKeyboardAnchor] = useState({ x: 300, y: 300 });
     const [showMathTablet, setShowMathTablet] = useState(false);
-    const [showTextLayersPopover, setShowTextLayersPopover] = useState(null);
+    const [showTextMathMenu, setShowTextMathMenu] = useState(null);
+    const [extractingImageTextId, setExtractingImageTextId] = useState(null);
 
     // Pop-over UI states
     const [showStrokePicker, setShowStrokePicker] = useState(false);
@@ -2839,6 +2867,94 @@ export default function Whiteboard({
         img.src = imgObj.src;
     }, [selectedImageId, imageObjects, saveToHistory, setImageObjects]);
 
+    // Extract text and LaTeX math formulas from an image using Vision AI (OCR to Canvas Text)
+    const handleExtractImageText = useCallback(async (targetImgObj) => {
+        const imgObj = targetImgObj || (selectedImageId ? imageObjects.find(i => i.id === selectedImageId) : null);
+        if (!imgObj || !imgObj.src || extractingImageTextId) return;
+
+        setExtractingImageTextId(imgObj.id);
+        const toastId = toast.loading('🔍 Recognizing text and math from image...');
+
+        try {
+            let imageData = imgObj.src;
+
+            // If not a data: URL, convert to dataURL via canvas to avoid CORS/network issues
+            if (imageData && !imageData.startsWith('data:')) {
+                try {
+                    const canvas = document.createElement('canvas');
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    await new Promise((resolve) => {
+                        img.onload = resolve;
+                        img.onerror = () => resolve(); // fallback to original string if canvas load fails
+                        img.src = imageData;
+                    });
+                    if (img.naturalWidth && img.naturalHeight) {
+                        canvas.width = img.naturalWidth;
+                        canvas.height = img.naturalHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        imageData = canvas.toDataURL('image/png');
+                    }
+                } catch (convErr) {
+                    console.warn('[ImageOCR] Canvas conversion warning:', convErr.message);
+                }
+            }
+
+            const res = await api.post('/ai/recognize-image-text', {
+                image: imageData,
+                provider: 'gemini'
+            });
+
+            if (res.data?.success && res.data?.data?.text) {
+                const extractedText = res.data.data.text.trim();
+                if (!extractedText) {
+                    toast.error('No readable text or math formulas detected in this image.', { id: toastId });
+                    return;
+                }
+
+                const newTextId = `text_${Date.now()}`;
+                const targetWidth = Math.max(imgObj.width || 320, 320);
+                const targetHeight = Math.max(100, Math.min(imgObj.height || 180, 400));
+                const newTextObj = {
+                    id: newTextId,
+                    type: 'text',
+                    x: imgObj.x,
+                    y: imgObj.y + (imgObj.height || 200) + 16,
+                    width: targetWidth,
+                    height: targetHeight,
+                    text: extractedText,
+                    color: '#ffffff',
+                    fontSize: 20,
+                    fontFamily: 'sans-serif',
+                    fontWeight: 'normal',
+                    fontStyle: 'normal',
+                    textDecoration: 'none',
+                    textAlign: 'left',
+                    zIndex: (imgObj.zIndex || 10) + 1,
+                    borderRadius: 8,
+                    backgroundColor: 'transparent',
+                    borderColor: '#3b82f6',
+                    borderWidth: 0,
+                };
+
+                setTextObjects(prev => [...prev, newTextObj]);
+                setSelectedTextIds([newTextId]);
+                setSelectedImageId(null);
+                setSelectedImageIds([]);
+                saveToHistory();
+                toast.success('✅ Text and math converted to editable text on canvas!', { id: toastId });
+            } else {
+                toast.error(res.data?.message || 'Failed to extract text from image.', { id: toastId });
+            }
+        } catch (err) {
+            console.error('[ImageOCR] Recognition error:', err);
+            toast.error(err.response?.data?.message || err.message || 'Image text recognition failed.', { id: toastId });
+        } finally {
+            setExtractingImageTextId(null);
+        }
+    }, [selectedImageId, imageObjects, extractingImageTextId, saveToHistory]);
+
 
     // Handle importing native WBF / IWB interactive panel format
     const handleImportWBF = useCallback((data) => {
@@ -3584,6 +3700,7 @@ export default function Whiteboard({
     const handleToggleLock = useCallback((targetId = null) => {
         if (targetId) {
             setShapeObjects(prev => prev.map(s => s.id === targetId ? { ...s, isLocked: !s.isLocked } : s));
+            setTextObjects(prev => prev.map(t => t.id === targetId ? { ...t, isLocked: !t.isLocked } : t));
             setImageObjects(prev => prev.map(i => i.id === targetId ? { ...i, isLocked: !i.isLocked } : i));
             setThreeDObjects(prev => prev.map(o => o.id === targetId ? { ...o, isLocked: !o.isLocked } : o));
             setGraphObjects(prev => prev.map(g => g.id === targetId ? { ...g, isLocked: !g.isLocked } : g));
@@ -3602,6 +3719,18 @@ export default function Whiteboard({
                 });
             });
         }
+        if (selectedTextIds.length > 0) {
+            setTextObjects(prev => {
+                const anyUnlocked = prev.some(t => selectedTextIds.includes(t.id) && !t.isLocked);
+                const shouldLock = anyUnlocked;
+                return prev.map(t => {
+                    if (selectedTextIds.includes(t.id)) {
+                        return { ...t, isLocked: shouldLock };
+                    }
+                    return t;
+                });
+            });
+        }
         if (selectedImageId) {
             setImageObjects(prev => prev.map(i => i.id === selectedImageId ? { ...i, isLocked: !i.isLocked } : i));
         }
@@ -3616,7 +3745,7 @@ export default function Whiteboard({
             setGraphObjects(prev => prev.map(g => g.id === selectedGraphId ? { ...g, isLocked: !g.isLocked } : g));
         }
         saveToHistory();
-    }, [selectedShapeIds, selectedImageId, selected3DIds, selectedGraphId, saveToHistory]);
+    }, [selectedShapeIds, selectedTextIds, selectedImageId, selected3DIds, selectedGraphId, saveToHistory]);
 
     // Floatable Main Toolbar Drag Start (Zero-lag, 120fps direct DOM manipulation)
     const handleToolbarDragStart = (e) => {
@@ -14722,6 +14851,21 @@ export default function Whiteboard({
                                                 <Wand2 className={`w-3.5 h-3.5 ${removingBgImageId === imgObj.id ? 'animate-spin' : ''}`} />
                                             </button>
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
+                                            {/* OCR: Extract Text & Math Equations to Canvas Text */}
+                                            <button
+                                                type="button"
+                                                disabled={extractingImageTextId === imgObj.id}
+                                                onClick={() => handleExtractImageText(imgObj)}
+                                                className={`p-1 rounded-full flex items-center justify-center transition ${extractingImageTextId === imgObj.id ? 'opacity-70 cursor-not-allowed bg-slate-800 text-indigo-400' : 'text-indigo-400 hover:text-white hover:bg-slate-800'}`}
+                                                title={extractingImageTextId === imgObj.id ? 'Recognizing text & math in image...' : 'Extract Text & Math Equations (OCR to Canvas Text)'}
+                                            >
+                                                {extractingImageTextId === imgObj.id ? (
+                                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                                                ) : (
+                                                    <ScanText className="w-3.5 h-3.5" />
+                                                )}
+                                            </button>
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
                                             {/* Quick Border Color Picker */}
                                             <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Border Color (sets 2px border if none)">
                                                 <div className="w-full h-full" style={{ backgroundColor: imgObj.borderColor || '#3b82f6' }} />
@@ -15233,9 +15377,9 @@ export default function Whiteboard({
                                                 }}
                                             />
                                             {/* If text contains LaTeX / math formulas, show live rendered KaTeX mini preview beneath */}
-                                            {(txtObj.text && (txtObj.text.includes('$') || txtObj.text.includes('\\'))) && (
+                                            {(txtObj.text && (txtObj.text.includes('$') || txtObj.text.includes('\\') || /[\^_{}]/.test(txtObj.text))) && (
                                                 <div 
-                                                    className="absolute top-full left-0 mt-1 px-2.5 py-1 bg-slate-900/95 text-slate-100 rounded-lg text-xs border border-slate-700/80 shadow-2xl z-50 pointer-events-none whitespace-nowrap overflow-x-auto max-w-sm"
+                                                    className="absolute top-full left-0 mt-1 px-2.5 py-1.5 bg-slate-900/95 text-slate-100 rounded-lg text-xs border border-slate-700/80 shadow-2xl z-50 pointer-events-none whitespace-pre-wrap break-words max-w-md max-h-36 overflow-y-auto"
                                                     dangerouslySetInnerHTML={{ __html: renderRichMathText(txtObj.text) }}
                                                 />
                                             )}
@@ -15484,6 +15628,74 @@ export default function Whiteboard({
                                                 <span>∞</span>
                                             </div>
                                         )
+                                    )}
+
+                                    {/* Lock Toggle Button - Top Right Corner */}
+                                    {isSelected ? (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleToggleLock(txtObj.id);
+                                            }}
+                                            onMouseDown={e => e.stopPropagation()}
+                                            onPointerDown={e => e.stopPropagation()}
+                                            className={`absolute -top-3 -right-3 w-6 h-6 rounded-full flex items-center justify-center transition shadow-md z-50 pointer-events-auto ${
+                                                txtObj.isLocked ? 'bg-amber-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+                                            }`}
+                                            title={txtObj.isLocked ? "Unlock Text" : "Lock Text"}
+                                        >
+                                            {txtObj.isLocked ? <Lock size={12} className="text-amber-200" /> : <Unlock size={12} />}
+                                        </button>
+                                    ) : (
+                                        txtObj.isLocked && (
+                                            <div className="absolute top-1 right-1 bg-white/80 p-0.5 rounded-full shadow pointer-events-none" style={{ zIndex: 30 }}>
+                                                <Lock size={12} className="text-red-500" />
+                                            </div>
+                                        )
+                                    )}
+
+                                    {/* East-Side 4 Layer Hooks */}
+                                    {isSelected && (
+                                        <div
+                                            className="absolute -right-7 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-40 pointer-events-auto opacity-35 hover:opacity-100 transition-all select-none"
+                                            onClick={e => e.stopPropagation()}
+                                            onMouseDown={e => e.stopPropagation()}
+                                            onPointerDown={e => e.stopPropagation()}
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={() => handleBringToFront(txtObj.id)}
+                                                className="p-1 bg-slate-900/90 hover:bg-slate-900 border border-slate-700/70 hover:border-slate-500 rounded text-slate-300 hover:text-white hover:scale-110 transition shadow-md"
+                                                title="Bring to Front"
+                                            >
+                                                <ChevronsUp size={12} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleBringForward(txtObj.id)}
+                                                className="p-1 bg-slate-900/90 hover:bg-slate-900 border border-slate-700/70 hover:border-slate-500 rounded text-slate-300 hover:text-white hover:scale-110 transition shadow-md"
+                                                title="Bring Forward"
+                                            >
+                                                <ChevronUp size={12} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSendBackward(txtObj.id)}
+                                                className="p-1 bg-slate-900/90 hover:bg-slate-900 border border-slate-700/70 hover:border-slate-500 rounded text-slate-300 hover:text-white hover:scale-110 transition shadow-md"
+                                                title="Send Backward"
+                                            >
+                                                <ChevronDown size={12} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSendToBack(txtObj.id)}
+                                                className="p-1 bg-slate-900/90 hover:bg-slate-900 border border-slate-700/70 hover:border-slate-500 rounded text-slate-300 hover:text-white hover:scale-110 transition shadow-md"
+                                                title="Send to Back"
+                                            >
+                                                <ChevronsDown size={12} />
+                                            </button>
+                                        </div>
                                     )}
 
                                     {/* Magnetic Connection Hooks (N, E, S, W, C) for linking diagrams & connectors to text fields */}
@@ -15736,90 +15948,81 @@ export default function Whiteboard({
 
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
-                                            {/* Insert Math Equation */}
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setEditingEquationId(null);
-                                                    setEquationInitialLatex('\\int_{0}^{\\infty} x^2 e^{-x}\\,dx = 2');
-                                                    setShowEquationModal(true);
-                                                }}
-                                                className="p-1 rounded-full flex items-center justify-center transition text-slate-300 hover:text-white hover:bg-slate-800"
-                                                title="Insert Math Equation (LaTeX Editor)"
-                                            >
-                                                <Calculator className="w-3.5 h-3.5" />
-                                            </button>
-
-                                            {/* Math Virtual Keyboard Toggle */}
-                                            <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                    const rect = e.currentTarget.getBoundingClientRect();
-                                                    setMathKeyboardAnchor({
-                                                        x: Math.min(window.innerWidth - 380, Math.max(10, rect.left - 100)),
-                                                        y: Math.min(window.innerHeight - 340, rect.bottom + 8)
-                                                    });
-                                                    setShowMathKeyboard(prev => !prev);
-                                                }}
-                                                className={`p-1 rounded-full flex items-center justify-center text-xs font-serif font-bold transition ${showMathKeyboard ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
-                                                title="Math Symbols & Greek Letters (Virtual Keyboard)"
-                                            >
-                                                <span className="w-3.5 h-3.5 flex items-center justify-center leading-none">Σ</span>
-                                            </button>
-
-                                            {/* Windows Math Input Tablet */}
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowMathTablet(true)}
-                                                className={`p-1 rounded-full flex items-center justify-center transition ${showMathTablet ? 'bg-amber-600 text-white shadow ring-1 ring-amber-400' : 'text-amber-400 hover:text-amber-300 hover:bg-slate-800'}`}
-                                                title="Math Input Tablet (Handwrite Math with Pencil/Stylus)"
-                                            >
-                                                <Pencil className="w-3.5 h-3.5" />
-                                            </button>
-
-                                            {/* 4-Level Layer Dropdown Popover */}
+                                            {/* Consolidated Math Tools Popover */}
                                             <div className="relative">
                                                 <button
                                                     type="button"
-                                                    onClick={() => setShowTextLayersPopover(prev => prev === txtObj.id ? null : txtObj.id)}
-                                                    className={`p-1 rounded-full flex items-center justify-center transition ${showTextLayersPopover === txtObj.id ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
-                                                    title="Layer Order"
+                                                    onClick={() => setShowTextMathMenu(prev => prev === txtObj.id ? null : txtObj.id)}
+                                                    className={`px-1.5 py-1 rounded-full flex items-center gap-0.5 text-xs font-serif font-bold transition ${
+                                                        showTextMathMenu === txtObj.id || showEquationModal || showMathKeyboard || showMathTablet
+                                                            ? 'bg-indigo-600 text-white shadow'
+                                                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                                                    }`}
+                                                    title="Math Tools (LaTeX Editor, Greek Symbols Keyboard, Handwriting Tablet)"
                                                 >
-                                                    <Layers className="w-3.5 h-3.5" />
+                                                    <span className="leading-none text-sm font-serif">Σ</span>
+                                                    <ChevronDown size={10} className="opacity-70" />
                                                 </button>
-                                                {showTextLayersPopover === txtObj.id && (
+                                                {showTextMathMenu === txtObj.id && (
                                                     <div
-                                                        className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-36 bg-slate-900 border border-slate-700 rounded-xl shadow-xl p-1 z-50 flex flex-col gap-0.5 text-xs text-slate-200"
+                                                        className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 bg-slate-900/98 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl p-1.5 z-50 flex flex-col gap-1 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-150"
                                                         onClick={(e) => e.stopPropagation()}
                                                         onMouseDown={(e) => e.stopPropagation()}
                                                     >
+                                                        <div className="text-[10px] font-bold tracking-wider text-slate-400 px-2 py-0.5 uppercase border-b border-slate-800">
+                                                            Mathematical Tools
+                                                        </div>
+                                                        {/* 1. LaTeX Equation Editor */}
                                                         <button
                                                             type="button"
-                                                            onClick={() => { handleBringToFront(txtObj.id); setShowTextLayersPopover(null); }}
-                                                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-800 rounded text-left transition text-slate-200 hover:text-white"
+                                                            onClick={() => {
+                                                                setEditingEquationId(null);
+                                                                setEquationInitialLatex('\\int_{0}^{\\infty} x^2 e^{-x}\\,dx = 2');
+                                                                setShowEquationModal(true);
+                                                                setShowTextMathMenu(null);
+                                                            }}
+                                                            className="flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-left transition text-slate-200 hover:text-white group"
                                                         >
-                                                            <ChevronsUp className="w-3.5 h-3.5 text-indigo-400" /> Bring to Front
+                                                            <Calculator className="w-4 h-4 text-blue-400 group-hover:scale-110 transition" />
+                                                            <div className="flex flex-col">
+                                                                <span className="font-semibold text-slate-100">Equation Editor</span>
+                                                                <span className="text-[10px] text-slate-400">LaTeX palette & formulas</span>
+                                                            </div>
                                                         </button>
+                                                        {/* 2. Math Symbols & Greek Letters */}
                                                         <button
                                                             type="button"
-                                                            onClick={() => { handleBringForward(txtObj.id); setShowTextLayersPopover(null); }}
-                                                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-800 rounded text-left transition text-slate-200 hover:text-white"
+                                                            onClick={(e) => {
+                                                                const rect = e.currentTarget.getBoundingClientRect();
+                                                                setMathKeyboardAnchor({
+                                                                    x: Math.min(window.innerWidth - 380, Math.max(10, rect.left - 100)),
+                                                                    y: Math.min(window.innerHeight - 340, rect.bottom + 8)
+                                                                });
+                                                                setShowMathKeyboard(true);
+                                                                setShowTextMathMenu(null);
+                                                            }}
+                                                            className="flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-left transition text-slate-200 hover:text-white group"
                                                         >
-                                                            <ChevronUp className="w-3.5 h-3.5 text-indigo-400" /> Bring Forward
+                                                            <span className="w-4 h-4 flex items-center justify-center font-serif font-bold text-sm text-purple-400 group-hover:scale-110 transition leading-none">Σ</span>
+                                                            <div className="flex flex-col">
+                                                                <span className="font-semibold text-slate-100">Math Keyboard</span>
+                                                                <span className="text-[10px] text-slate-400">Greek letters & symbols</span>
+                                                            </div>
                                                         </button>
+                                                        {/* 3. Windows Math Input Tablet */}
                                                         <button
                                                             type="button"
-                                                            onClick={() => { handleSendBackward(txtObj.id); setShowTextLayersPopover(null); }}
-                                                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-800 rounded text-left transition text-slate-200 hover:text-white"
+                                                            onClick={() => {
+                                                                setShowMathTablet(true);
+                                                                setShowTextMathMenu(null);
+                                                            }}
+                                                            className="flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-left transition text-slate-200 hover:text-white group"
                                                         >
-                                                            <ChevronDown className="w-3.5 h-3.5 text-indigo-400" /> Send Backward
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => { handleSendToBack(txtObj.id); setShowTextLayersPopover(null); }}
-                                                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-800 rounded text-left transition text-slate-200 hover:text-white"
-                                                        >
-                                                            <ChevronsDown className="w-3.5 h-3.5 text-indigo-400" /> Send to Back
+                                                            <Pencil className="w-4 h-4 text-amber-400 group-hover:scale-110 transition" />
+                                                            <div className="flex flex-col">
+                                                                <span className="font-semibold text-slate-100">Math Input Tablet</span>
+                                                                <span className="text-[10px] text-slate-400">Handwrite with stylus/pencil</span>
+                                                            </div>
                                                         </button>
                                                     </div>
                                                 )}

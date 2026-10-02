@@ -481,5 +481,32 @@ router.post('/recognize-math', authenticate, asyncHandler(async (req, res) => {
     }
 }));
 
+/**
+ * @route   POST /api/ai/recognize-image-text
+ * @desc    Recognize and transcribe text and LaTeX math formulas from an uploaded or selected image
+ * @access  Private (Authenticated users)
+ */
+router.post('/recognize-image-text', authenticate, asyncHandler(async (req, res) => {
+    const { image, provider = 'gemini' } = req.body;
+
+    if (!image) {
+        return res.status(400).json({ success: false, message: 'Image data is required' });
+    }
+
+    try {
+        const text = await aiService.recognizeImageTextAndMath(image, provider);
+        res.json({
+            success: true,
+            data: { text }
+        });
+    } catch (err) {
+        console.error('[AI Route] Image text and math recognition error:', err.message);
+        res.status(500).json({
+            success: false,
+            message: err.message || 'Image text recognition failed'
+        });
+    }
+}));
+
 module.exports = router;
 
