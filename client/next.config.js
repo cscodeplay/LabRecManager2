@@ -45,6 +45,10 @@ const nextConfig = {
                 destination: `${apiUrl}/RAG/:path*`,
             },
             {
+                source: '/uploads/audio/:path*',
+                destination: '/documents/audio/:path*',
+            },
+            {
                 source: '/uploads/:path*',
                 destination: `${apiUrl}/uploads/:path*`,
             },

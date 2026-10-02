@@ -18,7 +18,7 @@ async function seedAudioDocuments() {
             mimeType: 'audio/wav',
             fileSize: 1752014,
             cloudinaryId: 'local_thermo_samantha_wav',
-            url: '/uploads/audio/thermo_samantha.wav',
+            url: '/documents/audio/thermo_samantha.wav',
             category: 'audio'
         },
         {
@@ -29,7 +29,7 @@ async function seedAudioDocuments() {
             mimeType: 'audio/wav',
             fileSize: 1839522,
             cloudinaryId: 'local_thermo_daniel_wav',
-            url: '/uploads/audio/thermo_daniel.wav',
+            url: '/documents/audio/thermo_daniel.wav',
             category: 'audio'
         },
         {
@@ -40,7 +40,7 @@ async function seedAudioDocuments() {
             mimeType: 'audio/wav',
             fileSize: 1905748,
             cloudinaryId: 'local_thermo_rishi_wav',
-            url: '/uploads/audio/thermo_rishi.wav',
+            url: '/documents/audio/thermo_rishi.wav',
             category: 'audio'
         },
         {
@@ -51,7 +51,7 @@ async function seedAudioDocuments() {
             mimeType: 'audio/mp4',
             fileSize: 170786,
             cloudinaryId: 'local_thermo_samantha_m4a',
-            url: '/uploads/audio/thermo_samantha.m4a',
+            url: '/documents/audio/thermo_samantha.m4a',
             category: 'audio'
         },
         {
@@ -62,7 +62,7 @@ async function seedAudioDocuments() {
             mimeType: 'audio/mp4',
             fileSize: 179261,
             cloudinaryId: 'local_thermo_daniel_m4a',
-            url: '/uploads/audio/thermo_daniel.m4a',
+            url: '/documents/audio/thermo_daniel.m4a',
             category: 'audio'
         },
         {
@@ -73,7 +73,7 @@ async function seedAudioDocuments() {
             mimeType: 'audio/mp4',
             fileSize: 183898,
             cloudinaryId: 'local_thermo_rishi_m4a',
-            url: '/uploads/audio/thermo_rishi.m4a',
+            url: '/documents/audio/thermo_rishi.m4a',
             category: 'audio'
         }
     ];

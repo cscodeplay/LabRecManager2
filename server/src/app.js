@@ -129,6 +129,11 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
         }
     }
 }));
+app.use('/uploads/audio', express.static(path.join(__dirname, '../uploads/audio')));
+app.use('/documents/audio', express.static(path.join(__dirname, '../../client/public/documents/audio')));
+app.use('/documents/audio', express.static(path.join(__dirname, '../uploads/audio')));
+app.use('/audio', express.static(path.join(__dirname, '../../client/public/audio')));
+app.use('/audio', express.static(path.join(__dirname, '../uploads/audio')));
 app.use('/RAG', express.static(path.join(__dirname, '../../RAG')));
 app.use('/RAG', express.static(path.join(__dirname, '../../client/public/RAG')));
 

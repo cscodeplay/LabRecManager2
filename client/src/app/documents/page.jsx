@@ -3310,15 +3310,30 @@ export default function DocumentsPage() {
                     }}
                     onClose={() => setViewingDoc(null)}
                     onAttachToBot={(f, text) => handleAttachFileToBot(f || viewingDoc, text)}
-                    onDownload={(f) => {
-                        const dlUrl = f.url || viewingDoc.url;
+                    onDownload={async (f) => {
+                        const dlUrl = f?.url || viewingDoc?.url;
+                        const dlName = f?.fileName || f?.name || viewingDoc?.fileName || viewingDoc?.name || 'download';
                         if (dlUrl) {
-                            const link = document.createElement('a');
-                            link.href = dlUrl;
-                            link.download = f.name || f.fileName || viewingDoc.name || 'download';
-                            document.body.appendChild(link);
-                            link.click();
-                            document.body.removeChild(link);
+                            try {
+                                const res = await fetch(dlUrl);
+                                if (!res.ok) throw new Error('Download request failed');
+                                const blob = await res.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.download = dlName;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                window.URL.revokeObjectURL(url);
+                            } catch (_) {
+                                const link = document.createElement('a');
+                                link.href = dlUrl;
+                                link.download = dlName;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                            }
                         }
                     }}
                 />

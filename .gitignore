@@ -35,8 +35,12 @@ yarn-error.log*
 Thumbs.db
 
 # Uploads (user generated content)
-server/uploads/
-uploads/
+server/uploads/*
+!server/uploads/audio
+!server/uploads/audio/**
+uploads/*
+!uploads/audio
+!uploads/audio/**
 RAG/*
 !RAG/engmaths.pdf
 !RAG/python_math_library_syllabus.pdf

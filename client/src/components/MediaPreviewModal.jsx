@@ -94,12 +94,44 @@ export default function MediaPreviewModal({
                 let blob = null;
                 if (file.url) {
                     // Local document or direct URL
-                    const res = await fetch(file.url);
-                    if (!res.ok) throw new Error(`Could not fetch file: ${res.statusText}`);
+                    let res = null;
+                    let fetchUrl = file.url;
+                    try {
+                        res = await fetch(fetchUrl);
+                    } catch (_) {}
+
+                    if (!res || !res.ok) {
+                        // Resilient Fallback: If URL 404s, attempt alternate audio paths
+                        const filename = file.fileName || file.name || (fetchUrl.split('/').pop() || '');
+                        if (filename.match(/\.(wav|m4a|mp3|ogg|aac|flac)$/i)) {
+                            const fallbacks = [
+                                `/documents/audio/${filename}`,
+                                `/uploads/audio/${filename}`,
+                                `/audio/${filename}`
+                            ].filter(u => u !== fetchUrl);
+
+                            for (const fb of fallbacks) {
+                                try {
+                                    const fbRes = await fetch(fb);
+                                    if (fbRes.ok) {
+                                        res = fbRes;
+                                        break;
+                                    }
+                                } catch (_) {}
+                            }
+                        }
+                    }
+
+                    if (!res || !res.ok) throw new Error(`Could not fetch file: ${res ? res.statusText : 'Network error'}`);
                     const arrayBuffer = await res.arrayBuffer();
                     let mime = file.mimeType || res.headers.get('content-type') || 'application/octet-stream';
-                    if (category === 'pdf' || (file.name || file.fileName || '').toLowerCase().endsWith('.pdf')) {
+                    const lowerName = (file.name || file.fileName || '').toLowerCase();
+                    if (category === 'pdf' || lowerName.endsWith('.pdf')) {
                         mime = 'application/pdf';
+                    } else if (category === 'audio' || lowerName.endsWith('.wav')) {
+                        mime = 'audio/wav';
+                    } else if (category === 'audio' || lowerName.endsWith('.m4a')) {
+                        mime = 'audio/mp4';
                     }
                     blob = new Blob([arrayBuffer], { type: mime });
                 } else if (file.id) {
@@ -301,16 +333,34 @@ export default function MediaPreviewModal({
                         )}
 
                         {/* Download */}
-                        {onDownload && (
-                            <button
-                                type="button"
-                                onClick={() => onDownload(file)}
-                                className="p-2 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
-                                title="Download file"
-                            >
-                                <Download className="w-4 h-4" />
-                            </button>
-                        )}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (fileBlob) {
+                                    const url = URL.createObjectURL(fileBlob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = file.fileName || file.name || 'download';
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    URL.revokeObjectURL(url);
+                                } else if (onDownload) {
+                                    onDownload(file);
+                                } else if (file.url) {
+                                    const a = document.createElement('a');
+                                    a.href = file.url;
+                                    a.download = file.fileName || file.name || 'download';
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                }
+                            }}
+                            className="p-2 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                            title="Download file"
+                        >
+                            <Download className="w-4 h-4" />
+                        </button>
 
                         {/* Google Drive Link */}
                         {file.webViewLink && (
