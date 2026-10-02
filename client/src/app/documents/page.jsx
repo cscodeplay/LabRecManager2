@@ -26,6 +26,7 @@ const CATEGORIES = [
     { value: 'agreement', label: 'Agreements' },
     { value: 'report', label: 'Reports' },
     { value: 'policy', label: 'Policies' },
+    { value: 'audio', label: 'Audio & Lectures' },
     { value: 'other', label: 'Other' }
 ];
 
@@ -42,6 +43,12 @@ const FILE_ICONS = {
     png: '🖼️',
     gif: '🖼️',
     webp: '🖼️',
+    mp3: '🎵',
+    wav: '🎵',
+    m4a: '🎵',
+    ogg: '🎵',
+    aac: '🎵',
+    audio: '🎵',
     file: '📁'
 };
 

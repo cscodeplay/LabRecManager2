@@ -108,32 +108,44 @@ function formatSize(bytes) {
 router.get('/', authenticate, asyncHandler(async (req, res) => {
     const { category, search, folderId } = req.query;
 
-    const where = { schoolId: req.user.schoolId, deletedAt: null };
+    const conditions = [
+        { schoolId: req.user.schoolId },
+        { deletedAt: null }
+    ];
+
     const isAdmin = ['admin', 'principal'].includes(req.user.role);
     if (!isAdmin) {
-        where.uploadedById = req.user.id;
+        conditions.push({
+            OR: [
+                { uploadedById: req.user.id },
+                { isPublic: true },
+                { uploadedBy: { role: { in: ['admin', 'principal'] } } }
+            ]
+        });
     }
 
-    if (category) where.category = category;
+    if (category) conditions.push({ category });
 
     if (search) {
-        where.OR = [
-            { name: { contains: search, mode: 'insensitive' } },
-            { description: { contains: search, mode: 'insensitive' } },
-            { fileName: { contains: search, mode: 'insensitive' } }
-        ];
+        conditions.push({
+            OR: [
+                { name: { contains: search, mode: 'insensitive' } },
+                { description: { contains: search, mode: 'insensitive' } },
+                { fileName: { contains: search, mode: 'insensitive' } }
+            ]
+        });
         // If searching, we typically search globally (ignore folderId) unless explicitly desired.
-        // Given the requirement "search should work for folders and files inside its tree structure",
-        // global search is the most straightforward interpretation for flat SQL.
     } else {
         // Navigation Mode: strictly filter by folder
         if (folderId === 'root') {
-            where.folderId = null;
+            conditions.push({ folderId: null });
         } else if (folderId) {
-            where.folderId = folderId;
+            conditions.push({ folderId });
         }
         // If folderId is undefined, we return ALL documents (default behavior)
     }
+
+    const where = { AND: conditions };
 
     const documents = await prisma.document.findMany({
         where,

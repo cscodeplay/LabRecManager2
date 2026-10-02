@@ -12,22 +12,29 @@ const { asyncHandler } = require('../middleware/errorHandler');
 router.get('/', authenticate, asyncHandler(async (req, res) => {
     const { parentId, search } = req.query;
 
-    const where = {
-        schoolId: req.user.schoolId,
-        deletedAt: null
-    };
+    const conditions = [
+        { schoolId: req.user.schoolId },
+        { deletedAt: null }
+    ];
 
     const isAdmin = ['admin', 'principal'].includes(req.user.role);
     if (!isAdmin) {
-        where.createdById = req.user.id;
+        conditions.push({
+            OR: [
+                { createdById: req.user.id },
+                { createdBy: { role: { in: ['admin', 'principal'] } } }
+            ]
+        });
     }
 
     if (search) {
-        where.name = { contains: search, mode: 'insensitive' };
+        conditions.push({ name: { contains: search, mode: 'insensitive' } });
         // When searching, we ignore parentId to search globally
     } else {
-        where.parentId = parentId || null;
+        conditions.push({ parentId: parentId || null });
     }
+
+    const where = { AND: conditions };
 
     const folders = await prisma.documentFolder.findMany({
         where,
