@@ -123,9 +123,7 @@ export default function WhiteboardShortcutsModal({
                 { key: 'R (on select)', desc: 'Rotate 90° Clockwise', icon: RotateCcw },
                 { key: 'Arrow Keys', desc: 'Nudge Selected Items by 1px', icon: Move },
                 { key: `${shiftKey} + Arrows`, desc: 'Nudge Selected Items by 10px', icon: Move },
-                { key: '∞ (Infinite Cloner)', desc: 'Drag Object to Spawn Infinite Clones', icon: InfinityIcon },
-                { key: '3D Trackball', desc: 'Drag 3D Gimbal for Pitch, Yaw, Roll', icon: Box },
-                { key: `${modKey} + J / A`, desc: 'Open AI Diagram & Template Generator', icon: Sparkles },
+                { key: `${modKey} + ${shiftKey} + A`, desc: 'Open AI Bot Co-Pilot & Tutor (3D, Flowcharts, Voice)', icon: Sparkles },
                 { key: 'M', desc: 'Open Templates & SmartArt Gallery', icon: LayoutTemplate },
                 { key: '? / ' + modKey + ' + /', desc: 'Open Help & Shortcuts Guide', icon: Keyboard },
             ]
@@ -329,16 +327,18 @@ export default function WhiteboardShortcutsModal({
             ]
         },
         {
-            category: 'Closed Captions & Speech AI Tutor',
-            icon: '🎙️',
-            description: 'Live captions, audio device settings, and speech synthesis solutions',
+            category: 'AI Whiteboard Co-Pilot & Generative Drawing',
+            icon: '🤖',
+            description: 'Interactive 3D models, flowcharts, generative diagrams, and conversational speech',
             commands: [
-                { phrase: 'closed captions on / off', action: 'closed captions on', desc: 'Toggle real-time streaming speech captions overlay' },
-                { phrase: 'ai voice on / mute ai voice', action: 'ai voice on', desc: 'Enable/disable spoken AI voice answers' },
-                { phrase: 'ai tutor / ai assistant', action: 'ai tutor', desc: 'Open interactive AI solutions & tutoring dialog' },
+                { phrase: 'ai bot / ai co-pilot / open ai', action: 'ai bot', desc: 'Open interactive AI Bot Co-Pilot Hub' },
+                { phrase: 'draw 3D [earth | atom | dna | router | rocket]', action: 'draw 3D earth model', desc: 'Generate and place interactive 3D model on board' },
+                { phrase: 'draw flowchart [concept / topic]', action: 'draw login flowchart', desc: 'Generate native editable flowchart with smart arrows' },
+                { phrase: 'draw diagram [concept / axes / venn]', action: 'draw venn diagram', desc: 'Generate native geometric diagram on canvas' },
                 { phrase: 'solve [equation]', action: 'solve 2x + 6 = 18', desc: 'Ask AI to solve math equations and speak steps aloud' },
-                { phrase: 'explain [concept / theorem]', action: 'explain Pythagorean theorem', desc: 'Get voice explanation and LaTeX formula card' },
-                { phrase: 'how to [feature]', action: 'how to duplicate page', desc: 'Ask for spoken guidance on whiteboard tools' }
+                { phrase: 'explain [concept / theorem]', action: 'explain water cycle', desc: 'Get conversational voice explanation and step-by-step notes' },
+                { phrase: 'closed captions on / off', action: 'closed captions on', desc: 'Toggle real-time streaming speech captions overlay' },
+                { phrase: 'ai voice on / mute ai voice', action: 'ai voice on', desc: 'Enable/disable spoken AI voice answers' }
             ]
         }
     ], []);

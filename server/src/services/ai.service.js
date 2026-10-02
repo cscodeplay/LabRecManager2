@@ -1477,14 +1477,15 @@ Translate the user's spoken input into the single best standardized Whiteboard v
     - "delete" | "copy" | "paste" | "duplicate" | "lock" | "group" | "ungroup" | "bring to front" | "send to back"
 
 13. VOICE CONTROLS:
-    - "voice mode off" | "voice mode on"
-
-14. QUESTIONS, PROBLEMS & EDUCATIONAL ASSISTANCE:
-    - Users can ask math questions, science queries, formulas, or how-to guidance (e.g. "solve 3x + 12 = 36", "explain Pythagorean theorem", "calculate area of circle radius 7", "what is Ohm's law", "how do I duplicate a page?").
+15. GENERATIVE DRAWING, 3D MODELS, FLOWCHARTS & VISUAL DIAGRAMS:
+    - Insert 3D models: "insert 3D earth", "3D atom", "3D DNA", "3D rocket", "3D router", "3D laptop", "3D solar system", "insert 3D sphere/cube/pyramid"
+    - Draw flowcharts: "draw flowchart for login", "draw water cycle", "draw algorithm flowchart", "draw decision tree"
+    - Draw diagrams: "draw Venn diagram", "draw coordinate axes", "draw triangle with sides 3 4 5 and explain Pythagoras"
+    - Full educational boards: "explain structure of atom and draw it", "explain photosynthesis with diagram", "explain earth layers in 3d"
 
 Spoken input: "${text}"
 
-Determine whether the user is issuing a canvas command OR asking a question/requesting a solution:
+Determine whether the user is issuing a canvas command, requesting a generative visual/3D drawing, OR asking an educational question:
 
 If Canvas Command:
 {
@@ -1494,6 +1495,34 @@ If Canvas Command:
   "intent": "<intent_name>",
   "spokenFeedback": "<brief confirmation message>",
   "speechResponse": "<short natural voice reply for TTS>"
+}
+
+If Generative Drawing, 3D Model, Flowchart, or Visual Diagram:
+{
+  "recognized": true,
+  "type": "canvas_generation",
+  "intent": "generate_diagram_or_3d",
+  "speechResponse": "<2-3 engaging, natural conversational sentences explaining what was created and the scientific/mathematical concept for Speech Synthesis audio playback>",
+  "spokenFeedback": "<Brief status, e.g. 'Created 3D Earth with notes'>",
+  "solutionMarkdown": "<Step-by-step clear notes and LaTeX formulas using $$...$$ format for math/science>",
+  "canvasAction": {
+    "type": "insert_3d_model" | "draw_flowchart" | "draw_diagram" | "create_lesson_board",
+    "modelType": "<earth | sun | moon | mars | jupiter | saturn | atom | dna_double_helix | molecule | rocket | satellite | laptop | router | switch | cube | sphere | pyramid | cylinder | cone>",
+    "title": "<Concise title of diagram or visual>",
+    "color": "<hex color code>",
+    "nodes": [
+      { "id": "n1", "label": "<Step 1 text>", "shapeType": "pill | rectangle | diamond", "color": "#6366f1" }
+    ],
+    "connections": [
+      { "from": "n1", "to": "n2", "label": "<optional arrow label>" }
+    ],
+    "shapes": [
+      { "type": "circle | rectangle | triangle | arrow", "label": "<text>", "color": "#6366f1" }
+    ],
+    "notes": [
+      { "title": "<Note Title>", "text": "<Note explanation content>", "color": "purple | yellow | blue | green | pink" }
+    ]
+  }
 }
 
 If Question, Problem to Solve, or Explanation:
@@ -2529,6 +2558,418 @@ Output ONLY a valid JSON object matching this schema:
                     spokenFeedback: 'Guide: Laser Pointer'
                 };
             }
+        }
+
+        // 9. Interactive 3D Model Placements & Lessons
+        if (
+            low.includes('3d') ||
+            low.includes('three d') ||
+            low.includes('planet') ||
+            low.includes('solar system') ||
+            low.includes('earth') ||
+            low.includes('globe') ||
+            low.includes('atom') ||
+            low.includes('dna') ||
+            low.includes('molecule') ||
+            low.includes('rocket') ||
+            low.includes('satellite') ||
+            low.includes('router') ||
+            low.includes('switch') ||
+            low.includes('laptop')
+        ) {
+            // Earth / Globe
+            if (low.includes('earth') || low.includes('globe')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_earth',
+                    speechResponse: "I've placed an interactive 3D Earth model at the center of your whiteboard. You can rotate it freely in 3D to inspect the continents, oceans, and axial tilt.",
+                    spokenFeedback: 'Inserted 3D Earth',
+                    solutionMarkdown: `### Planet Earth (3D Interactive Model)\n\n- **Equatorial Circumference:** $40,075\\text{ km}$\n- **Axial Tilt:** $23.44^\\circ$ causing the four seasons\n- **Atmosphere:** $78\\%\\text{ N}_2$, $21\\%\\text{ O}_2$, $1\\%\\text{ Trace Gases}$\n- **Internal Layers:**\n  1. **Crust:** $0\\text{--}70\\text{ km}$ solid rock\n  2. **Mantle:** $2,900\\text{ km}$ semi-fluid silicate\n  3. **Outer Core:** Liquid Iron & Nickel (generates magnetosphere)\n  4. **Inner Core:** Solid Iron ($5,400^\\circ\\text{C}$)`,
+                    canvasAction: {
+                        type: 'insert_3d_model',
+                        modelType: 'earth',
+                        name: '3D Planet Earth',
+                        color: '#38bdf8',
+                        notes: [
+                            { title: 'Earth Dimensions', text: 'Radius: 6,371 km\nCircumference: 40,075 km\nTilt: 23.44°', color: 'blue' },
+                            { title: 'Atmosphere Composition', text: '78% Nitrogen (N2)\n21% Oxygen (O2)\n1% Argon & CO2', color: 'green' },
+                            { title: 'Internal Layers', text: '1. Crust (0-70 km)\n2. Mantle (2,900 km)\n3. Core (Liquid & Solid Iron)', color: 'purple' }
+                        ]
+                    }
+                };
+            }
+
+            // Sun / Solar System
+            if (low.includes('sun') || low.includes('solar')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_sun',
+                    speechResponse: "Here is an interactive 3D model of the Sun. It contains over 99.8 percent of our solar system's mass with core nuclear fusion fusing hydrogen into helium.",
+                    spokenFeedback: 'Inserted 3D Sun',
+                    solutionMarkdown: `### The Sun (3D Solar Model)\n\n- **Mass:** $1.989 \\times 10^{30}\\text{ kg}$ (99.86% of Solar System)\n- **Core Temperature:** $15,000,000\\text{ K}$ (Nuclear Fusion: $4\\text{H} \\rightarrow \\text{He} + 2e^+ + 2\\nu + \\gamma$)\n- **Surface Temperature:** $5,778\\text{ K}$\n- **Distance to Earth:** 1 AU ($\\approx 149.6 \\times 10^6\\text{ km}$, 8.3 light minutes)`,
+                    canvasAction: {
+                        type: 'insert_3d_model',
+                        modelType: 'sun',
+                        name: '3D Sun',
+                        color: '#f59e0b',
+                        notes: [
+                            { title: 'Solar Core', text: '15 Million °K\nHydrogen fusion powers all solar energy', color: 'yellow' },
+                            { title: 'Light Travel Time', text: 'Distance: 1 AU (149.6M km)\nLight reaches Earth in 8.3 minutes', color: 'purple' }
+                        ]
+                    }
+                };
+            }
+
+            // Atom / Subatomic Physics
+            if (low.includes('atom') || low.includes('atomic') || low.includes('bohr') || low.includes('nucleus') || low.includes('orbital')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_atom',
+                    speechResponse: "I have placed a 3D Atom model with its central nucleus and orbital electron shells onto your board. You can rotate it to inspect subatomic particle positions.",
+                    spokenFeedback: 'Inserted 3D Atom',
+                    solutionMarkdown: `### Atomic Structure & Bohr Model (3D)\n\n- **Nucleus:** Dense center containing:\n  - **Protons ($p^+$):** Charge $+1$, mass $1.673 \\times 10^{-27}\\text{ kg}$\n  - **Neutrons ($n^0$):** Charge $0$, mass $1.675 \\times 10^{-27}\\text{ kg}$\n- **Electron Shells:** Electrons ($e^-$, $-1$) arranged in quantised levels:\n  $$2n^2 \\quad (n=1: 2e^-, \\; n=2: 8e^-, \\; n=3: 18e^-)$$\n- **Atomic Number ($Z$):** Number of protons defining elemental identity.`,
+                    canvasAction: {
+                        type: 'insert_3d_model',
+                        modelType: 'atom',
+                        name: '3D Atom',
+                        color: '#818cf8',
+                        notes: [
+                            { title: 'Atomic Nucleus', text: 'Protons (+1) and Neutrons (0)\nBound by Strong Nuclear Force', color: 'purple' },
+                            { title: 'Electron Orbitals', text: 'Shell capacity: 2n²\nn=1 (K): 2e⁻\nn=2 (L): 8e⁻', color: 'blue' }
+                        ]
+                    }
+                };
+            }
+
+            // DNA Double Helix / Genetics
+            if (low.includes('dna') || low.includes('helix') || low.includes('genetic') || low.includes('nucleotide')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_dna',
+                    speechResponse: "Here is an interactive 3D DNA Double Helix showing antiparallel polynucleotide strands with Watson-Crick complementary base pairing.",
+                    spokenFeedback: 'Inserted 3D DNA Helix',
+                    solutionMarkdown: `### DNA Double Helix Structure (3D)\n\n- **Architecture:** Double-stranded antiparallel right-handed helix ($5' \\rightarrow 3'$ and $3' \\rightarrow 5'$).\n- **Watson-Crick Base Pairs:**\n  - **Adenine (A) = Thymine (T):** 2 Hydrogen Bonds\n  - **Guanine (G) $\\equiv$ Cytosine (C):** 3 Hydrogen Bonds\n- **Backbone:** Alternating Deoxyribose sugar and phosphate groups linked by phosphodiester bonds.`,
+                    canvasAction: {
+                        type: 'insert_3d_model',
+                        modelType: 'dna_double_helix',
+                        name: '3D DNA Double Helix',
+                        color: '#ec4899',
+                        notes: [
+                            { title: 'Complementary Base Pairs', text: 'A = T (2 Hydrogen bonds)\nG ≡ C (3 Hydrogen bonds)', color: 'pink' },
+                            { title: 'Helical Dimensions', text: 'Diameter: 2.0 nm\nPitch per turn: 3.4 nm (10 bp)', color: 'blue' }
+                        ]
+                    }
+                };
+            }
+
+            // Molecule / Chemical structure
+            if (low.includes('molecule') || low.includes('molecular') || low.includes('compound')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_molecule',
+                    speechResponse: "I've added an interactive 3D molecule model showing atoms linked by covalent bonds and standard valence angles.",
+                    spokenFeedback: 'Inserted 3D Molecule',
+                    solutionMarkdown: `### Chemical Molecular Geometry (3D)\n\n- **Bonds:** Covalent electron sharing between bonded nuclei.\n- **VSEPR Theory:** Electron pairs arrange symmetrically to minimize electrostatic repulsion.\n- **Bond Angles:**\n  - Tetrahedral (e.g. $\\text{CH}_4$): $109.5^\\circ$\n  - Trigonal Planar (e.g. $\\text{BF}_3$): $120^\\circ$\n  - Linear (e.g. $\\text{CO}_2$): $180^\\circ$`,
+                    canvasAction: {
+                        type: 'insert_3d_model',
+                        modelType: 'molecule',
+                        name: '3D Chemical Molecule',
+                        color: '#10b981'
+                    }
+                };
+            }
+
+            // Router / Multi-WAN / Network Device
+            if (low.includes('router') || low.includes('gateway') || low.includes('wan')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_router',
+                    speechResponse: "Here is an interactive 3D Multi-WAN Gateway Router. It connects local subnet workstations to multiple ISP uplink connections with load balancing.",
+                    spokenFeedback: 'Inserted 3D Router',
+                    solutionMarkdown: `### Multi-WAN Enterprise Gateway Router (3D)\n\n- **Function:** Layer 3 OSI Network Gateway routing IP packets across distinct subnets.\n- **Multi-WAN Failover:** Distributes external bandwidth across multiple ISP uplinks (WAN1, WAN2) with automatic heartbeat failover.\n- **Security:** Hardware NAT firewall, Stateful Packet Inspection (SPI), and IPSec VPN tunnels.`,
+                    canvasAction: {
+                        type: 'insert_3d_model',
+                        modelType: 'multwan_router',
+                        name: '3D Multi-WAN Router',
+                        color: '#6366f1',
+                        notes: [
+                            { title: 'Layer 3 Routing', text: 'Routes IP packets between LAN subnets and WAN uplinks', color: 'purple' },
+                            { title: 'Failover & Load Balancing', text: 'Dual WAN failover maintains 99.99% uptime across ISPs', color: 'blue' }
+                        ]
+                    }
+                };
+            }
+
+            // Network Switch
+            if (low.includes('switch') || low.includes('ethernet switch')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_switch',
+                    speechResponse: "I've placed a 3D Managed Network Switch model onto the canvas. It forwards Ethernet frames at Layer 2 using hardware MAC address tables.",
+                    spokenFeedback: 'Inserted 3D Switch',
+                    solutionMarkdown: `### Managed Network Switch (3D)\n\n- **Function:** Layer 2 Data Link frame forwarding using hardware CAM/MAC address tables.\n- **VLANs (802.1Q):** Isolates broadcast domains virtually without separate physical cabling.\n- **Gigabit Ethernet:** Full-duplex non-blocking backplane switching bandwidth.`,
+                    canvasAction: {
+                        type: 'insert_3d_model',
+                        modelType: 'network_switch',
+                        name: '3D Network Switch',
+                        color: '#0284c7'
+                    }
+                };
+            }
+
+            // Laptop / Workstation
+            if (low.includes('laptop') || low.includes('computer') || low.includes('pc') || low.includes('workstation')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_laptop',
+                    speechResponse: "Here is a 3D Workstation Laptop model. You can rotate and position it anywhere on your canvas.",
+                    spokenFeedback: 'Inserted 3D Laptop',
+                    solutionMarkdown: `### Workstation Laptop (3D)\n\n- **Client Endpoint:** Interacts as host device in network topologies and client-server architectures.`,
+                    canvasAction: {
+                        type: 'insert_3d_model',
+                        modelType: 'laptop',
+                        name: '3D Laptop Workstation',
+                        color: '#475569'
+                    }
+                };
+            }
+
+            // Rocket / Satellite
+            if (low.includes('rocket') || low.includes('spaceship')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_rocket',
+                    speechResponse: "I've placed an interactive 3D Rocket model onto the whiteboard.",
+                    spokenFeedback: 'Inserted 3D Rocket',
+                    solutionMarkdown: `### Aerospace Rocket (3D)\n\n- **Thrust:** Governed by Newton's Third Law ($F_{\\text{thrust}} = \\dot{m} v_e$).`,
+                    canvasAction: {
+                        type: 'insert_3d_model',
+                        modelType: 'rocket',
+                        name: '3D Rocket',
+                        color: '#ef4444'
+                    }
+                };
+            }
+
+            // Moon / Mars / Jupiter / Saturn
+            if (low.includes('moon') || low.includes('lunar')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_moon',
+                    speechResponse: "Here is a 3D Moon model with crater surface topography.",
+                    spokenFeedback: 'Inserted 3D Moon',
+                    canvasAction: { type: 'insert_3d_model', modelType: 'moon', name: '3D Moon', color: '#cbd5e1' }
+                };
+            }
+            if (low.includes('mars')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_mars',
+                    speechResponse: "I've placed a 3D Mars model showing the red planet's iron oxide surface.",
+                    spokenFeedback: 'Inserted 3D Mars',
+                    canvasAction: { type: 'insert_3d_model', modelType: 'mars', name: '3D Mars', color: '#f97316' }
+                };
+            }
+            if (low.includes('jupiter')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_jupiter',
+                    speechResponse: "Here is a 3D Jupiter model, the largest gas giant in our solar system.",
+                    spokenFeedback: 'Inserted 3D Jupiter',
+                    canvasAction: { type: 'insert_3d_model', modelType: 'jupiter', name: '3D Jupiter', color: '#d97706' }
+                };
+            }
+            if (low.includes('saturn')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_saturn',
+                    speechResponse: "I have added a 3D Saturn model with its iconic planetary rings.",
+                    spokenFeedback: 'Inserted 3D Saturn',
+                    canvasAction: { type: 'insert_3d_model', modelType: 'saturn', name: '3D Saturn', color: '#fbbf24' }
+                };
+            }
+
+            // Geometric 3D Solids
+            if (low.includes('cylinder')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_cylinder',
+                    speechResponse: "Inserted a 3D Cylinder with circular parallel bases.",
+                    spokenFeedback: 'Inserted 3D Cylinder',
+                    canvasAction: { type: 'insert_3d_model', modelType: 'cylinder', name: '3D Cylinder', color: '#3b82f6' }
+                };
+            }
+            if (low.includes('cone')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_cone',
+                    speechResponse: "Inserted a 3D Cone tapering smoothly from a circular base to an apex.",
+                    spokenFeedback: 'Inserted 3D Cone',
+                    canvasAction: { type: 'insert_3d_model', modelType: 'cone', name: '3D Cone', color: '#ec4899' }
+                };
+            }
+            if (low.includes('pyramid')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_pyramid',
+                    speechResponse: "Inserted a 3D Pyramid with polygonal base and converging triangular faces.",
+                    spokenFeedback: 'Inserted 3D Pyramid',
+                    canvasAction: { type: 'insert_3d_model', modelType: 'pyramid', name: '3D Pyramid', color: '#f59e0b' }
+                };
+            }
+            if (low.includes('sphere')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_sphere',
+                    speechResponse: "Inserted a 3D Sphere with uniform curvature in three dimensions.",
+                    spokenFeedback: 'Inserted 3D Sphere',
+                    canvasAction: { type: 'insert_3d_model', modelType: 'sphere', name: '3D Sphere', color: '#06b6d4' }
+                };
+            }
+            if (low.includes('cube') || low.includes('box')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'insert_3d_cube',
+                    speechResponse: "Inserted a 3D Cube with six congruent square faces.",
+                    spokenFeedback: 'Inserted 3D Cube',
+                    canvasAction: { type: 'insert_3d_model', modelType: 'cube', name: '3D Cube', color: '#6366f1' }
+                };
+            }
+        }
+
+        // 10. Generative Flowcharts & Process Diagrams
+        if (low.includes('flowchart') || (low.includes('flow') && low.includes('chart')) || (low.includes('diagram') && (low.includes('login') || low.includes('auth') || low.includes('process') || low.includes('cycle')))) {
+            // User Authentication / Login Flowchart
+            if (low.includes('login') || low.includes('auth') || low.includes('sign in') || low.includes('password')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'draw_flowchart_auth',
+                    speechResponse: "Drawing an interactive user authentication flowchart on your canvas, showing credential input, database validation, and JWT token session creation.",
+                    spokenFeedback: 'Drawn Authentication Flowchart',
+                    solutionMarkdown: `### User Authentication Architecture Flowchart\n\n1. **User Request:** Submits email & password via HTTPS POST.\n2. **Hash Verification:** Server compares hashed input against bcrypt salted hash in database.\n3. **Token Issuance:** On match, cryptographically signs JWT containing user claims.\n4. **Session Handshake:** Client stores token in secure HTTP-only cookie and enters authenticated state.`,
+                    canvasAction: {
+                        type: 'draw_flowchart',
+                        title: 'User Authentication Flow',
+                        nodes: [
+                            { id: 'auth_1', label: '1. User Enters Email & Password', shapeType: 'rectangle', color: '#6366f1' },
+                            { id: 'auth_2', label: '2. Server Validates Input & Hashes Password', shapeType: 'rectangle', color: '#3b82f6' },
+                            { id: 'auth_3', label: '3. Credentials Match in Database?', shapeType: 'diamond', color: '#f59e0b' },
+                            { id: 'auth_4', label: '4. Sign JWT Token & Authorize Session', shapeType: 'rectangle', color: '#10b981' },
+                            { id: 'auth_5', label: '5. Display 401 Unauthorized Error', shapeType: 'rectangle', color: '#ef4444' }
+                        ],
+                        connections: [
+                            { from: 'auth_1', to: 'auth_2' },
+                            { from: 'auth_2', to: 'auth_3' },
+                            { from: 'auth_3', to: 'auth_4', label: 'Match' },
+                            { from: 'auth_3', to: 'auth_5', label: 'Mismatch' }
+                        ]
+                    }
+                };
+            }
+
+            // Hydrological Water Cycle Flowchart
+            if (low.includes('water') || low.includes('rain') || low.includes('hydrolog')) {
+                return {
+                    recognized: true,
+                    type: 'canvas_generation',
+                    intent: 'draw_flowchart_water_cycle',
+                    speechResponse: "Drawing the hydrological water cycle flowchart showing solar evaporation, atmospheric condensation, precipitation, and groundwater collection.",
+                    spokenFeedback: 'Drawn Water Cycle Flowchart',
+                    solutionMarkdown: `### The Water Cycle (Hydrological Process)\n\n$$\\text{Liquid Water} \\xrightarrow{\\text{Evaporation}} \\text{Vapor} \\xrightarrow{\\text{Condensation}} \\text{Clouds} \\xrightarrow{\\text{Precipitation}} \\text{Runoff}$$\n\n1. **Evaporation & Transpiration:** Solar thermal energy turns liquid water into vapor.\n2. **Condensation:** Rising vapor cools into cloud droplets.\n3. **Precipitation:** Condensed droplets fall as rain, hail, or snow.\n4. **Infiltration & Runoff:** Water filters through soil into aquifers and flows back to lakes and oceans.`,
+                    canvasAction: {
+                        type: 'draw_flowchart',
+                        title: 'The Water Cycle Process',
+                        nodes: [
+                            { id: 'wc_1', label: '1. Solar Evaporation\n(Liquid → Water Vapor)', shapeType: 'rectangle', color: '#f59e0b' },
+                            { id: 'wc_2', label: '2. Cloud Condensation\n(Vapor → Cloud Droplets)', shapeType: 'rectangle', color: '#06b6d4' },
+                            { id: 'wc_3', label: '3. Precipitation\n(Rain / Snow / Hail)', shapeType: 'rectangle', color: '#3b82f6' },
+                            { id: 'wc_4', label: '4. Surface Runoff & Infiltration\n(Rivers, Oceans, Aquifers)', shapeType: 'rectangle', color: '#10b981' }
+                        ],
+                        connections: [
+                            { from: 'wc_1', to: 'wc_2' },
+                            { from: 'wc_2', to: 'wc_3' },
+                            { from: 'wc_3', to: 'wc_4' },
+                            { from: 'wc_4', to: 'wc_1', label: 'Continuous Cycle' }
+                        ]
+                    }
+                };
+            }
+
+            // Generic / Decision Tree Flowchart
+            return {
+                recognized: true,
+                type: 'canvas_generation',
+                intent: 'draw_flowchart_generic',
+                speechResponse: "Drawing a structured process flowchart with connected decision nodes and action steps.",
+                spokenFeedback: 'Drawn Flowchart',
+                canvasAction: {
+                    type: 'draw_flowchart',
+                    title: 'Process Workflow',
+                    nodes: [
+                        { id: 'fl_1', label: '1. Start Process & Initialize Inputs', shapeType: 'rectangle', color: '#6366f1' },
+                        { id: 'fl_2', label: '2. Transform & Compute Step', shapeType: 'rectangle', color: '#3b82f6' },
+                        { id: 'fl_3', label: '3. Validation Condition Met?', shapeType: 'diamond', color: '#f59e0b' },
+                        { id: 'fl_4', label: '4. Execute Output & Complete', shapeType: 'rectangle', color: '#10b981' }
+                    ],
+                    connections: [
+                        { from: 'fl_1', to: 'fl_2' },
+                        { from: 'fl_2', to: 'fl_3' },
+                        { from: 'fl_3', to: 'fl_4', label: 'Yes' }
+                    ]
+                }
+            };
+        }
+
+        // 11. Venn Diagrams & Geometric Constructions
+        if (low.includes('venn') || low.includes('venn diagram')) {
+            return {
+                recognized: true,
+                type: 'canvas_generation',
+                intent: 'draw_venn_diagram',
+                speechResponse: "Drawing an interactive two-set Venn diagram with overlapping circles showing set intersection and union relationships.",
+                spokenFeedback: 'Drawn Venn Diagram',
+                solutionMarkdown: `### Two-Set Venn Diagram ($A \\text{ and } B$)\n\n- **Intersection ($A \\cap B$):** Elements belonging to both set $A$ and set $B$.\n- **Union ($A \\cup B$):** Elements in $A$, in $B$, or in both: $|A \\cup B| = |A| + |B| - |A \\cap B|$.\n- **Relative Complement ($A \\setminus B$):** Elements belonging strictly to $A$ but not $B$.`,
+                canvasAction: {
+                    type: 'draw_diagram',
+                    diagramType: 'venn',
+                    title: 'Two-Set Venn Diagram'
+                }
+            };
+        }
+
+        if (low.includes('coordinate') || (low.includes('axes') && low.includes('draw')) || low.includes('cartesian')) {
+            return {
+                recognized: true,
+                type: 'canvas_generation',
+                intent: 'draw_coordinate_axes',
+                speechResponse: "Drawing Cartesian coordinate axes with labeled horizontal X-axis, vertical Y-axis, and origin.",
+                spokenFeedback: 'Drawn Coordinate Axes',
+                solutionMarkdown: `### Cartesian Coordinate System\n\n- **X-axis (Abscissa):** Horizontal dimension with $(x > 0)$ to right.\n- **Y-axis (Ordinate):** Vertical dimension with $(y > 0)$ upwards.\n- **Origin $(0,0)$:** Intersection point where both coordinates equal zero.\n- **Quadrants:** I $(+,+)$, II $(-,+)$, III $(-,-)$, IV $(+,-)$.`,
+                canvasAction: {
+                    type: 'draw_diagram',
+                    diagramType: 'axes',
+                    title: 'Cartesian Coordinate Axes'
+                }
+            };
         }
 
         return null;

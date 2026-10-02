@@ -17,7 +17,7 @@ import {
     Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX,
     ChevronUp, ChevronsUp, ChevronsDown, FileText, Check, Pause, Play, RotateCcw, Globe, Music,
     Underline, Bold, Italic, Shapes, Database, MessageSquare, Sigma, Calculator, Layers,
-    ZoomIn, ZoomOut, BookOpen, Gamepad2
+    ZoomIn, ZoomOut, BookOpen, Gamepad2, Bot
 } from 'lucide-react';
 import fixWebmDuration from 'fix-webm-duration';
 import katex from 'katex';
@@ -4194,6 +4194,13 @@ export default function Whiteboard({
                     saveToHistory();
                     return;
                 }
+            }
+
+            // AI Assistant Co-Pilot Shortcut (Cmd+Shift+A or Ctrl+Shift+A)
+            if (modKey && e.shiftKey && e.key.toLowerCase() === 'a') {
+                e.preventDefault();
+                setShowAiAssistantModal(prev => !prev);
+                return;
             }
 
             // Select All (Cmd+A or Ctrl+A)
@@ -10059,9 +10066,272 @@ export default function Whiteboard({
         }
     }, []);
 
-    // Handle inserting generated AI solution as a note onto whiteboard canvas
+    // Execute AI-generated native canvas actions (3D models, flowcharts, diagrams, educational lesson boards)
+    const executeAiCanvasAction = useCallback((canvasAction, options = {}) => {
+        if (!canvasAction || !canvasAction.type) return false;
+
+        const baseCx = Math.round((-panOffset.x + (containerRef.current?.clientWidth || 1200) / 2) / zoomLevel);
+        const baseCy = Math.round((-panOffset.y + (containerRef.current?.clientHeight || 800) / 2) / zoomLevel);
+
+        // 1. Insert Native Interactive 3D Model
+        if (canvasAction.type === 'insert_3d_model') {
+            const rawType = (canvasAction.modelType || 'cube').toLowerCase();
+            const isEarth = /earth/i.test(canvasAction.name || rawType);
+            const mType = isEarth ? 'earth' : rawType;
+            const dims = canvasAction.dimensions || getDefaultDimensions(mType);
+            const resolvedColor = canvasAction.color || (isEarth ? '#38bdf8' : '#6366f1');
+
+            const new3D = {
+                id: `3d_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                modelType: mType,
+                meshData: null,
+                name: canvasAction.name || `3D ${mType.charAt(0).toUpperCase() + mType.slice(1)}`,
+                x: Math.max(20, baseCx - 110),
+                y: Math.max(20, baseCy - 110),
+                width: 240,
+                height: 240,
+                color: resolvedColor,
+                rotX: -25,
+                rotY: 45,
+                rotZ: 0,
+                rotation: 0,
+                dimensions: dims,
+                unit: 'cm',
+                showDimensions: false,
+                projectionMode: 'isometric',
+                materialStyle: 'shaded'
+            };
+
+            setThreeDObjects(prev => [...prev, new3D]);
+            setSelected3DIds([new3D.id]);
+            setSelectedShapeIds([]);
+            setSelectedTextIds([]);
+            setSelectedImageId(null);
+            setSelectedImageIds([]);
+            setTool('select');
+
+            // If lesson notes are attached, spawn surrounding sticky notes
+            if (Array.isArray(canvasAction.notes) && canvasAction.notes.length > 0) {
+                const newNotes = canvasAction.notes.map((n, idx) => {
+                    const angle = (idx * (2 * Math.PI / canvasAction.notes.length)) - Math.PI / 4;
+                    const dist = 280;
+                    const nx = Math.round(baseCx + dist * Math.cos(angle) - 100);
+                    const ny = Math.round(baseCy + dist * Math.sin(angle) - 70);
+                    const note = createStickyNoteObject(nx, ny, n.color || 'purple');
+                    note.title = n.title;
+                    note.text = n.text;
+                    return note;
+                });
+                setPageShapeObjects(prev => ({
+                    ...prev,
+                    [currentPage]: [...(prev[currentPage] || []), ...newNotes]
+                }));
+            }
+
+            saveToHistory();
+            toast.success(`Inserted ${new3D.name} to whiteboard!`, { icon: '🪐' });
+            return true;
+        }
+
+        // 2. Draw Native Interactive Flowchart with Smart Connectors
+        if (canvasAction.type === 'draw_flowchart') {
+            const nodes = canvasAction.nodes || [];
+            const connections = canvasAction.connections || [];
+            const nodeMap = new Map();
+            const newShapes = [];
+
+            const isVertical = nodes.length >= 4;
+            const startX = isVertical ? baseCx - 110 : baseCx - (nodes.length * 210) / 2;
+            const startY = isVertical ? baseCy - (nodes.length * 105) / 2 : baseCy - 55;
+
+            nodes.forEach((n, idx) => {
+                const shapeId = `fl_node_${Date.now()}_${idx}`;
+                const isErrorNode = n.id.includes('5') || n.id.toLowerCase().includes('error') || n.id.toLowerCase().includes('fail');
+                const nx = isVertical ? (isErrorNode ? startX + 260 : startX) : startX + idx * 210;
+                const ny = isVertical ? (isErrorNode ? startY + (idx - 1) * 110 : startY + idx * 110) : startY;
+                const w = n.shapeType === 'diamond' ? 220 : 200;
+                const h = n.shapeType === 'diamond' ? 80 : 70;
+
+                const shape = {
+                    id: shapeId,
+                    type: n.shapeType || 'rectangle',
+                    x: nx,
+                    y: ny,
+                    width: w,
+                    height: h,
+                    rotation: 0,
+                    color: n.color || '#6366f1',
+                    strokeWidth: 2,
+                    fillColor: n.shapeType === 'diamond' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(99, 102, 241, 0.12)',
+                    strokeStyle: 'solid',
+                    text: n.label || '',
+                    fontSize: 14,
+                    fontFamily: 'Inter, sans-serif'
+                };
+                newShapes.push(shape);
+                nodeMap.set(n.id, shape);
+            });
+
+            connections.forEach((c, cIdx) => {
+                const sourceShape = nodeMap.get(c.from);
+                const targetShape = nodeMap.get(c.to);
+                if (sourceShape && targetShape) {
+                    const connId = `fl_conn_${Date.now()}_${cIdx}`;
+                    const isErrorBranch = c.label && (c.label.toLowerCase().includes('mismatch') || c.label.toLowerCase().includes('invalid') || c.label.toLowerCase().includes('no'));
+                    const conn = {
+                        id: connId,
+                        type: 'connector',
+                        sourceId: sourceShape.id,
+                        targetId: targetShape.id,
+                        sourceAnchor: isVertical ? (isErrorBranch ? 'right' : 'bottom') : 'right',
+                        targetAnchor: isVertical ? (isErrorBranch ? 'left' : 'top') : 'left',
+                        connectorType: 'elbow',
+                        arrowEnd: 'arrow',
+                        arrowStart: 'none',
+                        color: isErrorBranch ? '#ef4444' : '#6366f1',
+                        strokeWidth: 2,
+                        text: c.label || ''
+                    };
+                    newShapes.push(conn);
+                }
+            });
+
+            if (canvasAction.title) {
+                const titleNote = createStickyNoteObject(startX - 20, startY - 95, 'blue');
+                titleNote.width = 240;
+                titleNote.height = 70;
+                titleNote.title = 'Flowchart';
+                titleNote.text = canvasAction.title;
+                newShapes.unshift(titleNote);
+            }
+
+            setPageShapeObjects(prev => ({
+                ...prev,
+                [currentPage]: [...(prev[currentPage] || []), ...newShapes]
+            }));
+            setTool('select');
+            setSelectedShapeIds(newShapes.map(s => s.id));
+            saveToHistory();
+            toast.success(`Drawn ${canvasAction.title || 'flowchart'} on canvas!`, { icon: '📊' });
+            return true;
+        }
+
+        // 3. Draw Native Diagrams (Venn Diagram, Coordinate Axes)
+        if (canvasAction.type === 'draw_diagram') {
+            if (canvasAction.diagramType === 'venn') {
+                const radius = 130;
+                const circleA = {
+                    id: `venn_a_${Date.now()}`,
+                    type: 'circle',
+                    x: baseCx - radius - 20,
+                    y: baseCy - radius,
+                    width: radius * 2,
+                    height: radius * 2,
+                    rotation: 0,
+                    color: '#6366f1',
+                    strokeWidth: 3,
+                    fillColor: 'rgba(99, 102, 241, 0.2)',
+                    text: 'Set A',
+                    fontSize: 16
+                };
+                const circleB = {
+                    id: `venn_b_${Date.now()}`,
+                    type: 'circle',
+                    x: baseCx - 40,
+                    y: baseCy - radius,
+                    width: radius * 2,
+                    height: radius * 2,
+                    rotation: 0,
+                    color: '#10b981',
+                    strokeWidth: 3,
+                    fillColor: 'rgba(16, 185, 129, 0.2)',
+                    text: 'Set B',
+                    fontSize: 16
+                };
+                const intersectNote = createStickyNoteObject(baseCx - 70, baseCy + radius + 20, 'purple');
+                intersectNote.width = 200;
+                intersectNote.height = 80;
+                intersectNote.title = 'Venn Diagram';
+                intersectNote.text = 'Center: A ∩ B (Intersection)\nTotal: A ∪ B (Union)';
+
+                const shapes = [circleA, circleB, intersectNote];
+                setPageShapeObjects(prev => ({
+                    ...prev,
+                    [currentPage]: [...(prev[currentPage] || []), ...shapes]
+                }));
+                setTool('select');
+                setSelectedShapeIds(shapes.map(s => s.id));
+                saveToHistory();
+                toast.success('Drawn Venn Diagram on whiteboard!', { icon: '⭕' });
+                return true;
+            }
+
+            if (canvasAction.diagramType === 'axes') {
+                const axisLen = 300;
+                const axisX = {
+                    id: `axis_x_${Date.now()}`,
+                    type: 'arrow',
+                    startX: 0,
+                    startY: 0,
+                    endX: axisLen * 2,
+                    endY: 0,
+                    x: baseCx - axisLen,
+                    y: baseCy,
+                    width: axisLen * 2,
+                    height: 0,
+                    rotation: 0,
+                    color: '#3b82f6',
+                    strokeWidth: 2.5,
+                    text: 'X Axis'
+                };
+                const axisY = {
+                    id: `axis_y_${Date.now()}`,
+                    type: 'arrow',
+                    startX: 0,
+                    startY: axisLen * 2,
+                    endX: 0,
+                    endY: 0,
+                    x: baseCx,
+                    y: baseCy - axisLen,
+                    width: 0,
+                    height: axisLen * 2,
+                    rotation: 0,
+                    color: '#ef4444',
+                    strokeWidth: 2.5,
+                    text: 'Y Axis'
+                };
+                const originNote = createStickyNoteObject(baseCx + 15, baseCy + 15, 'yellow');
+                originNote.width = 160;
+                originNote.height = 70;
+                originNote.title = 'Origin (0,0)';
+                originNote.text = 'Intersection of X and Y';
+
+                const shapes = [axisX, axisY, originNote];
+                setPageShapeObjects(prev => ({
+                    ...prev,
+                    [currentPage]: [...(prev[currentPage] || []), ...shapes]
+                }));
+                setTool('select');
+                setSelectedShapeIds(shapes.map(s => s.id));
+                saveToHistory();
+                toast.success('Drawn Coordinate Axes on whiteboard!', { icon: '📈' });
+                return true;
+            }
+        }
+
+        return false;
+    }, [panOffset, zoomLevel, currentPage, setThreeDObjects, setSelected3DIds, setPageShapeObjects, setTool, setSelectedShapeIds, saveToHistory]);
+
+    // Handle inserting generated AI solution as a note or visual action onto whiteboard canvas
     const handleInsertAiSolutionToBoard = useCallback((solution) => {
         if (!solution) return;
+
+        // If the solution contains an interactive canvas action (3D model, flowchart, diagram), execute it directly!
+        if (solution.canvasAction && solution.canvasAction.type && solution.canvasAction.type !== 'insert_solution_card') {
+            const executed = executeAiCanvasAction(solution.canvasAction);
+            if (executed) return;
+        }
+
         const baseCx = Math.round((-panOffset.x + (containerRef.current?.clientWidth || 1200) / 2) / zoomLevel);
         const baseCy = Math.round((-panOffset.y + (containerRef.current?.clientHeight || 800) / 2) / zoomLevel);
 
@@ -10081,7 +10351,7 @@ export default function Whiteboard({
         setSelectedShapeIds([newNote.id]);
         saveToHistory();
         toast.success('Inserted AI Solution note to board', { icon: '📌' });
-    }, [panOffset, zoomLevel, currentPage, saveToHistory]);
+    }, [panOffset, zoomLevel, currentPage, saveToHistory, executeAiCanvasAction]);
 
     // ─── Voice Control & Speech Recognition Engine ──────────────────────
     const executeVoiceCommand = useCallback(async (rawText, isAiRetry = false) => {
@@ -11284,7 +11554,7 @@ export default function Whiteboard({
                 return;
             }
         }
-        if (txt.includes('ai tutor') || txt.includes('ai assistant')) {
+        if (txt.includes('ai tutor') || txt.includes('ai assistant') || txt.includes('ai bot') || txt.includes('co pilot') || txt.includes('copilot') || txt.includes('open ai')) {
             setShowAiAssistantModal(true);
             setVoiceFeedback('🤖 Opened AI Assistant & Tutor');
             return;
@@ -11522,7 +11792,25 @@ export default function Whiteboard({
                 setIsAiThinking(false);
 
                 if (data?.recognized) {
-                    // Check if it's an educational question, math problem, or solution
+                    // 1. If it's a generative canvas action (3D model, flowchart, diagram)
+                    if (data.type === 'canvas_generation' || (data.canvasAction && data.canvasAction.type && data.canvasAction.type !== 'insert_solution_card')) {
+                        executeAiCanvasAction(data.canvasAction);
+                        setAiSolutionData({
+                            question: rawText,
+                            speechResponse: data.speechResponse || data.spokenFeedback,
+                            solutionMarkdown: data.solutionMarkdown,
+                            canvasAction: data.canvasAction
+                        });
+                        setVoiceFeedback(data.spokenFeedback || '✨ AI Canvas Visual Created');
+                        toast.success(data.spokenFeedback || 'AI Visual Created on Canvas', { icon: '✨' });
+
+                        if (aiSpeechEnabled && (data.speechResponse || data.spokenFeedback)) {
+                            speakAiResponse(data.speechResponse || data.spokenFeedback);
+                        }
+                        return;
+                    }
+
+                    // 2. Check if it's an educational question, math problem, or solution
                     if (data.type === 'solution' || data.solutionMarkdown || data.intent === 'solve_or_explain') {
                         setAiSolutionData({
                             question: rawText,
@@ -11539,7 +11827,7 @@ export default function Whiteboard({
                         return;
                     }
 
-                    // Otherwise if it's a translated whiteboard command
+                    // 3. Otherwise if it's a translated whiteboard command
                     if (data.translatedCommand) {
                         toast.success(`✨ AI interpreted: "${data.translatedCommand}"`, { icon: '✨' });
                         if (aiSpeechEnabled && data.speechResponse) {
@@ -11556,7 +11844,7 @@ export default function Whiteboard({
 
         setVoiceFeedback(`Unrecognized: "${rawText}" - say "help" for commands`);
         toast(`Command not recognized: "${rawText}"`, { icon: '❓' });
-    }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, duplicateCurrentPage, deletePage, loadPage, currentPage, totalPages, selectedShapeIds, selectedTextIds, selectedImageId, selectedImageIds, selected3DIds, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, setBgPattern, setBgColor, onToggleFullscreen, handleInsertGraph, handleInsertDateTime, handleDelete, handleCopy, handlePaste, handleDuplicate, handleToggleLock, handleGroup, handleUngroup, handleBringToFront, handleSendToBack, handleAlign, handleDistribute, handleFlipSelection, handleRemoveImageBackground, updateSelectedImageFilters, setIsAutoShape, setIsOcrActive, handleConvertSelectedInkToText, setBrushType, setPenMode, setSparkleTheme, setPenOpacity, setPressureSensitivity, setHighlighterColor, setEraserMode, setEraserSize, setSelectMode, setIsSelectionInfiniteCloner, setLineType, setShowMinimap, setShowClipboard, setIsChatOpen, setShowPermissions, aiSpeechEnabled, speakAiResponse]);
+    }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, duplicateCurrentPage, deletePage, loadPage, currentPage, totalPages, selectedShapeIds, selectedTextIds, selectedImageId, selectedImageIds, selected3DIds, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, setBgPattern, setBgColor, onToggleFullscreen, handleInsertGraph, handleInsertDateTime, handleDelete, handleCopy, handlePaste, handleDuplicate, handleToggleLock, handleGroup, handleUngroup, handleBringToFront, handleSendToBack, handleAlign, handleDistribute, handleFlipSelection, handleRemoveImageBackground, updateSelectedImageFilters, setIsAutoShape, setIsOcrActive, handleConvertSelectedInkToText, setBrushType, setPenMode, setSparkleTheme, setPenOpacity, setPressureSensitivity, setHighlighterColor, setEraserMode, setEraserSize, setSelectMode, setIsSelectionInfiniteCloner, setLineType, setShowMinimap, setShowClipboard, setIsChatOpen, setShowPermissions, aiSpeechEnabled, speakAiResponse, executeAiCanvasAction]);
 
     const toggleVoiceListening = useCallback(() => {
         const SpeechRecognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -12913,6 +13201,26 @@ export default function Whiteboard({
                             </div>
                         )}
                     </div>
+
+                    {/* Dedicated AI Bot Co-Pilot Button */}
+                    <button
+                        type="button"
+                        onClick={() => setShowAiAssistantModal(prev => !prev)}
+                        className={`px-2 py-1 rounded-full transition-all flex items-center gap-1.5 text-xs font-semibold border ${
+                            showAiAssistantModal
+                                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-purple-400 shadow-md shadow-purple-500/30 ring-1 ring-purple-400/50'
+                                : isAiSpeaking || isAiThinking
+                                ? 'bg-purple-950/90 text-purple-200 border-purple-500/70 animate-pulse shadow-md shadow-purple-500/30'
+                                : 'bg-slate-800/90 hover:bg-slate-700/90 text-slate-200 hover:text-white border-slate-700/60 shadow-inner'
+                        }`}
+                        title="AI Bot Co-Pilot & Whiteboard Tutor (Ctrl+Shift+A) — Interactive 3D, Generative Flowcharts & Speech Solutions"
+                    >
+                        <Bot className={`w-3.5 h-3.5 ${isAiSpeaking ? 'text-pink-300 animate-bounce' : isAiThinking ? 'text-amber-300 animate-spin' : 'text-purple-400'}`} />
+                        <span className="hidden sm:inline text-[11px]">AI Bot</span>
+                        {(isAiSpeaking || isAiThinking) && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                        )}
+                    </button>
 
                     {/* Voice Control Toolbar Tool with Mic Selector & CC */}
                     <div className="relative flex items-center">
@@ -18878,6 +19186,9 @@ export default function Whiteboard({
                 solutionMarkdown={aiSolutionData?.solutionMarkdown}
                 canvasAction={aiSolutionData?.canvasAction}
                 isSpeaking={isAiSpeaking}
+                isThinking={isAiThinking}
+                isVoiceListening={isVoiceListening}
+                onToggleVoice={toggleVoiceListening}
                 onSpeak={speakAiResponse}
                 onStopSpeak={stopAiSpeech}
                 onInsertToBoard={handleInsertAiSolutionToBoard}
