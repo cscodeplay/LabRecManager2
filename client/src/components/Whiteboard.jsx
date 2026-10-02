@@ -3212,13 +3212,20 @@ export default function Whiteboard({
         }
         if (selectedTextIds.length > 0) {
             setTextObjects(prev => prev.filter(txt => !selectedTextIds.includes(txt.id)));
+            // Cascade delete connectors attached to deleted text objects
+            setShapeObjects(prev => prev.filter(shp => {
+                if (shp.type === 'connector' && (selectedTextIds.includes(shp.sourceId) || selectedTextIds.includes(shp.targetId))) {
+                    return false;
+                }
+                return true;
+            }));
             setSelectedTextIds([]);
             hasDeleted = true;
         }
         if (selectedShapeIds.length > 0) {
             setShapeObjects(prev => prev.filter(shp => {
                 if (selectedShapeIds.includes(shp.id)) return false;
-                // Cascade delete connectors attached to any deleted parent shape
+                // Cascade delete connectors attached to any deleted parent shape or text
                 if (shp.type === 'connector' && (selectedShapeIds.includes(shp.sourceId) || selectedShapeIds.includes(shp.targetId))) {
                     return false;
                 }
@@ -4914,6 +4921,22 @@ export default function Whiteboard({
             const canvasDy = dy * scaleY;
 
             if (textDragState.action === 'move') {
+                // If initiated as infinite cloner candidate, require movement > 4px before cloning
+                if (textDragState.isClonerCandidate) {
+                    if (Math.hypot(dx, dy) > 4) {
+                        const cloneId = Date.now();
+                        const cloneObj = { ...startObj, id: cloneId, isInfiniteCloner: false };
+                        setTextObjects(prev => [...prev, cloneObj]);
+                        setSelectedTextIds([cloneId]);
+                        textDragState.isClonerCandidate = false;
+                        textDragState.id = cloneId;
+                        textDragState.startObj = { ...cloneObj };
+                        textDragState.startTextObjs = [cloneObj];
+                    } else {
+                        return; // Don't move original text
+                    }
+                }
+
                 const deltaX = (clientX - (textDragState.lastX || textDragState.startX)) * scaleX;
                 const deltaY = (clientY - (textDragState.lastY || textDragState.startY)) * scaleY;
                 textDragState.lastX = clientX;
@@ -5288,13 +5311,14 @@ export default function Whiteboard({
                 y: (e.clientY - rect.top) * scaleY
             };
 
-            // Find nearest hook on any OTHER shape or image
+            // Find nearest hook on any OTHER shape, image, or text field
             const eligibleConnectables = [
                 ...shapeObjects.filter(s => 
                     s.id !== activeConnectorDrag.sourceId && 
                     !['line', 'arrow', 'double_arrow', 'dashed_line', 'connector', 'ruler', 'protractor'].includes(s.type)
                 ),
-                ...imageObjects.filter(img => img.id !== activeConnectorDrag.sourceId)
+                ...imageObjects.filter(img => img.id !== activeConnectorDrag.sourceId),
+                ...textObjects.filter(txt => txt.id !== activeConnectorDrag.sourceId)
             ];
 
             let snapTarget = null;
@@ -5367,7 +5391,7 @@ export default function Whiteboard({
             window.removeEventListener('pointermove', handlePointerMove);
             window.removeEventListener('pointerup', handlePointerUp);
         };
-    }, [activeConnectorDrag, shapeObjects, imageObjects, color, strokeWidth, socket, sessionId, saveToHistory, setShapeObjects, isShiftDown]);
+    }, [activeConnectorDrag, shapeObjects, imageObjects, textObjects, color, strokeWidth, socket, sessionId, saveToHistory, setShapeObjects, isShiftDown]);
 
     // Click on canvas to deselect images, text, shapes, 3D, media and PDF objects
     const handleCanvasClick = useCallback((e) => {
@@ -5568,7 +5592,10 @@ export default function Whiteboard({
 
     // ─── iPad-style Scratch-Out Scribble Detection Engine ───
     const isScribbleGesture = (pts) => {
-        if (!pts || pts.length < 8) return false;
+        if (!pts || pts.length < 16) return false;
+        // Never trigger scribble erase when OCR handwriting recognition, math conversion, or text editing is active
+        if (isOcrActive || editingTextId) return false;
+
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
         let totalLen = 0;
         for (let i = 0; i < pts.length; i++) {
@@ -5582,16 +5609,16 @@ export default function Whiteboard({
         const w = maxX - minX;
         const h = maxY - minY;
         const maxDim = Math.max(w, h);
-        if (maxDim < 20 || totalLen < 60) return false;
+        if (maxDim < 25 || totalLen < 120) return false;
 
         // Density of stroke: path length relative to bounding box
         const density = totalLen / (maxDim || 1);
-        if (density < 2.4) return false;
+        if (density < 3.8) return false;
 
         // Count direction reversals in X and Y
         let dirX = 0, dirY = 0;
         let reversalsX = 0, reversalsY = 0;
-        const threshold = 5;
+        const threshold = 6;
 
         let lastSigX = pts[0].x;
         let lastSigY = pts[0].y;
@@ -5619,8 +5646,8 @@ export default function Whiteboard({
             }
         }
 
-        // Scratch-out scribble has at least 3 direction reversals in X or Y
-        return (reversalsX >= 3 || reversalsY >= 3 || (reversalsX + reversalsY >= 4));
+        // Deliberate scratch-out scribble requires at least 6 direction reversals in X or Y
+        return (reversalsX >= 6 || reversalsY >= 6 || (reversalsX >= 4 && reversalsY >= 4));
     };
 
     // ─── AI Handwriting, Text & Math Ink Recognition Engine ───
@@ -7154,8 +7181,9 @@ export default function Whiteboard({
                 ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
             }
 
-            // 0. iPad-style Scratch-Out Scribble Gesture: Rapid zigzag over strokes or text erases them!
-            if (pts && isScribbleGesture(pts)) {
+            // 0. iPad-style Scratch-Out Scribble Gesture: Rapid deliberate zigzag over ink strokes erases them
+            // NEVER trigger when OCR handwriting recognition, math conversion, or text editing is active!
+            if (!isOcrActive && !editingTextId && pts && isScribbleGesture(pts)) {
                 let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
                 pts.forEach(p => {
                     if (p.x < minSx) minSx = p.x;
@@ -7172,9 +7200,10 @@ export default function Whiteboard({
                 };
 
                 const deletedShapeIds = [];
-                const deletedTextIds = [];
 
+                // Only erase ink path strokes (never delete text objects or diagram components during pen drawing)
                 const remainingShapes = shapeObjects.filter(shp => {
+                    if (shp.type !== 'path' && shp.type !== 'sparkle_path') return true;
                     const shpLeft = shp.x || 0;
                     const shpRight = shpLeft + (shp.width || 0);
                     const shpTop = shp.y || 0;
@@ -7187,25 +7216,10 @@ export default function Whiteboard({
                     return true;
                 });
 
-                const remainingTexts = textObjects.filter(txt => {
-                    const txtLeft = txt.x || 0;
-                    const txtRight = txtLeft + (txt.width || 0);
-                    const txtTop = txt.y || 0;
-                    const txtBottom = txtTop + (txt.height || 0);
-                    const overlaps = !(txtRight < sBox.left || txtLeft > sBox.right || txtBottom < sBox.top || txtTop > sBox.bottom);
-                    if (overlaps) {
-                        deletedTextIds.push(txt.id);
-                        return false;
-                    }
-                    return true;
-                });
-
-                if (deletedShapeIds.length > 0 || deletedTextIds.length > 0) {
+                if (deletedShapeIds.length > 0) {
                     setShapeObjects(remainingShapes);
-                    setTextObjects(remainingTexts);
                     if (socket && sessionId) {
                         deletedShapeIds.forEach(id => socket.emit('whiteboard:shape-delete', { sessionId, shapeId: id }));
-                        deletedTextIds.forEach(id => socket.emit('whiteboard:text-delete', { sessionId, textId: id }));
                     }
                     saveToHistory();
                     currentPathPointsRef.current = [];
@@ -7440,12 +7454,16 @@ export default function Whiteboard({
             const h = Math.abs(startPos.y - finalPosY) || 1;
 
             if (lineType.startsWith('connector')) {
-                const nonConnectorShapes = shapeObjects.filter(s => s.type !== 'connector' && !['ruler', 'protractor'].includes(s.type));
+                const nonConnectorShapes = [
+                    ...shapeObjects.filter(s => s.type !== 'connector' && !['ruler', 'protractor'].includes(s.type)),
+                    ...imageObjects,
+                    ...textObjects
+                ];
                 const startSnap = findNearestShape(startPos, nonConnectorShapes, 50);
                 const endSnap = findNearestShape(pos, nonConnectorShapes, 50);
 
                 if (!startSnap || !endSnap || startSnap.shape.id === endSnap.shape.id) {
-                    toast.error("Connectors must connect two distinct shapes. Please start and end on shape hooks.", { id: 'connector-must-snap' });
+                    toast.error("Connectors must connect two distinct elements. Please start and end on hooks.", { id: 'connector-must-snap' });
                     setTool('select');
                     return;
                 }
@@ -8869,19 +8887,20 @@ export default function Whiteboard({
 
         // 4B. Smart Connectors Layer (Curved, Elbow/Orthogonal, Straight, with Upright Arrowheads)
         const connectorObjects = currentShapeObjects.filter(s => s.type === 'connector');
+        const currentCanvasTextObjects = pageTextObjects[currentPage] || [];
         connectorObjects.forEach(conn => {
             ctx.save();
             let startPt = { x: conn.startX || 0, y: conn.startY || 0 };
             let endPt = { x: conn.endX || 0, y: conn.endY || 0 };
 
             if (conn.sourceId) {
-                const srcShape = currentShapeObjects.find(s => s.id === conn.sourceId) || currentImageObjects.find(i => i.id === conn.sourceId);
+                const srcShape = currentShapeObjects.find(s => s.id === conn.sourceId) || currentImageObjects.find(i => i.id === conn.sourceId) || currentCanvasTextObjects.find(t => t.id === conn.sourceId);
                 if (srcShape) {
                     startPt = getAnchorPoint(srcShape, conn.sourceAnchor || 'auto', endPt);
                 }
             }
             if (conn.targetId) {
-                const tgtShape = currentShapeObjects.find(s => s.id === conn.targetId) || currentImageObjects.find(i => i.id === conn.targetId);
+                const tgtShape = currentShapeObjects.find(s => s.id === conn.targetId) || currentImageObjects.find(i => i.id === conn.targetId) || currentCanvasTextObjects.find(t => t.id === conn.targetId);
                 if (tgtShape) {
                     endPt = getAnchorPoint(tgtShape, conn.targetAnchor || 'auto', startPt);
                 }
@@ -15120,7 +15139,6 @@ export default function Whiteboard({
                                     {/* Text Content or Edit Textarea */}
                                     {isEditing ? (
                                         <div className="relative w-full h-full">
-                                            {/* Hidden textarea for state management and keyboard input */}
                                             <textarea
                                                 ref={(el) => {
                                                     if (el) {
@@ -15128,7 +15146,7 @@ export default function Whiteboard({
                                                         // Position cursor
                                                         const caret = lastActiveTextCaretRef.current;
                                                         if (caret && caret.id === txtObj.id && caret.start != null) {
-                                                            el.setSelectionRange(caret.start, caret.end);
+                                                            try { el.setSelectionRange(caret.start, caret.end); } catch (err) {}
                                                         }
                                                     }
                                                 }}
@@ -15167,8 +15185,21 @@ export default function Whiteboard({
                                                     };
                                                 }}
                                                 autoFocus
-                                                className="absolute inset-0 w-full h-full opacity-0 pointer-events-none"
-                                                style={{ position: 'absolute', zIndex: -1 }}
+                                                className="w-full h-full p-2 whitespace-pre-wrap break-words leading-relaxed ring-2 ring-blue-500 ring-inset rounded bg-transparent resize-none outline-none overflow-hidden cursor-text select-text"
+                                                style={{
+                                                    color: txtObj.color,
+                                                    fontSize: `${txtObj.fontSize}px`,
+                                                    fontWeight: txtObj.fontWeight || 'normal',
+                                                    fontStyle: txtObj.fontStyle || 'normal',
+                                                    fontFamily: txtObj.fontFamily || 'sans-serif',
+                                                    textDecoration: txtObj.textDecoration || 'none',
+                                                    textAlign: txtObj.textAlign || 'left',
+                                                    lineHeight: 1.3,
+                                                    minHeight: txtObj.height,
+                                                    borderRadius: txtObj.borderRadius ? `${txtObj.borderRadius}px` : undefined,
+                                                    caretColor: txtObj.color || '#2563eb',
+                                                }}
+                                                placeholder="Type here..."
                                                 onBlur={(e) => {
                                                     if (showMathKeyboard || showMathTablet || showEquationModal) {
                                                         return;
@@ -15201,32 +15232,17 @@ export default function Whiteboard({
                                                     }
                                                 }}
                                             />
-                                            {/* Visible WYSIWYG rendered view - click to focus hidden textarea */}
-                                            <div
-                                                className="w-full h-full p-2 whitespace-pre-wrap break-words leading-relaxed ring-2 ring-blue-500 ring-inset rounded cursor-text"
-                                                style={{
-                                                    color: txtObj.color,
-                                                    fontSize: `${txtObj.fontSize}px`,
-                                                    fontWeight: txtObj.fontWeight || 'normal',
-                                                    fontStyle: txtObj.fontStyle || 'normal',
-                                                    fontFamily: txtObj.fontFamily || 'sans-serif',
-                                                    textDecoration: txtObj.textDecoration || 'none',
-                                                    textAlign: txtObj.textAlign || 'left',
-                                                    lineHeight: 1.3,
-                                                    minHeight: txtObj.height,
-                                                    borderRadius: txtObj.borderRadius ? `${txtObj.borderRadius}px` : undefined,
-                                                }}
-                                                dangerouslySetInnerHTML={{ __html: renderRichMathText(txtObj.text) || '<span class="text-slate-500 italic">Type here...</span>' }}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    const ta = document.querySelector(`textarea[data-text-id="${txtObj.id}"]`);
-                                                    if (ta) { ta.style.position = 'absolute'; ta.style.zIndex = '-1'; ta.focus(); }
-                                                }}
-                                            />
+                                            {/* If text contains LaTeX / math formulas, show live rendered KaTeX mini preview beneath */}
+                                            {(txtObj.text && (txtObj.text.includes('$') || txtObj.text.includes('\\'))) && (
+                                                <div 
+                                                    className="absolute top-full left-0 mt-1 px-2.5 py-1 bg-slate-900/95 text-slate-100 rounded-lg text-xs border border-slate-700/80 shadow-2xl z-50 pointer-events-none whitespace-nowrap overflow-x-auto max-w-sm"
+                                                    dangerouslySetInnerHTML={{ __html: renderRichMathText(txtObj.text) }}
+                                                />
+                                            )}
                                         </div>
                                     ) : (
                                         <div
-                                            className="w-full h-full p-2 whitespace-pre-wrap break-words select-none leading-relaxed"
+                                            className="w-full h-full p-2 whitespace-pre-wrap break-words select-none leading-relaxed cursor-text"
                                             style={{
                                                 pointerEvents: (tool === 'select' || isSelected) ? 'auto' : 'none',
                                                 color: txtObj.color,
@@ -15238,7 +15254,7 @@ export default function Whiteboard({
                                                 textAlign: txtObj.textAlign || 'left',
                                                 lineHeight: 1.3,
                                             }}
-                                            dangerouslySetInnerHTML={{ __html: renderRichMathText(txtObj.text) }}
+                                            dangerouslySetInnerHTML={{ __html: renderRichMathText(txtObj.text) || '<span class="text-slate-400 italic">Double-click to type text...</span>' }}
                                         />
                                     )}
 
@@ -15249,7 +15265,29 @@ export default function Whiteboard({
                                             <div
                                                 className="absolute inset-0"
                                                 style={{ pointerEvents: 'auto', cursor: 'move' }}
-                                                onMouseDown={(e) => { if (!canUserDraw) return; e.stopPropagation(); e.preventDefault(); if (txtObj.isLocked) return; setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }}
+                                                onMouseDown={(e) => {
+                                                    if (!canUserDraw) return;
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    if (txtObj.isLocked) return;
+                                                    if (txtObj.isInfiniteCloner) {
+                                                        setTextDragState({
+                                                            id: txtObj.id,
+                                                            isClonerCandidate: true,
+                                                            action: 'move',
+                                                            startX: e.clientX,
+                                                            startY: e.clientY,
+                                                            startObj: { ...txtObj },
+                                                            startObjs: [txtObj],
+                                                            startTextObjs: [txtObj],
+                                                            startShapeObjs: [],
+                                                            startImageObjs: [],
+                                                            start3DObjs: []
+                                                        });
+                                                        return;
+                                                    }
+                                                    setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) });
+                                                }}
                                                 onPointerDown={(e) => {
                                                     if (!canUserDraw) return;
                                                     e.stopPropagation();
@@ -15257,6 +15295,22 @@ export default function Whiteboard({
                                                     if (txtObj.isLocked) return;
                                                     const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
                                                     const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                    if (txtObj.isInfiniteCloner) {
+                                                        setTextDragState({
+                                                            id: txtObj.id,
+                                                            isClonerCandidate: true,
+                                                            action: 'move',
+                                                            startX: clientX,
+                                                            startY: clientY,
+                                                            startObj: { ...txtObj },
+                                                            startObjs: [txtObj],
+                                                            startTextObjs: [txtObj],
+                                                            startShapeObjs: [],
+                                                            startImageObjs: [],
+                                                            start3DObjs: []
+                                                        });
+                                                        return;
+                                                    }
                                                     setTextDragState({ id: txtObj.id, action: 'move', startX: clientX, startY: clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) });
                                                 }}
                                             />
@@ -15400,20 +15454,115 @@ export default function Whiteboard({
                                                         </div>
                                                     </div>
 
-                                                    {/* Delete Button */}
-                                                    <button
-                                                        className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center z-30 shadow-lg cursor-pointer"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setTextObjects(prev => prev.filter(t => t.id !== txtObj.id));
-                                                            setSelectedTextIds([]);
-                                                            saveToHistory();
-                                                        }}
-                                                    >
-                                                        <X className="w-3 h-3 text-white" />
-                                                    </button>
                                                 </>
                                             )}
+                                        </>
+                                    )}
+
+                                    {/* Infinite Cloner Hook for Text */}
+                                    {isSelected ? (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setTextObjects(prev => prev.map(t => t.id === txtObj.id ? { ...t, isInfiniteCloner: !t.isInfiniteCloner } : t));
+                                            }}
+                                            onMouseDown={e => e.stopPropagation()}
+                                            onPointerDown={e => e.stopPropagation()}
+                                            className={`absolute -top-7 -left-3.5 z-40 p-1 rounded shadow border transition-all pointer-events-auto ${
+                                                txtObj.isInfiniteCloner
+                                                    ? 'opacity-100 bg-indigo-600 border-indigo-400 text-white scale-105 shadow-indigo-500/50'
+                                                    : 'opacity-35 hover:opacity-100 bg-slate-900/90 hover:bg-slate-900 border-slate-700/70 text-slate-300 hover:text-white hover:scale-110'
+                                            }`}
+                                            title={txtObj.isInfiniteCloner ? "Infinite Copy ON (Click to Turn OFF)" : "Infinite Copy OFF (Click to Turn ON)"}
+                                        >
+                                            <InfinityIcon size={12} />
+                                        </button>
+                                    ) : (
+                                        txtObj.isInfiniteCloner && (
+                                            <div className="absolute top-1 left-1 bg-indigo-600/90 text-white rounded-full px-1.5 py-0.5 text-[9px] font-extrabold flex items-center gap-0.5 shadow pointer-events-none z-30">
+                                                <span>∞</span>
+                                            </div>
+                                        )
+                                    )}
+
+                                    {/* Magnetic Connection Hooks (N, E, S, W, C) for linking diagrams & connectors to text fields */}
+                                    {(isSelected || tool === 'line' || hoveredHook?.shapeId === txtObj.id) && !isEditing && (
+                                        <>
+                                            {[
+                                                { anchor: 'top', label: 'N', style: { left: '50%', top: 0 } },
+                                                { anchor: 'right', label: 'E', style: { left: '100%', top: '50%' } },
+                                                { anchor: 'bottom', label: 'S', style: { left: '50%', top: '100%' } },
+                                                { anchor: 'left', label: 'W', style: { left: 0, top: '50%' } },
+                                                { anchor: 'center', label: 'C', style: { left: '50%', top: '50%' } },
+                                            ].map(({ anchor, style }) => (
+                                                <div
+                                                    key={anchor}
+                                                    className="shape-magnetic-hook absolute w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-500 border-2 border-white shadow-md hover:bg-blue-600 hover:scale-125 transition-all z-35 flex items-center justify-center cursor-crosshair group/hook"
+                                                    style={{ ...style, pointerEvents: 'auto' }}
+                                                    title={`Connect from text ${anchor.toUpperCase()} hook (Hover to select style, drag to link)`}
+                                                    onPointerEnter={() => {
+                                                        if (hookHoverTimeoutRef.current) clearTimeout(hookHoverTimeoutRef.current);
+                                                        setHoveredHook({ shapeId: txtObj.id, anchor });
+                                                    }}
+                                                    onPointerLeave={() => {
+                                                        hookHoverTimeoutRef.current = setTimeout(() => {
+                                                            setHoveredHook(null);
+                                                        }, 700);
+                                                    }}
+                                                    onPointerDown={(e) => {
+                                                        startConnectorDrag(txtObj, anchor, activeConnectorPreset, e);
+                                                    }}
+                                                >
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-white pointer-events-none" />
+
+                                                    {/* Hover Style Popover */}
+                                                    {hoveredHook?.shapeId === txtObj.id && hoveredHook?.anchor === anchor && (
+                                                        <div
+                                                            className={`connector-hover-popover absolute z-[95] flex items-center gap-1 bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-2xl rounded-xl p-1 text-white animate-in fade-in zoom-in-95 duration-150 before:content-[''] before:absolute before:-inset-3 before:z-[-1] ${
+                                                                anchor === 'top' ? 'bottom-full mb-2 left-1/2 -translate-x-1/2' :
+                                                                anchor === 'bottom' ? 'top-full mt-2 left-1/2 -translate-x-1/2' :
+                                                                anchor === 'left' ? 'right-full mr-2 top-1/2 -translate-y-1/2' :
+                                                                'left-full ml-2 top-1/2 -translate-y-1/2'
+                                                            }`}
+                                                            style={{ pointerEvents: 'auto' }}
+                                                            onPointerEnter={() => {
+                                                                if (hookHoverTimeoutRef.current) clearTimeout(hookHoverTimeoutRef.current);
+                                                            }}
+                                                            onPointerLeave={() => {
+                                                                hookHoverTimeoutRef.current = setTimeout(() => {
+                                                                    setHoveredHook(null);
+                                                                }, 700);
+                                                            }}
+                                                            onPointerDown={(e) => e.stopPropagation()}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            {CONNECTOR_PRESET_STYLES.map((preset) => (
+                                                                <button
+                                                                    key={preset.id}
+                                                                    type="button"
+                                                                    className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all cursor-grab active:cursor-grabbing group/btn ${
+                                                                        activeConnectorPreset?.id === preset.id 
+                                                                            ? 'bg-blue-600 text-white shadow' 
+                                                                            : 'hover:bg-slate-700 text-slate-300 hover:text-white'
+                                                                    }`}
+                                                                    title={`${preset.label} (Click to set active, drag to connect)`}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setActiveConnectorPreset(preset);
+                                                                    }}
+                                                                    onPointerDown={(e) => {
+                                                                        setActiveConnectorPreset(preset);
+                                                                        startConnectorDrag(txtObj, anchor, preset, e);
+                                                                    }}
+                                                                >
+                                                                    {preset.icon}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
                                         </>
                                     )}
                                 </div>
@@ -15677,6 +15826,16 @@ export default function Whiteboard({
                                             </div>
 
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
+
+                                            {/* Infinite Copy Cloner */}
+                                            <button
+                                                type="button"
+                                                onClick={() => updateSelectedTextProps({ isInfiniteCloner: !txtObj.isInfiniteCloner })}
+                                                className={`p-1 rounded-full flex items-center justify-center transition ${txtObj.isInfiniteCloner ? 'text-indigo-400 bg-indigo-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                                                title={txtObj.isInfiniteCloner ? 'Infinite Copy ON (Click to Turn OFF)' : 'Infinite Copy OFF (Click to Turn ON)'}
+                                            >
+                                                <InfinityIcon className="w-3.5 h-3.5" />
+                                            </button>
 
                                             {/* Lock / Unlock */}
                                             <button
@@ -18379,6 +18538,7 @@ export default function Whiteboard({
                                 connector={conn}
                                 shapes={(pageShapeObjects[currentPage] || []).filter(s => s.type !== 'connector')}
                                 images={pageImageObjects[currentPage] || []}
+                                texts={pageTextObjects[currentPage] || []}
                                 isSelected={selectedShapeIds.includes(conn.id)}
                                 scale={currentZoom}
                                 onSelect={(id) => {

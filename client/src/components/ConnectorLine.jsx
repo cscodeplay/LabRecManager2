@@ -354,7 +354,7 @@ export const calculateAngle = (p1, p2) => {
     return (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI;
 };
 
-export default function ConnectorLine({ connector, shapes = [], images = [], isSelected, onUpdate, onSelect, onDelete = () => {}, scale = 1 }) {
+export default function ConnectorLine({ connector, shapes = [], images = [], texts = [], isSelected, onUpdate, onSelect, onDelete = () => {}, scale = 1 }) {
     const {
         id,
         sourceId,
@@ -388,8 +388,8 @@ export default function ConnectorLine({ connector, shapes = [], images = [], isS
     const snapTargetRef = useRef(null);
     const draggingEndpointRef = useRef(null);
 
-    // Combine shapes and images for connector hook resolution
-    const allConnectables = useMemo(() => [...shapes, ...(images || [])], [shapes, images]);
+    // Combine shapes, images, and text fields for connector hook resolution
+    const allConnectables = useMemo(() => [...shapes, ...(images || []), ...(texts || [])], [shapes, images, texts]);
 
     // Resolve start and end points
     const sourceShape = useMemo(() => allConnectables.find(s => s.id === sourceId), [allConnectables, sourceId]);
