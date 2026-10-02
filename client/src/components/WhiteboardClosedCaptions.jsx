@@ -12,7 +12,9 @@ import {
     Minimize2,
     BookOpen,
     HelpCircle,
-    Loader2
+    Loader2,
+    Pencil,
+    Send
 } from 'lucide-react';
 
 export default function WhiteboardClosedCaptions({
@@ -28,17 +30,23 @@ export default function WhiteboardClosedCaptions({
     onOpenAiSolution = () => {},
     onStopSpeaking = () => {},
     onClose = () => {},
+    onExecuteCommand = () => {},
     audioLevel = 0
 }) {
     const [isMinimized, setIsMinimized] = useState(false);
     const [lastSpoken, setLastSpoken] = useState('');
+    const [isEditing, setIsEditing] = useState(false);
+    const [editText, setEditText] = useState('');
 
     // Keep track of the most recent utterance or feedback
     useEffect(() => {
         if (transcript) {
             setLastSpoken(transcript);
+            if (!isEditing) {
+                setEditText(transcript);
+            }
         }
-    }, [transcript]);
+    }, [transcript, isEditing]);
 
     if (!isVisible) return null;
 
@@ -138,6 +146,24 @@ export default function WhiteboardClosedCaptions({
                                 </button>
                             )}
 
+                            {/* Type or Correct in CC Button */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsEditing(prev => !prev);
+                                    if (!editText && transcript) setEditText(transcript);
+                                }}
+                                className={`px-2 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 transition border ${
+                                    isEditing
+                                        ? 'bg-indigo-600 text-white border-indigo-400'
+                                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700'
+                                }`}
+                                title="Click to type in CC or correct speech recognition"
+                            >
+                                <Pencil className="w-2.5 h-2.5" />
+                                <span>{isEditing ? 'Close' : 'Type / Edit'}</span>
+                            </button>
+
                             <button
                                 type="button"
                                 onClick={() => setIsMinimized(true)}
@@ -159,8 +185,45 @@ export default function WhiteboardClosedCaptions({
                     </div>
 
                     {/* Main Closed Captions Content Area */}
-                    <div className="px-4 py-2.5 min-h-[48px] max-h-28 overflow-y-auto custom-scrollbar flex flex-col justify-center">
-                        {isAiSpeaking && aiSpeakingText ? (
+                    <div className="px-4 py-2.5 min-h-[48px] max-h-32 overflow-y-auto custom-scrollbar flex flex-col justify-center">
+                        {isEditing ? (
+                            <form
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    if (editText.trim()) {
+                                        onExecuteCommand(editText.trim());
+                                        setIsEditing(false);
+                                    }
+                                }}
+                                className="flex items-center gap-1.5 w-full my-0.5"
+                            >
+                                <input
+                                    type="text"
+                                    value={editText}
+                                    onChange={(e) => setEditText(e.target.value)}
+                                    placeholder="Type command or question (e.g. 'reduce border by 2px', 'draw 3D earth')..."
+                                    autoFocus
+                                    className="flex-1 bg-slate-900 border border-indigo-500/80 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={!editText.trim()}
+                                    className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs font-semibold shadow-sm transition flex items-center gap-1 shrink-0"
+                                    title="Execute Command"
+                                >
+                                    <Send className="w-3 h-3" />
+                                    <span>Run</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditing(false)}
+                                    className="p-1 text-slate-400 hover:text-white rounded shrink-0"
+                                    title="Cancel"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            </form>
+                        ) : isAiSpeaking && aiSpeakingText ? (
                             <div className="text-purple-200 text-xs sm:text-sm font-medium leading-snug">
                                 <span className="text-purple-400 font-bold mr-1.5">🔊 AI Tutor:</span>
                                 <span>{aiSpeakingText}</span>
@@ -171,15 +234,25 @@ export default function WhiteboardClosedCaptions({
                                 <span>Interpreting request and calculating solution...</span>
                             </div>
                         ) : interimTranscript || transcript ? (
-                            <div className="text-xs sm:text-sm leading-snug">
-                                {transcript && (
-                                    <span className="text-white font-medium mr-1.5">{transcript}</span>
-                                )}
-                                {interimTranscript && (
-                                    <span className="text-cyan-300 italic opacity-90 animate-pulse">
-                                        {interimTranscript}...
-                                    </span>
-                                )}
+                            <div
+                                onClick={() => {
+                                    setIsEditing(true);
+                                    setEditText(transcript || interimTranscript);
+                                }}
+                                className="text-xs sm:text-sm leading-snug cursor-pointer group flex items-center justify-between"
+                                title="Click to edit or correct this text"
+                            >
+                                <div>
+                                    {transcript && (
+                                        <span className="text-white font-medium mr-1.5">{transcript}</span>
+                                    )}
+                                    {interimTranscript && (
+                                        <span className="text-cyan-300 italic opacity-90 animate-pulse">
+                                            {interimTranscript}...
+                                        </span>
+                                    )}
+                                </div>
+                                <Pencil className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition shrink-0 ml-1.5" />
                             </div>
                         ) : feedback ? (
                             <div className="text-xs sm:text-sm font-medium text-emerald-300 flex items-center gap-2">
@@ -187,8 +260,13 @@ export default function WhiteboardClosedCaptions({
                                 <span>{feedback}</span>
                             </div>
                         ) : (
-                            <div className="text-xs text-slate-400 italic">
-                                {isListening ? 'Speak a whiteboard command or ask a question (e.g., "Solve 3x + 9 = 27")...' : 'Microphone idle. Click the Mic icon on the toolbar to speak.'}
+                            <div
+                                onClick={() => setIsEditing(true)}
+                                className="text-xs text-slate-400 italic cursor-pointer hover:text-slate-300 flex items-center justify-between group"
+                                title="Click to type in CC"
+                            >
+                                <span>{isListening ? 'Speak a whiteboard command or ask a question (e.g., "Solve 3x + 9 = 27")...' : 'Microphone idle. Click to type or click Mic to speak.'}</span>
+                                <Pencil className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition shrink-0 ml-1.5" />
                             </div>
                         )}
 

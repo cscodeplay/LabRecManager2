@@ -57,6 +57,11 @@ export function useSpeechSynthesis({
     const [volume, setVolume] = useState(defaultVolume);
     const [isEnabled, setIsEnabled] = useState(enabledByDefault);
 
+    // Keep isEnabled in sync with prop changes
+    useEffect(() => {
+        setIsEnabled(enabledByDefault);
+    }, [enabledByDefault]);
+
     const utteranceRef = useRef(null);
 
     // Check browser support and load voices
@@ -141,6 +146,9 @@ export function useSpeechSynthesis({
             const utterance = new SpeechSynthesisUtterance(cleaned);
             utteranceRef.current = utterance;
 
+            // Retain on window object to prevent Chromium garbage collector from cutting speech mid-sentence
+            window.__activeSpeechUtterance = utterance;
+
             const voiceToUse = options.voice || selectedVoice;
             if (voiceToUse) {
                 utterance.voice = voiceToUse;
@@ -161,6 +169,7 @@ export function useSpeechSynthesis({
                 setIsSpeaking(false);
                 setIsPaused(false);
                 setSpeakingText('');
+                window.__activeSpeechUtterance = null;
                 if (options.onEnd) options.onEnd();
             };
 
@@ -172,8 +181,14 @@ export function useSpeechSynthesis({
                 setIsSpeaking(false);
                 setIsPaused(false);
                 setSpeakingText('');
+                window.__activeSpeechUtterance = null;
                 if (options.onError) options.onError(e);
             };
+
+            // Wake up paused synthesis queue in Chromium
+            if (window.speechSynthesis.paused) {
+                window.speechSynthesis.resume();
+            }
 
             window.speechSynthesis.speak(utterance);
         } catch (err) {
@@ -181,6 +196,7 @@ export function useSpeechSynthesis({
             setIsSpeaking(false);
             setIsPaused(false);
             setSpeakingText('');
+            window.__activeSpeechUtterance = null;
         }
     }, [isEnabled, selectedVoice, rate, pitch, volume, stop]);
 

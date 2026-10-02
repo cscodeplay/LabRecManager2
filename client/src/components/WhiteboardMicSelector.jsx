@@ -30,7 +30,8 @@ export default function WhiteboardMicSelector({
     selectedVoice = null,
     onSelectVoice = () => {},
     speechRate = 1.0,
-    onChangeSpeechRate = () => {}
+    onChangeSpeechRate = () => {},
+    onOpenAiAssistantModal = () => {}
 }) {
     const [devices, setDevices] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -178,6 +179,24 @@ export default function WhiteboardMicSelector({
                 >
                     <Bot className="w-3.5 h-3.5" />
                     <span>AI Speech TTS</span>
+                </button>
+            </div>
+
+            {/* AI Bot Co-Pilot & Whiteboard Tutor Hub Launcher Card */}
+            <div className="p-2 bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-purple-950/40 border-b border-purple-500/20">
+                <button
+                    type="button"
+                    onClick={() => {
+                        onClose?.();
+                        onOpenAiAssistantModal?.();
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs flex items-center justify-between shadow-md shadow-purple-500/20 transition group"
+                >
+                    <div className="flex items-center gap-2">
+                        <Bot className="w-4 h-4 text-purple-200 group-hover:rotate-12 transition-transform" />
+                        <span>AI Bot Co-Pilot & Tutor</span>
+                    </div>
+                    <span className="text-[10px] font-mono opacity-80 bg-black/30 px-1.5 py-0.5 rounded border border-white/20">Ctrl+Shift+A</span>
                 </button>
             </div>
 

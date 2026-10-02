@@ -10405,6 +10405,275 @@ export default function Whiteboard({
         const cx = Math.round((cWidth / 2 - panOffset.x) / zoomLevel);
         const cy = Math.round((cHeight / 2 - panOffset.y) / zoomLevel);
 
+        // Centralized speech & visual narrator helper
+        const narrateAction = (spokenPhrase, visualFeedback) => {
+            const feedback = visualFeedback || spokenPhrase;
+            setVoiceFeedback(feedback);
+            if (feedback) {
+                toast(feedback, { id: 'voice-action-toast' });
+            }
+            if (aiSpeechEnabled && spokenPhrase) {
+                speakAiResponse(spokenPhrase);
+            }
+        };
+
+        // Property Modification Engine: handles relative deltas and absolute targets
+        const applyPropertyModification = (property, mode, rawValue) => {
+            const isRelative = mode === 'relative_delta' || mode === 'relative';
+            const val = typeof rawValue === 'number' ? rawValue : parseFloat(rawValue) || 0;
+
+            if (property === 'strokeWidth' || property === 'border' || property === 'outline' || property === 'thickness') {
+                const delta = isRelative ? val : 0;
+                const targetVal = isRelative ? 0 : Math.max(1, Math.min(40, val));
+
+                if (selectedShapeIds.length > 0) {
+                    setShapeObjects(prev => prev.map(s => {
+                        if (selectedShapeIds.includes(s.id)) {
+                            const curW = s.strokeWidth || 2;
+                            const newW = isRelative
+                                ? Math.max(1, Math.min(40, curW + delta))
+                                : targetVal;
+                            return { ...s, strokeWidth: newW };
+                        }
+                        return s;
+                    }));
+                    saveToHistory();
+                    return {
+                        speech: isRelative
+                            ? `${delta < 0 ? 'Reduced' : 'Increased'} border width by ${Math.abs(delta)} pixels on selected shape.`
+                            : `Set border width to ${targetVal} pixels on selected shape.`,
+                        feedback: `Border: ${isRelative ? (delta < 0 ? `-${Math.abs(delta)}px` : `+${delta}px`) : `${targetVal}px`}`
+                    };
+                } else {
+                    const newW = isRelative
+                        ? Math.max(1, Math.min(40, strokeWidth + delta))
+                        : targetVal;
+                    setStrokeWidth(newW);
+                    return {
+                        speech: `Set active border tool width to ${newW} pixels.`,
+                        feedback: `Border: ${newW}px`
+                    };
+                }
+            }
+
+            if (property === 'opacity' || property === 'transparency') {
+                const opacityVal = Math.max(0.05, Math.min(1, val > 1 ? val / 100 : val));
+                if (selectedShapeIds.length > 0) {
+                    setShapeObjects(prev => prev.map(s => {
+                        if (selectedShapeIds.includes(s.id)) {
+                            const cur = s.opacity !== undefined ? s.opacity : 1;
+                            const newOp = isRelative ? Math.max(0.05, Math.min(1, cur + (val > 1 ? val / 100 : val))) : opacityVal;
+                            return { ...s, opacity: Number(newOp.toFixed(2)) };
+                        }
+                        return s;
+                    }));
+                    saveToHistory();
+                    return {
+                        speech: `Adjusted opacity on selected shape to ${Math.round(opacityVal * 100)} percent.`,
+                        feedback: `Opacity: ${Math.round(opacityVal * 100)}%`
+                    };
+                }
+            }
+
+            if (property === 'fontSize' || property === 'font') {
+                const delta = isRelative ? val : 0;
+                const targetVal = isRelative ? 0 : Math.max(10, Math.min(120, val));
+                if (selectedTextIds.length > 0) {
+                    setTextObjects(prev => prev.map(t => {
+                        if (selectedTextIds.includes(t.id)) {
+                            const cur = t.fontSize || 20;
+                            const newSize = isRelative ? Math.max(10, Math.min(120, cur + delta)) : targetVal;
+                            return { ...t, fontSize: newSize };
+                        }
+                        return t;
+                    }));
+                    saveToHistory();
+                    return {
+                        speech: `Adjusted text font size to ${targetVal || 'new size'} pixels.`,
+                        feedback: `Font Size: ${targetVal || delta}px`
+                    };
+                }
+            }
+
+            if (property === 'rotation' || property === 'angle') {
+                const deg = val;
+                if (selectedShapeIds.length > 0) {
+                    setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, rotation: ((s.rotation || 0) + deg) % 360 } : s));
+                }
+                if (selectedImageId) {
+                    setImageObjects(prev => prev.map(img => img.id === selectedImageId ? { ...img, rotation: ((img.rotation || 0) + deg) % 360 } : img));
+                }
+                if (selectedTextIds.length > 0) {
+                    setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, rotation: ((t.rotation || 0) + deg) % 360 } : t));
+                }
+                saveToHistory();
+                return {
+                    speech: `Rotated selected objects by ${deg} degrees.`,
+                    feedback: `Rotated ${deg}°`
+                };
+            }
+
+            if (property === 'fillColor' || property === 'fill') {
+                const newColor = String(rawValue);
+                if (selectedShapeIds.length > 0) {
+                    setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: newColor } : s));
+                    saveToHistory();
+                    return {
+                        speech: `Set fill color to ${newColor} on selected shape.`,
+                        feedback: `Fill: ${newColor}`
+                    };
+                } else {
+                    setFillColor(newColor);
+                    return {
+                        speech: `Set active shape fill color to ${newColor}.`,
+                        feedback: `Fill: ${newColor}`
+                    };
+                }
+            }
+
+            if (property === 'color' || property === 'strokeColor') {
+                const newColor = String(rawValue);
+                if (selectedShapeIds.length > 0) {
+                    setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, color: newColor } : s));
+                    saveToHistory();
+                }
+                setColor(newColor);
+                return {
+                    speech: `Set color to ${newColor}.`,
+                    feedback: `Color: ${newColor}`
+                };
+            }
+
+            return null;
+        };
+
+        // ─── AI BOT AGENT INTENT ARBITER ─────────────────────────────────
+
+        // Intent 1: Cognitive / Explanatory / Teaching Query
+        // (e.g. "explain magnetic field with formula", "solve 3x + 9 = 27", "teach photosynthesis")
+        const isCognitiveQuery =
+            txt.startsWith('explain') ||
+            txt.startsWith('teach') ||
+            txt.startsWith('solve') ||
+            txt.startsWith('how does') ||
+            txt.startsWith('how do') ||
+            txt.startsWith('what is') ||
+            txt.startsWith('what are') ||
+            txt.startsWith('derive') ||
+            txt.startsWith('prove') ||
+            txt.startsWith('calculate') ||
+            txt.includes('magnetic field') ||
+            txt.includes('lorentz force') ||
+            txt.includes('photosynthesis') ||
+            txt.includes('pythagor') ||
+            (txt.includes('formula') && (txt.includes('explain') || txt.includes('what') || txt.includes('show') || txt.includes('tell') || txt.includes('magnetic')));
+
+        if (isCognitiveQuery && !isAiRetry) {
+            setVoiceFeedback(`🧠 AI Tutor: "${rawText}"...`);
+            setIsAiThinking(true);
+            try {
+                const response = await aiAPI.voiceCommand({
+                    speechText: rawText,
+                    context: {
+                        module: 'whiteboard',
+                        currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard'
+                    }
+                });
+                const data = response?.data?.data;
+                setIsAiThinking(false);
+                if (data?.recognized) {
+                    if (data.canvasAction && data.canvasAction.type && data.canvasAction.type !== 'insert_solution_card') {
+                        executeAiCanvasAction(data.canvasAction);
+                    }
+                    setAiSolutionData({
+                        question: rawText,
+                        speechResponse: data.speechResponse || data.spokenFeedback,
+                        solutionMarkdown: data.solutionMarkdown,
+                        canvasAction: data.canvasAction
+                    });
+                    narrateAction(
+                        data.speechResponse || data.spokenFeedback || 'Here is the explanation and formulas.',
+                        data.spokenFeedback || '🧠 AI Explanation Ready'
+                    );
+                    return;
+                }
+            } catch (err) {
+                setIsAiThinking(false);
+                console.warn('[Whiteboard Cognitive AI] Error:', err.message);
+            }
+        }
+
+        // Intent 2: Direct 3D Model Generative Action
+        // (e.g. "draw 3D earth", "insert 3D sun", "create 3D atom", "3D router", "3D DNA")
+        const is3DModelCommand =
+            (txt.includes('draw') || txt.includes('create') || txt.includes('insert') || txt.includes('show') || txt.includes('place') || txt.includes('make') || txt.includes('render') || txt.includes('spawn')) &&
+            (txt.includes('earth') || txt.includes('globe') || txt.includes('sun') || txt.includes('atom') || txt.includes('dna') || txt.includes('router') || txt.includes('rocket') || txt.includes('saturn') || txt.includes('mars') || txt.includes('jupiter') || txt.includes('moon') || txt.includes('molecule') || (txt.includes('3d') && !txt.includes('library') && !txt.includes('modal')));
+
+        if (is3DModelCommand) {
+            let modelType = 'earth';
+            let modelLabel = 'Planet Earth';
+            if (txt.includes('sun')) { modelType = 'sun'; modelLabel = 'The Sun'; }
+            else if (txt.includes('atom')) { modelType = 'atom'; modelLabel = 'Bohr Atom Model'; }
+            else if (txt.includes('dna')) { modelType = 'dna_double_helix'; modelLabel = 'DNA Double Helix'; }
+            else if (txt.includes('router')) { modelType = 'multwan_router'; modelLabel = 'Network Router'; }
+            else if (txt.includes('rocket')) { modelType = 'rocket'; modelLabel = 'Space Rocket'; }
+            else if (txt.includes('saturn')) { modelType = 'saturn'; modelLabel = 'Saturn with Rings'; }
+            else if (txt.includes('mars')) { modelType = 'mars'; modelLabel = 'Planet Mars'; }
+            else if (txt.includes('jupiter')) { modelType = 'jupiter'; modelLabel = 'Planet Jupiter'; }
+            else if (txt.includes('moon')) { modelType = 'moon'; modelLabel = 'The Moon'; }
+            else if (txt.includes('molecule')) { modelType = 'molecule'; modelLabel = 'Chemical Molecule'; }
+
+            executeAiCanvasAction({
+                type: 'insert_3d_model',
+                modelType,
+                name: `3D ${modelLabel}`,
+                color: '#6366f1'
+            });
+            narrateAction(
+                `Placing interactive 3D model of ${modelLabel} on the whiteboard canvas. You can rotate it freely in 3D.`,
+                `🪐 Placed 3D ${modelLabel}`
+            );
+            return;
+        }
+
+        // Intent 3: Local Tier 1 Property Modifications
+        // Relative Border Reduction: e.g. "reduce border by 2px", "reduce border 2px", "whittle outline by 2", "make border thinner"
+        const borderReduceMatch = txt.match(/(?:reduce|decrease|lower|cut|shave|drop|whittle|attenuate|slenderize)\s+(?:the\s+)?(?:border|stroke|outline|width|perimeter|boundary)\s+(?:by\s+)?(\d+)/i) ||
+            txt.match(/(?:border|stroke|outline)\s+(?:reduce|decrease|lower)\s+(?:by\s+)?(\d+)/i);
+        if (borderReduceMatch) {
+            const num = parseInt(borderReduceMatch[1], 10) || 2;
+            const res = applyPropertyModification('strokeWidth', 'relative_delta', -num);
+            if (res) {
+                narrateAction(res.speech, res.feedback);
+                return;
+            }
+        }
+
+        // Absolute Border Set: e.g. "reduce border to 1 px", "set border to 2px", "make border 3px", "border 1px"
+        const borderAbsoluteMatch = txt.match(/(?:set|make|reduce|change|adjust)\s+(?:the\s+)?(?:border|stroke|outline|width)\s+(?:to\s+)?(\d+)/i) ||
+            txt.match(/(?:border|stroke|outline)\s+(?:to\s+|is\s+)?(\d+)\s*(?:px|pixels?)?/i);
+        if (borderAbsoluteMatch) {
+            const num = parseInt(borderAbsoluteMatch[1], 10);
+            if (!isNaN(num) && num > 0 && num <= 40) {
+                const res = applyPropertyModification('strokeWidth', 'absolute_value', num);
+                if (res) {
+                    narrateAction(res.speech, res.feedback);
+                    return;
+                }
+            }
+        }
+
+        // Relative Border Increase: e.g. "increase border by 2px", "thicken border", "bolder outline by 3px"
+        const borderIncreaseMatch = txt.match(/(?:increase|raise|expand|boost|enlarge|thicken|grow|widen)\s+(?:the\s+)?(?:border|stroke|outline|width)\s+(?:by\s+)?(\d+)?/i);
+        if (borderIncreaseMatch) {
+            const num = parseInt(borderIncreaseMatch[1], 10) || 2;
+            const res = applyPropertyModification('strokeWidth', 'relative_delta', num);
+            if (res) {
+                narrateAction(res.speech, res.feedback);
+                return;
+            }
+        }
+
         // Helper to spawn shape with full text editing, measurement, and selection support
         const spawnVoiceShape = (shapeProps) => {
             const id = Date.now().toString();
@@ -11589,19 +11858,40 @@ export default function Whiteboard({
             setVoiceFeedback('🪟 Toggled Screen Curtain');
             return;
         }
-        if (txt.includes('equation') || txt.includes('math editor') || txt.includes('latex')) {
+        const isExplicitEquationModal =
+            txt === 'open equation editor' ||
+            txt === 'open math editor' ||
+            txt === 'open latex editor' ||
+            txt === 'show equation editor' ||
+            txt === 'equation editor' ||
+            txt === 'latex editor';
+        if (isExplicitEquationModal) {
             setShowEquationModal(true);
-            setVoiceFeedback('∑ Opened LaTeX Equation Editor');
+            narrateAction('Opened LaTeX Equation Editor.', '∑ Opened LaTeX Equation Editor');
             return;
         }
-        if (txt.includes('math solver') || txt.includes('math tablet') || txt.includes('handwrite math')) {
+
+        const isExplicitMathTablet =
+            txt === 'open math solver' ||
+            txt === 'open math tablet' ||
+            txt === 'handwrite math' ||
+            txt === 'math tablet';
+        if (isExplicitMathTablet) {
             setShowMathTablet(true);
-            setVoiceFeedback('✏️ Opened Handwriting Math Tablet');
+            narrateAction('Opened Handwriting Math Tablet.', '✏️ Opened Handwriting Math Tablet');
             return;
         }
-        if (txt.includes('3d') || txt.includes('domain library') || txt.includes('3d models')) {
+
+        const isExplicit3DModal =
+            txt === 'open 3d library' ||
+            txt === 'show 3d library' ||
+            txt === 'browse 3d models' ||
+            txt === '3d library' ||
+            txt === 'open domain library' ||
+            txt === 'domain library';
+        if (isExplicit3DModal) {
             setShowDomainLibrary(true);
-            setVoiceFeedback('📦 Opened 3D & Domain Library');
+            narrateAction('Opened 3D and Domain Symbol Library.', '📦 Opened 3D & Domain Library');
             return;
         }
         if (txt.includes('graph') || txt.includes('plot graph')) {
@@ -11792,7 +12082,17 @@ export default function Whiteboard({
                 setIsAiThinking(false);
 
                 if (data?.recognized) {
-                    // 1. If it's a generative canvas action (3D model, flowchart, diagram)
+                    // 1. Property Modification returned by LLM (e.g. for "whittle down perimeter by 2 units")
+                    if (data.type === 'property_modification' || data.intent === 'modify_property') {
+                        const res = applyPropertyModification(data.property, data.mode, data.value);
+                        narrateAction(
+                            data.speechResponse || res?.speech || 'Adjusted object property.',
+                            data.spokenFeedback || res?.feedback || 'Property Updated'
+                        );
+                        return;
+                    }
+
+                    // 2. Generative canvas action (3D model, flowchart, diagram)
                     if (data.type === 'canvas_generation' || (data.canvasAction && data.canvasAction.type && data.canvasAction.type !== 'insert_solution_card')) {
                         executeAiCanvasAction(data.canvasAction);
                         setAiSolutionData({
@@ -11801,16 +12101,14 @@ export default function Whiteboard({
                             solutionMarkdown: data.solutionMarkdown,
                             canvasAction: data.canvasAction
                         });
-                        setVoiceFeedback(data.spokenFeedback || '✨ AI Canvas Visual Created');
-                        toast.success(data.spokenFeedback || 'AI Visual Created on Canvas', { icon: '✨' });
-
-                        if (aiSpeechEnabled && (data.speechResponse || data.spokenFeedback)) {
-                            speakAiResponse(data.speechResponse || data.spokenFeedback);
-                        }
+                        narrateAction(
+                            data.speechResponse || data.spokenFeedback || 'AI visual created on canvas.',
+                            data.spokenFeedback || '✨ AI Canvas Visual Created'
+                        );
                         return;
                     }
 
-                    // 2. Check if it's an educational question, math problem, or solution
+                    // 3. Educational question, math problem, or solution explanation
                     if (data.type === 'solution' || data.solutionMarkdown || data.intent === 'solve_or_explain') {
                         setAiSolutionData({
                             question: rawText,
@@ -11818,16 +12116,14 @@ export default function Whiteboard({
                             solutionMarkdown: data.solutionMarkdown,
                             canvasAction: data.canvasAction
                         });
-                        setVoiceFeedback(data.spokenFeedback || '✨ AI Solution Ready');
-                        toast.success(data.spokenFeedback || 'AI Solution Ready', { icon: '✨' });
-
-                        if (aiSpeechEnabled && (data.speechResponse || data.spokenFeedback)) {
-                            speakAiResponse(data.speechResponse || data.spokenFeedback);
-                        }
+                        narrateAction(
+                            data.speechResponse || data.spokenFeedback || 'Here is the solution.',
+                            data.spokenFeedback || '✨ AI Solution Ready'
+                        );
                         return;
                     }
 
-                    // 3. Otherwise if it's a translated whiteboard command
+                    // 4. Standardized whiteboard command translation
                     if (data.translatedCommand) {
                         toast.success(`✨ AI interpreted: "${data.translatedCommand}"`, { icon: '✨' });
                         if (aiSpeechEnabled && data.speechResponse) {
@@ -13202,40 +13498,38 @@ export default function Whiteboard({
                         )}
                     </div>
 
-                    {/* Dedicated AI Bot Co-Pilot Button */}
-                    <button
-                        type="button"
-                        onClick={() => setShowAiAssistantModal(prev => !prev)}
-                        className={`px-2 py-1 rounded-full transition-all flex items-center gap-1.5 text-xs font-semibold border ${
-                            showAiAssistantModal
-                                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-purple-400 shadow-md shadow-purple-500/30 ring-1 ring-purple-400/50'
-                                : isAiSpeaking || isAiThinking
-                                ? 'bg-purple-950/90 text-purple-200 border-purple-500/70 animate-pulse shadow-md shadow-purple-500/30'
-                                : 'bg-slate-800/90 hover:bg-slate-700/90 text-slate-200 hover:text-white border-slate-700/60 shadow-inner'
-                        }`}
-                        title="AI Bot Co-Pilot & Whiteboard Tutor (Ctrl+Shift+A) — Interactive 3D, Generative Flowcharts & Speech Solutions"
-                    >
-                        <Bot className={`w-3.5 h-3.5 ${isAiSpeaking ? 'text-pink-300 animate-bounce' : isAiThinking ? 'text-amber-300 animate-spin' : 'text-purple-400'}`} />
-                        <span className="hidden sm:inline text-[11px]">AI Bot</span>
-                        {(isAiSpeaking || isAiThinking) && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                        )}
-                    </button>
-
-                    {/* Voice Control Toolbar Tool with Mic Selector & CC */}
+                    {/* Unified AI Voice Bot & Microphone Tool with Selector & CC */}
                     <div className="relative flex items-center">
-                        <div className="flex items-center rounded-full bg-slate-800/80 p-0.5 border border-slate-700/60 shadow-inner">
+                        <div className={`flex items-center rounded-full p-0.5 border shadow-inner transition-all ${
+                            isAiSpeaking
+                                ? 'bg-purple-950/90 border-purple-500/70 shadow-purple-500/30 ring-1 ring-purple-400/50'
+                                : isAiThinking
+                                ? 'bg-amber-950/90 border-amber-500/70 shadow-amber-500/30'
+                                : isVoiceListening
+                                ? 'bg-rose-950/80 border-rose-500/70 shadow-rose-500/30 ring-1 ring-rose-400/50'
+                                : 'bg-slate-800/80 border-slate-700/60'
+                        }`}>
                             <button
                                 type="button"
                                 onClick={toggleVoiceListening}
-                                className={`p-1 rounded-full transition-colors flex items-center justify-center ${
+                                className={`p-1.5 rounded-full transition-all flex items-center justify-center ${
                                     isVoiceListening 
                                         ? 'bg-rose-500 text-white shadow-lg animate-pulse ring-2 ring-rose-400/70' 
+                                        : isAiSpeaking
+                                        ? 'bg-purple-600 text-white shadow-lg animate-bounce'
+                                        : isAiThinking
+                                        ? 'bg-amber-500 text-white shadow-lg'
                                         : 'text-slate-300 hover:bg-slate-700 hover:text-white'
                                 }`}
-                                title={isVoiceListening ? 'Voice Control Active (Listening to commands) - Click to Stop' : 'Start Voice Control (Listen to voice commands)'}
+                                title={isVoiceListening ? 'AI Voice Bot Active (Listening...) — Click to Stop' : 'AI Voice Bot & Microphone (Click to toggle voice, ▾ for AI Bot Co-Pilot & Audio Settings)'}
                             >
-                                {isVoiceListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                                {isVoiceListening ? (
+                                    <MicOff className="w-3.5 h-3.5" />
+                                ) : isAiSpeaking ? (
+                                    <Volume2 className="w-3.5 h-3.5" />
+                                ) : (
+                                    <Mic className="w-3.5 h-3.5" />
+                                )}
                             </button>
                             <button
                                 type="button"
@@ -13244,13 +13538,13 @@ export default function Whiteboard({
                                 className={`p-0.5 pr-1 rounded-full text-slate-400 hover:text-white hover:bg-slate-700/60 transition ${
                                     showMicSelector ? 'text-indigo-400 bg-slate-700' : ''
                                 }`}
-                                title="Microphone Selector, Live Meter & Speech AI Voice Settings"
+                                title="Audio Settings & AI Bot Co-Pilot Hub"
                             >
                                 <ChevronDown className="w-2.5 h-2.5" />
                             </button>
                         </div>
 
-                        {/* Microphone & Audio Settings Popover */}
+                        {/* Microphone & Audio Settings Popover with AI Bot Hub Launcher */}
                         <WhiteboardMicSelector
                             isOpen={showMicSelector}
                             onClose={() => setShowMicSelector(false)}
@@ -13279,6 +13573,7 @@ export default function Whiteboard({
                             onSelectVoice={setTtsSelectedVoice}
                             speechRate={speechRate}
                             onChangeSpeechRate={setSpeechRate}
+                            onOpenAiAssistantModal={() => setShowAiAssistantModal(true)}
                         />
                     </div>
 
@@ -19174,6 +19469,7 @@ export default function Whiteboard({
                 onOpenAiSolution={() => setShowAiAssistantModal(true)}
                 onStopSpeaking={stopAiSpeech}
                 onClose={() => setShowClosedCaptions(false)}
+                onExecuteCommand={(cmd) => executeVoiceCommand(cmd)}
                 audioLevel={audioInputLevel}
             />
 

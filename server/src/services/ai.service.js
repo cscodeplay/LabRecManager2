@@ -1485,7 +1485,19 @@ Translate the user's spoken input into the single best standardized Whiteboard v
 
 Spoken input: "${text}"
 
-Determine whether the user is issuing a canvas command, requesting a generative visual/3D drawing, OR asking an educational question:
+Determine whether the user is issuing a canvas command, adjusting an object property, requesting a generative visual/3D drawing, OR asking an educational/cognitive question:
+
+If Property Modification (e.g., "reduce border to 1 px", "reduce border by 2px", "whittle down perimeter by 2 units", "increase opacity to 80%", "make font 24px", "expand width by 50px", "rotate 45 degrees"):
+{
+  "recognized": true,
+  "type": "property_modification",
+  "intent": "modify_property",
+  "property": "strokeWidth | opacity | fontSize | width | height | rotation | color | fillColor",
+  "mode": "relative_delta | absolute_value",
+  "value": -2,
+  "spokenFeedback": "Reduced border by 2px",
+  "speechResponse": "Reducing border width by 2 pixels on the selected shape."
+}
 
 If Canvas Command:
 {
@@ -1525,14 +1537,15 @@ If Generative Drawing, 3D Model, Flowchart, or Visual Diagram:
   }
 }
 
-If Question, Problem to Solve, or Explanation:
+If Question, Problem to Solve, or Explanation (e.g. "explain magnetic field with formula", "solve 3x + 12 = 36", "teach photosynthesis"):
+CRITICAL: NEVER return a tool modal command like "equation" or "math editor" when the user asks an educational explanation. ALWAYS return a "solution" with speechResponse and LaTeX formulas!
 {
   "recognized": true,
   "type": "solution",
   "intent": "solve_or_explain",
   "speechResponse": "<1-3 natural, conversational sentences formulated for Speech Synthesis audio playback>",
   "solutionMarkdown": "<Step-by-step clear solution and LaTeX formulas using $$...$$ format for math/science>",
-  "spokenFeedback": "<Brief status, e.g. 'Solved: 3x + 12 = 36'>",
+  "spokenFeedback": "<Brief status, e.g. 'Explained Magnetic Field & Formulas'>",
   "canvasAction": {
     "type": "insert_solution_card",
     "title": "<Concise title of solution or concept>",
@@ -2500,7 +2513,21 @@ Output ONLY a valid JSON object matching this schema:
             };
         }
 
-        // 6. Physics: Newton's Second Law
+        // 6. Physics: Magnetic Field & Lorentz Force
+        if (low.includes('magnetic') || low.includes('lorentz') || low.includes('biot-savart') || low.includes('magnetic flux')) {
+            return {
+                speechResponse: "A magnetic field is a vector field describing the magnetic influence on moving electric charges. Moving charges experience the Lorentz force F equals q times v cross B, which acts perpendicular to both velocity and the magnetic field.",
+                solutionMarkdown: `### Magnetic Field & Fundamental Formulas\n\n**1. Lorentz Force on a Moving Charge:**\n$$\\vec{F} = q(\\vec{E} + \\vec{v} \\times \\vec{B})$$\n- In pure magnetic field: $$F = q v B \\sin(\\theta)$$\n\n**2. Force on a Current-Carrying Wire:**\n$$\\vec{F} = I(\\vec{L} \\times \\vec{B})$$\n\n**3. Biot-Savart Law (Field from Current):**\n$$\\vec{B} = \\frac{\\mu_0}{4\\pi} \\int \\frac{I\\,d\\vec{l} \\times \\hat{r}}{r^2}$$\n\n**4. Magnetic Flux & Gauss's Law:**\n$$\\Phi_B = \\iint \\vec{B} \\cdot d\\vec{A} \\quad , \\quad \\nabla \\cdot \\vec{B} = 0$$`,
+                spokenFeedback: 'Explained Magnetic Field & Formulas',
+                canvasAction: {
+                    type: 'insert_solution_card',
+                    title: 'Magnetic Field & Lorentz Force',
+                    summary: 'F = q(v × B), B = μ₀I / (2πr)'
+                }
+            };
+        }
+
+        // 7. Physics: Newton's Second Law
         if (low.includes('newton') && (low.includes('second') || low.includes('force') || low.includes('acceleration'))) {
             return {
                 speechResponse: "Newton's second law of motion states that force equals mass multiplied by acceleration: F equals m times a.",
