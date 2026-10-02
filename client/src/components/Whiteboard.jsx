@@ -831,8 +831,15 @@ export default function Whiteboard({
     const [lassoPath, setLassoPath] = useState([]);
     const [clipboardHistory, setClipboardHistory] = useState([]); // array of clipboard items
     const [showClipboard, setShowClipboard] = useState(false);
-    // Laser pointer state
+    // Laser pointer state & Teacher Live Demonstration state
     const [laserPos, setLaserPos] = useState(null);
+    const latestLaserPosRef = useRef(null);
+    const [teacherLaser, setTeacherLaser] = useState(null); // { x, y, active, label, isPointing, isDrawing, action }
+    const [teacherLaserTrail, setTeacherLaserTrail] = useState([]);
+    const [teacherLiveDrawing, setTeacherLiveDrawing] = useState(null); // { active, shapeType, x, y, width, height, color, strokeWidth, progress, currentPathD, title }
+    const conversationHistoryRef = useRef([]);
+    const lastActionTargetRef = useRef(null);
+    const recentDrawActionsRef = useRef([]);
     const [remoteCursors, setRemoteCursors] = useState({});
     const [recentLiveActions, setRecentLiveActions] = useState([]);
 
@@ -6577,6 +6584,7 @@ export default function Whiteboard({
         // Handle laser pointer
         if (tool === 'laser') {
             setLaserPos(pos);
+            latestLaserPosRef.current = pos;
             broadcastAction('pointing with laser', pos.x, pos.y);
             if (laserTimeoutRef.current) {
                 clearTimeout(laserTimeoutRef.current);
@@ -7204,6 +7212,7 @@ export default function Whiteboard({
             });
         } else if (tool === 'laser') {
             setLaserPos(pos);
+            latestLaserPosRef.current = pos;
             if (laserTimeoutRef.current) {
                 clearTimeout(laserTimeoutRef.current);
             }
@@ -10215,6 +10224,465 @@ export default function Whiteboard({
         }
     }, []);
 
+    // ─── TEACHER DEMONSTRATION & SPATIAL REASONING ENGINE ──────────────
+    // 1. Gather rich spatial and conversational context of active board
+    const getWhiteboardSpatialContext = useCallback(() => {
+        const baseCx = Math.round((-panOffset.x + (containerRef.current?.clientWidth || 1200) / 2) / zoomLevel);
+        const baseCy = Math.round((-panOffset.y + (containerRef.current?.clientHeight || 800) / 2) / zoomLevel);
+        const margin = 40;
+        const xMin = Math.max(margin, Math.round(-panOffset.x / zoomLevel) + margin);
+        const xMax = Math.round((-panOffset.x + (containerRef.current?.clientWidth || 1200)) / zoomLevel) - margin;
+        const yMin = Math.max(margin, Math.round(-panOffset.y / zoomLevel) + margin);
+        const yMax = Math.round((-panOffset.y + (containerRef.current?.clientHeight || 800)) / zoomLevel) - margin;
+
+        const currentShapes = (pageShapeObjects[currentPage] || []).map(s => {
+            const cx = Math.round((s.x || 0) + (s.width || 0) / 2);
+            const cy = Math.round((s.y || 0) + (s.height || 0) / 2);
+            return {
+                id: s.id,
+                type: s.type,
+                x: Math.round(s.x || 0),
+                y: Math.round(s.y || 0),
+                width: Math.round(s.width || 0),
+                height: Math.round(s.height || 0),
+                center: { x: cx, y: cy },
+                color: s.color,
+                fillColor: s.fillColor,
+                text: s.text,
+                verticalRank: cy < baseCy - 100 ? 'top' : cy > baseCy + 100 ? 'bottom' : 'middle',
+                horizontalRank: cx < baseCx - 150 ? 'left' : cx > baseCx + 150 ? 'right' : 'center',
+                isLocked: !!s.isLocked,
+                sourceId: s.sourceId,
+                targetId: s.targetId
+            };
+        });
+
+        const currentTexts = (pageTextObjects[currentPage] || []).map(t => ({
+            id: t.id,
+            type: 'text',
+            x: Math.round(t.x || 0),
+            y: Math.round(t.y || 0),
+            width: Math.round(t.width || 120),
+            height: Math.round(t.height || 40),
+            text: t.text
+        }));
+
+        const currentImages = (pageImageObjects[currentPage] || []).map(i => ({
+            id: i.id,
+            type: 'image',
+            x: Math.round(i.x || 0),
+            y: Math.round(i.y || 0),
+            width: Math.round(i.width || 200),
+            height: Math.round(i.height || 200)
+        }));
+
+        return {
+            shapes: currentShapes,
+            texts: currentTexts,
+            images: currentImages,
+            viewport: {
+                width: canvasWidth,
+                height: canvasHeight,
+                visibleBox: { xMin, xMax, yMin, yMax },
+                center: { x: baseCx, y: baseCy },
+                zoomLevel,
+                panOffset
+            },
+            laserPos: latestLaserPosRef.current || laserPos,
+            conversationHistory: conversationHistoryRef.current.slice(-6),
+            lastActionTarget: lastActionTargetRef.current,
+            selectedShapeIds
+        };
+    }, [currentPage, pageShapeObjects, pageTextObjects, pageImageObjects, canvasWidth, canvasHeight, panOffset, zoomLevel, laserPos, selectedShapeIds]);
+
+    // 2. Intelligent Space Allocation & Collision Avoidance
+    const findAvailableCanvasSpace = useCallback((desiredW = 160, desiredH = 160, preference = null) => {
+        const margin = 40;
+        const xMin = Math.max(margin, Math.round(-panOffset.x / zoomLevel) + margin);
+        const xMax = Math.round((-panOffset.x + (containerRef.current?.clientWidth || 1200)) / zoomLevel) - margin;
+        const yMin = Math.max(margin, Math.round(-panOffset.y / zoomLevel) + margin);
+        const yMax = Math.round((-panOffset.y + (containerRef.current?.clientHeight || 800)) / zoomLevel) - margin;
+        const baseCx = Math.round((xMin + xMax) / 2);
+        const baseCy = Math.round((yMin + yMax) / 2);
+
+        const activeShapes = pageShapeObjects[currentPage] || [];
+        const obstacles = activeShapes.map(s => ({
+            x1: s.x || 0,
+            y1: s.y || 0,
+            x2: (s.x || 0) + (s.width || 0),
+            y2: (s.y || 0) + (s.height || 0),
+            id: s.id,
+            cx: (s.x || 0) + (s.width || 0) / 2,
+            cy: (s.y || 0) + (s.height || 0) / 2
+        }));
+
+        // Case A: User explicitly pointed with laser or gave coordinate preference
+        if (preference?.atLaser && latestLaserPosRef.current) {
+            const lx = Math.max(xMin, Math.min(xMax - desiredW, latestLaserPosRef.current.x - desiredW / 2));
+            const ly = Math.max(yMin, Math.min(yMax - desiredH, latestLaserPosRef.current.y - desiredH / 2));
+            return { x: Math.round(lx), y: Math.round(ly), width: desiredW, height: desiredH };
+        }
+
+        // Case B: Relative spatial command (e.g. "below the square", "above the circle", "right of the box")
+        if (preference?.relativeToId) {
+            const refShape = activeShapes.find(s => s.id === preference.relativeToId);
+            if (refShape) {
+                const refX = refShape.x || 0;
+                const refY = refShape.y || 0;
+                const refW = refShape.width || 120;
+                const refH = refShape.height || 120;
+                const refCx = refX + refW / 2;
+
+                if (preference.direction === 'below') {
+                    const availableY = yMax - (refY + refH);
+                    let finalH = desiredH;
+                    let finalW = desiredW;
+                    if (availableY < desiredH + 20 && availableY > 60) {
+                        finalH = Math.max(50, availableY - 20);
+                        finalW = Math.round(desiredW * (finalH / desiredH));
+                    }
+                    const targetY = Math.min(yMax - finalH, refY + refH + 25);
+                    const targetX = Math.max(xMin, Math.min(xMax - finalW, refCx - finalW / 2));
+                    return { x: Math.round(targetX), y: Math.round(targetY), width: finalW, height: finalH };
+                }
+
+                if (preference.direction === 'above') {
+                    const targetY = Math.max(yMin, refY - desiredH - 25);
+                    const targetX = Math.max(xMin, Math.min(xMax - desiredW, refCx - desiredW / 2));
+                    return { x: Math.round(targetX), y: Math.round(targetY), width: desiredW, height: desiredH };
+                }
+
+                if (preference.direction === 'right') {
+                    const targetX = Math.min(xMax - desiredW, refX + refW + 25);
+                    const targetY = Math.max(yMin, Math.min(yMax - desiredH, refY + (refH - desiredH) / 2));
+                    return { x: Math.round(targetX), y: Math.round(targetY), width: desiredW, height: desiredH };
+                }
+
+                if (preference.direction === 'left') {
+                    const targetX = Math.max(xMin, refX - desiredW - 25);
+                    const targetY = Math.max(yMin, Math.min(yMax - desiredH, refY + (refH - desiredH) / 2));
+                    return { x: Math.round(targetX), y: Math.round(targetY), width: desiredW, height: desiredH };
+                }
+            }
+        }
+
+        // Case C: Unspecified location - quadrant analysis to find largest open whitespace
+        const zones = [
+            { id: 'center', x: baseCx - desiredW / 2, y: baseCy - desiredH / 2 },
+            { id: 'top_left', x: xMin + 20, y: yMin + 20 },
+            { id: 'top_right', x: xMax - desiredW - 20, y: yMin + 20 },
+            { id: 'bottom_left', x: xMin + 20, y: yMax - desiredH - 20 },
+            { id: 'bottom_right', x: xMax - desiredW - 20, y: yMax - desiredH - 20 },
+            { id: 'middle_right', x: baseCx + 180, y: baseCy - desiredH / 2 },
+            { id: 'middle_left', x: baseCx - desiredW - 180, y: baseCy - desiredH / 2 }
+        ];
+
+        let bestZone = zones[0];
+        let minOverlapScore = Infinity;
+
+        for (const zone of zones) {
+            const zBox = { x1: zone.x, y1: zone.y, x2: zone.x + desiredW, y2: zone.y + desiredH };
+            let overlapCount = 0;
+            for (const obs of obstacles) {
+                const overlap = !(zBox.x2 < obs.x1 || zBox.x1 > obs.x2 || zBox.y2 < obs.y1 || zBox.y1 > obs.y2);
+                if (overlap) overlapCount++;
+            }
+            if (overlapCount < minOverlapScore) {
+                minOverlapScore = overlapCount;
+                bestZone = zone;
+                if (overlapCount === 0) break;
+            }
+        }
+
+        return {
+            x: Math.round(Math.max(xMin, Math.min(xMax - desiredW, bestZone.x))),
+            y: Math.round(Math.max(yMin, Math.min(yMax - desiredH, bestZone.y))),
+            width: desiredW,
+            height: desiredH
+        };
+    }, [currentPage, pageShapeObjects, panOffset, zoomLevel]);
+
+    // 3. 60fps Teacher Laser Glide Animation Engine
+    const animateTeacherLaserPath = useCallback((waypoints = [], duration = 700, onStep = null, onComplete = null) => {
+        if (!waypoints || waypoints.length === 0) {
+            onComplete && onComplete();
+            return;
+        }
+
+        const startPt = waypoints[0];
+        const endPt = waypoints[waypoints.length - 1];
+        const startTime = performance.now();
+
+        setTeacherLaser({
+            x: startPt.x,
+            y: startPt.y,
+            active: true,
+            label: startPt.label || 'AI Teacher',
+            action: startPt.action || 'Demonstrating'
+        });
+
+        const easeInOutQuad = (t) => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+
+        const frame = (now) => {
+            const elapsed = now - startTime;
+            const progress = Math.min(1, elapsed / duration);
+            const eased = easeInOutQuad(progress);
+
+            // Interpolate across waypoints
+            const totalSegments = waypoints.length - 1;
+            if (totalSegments <= 0) {
+                setTeacherLaser({
+                    x: endPt.x,
+                    y: endPt.y,
+                    active: true,
+                    label: endPt.label || 'AI Teacher',
+                    action: endPt.action || 'Demonstrating'
+                });
+                onComplete && onComplete();
+                return;
+            }
+
+            const segmentProgress = eased * totalSegments;
+            const segIndex = Math.min(totalSegments - 1, Math.floor(segmentProgress));
+            const segT = segmentProgress - segIndex;
+
+            const p0 = waypoints[segIndex];
+            const p1 = waypoints[segIndex + 1];
+
+            const curX = Math.round(p0.x + (p1.x - p0.x) * segT);
+            const curY = Math.round(p0.y + (p1.y - p0.y) * segT);
+
+            setTeacherLaser({
+                x: curX,
+                y: curY,
+                active: true,
+                label: p1.label || p0.label || 'AI Teacher',
+                action: p1.action || p0.action || 'Demonstrating'
+            });
+
+            setTeacherLaserTrail(prev => [
+                { x: curX, y: curY, color: '#f43f5e' },
+                ...(prev.slice(0, 7))
+            ]);
+
+            onStep && onStep({ x: curX, y: curY, progress });
+
+            if (progress < 1) {
+                requestAnimationFrame(frame);
+            } else {
+                setTeacherLaser({
+                    x: endPt.x,
+                    y: endPt.y,
+                    active: true,
+                    label: endPt.label || 'AI Teacher',
+                    action: endPt.action || 'Demonstrating'
+                });
+                setTimeout(() => {
+                    setTeacherLaserTrail([]);
+                    onComplete && onComplete();
+                }, 100);
+            }
+        };
+
+        requestAnimationFrame(frame);
+    }, []);
+
+    // 4. Simulated Teacher Toolbar Selection (AI glides pointer to toolbar, clicks tool, returns to canvas)
+    const animateTeacherToolbarSelection = useCallback((targetToolName = 'shape', targetLabel = 'Selecting Tool', onComplete = null) => {
+        const wrapper = canvasWrapperRef.current;
+        if (!wrapper) {
+            onComplete && onComplete();
+            return;
+        }
+
+        // Calculate location of toolbar dock (bottom center of viewport)
+        const rect = wrapper.getBoundingClientRect();
+        const startX = teacherLaser ? teacherLaser.x : (rect.width / 2);
+        const startY = teacherLaser ? teacherLaser.y : (rect.height / 2 - 100);
+
+        const toolbarX = Math.round(rect.width / 2);
+        const toolbarY = Math.round(rect.height - 40); // dock along bottom
+
+        const waypointsToToolbar = [
+            { x: startX, y: startY, label: 'AI Teacher', action: 'Picking tool...' },
+            { x: toolbarX, y: toolbarY, label: 'AI Teacher', action: `Selected ${targetToolName}` }
+        ];
+
+        animateTeacherLaserPath(waypointsToToolbar, 380, null, () => {
+            // Visual feedback on toolbar dock
+            toast(`👨‍🏫 Teacher selected ${targetToolName}`, { id: 'teacher-tool', duration: 1000, icon: '🎨' });
+            setTimeout(() => {
+                const waypointsBack = [
+                    { x: toolbarX, y: toolbarY, label: 'AI Teacher', action: `Drawing with ${targetToolName}` },
+                    { x: startX, y: startY, label: 'AI Teacher', action: 'Drawing...' }
+                ];
+                animateTeacherLaserPath(waypointsBack, 320, null, () => {
+                    onComplete && onComplete();
+                });
+            }, 120);
+        });
+    }, [teacherLaser, animateTeacherLaserPath]);
+
+    // 5. Authentic Real-Time Teacher Stroke Tracing Animation Engine
+    const animateTeacherDrawStroke = useCallback((shapeConfig, onComplete = null) => {
+        if (!shapeConfig) {
+            onComplete && onComplete();
+            return;
+        }
+
+        const type = shapeConfig.type || 'rectangle';
+        const color = shapeConfig.color || '#6366f1';
+        const strokeWidth = shapeConfig.strokeWidth || 2.5;
+        const strokeStyle = shapeConfig.strokeStyle || 'solid';
+
+        const x = shapeConfig.x || 0;
+        const y = shapeConfig.y || 0;
+        const w = shapeConfig.width || 120;
+        const h = shapeConfig.height || 120;
+        const cx = x + w / 2;
+        const cy = y + h / 2;
+
+        const duration = 480; // authentic drawing speed ~480ms
+        const startTime = performance.now();
+
+        setTeacherLiveDrawing({
+            active: true,
+            shapeType: type,
+            color,
+            strokeWidth,
+            strokeStyle,
+            currentPathD: '',
+            x, y, width: w, height: h
+        });
+
+        const frame = (now) => {
+            const elapsed = now - startTime;
+            const t = Math.min(1, elapsed / duration);
+
+            let pathD = '';
+            let currentNib = { x: cx, y: cy };
+
+            if (type === 'circle') {
+                const r = w / 2;
+                const angle = t * Math.PI * 2;
+                currentNib = { x: Math.round(cx + r * Math.cos(angle)), y: Math.round(cy + r * Math.sin(angle)) };
+                if (t >= 0.99) {
+                    pathD = `M ${cx - r} ${cy} a ${r} ${r} 0 1 0 ${r * 2} 0 a ${r} ${r} 0 1 0 -${r * 2} 0`;
+                } else {
+                    const startAngle = 0;
+                    const endAngle = angle;
+                    const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
+                    const startX = cx + r;
+                    const startY = cy;
+                    pathD = `M ${startX} ${startY} A ${r} ${r} 0 ${largeArc} 1 ${currentNib.x} ${currentNib.y}`;
+                }
+            } else if (type === 'diamond') {
+                const pts = [
+                    { x: cx, y: y },
+                    { x: x + w, y: cy },
+                    { x: cx, y: y + h },
+                    { x: x, y: cy },
+                    { x: cx, y: y }
+                ];
+                const segT = t * 4;
+                const segIdx = Math.min(3, Math.floor(segT));
+                const subT = segT - segIdx;
+                const pA = pts[segIdx];
+                const pB = pts[segIdx + 1];
+                currentNib = { x: Math.round(pA.x + (pB.x - pA.x) * subT), y: Math.round(pA.y + (pB.y - pA.y) * subT) };
+                let d = `M ${pts[0].x} ${pts[0].y}`;
+                for (let i = 1; i <= segIdx; i++) {
+                    d += ` L ${pts[i].x} ${pts[i].y}`;
+                }
+                d += ` L ${currentNib.x} ${currentNib.y}`;
+                pathD = d;
+            } else if (type === 'triangle') {
+                const pts = [
+                    { x: cx, y: y },
+                    { x: x + w, y: y + h },
+                    { x: x, y: y + h },
+                    { x: cx, y: y }
+                ];
+                const segT = t * 3;
+                const segIdx = Math.min(2, Math.floor(segT));
+                const subT = segT - segIdx;
+                const pA = pts[segIdx];
+                const pB = pts[segIdx + 1];
+                currentNib = { x: Math.round(pA.x + (pB.x - pA.x) * subT), y: Math.round(pA.y + (pB.y - pA.y) * subT) };
+                let d = `M ${pts[0].x} ${pts[0].y}`;
+                for (let i = 1; i <= segIdx; i++) {
+                    d += ` L ${pts[i].x} ${pts[i].y}`;
+                }
+                d += ` L ${currentNib.x} ${currentNib.y}`;
+                pathD = d;
+            } else if (type === 'connector' || type === 'arrow' || type === 'line') {
+                const x1 = shapeConfig.startX !== undefined ? shapeConfig.startX : x;
+                const y1 = shapeConfig.startY !== undefined ? shapeConfig.startY : y;
+                const x2 = shapeConfig.endX !== undefined ? shapeConfig.endX : (x + w);
+                const y2 = shapeConfig.endY !== undefined ? shapeConfig.endY : (y + h);
+                currentNib = { x: Math.round(x1 + (x2 - x1) * t), y: Math.round(y1 + (y2 - y1) * t) };
+                pathD = `M ${x1} ${y1} L ${currentNib.x} ${currentNib.y}`;
+            } else {
+                // Default rectangle / box perimeter: Top -> Right -> Bottom -> Left
+                const pts = [
+                    { x, y },
+                    { x: x + w, y },
+                    { x: x + w, y: y + h },
+                    { x, y: y + h },
+                    { x, y }
+                ];
+                const segT = t * 4;
+                const segIdx = Math.min(3, Math.floor(segT));
+                const subT = segT - segIdx;
+                const pA = pts[segIdx];
+                const pB = pts[segIdx + 1];
+                currentNib = { x: Math.round(pA.x + (pB.x - pA.x) * subT), y: Math.round(pA.y + (pB.y - pA.y) * subT) };
+                let d = `M ${pts[0].x} ${pts[0].y}`;
+                for (let i = 1; i <= segIdx; i++) {
+                    d += ` L ${pts[i].x} ${pts[i].y}`;
+                }
+                d += ` L ${currentNib.x} ${currentNib.y}`;
+                pathD = d;
+            }
+
+            setTeacherLiveDrawing(prev => ({ ...prev, currentPathD: pathD }));
+            setTeacherLaser({
+                x: currentNib.x,
+                y: currentNib.y,
+                active: true,
+                label: 'AI Teacher',
+                action: `Drawing ${type}`
+            });
+
+            if (t < 1) {
+                requestAnimationFrame(frame);
+            } else {
+                // Finalize: commit crisp vector shape to active canvas
+                setTeacherLiveDrawing(null);
+                setPageShapeObjects(prev => ({
+                    ...prev,
+                    [currentPage]: [...(prev[currentPage] || []), shapeConfig]
+                }));
+                setSelectedShapeIds([shapeConfig.id]);
+                lastActionTargetRef.current = {
+                    shapeIds: [shapeConfig.id],
+                    type: shapeConfig.type,
+                    bounds: { x, y, width: w, height: h }
+                };
+                recentDrawActionsRef.current.push(shapeConfig);
+                saveToHistory();
+
+                setTimeout(() => {
+                    setTeacherLaser(prev => prev ? { ...prev, action: 'Drawn!' } : null);
+                    setTimeout(() => setTeacherLaser(null), 800);
+                    onComplete && onComplete(shapeConfig);
+                }, 80);
+            }
+        };
+
+        requestAnimationFrame(frame);
+    }, [currentPage, saveToHistory]);
+
     // Execute AI-generated native canvas actions (3D models, flowcharts, diagrams, educational lesson boards)
     const executeAiCanvasAction = useCallback((canvasAction, options = {}) => {
         if (!canvasAction || !canvasAction.type) return false;
@@ -10646,8 +11114,149 @@ export default function Whiteboard({
             }
         }
 
+        // 4. Connect Shapes with Teacher Glide & Smart Anchors
+        if (canvasAction.type === 'connect_shapes') {
+            const currentShapes = pageShapeObjects[currentPage] || [];
+            const srcObj = currentShapes.find(s => s.id === canvasAction.sourceId);
+            const tgtObj = currentShapes.find(s => s.id === canvasAction.targetId);
+
+            if (srcObj && tgtObj && srcObj.id !== tgtObj.id) {
+                const sAnchor = canvasAction.sourceAnchor || (srcObj.x <= tgtObj.x ? 'right' : 'bottom');
+                const tAnchor = canvasAction.targetAnchor || (srcObj.x <= tgtObj.x ? 'left' : 'top');
+                const sPt = getAnchorPoint(srcObj, sAnchor);
+                const tPt = getAnchorPoint(tgtObj, tAnchor);
+
+                const newConn = {
+                    id: `conn_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                    type: 'connector',
+                    sourceId: srcObj.id,
+                    sourceAnchor: sAnchor,
+                    sourcePoint: sPt,
+                    targetId: tgtObj.id,
+                    targetAnchor: tAnchor,
+                    targetPoint: tPt,
+                    pathType: canvasAction.connectorType || 'orthogonal',
+                    color: canvasAction.color || '#6366f1',
+                    strokeWidth: 2.5,
+                    arrowEnd: 'arrow',
+                    arrowStart: 'none',
+                    text: canvasAction.label || ''
+                };
+
+                const waypoints = [
+                    { x: sPt.x, y: sPt.y, label: 'AI Teacher', action: 'Hooking source...' },
+                    { x: Math.round((sPt.x + tPt.x) / 2), y: Math.round((sPt.y + tPt.y) / 2), label: 'AI Teacher', action: 'Routing connector...' },
+                    { x: tPt.x, y: tPt.y, label: 'AI Teacher', action: 'Connected!' }
+                ];
+
+                animateTeacherLaserPath(waypoints, 600, null, () => {
+                    setPageShapeObjects(prev => ({
+                        ...prev,
+                        [currentPage]: [...(prev[currentPage] || []), newConn]
+                    }));
+                    setSelectedShapeIds([newConn.id]);
+                    lastActionTargetRef.current = { shapeIds: [newConn.id], type: 'connector', sourceId: srcObj.id, targetId: tgtObj.id };
+                    saveToHistory();
+                    toast.success('Connected shapes on board!', { icon: '🔗' });
+                });
+                return true;
+            }
+        }
+
+        // 5. Draw Shape with Teacher Toolbar Selection & Live Stroke Tracing
+        if (canvasAction.type === 'draw_shape') {
+            const shpType = canvasAction.shapeType || 'circle';
+            const reqColor = canvasAction.color || color || '#6366f1';
+            const initialW = canvasAction.width || (shpType === 'rectangle' ? 180 : 130);
+            const initialH = canvasAction.height || (shpType === 'rectangle' ? 120 : 130);
+
+            const space = findAvailableCanvasSpace(initialW, initialH, canvasAction.preference);
+            const shapeObj = {
+                id: `shp_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                type: shpType,
+                x: space.x,
+                y: space.y,
+                width: space.width,
+                height: space.height,
+                rotation: 0,
+                color: reqColor,
+                strokeWidth: 2.5,
+                strokeStyle: 'solid',
+                text: canvasAction.text || '',
+                fontSize: 16
+            };
+
+            animateTeacherToolbarSelection(shpType, reqColor, () => {
+                animateTeacherDrawStroke(shapeObj, () => {
+                    toast.success(`Drawn ${shpType} on canvas!`, { icon: '✏️' });
+                });
+            });
+            return true;
+        }
+
+        // 6. Move Shape with Teacher Drag Gesture
+        if (canvasAction.type === 'move_shape') {
+            const currentShapes = pageShapeObjects[currentPage] || [];
+            const targetId = canvasAction.targetId || (lastActionTargetRef.current?.shapeIds?.[0]) || (selectedShapeIds?.[0]);
+            const targetObj = currentShapes.find(s => s.id === targetId);
+
+            if (targetObj) {
+                const startX = targetObj.x || 0;
+                const startY = targetObj.y || 0;
+                const finalX = canvasAction.targetX !== undefined ? canvasAction.targetX : (startX + (canvasAction.dx || 0));
+                const finalY = canvasAction.targetY !== undefined ? canvasAction.targetY : (startY + (canvasAction.dy || 0));
+
+                const waypoints = [
+                    { x: startX + targetObj.width / 2, y: startY + targetObj.height / 2, label: 'AI Teacher', action: 'Grabbing object...' },
+                    { x: finalX + targetObj.width / 2, y: finalY + targetObj.height / 2, label: 'AI Teacher', action: 'Moved!' }
+                ];
+
+                animateTeacherLaserPath(waypoints, 450, null, () => {
+                    setPageShapeObjects(prev => ({
+                        ...prev,
+                        [currentPage]: prev[currentPage].map(s => s.id === targetId ? { ...s, x: finalX, y: finalY } : s)
+                    }));
+                    lastActionTargetRef.current = { shapeIds: [targetId], type: targetObj.type, bounds: { x: finalX, y: finalY, width: targetObj.width, height: targetObj.height } };
+                    saveToHistory();
+                    toast.success('Moved object!', { icon: '✋' });
+                });
+                return true;
+            }
+        }
+
+        // 7. Resize Shape with Smooth Transition
+        if (canvasAction.type === 'resize_shape') {
+            const currentShapes = pageShapeObjects[currentPage] || [];
+            const targetId = canvasAction.targetId || (lastActionTargetRef.current?.shapeIds?.[0]) || (selectedShapeIds?.[0]);
+            const targetObj = currentShapes.find(s => s.id === targetId);
+
+            if (targetObj) {
+                const scale = canvasAction.scale || 1.25;
+                const newW = Math.round(targetObj.width * scale);
+                const newH = Math.round(targetObj.height * scale);
+                const newX = Math.round(targetObj.x - (newW - targetObj.width) / 2);
+                const newY = Math.round(targetObj.y - (newH - targetObj.height) / 2);
+
+                setPageShapeObjects(prev => ({
+                    ...prev,
+                    [currentPage]: prev[currentPage].map(s => s.id === targetId ? { ...s, x: newX, y: newY, width: newW, height: newH } : s)
+                }));
+                lastActionTargetRef.current = { shapeIds: [targetId], type: targetObj.type, bounds: { x: newX, y: newY, width: newW, height: newH } };
+                saveToHistory();
+                toast.success(`Resized object by ${Math.round(scale * 100)}%!`, { icon: '📐' });
+                return true;
+            }
+        }
+
+        // 8. Screenshot Action
+        if (canvasAction.type === 'screenshot') {
+            handleScreenshot();
+            toast.success('📸 Captured Whiteboard Screenshot!', { icon: '📸' });
+            return true;
+        }
+
         return false;
-    }, [panOffset, zoomLevel, currentPage, setThreeDObjects, setSelected3DIds, setPageShapeObjects, setTool, setSelectedShapeIds, saveToHistory]);
+    }, [panOffset, zoomLevel, currentPage, setThreeDObjects, setSelected3DIds, setPageShapeObjects, setTool, setSelectedShapeIds, saveToHistory, pageShapeObjects, color, findAvailableCanvasSpace, animateTeacherToolbarSelection, animateTeacherDrawStroke, animateTeacherLaserPath, selectedShapeIds, handleScreenshot]);
 
     // Helper: Convert AI step-by-step text/markdown into an interactive flowchart diagram action
     const convertSolutionToFlowchart = useCallback((solution) => {
@@ -10851,6 +11460,171 @@ export default function Whiteboard({
             }
         };
 
+        // Record interaction in short-term conversation history for follow-up reference resolution
+        conversationHistoryRef.current.push({ role: 'user', content: rawText });
+        if (conversationHistoryRef.current.length > 12) {
+            conversationHistoryRef.current = conversationHistoryRef.current.slice(-12);
+        }
+
+        // 0.1 Screenshot & Board Capture Voice Command
+        if (
+            txt.includes('screenshot') ||
+            txt.includes('take screenshot') ||
+            txt.includes('capture board') ||
+            txt.includes('capture whiteboard') ||
+            txt.includes('take snapshot') ||
+            txt.includes('screen capture') ||
+            txt === 'screenshot' ||
+            txt === 'capture'
+        ) {
+            try {
+                await handleScreenshot();
+                toast.success('📸 Captured Whiteboard Screenshot!', { icon: '📸' });
+                narrateAction('Captured high-resolution whiteboard screenshot.', '📸 Screenshot Captured');
+                conversationHistoryRef.current.push({ role: 'assistant', content: 'Captured whiteboard screenshot' });
+            } catch (err) {
+                console.error('Screenshot error:', err);
+                toast.error('Failed to capture screenshot');
+            }
+            return;
+        }
+
+        // 0.2 Connect Two Lower / Specific Shapes (Spatial Awareness)
+        if (
+            (txt.includes('connect') || txt.includes('link')) &&
+            (txt.includes('lower') || txt.includes('bottom') || txt.includes('lowest')) &&
+            (txt.includes('circle') || txt.includes('shape') || txt.includes('node'))
+        ) {
+            const currentShapes = (pageShapeObjects[currentPage] || []);
+            const circles = currentShapes.filter(s => s.type === 'circle' || s.type === 'ellipse' || s.type === 'oval');
+            const pool = circles.length >= 2 ? circles : currentShapes.filter(s => s.type !== 'connector');
+            if (pool.length >= 2) {
+                const sortedByYDesc = [...pool].sort((a, b) => {
+                    const cyA = (a.y || 0) + (a.height || 80) / 2;
+                    const cyB = (b.y || 0) + (b.height || 80) / 2;
+                    return cyB - cyA; // Lowest (highest Y) first
+                });
+                const s1 = sortedByYDesc[0];
+                const s2 = sortedByYDesc[1];
+                await executeAiCanvasAction({
+                    type: 'connect_shapes',
+                    sourceId: s1.id,
+                    targetId: s2.id,
+                    connectionType: 'curved',
+                    label: 'Connected'
+                });
+                narrateAction('Connected the two lower shapes with a smart connector.', '🔗 Connected Lower Shapes');
+                conversationHistoryRef.current.push({ role: 'assistant', content: 'Connected two lower shapes' });
+                return;
+            }
+        }
+
+        // 0.3 Dynamic Re-Correction: Relative Movement ("move it to the right / up / down")
+        if (
+            (txt.includes('move it') || txt.includes('shift it') || txt.includes('drag it') || txt.startsWith('move right') || txt.startsWith('move left') || txt.startsWith('move up') || txt.startsWith('move down')) ||
+            ((txt.includes('it') || txt.includes('that')) && (txt.includes('move') || txt.includes('shift')))
+        ) {
+            const currentShapes = (pageShapeObjects[currentPage] || []);
+            const targetId = (lastActionTargetRef.current?.shapeIds?.[0]) || (selectedShapeIds?.[0]);
+            if (targetId && currentShapes.some(s => s.id === targetId)) {
+                let dx = 0, dy = 0;
+                if (txt.includes('right')) dx = 140;
+                else if (txt.includes('left')) dx = -140;
+                if (txt.includes('up') || txt.includes('higher') || txt.includes('top')) dy = -140;
+                else if (txt.includes('down') || txt.includes('lower') || txt.includes('bottom')) dy = 140;
+
+                await executeAiCanvasAction({
+                    type: 'move_shape',
+                    targetId,
+                    dx,
+                    dy
+                });
+                narrateAction(`Moved object ${dx > 0 ? 'right' : dx < 0 ? 'left' : ''} ${dy < 0 ? 'up' : dy > 0 ? 'down' : ''}.`, '↔️ Moved Object');
+                conversationHistoryRef.current.push({ role: 'assistant', content: `Moved object` });
+                return;
+            }
+        }
+
+        // 0.4 Dynamic Re-Correction: Relative Sizing ("make it bigger / smaller / shrink it")
+        if (
+            txt.includes('make it bigger') ||
+            txt.includes('make it smaller') ||
+            txt.includes('make it larger') ||
+            txt.includes('shrink it') ||
+            txt.includes('enlarge it') ||
+            txt.includes('scale it up') ||
+            txt.includes('scale it down')
+        ) {
+            const currentShapes = (pageShapeObjects[currentPage] || []);
+            const targetId = (lastActionTargetRef.current?.shapeIds?.[0]) || (selectedShapeIds?.[0]);
+            if (targetId && currentShapes.some(s => s.id === targetId)) {
+                const isGrow = txt.includes('bigger') || txt.includes('larger') || txt.includes('enlarge') || txt.includes('scale it up');
+                const scale = isGrow ? 1.35 : 0.72;
+                await executeAiCanvasAction({
+                    type: 'resize_shape',
+                    targetId,
+                    scale
+                });
+                narrateAction(`Scaled object ${isGrow ? 'larger' : 'smaller'}.`, '📐 Resized Object');
+                conversationHistoryRef.current.push({ role: 'assistant', content: `Resized object` });
+                return;
+            }
+        }
+
+        // 0.5 Dynamic Re-Correction: Color Adjustment ("actually make that blue", "make it red")
+        const colorMatch = txt.match(/(?:actually\s+)?(?:make it|make that|turn it|color it|set color to)\s+(blue|red|green|yellow|orange|purple|pink|cyan|black|white|emerald|violet)/);
+        if (colorMatch) {
+            const currentShapes = (pageShapeObjects[currentPage] || []);
+            const targetId = (lastActionTargetRef.current?.shapeIds?.[0]) || (selectedShapeIds?.[0]);
+            if (targetId && currentShapes.some(s => s.id === targetId)) {
+                const colorName = colorMatch[1];
+                const colorPalette = {
+                    blue: '#3b82f6', red: '#ef4444', green: '#10b981',
+                    yellow: '#f59e0b', orange: '#f97316', purple: '#8b5cf6',
+                    pink: '#ec4899', cyan: '#06b6d4', black: '#1f2937',
+                    white: '#ffffff', emerald: '#10b981', violet: '#7c3aed'
+                };
+                const hex = colorPalette[colorName] || colorName;
+                setShapeObjects(prev => prev.map(s => s.id === targetId ? { ...s, color: hex, fillColor: `${hex}22` } : s));
+                saveToHistory();
+                narrateAction(`Changed color to ${colorName}.`, `🎨 Color: ${colorName}`);
+                conversationHistoryRef.current.push({ role: 'assistant', content: `Changed color to ${colorName}` });
+                return;
+            }
+        }
+
+        // 0.6 Spatial Placement: "draw [shape] where laser is" / "draw [shape] right here" / "below the square"
+        if (
+            (txt.includes('where laser is') || txt.includes('at laser') || txt.includes('right here') || txt.includes('at pointer') || txt.includes('below') || txt.includes('above') || txt.includes('next to')) &&
+            (txt.includes('draw') || txt.includes('create') || txt.includes('add') || txt.includes('circle') || txt.includes('square') || txt.includes('rectangle') || txt.includes('diamond') || txt.includes('triangle'))
+        ) {
+            let shpType = 'rectangle';
+            if (txt.includes('circle')) shpType = 'circle';
+            else if (txt.includes('diamond')) shpType = 'diamond';
+            else if (txt.includes('triangle')) shpType = 'triangle';
+            else if (txt.includes('square') || txt.includes('box')) shpType = 'rectangle';
+
+            let preference = null;
+            if (txt.includes('laser') || txt.includes('right here') || txt.includes('pointer')) {
+                preference = 'at_laser';
+            } else if (txt.includes('below')) {
+                preference = 'below';
+            } else if (txt.includes('above')) {
+                preference = 'above';
+            } else if (txt.includes('right') || txt.includes('next to')) {
+                preference = 'right';
+            }
+
+            await executeAiCanvasAction({
+                type: 'draw_shape',
+                shapeType: shpType,
+                preference
+            });
+            narrateAction(`Drawn ${shpType} on canvas.`, `✏️ Drew ${shpType}`);
+            conversationHistoryRef.current.push({ role: 'assistant', content: `Drew ${shpType}` });
+            return;
+        }
+
         // Property Modification Engine: handles relative deltas and absolute targets
         const applyPropertyModification = (property, mode, rawValue) => {
             const isRelative = mode === 'relative_delta' || mode === 'relative';
@@ -11010,7 +11784,8 @@ export default function Whiteboard({
                     speechText: rawText,
                     context: {
                         module: 'whiteboard',
-                        currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard'
+                        currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard',
+                        ...getWhiteboardSpatialContext()
                     }
                 });
                 const data = response?.data?.data;
@@ -12508,7 +13283,8 @@ export default function Whiteboard({
                     speechText: rawText,
                     context: {
                         module: 'whiteboard',
-                        currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard'
+                        currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard',
+                        ...getWhiteboardSpatialContext()
                     }
                 });
 
@@ -12516,6 +13292,11 @@ export default function Whiteboard({
                 setIsAiThinking(false);
 
                 if (data?.recognized) {
+                    // Record assistant response in conversation history
+                    if (data.speechResponse || data.spokenFeedback) {
+                        conversationHistoryRef.current.push({ role: 'assistant', content: data.speechResponse || data.spokenFeedback });
+                    }
+
                     // 1. Property Modification returned by LLM (e.g. for "whittle down perimeter by 2 units")
                     if (data.type === 'property_modification' || data.intent === 'modify_property') {
                         const res = applyPropertyModification(data.property, data.mode, data.value);
@@ -12526,8 +13307,13 @@ export default function Whiteboard({
                         return;
                     }
 
-                    // 2. Generative canvas action (3D model, flowchart, diagram)
+                    // 2. Generative canvas action (3D model, flowchart, diagram, screenshot)
                     if (data.type === 'canvas_generation' || (data.canvasAction && data.canvasAction.type && data.canvasAction.type !== 'insert_solution_card')) {
+                        if (data.canvasAction.type === 'screenshot') {
+                            await handleScreenshot();
+                            narrateAction('Captured whiteboard screenshot.', '📸 Screenshot Captured');
+                            return;
+                        }
                         executeAiCanvasAction(data.canvasAction);
                         setAiSolutionData({
                             question: rawText,
@@ -12574,7 +13360,7 @@ export default function Whiteboard({
 
         setVoiceFeedback(`Unrecognized: "${rawText}" - say "help" for commands`);
         toast(`Command not recognized: "${rawText}"`, { icon: '❓' });
-    }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, duplicateCurrentPage, deletePage, loadPage, currentPage, totalPages, selectedShapeIds, selectedTextIds, selectedImageId, selectedImageIds, selected3DIds, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, setBgPattern, setBgColor, onToggleFullscreen, handleInsertGraph, handleInsertDateTime, handleDelete, handleCopy, handlePaste, handleDuplicate, handleToggleLock, handleGroup, handleUngroup, handleBringToFront, handleSendToBack, handleAlign, handleDistribute, handleFlipSelection, handleRemoveImageBackground, updateSelectedImageFilters, setIsAutoShape, setIsOcrActive, handleConvertSelectedInkToText, setBrushType, setPenMode, setSparkleTheme, setPenOpacity, setPressureSensitivity, setHighlighterColor, setEraserMode, setEraserSize, setSelectMode, setIsSelectionInfiniteCloner, setLineType, setShowMinimap, setShowClipboard, setIsChatOpen, setShowPermissions, aiSpeechEnabled, speakAiResponse, executeAiCanvasAction]);
+    }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, duplicateCurrentPage, deletePage, loadPage, currentPage, totalPages, selectedShapeIds, selectedTextIds, selectedImageId, selectedImageIds, selected3DIds, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, setBgPattern, setBgColor, onToggleFullscreen, handleInsertGraph, handleInsertDateTime, handleDelete, handleCopy, handlePaste, handleDuplicate, handleToggleLock, handleGroup, handleUngroup, handleBringToFront, handleSendToBack, handleAlign, handleDistribute, handleFlipSelection, handleRemoveImageBackground, updateSelectedImageFilters, setIsAutoShape, setIsOcrActive, handleConvertSelectedInkToText, setBrushType, setPenMode, setSparkleTheme, setPenOpacity, setPressureSensitivity, setHighlighterColor, setEraserMode, setEraserSize, setSelectMode, setIsSelectionInfiniteCloner, setLineType, setShowMinimap, setShowClipboard, setIsChatOpen, setShowPermissions, aiSpeechEnabled, speakAiResponse, executeAiCanvasAction, handleScreenshot, getWhiteboardSpatialContext]);
 
     const toggleVoiceListening = useCallback(() => {
         const SpeechRecognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -18795,6 +19581,66 @@ export default function Whiteboard({
                         >
                             <div className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-75" />
                             <div className="absolute inset-1 rounded-full bg-red-500 shadow-lg shadow-red-500/50" />
+                        </div>
+                    )}
+
+                    {/* Simulated Teacher Live Drawing SVG Stroke Overlay */}
+                    {teacherLiveDrawing && teacherLiveDrawing.active && (
+                        <svg className="absolute inset-0 w-full h-full pointer-events-none z-45 overflow-visible">
+                            <path
+                                d={teacherLiveDrawing.currentPathD}
+                                fill="none"
+                                stroke={teacherLiveDrawing.color || '#6366f1'}
+                                strokeWidth={teacherLiveDrawing.strokeWidth || 3}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeDasharray={teacherLiveDrawing.strokeStyle === 'dashed' ? '8,8' : teacherLiveDrawing.strokeStyle === 'dotted' ? '3,6' : undefined}
+                                className="filter drop-shadow-md"
+                            />
+                        </svg>
+                    )}
+
+                    {/* Simulated Teacher Laser Pointer Trail & Interactive Pointer Nib */}
+                    {teacherLaserTrail && teacherLaserTrail.length > 0 && (
+                        <svg className="absolute inset-0 w-full h-full pointer-events-none z-50 overflow-visible">
+                            {teacherLaserTrail.map((p, idx) => (
+                                <circle
+                                    key={idx}
+                                    cx={p.x}
+                                    cy={p.y}
+                                    r={Math.max(1.5, ((idx + 1) / teacherLaserTrail.length) * 3.5)}
+                                    fill="#6366f1"
+                                    opacity={((idx + 1) / teacherLaserTrail.length) * 0.7}
+                                />
+                            ))}
+                        </svg>
+                    )}
+
+                    {teacherLaser && (
+                        <div
+                            className="absolute pointer-events-none z-50 flex items-center transition-all duration-75"
+                            style={{
+                                left: teacherLaser.x,
+                                top: teacherLaser.y,
+                                transform: 'translate(-50%, -50%)'
+                            }}
+                        >
+                            {/* Pulsing teacher laser emitter */}
+                            <div className="relative w-6 h-6 flex items-center justify-center">
+                                <div className="absolute inset-0 rounded-full bg-indigo-500 animate-ping opacity-75" />
+                                <div className="w-3.5 h-3.5 rounded-full bg-indigo-500 border-2 border-white shadow-lg shadow-indigo-500/80 ring-2 ring-indigo-300" />
+                                <div className="absolute -inset-1 rounded-full border border-indigo-400/50 animate-pulse" />
+                            </div>
+                            {/* Teacher label / action badge */}
+                            <div className="ml-2 px-2.5 py-1 bg-slate-900/95 text-white text-[11px] font-bold rounded-lg shadow-xl border border-indigo-500/50 backdrop-blur-md flex items-center gap-1.5 whitespace-nowrap">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                                <span className="text-indigo-300 font-semibold">{teacherLaser.label || '👨‍🏫 AI Teacher'}</span>
+                                {teacherLaser.action && (
+                                    <span className="text-slate-300 font-normal border-l border-slate-700 pl-1.5">
+                                        {teacherLaser.action}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     )}
 

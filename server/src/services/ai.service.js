@@ -1471,18 +1471,30 @@ Translate the user's spoken input into the single best standardized Whiteboard v
     - "font bold" | "font italic" | "font underline" | "font size [N]" | "font [sans|serif|mono|cursive]"
 
 11. PANELS, MODALS & TOOLS:
-    - "help" | "export" | "tasks" | "template" | "timer" | "spotlight" | "curtain" | "equation" | "math solver" | "3d" | "graph" | "game" | "record" | "insert image" | "media" | "datetime" | "minimap" | "clipboard" | "chat" | "permissions"
+    - "help" | "export" | "take screenshot" | "screenshot" | "capture board" | "snapshot" | "tasks" | "template" | "timer" | "spotlight" | "curtain" | "equation" | "math solver" | "3d" | "graph" | "game" | "record" | "insert image" | "media" | "datetime" | "minimap" | "clipboard" | "chat" | "permissions"
 
 12. CLIPBOARD & OBJECT ACTIONS:
     - "delete" | "copy" | "paste" | "duplicate" | "lock" | "group" | "ungroup" | "bring to front" | "send to back"
 
-13. VOICE CONTROLS:
-15. GENERATIVE DRAWING, 3D MODELS, FLOWCHARTS & VISUAL DIAGRAMS:
+13. SPATIAL CONNECTIONS & RE-CORRECTIONS:
+    - "connect [shape 1] to [shape 2]" (e.g. "connect the two lower circles", "connect the top box to the bottom circle")
+    - "move it [direction]" | "move [shape] [direction]" (e.g. "move it higher", "move the square to the right")
+    - "make it [bigger|smaller]" | "shrink it [by half|N%]" | "actually make it [color]" | "undo that and draw a [shape] instead"
+
+14. GENERATIVE DRAWING, 3D MODELS, FLOWCHARTS & VISUAL DIAGRAMS:
     - Insert 3D models: "insert 3D earth", "3D atom", "3D DNA", "3D rocket", "3D router", "3D laptop", "3D solar system", "insert 3D sphere/cube/pyramid"
     - Draw flowcharts: "draw flowchart for login", "draw water cycle", "draw algorithm flowchart", "draw decision tree"
     - Draw diagrams: "draw Venn diagram", "draw coordinate axes", "draw triangle with sides 3 4 5 and explain Pythagoras"
     - Full educational boards: "explain structure of atom and draw it", "explain photosynthesis with diagram", "explain earth layers in 3d"
 
+${context.shapes && context.shapes.length > 0 ? `CURRENT ACTIVE OBJECTS ON WHITEBOARD:
+${JSON.stringify(context.shapes.slice(0, 30))}
+` : ''}
+${context.viewport ? `BOARD VIEWPORT & BOUNDS: ${JSON.stringify(context.viewport)}\n` : ''}
+${context.conversationHistory && context.conversationHistory.length > 0 ? `RECENT CONVERSATION TURNS:
+${JSON.stringify(context.conversationHistory.slice(-5))}
+` : ''}
+${context.lastActionTarget ? `LAST TARGETED OBJECT: ${JSON.stringify(context.lastActionTarget)}\n` : ''}
 Spoken input: "${text}"
 
 Determine whether the user is issuing a canvas command, adjusting an object property, requesting a generative visual/3D drawing, OR asking an educational/cognitive question:
@@ -2253,6 +2265,11 @@ If completely gibberish:
                 intent = 'export_modal';
                 spokenFeedback = 'Opened Export dialog';
             }
+            else if (low.includes('screenshot') || low.includes('screen shot') || low.includes('capture board') || low.includes('capture screen') || low.includes('snapshot')) {
+                translatedCommand = 'take screenshot';
+                intent = 'screenshot';
+                spokenFeedback = 'Capturing Whiteboard Screenshot';
+            }
             else if (low.includes('timer') || low.includes('stopwatch') || low.includes('countdown')) {
                 translatedCommand = 'timer';
                 intent = 'timer';
@@ -2267,6 +2284,46 @@ If completely gibberish:
                 translatedCommand = 'equation';
                 intent = 'equation_editor';
                 spokenFeedback = 'Opened LaTeX Equation Editor';
+            }
+
+            // Spatial connector fast resolution: e.g. "connect the two lower circles"
+            if (context.shapes && context.shapes.length >= 2 && low.includes('connect')) {
+                const shapes = context.shapes;
+                let targetType = 'circle';
+                if (low.includes('square')) targetType = 'rectangle';
+                else if (low.includes('diamond')) targetType = 'diamond';
+                else if (low.includes('terminator')) targetType = 'terminator';
+                else if (low.includes('box') || low.includes('rect')) targetType = 'rectangle';
+
+                let matched = shapes.filter(s => s.type === targetType || (targetType === 'rectangle' && (s.type === 'rectangle' || s.type === 'rounded_rect')));
+                if (matched.length < 2) matched = shapes.filter(s => s.type !== 'connector' && s.type !== 'path');
+
+                if (matched.length >= 2) {
+                    if (low.includes('lower') || low.includes('bottom')) {
+                        matched.sort((a, b) => (b.center?.y || b.y || 0) - (a.center?.y || a.y || 0));
+                    } else if (low.includes('upper') || low.includes('top')) {
+                        matched.sort((a, b) => (a.center?.y || a.y || 0) - (b.center?.y || b.y || 0));
+                    }
+                    const s1 = matched[0];
+                    const s2 = matched[1];
+                    const leftObj = (s1.center?.x || s1.x || 0) <= (s2.center?.x || s2.x || 0) ? s1 : s2;
+                    const rightObj = leftObj === s1 ? s2 : s1;
+                    return {
+                        recognized: true,
+                        type: 'canvas_generation',
+                        intent: 'connect_shapes',
+                        speechResponse: `Connecting the two shapes with a smart connector.`,
+                        spokenFeedback: 'Connected Shapes',
+                        canvasAction: {
+                            type: 'connect_shapes',
+                            sourceId: leftObj.id,
+                            targetId: rightObj.id,
+                            sourceAnchor: 'right',
+                            targetAnchor: 'left',
+                            connectorType: 'orthogonal'
+                        }
+                    };
+                }
             }
 
             if (translatedCommand) {
