@@ -216,24 +216,24 @@ export default function WhiteboardMathTablet({
         }
         abortControllerRef.current = new AbortController();
 
-        // Render black ink on pure white background for optimal OCR recognition
+        // Render high-resolution black ink on pure white background for optimal OCR recognition
         const offscreen = document.createElement('canvas');
-        offscreen.width = 600;
-        offscreen.height = 240;
+        offscreen.width = 800;
+        offscreen.height = 300;
         const octx = offscreen.getContext('2d');
         octx.fillStyle = '#ffffff';
-        octx.fillRect(0, 0, 600, 240);
+        octx.fillRect(0, 0, 800, 300);
 
         octx.lineCap = 'round';
         octx.lineJoin = 'round';
         octx.strokeStyle = '#000000';
-        octx.lineWidth = 4;
+        octx.lineWidth = 4.5;
 
         activeStrokes.forEach(points => {
             if (!points || points.length === 0) return;
             if (points.length === 1) {
                 octx.beginPath();
-                octx.arc(points[0].x, points[0].y, 2.5, 0, Math.PI * 2);
+                octx.arc(points[0].x, points[0].y, 2.8, 0, Math.PI * 2);
                 octx.fill();
                 return;
             }
@@ -274,14 +274,14 @@ export default function WhiteboardMathTablet({
         }
     }, [strokes, provider]);
 
-    // Schedule debounced auto-recognition after writing stops
+    // Schedule debounced auto-recognition after writing stops (fast 450ms inline turnaround)
     const scheduleAutoRecognition = useCallback((updatedStrokes) => {
         if (debounceTimerRef.current) {
             clearTimeout(debounceTimerRef.current);
         }
         debounceTimerRef.current = setTimeout(() => {
             triggerRecognition(updatedStrokes);
-        }, 1100);
+        }, 450);
     }, [triggerRecognition]);
 
     // Pointer event coordinates relative to canvas
@@ -422,6 +422,42 @@ export default function WhiteboardMathTablet({
         }
     }
 
+    const QUICK_MATH_TEMPLATES = [
+        { label: '∫_a^b', tooltip: 'Definite Integral with Limits: \\int_{0}^{\\infty}', latex: '\\int_{0}^{\\infty} f(x)\\,dx' },
+        { label: '∫', tooltip: 'Indefinite Integral: \\int', latex: '\\int f(x)\\,dx' },
+        { label: '∬', tooltip: 'Double Integral: \\iint', latex: '\\iint_{D} f(x,y)\\,dx\\,dy' },
+        { label: '∮', tooltip: 'Contour Closed Integral: \\oint', latex: '\\oint_{C} \\vec{F}\\cdot d\\vec{r}' },
+        { label: '∑_i^n', tooltip: 'Summation with Bounds: \\sum_{i=1}^{n}', latex: '\\sum_{i=1}^{n} x_i' },
+        { label: 'lim', tooltip: 'Limit: \\lim_{x \\to 0}', latex: '\\lim_{x \\to 0} f(x)' },
+        { label: 'a/b', tooltip: 'Fraction: \\frac{a}{b}', latex: '\\frac{a}{b}' },
+        { label: '√x', tooltip: 'Square Root: \\sqrt{x}', latex: '\\sqrt{x}' },
+        { label: 'xⁿ', tooltip: 'Power / Exponent: x^n', latex: 'x^2' },
+        { label: 'dx', tooltip: 'Differential dx', latex: '\\,dx' },
+        { label: '∞', tooltip: 'Infinity', latex: '\\infty' },
+        { label: 'π', tooltip: 'Pi', latex: '\\pi' },
+        { label: 'θ', tooltip: 'Theta', latex: '\\theta' },
+        { label: '±', tooltip: 'Plus-Minus', latex: '\\pm' }
+    ];
+
+    const handleInsertTemplate = (templateLatex) => {
+        const next = activeFormula ? `${activeFormula} ${templateLatex}` : templateLatex;
+        setRecognizedLatex(next);
+        setEditableLatex(next);
+    };
+
+    const handleSetIntegralLimits = (lower, upper) => {
+        let current = activeFormula || '\\int f(x)\\,dx';
+        if (current.includes('\\int_{')) {
+            current = current.replace(/\\int_\{[^}]*\}\^\{[^}]*\}/g, `\\int_{${lower}}^{${upper}}`);
+        } else if (current.includes('\\int')) {
+            current = current.replace(/\\int/g, `\\int_{${lower}}^{${upper}}`);
+        } else {
+            current = `\\int_{${lower}}^{${upper}} ` + current;
+        }
+        setRecognizedLatex(current);
+        setEditableLatex(current);
+    };
+
     return (
         <div 
             ref={containerRef}
@@ -429,7 +465,7 @@ export default function WhiteboardMathTablet({
             style={{ 
                 left: `${position.x}px`, 
                 top: `${position.y}px`, 
-                width: '630px',
+                width: '680px',
                 boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.7)'
             }}
         >
@@ -445,7 +481,7 @@ export default function WhiteboardMathTablet({
                         Σ
                     </div>
                     <span className="font-semibold text-xs tracking-wide text-white">Math Input Tablet</span>
-                    <span className="text-[10px] text-slate-400 bg-slate-700/60 px-1.5 py-0.5 rounded font-mono">Windows MIP</span>
+                    <span className="text-[10px] text-slate-400 bg-slate-700/60 px-1.5 py-0.5 rounded font-mono">Windows MIP Style</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                     <button 
@@ -459,7 +495,7 @@ export default function WhiteboardMathTablet({
             </div>
 
             {/* Live KaTeX Recognition Ribbon */}
-            <div className="bg-slate-950/80 px-4 py-2.5 border-b border-slate-800 flex flex-col gap-1.5 min-h-[70px]">
+            <div className="bg-slate-950/80 px-4 py-2 border-b border-slate-800 flex flex-col gap-1 min-h-[64px]">
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                     <div className="flex items-center gap-1.5 font-medium">
                         <Eye className="w-3.5 h-3.5 text-indigo-400" />
@@ -467,7 +503,7 @@ export default function WhiteboardMathTablet({
                         {isRecognizing && (
                             <span className="flex items-center gap-1 text-indigo-400 ml-2 animate-pulse text-[10px]">
                                 <Loader2 className="w-3 h-3 animate-spin" />
-                                Recognizing handwriting...
+                                Converting handwriting inline...
                             </span>
                         )}
                     </div>
@@ -501,7 +537,7 @@ export default function WhiteboardMathTablet({
                         autoFocus
                     />
                 ) : (
-                    <div className="flex items-center justify-center min-h-[40px] overflow-x-auto py-1">
+                    <div className="flex items-center justify-center min-h-[38px] overflow-x-auto py-0.5">
                         {activeFormula ? (
                             <div 
                                 className="text-white text-lg tracking-wide"
@@ -514,6 +550,37 @@ export default function WhiteboardMathTablet({
                         )}
                     </div>
                 )}
+            </div>
+
+            {/* Integration Limits Preset Strip (appears dynamically when an integral is active) */}
+            {activeFormula && activeFormula.includes('\\int') && (
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-950/30 border-b border-amber-500/20 text-xs">
+                    <span className="text-[10px] text-amber-300 font-semibold shrink-0">Integration Limits:</span>
+                    <div className="flex items-center gap-1 overflow-x-auto custom-scrollbar">
+                        <button type="button" onClick={() => handleSetIntegralLimits('0', '\\infty')} className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono border border-slate-700 transition">0 → ∞</button>
+                        <button type="button" onClick={() => handleSetIntegralLimits('-\\infty', '\\infty')} className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono border border-slate-700 transition">-∞ → ∞</button>
+                        <button type="button" onClick={() => handleSetIntegralLimits('0', '1')} className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono border border-slate-700 transition">0 → 1</button>
+                        <button type="button" onClick={() => handleSetIntegralLimits('-1', '1')} className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono border border-slate-700 transition">-1 → 1</button>
+                        <button type="button" onClick={() => handleSetIntegralLimits('0', '2\\pi')} className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono border border-slate-700 transition">0 → 2π</button>
+                        <button type="button" onClick={() => handleSetIntegralLimits('a', 'b')} className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono border border-slate-700 transition">a → b</button>
+                    </div>
+                </div>
+            )}
+
+            {/* Quick Math Templates Toolbar (Windows MIP Style Structure Bar) */}
+            <div className="px-3 py-1 bg-slate-950/90 border-b border-slate-800 flex items-center gap-1 overflow-x-auto custom-scrollbar">
+                <span className="text-[10px] text-slate-400 font-semibold mr-1 shrink-0">Symbols:</span>
+                {QUICK_MATH_TEMPLATES.map((tmpl, idx) => (
+                    <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleInsertTemplate(tmpl.latex)}
+                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white text-[11px] font-serif border border-slate-700/80 transition shrink-0"
+                        title={tmpl.tooltip}
+                    >
+                        {tmpl.label}
+                    </button>
+                ))}
             </div>
 
             {/* Handwriting Surface & Side Toolbar */}

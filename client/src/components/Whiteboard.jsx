@@ -12306,6 +12306,7 @@ export default function Whiteboard({
                     { id: 'line', icon: lineType.startsWith('connector') ? Waypoints : (lineType === 'arrow' ? MoveRight : Minus), label: 'Lines & Arrows', important: false },
                     { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : (shapeType === 'parallelogram' ? ParallelogramIcon : RectangleHorizontal))), label: 'Shapes', important: true },
                     { id: 'text', icon: Type, label: 'Text (T)', important: true },
+                    { id: 'math_tablet', icon: Calculator, label: 'Math Input Tablet (Windows MIP)', important: true },
                     { id: 'image', icon: ImageIcon, label: 'Insert Image', important: false },
                     { id: 'media', icon: Film, label: 'Media & Documents (PDF, Video, Audio, Record, Web)', important: true },
                     { id: 'domain_3d', icon: Box, label: '3D Objects & Domain Library', important: true },
@@ -12375,6 +12376,10 @@ export default function Whiteboard({
                             <div key={t.id} className="relative">
                                 <button
                                     onClick={() => {
+                                        if (t.id === 'math_tablet') {
+                                            setShowMathTablet(true);
+                                            return;
+                                        }
                                         if (t.id === 'equation') {
                                             setEquationInitialLatex('\\int_{0}^{\\infty} x^2 e^{-x}\\,dx = 2');
                                             setEditingEquationId(null);
@@ -12469,6 +12474,7 @@ export default function Whiteboard({
                                     }}
                                     className={`p-1 rounded-full transition-colors flex items-center justify-center ${
                                         tool === t.id ||
+                                        (t.id === 'math_tablet' && showMathTablet) ||
                                         (t.id === 'recorder' && showRecorder) ||
                                         (t.id === 'timer' && showClassroomTimer) ||
                                         (t.id === 'spotlight' && isSpotlightActive) ||
@@ -19127,6 +19133,10 @@ export default function Whiteboard({
             <WhiteboardEquationEditor
                 isOpen={showEquationModal}
                 initialLatex={equationInitialLatex}
+                onOpenTablet={() => {
+                    setShowEquationModal(false);
+                    setShowMathTablet(true);
+                }}
                 onClose={() => {
                     setShowEquationModal(false);
                     setEditingEquationId(null);

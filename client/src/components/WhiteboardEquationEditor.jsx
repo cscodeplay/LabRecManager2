@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import katex from 'katex';
-import { X, Check, Calculator, Trash2, HelpCircle, ArrowLeft, Sparkles } from 'lucide-react';
+import { X, Check, Calculator, Trash2, HelpCircle, ArrowLeft, Sparkles, Pencil } from 'lucide-react';
 
 export const SYMBOL_CATEGORIES = [
     {
@@ -146,6 +146,7 @@ export default function WhiteboardEquationEditor({
     initialLatex = '',
     onInsert,
     onClose,
+    onOpenTablet,
     position = { x: 300, y: 150 }
 }) {
     const [latex, setLatex] = useState(initialLatex || '');
@@ -227,13 +228,28 @@ export default function WhiteboardEquationEditor({
                             Math Equation Editor
                         </span>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-700/60 transition"
-                        title="Close Editor (Escape)"
-                    >
-                        <X size={15} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {onOpenTablet && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onOpenTablet(latex);
+                                }}
+                                className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold bg-amber-600/25 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/30 transition shadow-xs"
+                                title="Switch to Windows Math Input Tablet (Handwrite inline math & integrals)"
+                            >
+                                <Pencil size={12} />
+                                <span>Handwrite Tablet</span>
+                            </button>
+                        )}
+                        <button
+                            onClick={onClose}
+                            className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-700/60 transition"
+                            title="Close Editor (Escape)"
+                        >
+                            <X size={15} />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Categorized Symbol Tabs */}

@@ -6492,17 +6492,37 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
         }
 
         const dataUrl = `data:${mimeType};base64,${rawBase64}`;
-        const systemPrompt = `You are a specialized handwriting and mathematical recognition engine, like Windows Math Input Panel and Apple Scribble.
-Analyze the handwritten ink strokes in the image and transcribe them accurately.
-If the drawing is mathematical (equations, fractions, variables, formulas, symbols), transcribe into standard LaTeX format.
-If the drawing is text (words, notes, sentences) or a mixture of text and math, transcribe the words clearly and format mathematical expressions in LaTeX (e.g. \\frac{a}{b}, x^2, \\sqrt{x}).
+        const systemPrompt = `You are a high-precision handwriting mathematical OCR engine, modelled after Windows Math Input Panel and Mathpix.
+Analyze the handwritten ink strokes in the image and transcribe them into standard LaTeX format.
 
-RULES:
-1. Return ONLY the transcribed text or LaTeX string.
-2. Do NOT wrap in markdown code blocks (\`\`\`latex or \`\`\`), do NOT enclose in $ or $$, and do NOT provide conversational explanations.
-3. Correctly interpret handwriting words, letters, punctuation, and numbers.
-4. Correctly interpret fractions (\\frac{a}{b}), exponents (x^2), subscripts (a_n), square roots (\\sqrt{...}), integrals (\\int), summations (\\sum), limits (\\lim_{x \\to 0}), greek symbols (\\alpha, \\beta, \\pi, \\theta), matrices, brackets, and operators (+, -, \\times, \\div, \\pm, \\leq, \\geq, \\neq).
-5. If empty or no recognizable writing is drawn, return an empty string "".`;
+CRITICAL MATHEMATICAL TRANSCRIPTION RULES:
+1. INTEGRALS & DEFINITE INTEGRALS WITH LIMITS:
+   - An elongated vertical curve with top and bottom hooks is an INTEGRAL symbol (\\int), NOT the letter 's', 'S', or 'f'.
+   - If there is a number, variable, or symbol near the bottom hook and/or near the top hook, transcribe as a definite integral with limits:
+     e.g., "\\int_{0}^{\\infty} f(x)\\,dx", "\\int_{a}^{b} x^2\\,dx", "\\int_{-1}^{1} (1-x^2)\\,dx", "\\int_{0}^{2\\pi} \\sin(\\theta)\\,d\\theta".
+   - Double integral: "\\iint" or "\\iint_D", Triple integral: "\\iiint", Contour integral: "\\oint" or "\\oint_C".
+   - Always append the differential variable with a small space: "\\,dx", "\\,dy", "\\,dt".
+
+2. SUMMATIONS & PRODUCTS:
+   - A jagged Greek Sigma is a summation: "\\sum_{i=1}^{n}", "\\sum_{k=0}^{\\infty}".
+   - A capital Pi is a product: "\\prod_{i=1}^{n}".
+
+3. LIMITS:
+   - "lim" with an approach condition beneath is a limit: "\\lim_{x \\to 0}", "\\lim_{n \\to \\infty}".
+
+4. FRACTIONS, EXPONENTS, AND RADICALS:
+   - Horizontal bar separating upper and lower terms MUST be a fraction: "\\frac{numerator}{denominator}".
+   - Square root with a roof line: "\\sqrt{expression}", with index: "\\sqrt[n]{x}".
+   - Superscripts and exponents: "x^2", "e^{-x}", "x^{n+1}".
+   - Subscripts: "x_1", "a_n", "v_0".
+
+5. GREEK LETTERS & COMMON OPERATORS:
+   - Recognize \\alpha, \\beta, \\gamma, \\theta, \\pi, \\lambda, \\mu, \\sigma, \\phi, \\omega, \\Delta, \\nabla, \\partial, \\infty, \\pm, \\times, \\div, \\neq, \\leq, \\geq.
+
+OUTPUT RULES:
+- Output ONLY the clean LaTeX string.
+- Do NOT wrap in markdown code blocks (\`\`\`latex ... \`\`\`), do NOT enclose in $ or $$, and do NOT output conversational commentary.
+- If blank or empty, output "".`;
 
         const cleanLatex = (text) => {
             if (!text) return '';
