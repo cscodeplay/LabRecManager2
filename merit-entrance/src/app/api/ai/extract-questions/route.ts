@@ -270,7 +270,7 @@ export async function POST(req: NextRequest) {
         const { images, customPrompt, model: selectedModel } = await req.json();
 
         // Validate model and select provider
-        const geminiModels = ['gemini-1.5-flash', 'gemini-flash-latest', 'gemini-1.5-pro', 'gemini-pro-latest', 'gemini-flash-lite-latest', 'gemini-2.0-flash', 'gemini-2.0-pro-exp-02-05'];
+        const geminiModels = ['gemini-1.5-flash', 'gemini-flash-latest', 'gemini-1.5-pro', 'gemini-pro-latest', 'gemini-flash-lite-latest', 'gemini-3.8-flash', 'gemini-2.0-pro-exp-02-05'];
 
         // Flexible validation: Check prefixes or known lists
         let provider = 'gemini';

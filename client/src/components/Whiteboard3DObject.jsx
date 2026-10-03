@@ -3269,6 +3269,29 @@ export default function Whiteboard3DObject({
                         />
                     ))}
 
+                    {/* Magnetic Connector Hooks for 3D Objects */}
+                    {[
+                        { anchor: 'top', style: { left: '50%', top: -14, transform: 'translate(-50%, -50%)' } },
+                        { anchor: 'bottom', style: { left: '50%', bottom: -14, transform: 'translate(-50%, 50%)' } },
+                        { anchor: 'left', style: { left: -14, top: '50%', transform: 'translate(-50%, -50%)' } },
+                        { anchor: 'right', style: { right: -14, top: '50%', transform: 'translate(50%, -50%)' } },
+                        { anchor: 'center', style: { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' } },
+                    ].map(({ anchor, style }) => (
+                        <div
+                            key={"hook-"+anchor}
+                            className="shape-magnetic-hook absolute w-3.5 h-3.5 rounded-full bg-blue-500 border-2 border-white shadow-md hover:bg-blue-600 hover:scale-125 transition-all z-[90] flex items-center justify-center cursor-crosshair group/hook"
+                            style={{ ...style, pointerEvents: 'auto' }}
+                            title={`Connect from ${anchor.toUpperCase()} hook`}
+                            onPointerDown={(e) => {
+                                // Since this is a self-contained component, we emit a custom event to Whiteboard.jsx 
+                                // that the hook was dragged. Whiteboard.jsx will listen and trigger startConnectorDrag.
+                                if (onStartConnector) {
+                                    onStartConnector(obj.id, anchor, e);
+                                }
+                            }}
+                        />
+                    ))}
+
                     {/* Edge Resize Handles */}
                     {[
                         { handle: 'n', style: { left: '50%', top: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' } },

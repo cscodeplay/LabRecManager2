@@ -11467,6 +11467,109 @@ export default function Whiteboard({
         const cx = Math.round((cWidth / 2 - panOffset.x) / zoomLevel);
         const cy = Math.round((cHeight / 2 - panOffset.y) / zoomLevel);
 
+        const isExactLocalCommand = /^(pen|pencil|eraser|select|laser|clear|undo|redo|zoom in|zoom out|reset zoom|new page|next page|previous page)$/i.test(txt);
+        
+        if (!isAiRetry && !isExactLocalCommand) {
+            setVoiceFeedback(`🤖 Asking AI: "${rawText}"...`);
+            setIsAiThinking(true);
+            try {
+                const response = await aiAPI.voiceCommand({
+                    speechText: rawText,
+                    context: {
+                        module: 'whiteboard',
+                        currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard',
+                        ...getWhiteboardSpatialContext()
+                    }
+                });
+
+                const data = response?.data?.data;
+                setIsAiThinking(false);
+
+                if (data?.recognized && Array.isArray(data.actions)) {
+                    if (data.speechResponse) {
+                        conversationHistoryRef.current.push({ role: 'assistant', content: data.speechResponse });
+                        if (aiSpeechEnabled) speakAiResponse(data.speechResponse);
+                        toast.success(data.speechResponse, { icon: '🤖' });
+                        setVoiceFeedback(data.speechResponse);
+                    }
+                    
+                    for (const action of data.actions) {
+                        if (action.type === 'UI_COMMAND' && action.command) {
+                            executeVoiceCommand(action.command, true);
+                        } 
+                        else if (action.type === 'MODIFY_PROPERTY') {
+                            applyPropertyModification(action.property, action.mode || 'absolute_value', action.value);
+                        } 
+                        else if (action.type === 'CREATE_OBJECT') {
+                            if (action.objectType === '3d_model') {
+                                executeAiCanvasAction({ 
+                                    type: 'insert_3d_model', 
+                                    modelType: action.modelType, 
+                                    color: action.color,
+                                    x: action.x, 
+                                    y: action.y 
+                                });
+                            } else if (action.objectType === 'sticky_note') {
+                                const nx = action.x || cx - 100;
+                                const ny = action.y || cy - 100;
+                                const note = createStickyNoteObject(nx, ny, action.color || 'yellow');
+                                note.text = action.text || '';
+                                setPageShapeObjects(prev => ({
+                                    ...prev,
+                                    [currentPage]: [...(prev[currentPage] || []), note]
+                                }));
+                            } else if (action.objectType === 'lesson_board') {
+                                executeAiCanvasAction({
+                                    type: 'create_lesson_board',
+                                    title: 'AI Explanation',
+                                    notes: [{ title: 'Explanation', text: action.text || '' }]
+                                });
+                            }
+                        }
+                        else if (action.type === 'DELETE_OBJECT' && action.targetId) {
+                            setShapeObjects(prev => prev.filter(s => s.id !== action.targetId));
+                            setThreeDObjects(prev => prev.filter(s => s.id !== action.targetId));
+                            setTextObjects(prev => prev.filter(s => s.id !== action.targetId));
+                            setImageObjects(prev => prev.filter(s => s.id !== action.targetId));
+                        }
+                        else if (action.type === 'SPATIAL_CLARIFICATION') {
+                            setVoiceFeedback(action.message);
+                            if (aiSpeechEnabled) speakAiResponse(action.message);
+                            toast(action.message, { icon: '❓' });
+                            // In Phase 3, we would dispatch laser pointer UI events here using action.candidateIds
+                        }
+                    }
+                    return;
+                }
+
+                // Fallback for legacy JSON format (if AI ignores schema)
+                if (data?.recognized && data?.translatedCommand) {
+                     return await executeVoiceCommand(data.translatedCommand, true);
+                }
+
+                if (data?.quotaExhausted) {
+                    const quotaMsg = data.error || 'AI Quota Exhausted across all configured providers. Please check your API keys or configure a paid model in Settings.';
+                    setVoiceFeedback('⚠️ AI Quota Exhausted');
+                    toast.error(quotaMsg, { id: 'ai-voice-quota', duration: 7000 });
+                    return;
+                }
+            } catch (err) {
+                console.warn('[Whiteboard Voice AI] Translation error:', err.message);
+                setIsAiThinking(false);
+                const isQuota = Boolean(err.response?.status === 429 || (err.message && /quota|rate limit|429/i.test(err.message)));
+                if (isQuota) {
+                    const quotaMsg = err.response?.data?.message || 'AI Quota Exhausted across all configured providers.';
+                    setVoiceFeedback('⚠️ AI Quota Exhausted');
+                    toast.error(quotaMsg, { id: 'ai-voice-quota', duration: 7000 });
+                    return;
+                }
+            }
+            
+            // If AI didn't recognize it or failed, we can optionally fallback, but we'll just return.
+            setVoiceFeedback(`Unrecognized by AI: "${rawText}"`);
+            return;
+        }
+
         // Centralized speech & visual narrator helper
         const narrateAction = (spokenPhrase, visualFeedback) => {
             const feedback = visualFeedback || spokenPhrase;
@@ -11653,17 +11756,27 @@ export default function Whiteboard({
                 const delta = isRelative ? val : 0;
                 const targetVal = isRelative ? 0 : Math.max(1, Math.min(40, val));
 
-                if (selectedShapeIds.length > 0) {
-                    setShapeObjects(prev => prev.map(s => {
-                        if (selectedShapeIds.includes(s.id)) {
-                            const curW = s.strokeWidth || 2;
-                            const newW = isRelative
-                                ? Math.max(1, Math.min(40, curW + delta))
-                                : targetVal;
-                            return { ...s, strokeWidth: newW };
-                        }
-                        return s;
-                    }));
+                if (selectedShapeIds.length > 0 || selected3DIds.length > 0) {
+                    if (selectedShapeIds.length > 0) {
+                        setShapeObjects(prev => prev.map(s => {
+                            if (selectedShapeIds.includes(s.id)) {
+                                const curW = s.strokeWidth || 2;
+                                const newW = isRelative ? Math.max(1, Math.min(40, curW + delta)) : targetVal;
+                                return { ...s, strokeWidth: newW };
+                            }
+                            return s;
+                        }));
+                    }
+                    if (selected3DIds.length > 0) {
+                        setThreeDObjects(prev => prev.map(s => {
+                            if (selected3DIds.includes(s.id)) {
+                                const curW = s.edgeWidth !== undefined ? s.edgeWidth : 0.8;
+                                const newW = isRelative ? Math.max(0, Math.min(10, curW + (delta / 4))) : targetVal / 4;
+                                return { ...s, edgeWidth: newW };
+                            }
+                            return s;
+                        }));
+                    }
                     saveToHistory();
                     return {
                         speech: isRelative
@@ -11727,6 +11840,9 @@ export default function Whiteboard({
                 if (selectedShapeIds.length > 0) {
                     setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, rotation: ((s.rotation || 0) + deg) % 360 } : s));
                 }
+                if (selected3DIds.length > 0) {
+                    setThreeDObjects(prev => prev.map(s => selected3DIds.includes(s.id) ? { ...s, rotation: ((s.rotation || 0) + deg) % 360 } : s));
+                }
                 if (selectedImageId) {
                     setImageObjects(prev => prev.map(img => img.id === selectedImageId ? { ...img, rotation: ((img.rotation || 0) + deg) % 360 } : img));
                 }
@@ -11762,6 +11878,10 @@ export default function Whiteboard({
                 const newColor = String(rawValue);
                 if (selectedShapeIds.length > 0) {
                     setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, color: newColor } : s));
+                    saveToHistory();
+                }
+                if (selected3DIds.length > 0) {
+                    setThreeDObjects(prev => prev.map(s => selected3DIds.includes(s.id) ? { ...s, color: newColor, materialStyle: 'shaded' } : s));
                     saveToHistory();
                 }
                 setColor(newColor);
@@ -13373,106 +13493,6 @@ export default function Whiteboard({
         }
 
         // 10. AI-Powered Assistant, Solutions & Fallback Translation
-        if (!isAiRetry) {
-            setVoiceFeedback(`🤖 Asking AI: "${rawText}"...`);
-            setIsAiThinking(true);
-            try {
-                const response = await aiAPI.voiceCommand({
-                    speechText: rawText,
-                    context: {
-                        module: 'whiteboard',
-                        currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard',
-                        ...getWhiteboardSpatialContext()
-                    }
-                });
-
-                const data = response?.data?.data;
-                setIsAiThinking(false);
-
-                if (data?.recognized) {
-                    // Record assistant response in conversation history
-                    if (data.speechResponse || data.spokenFeedback) {
-                        conversationHistoryRef.current.push({ role: 'assistant', content: data.speechResponse || data.spokenFeedback });
-                    }
-
-                    // 1. Property Modification returned by LLM (e.g. for "whittle down perimeter by 2 units")
-                    if (data.type === 'property_modification' || data.intent === 'modify_property') {
-                        const res = applyPropertyModification(data.property, data.mode, data.value);
-                        narrateAction(
-                            data.speechResponse || res?.speech || 'Adjusted object property.',
-                            data.spokenFeedback || res?.feedback || 'Property Updated'
-                        );
-                        return;
-                    }
-
-                    // 2. Generative canvas action (3D model, flowchart, diagram, screenshot)
-                    if (data.type === 'canvas_generation' || (data.canvasAction && data.canvasAction.type && data.canvasAction.type !== 'insert_solution_card')) {
-                        if (data.canvasAction.type === 'screenshot') {
-                            await handleScreenshot();
-                            narrateAction('Captured whiteboard screenshot.', '📸 Screenshot Captured');
-                            return;
-                        }
-                        executeAiCanvasAction(data.canvasAction);
-                        setAiSolutionData({
-                            question: rawText,
-                            speechResponse: data.speechResponse || data.spokenFeedback,
-                            solutionMarkdown: data.solutionMarkdown,
-                            canvasAction: data.canvasAction
-                        });
-                        narrateAction(
-                            data.speechResponse || data.spokenFeedback || 'AI visual created on canvas.',
-                            data.spokenFeedback || '✨ AI Canvas Visual Created'
-                        );
-                        return;
-                    }
-
-                    // 3. Educational question, math problem, or solution explanation
-                    if (data.type === 'solution' || data.solutionMarkdown || data.intent === 'solve_or_explain') {
-                        setAiSolutionData({
-                            question: rawText,
-                            speechResponse: data.speechResponse || data.spokenFeedback,
-                            solutionMarkdown: data.solutionMarkdown,
-                            canvasAction: data.canvasAction
-                        });
-                        narrateAction(
-                            data.speechResponse || data.spokenFeedback || 'Here is the solution.',
-                            data.spokenFeedback || '✨ AI Solution Ready'
-                        );
-                        return;
-                    }
-
-                    // 4. Standardized whiteboard command translation
-                    if (data.translatedCommand) {
-                        toast.success(`✨ AI interpreted: "${data.translatedCommand}"`, { icon: '✨' });
-                        if (aiSpeechEnabled && data.speechResponse) {
-                            speakAiResponse(data.speechResponse);
-                        }
-                        return await executeVoiceCommand(data.translatedCommand, true);
-                    }
-                }
-
-                if (data?.quotaExhausted) {
-                    const quotaMsg = data.error || 'AI Quota Exhausted across all configured providers. Please check your API keys or configure a paid model in Settings.';
-                    setVoiceFeedback('⚠️ AI Quota Exhausted');
-                    toast.error(quotaMsg, { id: 'ai-voice-quota', duration: 7000 });
-                    if (aiSpeechEnabled && data.speechResponse) {
-                        speakAiResponse(data.speechResponse);
-                    }
-                    return;
-                }
-            } catch (err) {
-                console.warn('[Whiteboard Voice AI] Translation error:', err.message);
-                setIsAiThinking(false);
-                const isQuota = Boolean(err.response?.status === 429 || (err.message && /quota|rate limit|429/i.test(err.message)));
-                if (isQuota) {
-                    const quotaMsg = err.response?.data?.message || 'AI Quota Exhausted across all configured providers. Please check your API keys or configure a paid model in Settings.';
-                    setVoiceFeedback('⚠️ AI Quota Exhausted');
-                    toast.error(quotaMsg, { id: 'ai-voice-quota', duration: 7000 });
-                    return;
-                }
-            }
-        }
-
         setVoiceFeedback(`Unrecognized: "${rawText}" - say "help" for commands`);
         toast(`Command not recognized: "${rawText}"`, { icon: '❓' });
     }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, duplicateCurrentPage, deletePage, loadPage, currentPage, totalPages, selectedShapeIds, selectedTextIds, selectedImageId, selectedImageIds, selected3DIds, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, setBgPattern, setBgColor, onToggleFullscreen, handleInsertGraph, handleInsertDateTime, handleDelete, handleCopy, handlePaste, handleDuplicate, handleToggleLock, handleGroup, handleUngroup, handleBringToFront, handleSendToBack, handleAlign, handleDistribute, handleFlipSelection, handleRemoveImageBackground, updateSelectedImageFilters, setIsAutoShape, setIsOcrActive, handleConvertSelectedInkToText, setBrushType, setPenMode, setSparkleTheme, setPenOpacity, setPressureSensitivity, setHighlighterColor, setEraserMode, setEraserSize, setSelectMode, setIsSelectionInfiniteCloner, setLineType, setShowMinimap, setShowClipboard, setIsChatOpen, setShowPermissions, aiSpeechEnabled, speakAiResponse, executeAiCanvasAction, handleScreenshot, getWhiteboardSpatialContext]);
@@ -20408,8 +20428,8 @@ export default function Whiteboard({
 
                     {/* 3D Objects Layer (3D perspective mesh projection, 3D trackball rotation, 2D controls) */}
                     {(page3DObjects[currentPage] || []).map((obj3d) => (
+                        
                         <Whiteboard3DObject
-                            key={obj3d.id}
                             obj={obj3d}
                             isSelected={selected3DIds.includes(obj3d.id)}
                             scale={currentZoom}
@@ -20491,6 +20511,8 @@ export default function Whiteboard({
                                 setSelected3DIds([clone.id]);
                             }}
                         />
+                        
+
                     ))}
 
                     {/* Resizable, Multi-Page Document Viewers (PDF) */}

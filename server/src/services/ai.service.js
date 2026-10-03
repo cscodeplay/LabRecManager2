@@ -9,9 +9,9 @@ const ACTIVE_OPENAI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o1-mini', 'gp
 const ACTIVE_ANTHROPIC_MODELS = ['claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'];
 const ACTIVE_DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-reasoner'];
 const ACTIVE_OPENROUTER_MODELS = ['openai/gpt-4o', 'anthropic/claude-3.5-sonnet', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct'];
-const ACTIVE_GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'];
-const ACTIVE_GROQ_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
-const ACTIVE_SAMBANOVA_MODELS = ['Meta-Llama-3.1-70B-Instruct'];
+const ACTIVE_GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-1.5-pro'];
+const ACTIVE_GROQ_MODELS = ['llama-3.1-8b-instant', 'llama3-8b-8192', 'gemma2-9b-it'];
+const ACTIVE_SAMBANOVA_MODELS = ['Meta-Llama-3.1-8B-Instruct'];
 
 class AIService {
     constructor() {
@@ -517,7 +517,7 @@ class AIService {
                     err.noKey = true;
                     throw err;
                 }
-                const testModel = model || 'gemini-2.0-flash';
+                const testModel = model || 'gemini-1.5-flash';
                 const res = await this.callGemini({
                     contents: 'Say "ACTIVE"',
                     systemInstruction: systemPrompt,
@@ -535,7 +535,7 @@ class AIService {
                     err.noKey = true;
                     throw err;
                 }
-                const testModel = model || 'llama-3.3-70b-versatile';
+                const testModel = model || 'llama-3.1-8b-instant';
                 const res = await this.callGroq({
                     messages: testMessages,
                     model: testModel,
@@ -553,7 +553,7 @@ class AIService {
                     err.noKey = true;
                     throw err;
                 }
-                const testModel = model || 'Meta-Llama-3.1-70B-Instruct';
+                const testModel = model || 'Meta-Llama-3.1-8B-Instruct';
                 const res = await this.callSambaNova({
                     messages: testMessages,
                     model: testModel,
@@ -2068,184 +2068,70 @@ Output MUST be ONLY valid JSON matching this schema:
             context.currentRoute?.includes('live-board');
 
         if (isWhiteboard) {
-            const whiteboardSystemPrompt = `You are a voice command interpreter for an interactive collaborative Whiteboard canvas.
-Users speak natural, conversational, or imprecise commands (e.g., "wipe the whole board clean", "can you draw a round red circle of size 80", "put a dashed box around here", "zoom closer into the canvas", "switch over to highlighting mode", "let's see the keyboard shortcuts", "hide the measurements", "bring the selected item forward", etc.).
-Translate the user's spoken input into the single best standardized Whiteboard voice command string from this supported grammar:
+            const whiteboardSystemPrompt = \`You are an advanced Spatial & Generative AI reasoning engine for an interactive Whiteboard.
+You receive the user's spoken command along with a JSON representation of the current whiteboard state (objects, sizes, spatial coordinates).
+Your goal is to parse the user's intent, perform any required knowledge-base reasoning (like deriving formulas, writing code, or generating scientific explanations), and return a sequence of autonomous actions to modify the canvas.
 
-1. DRAW SHAPES & CONNECTORS:
-   - "draw circle [radius N]" (e.g. "draw circle radius 60")
-   - "draw square [side N]" (e.g. "draw square side 100")
-   - "draw rectangle [W by H]" (e.g. "draw rectangle 200 by 120")
-   - "draw triangle [size N]"
-   - "draw pentagon [size N]"
-   - "draw hexagon [size N]"
-   - "draw star [size N]"
-   - "draw diamond [size N]"
-   - "draw arrow" | "double arrow"
-   - "draw line" | "straight connector" | "elbow connector" | "curved connector" | "curved arc"
-   - "sticky note [yellow|blue|green|pink|purple|orange]" | "add sticky note"
+Determine what the user wants to accomplish:
+1. UI Controls (zoom, switch tools to pen/eraser, clear board)
+2. Property Modification (changing color, thickness, opacity)
+3. Object Creation (drawing shapes, text, 3D models, generative sticky notes)
+4. Spatial Operations (moving, grouping, deleting contextually chosen objects)
+5. Generative Explanations (a full multi-modal explanation involving 3D models, math, and voice).
 
-2. SMART SHAPES & SMART INK:
-   - "turn on smart shape" | "turn off smart shape" | "toggle smart shape"
-   - "turn on smart ink" | "turn off smart ink" | "toggle smart ink"
-   - "convert ink" | "convert handwriting" | "ink to text" | "ink to math"
-
-3. PEN BRUSHES, MODES & HIGHLIGHTER:
-   - "pen" | "calligraphy" | "crayon" | "watercolor" | "fountain"
-   - "sparkle pen [galaxy|rainbow|gold|emerald]"
-   - "pen opacity [10-100]%"
-   - "pressure sensitivity on" | "pressure sensitivity off"
-   - "highlighter [yellow|green|blue|pink|orange]" | "highlighter size [N]"
-
-4. ERASER & SELECTION MODES:
-   - "eraser" | "object eraser" | "pixel eraser" | "eraser size [N]"
-   - "select" | "lasso select" | "box select" | "select all" | "deselect all"
-   - "infinite cloner on" | "infinite cloner off" | "toggle infinite cloner"
-
-5. STYLING & SHAPE PROPERTIES:
-   - "color [red|blue|green|yellow|orange|purple|violet|black|white|pink|cyan|emerald]"
-   - "border [color]"
-   - "border width [1-40]" | "thicker border" | "thinner border"
-   - "dashed border" | "dotted border" | "solid border" | "double border"
-   - "fill [color]" | "no fill"
-   - "corner radius [0-60]"
-   - "display units" | "hide units" | "toggle units"
-
-6. ALIGNMENT, ROTATION & TRANSFORMATION:
-   - "align left" | "align center" | "align right" | "align top" | "align middle" | "align bottom"
-   - "distribute horizontally" | "distribute vertically"
-   - "flip horizontal" | "flip vertical"
-   - "rotate [90|-90|N] degrees" | "rotate left" | "rotate right"
-
-7. IMAGE TOOLS:
-   - "remove image background" | "grayscale image" | "reset image filters"
-
-8. CANVAS ACTIONS & BACKGROUND STYLING:
-   - "clear the board" | "undo" | "redo" | "zoom in" | "zoom out" | "reset zoom" | "fit to screen" | "fullscreen"
-   - "background [grid|dots|lines|graph|music|isometric|hex|plain]"
-   - "background color [blue|navy|black|chalkboard|white|slate|gray|green|purple|cyan]" | "background [blue|navy|black|white|chalkboard|slate|gray]"
-
-9. MULTI-PAGE:
-   - "new page" | "duplicate page" | "delete page" | "next page" | "previous page" | "jump to page [N]"
-
-10. TEXT & TYPOGRAPHY:
-    - "type [text to type]"
-    - "font bold" | "font italic" | "font underline" | "font size [N]" | "font [sans|serif|mono|cursive]"
-
-11. PANELS, MODALS & TOOLS:
-    - "help" | "export" | "take screenshot" | "screenshot" | "capture board" | "snapshot" | "tasks" | "template" | "timer" | "spotlight" | "curtain" | "equation" | "math solver" | "3d" | "graph" | "game" | "record" | "insert image" | "media" | "datetime" | "minimap" | "clipboard" | "chat" | "permissions"
-
-12. CLIPBOARD & OBJECT ACTIONS:
-    - "delete" | "copy" | "paste" | "duplicate" | "lock" | "group" | "ungroup" | "bring to front" | "send to back"
-
-13. SPATIAL CONNECTIONS & RE-CORRECTIONS:
-    - "connect [shape 1] to [shape 2]" (e.g. "connect the two lower circles", "connect the top box to the bottom circle")
-    - "move it [direction]" | "move [shape] [direction]" (e.g. "move it higher", "move the square to the right")
-    - "make it [bigger|smaller]" | "shrink it [by half|N%]" | "actually make it [color]" | "undo that and draw a [shape] instead"
-
-14. GENERATIVE DRAWING, 3D MODELS, FLOWCHARTS & VISUAL DIAGRAMS:
-    - Insert 3D models: "insert 3D earth", "3D atom", "3D DNA", "3D rocket", "3D router", "3D laptop", "3D solar system", "insert 3D sphere/cube/pyramid"
-    - Draw flowcharts: "draw flowchart for login", "draw water cycle", "draw algorithm flowchart", "draw decision tree"
-    - Draw diagrams: "draw Venn diagram", "draw coordinate axes", "draw triangle with sides 3 4 5 and explain Pythagoras"
-    - Full educational boards: "explain structure of atom and draw it", "explain photosynthesis with diagram", "explain earth layers in 3d"
-
-${context.shapes && context.shapes.length > 0 ? `CURRENT ACTIVE OBJECTS ON WHITEBOARD:
-${JSON.stringify(context.shapes.slice(0, 30))}
-` : ''}
-${context.viewport ? `BOARD VIEWPORT & BOUNDS: ${JSON.stringify(context.viewport)}\n` : ''}
-${context.conversationHistory && context.conversationHistory.length > 0 ? `RECENT CONVERSATION TURNS:
-${JSON.stringify(context.conversationHistory.slice(-5))}
-` : ''}
-${context.lastActionTarget ? `LAST TARGETED OBJECT: ${JSON.stringify(context.lastActionTarget)}\n` : ''}
-Spoken input: "${text}"
-
-Determine whether the user is issuing a canvas command, adjusting an object property, requesting a generative visual/3D drawing, OR asking an educational/cognitive question:
-
-If Property Modification (e.g., "reduce border to 1 px", "reduce border by 2px", "whittle down perimeter by 2 units", "increase opacity to 80%", "make font 24px", "expand width by 50px", "rotate 45 degrees"):
+OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
 {
   "recognized": true,
-  "type": "property_modification",
-  "intent": "modify_property",
-  "property": "strokeWidth | opacity | fontSize | width | height | rotation | color | fillColor",
-  "mode": "relative_delta | absolute_value",
-  "value": -2,
-  "spokenFeedback": "Reduced border by 2px",
-  "speechResponse": "Reducing border width by 2 pixels on the selected shape."
+  "speechResponse": "<A natural, engaging response to read aloud via TTS. Be concise.>",
+  "actions": [
+    {
+      "type": "UI_COMMAND",
+      "command": "zoom in | zoom out | reset zoom | eraser | pen | highlighter | select | clear whiteboard | undo | redo | new page | next page | previous page"
+    },
+    {
+      "type": "MODIFY_PROPERTY",
+      "property": "strokeWidth | opacity | fontSize | width | height | rotation | color | fillColor",
+      "value": "<number or string>",
+      "targetId": "<id of the specific object, derived from CURRENT ACTIVE OBJECTS. If unspecified, applies to current selection>"
+    },
+    {
+      "type": "CREATE_OBJECT",
+      "objectType": "circle | square | rectangle | triangle | line | arrow | sticky_note | text | 3d_model | flowchart | lesson_board",
+      "text": "<For text/sticky_notes: Generated content. Supports markdown and $$LaTeX$$ formulas. YOU MUST GENERATE THIS KNOWLEDGE YOURSELF.>",
+      "modelType": "cube | sphere | pyramid | cylinder | cone | earth | atom | dna | rocket",
+      "color": "<hex code or standard color name>",
+      "x": "<Compute specific X coordinate if user requested a location, else omit>",
+      "y": "<Compute specific Y coordinate if user requested a location, else omit>"
+    },
+    {
+      "type": "DELETE_OBJECT",
+      "targetId": "<id of the object to delete, resolved using spatial reasoning>"
+    },
+    {
+      "type": "SPATIAL_CLARIFICATION",
+      "message": "<If target is genuinely ambiguous (e.g., 'delete the red circle' but there are two identical red circles), ask the user which one they mean>",
+      "candidateIds": ["<id1>", "<id2>"]
+    }
+  ]
 }
 
-If Canvas Command:
-{
-  "recognized": true,
-  "type": "command",
-  "translatedCommand": "<standardized command from above grammar>",
-  "intent": "<intent_name>",
-  "spokenFeedback": "<brief confirmation message>",
-  "speechResponse": "<short natural voice reply for TTS>"
-}
+CRITICAL RULES:
+- **NO HARDCODING**: If the user says "the circle on the extreme left" or "the biggest square", DO NOT ask for clarification. Look at the CURRENT ACTIVE OBJECTS JSON. Find the object with the lowest 'x' coordinate, or largest 'width'*'height', and output its 'id' in targetId.
+- **NO FALSE STICKY NOTES**: If the user asks for a simple shape or 3D model (e.g. "create 3D sphere"), ONLY output the CREATE_OBJECT for the sphere. DO NOT add sticky notes unless explicitly asked or generating a "lesson_board".
+- **GENERATIVE KNOWLEDGE**: If the user asks for a sticky note with a formula (e.g. "sticky note with volume of cube"), YOU must output the actual formula in LaTeX format within the 'text' property of the CREATE_OBJECT action.
+- **MULTI-MODAL EXPLANATIONS**: If asked to explain a scientific/math concept, output an array of actions: e.g., create a 3d_model, create a sticky_note with the formula, and add a speechResponse explaining it.
 
-If Generative Drawing, 3D Model, Flowchart, or Visual Diagram:
-{
-  "recognized": true,
-  "type": "canvas_generation",
-  "intent": "generate_diagram_or_3d",
-  "speechResponse": "<2-3 engaging, natural conversational sentences explaining what was created and the scientific/mathematical concept for Speech Synthesis audio playback>",
-  "spokenFeedback": "<Brief status, e.g. 'Created 3D Earth with notes'>",
-  "solutionMarkdown": "<Step-by-step clear notes and LaTeX formulas using $$...$$ format for math/science>",
-  "canvasAction": {
-    "type": "insert_3d_model" | "draw_flowchart" | "draw_diagram" | "create_lesson_board",
-    "layoutType": "cycle | branching | hierarchical",
-    "modelType": "<earth | sun | moon | mars | jupiter | saturn | atom | dna_double_helix | molecule | rocket | satellite | laptop | router | switch | cube | sphere | pyramid | cylinder | cone>",
-    "title": "<Concise title of diagram or visual>",
-    "color": "<hex color code>",
-    "nodes": [
-      { "id": "n1", "label": "<Step 1 text>", "shapeType": "terminator | rounded_rect | rectangle | diamond | parallelogram | cylinder | circle", "color": "#6366f1" }
-    ],
-    "connections": [
-      { "from": "n1", "to": "n2", "label": "<descriptive transition label, e.g. chemical step, reaction, condition, action>", "sourceAnchor": "top | bottom | left | right", "targetAnchor": "top | bottom | left | right" }
-    ],
-    "shapes": [
-      { "type": "circle | rectangle | triangle | arrow", "label": "<text>", "color": "#6366f1" }
-    ],
-    "notes": [
-      { "title": "<Note Title>", "text": "<Note explanation content>", "color": "purple | yellow | blue | green | pink" }
-    ]
-  }
-}
+\${context.shapes && context.shapes.length > 0 ? \\\`CURRENT ACTIVE OBJECTS ON WHITEBOARD:
+\${JSON.stringify(context.shapes.slice(0, 30))}
+\\\` : ''}
+\${context.viewport ? \\\`BOARD VIEWPORT & BOUNDS: \${JSON.stringify(context.viewport)}\\n\\\` : ''}
+\${context.conversationHistory && context.conversationHistory.length > 0 ? \\\`RECENT CONVERSATION TURNS:
+\${JSON.stringify(context.conversationHistory.slice(-5))}
+\\\` : ''}
+\${context.lastActionTarget ? \\\`LAST TARGETED OBJECT: \${JSON.stringify(context.lastActionTarget)}\\n\\\` : ''}
+Spoken input: "\${text}"
+\`;
 
-CRITICAL FLOWCHART & CYCLE GUIDELINES:
-- For any cyclic process (Krebs cycle, photosynthesis, Calvin cycle, nitrogen cycle, carbon cycle, cell cycle, rock cycle, water cycle, PDCA cycle, SDLC):
-  - Set "layoutType": "cycle"
-  - Arrange stages in sequential clockwise order.
-  - Connect the final stage back to the first stage with a meaningful loop label (e.g. "Continuous Cycle", "Regeneration", "Substrate Recycling").
-  - On EVERY connection, include a descriptive "label" (e.g. chemical enzyme, energy transfer, condition).
-  - Use "terminator" for major start/end/reservoir states, "rounded_rect" for processes, "diamond" for checkpoints.
-- For decision trees, algorithms, or sequential processes (binary search, auth, checkout, ML pipeline):
-  - Set "layoutType": "branching"
-  - Use "diamond" for decisions, "parallelogram" for input/output, "terminator" for start/end, "rectangle" for steps.
-  - Label branches clearly ("Yes/Match", "No/Mismatch", "Retry").
-
-If Question, Problem to Solve, or Scientific/Educational Explanation (e.g. "explain newton three laws of motion", "explain photosynthesis", "solve 3x + 12 = 36", "teach magnetic field with formula"):
-CRITICAL: NEVER return a drawing command (like 'draw circle') or canvas wipe command ('clear the board') for educational questions or explanations! ALWAYS return a "solution" with speechResponse and LaTeX formulas!
-{
-  "recognized": true,
-  "type": "solution",
-  "intent": "solve_or_explain",
-  "speechResponse": "<2-4 natural, engaging conversational sentences explaining the concepts clearly for Speech Synthesis audio playback>",
-  "solutionMarkdown": "<Step-by-step clear solution, definitions, and LaTeX formulas using $$...$$ format for math/science>",
-  "spokenFeedback": "<Brief status, e.g. 'Explained Newton\\'s Laws of Motion'>",
-  "canvasAction": {
-    "type": "insert_solution_card",
-    "title": "<Concise title of solution or concept>",
-    "summary": "<1-line summary of answer>"
-  }
-}
-
-If completely gibberish:
-{
-  "recognized": false,
-  "type": "unrecognized",
-  "spokenFeedback": "Command not recognized"
-}`;
 
             const isCognitiveQuery =
                 low.startsWith('explain') ||

@@ -2,6 +2,30 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { X, GripVertical, Minimize2, Maximize2, Lock, Unlock, MessageCircle } from 'lucide-react';
+import katex from 'katex';
+
+function renderNoteText(text) {
+    if (!text) return '<span class="opacity-40 italic">Double-click to edit...</span>';
+    const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    let html = escapeHtml(text);
+    
+    // Block math $$...$$
+    html = html.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
+        try { return `<span class="inline-block my-1 text-center w-full">${katex.renderToString(math, { displayMode: true, throwOnError: false })}</span>`; }
+        catch (e) { return match; }
+    });
+    // Inline math $...$
+    html = html.replace(/\$([^\$]+)\$/g, (match, math) => {
+        try { return katex.renderToString(math, { displayMode: false, throwOnError: false }); }
+        catch (e) { return match; }
+    });
+    
+    // Markdown basics for boldness and lists
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    
+    return html;
+}
 
 /**
  * StickyNote — Draggable, resizable, rotatable colored note card for the whiteboard.
@@ -272,10 +296,8 @@ export default function StickyNoteRenderer({
                                     fontWeight: note.fontWeight || 'normal',
                                     fontStyle: note.fontStyle || 'normal',
                                 }}
+                            dangerouslySetInnerHTML={{ __html: renderNoteText(note.text) }}
                             >
-                                {note.text || (
-                                    <span className="opacity-40 italic">Double-click to edit...</span>
-                                )}
                             </div>
                         )}
                     </div>
