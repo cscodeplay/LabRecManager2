@@ -9,7 +9,7 @@ const ACTIVE_OPENAI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o1-mini', 'gp
 const ACTIVE_ANTHROPIC_MODELS = ['claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'];
 const ACTIVE_DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-reasoner'];
 const ACTIVE_OPENROUTER_MODELS = ['openai/gpt-4o', 'anthropic/claude-3.5-sonnet', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct'];
-const ACTIVE_GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-1.5-pro'];
+const ACTIVE_GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro-latest'];
 const ACTIVE_GROQ_MODELS = ['llama-3.1-8b-instant', 'llama3-8b-8192', 'gemma2-9b-it'];
 const ACTIVE_SAMBANOVA_MODELS = ['Meta-Llama-3.1-8B-Instruct'];
 
@@ -517,7 +517,7 @@ class AIService {
                     err.noKey = true;
                     throw err;
                 }
-                const testModel = model || 'gemini-1.5-flash';
+                const testModel = model || 'gemini-2.0-flash';
                 const res = await this.callGemini({
                     contents: 'Say "ACTIVE"',
                     systemInstruction: systemPrompt,
