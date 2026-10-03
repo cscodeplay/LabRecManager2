@@ -2068,7 +2068,7 @@ Output MUST be ONLY valid JSON matching this schema:
             context.currentRoute?.includes('live-board');
 
         if (isWhiteboard) {
-            const whiteboardSystemPrompt = \`You are an advanced Spatial & Generative AI reasoning engine for an interactive Whiteboard.
+            const whiteboardSystemPrompt = `You are an advanced Spatial & Generative AI reasoning engine for an interactive Whiteboard.
 You receive the user's spoken command along with a JSON representation of the current whiteboard state (objects, sizes, spatial coordinates).
 Your goal is to parse the user's intent, perform any required knowledge-base reasoning (like deriving formulas, writing code, or generating scientific explanations), and return a sequence of autonomous actions to modify the canvas.
 
@@ -2121,16 +2121,16 @@ CRITICAL RULES:
 - **GENERATIVE KNOWLEDGE**: If the user asks for a sticky note with a formula (e.g. "sticky note with volume of cube"), YOU must output the actual formula in LaTeX format within the 'text' property of the CREATE_OBJECT action.
 - **MULTI-MODAL EXPLANATIONS**: If asked to explain a scientific/math concept, output an array of actions: e.g., create a 3d_model, create a sticky_note with the formula, and add a speechResponse explaining it.
 
-\${context.shapes && context.shapes.length > 0 ? \\\`CURRENT ACTIVE OBJECTS ON WHITEBOARD:
-\${JSON.stringify(context.shapes.slice(0, 30))}
-\\\` : ''}
-\${context.viewport ? \\\`BOARD VIEWPORT & BOUNDS: \${JSON.stringify(context.viewport)}\\n\\\` : ''}
-\${context.conversationHistory && context.conversationHistory.length > 0 ? \\\`RECENT CONVERSATION TURNS:
-\${JSON.stringify(context.conversationHistory.slice(-5))}
-\\\` : ''}
-\${context.lastActionTarget ? \\\`LAST TARGETED OBJECT: \${JSON.stringify(context.lastActionTarget)}\\n\\\` : ''}
-Spoken input: "\${text}"
-\`;
+${context.shapes && context.shapes.length > 0 ? `CURRENT ACTIVE OBJECTS ON WHITEBOARD:
+${JSON.stringify(context.shapes.slice(0, 30))}
+` : ''}
+${context.viewport ? `BOARD VIEWPORT & BOUNDS: ${JSON.stringify(context.viewport)}\n` : ''}
+${context.conversationHistory && context.conversationHistory.length > 0 ? `RECENT CONVERSATION TURNS:
+${JSON.stringify(context.conversationHistory.slice(-5))}
+` : ''}
+${context.lastActionTarget ? `LAST TARGETED OBJECT: ${JSON.stringify(context.lastActionTarget)}\n` : ''}
+Spoken input: "${text}"
+`;
 
 
             const isCognitiveQuery =
