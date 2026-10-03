@@ -12,8 +12,11 @@ import {
     Subtitles,
     Bot,
     Sparkles,
-    Sliders
+    Sliders,
+    ExternalLink
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useVoiceStore } from '@/lib/store';
 
 export default function WhiteboardMicSelector({
     isOpen,
@@ -33,6 +36,8 @@ export default function WhiteboardMicSelector({
     onChangeSpeechRate = () => {},
     onOpenAiAssistantModal = () => {}
 }) {
+    const router = useRouter();
+    const { voiceProfile, setVoiceProfile } = useVoiceStore();
     const [devices, setDevices] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [hasPermission, setHasPermission] = useState(false);
@@ -341,9 +346,77 @@ export default function WhiteboardMicSelector({
 
                     {/* Voice Selection */}
                     <div>
-                        <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block mb-1.5">
-                            AI Voice Actor
-                        </label>
+                        <div className="flex items-center justify-between mb-1.5">
+                            <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                                AI Voice Actor Persona
+                            </label>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onClose?.();
+                                    router.push('/settings?tab=voice');
+                                }}
+                                className="text-[10px] text-purple-400 hover:text-purple-300 flex items-center gap-1 font-medium transition"
+                                title="Open full voice settings"
+                            >
+                                Voice Studio <ExternalLink className="w-2.5 h-2.5" />
+                            </button>
+                        </div>
+
+                        {/* Persona Quick Chips */}
+                        <div className="grid grid-cols-3 gap-1.5 mb-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setVoiceProfile('samantha');
+                                    const v = voices.find(v => v.name.toLowerCase().includes('samantha') || (v.lang.startsWith('en-US') && v.name.includes('Natural')) || v.name.includes('Karen') || v.name.includes('Google US English'));
+                                    if (v) onSelectVoice?.(v);
+                                }}
+                                className={`px-2 py-1.5 rounded-lg text-[11px] font-bold text-center border transition flex flex-col items-center gap-0.5 ${
+                                    voiceProfile === 'samantha'
+                                        ? 'bg-purple-600/30 border-purple-500 text-purple-200 shadow-xs'
+                                        : 'bg-slate-900 border-slate-700/60 text-slate-300 hover:border-slate-600'
+                                }`}
+                            >
+                                <span>👩‍🏫 Samantha</span>
+                                <span className="text-[9px] text-slate-400 font-normal">US Educator</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setVoiceProfile('daniel');
+                                    const v = voices.find(v => v.name.toLowerCase().includes('daniel') || v.name.includes('George') || v.name.includes('Oliver') || v.name.includes('Google UK English Male') || v.lang.startsWith('en-GB'));
+                                    if (v) onSelectVoice?.(v);
+                                }}
+                                className={`px-2 py-1.5 rounded-lg text-[11px] font-bold text-center border transition flex flex-col items-center gap-0.5 ${
+                                    voiceProfile === 'daniel'
+                                        ? 'bg-purple-600/30 border-purple-500 text-purple-200 shadow-xs'
+                                        : 'bg-slate-900 border-slate-700/60 text-slate-300 hover:border-slate-600'
+                                }`}
+                            >
+                                <span>👨‍🏫 Daniel</span>
+                                <span className="text-[9px] text-slate-400 font-normal">UK Academic</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setVoiceProfile('rishi');
+                                    const v = voices.find(v => v.name.toLowerCase().includes('rishi') || v.name.includes('Neerja') || v.name.includes('India') || v.lang.startsWith('en-IN') || v.lang.startsWith('hi'));
+                                    if (v) onSelectVoice?.(v);
+                                }}
+                                className={`px-2 py-1.5 rounded-lg text-[11px] font-bold text-center border transition flex flex-col items-center gap-0.5 ${
+                                    voiceProfile === 'rishi'
+                                        ? 'bg-purple-600/30 border-purple-500 text-purple-200 shadow-xs'
+                                        : 'bg-slate-900 border-slate-700/60 text-slate-300 hover:border-slate-600'
+                                }`}
+                            >
+                                <span>👨‍🏫 Rishi</span>
+                                <span className="text-[9px] text-slate-400 font-normal">Indian English</span>
+                            </button>
+                        </div>
+
                         <select
                             value={selectedVoice?.name || ''}
                             onChange={(e) => {

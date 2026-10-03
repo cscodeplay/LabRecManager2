@@ -118,3 +118,24 @@ export const useThemeStore = create(
         { name: 'theme-storage' }
     )
 );
+
+export const useVoiceStore = create(
+    persist(
+        (set, get) => ({
+            voiceProfile: 'samantha', // 'samantha' | 'daniel' | 'rishi' | 'custom'
+            voiceName: 'Samantha',
+            rate: 1.0,
+            pitch: 1.0,
+            volume: 1.0,
+            autoReadAiResponses: true,
+            setVoiceProfile: (voiceProfile) => set({ voiceProfile }),
+            setVoiceName: (voiceName) => set({ voiceName }),
+            setRate: (rate) => set({ rate }),
+            setPitch: (pitch) => set({ pitch }),
+            setVolume: (volume) => set({ volume }),
+            setAutoReadAiResponses: (autoReadAiResponses) => set({ autoReadAiResponses }),
+            updateVoiceSettings: (settings) => set((state) => ({ ...state, ...settings })),
+        }),
+        { name: 'ai-voice-storage' }
+    )
+);

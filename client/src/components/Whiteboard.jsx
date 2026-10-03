@@ -68,7 +68,7 @@ import WhiteboardSnakeGame from './games/WhiteboardSnakeGame';
 import { convertToGameObjects, generateRandomObstacles } from './games/obstacleConverter';
 import api, { aiAPI } from '@/lib/api';
 import { toast } from 'react-hot-toast';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useVoiceStore } from '@/lib/store';
 import { formatDate, formatTime } from '@/lib/dateUtils';
 
 /**
@@ -973,13 +973,29 @@ export default function Whiteboard({
         }
         return '';
     });
+    const {
+        rate: storeSpeechRate,
+        autoReadAiResponses: storeAutoRead,
+        setRate: setStoreSpeechRate,
+        setAutoReadAiResponses: setStoreAutoRead
+    } = useVoiceStore();
+
     const [aiSpeechEnabled, setAiSpeechEnabled] = useState(() => {
+        if (storeAutoRead !== undefined) return storeAutoRead;
         if (typeof window !== 'undefined') {
             return localStorage.getItem('wb_ai_speech') !== 'false';
         }
         return true;
     });
-    const [speechRate, setSpeechRate] = useState(1.0);
+    const [speechRate, setSpeechRate] = useState(storeSpeechRate || 1.0);
+
+    useEffect(() => {
+        if (storeAutoRead !== undefined) setAiSpeechEnabled(storeAutoRead);
+    }, [storeAutoRead]);
+
+    useEffect(() => {
+        if (storeSpeechRate !== undefined) setSpeechRate(storeSpeechRate);
+    }, [storeSpeechRate]);
     const [audioInputLevel, setAudioInputLevel] = useState(0);
     const [isAiThinking, setIsAiThinking] = useState(false);
     const [aiSolutionData, setAiSolutionData] = useState(null);
@@ -14789,6 +14805,7 @@ export default function Whiteboard({
                                 setAiSpeechEnabled(prev => {
                                     const next = !prev;
                                     if (typeof window !== 'undefined') localStorage.setItem('wb_ai_speech', String(next));
+                                    setStoreAutoRead(next);
                                     return next;
                                 });
                             }}
@@ -14798,7 +14815,10 @@ export default function Whiteboard({
                             selectedVoice={ttsSelectedVoice}
                             onSelectVoice={setTtsSelectedVoice}
                             speechRate={speechRate}
-                            onChangeSpeechRate={setSpeechRate}
+                            onChangeSpeechRate={(r) => {
+                                setSpeechRate(r);
+                                setStoreSpeechRate(r);
+                            }}
                             onOpenAiAssistantModal={() => setShowAiAssistantModal(true)}
                         />
                     </div>

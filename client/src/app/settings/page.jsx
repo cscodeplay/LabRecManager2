@@ -9,7 +9,8 @@ import {
     Volume2, Play, Square, Cloud, HardDrive, Key, Copy, Check, ExternalLink,
     RefreshCw, Eye, EyeOff, Server, Database, Sparkles
 } from 'lucide-react';
-import { useAuthStore, useThemeStore, useLanguageStore } from '@/lib/store';
+import { useAuthStore, useThemeStore, useLanguageStore, useVoiceStore } from '@/lib/store';
+import useSpeechSynthesis from '@/hooks/useSpeechSynthesis';
 import { authAPI, gradeScalesAPI, devicesAPI, academicYearsAPI, driveAdminAPI, googleDriveAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
@@ -98,6 +99,117 @@ export default function SettingsPage() {
         onedrive: 'http://localhost:5001/api/drive/auth/callback/onedrive',
         dropbox: 'http://localhost:5001/api/drive/auth/callback/dropbox'
     });
+
+    // AI Teacher Voice state & persistence
+    const {
+        voiceProfile,
+        voiceName,
+        rate: storeRate,
+        pitch: storePitch,
+        volume: storeVolume,
+        autoReadAiResponses,
+        updateVoiceSettings
+    } = useVoiceStore();
+
+    const [selectedVoiceProfile, setSelectedVoiceProfile] = useState(voiceProfile || 'samantha');
+    const [selectedVoiceName, setSelectedVoiceName] = useState(voiceName || '');
+    const [voiceRate, setVoiceRate] = useState(storeRate || 1.0);
+    const [voicePitch, setVoicePitch] = useState(storePitch || 1.0);
+    const [voiceVolume, setVoiceVolume] = useState(storeVolume !== undefined ? storeVolume : 1.0);
+    const [autoReadVoice, setAutoReadVoice] = useState(autoReadAiResponses !== undefined ? autoReadAiResponses : true);
+
+    const [testPhrase, setTestPhrase] = useState(
+        'Hello! I am your AI Whiteboard Teacher. In thermodynamics, energy can neither be created nor destroyed, only transformed from one form to another.'
+    );
+    const [playingSampleUrl, setPlayingSampleUrl] = useState(null);
+    const sampleAudioRef = useRef(null);
+
+    // Live speech synthesis hook for voice studio
+    const {
+        voices: systemVoices,
+        isSpeaking: isTtsSpeaking,
+        speak: speakTts,
+        stop: stopTts
+    } = useSpeechSynthesis();
+
+    useEffect(() => {
+        if (voiceProfile) setSelectedVoiceProfile(voiceProfile);
+        if (voiceName) setSelectedVoiceName(voiceName);
+        if (storeRate !== undefined) setVoiceRate(storeRate);
+        if (storePitch !== undefined) setVoicePitch(storePitch);
+        if (storeVolume !== undefined) setVoiceVolume(storeVolume);
+        if (autoReadAiResponses !== undefined) setAutoReadVoice(autoReadAiResponses);
+    }, [voiceProfile, voiceName, storeRate, storePitch, storeVolume, autoReadAiResponses]);
+
+    const handleSaveVoiceSettings = () => {
+        updateVoiceSettings({
+            voiceProfile: selectedVoiceProfile,
+            voiceName: selectedVoiceName,
+            rate: voiceRate,
+            pitch: voicePitch,
+            volume: voiceVolume,
+            autoReadAiResponses: autoReadVoice
+        });
+        toast.success('AI Teacher Voice settings saved successfully!');
+    };
+
+    const handlePlayStudioSample = (url) => {
+        if (playingSampleUrl === url) {
+            if (sampleAudioRef.current) {
+                sampleAudioRef.current.pause();
+                sampleAudioRef.current.currentTime = 0;
+            }
+            setPlayingSampleUrl(null);
+            return;
+        }
+
+        if (sampleAudioRef.current) {
+            sampleAudioRef.current.pause();
+        }
+
+        const audio = new Audio(url);
+        sampleAudioRef.current = audio;
+        setPlayingSampleUrl(url);
+
+        audio.onended = () => {
+            setPlayingSampleUrl(null);
+        };
+        audio.onerror = () => {
+            toast.error('Unable to play audio sample');
+            setPlayingSampleUrl(null);
+        };
+
+        audio.play().catch(() => {
+            setPlayingSampleUrl(null);
+        });
+    };
+
+    const handleTestLiveSpeech = () => {
+        if (isTtsSpeaking) {
+            stopTts();
+            return;
+        }
+
+        let matchedVoice = null;
+        if (selectedVoiceName && systemVoices) {
+            matchedVoice = systemVoices.find(v => v.name.toLowerCase() === selectedVoiceName.toLowerCase());
+        }
+
+        speakTts(testPhrase, {
+            voice: matchedVoice,
+            rate: voiceRate,
+            pitch: voicePitch,
+            volume: voiceVolume
+        });
+    };
+
+    useEffect(() => {
+        return () => {
+            if (sampleAudioRef.current) {
+                sampleAudioRef.current.pause();
+            }
+        };
+    }, []);
 
     const isAdmin = user?.role === 'admin' || user?.role === 'principal';
 
@@ -566,6 +678,7 @@ export default function SettingsPage() {
     const tabs = [
         { id: 'profile', icon: User, label: 'Profile' },
         { id: 'devices', icon: Video, label: 'Devices' },
+        { id: 'voice', icon: Volume2, label: 'AI Teacher Voice' },
         { id: 'notifications', icon: Bell, label: 'Notifications' },
         { id: 'appearance', icon: Palette, label: 'Appearance' },
         { id: 'security', icon: Shield, label: 'Security' },
@@ -574,7 +687,7 @@ export default function SettingsPage() {
             { id: 'sessions', icon: Calendar, label: 'Sessions' },
             { id: 'grading', icon: GraduationCap, label: 'Grading' },
             { id: 'database', icon: SettingsIcon, label: 'SQL Console' },
-            { id: 'ai', icon: Bell, label: 'AI & API Keys' } // Reusing Bell icon to avoid importing Bot if not present
+            { id: 'ai', icon: Sparkles, label: 'AI Models & API Keys' }
         ] : [])
     ];
 
@@ -2295,8 +2408,430 @@ export default function SettingsPage() {
                             </div>
                         )}
 
+                        {activeTab === 'voice' && (
+                            <div className="card p-6 space-y-6">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+                                    <div>
+                                        <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                                            <Volume2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                                            AI Teacher Voice & Speech Synthesis
+                                        </h2>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                            Select and customize the voice persona for the interactive Whiteboard Teacher and Copilot.
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveVoiceSettings}
+                                            className="btn btn-primary text-xs flex items-center gap-1.5 shadow-sm"
+                                        >
+                                            <Save className="w-4 h-4" /> Save Voice Settings
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Voice Persona Profiles */}
+                                <div>
+                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 block mb-3">
+                                        1. Select Teacher Voice Persona
+                                    </label>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        {/* Samantha */}
+                                        <div
+                                            onClick={() => {
+                                                setSelectedVoiceProfile('samantha');
+                                                const v = systemVoices.find(v => v.name.toLowerCase().includes('samantha') || (v.lang.startsWith('en-US') && v.name.includes('Natural')) || v.name.includes('Karen') || v.name.includes('Google US English'));
+                                                if (v) setSelectedVoiceName(v.name);
+                                            }}
+                                            className={`p-4 rounded-xl border-2 transition cursor-pointer relative flex flex-col justify-between ${
+                                                selectedVoiceProfile === 'samantha'
+                                                    ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/40 shadow-sm'
+                                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'
+                                            }`}
+                                        >
+                                            {selectedVoiceProfile === 'samantha' && (
+                                                <div className="absolute top-3 right-3 text-indigo-600 dark:text-indigo-400">
+                                                    <CheckCircle className="w-5 h-5 fill-indigo-600 text-white dark:fill-indigo-400 dark:text-slate-900" />
+                                                </div>
+                                            )}
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <span className="text-2xl">👩‍🏫</span>
+                                                    <div>
+                                                        <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Samantha</h4>
+                                                        <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                                            US Educator
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">
+                                                    Articulate, warm, engaging American teaching tone. Best for structured walkthroughs and clear step-by-step whiteboard guidance.
+                                                </p>
+                                            </div>
+
+                                            <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handlePlayStudioSample('/documents/audio/thermo_samantha.wav');
+                                                    }}
+                                                    className={`px-2.5 py-1 text-xs rounded-lg font-medium flex items-center gap-1.5 transition ${
+                                                        playingSampleUrl === '/documents/audio/thermo_samantha.wav'
+                                                            ? 'bg-rose-600 text-white'
+                                                            : 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200'
+                                                    }`}
+                                                >
+                                                    {playingSampleUrl === '/documents/audio/thermo_samantha.wav' ? <Square className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current" />}
+                                                    {playingSampleUrl === '/documents/audio/thermo_samantha.wav' ? 'Playing Sample' : 'Studio Sample'}
+                                                </button>
+                                                <span className="text-[11px] text-slate-400 font-mono">.WAV • 4-5 Lines</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Daniel */}
+                                        <div
+                                            onClick={() => {
+                                                setSelectedVoiceProfile('daniel');
+                                                const v = systemVoices.find(v => v.name.toLowerCase().includes('daniel') || v.name.includes('George') || v.name.includes('Oliver') || v.name.includes('Google UK English Male') || v.lang.startsWith('en-GB'));
+                                                if (v) setSelectedVoiceName(v.name);
+                                            }}
+                                            className={`p-4 rounded-xl border-2 transition cursor-pointer relative flex flex-col justify-between ${
+                                                selectedVoiceProfile === 'daniel'
+                                                    ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/40 shadow-sm'
+                                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'
+                                            }`}
+                                        >
+                                            {selectedVoiceProfile === 'daniel' && (
+                                                <div className="absolute top-3 right-3 text-indigo-600 dark:text-indigo-400">
+                                                    <CheckCircle className="w-5 h-5 fill-indigo-600 text-white dark:fill-indigo-400 dark:text-slate-900" />
+                                                </div>
+                                            )}
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <span className="text-2xl">👨‍🏫</span>
+                                                    <div>
+                                                        <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Daniel</h4>
+                                                        <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+                                                            UK Academic
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">
+                                                    Deep, resonant British academic depth. Authoritative lecture pacing suitable for higher-level theory and university engineering concepts.
+                                                </p>
+                                            </div>
+
+                                            <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handlePlayStudioSample('/documents/audio/thermo_daniel.wav');
+                                                    }}
+                                                    className={`px-2.5 py-1 text-xs rounded-lg font-medium flex items-center gap-1.5 transition ${
+                                                        playingSampleUrl === '/documents/audio/thermo_daniel.wav'
+                                                            ? 'bg-rose-600 text-white'
+                                                            : 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200'
+                                                    }`}
+                                                >
+                                                    {playingSampleUrl === '/documents/audio/thermo_daniel.wav' ? <Square className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current" />}
+                                                    {playingSampleUrl === '/documents/audio/thermo_daniel.wav' ? 'Playing Sample' : 'Studio Sample'}
+                                                </button>
+                                                <span className="text-[11px] text-slate-400 font-mono">.WAV • 4-5 Lines</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Rishi */}
+                                        <div
+                                            onClick={() => {
+                                                setSelectedVoiceProfile('rishi');
+                                                const v = systemVoices.find(v => v.name.toLowerCase().includes('rishi') || v.name.includes('Neerja') || v.name.includes('India') || v.lang.startsWith('en-IN') || v.lang.startsWith('hi'));
+                                                if (v) setSelectedVoiceName(v.name);
+                                            }}
+                                            className={`p-4 rounded-xl border-2 transition cursor-pointer relative flex flex-col justify-between ${
+                                                selectedVoiceProfile === 'rishi'
+                                                    ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/40 shadow-sm'
+                                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'
+                                            }`}
+                                        >
+                                            {selectedVoiceProfile === 'rishi' && (
+                                                <div className="absolute top-3 right-3 text-indigo-600 dark:text-indigo-400">
+                                                    <CheckCircle className="w-5 h-5 fill-indigo-600 text-white dark:fill-indigo-400 dark:text-slate-900" />
+                                                </div>
+                                            )}
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <span className="text-2xl">👨‍🏫</span>
+                                                    <div>
+                                                        <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Rishi</h4>
+                                                        <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
+                                                            Indian English
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">
+                                                    Expressive, natural Indian English educator delivery. High clarity for classroom demonstrations, interactive problem-solving, and Q&A.
+                                                </p>
+                                            </div>
+
+                                            <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handlePlayStudioSample('/documents/audio/thermo_rishi.wav');
+                                                    }}
+                                                    className={`px-2.5 py-1 text-xs rounded-lg font-medium flex items-center gap-1.5 transition ${
+                                                        playingSampleUrl === '/documents/audio/thermo_rishi.wav'
+                                                            ? 'bg-rose-600 text-white'
+                                                            : 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200'
+                                                    }`}
+                                                >
+                                                    {playingSampleUrl === '/documents/audio/thermo_rishi.wav' ? <Square className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current" />}
+                                                    {playingSampleUrl === '/documents/audio/thermo_rishi.wav' ? 'Playing Sample' : 'Studio Sample'}
+                                                </button>
+                                                <span className="text-[11px] text-slate-400 font-mono">.WAV • 4-5 Lines</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* System Synthesis Voice Selector */}
+                                <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+                                    <div>
+                                        <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 block mb-1">
+                                            2. Underlying Browser Synthesis Voice
+                                        </label>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                                            Choose the exact synthesized voice engine from your operating system or browser for real-time speech responses.
+                                        </p>
+                                        <select
+                                            value={selectedVoiceName}
+                                            onChange={(e) => {
+                                                setSelectedVoiceName(e.target.value);
+                                                setSelectedVoiceProfile('custom');
+                                            }}
+                                            className="select w-full text-xs font-mono"
+                                        >
+                                            {systemVoices && systemVoices.length > 0 ? (
+                                                <>
+                                                    <optgroup label="English Voices (Recommended for Teaching)">
+                                                        {systemVoices.filter(v => v.lang.startsWith('en')).map(v => (
+                                                            <option key={v.name} value={v.name}>
+                                                                {v.name} ({v.lang}) {v.default ? '— Default' : ''}
+                                                            </option>
+                                                        ))}
+                                                    </optgroup>
+                                                    <optgroup label="Other Regional & Global Voices">
+                                                        {systemVoices.filter(v => !v.lang.startsWith('en')).map(v => (
+                                                            <option key={v.name} value={v.name}>
+                                                                {v.name} ({v.lang})
+                                                            </option>
+                                                        ))}
+                                                    </optgroup>
+                                                </>
+                                            ) : (
+                                                <option value="">Default System Voice (Auto-detecting...)</option>
+                                            )}
+                                        </select>
+                                    </div>
+
+                                    {/* Modulation Sliders: Speed, Pitch, Volume */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                                        {/* Speech Rate */}
+                                        <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                                            <div className="flex items-center justify-between text-xs mb-1">
+                                                <span className="font-semibold text-slate-700 dark:text-slate-300">Speech Speed</span>
+                                                <span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold">{voiceRate.toFixed(2)}x</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="0.6"
+                                                max="1.6"
+                                                step="0.05"
+                                                value={voiceRate}
+                                                onChange={(e) => setVoiceRate(parseFloat(e.target.value))}
+                                                className="w-full accent-indigo-600"
+                                            />
+                                            <div className="flex items-center justify-between gap-1 mt-2">
+                                                <button type="button" onClick={() => setVoiceRate(0.85)} className={`px-2 py-0.5 rounded text-[10px] ${voiceRate === 0.85 ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>0.85x Calibrated</button>
+                                                <button type="button" onClick={() => setVoiceRate(1.0)} className={`px-2 py-0.5 rounded text-[10px] ${voiceRate === 1.0 ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>1.0x Normal</button>
+                                                <button type="button" onClick={() => setVoiceRate(1.15)} className={`px-2 py-0.5 rounded text-[10px] ${voiceRate === 1.15 ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>1.15x Brisk</button>
+                                            </div>
+                                        </div>
+
+                                        {/* Speech Pitch */}
+                                        <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                                            <div className="flex items-center justify-between text-xs mb-1">
+                                                <span className="font-semibold text-slate-700 dark:text-slate-300">Voice Pitch</span>
+                                                <span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold">{voicePitch.toFixed(2)}</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="0.7"
+                                                max="1.3"
+                                                step="0.05"
+                                                value={voicePitch}
+                                                onChange={(e) => setVoicePitch(parseFloat(e.target.value))}
+                                                className="w-full accent-indigo-600"
+                                            />
+                                            <div className="flex items-center justify-between gap-1 mt-2">
+                                                <button type="button" onClick={() => setVoicePitch(0.9)} className={`px-2 py-0.5 rounded text-[10px] ${voicePitch === 0.9 ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>0.9 Deeper</button>
+                                                <button type="button" onClick={() => setVoicePitch(1.0)} className={`px-2 py-0.5 rounded text-[10px] ${voicePitch === 1.0 ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>1.0 Natural</button>
+                                                <button type="button" onClick={() => setVoicePitch(1.1)} className={`px-2 py-0.5 rounded text-[10px] ${voicePitch === 1.1 ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>1.1 Bright</button>
+                                            </div>
+                                        </div>
+
+                                        {/* Speech Volume */}
+                                        <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                                            <div className="flex items-center justify-between text-xs mb-1">
+                                                <span className="font-semibold text-slate-700 dark:text-slate-300">Volume</span>
+                                                <span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold">{Math.round(voiceVolume * 100)}%</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="1"
+                                                step="0.05"
+                                                value={voiceVolume}
+                                                onChange={(e) => setVoiceVolume(parseFloat(e.target.value))}
+                                                className="w-full accent-indigo-600"
+                                            />
+                                            <div className="flex items-center justify-between gap-1 mt-2">
+                                                <button type="button" onClick={() => setVoiceVolume(0.5)} className={`px-2 py-0.5 rounded text-[10px] ${voiceVolume === 0.5 ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>50%</button>
+                                                <button type="button" onClick={() => setVoiceVolume(0.8)} className={`px-2 py-0.5 rounded text-[10px] ${voiceVolume === 0.8 ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>80%</button>
+                                                <button type="button" onClick={() => setVoiceVolume(1.0)} className={`px-2 py-0.5 rounded text-[10px] ${voiceVolume === 1.0 ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>100%</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Auto-read toggle */}
+                                    <div className="pt-2 flex items-center justify-between">
+                                        <div>
+                                            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
+                                                Auto-Speak Whiteboard Answers & Teacher Demonstrations
+                                            </span>
+                                            <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                                                When enabled, the AI teacher will verbally explain equations, describe shapes, and confirm actions aloud.
+                                            </span>
+                                        </div>
+                                        <label className="relative inline-flex items-center cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={autoReadVoice}
+                                                onChange={(e) => setAutoReadVoice(e.target.checked)}
+                                                className="sr-only peer"
+                                            />
+                                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                {/* Live Interactive Voice Testing Console */}
+                                <div className="p-4 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-xl border border-indigo-200/80 dark:border-indigo-800/80 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold uppercase tracking-wider text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                                            <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                            3. Live Speech Testing Console
+                                        </span>
+                                        <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">
+                                            Test live synthesis with your current settings
+                                        </span>
+                                    </div>
+
+                                    <textarea
+                                        value={testPhrase}
+                                        onChange={(e) => setTestPhrase(e.target.value)}
+                                        rows={2}
+                                        className="w-full text-xs p-2.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        placeholder="Type any test sentence..."
+                                    />
+
+                                    <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={handleTestLiveSpeech}
+                                                className={`px-3 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-sm transition ${
+                                                    isTtsSpeaking
+                                                        ? 'bg-rose-600 text-white animate-pulse'
+                                                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                                }`}
+                                            >
+                                                {isTtsSpeaking ? <Square className="w-3.5 h-3.5 fill-current" /> : <Volume2 className="w-3.5 h-3.5" />}
+                                                {isTtsSpeaking ? 'Stop Speaking' : 'Speak Test Phrase'}
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setTestPhrase('The first law of thermodynamics states that the total energy of an isolated system is constant.');
+                                                }}
+                                                className="px-2.5 py-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-100 rounded-lg border border-slate-200 dark:border-slate-700"
+                                            >
+                                                Load Thermodynamics Test
+                                            </button>
+                                        </div>
+
+                                        <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
+                                            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-ping"></span>
+                                            Ready • Active Profile: <strong className="capitalize">{selectedVoiceProfile}</strong>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Final Save Bar */}
+                                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedVoiceProfile('samantha');
+                                            setSelectedVoiceName('');
+                                            setVoiceRate(1.0);
+                                            setVoicePitch(1.0);
+                                            setVoiceVolume(1.0);
+                                            setAutoReadVoice(true);
+                                            toast('Reset to default voice settings', { icon: '🔄' });
+                                        }}
+                                        className="btn btn-secondary text-xs"
+                                    >
+                                        Reset to Defaults
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveVoiceSettings}
+                                        className="btn btn-primary text-xs flex items-center gap-1.5 shadow-md"
+                                    >
+                                        <Save className="w-4 h-4" /> Save Voice Settings
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
                         {activeTab === 'ai' && isAdmin && (
                             <div className="card p-6 space-y-6">
+                                {/* Quick link to Voice Settings */}
+                                <div className="p-4 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/40 dark:to-purple-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl flex items-center justify-between gap-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                                            <Volume2 className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">AI Teacher Voice Studio</h4>
+                                            <p className="text-xs text-slate-600 dark:text-slate-400">Current voice: <strong className="capitalize">{selectedVoiceProfile}</strong> ({selectedVoiceName || 'Auto-matched'})</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setActiveTab('voice')}
+                                        className="btn btn-primary text-xs flex items-center gap-1.5 shrink-0"
+                                    >
+                                        <Volume2 className="w-4 h-4" /> Configure Voice
+                                    </button>
+                                </div>
+
                                 <div>
                                     <h2 className="text-lg font-semibold text-slate-900 mb-2">AI Models & API Keys Setup</h2>
                                     <p className="text-sm text-slate-600 mb-4">

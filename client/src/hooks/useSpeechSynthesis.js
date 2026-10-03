@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useVoiceStore } from '@/lib/store';
 
 /**
  * Text cleaner for Speech Synthesis (removes heavy markdown and LaTeX syntax
@@ -46,16 +47,40 @@ export function useSpeechSynthesis({
     defaultVolume = 1.0,
     enabledByDefault = true
 } = {}) {
+    const {
+        voiceProfile,
+        voiceName,
+        rate: storeRate,
+        pitch: storePitch,
+        volume: storeVolume,
+        autoReadAiResponses,
+        setVoiceName,
+        setVoiceProfile
+    } = useVoiceStore();
+
     const [isSupported, setIsSupported] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [speakingText, setSpeakingText] = useState('');
     const [voices, setVoices] = useState([]);
-    const [selectedVoice, setSelectedVoice] = useState(null);
-    const [rate, setRate] = useState(defaultRate);
-    const [pitch, setPitch] = useState(defaultPitch);
-    const [volume, setVolume] = useState(defaultVolume);
+    const [selectedVoice, setSelectedVoiceState] = useState(null);
+    const [rate, setRate] = useState(storeRate || defaultRate);
+    const [pitch, setPitch] = useState(storePitch || defaultPitch);
+    const [volume, setVolume] = useState(storeVolume !== undefined ? storeVolume : defaultVolume);
     const [isEnabled, setIsEnabled] = useState(enabledByDefault);
+
+    // Sync store changes to local state
+    useEffect(() => {
+        if (storeRate !== undefined) setRate(storeRate);
+    }, [storeRate]);
+
+    useEffect(() => {
+        if (storePitch !== undefined) setPitch(storePitch);
+    }, [storePitch]);
+
+    useEffect(() => {
+        if (storeVolume !== undefined) setVolume(storeVolume);
+    }, [storeVolume]);
 
     // Keep isEnabled in sync with prop changes
     useEffect(() => {
@@ -63,6 +88,54 @@ export function useSpeechSynthesis({
     }, [enabledByDefault]);
 
     const utteranceRef = useRef(null);
+
+    // Helper to find best matching voice
+    const resolveVoice = useCallback((availableVoices, profile, explicitName) => {
+        if (!availableVoices || availableVoices.length === 0) return null;
+
+        // 1. Explicit name match
+        if (explicitName) {
+            const found = availableVoices.find(v => v.name.toLowerCase() === explicitName.toLowerCase());
+            if (found) return found;
+        }
+
+        // 2. Profile-based matching
+        if (profile === 'samantha') {
+            return (
+                availableVoices.find(v => v.name.toLowerCase().includes('samantha')) ||
+                availableVoices.find(v => v.name.includes('Natural') && v.lang.startsWith('en-US')) ||
+                availableVoices.find(v => v.name.includes('Google US English')) ||
+                availableVoices.find(v => v.name.includes('Karen')) ||
+                availableVoices.find(v => v.lang === 'en-US' && v.name.includes('Female')) ||
+                availableVoices.find(v => v.lang.startsWith('en'))
+            );
+        } else if (profile === 'daniel') {
+            return (
+                availableVoices.find(v => v.name.toLowerCase().includes('daniel')) ||
+                availableVoices.find(v => v.name.includes('George')) ||
+                availableVoices.find(v => v.name.includes('Oliver')) ||
+                availableVoices.find(v => v.name.includes('Google UK English Male')) ||
+                availableVoices.find(v => v.lang.startsWith('en-GB')) ||
+                availableVoices.find(v => v.lang.startsWith('en'))
+            );
+        } else if (profile === 'rishi') {
+            return (
+                availableVoices.find(v => v.name.toLowerCase().includes('rishi')) ||
+                availableVoices.find(v => v.name.includes('Neerja')) ||
+                availableVoices.find(v => v.name.includes('India')) ||
+                availableVoices.find(v => v.lang.startsWith('en-IN')) ||
+                availableVoices.find(v => v.lang.startsWith('hi')) ||
+                availableVoices.find(v => v.lang.startsWith('en'))
+            );
+        }
+
+        // 3. Fallback to best natural English voice
+        return (
+            availableVoices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Daniel'))) ||
+            availableVoices.find(v => v.lang.startsWith('en')) ||
+            availableVoices[0]
+        );
+    }, []);
 
     // Check browser support and load voices
     useEffect(() => {
@@ -77,14 +150,10 @@ export function useSpeechSynthesis({
             const availableVoices = window.speechSynthesis.getVoices();
             if (availableVoices && availableVoices.length > 0) {
                 setVoices(availableVoices);
-
-                // Auto-pick optimal high quality natural English voice
-                const preferredVoice =
-                    availableVoices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Daniel') || v.name.includes('Karen'))) ||
-                    availableVoices.find(v => v.lang.startsWith('en')) ||
-                    availableVoices[0];
-
-                setSelectedVoice(prev => prev || preferredVoice);
+                const matched = resolveVoice(availableVoices, voiceProfile, voiceName);
+                if (matched) {
+                    setSelectedVoiceState(matched);
+                }
             }
         };
 
@@ -99,7 +168,20 @@ export function useSpeechSynthesis({
                 window.speechSynthesis.cancel();
             }
         };
-    }, []);
+    }, [voiceProfile, voiceName, resolveVoice]);
+
+    // Setter that updates both local state and store
+    const setSelectedVoice = useCallback((voice) => {
+        setSelectedVoiceState(voice);
+        if (voice?.name) {
+            setVoiceName(voice.name);
+            const lower = voice.name.toLowerCase();
+            if (lower.includes('samantha')) setVoiceProfile('samantha');
+            else if (lower.includes('daniel')) setVoiceProfile('daniel');
+            else if (lower.includes('rishi')) setVoiceProfile('rishi');
+            else setVoiceProfile('custom');
+        }
+    }, [setVoiceName, setVoiceProfile]);
 
     // Stop and cancel speech
     const stop = useCallback(() => {
