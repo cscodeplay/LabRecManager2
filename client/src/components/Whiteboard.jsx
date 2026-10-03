@@ -840,6 +840,9 @@ export default function Whiteboard({
     const conversationHistoryRef = useRef([]);
     const lastActionTargetRef = useRef(null);
     const recentDrawActionsRef = useRef([]);
+    const lastExecutedVoiceTextRef = useRef('');
+    const lastExecutedVoiceTimeRef = useRef(0);
+    const lastVoiceResultIndexRef = useRef(-1);
     const [remoteCursors, setRemoteCursors] = useState({});
     const [recentLiveActions, setRecentLiveActions] = useState([]);
 
@@ -11774,7 +11777,7 @@ export default function Whiteboard({
         // ─── AI BOT AGENT INTENT ARBITER ─────────────────────────────────
 
         // Intent 1: Cognitive / Explanatory / Teaching Query
-        // (e.g. "explain magnetic field with formula", "solve 3x + 9 = 27", "teach photosynthesis")
+        // (e.g. "explain magnetic field with formula", "solve 3x + 9 = 27", "teach photosynthesis", "explain newton three laws of motion")
         const isCognitiveQuery =
             txt.startsWith('explain') ||
             txt.startsWith('teach') ||
@@ -11786,6 +11789,10 @@ export default function Whiteboard({
             txt.startsWith('derive') ||
             txt.startsWith('prove') ||
             txt.startsWith('calculate') ||
+            txt.includes('newton') ||
+            txt.includes('laws of motion') ||
+            txt.includes('law of motion') ||
+            txt.includes('three law') ||
             txt.includes('magnetic field') ||
             txt.includes('lorentz force') ||
             txt.includes('photosynthesis') ||
@@ -11795,6 +11802,7 @@ export default function Whiteboard({
         if (isCognitiveQuery && !isAiRetry) {
             setVoiceFeedback(`🧠 AI Tutor: "${rawText}"...`);
             setIsAiThinking(true);
+            let data = null;
             try {
                 const response = await aiAPI.voiceCommand({
                     speechText: rawText,
@@ -11804,27 +11812,229 @@ export default function Whiteboard({
                         ...getWhiteboardSpatialContext()
                     }
                 });
-                const data = response?.data?.data;
-                setIsAiThinking(false);
-                if (data?.recognized) {
-                    if (data.canvasAction && data.canvasAction.type && data.canvasAction.type !== 'insert_solution_card') {
-                        executeAiCanvasAction(data.canvasAction);
-                    }
-                    setAiSolutionData({
-                        question: rawText,
-                        speechResponse: data.speechResponse || data.spokenFeedback,
-                        solutionMarkdown: data.solutionMarkdown,
-                        canvasAction: data.canvasAction
-                    });
-                    narrateAction(
-                        data.speechResponse || data.spokenFeedback || 'Here is the explanation and formulas.',
-                        data.spokenFeedback || '🧠 AI Explanation Ready'
-                    );
-                    return;
-                }
+                data = response?.data?.data;
             } catch (err) {
-                setIsAiThinking(false);
                 console.warn('[Whiteboard Cognitive AI] Error:', err.message);
+            } finally {
+                setIsAiThinking(false);
+            }
+
+            if (data?.recognized && (data.solutionMarkdown || data.type === 'solution' || data.speechResponse)) {
+                if (data.canvasAction && data.canvasAction.type && data.canvasAction.type !== 'insert_solution_card') {
+                    executeAiCanvasAction(data.canvasAction);
+                }
+                setAiSolutionData({
+                    question: rawText,
+                    speechResponse: data.speechResponse || data.spokenFeedback,
+                    solutionMarkdown: data.solutionMarkdown,
+                    canvasAction: data.canvasAction
+                });
+                narrateAction(
+                    data.speechResponse || data.spokenFeedback || 'Here is the explanation and formulas.',
+                    data.spokenFeedback || '🧠 AI Explanation Ready'
+                );
+                return;
+            }
+
+            // ─── CLIENT LOCAL SCIENTIFIC KNOWLEDGE FALLBACK ───
+            // Newton's Three Laws of Motion
+            if (
+                (txt.includes('newton') && (txt.includes('law') || txt.includes('three') || txt.includes('3') || txt.includes('motion') || txt.includes('first') || txt.includes('second') || txt.includes('third'))) ||
+                txt.includes('three laws of motion') ||
+                txt.includes('three law of motion') ||
+                txt.includes('laws of motion') ||
+                txt.includes('law of motion')
+            ) {
+                const newtonSol = {
+                    question: rawText,
+                    speechResponse: "Sir Isaac Newton's three laws of motion describe how objects move and interact. The first law, the Law of Inertia, states that an object remains at rest or moves with uniform straight-line velocity unless acted upon by a net external force. The second law quantifies this relationship: net force equals mass multiplied by acceleration, F equals m times a. The third law states that for every action, there is an equal and opposite reaction.",
+                    solutionMarkdown: `### Newton's Three Laws of Motion\n\n` +
+                        `**1. First Law (Law of Inertia):**\n$$\\sum \\vec{F} = 0 \\implies \\vec{v} = \\text{constant}$$\nAn object continues in its state of rest or uniform motion in a straight line unless compelled to change that state by an external net force.\n\n` +
+                        `**2. Second Law (Law of Force & Acceleration):**\n$$\\vec{F}_{\\text{net}} = m \\cdot \\vec{a} = \\frac{d\\vec{p}}{dt}$$\nThe acceleration of an object is directly proportional to the net force acting upon it and inversely proportional to its mass.\n\n` +
+                        `**3. Third Law (Action & Reaction):**\n$$\\vec{F}_{A \\to B} = -\\vec{F}_{B \\to A}$$\nFor every action force exerted by body A on body B, there is an equal magnitude and opposite direction reaction force exerted by body B on body A.`,
+                    canvasAction: {
+                        type: 'insert_solution_card',
+                        title: "Newton's Three Laws of Motion",
+                        summary: "1. Inertia | 2. F = ma | 3. F₁₂ = -F₂₁"
+                    }
+                };
+                setAiSolutionData(newtonSol);
+                narrateAction(newtonSol.speechResponse, "🧠 Explained Newton's Laws of Motion");
+                return;
+            }
+
+            // Pythagorean Theorem
+            if (txt.includes('pythagor')) {
+                const pythSol = {
+                    question: rawText,
+                    speechResponse: "The Pythagorean theorem states that in a right-angled triangle, the square of the hypotenuse is equal to the sum of the squares of the other two sides: a squared plus b squared equals c squared.",
+                    solutionMarkdown: `### Pythagorean Theorem\n\nIn any right-angled triangle with legs $a$ and $b$ and hypotenuse $c$:\n\n$$a^2 + b^2 = c^2 \\implies c = \\sqrt{a^2 + b^2}$$`,
+                    canvasAction: { type: 'insert_solution_card', title: 'Pythagorean Theorem', summary: 'a² + b² = c²' }
+                };
+                setAiSolutionData(pythSol);
+                narrateAction(pythSol.speechResponse, "🧠 Explained Pythagorean Theorem");
+                return;
+            }
+
+            // Ohm's Law
+            if (txt.includes('ohm')) {
+                const ohmSol = {
+                    question: rawText,
+                    speechResponse: "Ohm's law states that the electric current through a conductor between two points is directly proportional to the voltage across the two points: V equals I times R.",
+                    solutionMarkdown: `### Ohm's Law\n\n$$V = I \\cdot R$$\n\n- **$V$**: Voltage in Volts (V)\n- **$I$**: Current in Amperes (A)\n- **$R$**: Resistance in Ohms ($\\Omega$)`,
+                    canvasAction: { type: 'insert_solution_card', title: "Ohm's Law", summary: 'V = I · R' }
+                };
+                setAiSolutionData(ohmSol);
+                narrateAction(ohmSol.speechResponse, "🧠 Explained Ohm's Law");
+                return;
+            }
+
+            // Photosynthesis
+            if (txt.includes('photosynthesis')) {
+                const photoSol = {
+                    question: rawText,
+                    speechResponse: "Photosynthesis is the biochemical process by which green plants and certain organisms synthesize glucose from carbon dioxide and water using sunlight energy absorbed by chlorophyll.",
+                    solutionMarkdown: `### Photosynthesis\n\n$$6\\text{CO}_2 + 6\\text{H}_2\\text{O} \\xrightarrow{\\text{Light energy}} \\text{C}_6\\text{H}_{12}\\text{O}_6 + 6\\text{O}_2$$`,
+                    canvasAction: { type: 'insert_solution_card', title: 'Photosynthesis', summary: '6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂' }
+                };
+                setAiSolutionData(photoSol);
+                narrateAction(photoSol.speechResponse, "🧠 Explained Photosynthesis");
+                return;
+            }
+
+            // Universal Gravitation
+            if (txt.includes('gravit') || (txt.includes('gravity') && (txt.includes('formula') || txt.includes('law')))) {
+                const gravSol = {
+                    question: rawText,
+                    speechResponse: "Newton's law of universal gravitation states that every particle attracts every other particle with a force directly proportional to the product of their masses and inversely proportional to the square of the distance between them: F equals G times m 1 times m 2 divided by r squared.",
+                    solutionMarkdown: `### Universal Gravitation\n\n$$F = G \\frac{m_1 m_2}{r^2}$$\n\n- **$G$**: $6.674 \\times 10^{-11} \\,\\text{N}\\cdot\\text{m}^2/\\text{kg}^2$`,
+                    canvasAction: { type: 'insert_solution_card', title: 'Universal Gravitation', summary: 'F = G(m₁m₂)/r²' }
+                };
+                setAiSolutionData(gravSol);
+                narrateAction(gravSol.speechResponse, "🧠 Explained Universal Gravitation");
+                return;
+            }
+
+            // General Educational Query Fallback: Speak and create an AI study card on canvas
+            const note = createStickyNoteObject(cx - 100, cy - 80, 'purple');
+            note.title = rawText.slice(0, 35);
+            note.text = `AI Tutor notes for: ${rawText}`;
+            setPageShapeObjects(prev => ({
+                ...prev,
+                [currentPage]: [...(prev[currentPage] || []), note]
+            }));
+            saveToHistory();
+            narrateAction(`I heard your question: "${rawText}". I have created an AI study card on the whiteboard for you.`, `🧠 Study Card: ${rawText.slice(0, 25)}`);
+            return; // CRITICAL: NEVER FALL THROUGH TO SHAPES OR CLEAR CANVAS!
+        }
+
+        // ─── HIGH PRIORITY: Background Color & Canvas Pattern Controls ───
+        const isBackgroundCommand =
+            txt.includes('background') ||
+            txt.includes('canvas color') ||
+            txt.includes('board color') ||
+            txt.includes('canvas background') ||
+            txt.includes('whiteboard color') ||
+            txt.includes('dark canvas') ||
+            txt.includes('chalkboard');
+
+        if (isBackgroundCommand) {
+            // Background Colors
+            if (txt.includes('blue') || txt.includes('navy') || txt.includes('dark blue')) {
+                const hex = (txt.includes('navy') || txt.includes('dark blue')) ? '#0f172a' : '#1e3a8a';
+                setBgColor(hex);
+                setBgPattern('plain');
+                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: hex, bgPattern: 'plain' });
+                narrateAction(`Changed whiteboard background to ${txt.includes('navy') ? 'navy' : 'blue'}.`, `🟦 Background: ${txt.includes('navy') ? 'Navy' : 'Blue'}`);
+                return;
+            }
+            if (txt.includes('black') || txt.includes('blackboard') || txt.includes('dark')) {
+                setBgColor('#000000');
+                setBgPattern('plain');
+                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: '#000000', bgPattern: 'plain' });
+                narrateAction('Changed canvas background to black.', '⬛ Background: Black');
+                return;
+            }
+            if (txt.includes('white') || txt.includes('plain') || txt.includes('blank') || txt.includes('light')) {
+                setBgColor('#ffffff');
+                setBgPattern('plain');
+                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: '#ffffff', bgPattern: 'plain' });
+                narrateAction('Changed canvas background to plain white.', '⬜ Background: Plain White');
+                return;
+            }
+            if (txt.includes('chalkboard') || txt.includes('green')) {
+                setBgColor('#1b4332');
+                setBgPattern('plain');
+                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: '#1b4332', bgPattern: 'plain' });
+                narrateAction('Changed canvas background to chalkboard green.', '🟩 Background: Chalkboard Green');
+                return;
+            }
+            if (txt.includes('slate') || txt.includes('charcoal')) {
+                setBgColor('#1e293b');
+                setBgPattern('plain');
+                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: '#1e293b', bgPattern: 'plain' });
+                narrateAction('Changed canvas background to slate.', '🌫️ Background: Slate');
+                return;
+            }
+            if (txt.includes('gray') || txt.includes('grey')) {
+                setBgColor('#334155');
+                setBgPattern('plain');
+                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: '#334155', bgPattern: 'plain' });
+                narrateAction('Changed canvas background to gray.', '🌫️ Background: Gray');
+                return;
+            }
+            if (txt.includes('purple') || txt.includes('violet')) {
+                setBgColor('#4c1d95');
+                setBgPattern('plain');
+                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: '#4c1d95', bgPattern: 'plain' });
+                narrateAction('Changed canvas background to purple.', '🟪 Background: Purple');
+                return;
+            }
+            if (txt.includes('cyan')) {
+                setBgColor('#0891b2');
+                setBgPattern('plain');
+                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: '#0891b2', bgPattern: 'plain' });
+                narrateAction('Changed canvas background to cyan.', '🟦 Background: Cyan');
+                return;
+            }
+
+            // Background Patterns
+            if (txt.includes('grid') || txt.includes('graph paper')) {
+                const next = bgPattern === 'grid' ? 'plain' : 'grid';
+                setBgPattern(next);
+                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor, bgPattern: next });
+                narrateAction(`Toggled background grid ${next === 'grid' ? 'on' : 'off'}.`, '▦ Background Grid');
+                return;
+            }
+            if (txt.includes('dot') || txt.includes('dotted')) {
+                setBgPattern('dotted');
+                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor, bgPattern: 'dotted' });
+                narrateAction('Set background pattern to dots.', '••• Background: Dots');
+                return;
+            }
+            if (txt.includes('line') || txt.includes('ruled')) {
+                setBgPattern('lined');
+                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor, bgPattern: 'lined' });
+                narrateAction('Set background pattern to ruled lines.', '📋 Background: Ruled Lines');
+                return;
+            }
+            if (txt.includes('music')) {
+                setBgPattern('music');
+                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor, bgPattern: 'music' });
+                narrateAction('Set background pattern to music staff.', '🎵 Background: Music Staff');
+                return;
+            }
+            if (txt.includes('isometric') || txt.includes('iso')) {
+                setBgPattern('iso');
+                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor, bgPattern: 'iso' });
+                narrateAction('Set background pattern to isometric grid.', '📐 Background: Isometric');
+                return;
+            }
+            if (txt.includes('hex')) {
+                setBgPattern('hex');
+                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor, bgPattern: 'hex' });
+                narrateAction('Set background pattern to hexagons.', '⬡ Background: Hexagons');
+                return;
             }
         }
 
@@ -11933,7 +12143,14 @@ export default function Whiteboard({
 
         // 1. Shapes with Dimensions & Radii
         // Circle: "draw circle radius 80", "draw circle of radius 60", "circle 50", "round 70"
-        if (txt.includes('circle') || txt.includes('round') || txt.includes('disc') || txt.includes('ring')) {
+        const isCircleVoice =
+            (/\b(circle|disc|ring|circular)\b/i.test(txt) ||
+            (/\b(round\s+shape|round\s+circle)\b/i.test(txt)) ||
+            (/\bround\b/i.test(txt) && !txt.includes('background') && !txt.includes('ground') && !txt.includes('around') && !txt.includes('surround'))) &&
+            !txt.includes('clear') &&
+            !txt.includes('color');
+
+        if (isCircleVoice) {
             const match = txt.match(/(?:radius|size|of)?\s*(\d+)/i);
             const radius = match ? parseInt(match[1], 10) : 60;
             spawnVoiceShape({
@@ -11946,7 +12163,6 @@ export default function Whiteboard({
             const msg = `⭕ Drew circle with radius ${radius}px`;
             setVoiceFeedback(msg);
             toast.success(msg, { icon: '⭕' });
-            return;
         }
 
         // Square: "draw square side 100", "draw square of side 80", "square 120"
@@ -12830,75 +13046,6 @@ export default function Whiteboard({
             setVoiceFeedback('⛶ Toggled Fullscreen');
             return;
         }
-        // Background Patterns & Colors
-        if (txt.includes('background grid') || txt.includes('canvas grid') || txt === 'grid' || txt.includes('toggle grid')) {
-            setBgPattern(prev => (prev === 'grid' ? 'plain' : 'grid'));
-            setVoiceFeedback('▦ Background Grid toggled');
-            toast.success('Background Grid toggled', { icon: '▦' });
-            return;
-        }
-        if (txt.includes('background dots') || txt.includes('background dotted') || txt.includes('canvas dots')) {
-            setBgPattern('dotted');
-            setVoiceFeedback('••• Background set to Dots');
-            toast.success('Background set to Dots', { icon: '•••' });
-            return;
-        }
-        if (txt.includes('background lines') || txt.includes('background lined') || txt.includes('ruled canvas') || txt.includes('ruled background')) {
-            setBgPattern('lined');
-            setVoiceFeedback('📋 Background set to Ruled Lines');
-            toast.success('Background set to Ruled Lines', { icon: '📋' });
-            return;
-        }
-        if (txt.includes('background graph') || txt.includes('graph paper background') || txt.includes('graph paper')) {
-            setBgPattern('graph');
-            setVoiceFeedback('📈 Background set to Graph Paper');
-            toast.success('Background set to Graph Paper', { icon: '📈' });
-            return;
-        }
-        if (txt.includes('background music') || txt.includes('sheet music background')) {
-            setBgPattern('music');
-            setVoiceFeedback('🎵 Background set to Music Staff');
-            toast.success('Background set to Music Staff', { icon: '🎵' });
-            return;
-        }
-        if (txt.includes('background isometric') || txt.includes('isometric background')) {
-            setBgPattern('iso');
-            setVoiceFeedback('📐 Background set to Isometric');
-            toast.success('Background set to Isometric', { icon: '📐' });
-            return;
-        }
-        if (txt.includes('background hex') || txt.includes('hexagonal background')) {
-            setBgPattern('hex');
-            setVoiceFeedback('⬡ Background set to Hexagons');
-            toast.success('Background set to Hexagons', { icon: '⬡' });
-            return;
-        }
-        if (txt.includes('background plain') || txt.includes('background blank') || txt.includes('background white') || txt.includes('white background')) {
-            setBgPattern('plain');
-            setBgColor('#ffffff');
-            setVoiceFeedback('⬜ Background set to Plain White');
-            toast.success('Background set to Plain White', { icon: '⬜' });
-            return;
-        }
-        if (txt.includes('background black') || txt.includes('blackboard') || txt.includes('dark canvas') || txt.includes('black background')) {
-            setBgColor('#000000');
-            setVoiceFeedback('⬛ Background color set to Black');
-            toast.success('Background set to Black', { icon: '⬛' });
-            return;
-        }
-        if (txt.includes('chalkboard') || txt.includes('green chalkboard') || txt.includes('background green')) {
-            setBgColor('#1b4332');
-            setVoiceFeedback('🟩 Background set to Green Chalkboard');
-            toast.success('Chalkboard Green background', { icon: '🟩' });
-            return;
-        }
-        if (txt.includes('navy background') || txt.includes('dark blue background')) {
-            setBgColor('#0f172a');
-            setVoiceFeedback('🟦 Background set to Navy Slate');
-            toast.success('Navy Slate background', { icon: '🟦' });
-            return;
-        }
-
         // 7. Multi-Page Navigation & Page Actions
         if (txt.includes('new page') || txt.includes('add page')) {
             addNewPage();
@@ -13410,18 +13557,22 @@ export default function Whiteboard({
                 recognition.onstart = () => {
                     setIsVoiceListening(true);
                     isVoiceListeningRef.current = true;
+                    lastVoiceResultIndexRef.current = -1;
                     toast.success('🎙️ Voice Control active! Listening to commands...', { icon: '🎤' });
                 };
 
                 recognition.onresult = (event) => {
                     let interim = '';
-                    let finalTranscript = '';
+                    let newFinalTranscript = '';
                     for (let i = event.resultIndex; i < event.results.length; i++) {
-                        const trans = event.results[i][0].transcript;
-                        if (event.results[i].isFinal) {
-                            finalTranscript += trans;
+                        const res = event.results[i];
+                        if (res.isFinal) {
+                            if (i > lastVoiceResultIndexRef.current) {
+                                newFinalTranscript += res[0].transcript + ' ';
+                                lastVoiceResultIndexRef.current = i;
+                            }
                         } else {
-                            interim += trans;
+                            interim += res[0].transcript;
                         }
                     }
 
@@ -13429,10 +13580,18 @@ export default function Whiteboard({
                         setInterimVoiceTranscript(interim);
                     }
 
-                    if (finalTranscript) {
+                    const trimmedFinal = newFinalTranscript.trim();
+                    if (trimmedFinal) {
+                        const now = Date.now();
+                        // Prevent duplicated execution within 800ms of identical transcript
+                        if (trimmedFinal === lastExecutedVoiceTextRef.current && (now - lastExecutedVoiceTimeRef.current) < 800) {
+                            return;
+                        }
+                        lastExecutedVoiceTextRef.current = trimmedFinal;
+                        lastExecutedVoiceTimeRef.current = now;
                         setInterimVoiceTranscript('');
-                        setVoiceTranscript(finalTranscript);
-                        executeVoiceCommand(finalTranscript);
+                        setVoiceTranscript(trimmedFinal);
+                        executeVoiceCommand(trimmedFinal);
                     }
                 };
 

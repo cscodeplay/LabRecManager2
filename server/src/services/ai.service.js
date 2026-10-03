@@ -2,7 +2,7 @@ const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const ACTIVE_GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-3.6-flash'];
-const ACTIVE_GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it', 'openai/gpt-oss-120b', 'qwen/qwen3.6-27b'];
+const ACTIVE_GROQ_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
 
 class AIService {
     constructor() {
@@ -1461,7 +1461,7 @@ Translate the user's spoken input into the single best standardized Whiteboard v
 8. CANVAS ACTIONS & BACKGROUND STYLING:
    - "clear the board" | "undo" | "redo" | "zoom in" | "zoom out" | "reset zoom" | "fit to screen" | "fullscreen"
    - "background [grid|dots|lines|graph|music|isometric|hex|plain]"
-   - "background color [black|chalkboard|navy|white]"
+   - "background color [blue|navy|black|chalkboard|white|slate|gray|green|purple|cyan]" | "background [blue|navy|black|white|chalkboard|slate|gray]"
 
 9. MULTI-PAGE:
    - "new page" | "duplicate page" | "delete page" | "next page" | "previous page" | "jump to page [N]"
@@ -1562,15 +1562,15 @@ CRITICAL FLOWCHART & CYCLE GUIDELINES:
   - Use "diamond" for decisions, "parallelogram" for input/output, "terminator" for start/end, "rectangle" for steps.
   - Label branches clearly ("Yes/Match", "No/Mismatch", "Retry").
 
-If Question, Problem to Solve, or Explanation (e.g. "explain magnetic field with formula", "solve 3x + 12 = 36", "teach photosynthesis"):
-CRITICAL: NEVER return a tool modal command like "equation" or "math editor" when the user asks an educational explanation. ALWAYS return a "solution" with speechResponse and LaTeX formulas!
+If Question, Problem to Solve, or Scientific/Educational Explanation (e.g. "explain newton three laws of motion", "explain photosynthesis", "solve 3x + 12 = 36", "teach magnetic field with formula"):
+CRITICAL: NEVER return a drawing command (like 'draw circle') or canvas wipe command ('clear the board') for educational questions or explanations! ALWAYS return a "solution" with speechResponse and LaTeX formulas!
 {
   "recognized": true,
   "type": "solution",
   "intent": "solve_or_explain",
-  "speechResponse": "<1-3 natural, conversational sentences formulated for Speech Synthesis audio playback>",
-  "solutionMarkdown": "<Step-by-step clear solution and LaTeX formulas using $$...$$ format for math/science>",
-  "spokenFeedback": "<Brief status, e.g. 'Explained Magnetic Field & Formulas'>",
+  "speechResponse": "<2-4 natural, engaging conversational sentences explaining the concepts clearly for Speech Synthesis audio playback>",
+  "solutionMarkdown": "<Step-by-step clear solution, definitions, and LaTeX formulas using $$...$$ format for math/science>",
+  "spokenFeedback": "<Brief status, e.g. 'Explained Newton\\'s Laws of Motion'>",
   "canvasAction": {
     "type": "insert_solution_card",
     "title": "<Concise title of solution or concept>",
@@ -1586,24 +1586,26 @@ If completely gibberish:
 }`;
 
             if (this.groq) {
-                try {
-                    const completion = await this.groq.chat.completions.create({
-                        model: ACTIVE_GROQ_MODELS[0],
-                        messages: [
-                            { role: 'system', content: 'Output ONLY valid JSON. No markdown wrappers or explanation.' },
-                            { role: 'user', content: whiteboardSystemPrompt }
-                        ],
-                        temperature: 0.1
-                    });
-                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
-                    if (parsed && (parsed.translatedCommand || parsed.recognized)) {
-                        return {
-                            ...parsed,
-                            recognized: parsed.recognized !== false
-                        };
+                for (const gModel of ACTIVE_GROQ_MODELS) {
+                    try {
+                        const completion = await this.groq.chat.completions.create({
+                            model: gModel,
+                            messages: [
+                                { role: 'system', content: 'Output ONLY valid JSON. No markdown wrappers or explanation.' },
+                                { role: 'user', content: whiteboardSystemPrompt }
+                            ],
+                            temperature: 0.1
+                        });
+                        const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                        if (parsed && (parsed.translatedCommand || parsed.recognized || parsed.type === 'solution')) {
+                            return {
+                                ...parsed,
+                                recognized: parsed.recognized !== false
+                            };
+                        }
+                    } catch (e) {
+                        console.warn(`[AIService] Groq (${gModel}) whiteboard voice parser failed:`, e.message);
                     }
-                } catch (e) {
-                    console.warn('[AIService] Groq whiteboard voice parser failed:', e.message);
                 }
             }
 
@@ -1671,8 +1673,74 @@ If completely gibberish:
                 intent = 'grid';
                 spokenFeedback = 'Toggling grid background';
             }
+            // Background Patterns & Colors (Evaluated before shapes so 'background' never collides with 'round')
+            else if ((low.includes('blue') || low.includes('dark blue')) && (low.includes('background') || low.includes('canvas') || low.includes('board'))) {
+                translatedCommand = 'background color blue';
+                intent = 'bg_blue';
+                spokenFeedback = 'Setting canvas background to blue';
+            }
+            else if (low.includes('chalkboard') || (low.includes('green') && (low.includes('board') || low.includes('background') || low.includes('canvas')))) {
+                translatedCommand = 'chalkboard';
+                intent = 'bg_chalkboard';
+                spokenFeedback = 'Setting chalkboard green background';
+            }
+            else if (low.includes('navy') && (low.includes('background') || low.includes('canvas') || low.includes('board'))) {
+                translatedCommand = 'navy background';
+                intent = 'bg_navy';
+                spokenFeedback = 'Setting navy dark background';
+            }
+            else if (low.includes('black') && (low.includes('background') || low.includes('board') || low.includes('canvas'))) {
+                translatedCommand = 'background black';
+                intent = 'bg_black';
+                spokenFeedback = 'Setting black canvas background';
+            }
+            else if ((low.includes('white') || low.includes('plain') || low.includes('blank')) && (low.includes('background') || low.includes('board') || low.includes('canvas'))) {
+                translatedCommand = 'background white';
+                intent = 'bg_white';
+                spokenFeedback = 'Setting white canvas background';
+            }
+            else if (low.includes('slate') && (low.includes('background') || low.includes('canvas') || low.includes('board'))) {
+                translatedCommand = 'background color slate';
+                intent = 'bg_slate';
+                spokenFeedback = 'Setting slate canvas background';
+            }
+            else if (low.includes('purple') && (low.includes('background') || low.includes('canvas') || low.includes('board'))) {
+                translatedCommand = 'background color purple';
+                intent = 'bg_purple';
+                spokenFeedback = 'Setting purple canvas background';
+            }
+            else if (low.includes('cyan') && (low.includes('background') || low.includes('canvas') || low.includes('board'))) {
+                translatedCommand = 'background color cyan';
+                intent = 'bg_cyan';
+                spokenFeedback = 'Setting cyan canvas background';
+            }
+            else if (low.includes('background dot') || low.includes('canvas dot') || low.includes('dotted background')) {
+                translatedCommand = 'background dots';
+                intent = 'bg_dots';
+                spokenFeedback = 'Setting background to dots';
+            }
+            else if (low.includes('ruled') || low.includes('lined background') || low.includes('background lines')) {
+                translatedCommand = 'background lines';
+                intent = 'bg_lines';
+                spokenFeedback = 'Setting background to ruled lines';
+            }
+            else if (low.includes('music') && (low.includes('background') || low.includes('sheet') || low.includes('canvas'))) {
+                translatedCommand = 'background music';
+                intent = 'bg_music';
+                spokenFeedback = 'Setting background to music staff';
+            }
+            else if (low.includes('isometric') && (low.includes('background') || low.includes('canvas'))) {
+                translatedCommand = 'background isometric';
+                intent = 'bg_iso';
+                spokenFeedback = 'Setting background to isometric';
+            }
+            else if (low.includes('hex') && (low.includes('background') || low.includes('canvas'))) {
+                translatedCommand = 'background hex';
+                intent = 'bg_hex';
+                spokenFeedback = 'Setting background to hexagons';
+            }
             // Shapes Drawing
-            else if (low.includes('circle') || low.includes('round') || low.includes('disc') || low.includes('ring')) {
+            else if (low.includes('circle') || (/\b(round\s+shape|round\s+circle|disc|ring)\b/i.test(low)) || (/\bround\b/i.test(low) && !low.includes('background') && !low.includes('ground') && !low.includes('around') && !low.includes('surround'))) {
                 const num = (low.match(/\d+/) || [60])[0];
                 translatedCommand = `draw circle radius ${num}`;
                 intent = 'draw_circle';
@@ -2049,52 +2117,6 @@ If completely gibberish:
                 translatedCommand = 'reset image filters';
                 intent = 'reset_image_filters';
                 spokenFeedback = 'Reset image filters';
-            }
-            // Background Patterns & Colors
-            else if (low.includes('background dot') || low.includes('canvas dot') || low.includes('dotted background')) {
-                translatedCommand = 'background dots';
-                intent = 'bg_dots';
-                spokenFeedback = 'Setting background to dots';
-            }
-            else if (low.includes('ruled') || low.includes('lined background') || low.includes('background lines')) {
-                translatedCommand = 'background lines';
-                intent = 'bg_lines';
-                spokenFeedback = 'Setting background to ruled lines';
-            }
-            else if (low.includes('music') && (low.includes('background') || low.includes('sheet') || low.includes('canvas'))) {
-                translatedCommand = 'background music';
-                intent = 'bg_music';
-                spokenFeedback = 'Setting background to music staff';
-            }
-            else if (low.includes('isometric') && (low.includes('background') || low.includes('canvas'))) {
-                translatedCommand = 'background isometric';
-                intent = 'bg_iso';
-                spokenFeedback = 'Setting background to isometric';
-            }
-            else if (low.includes('hex') && (low.includes('background') || low.includes('canvas'))) {
-                translatedCommand = 'background hex';
-                intent = 'bg_hex';
-                spokenFeedback = 'Setting background to hexagons';
-            }
-            else if (low.includes('chalkboard') || (low.includes('green') && (low.includes('board') || low.includes('background')))) {
-                translatedCommand = 'chalkboard';
-                intent = 'bg_chalkboard';
-                spokenFeedback = 'Setting chalkboard green background';
-            }
-            else if (low.includes('navy') && (low.includes('background') || low.includes('canvas'))) {
-                translatedCommand = 'navy background';
-                intent = 'bg_navy';
-                spokenFeedback = 'Setting navy dark background';
-            }
-            else if (low.includes('black') && (low.includes('background') || low.includes('board') || low.includes('canvas'))) {
-                translatedCommand = 'background black';
-                intent = 'bg_black';
-                spokenFeedback = 'Setting black canvas background';
-            }
-            else if (low.includes('white') && (low.includes('background') || low.includes('board') || low.includes('canvas'))) {
-                translatedCommand = 'background white';
-                intent = 'bg_white';
-                spokenFeedback = 'Setting white canvas background';
             }
             // Multi-Page
             else if (low.includes('duplicate page') || low.includes('clone page')) {
@@ -2597,16 +2619,127 @@ Output ONLY a valid JSON object matching this schema:
             };
         }
 
-        // 7. Physics: Newton's Second Law
-        if (low.includes('newton') && (low.includes('second') || low.includes('force') || low.includes('acceleration'))) {
+        // 7. Physics: Newton's Laws of Motion & Classical Mechanics
+        if (
+            (low.includes('newton') && (low.includes('law') || low.includes('three') || low.includes('3') || low.includes('motion') || low.includes('principle') || low.includes('second') || low.includes('first') || low.includes('third') || low.includes('force'))) ||
+            low.includes('three laws of motion') ||
+            low.includes('three law of motion') ||
+            low.includes('laws of motion') ||
+            low.includes('law of motion')
+        ) {
+            // Check if user specifically requested First Law
+            if (low.includes('first') && !low.includes('three') && !low.includes('all')) {
+                return {
+                    speechResponse: "Newton's First Law of Motion, also known as the Law of Inertia, states that an object at rest will remain at rest, and an object in motion will continue in motion at a constant velocity, unless acted upon by a net external force.",
+                    solutionMarkdown: `### Newton's First Law of Motion (Law of Inertia)\n\n` +
+                        `$$\\sum \\vec{F} = 0 \\implies \\vec{v} = \\text{constant}$$\n\n` +
+                        `**Definition:**\nAn object continues in its state of rest or uniform motion in a straight line unless acted upon by an unbalanced external force.\n\n` +
+                        `**Key Concepts:**\n` +
+                        `- **Inertia:** The resistance of any physical object to any change in its velocity.\n` +
+                        `- **Mass as Inertia:** Greater mass means greater inertia.\n\n` +
+                        `*Everyday Example:* Passengers lurch forward when a bus suddenly brakes because their bodies tend to maintain their forward velocity.`,
+                    spokenFeedback: "Explained Newton's First Law of Motion",
+                    canvasAction: {
+                        type: 'insert_solution_card',
+                        title: "Newton's First Law (Inertia)",
+                        summary: 'ΣF = 0 ⟹ v = const'
+                    }
+                };
+            }
+
+            // Check if user specifically requested Third Law
+            if (low.includes('third') && !low.includes('three') && !low.includes('all')) {
+                return {
+                    speechResponse: "Newton's Third Law of Motion states that for every action, there is an equal and opposite reaction. When object A exerts a force on object B, object B simultaneously exerts an equal magnitude force in the opposite direction on object A.",
+                    solutionMarkdown: `### Newton's Third Law of Motion (Action & Reaction)\n\n` +
+                        `$$\\vec{F}_{A \\to B} = -\\vec{F}_{B \\to A}$$\n\n` +
+                        `**Definition:**\nFor every action force, there is always an equal magnitude and opposite direction reaction force.\n\n` +
+                        `**Critical Principles:**\n` +
+                        `- Action and reaction forces act on **two different bodies**, so they never cancel each other out.\n` +
+                        `- Forces always occur in matched pairs.\n\n` +
+                        `*Everyday Examples:*\n` +
+                        `- **Rocket Propulsion:** Expanding exhaust gases pushed downward push the rocket upward.\n` +
+                        `- **Swimming:** Pushing water backward propels the swimmer forward.`,
+                    spokenFeedback: "Explained Newton's Third Law of Motion",
+                    canvasAction: {
+                        type: 'insert_solution_card',
+                        title: "Newton's Third Law",
+                        summary: 'F(A→B) = -F(B→A)'
+                    }
+                };
+            }
+
+            // Check if user specifically requested Second Law only
+            if (low.includes('second') && !low.includes('three') && !low.includes('all')) {
+                return {
+                    speechResponse: "Newton's Second Law of Motion states that the acceleration of an object depends on the net force acting upon it and the mass of the object: Force equals mass multiplied by acceleration, F equals m times a.",
+                    solutionMarkdown: `### Newton's Second Law of Motion\n\n` +
+                        `$$\\vec{F}_{\\text{net}} = m \\cdot \\vec{a} = \\frac{d\\vec{p}}{dt}$$\n\n` +
+                        `- **$F$**: Net Force in Newtons (N or $\\text{kg}\\cdot\\text{m}/\\text{s}^2$)\n` +
+                        `- **$m$**: Mass in kilograms (kg)\n` +
+                        `- **$a$**: Acceleration in meters per second squared ($\\text{m}/\\text{s}^2$)\n` +
+                        `- **$\\vec{p}$**: Momentum ($m\\vec{v}$)\n\n` +
+                        `**Key Inferences:**\n` +
+                        `- Acceleration is directly proportional to net force: $a \\propto F$.\n` +
+                        `- Acceleration is inversely proportional to mass: $a \\propto \\frac{1}{m}$.`,
+                    spokenFeedback: "Explained Newton's Second Law",
+                    canvasAction: {
+                        type: 'insert_solution_card',
+                        title: "Newton's Second Law",
+                        summary: 'F = m · a'
+                    }
+                };
+            }
+
+            // Comprehensive Explanation of all Three Laws of Motion
             return {
-                speechResponse: "Newton's second law of motion states that force equals mass multiplied by acceleration: F equals m times a.",
-                solutionMarkdown: `### Newton's Second Law of Motion\n\n$$\\vec{F} = m \\cdot \\vec{a}$$\n\n- **$F$**: Force in Newtons (N or $\\text{kg}\\cdot\\text{m}/\\text{s}^2$)\n- **$m$**: Mass in kilograms (kg)\n- **$a$**: Acceleration in meters per second squared ($\\text{m}/\\text{s}^2$)\n\n**Key Inferences:**\n- Doubling force doubles acceleration for a constant mass.\n- Greater mass requires more force to accelerate.`,
-                spokenFeedback: "Explained Newton's Second Law",
+                speechResponse: "Sir Isaac Newton's three laws of motion form the foundation of classical mechanics. First Law, the Law of Inertia: An object remains at rest or moves with constant velocity unless acted upon by a net external force. Second Law, the Law of Force and Acceleration: Net force equals mass times acceleration, F equals m times a. Third Law, the Law of Action and Reaction: For every action, there is an equal and opposite reaction.",
+                solutionMarkdown: `### Newton's Three Laws of Motion\n\n` +
+                    `Formulated by Sir Isaac Newton in 1687 (*Philosophiæ Naturalis Principia Mathematica*), these three laws describe the relationship between a body and the forces acting upon it.\n\n` +
+                    `---\n\n` +
+                    `#### 1. First Law: Law of Inertia\n` +
+                    `$$\\sum \\vec{F} = 0 \\implies \\vec{v} = \\text{constant}$$\n` +
+                    `- **Statement:** A body remains at rest or continues in uniform motion in a straight line unless acted upon by an external net force.\n` +
+                    `- **Concept:** **Inertia** is the natural tendency of an object to resist changes in its state of motion.\n` +
+                    `- *Example:* Seatbelts restrain passengers during sudden deceleration.\n\n` +
+                    `---\n\n` +
+                    `#### 2. Second Law: Law of Force & Acceleration\n` +
+                    `$$\\vec{F} = m \\cdot \\vec{a} = \\frac{d\\vec{p}}{dt}$$\n` +
+                    `- **Statement:** The rate of change of momentum of a body is directly proportional to the applied force and occurs in the direction of the force.\n` +
+                    `- **Units:** Force in Newtons ($\\text{N} = \\text{kg}\\cdot\\text{m}/\\text{s}^2$).\n` +
+                    `- *Example:* Pushing a car requires far more force than pushing a bicycle to achieve the same acceleration.\n\n` +
+                    `---\n\n` +
+                    `#### 3. Third Law: Law of Action & Reaction\n` +
+                    `$$\\vec{F}_{A \\to B} = -\\vec{F}_{B \\to A}$$\n` +
+                    `- **Statement:** For every action, there is an equal and opposite reaction.\n` +
+                    `- **Key rule:** Action and reaction forces act on **different bodies** simultaneously, so they never cancel each other out.\n` +
+                    `- *Example:* Rocket engines expel hot gases downward at high velocity, producing an upward thrust that propels the rocket into orbit.`,
+                spokenFeedback: "Explained Newton's Three Laws of Motion",
                 canvasAction: {
                     type: 'insert_solution_card',
-                    title: "Newton's Second Law",
-                    summary: 'F = m · a'
+                    title: "Newton's Three Laws of Motion",
+                    summary: "1. Inertia | 2. F = ma | 3. F₁₂ = -F₂₁"
+                }
+            };
+        }
+
+        // 7B. Universal Gravitation
+        if (low.includes('gravit') || (low.includes('gravity') && (low.includes('formula') || low.includes('law') || low.includes('newton')))) {
+            return {
+                speechResponse: "Newton's law of universal gravitation states that every particle attracts every other particle with a force directly proportional to the product of their masses and inversely proportional to the square of the distance between them: F equals G times m 1 times m 2 divided by r squared.",
+                solutionMarkdown: `### Newton's Law of Universal Gravitation\n\n` +
+                    `$$F = G \\frac{m_1 m_2}{r^2}$$\n\n` +
+                    `- **$F$**: Gravitational force between two masses (N)\n` +
+                    `- **$G$**: Universal gravitational constant $\\approx 6.674 \\times 10^{-11} \\,\\text{N}\\cdot\\text{m}^2/\\text{kg}^2$\n` +
+                    `- **$m_1, m_2$**: Masses of the two objects (kg)\n` +
+                    `- **$r$**: Distance between centers of the masses (m)\n\n` +
+                    `**Acceleration due to Gravity on Earth ($g$):**\n` +
+                    `$$g = \\frac{G M_{\\text{Earth}}}{R_{\\text{Earth}}^2} \\approx 9.81 \\,\\text{m}/\\text{s}^2$$`,
+                spokenFeedback: "Explained Universal Gravitation",
+                canvasAction: {
+                    type: 'insert_solution_card',
+                    title: "Universal Gravitation",
+                    summary: "F = G(m₁m₂)/r²"
                 }
             };
         }
