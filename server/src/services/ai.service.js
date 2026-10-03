@@ -2093,6 +2093,9 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
 {
   "recognized": true,
   "speechResponse": "<A natural, engaging response to read aloud via TTS. Be concise.>",
+  "suggestedFollowUps": [
+    "<3 to 4 smart, highly topic-relevant follow-up actions or questions with emojis, e.g. '📐 Show formula', '🌿 Draw diagram', '✨ Show in 3D', '💡 Give a real-world example', '📝 Summarize in 3 points'>"
+  ],
   "actions": [
     {
       "type": "UI_COMMAND",
@@ -2184,6 +2187,8 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
 }
 
 CRITICAL RULES:
+- **DYNAMIC AI GENERATED ACTION PILLS (suggestedFollowUps)**:
+  For every response, generate 3 to 4 highly contextual, actionable follow-up suggestion pills tailored to the topic (e.g. for physics: ["📐 Show formula", "✨ Show in 3D model", "💡 Give real-world example"], for math: ["🔢 Solve with numbers", "📈 Graph this function", "📝 Step-by-step derivation"], for biology: ["🌿 Show cell diagram", "🔬 Explain function", "📝 Key definitions"]). Each should start with a relevant emoji.
 - **STRICTLY NO AUTOMATIC STICKY NOTES ON ANSWERS / EXPLANATIONS**:
   When the user asks an educational question, concept explanation, math problem, doubt, or conversational query (e.g. "what is photosynthesis", "explain gravity", "solve 3x + 9 = 27", "teach newton's laws"):
   - Provide the complete, structured explanation inside 'speechResponse'.
