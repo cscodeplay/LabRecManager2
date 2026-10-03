@@ -8620,7 +8620,11 @@ export function BotSettingsModal({ settings, onSave, onClose, isDialog = false }
                         onChange={(e) => setTemp(prev => ({ ...prev, defaultModel: e.target.value }))}
                         className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500"
                     >
-                        <option value="auto">Auto (Gemini & Groq intelligent routing)</option>
+                        <option value="auto">Auto (Paid Waterfall & Intelligent Routing)</option>
+                        <option value="openai">OpenAI (GPT-4o - Paid / Uninterrupted)</option>
+                        <option value="anthropic">Anthropic (Claude 3.7 Sonnet - Paid)</option>
+                        <option value="deepseek">DeepSeek (V3 / R1 - Paid / Fast)</option>
+                        <option value="openrouter">OpenRouter (Universal Paid Hub)</option>
                         <option value="groq">Groq (Llama-3.3-70b - Ultra Fast)</option>
                         <option value="gemini">Gemini (Gemini-2.5-flash - Deep Context)</option>
                         <option value="sambanova">SambaNova (Meta-Llama-3.1-70B)</option>
@@ -9924,11 +9928,15 @@ export default function FloatingChatbot() {
                                     onChange={(e) => handleModelChange(e.target.value)}
                                     className="bg-white/15 border border-white/25 text-white text-[10px] rounded px-1.5 py-0.5 outline-none focus:bg-white/25 max-w-[100px] truncate cursor-pointer"
                                 >
-                                    <option value="auto" className="text-black">Auto</option>
+                                    <option value="auto" className="text-black">Auto (Paid First)</option>
+                                    <option value="openai" className="text-black">OpenAI (GPT-4o)</option>
+                                    <option value="anthropic" className="text-black">Claude 3.7</option>
+                                    <option value="deepseek" className="text-black">DeepSeek V3</option>
+                                    <option value="openrouter" className="text-black">OpenRouter</option>
                                     <option value="groq" className="text-black">Groq (Llama)</option>
                                     <option value="gemini" className="text-black">Gemini</option>
                                     <option value="sambanova" className="text-black">SambaNova</option>
-                                    <option value="github" className="text-black">GPT-4o</option>
+                                    <option value="github" className="text-black">GPT-4o (GitHub)</option>
                                 </select>
                             </div>
                         </div>

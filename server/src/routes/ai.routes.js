@@ -5,7 +5,10 @@ const { authenticate, authorize, optionalAuth } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const prisma = require('../config/database');
 const aiService = require('../services/ai.service');
+const chatbotService = require('../services/chatbot.service');
 const notificationService = require('../services/notificationService');
+const fs = require('fs');
+const path = require('path');
 
 const upload = multer({
     limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
@@ -408,15 +411,33 @@ router.post('/voice-command', optionalAuth, asyncHandler(async (req, res) => {
     try {
         const result = await aiService.executeVoiceCommand(speechText, context);
 
+        if (result && result.quotaExhausted) {
+            return res.status(429).json({
+                success: false,
+                quotaExhausted: true,
+                message: result.error || 'AI Quota Exhausted across all configured providers',
+                data: result
+            });
+        }
+
         res.json({
             success: true,
             data: result
         });
     } catch (err) {
         console.error('[AI Route] Voice command error:', err.message);
-        res.status(500).json({
+        const isQuota = Boolean(err.isQuotaExhausted || (err.message && /quota|rate limit|429|resource_exhausted/i.test(err.message)));
+        res.status(isQuota ? 429 : 500).json({
             success: false,
-            message: err.message || 'Voice command interpretation failed'
+            quotaExhausted: isQuota,
+            message: err.message || 'Voice command interpretation failed',
+            data: {
+                recognized: false,
+                quotaExhausted: isQuota,
+                error: err.message,
+                spokenFeedback: isQuota ? 'AI service quota exhausted. Please check your API keys in Settings.' : 'Voice command interpretation failed',
+                speechResponse: isQuota ? 'The AI service quota is currently exhausted. Please update your API keys or configure a paid model in Settings to continue.' : 'AI failed to process this command.'
+            }
         });
     }
 }));
@@ -508,5 +529,130 @@ router.post('/recognize-image-text', authenticate, asyncHandler(async (req, res)
     }
 }));
 
+/**
+ * @route   GET /api/ai/config
+ * @desc    Get current AI model configurations and status (Admin/Principal only)
+ * @access  Private (Admin / Principal)
+ */
+router.get('/config', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const config = aiService.getConfigurations();
+    res.json({
+        success: true,
+        data: config
+    });
+}));
+
+/**
+ * @route   POST /api/ai/config
+ * @desc    Update and save AI provider API keys (OpenAI, Anthropic, DeepSeek, OpenRouter, Gemini, Groq, SambaNova)
+ * @access  Private (Admin / Principal)
+ */
+router.post('/config', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const {
+        openaiApiKey,
+        anthropicApiKey,
+        deepseekApiKey,
+        openrouterApiKey,
+        geminiApiKey,
+        groqApiKey,
+        sambanovaApiKey,
+        preferredProvider
+    } = req.body;
+
+    const configPath = path.join(__dirname, '../../storage/ai_config.json');
+    const dir = path.dirname(configPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    let existing = {};
+    try {
+        if (fs.existsSync(configPath)) {
+            existing = JSON.parse(fs.readFileSync(configPath, 'utf8')) || {};
+        }
+    } catch (e) {}
+
+    const isMasked = (v) => v && (typeof v === 'string') && (v.includes('••••') || v.includes('***'));
+
+    const updated = {
+        openaiApiKey: (!isMasked(openaiApiKey) && typeof openaiApiKey === 'string' && openaiApiKey.trim()) ? openaiApiKey.trim() : existing.openaiApiKey,
+        anthropicApiKey: (!isMasked(anthropicApiKey) && typeof anthropicApiKey === 'string' && anthropicApiKey.trim()) ? anthropicApiKey.trim() : existing.anthropicApiKey,
+        deepseekApiKey: (!isMasked(deepseekApiKey) && typeof deepseekApiKey === 'string' && deepseekApiKey.trim()) ? deepseekApiKey.trim() : existing.deepseekApiKey,
+        openrouterApiKey: (!isMasked(openrouterApiKey) && typeof openrouterApiKey === 'string' && openrouterApiKey.trim()) ? openrouterApiKey.trim() : existing.openrouterApiKey,
+        geminiApiKey: (!isMasked(geminiApiKey) && typeof geminiApiKey === 'string' && geminiApiKey.trim()) ? geminiApiKey.trim() : existing.geminiApiKey,
+        groqApiKey: (!isMasked(groqApiKey) && typeof groqApiKey === 'string' && groqApiKey.trim()) ? groqApiKey.trim() : existing.groqApiKey,
+        sambanovaApiKey: (!isMasked(sambanovaApiKey) && typeof sambanovaApiKey === 'string' && sambanovaApiKey.trim()) ? sambanovaApiKey.trim() : existing.sambanovaApiKey,
+        preferredProvider: preferredProvider || existing.preferredProvider || 'auto'
+    };
+
+    // Clean undefined keys
+    Object.keys(updated).forEach(k => {
+        if (updated[k] === undefined || updated[k] === '') delete updated[k];
+    });
+
+    fs.writeFileSync(configPath, JSON.stringify(updated, null, 2), 'utf8');
+
+    // Update in-memory process.env
+    if (updated.openaiApiKey) process.env.OPENAI_API_KEY = updated.openaiApiKey;
+    if (updated.anthropicApiKey) process.env.ANTHROPIC_API_KEY = updated.anthropicApiKey;
+    if (updated.deepseekApiKey) process.env.DEEPSEEK_API_KEY = updated.deepseekApiKey;
+    if (updated.openrouterApiKey) process.env.OPENROUTER_API_KEY = updated.openrouterApiKey;
+    if (updated.geminiApiKey) process.env.GEMINI_API_KEY = updated.geminiApiKey;
+    if (updated.groqApiKey) process.env.GROQ_API_KEY = updated.groqApiKey;
+    if (updated.sambanovaApiKey) process.env.SAMBANOVA_API_KEY = updated.sambanovaApiKey;
+    if (updated.preferredProvider) process.env.AI_PREFERRED_PROVIDER = updated.preferredProvider;
+
+    // Reload services
+    const aiConfig = aiService.reload();
+    chatbotService.reload();
+
+    res.json({
+        success: true,
+        message: 'AI Provider configurations saved and reloaded successfully',
+        data: aiConfig
+    });
+}));
+
+/**
+ * @route   POST /api/ai/test-provider
+ * @desc    Test live connectivity and quota for an AI provider
+ * @access  Private (Admin / Principal)
+ */
+router.post('/test-provider', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { provider } = req.body;
+    if (!provider) {
+        return res.status(400).json({ success: false, message: 'Provider is required' });
+    }
+
+    const t0 = Date.now();
+    try {
+        const testRes = await aiService.executeChatCompletion({
+            systemPrompt: 'You are an AI diagnostic assistant. Output exactly the word: ACTIVE.',
+            messages: [{ role: 'user', content: 'Ping' }],
+            preferredProvider: provider,
+            temperature: 0.1,
+            maxTokens: 10
+        });
+
+        const latencyMs = Date.now() - t0;
+        res.json({
+            success: true,
+            provider,
+            model: testRes.model,
+            latencyMs,
+            message: `Connection successful (${testRes.model} in ${latencyMs}ms)`
+        });
+    } catch (err) {
+        const latencyMs = Date.now() - t0;
+        const isQuota = Boolean(err.isQuotaExhausted || (err.message && /quota|rate limit|credit|balance|429|resource_exhausted/i.test(err.message)));
+        res.status(isQuota ? 429 : 400).json({
+            success: false,
+            provider,
+            latencyMs,
+            quotaExhausted: isQuota,
+            message: err.message
+        });
+    }
+}));
+
 module.exports = router;
+
 

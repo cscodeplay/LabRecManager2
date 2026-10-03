@@ -713,6 +713,9 @@ export const aiAPI = {
     batchCreate: (data) => api.post('/ai/batch-create', data),
     cardAssist: (data) => api.post('/ai/card-assist', data),
     voiceCommand: (data) => api.post('/ai/voice-command', data),
+    getConfig: () => api.get('/ai/config'),
+    saveConfig: (data) => api.post('/ai/config', data),
+    testProvider: (data) => api.post('/ai/test-provider', data),
 };
 
 export default api;

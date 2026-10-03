@@ -7,11 +7,11 @@ import {
     GraduationCap, Plus, Trash2, RotateCcw, Calendar, Filter, Clock,
     Video, Mic, MicOff, VideoOff, CheckCircle, XCircle, AlertTriangle,
     Volume2, Play, Square, Cloud, HardDrive, Key, Copy, Check, ExternalLink,
-    RefreshCw, Eye, EyeOff, Server, Database, Sparkles
+    RefreshCw, Eye, EyeOff, Server, Database, Sparkles, Zap, Cpu, CheckCircle2
 } from 'lucide-react';
 import { useAuthStore, useThemeStore, useLanguageStore, useVoiceStore } from '@/lib/store';
 import useSpeechSynthesis from '@/hooks/useSpeechSynthesis';
-import { authAPI, gradeScalesAPI, devicesAPI, academicYearsAPI, driveAdminAPI, googleDriveAPI } from '@/lib/api';
+import { authAPI, gradeScalesAPI, devicesAPI, academicYearsAPI, driveAdminAPI, googleDriveAPI, aiAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import ConfirmDialog, { useConfirm } from '@/components/ConfirmDialog';
@@ -203,6 +203,97 @@ export default function SettingsPage() {
         });
     };
 
+    // AI Models & Paid Providers state
+    const [aiConfigs, setAiConfigs] = useState({
+        preferredProvider: 'auto',
+        providers: {}
+    });
+    const [aiKeysInput, setAiKeysInput] = useState({
+        openaiApiKey: '',
+        anthropicApiKey: '',
+        deepseekApiKey: '',
+        openrouterApiKey: '',
+        geminiApiKey: '',
+        groqApiKey: '',
+        sambanovaApiKey: '',
+        preferredProvider: 'auto'
+    });
+    const [loadingAiSettings, setLoadingAiSettings] = useState(false);
+    const [savingAiSettings, setSavingAiSettings] = useState(false);
+    const [testingProvider, setTestingProvider] = useState(null);
+    const [testResults, setTestResults] = useState({});
+    const [showAiSecrets, setShowAiSecrets] = useState({});
+
+    const loadAiSettings = async () => {
+        try {
+            setLoadingAiSettings(true);
+            const res = await aiAPI.getConfig();
+            if (res.data?.success && res.data?.data) {
+                const data = res.data.data;
+                setAiConfigs(data);
+                const provs = data.providers || {};
+                setAiKeysInput({
+                    openaiApiKey: provs.openai?.maskedKey || '',
+                    anthropicApiKey: provs.anthropic?.maskedKey || '',
+                    deepseekApiKey: provs.deepseek?.maskedKey || '',
+                    openrouterApiKey: provs.openrouter?.maskedKey || '',
+                    geminiApiKey: provs.gemini?.maskedKey || '',
+                    groqApiKey: provs.groq?.maskedKey || '',
+                    sambanovaApiKey: provs.sambanova?.maskedKey || '',
+                    preferredProvider: data.preferredProvider || 'auto'
+                });
+            }
+        } catch (err) {
+            console.warn('Failed to load AI settings:', err.message);
+        } finally {
+            setLoadingAiSettings(false);
+        }
+    };
+
+    const handleSaveAiSettings = async () => {
+        try {
+            setSavingAiSettings(true);
+            const res = await aiAPI.saveConfig(aiKeysInput);
+            if (res.data?.success) {
+                toast.success('AI configurations saved and active!', { icon: '🤖' });
+                await loadAiSettings();
+            }
+        } catch (err) {
+            console.error('Failed to save AI config:', err);
+            toast.error(err.response?.data?.message || 'Failed to save AI configuration');
+        } finally {
+            setSavingAiSettings(false);
+        }
+    };
+
+    const handleTestProvider = async (providerKey) => {
+        try {
+            setTestingProvider(providerKey);
+            const res = await aiAPI.testProvider({ provider: providerKey });
+            if (res.data?.success) {
+                setTestResults(prev => ({
+                    ...prev,
+                    [providerKey]: { status: 'success', message: res.data.message, latency: res.data.latencyMs, model: res.data.model }
+                }));
+                toast.success(`${providerKey.toUpperCase()} verified! (${res.data.latencyMs}ms)`, { icon: '✅' });
+            }
+        } catch (err) {
+            const isQuota = err.response?.data?.quotaExhausted;
+            const msg = err.response?.data?.message || err.message;
+            setTestResults(prev => ({
+                ...prev,
+                [providerKey]: { status: isQuota ? 'quota_exhausted' : 'error', message: msg }
+            }));
+            if (isQuota) {
+                toast.error(`⚠️ ${providerKey.toUpperCase()} Quota Exhausted: ${msg}`, { duration: 6000 });
+            } else {
+                toast.error(`❌ ${providerKey.toUpperCase()} Test Failed: ${msg}`, { duration: 6000 });
+            }
+        } finally {
+            setTestingProvider(null);
+        }
+    };
+
     useEffect(() => {
         return () => {
             if (sampleAudioRef.current) {
@@ -231,6 +322,9 @@ export default function SettingsPage() {
         }
         if (activeTab === 'cloud_drives' && isAdmin) {
             loadCloudDriveSettings();
+        }
+        if (activeTab === 'ai' && isAdmin) {
+            loadAiSettings();
         }
     }, [activeTab, isAdmin]);
 
@@ -2811,75 +2905,621 @@ export default function SettingsPage() {
                         )}
 
                         {activeTab === 'ai' && isAdmin && (
-                            <div className="card p-6 space-y-6">
-                                {/* Quick link to Voice Settings */}
-                                <div className="p-4 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/40 dark:to-purple-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl flex items-center justify-between gap-4">
+                            <div className="space-y-6">
+                                {/* AI Teacher Voice Studio Banner */}
+                                <div className="p-4 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 dark:from-indigo-950/40 dark:via-purple-950/40 dark:to-pink-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                                        <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md">
                                             <Volume2 className="w-5 h-5" />
                                         </div>
                                         <div>
-                                            <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">AI Teacher Voice Studio</h4>
-                                            <p className="text-xs text-slate-600 dark:text-slate-400">Current voice: <strong className="capitalize">{selectedVoiceProfile}</strong> ({selectedVoiceName || 'Auto-matched'})</p>
+                                            <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-2">
+                                                AI Teacher Voice Studio
+                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300 font-medium">Synchronized</span>
+                                            </h4>
+                                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                                                Active Speech Persona: <strong className="capitalize text-indigo-600 dark:text-indigo-400">{selectedVoiceProfile}</strong> ({selectedVoiceName || 'Auto-matched'})
+                                            </p>
                                         </div>
                                     </div>
                                     <button
                                         type="button"
                                         onClick={() => setActiveTab('voice')}
-                                        className="btn btn-primary text-xs flex items-center gap-1.5 shrink-0"
+                                        className="btn btn-primary text-xs flex items-center gap-1.5 shrink-0 self-start sm:self-auto"
                                     >
-                                        <Volume2 className="w-4 h-4" /> Configure Voice
+                                        <Volume2 className="w-4 h-4" /> Configure Teacher Voice
                                     </button>
                                 </div>
 
-                                <div>
-                                    <h2 className="text-lg font-semibold text-slate-900 mb-2">AI Models & API Keys Setup</h2>
-                                    <p className="text-sm text-slate-600 mb-4">
-                                        Configure AI providers like SambaNova, Groq, Gemini, and GitHub Models to power LIA. Since this app runs on Render.com, you must set these keys as Environment Variables.
-                                    </p>
-                                </div>
-                                
-                                <div className="space-y-4">
-                                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg">
-                                        <h3 className="font-semibold text-slate-800 mb-2">How to add API Keys on Render.com</h3>
-                                        <ol className="list-decimal list-inside text-sm text-slate-600 space-y-2">
-                                            <li>Log into your Render dashboard and select your Web Service.</li>
-                                            <li>Go to the <strong>Environment</strong> tab on the left menu.</li>
-                                            <li>Click <strong>Add Environment Variable</strong>.</li>
-                                            <li>Add the variables (e.g. <code>SAMBANOVA_API_KEY</code>, <code>GROQ_API_KEY</code>).</li>
-                                            <li>Save the changes. Render will automatically redeploy the backend!</li>
-                                        </ol>
+                                {/* Main Header & Controls */}
+                                <div className="card p-6 space-y-6">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+                                        <div>
+                                            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                                                <Sparkles className="w-5 h-5 text-indigo-600" /> AI Models & Engine Configurations
+                                            </h2>
+                                            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
+                                                Configure enterprise paid providers (OpenAI, Anthropic Claude, DeepSeek, OpenRouter) and fast cloud models.
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={loadAiSettings}
+                                                disabled={loadingAiSettings}
+                                                className="btn btn-secondary text-xs flex items-center gap-1.5"
+                                                title="Refresh active provider statuses"
+                                            >
+                                                <RefreshCw className={`w-3.5 h-3.5 ${loadingAiSettings ? 'animate-spin' : ''}`} /> Refresh
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleSaveAiSettings}
+                                                disabled={savingAiSettings}
+                                                className="btn btn-primary text-xs flex items-center gap-1.5 shadow-sm"
+                                            >
+                                                <Save className="w-4 h-4" />
+                                                {savingAiSettings ? 'Saving...' : 'Save AI Configuration'}
+                                            </button>
+                                        </div>
                                     </div>
 
-                                    <div className="grid gap-3">
-                                        <div className="p-3 border border-slate-200 rounded-lg flex items-center justify-between">
-                                            <div>
-                                                <div className="font-medium text-slate-800">SambaNova API (Llama 3.2 Vision)</div>
-                                                <div className="text-xs text-slate-500 font-mono mt-0.5">SAMBANOVA_API_KEY</div>
-                                            </div>
-                                            <a href="https://cloud.sambanova.ai/" target="_blank" rel="noreferrer" className="text-primary-600 text-sm hover:underline">Get Key</a>
+                                    {/* Strict No-Mock / Quota Halting Safeguard Banner */}
+                                    <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-xl flex items-start gap-3">
+                                        <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                                        <div className="text-xs leading-relaxed text-slate-700 dark:text-slate-300">
+                                            <strong className="text-emerald-800 dark:text-emerald-300 font-semibold block mb-0.5">
+                                                Strict Live AI Enforcement & Quota Exhaustion Halting
+                                            </strong>
+                                            All canned fallback text and local fake answers (such as hardcoded Newton's laws or Pythagoras formulas) are completely disabled. Every user inquiry is evaluated dynamically via authentic AI models. If model quotas are exhausted or credentials fail, execution halts immediately with a clear alert rather than mutating whiteboard drawings or executing phantom commands.
                                         </div>
-                                        <div className="p-3 border border-slate-200 rounded-lg flex items-center justify-between">
+                                    </div>
+
+                                    {/* Preferred Primary Provider Selector */}
+                                    <div className="p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                             <div>
-                                                <div className="font-medium text-slate-800">GitHub Models API (GPT-4o)</div>
-                                                <div className="text-xs text-slate-500 font-mono mt-0.5">GITHUB_TOKEN</div>
+                                                <label className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                                                    <Cpu className="w-4 h-4 text-indigo-600" /> Preferred AI Engine Routing
+                                                </label>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                                    Choose which provider takes precedence for Chatbot, Voice Whiteboard, and Smart Teaching assists.
+                                                </p>
                                             </div>
-                                            <a href="https://github.com/marketplace/models" target="_blank" rel="noreferrer" className="text-primary-600 text-sm hover:underline">Get Token</a>
+                                            <select
+                                                value={aiKeysInput.preferredProvider}
+                                                onChange={(e) => setAiKeysInput(prev => ({ ...prev, preferredProvider: e.target.value }))}
+                                                className="input text-xs sm:text-sm py-1.5 px-3 rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-medium max-w-xs"
+                                            >
+                                                <option value="auto">Auto-Cascade (Paid First: OpenAI → Claude → DeepSeek → OpenRouter → Groq → Gemini → SambaNova)</option>
+                                                <option value="openai">OpenAI (Direct Paid: GPT-4o / GPT-4o-mini)</option>
+                                                <option value="anthropic">Anthropic (Direct Paid: Claude 3.7 Sonnet / Claude 3.5 Sonnet)</option>
+                                                <option value="deepseek">DeepSeek (Direct Paid: DeepSeek-Chat / DeepSeek-Reasoner)</option>
+                                                <option value="openrouter">OpenRouter (Unified Paid Multi-Model Gateway)</option>
+                                                <option value="gemini">Google Gemini (Gemini 2.0 Flash)</option>
+                                                <option value="groq">Groq (LPU Llama 3.3 70B Versatile)</option>
+                                                <option value="sambanova">SambaNova (Llama 3.2 Vision)</option>
+                                            </select>
                                         </div>
-                                        <div className="p-3 border border-slate-200 rounded-lg flex items-center justify-between">
-                                            <div>
-                                                <div className="font-medium text-slate-800">Groq API (Llama 3.3)</div>
-                                                <div className="text-xs text-slate-500 font-mono mt-0.5">GROQ_API_KEY</div>
+                                    </div>
+
+                                    {/* Section 1: Paid & Commercial AI Providers */}
+                                    <div className="space-y-4">
+                                        <div className="flex items-center gap-2">
+                                            <Zap className="w-4 h-4 text-amber-500" />
+                                            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                                                Paid & Enterprise AI Models (Zero Rate-Limit Interruption)
+                                            </h3>
+                                        </div>
+
+                                        <div className="grid gap-4 md:grid-cols-2">
+                                            {/* OpenAI */}
+                                            <div className="p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900/60 shadow-sm space-y-3">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">OpenAI</h4>
+                                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-800">
+                                                                Paid / Tier 1-5
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Models: <code>gpt-4o</code>, <code>gpt-4o-mini</code>, <code>o3-mini</code></p>
+                                                    </div>
+                                                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                                                        aiConfigs?.providers?.openai?.configured 
+                                                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200' 
+                                                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                                    }`}>
+                                                        {aiConfigs?.providers?.openai?.configured ? '✓ Active' : 'Not Set'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="relative">
+                                                    <input
+                                                        type={showAiSecrets.openai ? 'text' : 'password'}
+                                                        placeholder="sk-proj-..."
+                                                        value={aiKeysInput.openaiApiKey}
+                                                        onChange={(e) => setAiKeysInput(prev => ({ ...prev, openaiApiKey: e.target.value }))}
+                                                        className="input text-xs font-mono pr-9 w-full"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowAiSecrets(prev => ({ ...prev, openai: !prev.openai }))}
+                                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                                    >
+                                                        {showAiSecrets.openai ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                    </button>
+                                                </div>
+
+                                                <div className="flex items-center justify-between pt-1">
+                                                    <a
+                                                        href="https://platform.openai.com/api-keys"
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                                                    >
+                                                        Get OpenAI Key <ExternalLink className="w-3 h-3" />
+                                                    </a>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleTestProvider('openai')}
+                                                        disabled={testingProvider === 'openai'}
+                                                        className="btn btn-secondary text-xs py-1 px-2.5 flex items-center gap-1"
+                                                    >
+                                                        {testingProvider === 'openai' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+                                                        Test Key
+                                                    </button>
+                                                </div>
+
+                                                {testResults.openai && (
+                                                    <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+                                                        testResults.openai.status === 'success'
+                                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
+                                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200'
+                                                    }`}>
+                                                        {testResults.openai.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
+                                                        <span>{testResults.openai.message} {testResults.openai.latency ? `(${testResults.openai.latency}ms)` : ''}</span>
+                                                    </div>
+                                                )}
                                             </div>
-                                            <a href="https://console.groq.com/" target="_blank" rel="noreferrer" className="text-primary-600 text-sm hover:underline">Get Key</a>
-                                        </div>
-                                        <div className="p-3 border border-slate-200 rounded-lg flex items-center justify-between">
-                                            <div>
-                                                <div className="font-medium text-slate-800">Google Gemini API</div>
-                                                <div className="text-xs text-slate-500 font-mono mt-0.5">GEMINI_API_KEY</div>
+
+                                            {/* Anthropic */}
+                                            <div className="p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900/60 shadow-sm space-y-3">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">Anthropic Claude</h4>
+                                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 font-semibold border border-amber-200 dark:border-amber-800">
+                                                                Paid / Build Tier
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Models: <code>claude-3-7-sonnet</code>, <code>claude-3-5-sonnet</code></p>
+                                                    </div>
+                                                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                                                        aiConfigs?.providers?.anthropic?.configured 
+                                                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200' 
+                                                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                                    }`}>
+                                                        {aiConfigs?.providers?.anthropic?.configured ? '✓ Active' : 'Not Set'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="relative">
+                                                    <input
+                                                        type={showAiSecrets.anthropic ? 'text' : 'password'}
+                                                        placeholder="sk-ant-api03-..."
+                                                        value={aiKeysInput.anthropicApiKey}
+                                                        onChange={(e) => setAiKeysInput(prev => ({ ...prev, anthropicApiKey: e.target.value }))}
+                                                        className="input text-xs font-mono pr-9 w-full"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowAiSecrets(prev => ({ ...prev, anthropic: !prev.anthropic }))}
+                                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                                    >
+                                                        {showAiSecrets.anthropic ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                    </button>
+                                                </div>
+
+                                                <div className="flex items-center justify-between pt-1">
+                                                    <a
+                                                        href="https://console.anthropic.com/settings/keys"
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                                                    >
+                                                        Get Claude Key <ExternalLink className="w-3 h-3" />
+                                                    </a>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleTestProvider('anthropic')}
+                                                        disabled={testingProvider === 'anthropic'}
+                                                        className="btn btn-secondary text-xs py-1 px-2.5 flex items-center gap-1"
+                                                    >
+                                                        {testingProvider === 'anthropic' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+                                                        Test Key
+                                                    </button>
+                                                </div>
+
+                                                {testResults.anthropic && (
+                                                    <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+                                                        testResults.anthropic.status === 'success'
+                                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
+                                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200'
+                                                    }`}>
+                                                        {testResults.anthropic.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
+                                                        <span>{testResults.anthropic.message} {testResults.anthropic.latency ? `(${testResults.anthropic.latency}ms)` : ''}</span>
+                                                    </div>
+                                                )}
                                             </div>
-                                            <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" className="text-primary-600 text-sm hover:underline">Get Key</a>
+
+                                            {/* DeepSeek */}
+                                            <div className="p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900/60 shadow-sm space-y-3">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">DeepSeek</h4>
+                                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 font-semibold border border-blue-200 dark:border-blue-800">
+                                                                Paid / Pre-funded
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Models: <code>deepseek-chat</code> (V3), <code>deepseek-reasoner</code> (R1)</p>
+                                                    </div>
+                                                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                                                        aiConfigs?.providers?.deepseek?.configured 
+                                                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200' 
+                                                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                                    }`}>
+                                                        {aiConfigs?.providers?.deepseek?.configured ? '✓ Active' : 'Not Set'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="relative">
+                                                    <input
+                                                        type={showAiSecrets.deepseek ? 'text' : 'password'}
+                                                        placeholder="sk-..."
+                                                        value={aiKeysInput.deepseekApiKey}
+                                                        onChange={(e) => setAiKeysInput(prev => ({ ...prev, deepseekApiKey: e.target.value }))}
+                                                        className="input text-xs font-mono pr-9 w-full"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowAiSecrets(prev => ({ ...prev, deepseek: !prev.deepseek }))}
+                                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                                    >
+                                                        {showAiSecrets.deepseek ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                    </button>
+                                                </div>
+
+                                                <div className="flex items-center justify-between pt-1">
+                                                    <a
+                                                        href="https://platform.deepseek.com/api_keys"
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                                                    >
+                                                        Get DeepSeek Key <ExternalLink className="w-3 h-3" />
+                                                    </a>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleTestProvider('deepseek')}
+                                                        disabled={testingProvider === 'deepseek'}
+                                                        className="btn btn-secondary text-xs py-1 px-2.5 flex items-center gap-1"
+                                                    >
+                                                        {testingProvider === 'deepseek' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+                                                        Test Key
+                                                    </button>
+                                                </div>
+
+                                                {testResults.deepseek && (
+                                                    <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+                                                        testResults.deepseek.status === 'success'
+                                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
+                                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200'
+                                                    }`}>
+                                                        {testResults.deepseek.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
+                                                        <span>{testResults.deepseek.message} {testResults.deepseek.latency ? `(${testResults.deepseek.latency}ms)` : ''}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* OpenRouter */}
+                                            <div className="p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900/60 shadow-sm space-y-3">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">OpenRouter</h4>
+                                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 font-semibold border border-purple-200 dark:border-purple-800">
+                                                                Unified Paid Gateway
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Models: Auto-routes to 200+ models with prepaid credits</p>
+                                                    </div>
+                                                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                                                        aiConfigs?.providers?.openrouter?.configured 
+                                                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200' 
+                                                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                                    }`}>
+                                                        {aiConfigs?.providers?.openrouter?.configured ? '✓ Active' : 'Not Set'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="relative">
+                                                    <input
+                                                        type={showAiSecrets.openrouter ? 'text' : 'password'}
+                                                        placeholder="sk-or-v1-..."
+                                                        value={aiKeysInput.openrouterApiKey}
+                                                        onChange={(e) => setAiKeysInput(prev => ({ ...prev, openrouterApiKey: e.target.value }))}
+                                                        className="input text-xs font-mono pr-9 w-full"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowAiSecrets(prev => ({ ...prev, openrouter: !prev.openrouter }))}
+                                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                                    >
+                                                        {showAiSecrets.openrouter ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                    </button>
+                                                </div>
+
+                                                <div className="flex items-center justify-between pt-1">
+                                                    <a
+                                                        href="https://openrouter.ai/keys"
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                                                    >
+                                                        Get OpenRouter Key <ExternalLink className="w-3 h-3" />
+                                                    </a>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleTestProvider('openrouter')}
+                                                        disabled={testingProvider === 'openrouter'}
+                                                        className="btn btn-secondary text-xs py-1 px-2.5 flex items-center gap-1"
+                                                    >
+                                                        {testingProvider === 'openrouter' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+                                                        Test Key
+                                                    </button>
+                                                </div>
+
+                                                {testResults.openrouter && (
+                                                    <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+                                                        testResults.openrouter.status === 'success'
+                                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
+                                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200'
+                                                    }`}>
+                                                        {testResults.openrouter.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
+                                                        <span>{testResults.openrouter.message} {testResults.openrouter.latency ? `(${testResults.openrouter.latency}ms)` : ''}</span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
+                                    </div>
+
+                                    {/* Section 2: Fast & Cloud Tier Providers */}
+                                    <div className="space-y-4 pt-2">
+                                        <div className="flex items-center gap-2">
+                                            <Cpu className="w-4 h-4 text-indigo-500" />
+                                            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                                                Fast & Multimodal Cloud Providers
+                                            </h3>
+                                        </div>
+
+                                        <div className="grid gap-4 md:grid-cols-3">
+                                            {/* Google Gemini */}
+                                            <div className="p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900/60 shadow-sm space-y-3">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">Google Gemini</h4>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5"><code>gemini-2.0-flash</code></p>
+                                                    </div>
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                                                        aiConfigs?.providers?.gemini?.configured 
+                                                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200' 
+                                                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                                    }`}>
+                                                        {aiConfigs?.providers?.gemini?.configured ? 'Active' : 'Not Set'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="relative">
+                                                    <input
+                                                        type={showAiSecrets.gemini ? 'text' : 'password'}
+                                                        placeholder="AIzaSy..."
+                                                        value={aiKeysInput.geminiApiKey}
+                                                        onChange={(e) => setAiKeysInput(prev => ({ ...prev, geminiApiKey: e.target.value }))}
+                                                        className="input text-xs font-mono pr-9 w-full"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowAiSecrets(prev => ({ ...prev, gemini: !prev.gemini }))}
+                                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                                    >
+                                                        {showAiSecrets.gemini ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                    </button>
+                                                </div>
+
+                                                <div className="flex items-center justify-between pt-1">
+                                                    <a
+                                                        href="https://aistudio.google.com/app/apikey"
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                                                    >
+                                                        Get Key <ExternalLink className="w-3 h-3" />
+                                                    </a>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleTestProvider('gemini')}
+                                                        disabled={testingProvider === 'gemini'}
+                                                        className="btn btn-secondary text-xs py-1 px-2 flex items-center gap-1"
+                                                    >
+                                                        {testingProvider === 'gemini' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+                                                        Test
+                                                    </button>
+                                                </div>
+
+                                                {testResults.gemini && (
+                                                    <div className={`p-1.5 rounded-lg text-xs ${
+                                                        testResults.gemini.status === 'success'
+                                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300'
+                                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300'
+                                                    }`}>
+                                                        {testResults.gemini.message} {testResults.gemini.latency ? `(${testResults.gemini.latency}ms)` : ''}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Groq */}
+                                            <div className="p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900/60 shadow-sm space-y-3">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">Groq LPU</h4>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5"><code>llama-3.3-70b-versatile</code></p>
+                                                    </div>
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                                                        aiConfigs?.providers?.groq?.configured 
+                                                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200' 
+                                                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                                    }`}>
+                                                        {aiConfigs?.providers?.groq?.configured ? 'Active' : 'Not Set'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="relative">
+                                                    <input
+                                                        type={showAiSecrets.groq ? 'text' : 'password'}
+                                                        placeholder="gsk_..."
+                                                        value={aiKeysInput.groqApiKey}
+                                                        onChange={(e) => setAiKeysInput(prev => ({ ...prev, groqApiKey: e.target.value }))}
+                                                        className="input text-xs font-mono pr-9 w-full"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowAiSecrets(prev => ({ ...prev, groq: !prev.groq }))}
+                                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                                    >
+                                                        {showAiSecrets.groq ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                    </button>
+                                                </div>
+
+                                                <div className="flex items-center justify-between pt-1">
+                                                    <a
+                                                        href="https://console.groq.com/keys"
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                                                    >
+                                                        Get Key <ExternalLink className="w-3 h-3" />
+                                                    </a>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleTestProvider('groq')}
+                                                        disabled={testingProvider === 'groq'}
+                                                        className="btn btn-secondary text-xs py-1 px-2 flex items-center gap-1"
+                                                    >
+                                                        {testingProvider === 'groq' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+                                                        Test
+                                                    </button>
+                                                </div>
+
+                                                {testResults.groq && (
+                                                    <div className={`p-1.5 rounded-lg text-xs ${
+                                                        testResults.groq.status === 'success'
+                                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300'
+                                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300'
+                                                    }`}>
+                                                        {testResults.groq.message} {testResults.groq.latency ? `(${testResults.groq.latency}ms)` : ''}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* SambaNova */}
+                                            <div className="p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900/60 shadow-sm space-y-3">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">SambaNova</h4>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5"><code>Llama-3.2-11B-Vision</code></p>
+                                                    </div>
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                                                        aiConfigs?.providers?.sambanova?.configured 
+                                                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200' 
+                                                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                                    }`}>
+                                                        {aiConfigs?.providers?.sambanova?.configured ? 'Active' : 'Not Set'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="relative">
+                                                    <input
+                                                        type={showAiSecrets.sambanova ? 'text' : 'password'}
+                                                        placeholder="SambaNova key..."
+                                                        value={aiKeysInput.sambanovaApiKey}
+                                                        onChange={(e) => setAiKeysInput(prev => ({ ...prev, sambanovaApiKey: e.target.value }))}
+                                                        className="input text-xs font-mono pr-9 w-full"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowAiSecrets(prev => ({ ...prev, sambanova: !prev.sambanova }))}
+                                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                                    >
+                                                        {showAiSecrets.sambanova ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                    </button>
+                                                </div>
+
+                                                <div className="flex items-center justify-between pt-1">
+                                                    <a
+                                                        href="https://cloud.sambanova.ai/"
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                                                    >
+                                                        Get Key <ExternalLink className="w-3 h-3" />
+                                                    </a>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleTestProvider('sambanova')}
+                                                        disabled={testingProvider === 'sambanova'}
+                                                        className="btn btn-secondary text-xs py-1 px-2 flex items-center gap-1"
+                                                    >
+                                                        {testingProvider === 'sambanova' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+                                                        Test
+                                                    </button>
+                                                </div>
+
+                                                {testResults.sambanova && (
+                                                    <div className={`p-1.5 rounded-lg text-xs ${
+                                                        testResults.sambanova.status === 'success'
+                                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300'
+                                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300'
+                                                    }`}>
+                                                        {testResults.sambanova.message} {testResults.sambanova.latency ? `(${testResults.sambanova.latency}ms)` : ''}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Action Bar / Render.com Deploy Guide */}
+                                    <div className="p-4 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+                                        <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                                            Hosting on Render.com or Production Cloud
+                                        </h4>
+                                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                                            Keys saved here persist locally in the backend data storage (<code className="font-mono">server/storage/ai_config.json</code>) and become active immediately without server reboot. You can also configure them directly in your cloud dashboard (e.g. Render Environment Variables: <code className="font-mono">OPENAI_API_KEY</code>, <code className="font-mono">ANTHROPIC_API_KEY</code>, <code className="font-mono">DEEPSEEK_API_KEY</code>, <code className="font-mono">OPENROUTER_API_KEY</code>, <code className="font-mono">GEMINI_API_KEY</code>, <code className="font-mono">GROQ_API_KEY</code>).
+                                        </p>
+                                    </div>
+
+                                    {/* Bottom Save Button */}
+                                    <div className="flex justify-end pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveAiSettings}
+                                            disabled={savingAiSettings}
+                                            className="btn btn-primary text-sm flex items-center gap-2 px-6 py-2.5 shadow-md"
+                                        >
+                                            <Save className="w-4 h-4" />
+                                            {savingAiSettings ? 'Saving Configuration...' : 'Save AI Configuration'}
+                                        </button>
                                     </div>
                                 </div>
                             </div>

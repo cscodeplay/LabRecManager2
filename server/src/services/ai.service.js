@@ -1,33 +1,548 @@
+const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const ACTIVE_GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-3.6-flash'];
+// Paid & Production Models for Smooth, Uninterrupted Actions and Responses
+const ACTIVE_OPENAI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o1-mini', 'gpt-4-turbo'];
+const ACTIVE_ANTHROPIC_MODELS = ['claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'];
+const ACTIVE_DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-reasoner'];
+const ACTIVE_OPENROUTER_MODELS = ['openai/gpt-4o', 'anthropic/claude-3.5-sonnet', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct'];
+const ACTIVE_GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'];
 const ACTIVE_GROQ_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+const ACTIVE_SAMBANOVA_MODELS = ['Meta-Llama-3.1-70B-Instruct'];
 
 class AIService {
     constructor() {
         this.groq = null;
         this.genAI = null;
+        this.openAIKey = null;
+        this.anthropicKey = null;
+        this.deepSeekKey = null;
+        this.openRouterKey = null;
+        this.geminiKey = null;
+        this.groqKey = null;
+        this.sambaNovaKey = null;
+        this.preferredProvider = 'auto';
+        this.configPath = path.join(__dirname, '../../storage/ai_config.json');
         this.initialize();
     }
 
     initialize() {
-        const groqKey = process.env.GROQ_API_KEY;
-        if (groqKey) {
-            this.groq = new Groq({ apiKey: groqKey });
-            console.log('[AIService] Groq initialized as primary provider.');
-        } else {
-            console.warn('[AIService] GROQ_API_KEY not set.');
+        let fileConfig = {};
+        try {
+            if (fs.existsSync(this.configPath)) {
+                fileConfig = JSON.parse(fs.readFileSync(this.configPath, 'utf8')) || {};
+            }
+        } catch (e) {
+            console.warn('[AIService] Could not read ai_config.json:', e.message);
         }
 
-        const geminiKey = process.env.GEMINI_API_KEY;
-        if (geminiKey) {
-            this.genAI = new GoogleGenerativeAI(geminiKey);
-            console.log('[AIService] Gemini initialized as fallback provider.');
-        } else {
-            console.warn('[AIService] GEMINI_API_KEY not set.');
+        // 1. Paid Models (Primary for Uninterrupted Execution)
+        this.openAIKey = fileConfig.openaiApiKey || process.env.OPENAI_API_KEY || null;
+        this.anthropicKey = fileConfig.anthropicApiKey || process.env.ANTHROPIC_API_KEY || null;
+        this.deepSeekKey = fileConfig.deepseekApiKey || process.env.DEEPSEEK_API_KEY || null;
+        this.openRouterKey = fileConfig.openrouterApiKey || process.env.OPENROUTER_API_KEY || null;
+
+        // 2. High-Speed & Multimodal Providers
+        this.groqKey = fileConfig.groqApiKey || process.env.GROQ_API_KEY || null;
+        this.geminiKey = fileConfig.geminiApiKey || process.env.GEMINI_API_KEY || null;
+        this.sambaNovaKey = fileConfig.sambanovaApiKey || process.env.SAMBANOVA_API_KEY || null;
+        this.preferredProvider = fileConfig.preferredProvider || process.env.AI_PREFERRED_PROVIDER || 'auto';
+
+        if (this.groqKey) {
+            try {
+                this.groq = new Groq({ apiKey: this.groqKey });
+                console.log('[AIService] Groq initialized.');
+            } catch (err) {
+                console.warn('[AIService] Groq init failed:', err.message);
+                this.groq = null;
+            }
+        }
+
+        if (this.geminiKey) {
+            try {
+                this.genAI = new GoogleGenerativeAI(this.geminiKey);
+                console.log('[AIService] Gemini initialized.');
+            } catch (err) {
+                console.warn('[AIService] Gemini init failed:', err.message);
+                this.genAI = null;
+            }
+        }
+
+        if (this.openAIKey) console.log('[AIService] OpenAI (Paid) initialized.');
+        if (this.anthropicKey) console.log('[AIService] Anthropic Claude (Paid) initialized.');
+        if (this.deepSeekKey) console.log('[AIService] DeepSeek (Paid) initialized.');
+        if (this.openRouterKey) console.log('[AIService] OpenRouter (Paid Hub) initialized.');
+        if (this.sambaNovaKey) console.log('[AIService] SambaNova initialized.');
+    }
+
+    reload() {
+        this.initialize();
+        return this.getConfigurations();
+    }
+
+    getConfigurations() {
+        const mask = (k) => {
+            if (!k || typeof k !== 'string') return '';
+            const t = k.trim();
+            if (t.length <= 8) return '••••••••';
+            return `${t.slice(0, 4)}••••${t.slice(-4)}`;
+        };
+
+        return {
+            preferredProvider: this.preferredProvider || 'auto',
+            providers: {
+                openai: {
+                    name: 'OpenAI (Paid)',
+                    configured: Boolean(this.openAIKey),
+                    maskedKey: mask(this.openAIKey),
+                    models: ACTIVE_OPENAI_MODELS,
+                    tier: 'paid'
+                },
+                anthropic: {
+                    name: 'Anthropic Claude (Paid)',
+                    configured: Boolean(this.anthropicKey),
+                    maskedKey: mask(this.anthropicKey),
+                    models: ACTIVE_ANTHROPIC_MODELS,
+                    tier: 'paid'
+                },
+                deepseek: {
+                    name: 'DeepSeek (Paid)',
+                    configured: Boolean(this.deepSeekKey),
+                    maskedKey: mask(this.deepSeekKey),
+                    models: ACTIVE_DEEPSEEK_MODELS,
+                    tier: 'paid'
+                },
+                openrouter: {
+                    name: 'OpenRouter (Universal Paid Hub)',
+                    configured: Boolean(this.openRouterKey),
+                    maskedKey: mask(this.openRouterKey),
+                    models: ACTIVE_OPENROUTER_MODELS,
+                    tier: 'paid'
+                },
+                gemini: {
+                    name: 'Google Gemini (Paid/Free)',
+                    configured: Boolean(this.geminiKey),
+                    maskedKey: mask(this.geminiKey),
+                    models: ACTIVE_GEMINI_MODELS,
+                    tier: 'flexible'
+                },
+                groq: {
+                    name: 'Groq (Ultra-Fast LPU)',
+                    configured: Boolean(this.groqKey),
+                    maskedKey: mask(this.groqKey),
+                    models: ACTIVE_GROQ_MODELS,
+                    tier: 'fast'
+                },
+                sambanova: {
+                    name: 'SambaNova (Llama 3.1 70B)',
+                    configured: Boolean(this.sambaNovaKey),
+                    maskedKey: mask(this.sambaNovaKey),
+                    models: ACTIVE_SAMBANOVA_MODELS,
+                    tier: 'fast'
+                }
+            }
+        };
+    }
+
+    // ═══ PAID & FAST PROVIDER CALLERS ═══
+
+    async callOpenAI({ messages, model = 'gpt-4o', temperature = 0.1, max_tokens = 4000, jsonMode = false }) {
+        if (!this.openAIKey) throw new Error('OpenAI API key not configured');
+        const payload = {
+            model,
+            messages,
+            temperature,
+            max_tokens
+        };
+        if (jsonMode) {
+            payload.response_format = { type: 'json_object' };
+        }
+        try {
+            console.log(`[AIService] Calling OpenAI (${model})...`);
+            const res = await axios.post('https://api.openai.com/v1/chat/completions', payload, {
+                headers: {
+                    'Authorization': `Bearer ${this.openAIKey.trim()}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 35000
+            });
+            const text = res.data?.choices?.[0]?.message?.content || '';
+            return { text, model, provider: 'openai' };
+        } catch (err) {
+            const status = err.response?.status;
+            const errData = err.response?.data?.error || {};
+            const isQuota = status === 429 ||
+                errData.code === 'insufficient_quota' ||
+                errData.type === 'insufficient_quota' ||
+                (errData.message && /quota|rate limit|billing/i.test(errData.message));
+            const error = new Error(`OpenAI (${model}) failed: ${errData.message || err.message}`);
+            error.status = status;
+            error.isQuotaError = isQuota;
+            error.provider = 'openai';
+            throw error;
         }
     }
+
+    async callAnthropic({ messages, system = '', model = 'claude-3-7-sonnet-20250219', temperature = 0.1, max_tokens = 4000 }) {
+        if (!this.anthropicKey) throw new Error('Anthropic API key not configured');
+        
+        let systemPrompt = system || '';
+        const anthropicMessages = [];
+        for (const m of messages) {
+            if (m.role === 'system') {
+                systemPrompt = systemPrompt ? `${systemPrompt}\n\n${m.content}` : m.content;
+            } else {
+                anthropicMessages.push({
+                    role: m.role === 'assistant' ? 'assistant' : 'user',
+                    content: m.content
+                });
+            }
+        }
+        if (anthropicMessages.length === 0 && systemPrompt) {
+            anthropicMessages.push({ role: 'user', content: 'Proceed' });
+        }
+
+        const payload = {
+            model,
+            system: systemPrompt || undefined,
+            messages: anthropicMessages,
+            temperature,
+            max_tokens
+        };
+
+        try {
+            console.log(`[AIService] Calling Anthropic (${model})...`);
+            const res = await axios.post('https://api.anthropic.com/v1/messages', payload, {
+                headers: {
+                    'x-api-key': this.anthropicKey.trim(),
+                    'anthropic-version': '2023-06-01',
+                    'Content-Type': 'application/json'
+                },
+                timeout: 40000
+            });
+            const text = res.data?.content?.[0]?.text || '';
+            return { text, model, provider: 'anthropic' };
+        } catch (err) {
+            const status = err.response?.status;
+            const errData = err.response?.data?.error || {};
+            const isQuota = status === 429 ||
+                errData.type === 'rate_limit_error' ||
+                (errData.message && /quota|rate limit|credit balance|overloaded/i.test(errData.message));
+            const error = new Error(`Anthropic (${model}) failed: ${errData.message || err.message}`);
+            error.status = status;
+            error.isQuotaError = isQuota;
+            error.provider = 'anthropic';
+            throw error;
+        }
+    }
+
+    async callDeepSeek({ messages, model = 'deepseek-chat', temperature = 0.1, max_tokens = 4000, jsonMode = false }) {
+        if (!this.deepSeekKey) throw new Error('DeepSeek API key not configured');
+        const payload = {
+            model,
+            messages,
+            temperature,
+            max_tokens
+        };
+        if (jsonMode) {
+            payload.response_format = { type: 'json_object' };
+        }
+        try {
+            console.log(`[AIService] Calling DeepSeek (${model})...`);
+            const res = await axios.post('https://api.deepseek.com/chat/completions', payload, {
+                headers: {
+                    'Authorization': `Bearer ${this.deepSeekKey.trim()}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 35000
+            });
+            const text = res.data?.choices?.[0]?.message?.content || '';
+            return { text, model, provider: 'deepseek' };
+        } catch (err) {
+            const status = err.response?.status;
+            const errData = err.response?.data?.error || {};
+            const isQuota = status === 429 ||
+                errData.code === 'insufficient_quota' ||
+                (errData.message && /quota|rate limit|balance/i.test(errData.message));
+            const error = new Error(`DeepSeek (${model}) failed: ${errData.message || err.message}`);
+            error.status = status;
+            error.isQuotaError = isQuota;
+            error.provider = 'deepseek';
+            throw error;
+        }
+    }
+
+    async callOpenRouter({ messages, model = 'openai/gpt-4o', temperature = 0.1, max_tokens = 4000 }) {
+        if (!this.openRouterKey) throw new Error('OpenRouter API key not configured');
+        try {
+            console.log(`[AIService] Calling OpenRouter (${model})...`);
+            const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+                model,
+                messages,
+                temperature,
+                max_tokens
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${this.openRouterKey.trim()}`,
+                    'HTTP-Referer': 'https://labrecmanager.app',
+                    'X-Title': 'Lab Record Manager',
+                    'Content-Type': 'application/json'
+                },
+                timeout: 35000
+            });
+            const text = res.data?.choices?.[0]?.message?.content || '';
+            return { text, model, provider: 'openrouter' };
+        } catch (err) {
+            const status = err.response?.status;
+            const errData = err.response?.data?.error || {};
+            const isQuota = status === 429 ||
+                (errData.message && /credits|quota|rate limit|balance/i.test(errData.message));
+            const error = new Error(`OpenRouter (${model}) failed: ${errData.message || err.message}`);
+            error.status = status;
+            error.isQuotaError = isQuota;
+            error.provider = 'openrouter';
+            throw error;
+        }
+    }
+
+    async callGroq({ messages, model, temperature = 0.1, max_tokens = 4000, jsonMode = false }) {
+        if (!this.groq) throw new Error('Groq not configured');
+        const modelsToTry = model ? [model] : ACTIVE_GROQ_MODELS;
+        let lastErr = null;
+
+        for (const m of modelsToTry) {
+            try {
+                console.log(`[AIService] Calling Groq (${m})...`);
+                const req = {
+                    model: m,
+                    messages,
+                    temperature,
+                    max_tokens
+                };
+                if (jsonMode) {
+                    req.response_format = { type: 'json_object' };
+                }
+                const completion = await this.groq.chat.completions.create(req);
+                const text = completion.choices[0]?.message?.content || '';
+                return { text, model: m, provider: 'groq' };
+            } catch (err) {
+                lastErr = err;
+                const status = err.status || err.response?.status;
+                const isQuota = status === 429 || (err.message && /rate limit|quota|tokens per minute/i.test(err.message));
+                console.warn(`[AIService] Groq ${m} failed (${status || 'error'}): ${err.message?.substring(0, 80)}`);
+                if (isQuota) {
+                    err.isQuotaError = true;
+                    // continue to try other models or providers
+                }
+            }
+        }
+        const error = new Error(`Groq failed: ${lastErr?.message || 'All models failed'}`);
+        error.isQuotaError = Boolean(lastErr?.status === 429 || lastErr?.isQuotaError || (lastErr?.message && /rate limit|quota/i.test(lastErr.message)));
+        error.provider = 'groq';
+        throw error;
+    }
+
+    async callGemini({ contents, systemInstruction, model, temperature = 0.1 }) {
+        if (!this.genAI) throw new Error('Gemini not configured');
+        const modelsToTry = model ? [model] : ACTIVE_GEMINI_MODELS;
+        let lastErr = null;
+
+        for (const m of modelsToTry) {
+            try {
+                console.log(`[AIService] Calling Gemini (${m})...`);
+                const geminiModel = this.genAI.getGenerativeModel({
+                    model: m,
+                    systemInstruction: systemInstruction || undefined,
+                    generationConfig: { temperature }
+                });
+                const result = await geminiModel.generateContent(contents);
+                const text = (await result.response).text();
+                return { text, model: m, provider: 'gemini' };
+            } catch (err) {
+                lastErr = err;
+                const isQuota = err.status === 429 ||
+                    (err.message && /resource_exhausted|quota|rate limit|429/i.test(err.message));
+                console.warn(`[AIService] Gemini ${m} failed: ${err.message?.substring(0, 80)}`);
+                if (isQuota) {
+                    err.isQuotaError = true;
+                }
+            }
+        }
+        const error = new Error(`Gemini failed: ${lastErr?.message || 'All models failed'}`);
+        error.isQuotaError = Boolean(lastErr?.isQuotaError || (lastErr?.message && /resource_exhausted|quota|429/i.test(lastErr.message)));
+        error.provider = 'gemini';
+        throw error;
+    }
+
+    async callSambaNova({ messages, model = 'Meta-Llama-3.1-70B-Instruct', temperature = 0.1, max_tokens = 4000 }) {
+        if (!this.sambaNovaKey) throw new Error('SambaNova not configured');
+        try {
+            console.log(`[AIService] Calling SambaNova (${model})...`);
+            const res = await axios.post('https://api.sambanova.ai/v1/chat/completions', {
+                model,
+                messages,
+                temperature,
+                max_tokens
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${this.sambaNovaKey.trim()}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 35000
+            });
+            const text = res.data?.choices?.[0]?.message?.content || '';
+            return { text, model, provider: 'sambanova' };
+        } catch (err) {
+            const status = err.response?.status;
+            const errData = err.response?.data?.error || {};
+            const isQuota = status === 429 || (errData.message && /quota|rate limit/i.test(errData.message));
+            const error = new Error(`SambaNova failed: ${errData.message || err.message}`);
+            error.status = status;
+            error.isQuotaError = isQuota;
+            error.provider = 'sambanova';
+            throw error;
+        }
+    }
+
+    /**
+     * Unified Chat Completion Engine
+     * Prioritizes Paid Models (OpenAI, Anthropic Claude, DeepSeek, OpenRouter)
+     * Cascades down through available providers and models.
+     * Detects quota exhaustion and returns clear errors without fake local fallbacks!
+     */
+    async executeChatCompletion({ messages, systemPrompt = '', preferredProvider = 'auto', temperature = 0.1, maxTokens = 4000, jsonMode = false }) {
+        const fullMessages = [];
+        if (systemPrompt) {
+            fullMessages.push({ role: 'system', content: systemPrompt });
+        }
+        if (Array.isArray(messages)) {
+            for (const m of messages) fullMessages.push(m);
+        }
+
+        const candidateOrder = [];
+        const pref = preferredProvider || this.preferredProvider || 'auto';
+
+        // 1. If explicit preferred provider given
+        if (pref !== 'auto') {
+            if (pref === 'openai' && this.openAIKey) candidateOrder.push('openai');
+            else if (pref === 'anthropic' && this.anthropicKey) candidateOrder.push('anthropic');
+            else if (pref === 'deepseek' && this.deepSeekKey) candidateOrder.push('deepseek');
+            else if (pref === 'openrouter' && this.openRouterKey) candidateOrder.push('openrouter');
+            else if (pref === 'groq' && this.groqKey) candidateOrder.push('groq');
+            else if (pref === 'gemini' && this.geminiKey) candidateOrder.push('gemini');
+            else if (pref === 'sambanova' && this.sambaNovaKey) candidateOrder.push('sambanova');
+        }
+
+        // 2. Add remaining configured providers
+        // Paid Tier First (Guarantees uninterrupted, high RPM execution)
+        if (this.openAIKey && !candidateOrder.includes('openai')) candidateOrder.push('openai');
+        if (this.anthropicKey && !candidateOrder.includes('anthropic')) candidateOrder.push('anthropic');
+        if (this.deepSeekKey && !candidateOrder.includes('deepseek')) candidateOrder.push('deepseek');
+        if (this.openRouterKey && !candidateOrder.includes('openrouter')) candidateOrder.push('openrouter');
+
+        // High-Speed Inference
+        if (this.groqKey && !candidateOrder.includes('groq')) candidateOrder.push('groq');
+        if (this.geminiKey && !candidateOrder.includes('gemini')) candidateOrder.push('gemini');
+        if (this.sambaNovaKey && !candidateOrder.includes('sambanova')) candidateOrder.push('sambanova');
+
+        if (candidateOrder.length === 0) {
+            const err = new Error('No AI provider configured. Please add an API key (OpenAI, Anthropic, DeepSeek, Gemini, or Groq) in Settings.');
+            err.isQuotaExhausted = false;
+            err.noConfig = true;
+            throw err;
+        }
+
+        const attemptErrors = [];
+
+        for (const prov of candidateOrder) {
+            try {
+                if (prov === 'openai') {
+                    for (const m of ACTIVE_OPENAI_MODELS.slice(0, 3)) {
+                        try {
+                            return await this.callOpenAI({ messages: fullMessages, model: m, temperature, max_tokens: maxTokens, jsonMode });
+                        } catch (mErr) {
+                            attemptErrors.push({ provider: 'openai', model: m, error: mErr.message, isQuota: mErr.isQuotaError });
+                            if (mErr.isQuotaError) break; // quota exhausted for this account, move to next provider
+                        }
+                    }
+                } else if (prov === 'anthropic') {
+                    for (const m of ACTIVE_ANTHROPIC_MODELS.slice(0, 2)) {
+                        try {
+                            return await this.callAnthropic({ messages: fullMessages, system: systemPrompt, model: m, temperature, max_tokens: maxTokens });
+                        } catch (mErr) {
+                            attemptErrors.push({ provider: 'anthropic', model: m, error: mErr.message, isQuota: mErr.isQuotaError });
+                            if (mErr.isQuotaError) break;
+                        }
+                    }
+                } else if (prov === 'deepseek') {
+                    for (const m of ACTIVE_DEEPSEEK_MODELS) {
+                        try {
+                            return await this.callDeepSeek({ messages: fullMessages, model: m, temperature, max_tokens: maxTokens, jsonMode });
+                        } catch (mErr) {
+                            attemptErrors.push({ provider: 'deepseek', model: m, error: mErr.message, isQuota: mErr.isQuotaError });
+                            if (mErr.isQuotaError) break;
+                        }
+                    }
+                } else if (prov === 'openrouter') {
+                    for (const m of ACTIVE_OPENROUTER_MODELS.slice(0, 2)) {
+                        try {
+                            return await this.callOpenRouter({ messages: fullMessages, model: m, temperature, max_tokens: maxTokens });
+                        } catch (mErr) {
+                            attemptErrors.push({ provider: 'openrouter', model: m, error: mErr.message, isQuota: mErr.isQuotaError });
+                            if (mErr.isQuotaError) break;
+                        }
+                    }
+                } else if (prov === 'groq') {
+                    for (const m of ACTIVE_GROQ_MODELS.slice(0, 3)) {
+                        try {
+                            return await this.callGroq({ messages: fullMessages, model: m, temperature, max_tokens: maxTokens, jsonMode });
+                        } catch (mErr) {
+                            attemptErrors.push({ provider: 'groq', model: m, error: mErr.message, isQuota: mErr.isQuotaError });
+                            if (mErr.isQuotaError) break;
+                        }
+                    }
+                } else if (prov === 'gemini') {
+                    // Convert messages to Gemini format
+                    const userParts = [];
+                    for (const m of fullMessages) {
+                        if (m.role === 'user') userParts.push(m.content);
+                        else if (m.role === 'assistant') userParts.push(`Assistant: ${m.content}`);
+                    }
+                    const prompt = userParts.join('\n\n') || 'Proceed';
+                    for (const m of ACTIVE_GEMINI_MODELS.slice(0, 3)) {
+                        try {
+                            return await this.callGemini({ contents: prompt, systemInstruction: systemPrompt, model: m, temperature });
+                        } catch (mErr) {
+                            attemptErrors.push({ provider: 'gemini', model: m, error: mErr.message, isQuota: mErr.isQuotaError });
+                            if (mErr.isQuotaError) break;
+                        }
+                    }
+                } else if (prov === 'sambanova') {
+                    try {
+                        return await this.callSambaNova({ messages: fullMessages, model: ACTIVE_SAMBANOVA_MODELS[0], temperature, max_tokens: maxTokens });
+                    } catch (mErr) {
+                        attemptErrors.push({ provider: 'sambanova', model: ACTIVE_SAMBANOVA_MODELS[0], error: mErr.message, isQuota: mErr.isQuotaError });
+                    }
+                }
+            } catch (err) {
+                attemptErrors.push({ provider: prov, error: err.message, isQuota: err.isQuotaError });
+            }
+        }
+
+        const isQuotaExhausted = attemptErrors.length > 0 && attemptErrors.some(e => e.isQuota);
+        const errorDetail = attemptErrors.map(e => `${e.provider}${e.model ? ` (${e.model})` : ''}: ${e.error}`).join(' | ');
+        const finalError = new Error(isQuotaExhausted 
+            ? `AI Quota Exhausted: All configured AI providers have exhausted their rate limits or API credit balance. (${errorDetail})` 
+            : `All configured AI providers failed: ${errorDetail}`
+        );
+        finalError.isQuotaExhausted = isQuotaExhausted;
+        finalError.attemptErrors = attemptErrors;
+        throw finalError;
+    }
+
 
     /**
      * Extract structured assignment list from syllabus / program list image
@@ -1352,46 +1867,31 @@ Output MUST be ONLY valid JSON matching this schema:
                 return this.executeVoiceCommand(prompt, context);
         }
 
-        // 1. Try Groq (Ultra-fast primary)
-        if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            try {
-                const completion = await this.groq.chat.completions.create({
-                    model: ACTIVE_GROQ_MODELS[0],
-                    messages: [
-                        { role: 'system', content: 'You are an educational AI assistant. Output ONLY valid JSON matching the requested schema. No markdown code blocks.' },
-                        { role: 'user', content: systemPrompt }
-                    ],
-                    temperature: 0.2
-                });
-                const responseText = completion.choices[0]?.message?.content || '{}';
-                return this.parseJSONResponse(responseText);
-            } catch (groqErr) {
-                console.warn('[AIService] Groq card-assist failed:', groqErr.message);
+        // Execute via Unified AI Completion (OpenAI Paid -> Anthropic -> DeepSeek -> OpenRouter -> Groq -> Gemini -> SambaNova)
+        try {
+            const completionRes = await this.executeChatCompletion({
+                systemPrompt: 'You are an educational AI assistant. Output ONLY valid JSON matching the requested schema. No markdown code blocks.',
+                messages: [{ role: 'user', content: systemPrompt }],
+                preferredProvider: provider || this.preferredProvider || 'auto',
+                temperature: 0.2,
+                jsonMode: true
+            });
+            const parsed = this.parseJSONResponse(completionRes.text || '{}');
+            if (parsed && typeof parsed === 'object') return parsed;
+        } catch (aiErr) {
+            console.warn(`[AIService] AI card-assist failed for ${type}:`, aiErr.message);
+            if (aiErr.isQuotaExhausted) {
+                throw aiErr;
             }
         }
 
-        // 2. Try Gemini (Fallback)
-        if (this.genAI) {
-            for (const modelName of ACTIVE_GEMINI_MODELS) {
-                try {
-                    const model = this.genAI.getGenerativeModel({ model: modelName });
-                    const result = await model.generateContent(systemPrompt);
-                    const responseText = result.response.text();
-                    const parsed = this.parseJSONResponse(responseText);
-                    if (parsed) return parsed;
-                } catch (geminiErr) {
-                    console.warn(`[AIService] Gemini (${modelName}) card-assist failed:`, geminiErr.message);
-                }
-            }
-        }
-
-        // 3. Fallback
+        // Fallback only if non-quota and fallbackFn exists
         if (fallbackFn) {
-            console.log(`[AIService] Using rule-based fallback for ${type}`);
+            console.log(`[AIService] Using structure template fallback for ${type}`);
             return fallbackFn();
         }
 
-        throw new Error('AI generation failed. Please check your network or try again.');
+        throw new Error('AI generation failed across all configured models. Please check your API keys or quota in Settings.');
     }
 
     /**
@@ -1585,47 +2085,72 @@ If completely gibberish:
   "spokenFeedback": "Command not recognized"
 }`;
 
-            if (this.groq) {
-                for (const gModel of ACTIVE_GROQ_MODELS) {
-                    try {
-                        const completion = await this.groq.chat.completions.create({
-                            model: gModel,
-                            messages: [
-                                { role: 'system', content: 'Output ONLY valid JSON. No markdown wrappers or explanation.' },
-                                { role: 'user', content: whiteboardSystemPrompt }
-                            ],
-                            temperature: 0.1
-                        });
-                        const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
-                        if (parsed && (parsed.translatedCommand || parsed.recognized || parsed.type === 'solution')) {
-                            return {
-                                ...parsed,
-                                recognized: parsed.recognized !== false
-                            };
-                        }
-                    } catch (e) {
-                        console.warn(`[AIService] Groq (${gModel}) whiteboard voice parser failed:`, e.message);
-                    }
+            const isCognitiveQuery =
+                low.startsWith('explain') ||
+                low.startsWith('teach') ||
+                low.startsWith('solve') ||
+                low.startsWith('how does') ||
+                low.startsWith('how do') ||
+                low.startsWith('what is') ||
+                low.startsWith('what are') ||
+                low.startsWith('derive') ||
+                low.startsWith('prove') ||
+                low.startsWith('calculate') ||
+                low.startsWith('why') ||
+                low.includes('newton') ||
+                low.includes('law of motion') ||
+                low.includes('magnetic') ||
+                low.includes('photosynthesis') ||
+                low.includes('pythagor') ||
+                low.includes('ohm') ||
+                low.includes('formula') ||
+                low.includes('equation') ||
+                low.includes('diagram') ||
+                low.includes('flowchart') ||
+                low.includes('3d model') ||
+                low.includes('structure of') ||
+                low.includes('cycle');
+
+            // Dispatch to Unified AI Completion (OpenAI Paid -> Anthropic -> DeepSeek -> OpenRouter -> Groq -> Gemini -> SambaNova)
+            try {
+                const completionRes = await this.executeChatCompletion({
+                    systemPrompt: whiteboardSystemPrompt,
+                    messages: [{ role: 'user', content: `Spoken input: "${text}"` }],
+                    preferredProvider: context.preferredProvider || this.preferredProvider || 'auto',
+                    temperature: 0.1,
+                    jsonMode: true
+                });
+
+                const parsed = this.parseJSONResponse(completionRes.text || '{}');
+                if (parsed && (parsed.translatedCommand || parsed.recognized || parsed.type === 'solution' || parsed.type === 'canvas_generation')) {
+                    return {
+                        ...parsed,
+                        recognized: parsed.recognized !== false,
+                        modelUsed: completionRes.model,
+                        providerUsed: completionRes.provider
+                    };
+                }
+            } catch (err) {
+                console.warn('[AIService] executeChatCompletion failed for whiteboard voice:', err.message);
+                if (err.isQuotaExhausted || isCognitiveQuery) {
+                    // USER DIRECTIVE: Strictly NO local fallbacks for questions / educational queries.
+                    // If quota is exhausted or AI failed, clearly show error and do not proceed!
+                    return {
+                        recognized: false,
+                        success: false,
+                        quotaExhausted: Boolean(err.isQuotaExhausted),
+                        error: err.message,
+                        spokenFeedback: err.isQuotaExhausted
+                            ? 'AI service quota exhausted. Please check your API keys or configure a paid model in Settings.'
+                            : 'AI service unavailable. Please check your network connection or API settings.',
+                        speechResponse: err.isQuotaExhausted
+                            ? 'The AI service quota is currently exhausted. Please update your API keys or configure a paid model in Settings to continue.'
+                            : 'The AI model could not process this request right now. Please try again.'
+                    };
                 }
             }
 
-            if (this.genAI) {
-                try {
-                    const model = this.genAI.getGenerativeModel({ model: ACTIVE_GEMINI_MODELS[0] });
-                    const result = await model.generateContent(whiteboardSystemPrompt);
-                    const parsed = this.parseJSONResponse(result.response?.text() || '{}');
-                    if (parsed && (parsed.translatedCommand || parsed.recognized)) {
-                        return {
-                            ...parsed,
-                            recognized: parsed.recognized !== false
-                        };
-                    }
-                } catch (e) {
-                    console.warn('[AIService] Gemini whiteboard voice parser failed:', e.message);
-                }
-            }
-
-            // High-coverage Rule-based Fallback for Whiteboard Voice Commands
+            // Direct standard UI button shortcuts (only if non-cognitive and recognized verbatim)
             let translatedCommand = null;
             let intent = 'unknown';
             let spokenFeedback = `Interpreted: "${text}"`;
@@ -2359,16 +2884,14 @@ If completely gibberish:
                 };
             }
 
-            // Intelligent Local Solution / Math / Educational Solver Fallback
-            const localAssist = this.solveMathOrHelpQueryLocally(text);
-            if (localAssist) {
-                return {
-                    recognized: true,
-                    type: 'solution',
-                    intent: 'solve_or_explain',
-                    ...localAssist
-                };
-            }
+            // If it could not match any direct UI shortcut and AI failed or did not recognize it, do NOT guess or fake responses:
+            return {
+                recognized: false,
+                type: 'unrecognized',
+                translatedCommand: null,
+                intent: 'unrecognized',
+                spokenFeedback: `Could not match voice command: "${text}"`
+            };
 
             return {
                 recognized: false,

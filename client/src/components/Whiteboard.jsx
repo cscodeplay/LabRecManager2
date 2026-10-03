@@ -11803,6 +11803,9 @@ export default function Whiteboard({
             setVoiceFeedback(`🧠 AI Tutor: "${rawText}"...`);
             setIsAiThinking(true);
             let data = null;
+            let reqFailed = false;
+            let reqError = null;
+
             try {
                 const response = await aiAPI.voiceCommand({
                     speechText: rawText,
@@ -11814,7 +11817,10 @@ export default function Whiteboard({
                 });
                 data = response?.data?.data;
             } catch (err) {
-                console.warn('[Whiteboard Cognitive AI] Error:', err.message);
+                reqFailed = true;
+                reqError = err.response?.data?.message || err.response?.data?.data?.error || err.message;
+                data = err.response?.data?.data || null;
+                console.warn('[Whiteboard Cognitive AI] Error:', reqError);
             } finally {
                 setIsAiThinking(false);
             }
@@ -11836,96 +11842,25 @@ export default function Whiteboard({
                 return;
             }
 
-            // ─── CLIENT LOCAL SCIENTIFIC KNOWLEDGE FALLBACK ───
-            // Newton's Three Laws of Motion
-            if (
-                (txt.includes('newton') && (txt.includes('law') || txt.includes('three') || txt.includes('3') || txt.includes('motion') || txt.includes('first') || txt.includes('second') || txt.includes('third'))) ||
-                txt.includes('three laws of motion') ||
-                txt.includes('three law of motion') ||
-                txt.includes('laws of motion') ||
-                txt.includes('law of motion')
-            ) {
-                const newtonSol = {
-                    question: rawText,
-                    speechResponse: "Sir Isaac Newton's three laws of motion describe how objects move and interact. The first law, the Law of Inertia, states that an object remains at rest or moves with uniform straight-line velocity unless acted upon by a net external force. The second law quantifies this relationship: net force equals mass multiplied by acceleration, F equals m times a. The third law states that for every action, there is an equal and opposite reaction.",
-                    solutionMarkdown: `### Newton's Three Laws of Motion\n\n` +
-                        `**1. First Law (Law of Inertia):**\n$$\\sum \\vec{F} = 0 \\implies \\vec{v} = \\text{constant}$$\nAn object continues in its state of rest or uniform motion in a straight line unless compelled to change that state by an external net force.\n\n` +
-                        `**2. Second Law (Law of Force & Acceleration):**\n$$\\vec{F}_{\\text{net}} = m \\cdot \\vec{a} = \\frac{d\\vec{p}}{dt}$$\nThe acceleration of an object is directly proportional to the net force acting upon it and inversely proportional to its mass.\n\n` +
-                        `**3. Third Law (Action & Reaction):**\n$$\\vec{F}_{A \\to B} = -\\vec{F}_{B \\to A}$$\nFor every action force exerted by body A on body B, there is an equal magnitude and opposite direction reaction force exerted by body B on body A.`,
-                    canvasAction: {
-                        type: 'insert_solution_card',
-                        title: "Newton's Three Laws of Motion",
-                        summary: "1. Inertia | 2. F = ma | 3. F₁₂ = -F₂₁"
-                    }
-                };
-                setAiSolutionData(newtonSol);
-                narrateAction(newtonSol.speechResponse, "🧠 Explained Newton's Laws of Motion");
-                return;
-            }
+            // USER DIRECTIVE: Strictly NO local fallbacks for questions/queries.
+            // If quota is exhausted or AI failed, clearly show error and DO NOT proceed!
+            const isQuota = Boolean(
+                data?.quotaExhausted ||
+                (reqError && /quota|rate limit|429|resource_exhausted|credit balance/i.test(reqError)) ||
+                (data?.error && /quota|rate limit|429|resource_exhausted|credit balance/i.test(data.error))
+            );
 
-            // Pythagorean Theorem
-            if (txt.includes('pythagor')) {
-                const pythSol = {
-                    question: rawText,
-                    speechResponse: "The Pythagorean theorem states that in a right-angled triangle, the square of the hypotenuse is equal to the sum of the squares of the other two sides: a squared plus b squared equals c squared.",
-                    solutionMarkdown: `### Pythagorean Theorem\n\nIn any right-angled triangle with legs $a$ and $b$ and hypotenuse $c$:\n\n$$a^2 + b^2 = c^2 \\implies c = \\sqrt{a^2 + b^2}$$`,
-                    canvasAction: { type: 'insert_solution_card', title: 'Pythagorean Theorem', summary: 'a² + b² = c²' }
-                };
-                setAiSolutionData(pythSol);
-                narrateAction(pythSol.speechResponse, "🧠 Explained Pythagorean Theorem");
-                return;
-            }
+            const displayError = data?.error || reqError || (isQuota
+                ? 'AI Quota Exhausted across all configured providers. Please check your API keys or configure a paid model (OpenAI, Anthropic, DeepSeek) in Settings.'
+                : `AI was unable to answer: "${rawText}". Please check API status or try again.`
+            );
 
-            // Ohm's Law
-            if (txt.includes('ohm')) {
-                const ohmSol = {
-                    question: rawText,
-                    speechResponse: "Ohm's law states that the electric current through a conductor between two points is directly proportional to the voltage across the two points: V equals I times R.",
-                    solutionMarkdown: `### Ohm's Law\n\n$$V = I \\cdot R$$\n\n- **$V$**: Voltage in Volts (V)\n- **$I$**: Current in Amperes (A)\n- **$R$**: Resistance in Ohms ($\\Omega$)`,
-                    canvasAction: { type: 'insert_solution_card', title: "Ohm's Law", summary: 'V = I · R' }
-                };
-                setAiSolutionData(ohmSol);
-                narrateAction(ohmSol.speechResponse, "🧠 Explained Ohm's Law");
-                return;
+            setVoiceFeedback(`⚠️ ${isQuota ? 'AI Quota Exhausted' : 'AI Error'}`);
+            toast.error(displayError, { id: 'ai-cognitive-quota-error', duration: 7000 });
+            if (aiSpeechEnabled) {
+                speakAiResponse(data?.speechResponse || (isQuota ? 'The AI service quota is currently exhausted. Please update your API keys or configure a paid model in settings to continue.' : 'AI model could not answer this query.'));
             }
-
-            // Photosynthesis
-            if (txt.includes('photosynthesis')) {
-                const photoSol = {
-                    question: rawText,
-                    speechResponse: "Photosynthesis is the biochemical process by which green plants and certain organisms synthesize glucose from carbon dioxide and water using sunlight energy absorbed by chlorophyll.",
-                    solutionMarkdown: `### Photosynthesis\n\n$$6\\text{CO}_2 + 6\\text{H}_2\\text{O} \\xrightarrow{\\text{Light energy}} \\text{C}_6\\text{H}_{12}\\text{O}_6 + 6\\text{O}_2$$`,
-                    canvasAction: { type: 'insert_solution_card', title: 'Photosynthesis', summary: '6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂' }
-                };
-                setAiSolutionData(photoSol);
-                narrateAction(photoSol.speechResponse, "🧠 Explained Photosynthesis");
-                return;
-            }
-
-            // Universal Gravitation
-            if (txt.includes('gravit') || (txt.includes('gravity') && (txt.includes('formula') || txt.includes('law')))) {
-                const gravSol = {
-                    question: rawText,
-                    speechResponse: "Newton's law of universal gravitation states that every particle attracts every other particle with a force directly proportional to the product of their masses and inversely proportional to the square of the distance between them: F equals G times m 1 times m 2 divided by r squared.",
-                    solutionMarkdown: `### Universal Gravitation\n\n$$F = G \\frac{m_1 m_2}{r^2}$$\n\n- **$G$**: $6.674 \\times 10^{-11} \\,\\text{N}\\cdot\\text{m}^2/\\text{kg}^2$`,
-                    canvasAction: { type: 'insert_solution_card', title: 'Universal Gravitation', summary: 'F = G(m₁m₂)/r²' }
-                };
-                setAiSolutionData(gravSol);
-                narrateAction(gravSol.speechResponse, "🧠 Explained Universal Gravitation");
-                return;
-            }
-
-            // General Educational Query Fallback: Speak and create an AI study card on canvas
-            const note = createStickyNoteObject(cx - 100, cy - 80, 'purple');
-            note.title = rawText.slice(0, 35);
-            note.text = `AI Tutor notes for: ${rawText}`;
-            setPageShapeObjects(prev => ({
-                ...prev,
-                [currentPage]: [...(prev[currentPage] || []), note]
-            }));
-            saveToHistory();
-            narrateAction(`I heard your question: "${rawText}". I have created an AI study card on the whiteboard for you.`, `🧠 Study Card: ${rawText.slice(0, 25)}`);
-            return; // CRITICAL: NEVER FALL THROUGH TO SHAPES OR CLEAR CANVAS!
+            return; // STRICT: HALT IMMEDIATELY. NEVER FALL THROUGH TO SHAPES OR CLEAR CANVAS!
         }
 
         // ─── HIGH PRIORITY: Background Color & Canvas Pattern Controls ───
@@ -13515,9 +13450,26 @@ export default function Whiteboard({
                         return await executeVoiceCommand(data.translatedCommand, true);
                     }
                 }
+
+                if (data?.quotaExhausted) {
+                    const quotaMsg = data.error || 'AI Quota Exhausted across all configured providers. Please check your API keys or configure a paid model in Settings.';
+                    setVoiceFeedback('⚠️ AI Quota Exhausted');
+                    toast.error(quotaMsg, { id: 'ai-voice-quota', duration: 7000 });
+                    if (aiSpeechEnabled && data.speechResponse) {
+                        speakAiResponse(data.speechResponse);
+                    }
+                    return;
+                }
             } catch (err) {
                 console.warn('[Whiteboard Voice AI] Translation error:', err.message);
                 setIsAiThinking(false);
+                const isQuota = Boolean(err.response?.status === 429 || (err.message && /quota|rate limit|429/i.test(err.message)));
+                if (isQuota) {
+                    const quotaMsg = err.response?.data?.message || 'AI Quota Exhausted across all configured providers. Please check your API keys or configure a paid model in Settings.';
+                    setVoiceFeedback('⚠️ AI Quota Exhausted');
+                    toast.error(quotaMsg, { id: 'ai-voice-quota', duration: 7000 });
+                    return;
+                }
             }
         }
 
