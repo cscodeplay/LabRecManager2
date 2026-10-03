@@ -3039,7 +3039,7 @@ export default function SettingsPage() {
                                                 <option value="anthropic">Anthropic (Direct Paid: Claude 3.7 Sonnet / Claude 3.5 Sonnet)</option>
                                                 <option value="deepseek">DeepSeek (Direct Paid: DeepSeek-Chat / DeepSeek-Reasoner)</option>
                                                 <option value="openrouter">OpenRouter (Unified Paid Multi-Model Gateway)</option>
-                                                <option value="gemini">Google Gemini (Gemini 2.0 Flash)</option>
+                                                <option value="gemini">Google Gemini (Gemini 3.8 Flash / 3.5 Flash-Lite)</option>
                                                 <option value="groq">Groq (LPU Llama 3.3 70B Versatile)</option>
                                                 <option value="sambanova">SambaNova (Llama 3.2 Vision)</option>
                                             </select>
@@ -3370,7 +3370,7 @@ export default function SettingsPage() {
                                                     <div>
                                                         <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">Google Gemini</h4>
                                                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                                            <span className="text-indigo-600 dark:text-indigo-400 font-medium">Mapped Test: <code>gemini-1.5-flash</code></span>
+                                                            <span className="text-indigo-600 dark:text-indigo-400 font-medium">Mapped Test: <code>gemini-3.8-flash</code></span>
                                                         </p>
                                                     </div>
                                                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${

@@ -570,6 +570,15 @@ router.post('/config', authenticate, authorize('admin', 'principal'), asyncHandl
         }
     } catch (e) {}
 
+    // Fall back to current active keys if not explicitly defined in existing json
+    existing.openaiApiKey = existing.openaiApiKey || aiService.openAIKey || process.env.OPENAI_API_KEY;
+    existing.anthropicApiKey = existing.anthropicApiKey || aiService.anthropicKey || process.env.ANTHROPIC_API_KEY;
+    existing.deepseekApiKey = existing.deepseekApiKey || aiService.deepSeekKey || process.env.DEEPSEEK_API_KEY;
+    existing.openrouterApiKey = existing.openrouterApiKey || aiService.openRouterKey || process.env.OPENROUTER_API_KEY;
+    existing.geminiApiKey = existing.geminiApiKey || aiService.geminiKey || process.env.GEMINI_API_KEY;
+    existing.groqApiKey = existing.groqApiKey || aiService.groqKey || process.env.GROQ_API_KEY;
+    existing.sambanovaApiKey = existing.sambanovaApiKey || aiService.sambaNovaKey || process.env.SAMBANOVA_API_KEY;
+
     const isMasked = (v) => v && (typeof v === 'string') && (v.includes('••••') || v.includes('***'));
 
     const updated = {

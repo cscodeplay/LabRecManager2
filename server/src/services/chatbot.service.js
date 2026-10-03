@@ -59,7 +59,7 @@ class ChatbotService {
         const geminiKey = fileConfig.geminiApiKey || process.env.GEMINI_API_KEY;
         if (geminiKey) {
             const genAI = new GoogleGenerativeAI(geminiKey);
-            const geminiModelNames = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro-latest'];
+            const geminiModelNames = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'];
             this.geminiModels = geminiModelNames.map(name => ({
                 name, instance: genAI.getGenerativeModel({ model: name })
             }));
