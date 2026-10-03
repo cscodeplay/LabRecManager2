@@ -2184,6 +2184,11 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
 }
 
 CRITICAL RULES:
+- **STRICTLY NO AUTOMATIC STICKY NOTES ON ANSWERS / EXPLANATIONS**:
+  When the user asks an educational question, concept explanation, math problem, doubt, or conversational query (e.g. "what is photosynthesis", "explain gravity", "solve 3x + 9 = 27", "teach newton's laws"):
+  - Provide the complete, structured explanation inside 'speechResponse'.
+  - DO NOT output a CREATE_OBJECT action for a sticky_note! The Whiteboard now displays your response in a sleek collapsible pane directly above the CC box with instant user action pills ("Create sticky note of above", "Insert as text").
+  - ONLY output CREATE_OBJECT for sticky_note if the user EXPLICITLY commanded you to create a sticky note (e.g. "create a sticky note with...", "make a sticky note about...", "put a yellow note with...").
 - **BACKGROUND CONTROLS**:
   - If user says "change background to black", set color: "#000000", pattern: "plain", scope: "current".
   - If user says "change background of all pages to navy", set color: "#0f172a", scope: "all".

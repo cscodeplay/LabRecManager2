@@ -11813,6 +11813,12 @@ export default function Whiteboard({
                         if (aiSpeechEnabled) speakAiResponse(data.speechResponse);
                         toast.success(data.speechResponse, { icon: '🤖' });
                         setVoiceFeedback(data.speechResponse);
+                        setAiSolutionData({
+                            question: rawText,
+                            speechResponse: data.speechResponse,
+                            solutionMarkdown: data.solutionMarkdown || data.speechResponse,
+                            suggestedFollowUps: data.suggestedFollowUps || []
+                        });
                     }
                     
                     for (const action of data.actions) {
@@ -13837,6 +13843,46 @@ export default function Whiteboard({
         setVoiceFeedback(`Unrecognized: "${rawText}" - say "help" for commands`);
         toast(`Command not recognized: "${rawText}"`, { icon: '❓' });
     }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, duplicateCurrentPage, deletePage, loadPage, currentPage, totalPages, selectedShapeIds, selectedTextIds, selectedImageId, selectedImageIds, selected3DIds, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, setBgPattern, setBgColor, onToggleFullscreen, handleInsertGraph, handleInsertDateTime, handleDelete, handleCopy, handlePaste, handleDuplicate, handleToggleLock, handleGroup, handleUngroup, handleBringToFront, handleSendToBack, handleAlign, handleDistribute, handleFlipSelection, handleRemoveImageBackground, updateSelectedImageFilters, setIsAutoShape, setIsOcrActive, handleConvertSelectedInkToText, setBrushType, setPenMode, setSparkleTheme, setPenOpacity, setPressureSensitivity, setHighlighterColor, setEraserMode, setEraserSize, setSelectMode, setIsSelectionInfiniteCloner, setLineType, setShowMinimap, setShowClipboard, setIsChatOpen, setShowPermissions, aiSpeechEnabled, speakAiResponse, executeAiCanvasAction, handleScreenshot, getWhiteboardSpatialContext]);
+
+    // Insert AI response as Sticky Note on Canvas
+    const handleInsertAiStickyNote = useCallback((content) => {
+        if (!content) return;
+        const cWidth = canvasRef.current?.width || 1200;
+        const cHeight = canvasRef.current?.height || 800;
+        const cx = Math.round((cWidth / 2 - panOffset.x) / zoomLevel);
+        const cy = Math.round((cHeight / 2 - panOffset.y) / zoomLevel);
+        const existingCount = (pageShapeObjects[currentPage] || []).length;
+        const offset = (existingCount % 6) * 28;
+        const note = createStickyNoteObject(cx - 110 + offset, cy - 100 + offset, 'yellow');
+        note.text = content;
+        setPageShapeObjects(prev => ({
+            ...prev,
+            [currentPage]: [...(prev[currentPage] || []), note]
+        }));
+        saveToHistory();
+        toast.success('Created sticky note from AI response!', { icon: '📝' });
+    }, [panOffset, zoomLevel, currentPage, pageShapeObjects, saveToHistory]);
+
+    // Insert AI response as Clean Text Object on Canvas
+    const handleInsertAiTextObject = useCallback((content) => {
+        if (!content) return;
+        const cWidth = canvasRef.current?.width || 1200;
+        const cHeight = canvasRef.current?.height || 800;
+        const cx = Math.round((cWidth / 2 - panOffset.x) / zoomLevel);
+        const cy = Math.round((cHeight / 2 - panOffset.y) / zoomLevel);
+        const newText = {
+            id: Date.now().toString(),
+            text: content,
+            x: cx - 140,
+            y: cy - 40,
+            fontSize: 22,
+            fontFamily: 'sans-serif',
+            color: color || '#1e293b'
+        };
+        setTextObjects(prev => [...prev, newText]);
+        saveToHistory();
+        toast.success('Inserted AI response as text!', { icon: '🔤' });
+    }, [panOffset, zoomLevel, color, saveToHistory]);
 
     const toggleVoiceListening = useCallback(() => {
         const SpeechRecognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -21454,9 +21500,9 @@ export default function Whiteboard({
                 onExecuteCommand={executeVoiceCommand}
             />
 
-            {/* Live Real-Time Closed Captions (CC) Overlay */}
+            {/* Live Real-Time Closed Captions (CC) Overlay with Collapsible AI Knowledge Pane */}
             <WhiteboardClosedCaptions
-                isVisible={showClosedCaptions && (isVoiceListening || Boolean(interimVoiceTranscript || voiceTranscript || voiceFeedback || isAiSpeaking || isAiThinking))}
+                isVisible={showClosedCaptions && (isVoiceListening || Boolean(interimVoiceTranscript || voiceTranscript || voiceFeedback || isAiSpeaking || isAiThinking || aiSolutionData?.speechResponse))}
                 isListening={isVoiceListening}
                 transcript={voiceTranscript}
                 interimTranscript={interimVoiceTranscript}
@@ -21465,6 +21511,10 @@ export default function Whiteboard({
                 isAiSpeaking={isAiSpeaking}
                 aiSpeakingText={aiSpeakingText}
                 aiSolution={aiSolutionData}
+                aiResponseText={aiSolutionData?.speechResponse || aiSpeakingText}
+                suggestedFollowUps={aiSolutionData?.suggestedFollowUps || []}
+                onCreateStickyNote={handleInsertAiStickyNote}
+                onInsertAsText={handleInsertAiTextObject}
                 onOpenAiSolution={() => setShowAiAssistantModal(true)}
                 onStopSpeaking={stopAiSpeech}
                 onClose={() => setShowClosedCaptions(false)}

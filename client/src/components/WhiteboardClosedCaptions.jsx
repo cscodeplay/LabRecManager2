@@ -14,8 +14,38 @@ import {
     HelpCircle,
     Loader2,
     Pencil,
-    Send
+    Send,
+    ChevronDown,
+    ChevronUp,
+    StickyNote as StickyNoteIcon,
+    Type as TypeIcon
 } from 'lucide-react';
+import katex from 'katex';
+
+function renderFormattedText(rawText) {
+    if (!rawText) return '';
+    const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    let html = escapeHtml(rawText);
+
+    // Block math $$...$$
+    html = html.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
+        try {
+            return `<div class="my-1.5 p-1 bg-slate-900/80 rounded border border-indigo-500/30 overflow-x-auto text-center">${katex.renderToString(math.trim(), { displayMode: true, throwOnError: false })}</div>`;
+        } catch (e) { return match; }
+    });
+
+    // Inline math $...$
+    html = html.replace(/\$([^\$
+]+)\$/g, (match, math) => {
+        try {
+            return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false });
+        } catch (e) { return match; }
+    });
+
+    // Bold **text**
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-white">$1</strong>');
+    return html;
+}
 
 export default function WhiteboardClosedCaptions({
     isVisible = true,
@@ -27,6 +57,10 @@ export default function WhiteboardClosedCaptions({
     isAiSpeaking = false,
     aiSpeakingText = '',
     aiSolution = null,
+    aiResponseText = '',
+    suggestedFollowUps = [],
+    onCreateStickyNote = () => {},
+    onInsertAsText = () => {},
     onOpenAiSolution = () => {},
     onStopSpeaking = () => {},
     onClose = () => {},
@@ -37,6 +71,21 @@ export default function WhiteboardClosedCaptions({
     const [lastSpoken, setLastSpoken] = useState('');
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState('');
+    const [isPaneCollapsed, setIsPaneCollapsed] = useState(false);
+    const [isPaneDismissed, setIsPaneDismissed] = useState(false);
+    const lastResponseSeenRef = React.useRef('');
+
+    // Determine the active display response
+    const activeAiResponse = aiResponseText || aiSolution?.solutionMarkdown || aiSolution?.speechResponse || (isAiSpeaking ? aiSpeakingText : '');
+
+    // Reset pane expansion & visibility whenever a fresh AI response arrives
+    useEffect(() => {
+        if (activeAiResponse && activeAiResponse !== lastResponseSeenRef.current) {
+            lastResponseSeenRef.current = activeAiResponse;
+            setIsPaneDismissed(false);
+            setIsPaneCollapsed(false);
+        }
+    }, [activeAiResponse]);
 
     // Keep track of the most recent utterance or feedback
     useEffect(() => {
@@ -54,8 +103,96 @@ export default function WhiteboardClosedCaptions({
     const hasActiveText = Boolean(interimTranscript || transcript || aiSpeakingText || feedback || isAiThinking);
 
     // If completely idle and no recent text, keep it subtle or auto-compact
+    // Contextual pills
+    const defaultFollowUps = ['💡 Explain more simply', '📐 Show formula', '✨ Explain with 3D model', '📝 Summarize key points'];
+    const activePills = (suggestedFollowUps && suggestedFollowUps.length > 0) ? suggestedFollowUps : defaultFollowUps;
+
     return (
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-xl w-[92%] sm:w-auto min-w-[320px] pointer-events-auto select-none transition-all duration-200">
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-xl w-[92%] sm:w-[540px] pointer-events-auto select-none transition-all duration-200 flex flex-col">
+            {/* Collapsible AI Explanation & Knowledge Pane Above CC Box */}
+            {activeAiResponse && !isPaneDismissed && !isMinimized && (
+                <div className="mb-2 bg-slate-950/95 backdrop-blur-md border border-indigo-500/50 rounded-2xl shadow-2xl overflow-hidden transition-all duration-200 animate-in fade-in slide-in-from-bottom-2">
+                    {/* Header Bar */}
+                    <div className="px-3.5 py-2 bg-indigo-950/60 border-b border-indigo-500/30 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 font-semibold text-indigo-300">
+                            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>AI Response</span>
+                            {aiSolution?.question && (
+                                <span className="text-[11px] font-normal text-slate-400 truncate max-w-[240px]">
+                                    ({aiSolution.question})
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <button
+                                type="button"
+                                onClick={() => setIsPaneCollapsed(prev => !prev)}
+                                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                                title={isPaneCollapsed ? "Expand Response" : "Collapse Response"}
+                            >
+                                {isPaneCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setIsPaneDismissed(true)}
+                                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                                title="Dismiss Response Pane"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Expandable Content Area */}
+                    {!isPaneCollapsed && (
+                        <div className="p-3 text-xs text-slate-200 space-y-2.5 max-h-56 overflow-y-auto custom-scrollbar">
+                            {/* Rendered Markdown & Math Text */}
+                            <div
+                                className="leading-relaxed whitespace-pre-wrap select-text text-slate-200 text-[12px]"
+                                dangerouslySetInnerHTML={{ __html: renderFormattedText(activeAiResponse) }}
+                            />
+
+                            {/* Suggested Follow-up Action Pills */}
+                            <div className="pt-2 border-t border-slate-800/90 flex flex-wrap gap-1.5 items-center">
+                                {/* 1. Create sticky note of above */}
+                                <button
+                                    type="button"
+                                    onClick={() => onCreateStickyNote(activeAiResponse)}
+                                    className="px-2.5 py-1 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 text-[11px] font-medium flex items-center gap-1 transition shadow-sm hover:scale-105 active:scale-95"
+                                    title="Create a yellow sticky note on canvas with this response"
+                                >
+                                    <span>📝</span>
+                                    <span>Create sticky note of above</span>
+                                </button>
+
+                                {/* 2. Insert as text */}
+                                <button
+                                    type="button"
+                                    onClick={() => onInsertAsText(activeAiResponse)}
+                                    className="px-2.5 py-1 rounded-full bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/50 text-[11px] font-medium flex items-center gap-1 transition shadow-sm hover:scale-105 active:scale-95"
+                                    title="Place this response directly on canvas as a text object"
+                                >
+                                    <span>🔤</span>
+                                    <span>Insert as text</span>
+                                </button>
+
+                                {/* Contextual follow-up suggestions */}
+                                {activePills.map((pill, idx) => (
+                                    <button
+                                        key={idx}
+                                        type="button"
+                                        onClick={() => onExecuteCommand(pill)}
+                                        className="px-2.5 py-1 rounded-full bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[11px] font-medium transition shadow-sm hover:scale-105 active:scale-95"
+                                    >
+                                        {pill}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {isMinimized ? (
                 /* Minimized floating pill */
                 <div
