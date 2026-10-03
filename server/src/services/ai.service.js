@@ -149,8 +149,9 @@ class AIService {
 
     // ═══ PAID & FAST PROVIDER CALLERS ═══
 
-    async callOpenAI({ messages, model = 'gpt-4o', temperature = 0.1, max_tokens = 4000, jsonMode = false }) {
-        if (!this.openAIKey) throw new Error('OpenAI API key not configured');
+    async callOpenAI({ messages, model = 'gpt-4o', temperature = 0.1, max_tokens = 4000, jsonMode = false, apiKey }) {
+        const key = (apiKey && typeof apiKey === 'string' && apiKey.trim()) ? apiKey.trim() : (this.openAIKey ? this.openAIKey.trim() : '');
+        if (!key) throw new Error('OpenAI API key is not entered. Please enter a valid API key.');
         const payload = {
             model,
             messages,
@@ -164,7 +165,7 @@ class AIService {
             console.log(`[AIService] Calling OpenAI (${model})...`);
             const res = await axios.post('https://api.openai.com/v1/chat/completions', payload, {
                 headers: {
-                    'Authorization': `Bearer ${this.openAIKey.trim()}`,
+                    'Authorization': `Bearer ${key}`,
                     'Content-Type': 'application/json'
                 },
                 timeout: 35000
@@ -186,8 +187,9 @@ class AIService {
         }
     }
 
-    async callAnthropic({ messages, system = '', model = 'claude-3-7-sonnet-20250219', temperature = 0.1, max_tokens = 4000 }) {
-        if (!this.anthropicKey) throw new Error('Anthropic API key not configured');
+    async callAnthropic({ messages, system = '', model = 'claude-3-7-sonnet-20250219', temperature = 0.1, max_tokens = 4000, apiKey }) {
+        const key = (apiKey && typeof apiKey === 'string' && apiKey.trim()) ? apiKey.trim() : (this.anthropicKey ? this.anthropicKey.trim() : '');
+        if (!key) throw new Error('Anthropic Claude API key is not entered. Please enter a valid API key.');
         
         let systemPrompt = system || '';
         const anthropicMessages = [];
@@ -217,7 +219,7 @@ class AIService {
             console.log(`[AIService] Calling Anthropic (${model})...`);
             const res = await axios.post('https://api.anthropic.com/v1/messages', payload, {
                 headers: {
-                    'x-api-key': this.anthropicKey.trim(),
+                    'x-api-key': key,
                     'anthropic-version': '2023-06-01',
                     'Content-Type': 'application/json'
                 },
@@ -239,8 +241,9 @@ class AIService {
         }
     }
 
-    async callDeepSeek({ messages, model = 'deepseek-chat', temperature = 0.1, max_tokens = 4000, jsonMode = false }) {
-        if (!this.deepSeekKey) throw new Error('DeepSeek API key not configured');
+    async callDeepSeek({ messages, model = 'deepseek-chat', temperature = 0.1, max_tokens = 4000, jsonMode = false, apiKey }) {
+        const key = (apiKey && typeof apiKey === 'string' && apiKey.trim()) ? apiKey.trim() : (this.deepSeekKey ? this.deepSeekKey.trim() : '');
+        if (!key) throw new Error('DeepSeek API key is not entered. Please enter a valid API key.');
         const payload = {
             model,
             messages,
@@ -254,7 +257,7 @@ class AIService {
             console.log(`[AIService] Calling DeepSeek (${model})...`);
             const res = await axios.post('https://api.deepseek.com/chat/completions', payload, {
                 headers: {
-                    'Authorization': `Bearer ${this.deepSeekKey.trim()}`,
+                    'Authorization': `Bearer ${key}`,
                     'Content-Type': 'application/json'
                 },
                 timeout: 35000
@@ -275,8 +278,9 @@ class AIService {
         }
     }
 
-    async callOpenRouter({ messages, model = 'openai/gpt-4o', temperature = 0.1, max_tokens = 4000 }) {
-        if (!this.openRouterKey) throw new Error('OpenRouter API key not configured');
+    async callOpenRouter({ messages, model = 'openai/gpt-4o', temperature = 0.1, max_tokens = 4000, apiKey }) {
+        const key = (apiKey && typeof apiKey === 'string' && apiKey.trim()) ? apiKey.trim() : (this.openRouterKey ? this.openRouterKey.trim() : '');
+        if (!key) throw new Error('OpenRouter API key is not entered. Please enter a valid API key.');
         try {
             console.log(`[AIService] Calling OpenRouter (${model})...`);
             const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
@@ -286,7 +290,7 @@ class AIService {
                 max_tokens
             }, {
                 headers: {
-                    'Authorization': `Bearer ${this.openRouterKey.trim()}`,
+                    'Authorization': `Bearer ${key}`,
                     'HTTP-Referer': 'https://labrecmanager.app',
                     'X-Title': 'Lab Record Manager',
                     'Content-Type': 'application/json'
@@ -308,8 +312,12 @@ class AIService {
         }
     }
 
-    async callGroq({ messages, model, temperature = 0.1, max_tokens = 4000, jsonMode = false }) {
-        if (!this.groq) throw new Error('Groq not configured');
+    async callGroq({ messages, model, temperature = 0.1, max_tokens = 4000, jsonMode = false, apiKey }) {
+        let client = this.groq;
+        if (apiKey && typeof apiKey === 'string' && apiKey.trim()) {
+            client = new Groq({ apiKey: apiKey.trim() });
+        }
+        if (!client) throw new Error('Groq API key is not entered. Please enter a valid API key.');
         const modelsToTry = model ? [model] : ACTIVE_GROQ_MODELS;
         let lastErr = null;
 
@@ -325,7 +333,7 @@ class AIService {
                 if (jsonMode) {
                     req.response_format = { type: 'json_object' };
                 }
-                const completion = await this.groq.chat.completions.create(req);
+                const completion = await client.chat.completions.create(req);
                 const text = completion.choices[0]?.message?.content || '';
                 return { text, model: m, provider: 'groq' };
             } catch (err) {
@@ -335,7 +343,6 @@ class AIService {
                 console.warn(`[AIService] Groq ${m} failed (${status || 'error'}): ${err.message?.substring(0, 80)}`);
                 if (isQuota) {
                     err.isQuotaError = true;
-                    // continue to try other models or providers
                 }
             }
         }
@@ -345,15 +352,19 @@ class AIService {
         throw error;
     }
 
-    async callGemini({ contents, systemInstruction, model, temperature = 0.1 }) {
-        if (!this.genAI) throw new Error('Gemini not configured');
+    async callGemini({ contents, systemInstruction, model, temperature = 0.1, apiKey }) {
+        let client = this.genAI;
+        if (apiKey && typeof apiKey === 'string' && apiKey.trim()) {
+            client = new GoogleGenerativeAI(apiKey.trim());
+        }
+        if (!client) throw new Error('Google Gemini API key is not entered. Please enter a valid API key.');
         const modelsToTry = model ? [model] : ACTIVE_GEMINI_MODELS;
         let lastErr = null;
 
         for (const m of modelsToTry) {
             try {
                 console.log(`[AIService] Calling Gemini (${m})...`);
-                const geminiModel = this.genAI.getGenerativeModel({
+                const geminiModel = client.getGenerativeModel({
                     model: m,
                     systemInstruction: systemInstruction || undefined,
                     generationConfig: { temperature }
@@ -377,8 +388,9 @@ class AIService {
         throw error;
     }
 
-    async callSambaNova({ messages, model = 'Meta-Llama-3.1-70B-Instruct', temperature = 0.1, max_tokens = 4000 }) {
-        if (!this.sambaNovaKey) throw new Error('SambaNova not configured');
+    async callSambaNova({ messages, model = 'Meta-Llama-3.1-70B-Instruct', temperature = 0.1, max_tokens = 4000, apiKey }) {
+        const key = (apiKey && typeof apiKey === 'string' && apiKey.trim()) ? apiKey.trim() : (this.sambaNovaKey ? this.sambaNovaKey.trim() : '');
+        if (!key) throw new Error('SambaNova API key is not entered. Please enter a valid API key.');
         try {
             console.log(`[AIService] Calling SambaNova (${model})...`);
             const res = await axios.post('https://api.sambanova.ai/v1/chat/completions', {
@@ -388,7 +400,7 @@ class AIService {
                 max_tokens
             }, {
                 headers: {
-                    'Authorization': `Bearer ${this.sambaNovaKey.trim()}`,
+                    'Authorization': `Bearer ${key}`,
                     'Content-Type': 'application/json'
                 },
                 timeout: 35000
@@ -404,6 +416,156 @@ class AIService {
             error.isQuotaError = isQuota;
             error.provider = 'sambanova';
             throw error;
+        }
+    }
+
+    /**
+     * Isolated Single-Provider Connectivity & Diagnostic Test
+     * STRICT RULE: Tests ONLY the specified provider with its exact key and mapped model.
+     * NEVER falls back or cascades to other providers!
+     */
+    async testProviderConnectivity({ provider, apiKey, model }) {
+        if (!provider) {
+            throw new Error('Provider name is required for connectivity test');
+        }
+        const p = String(provider).toLowerCase().trim();
+
+        const isMasked = (v) => v && (typeof v === 'string') && (v.includes('••••') || v.includes('***'));
+        const cleanKey = (apiKey && !isMasked(apiKey) && typeof apiKey === 'string' && apiKey.trim()) ? apiKey.trim() : null;
+
+        const testMessages = [{ role: 'user', content: 'Say "ACTIVE"' }];
+        const systemPrompt = 'You are an AI diagnostic assistant. Output exactly the word: ACTIVE.';
+
+        switch (p) {
+            case 'openai': {
+                const key = cleanKey || this.openAIKey;
+                if (!key) {
+                    const err = new Error('OpenAI API key is not entered. Please enter a valid API key first.');
+                    err.noKey = true;
+                    throw err;
+                }
+                const testModel = model || 'gpt-4o-mini';
+                const res = await this.callOpenAI({
+                    messages: testMessages,
+                    model: testModel,
+                    temperature: 0.1,
+                    max_tokens: 15,
+                    apiKey: key
+                });
+                return { provider: 'openai', model: res.model || testModel, text: res.text };
+            }
+
+            case 'anthropic': {
+                const key = cleanKey || this.anthropicKey;
+                if (!key) {
+                    const err = new Error('Anthropic Claude API key is not entered. Please enter a valid API key first.');
+                    err.noKey = true;
+                    throw err;
+                }
+                const testModel = model || 'claude-3-5-haiku-20241022';
+                const res = await this.callAnthropic({
+                    messages: testMessages,
+                    system: systemPrompt,
+                    model: testModel,
+                    temperature: 0.1,
+                    max_tokens: 15,
+                    apiKey: key
+                });
+                return { provider: 'anthropic', model: res.model || testModel, text: res.text };
+            }
+
+            case 'deepseek': {
+                const key = cleanKey || this.deepSeekKey;
+                if (!key) {
+                    const err = new Error('DeepSeek API key is not entered. Please enter a valid API key first.');
+                    err.noKey = true;
+                    throw err;
+                }
+                const testModel = model || 'deepseek-chat';
+                const res = await this.callDeepSeek({
+                    messages: testMessages,
+                    model: testModel,
+                    temperature: 0.1,
+                    max_tokens: 15,
+                    apiKey: key
+                });
+                return { provider: 'deepseek', model: res.model || testModel, text: res.text };
+            }
+
+            case 'openrouter': {
+                const key = cleanKey || this.openRouterKey;
+                if (!key) {
+                    const err = new Error('OpenRouter API key is not entered. Please enter a valid API key first.');
+                    err.noKey = true;
+                    throw err;
+                }
+                const testModel = model || 'openai/gpt-4o-mini';
+                const res = await this.callOpenRouter({
+                    messages: testMessages,
+                    model: testModel,
+                    temperature: 0.1,
+                    max_tokens: 15,
+                    apiKey: key
+                });
+                return { provider: 'openrouter', model: res.model || testModel, text: res.text };
+            }
+
+            case 'gemini': {
+                const key = cleanKey || this.geminiKey;
+                if (!key) {
+                    const err = new Error('Google Gemini API key is not entered. Please enter a valid API key first.');
+                    err.noKey = true;
+                    throw err;
+                }
+                const testModel = model || 'gemini-2.0-flash';
+                const res = await this.callGemini({
+                    contents: 'Say "ACTIVE"',
+                    systemInstruction: systemPrompt,
+                    model: testModel,
+                    temperature: 0.1,
+                    apiKey: key
+                });
+                return { provider: 'gemini', model: res.model || testModel, text: res.text };
+            }
+
+            case 'groq': {
+                const key = cleanKey || this.groqKey;
+                if (!key) {
+                    const err = new Error('Groq API key is not entered. Please enter a valid API key first.');
+                    err.noKey = true;
+                    throw err;
+                }
+                const testModel = model || 'llama-3.3-70b-versatile';
+                const res = await this.callGroq({
+                    messages: testMessages,
+                    model: testModel,
+                    temperature: 0.1,
+                    max_tokens: 15,
+                    apiKey: key
+                });
+                return { provider: 'groq', model: res.model || testModel, text: res.text };
+            }
+
+            case 'sambanova': {
+                const key = cleanKey || this.sambaNovaKey;
+                if (!key) {
+                    const err = new Error('SambaNova API key is not entered. Please enter a valid API key first.');
+                    err.noKey = true;
+                    throw err;
+                }
+                const testModel = model || 'Meta-Llama-3.1-70B-Instruct';
+                const res = await this.callSambaNova({
+                    messages: testMessages,
+                    model: testModel,
+                    temperature: 0.1,
+                    max_tokens: 15,
+                    apiKey: key
+                });
+                return { provider: 'sambanova', model: res.model || testModel, text: res.text };
+            }
+
+            default:
+                throw new Error(`Unsupported or unknown AI provider: ${provider}`);
         }
     }
 

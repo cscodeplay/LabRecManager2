@@ -617,19 +617,17 @@ router.post('/config', authenticate, authorize('admin', 'principal'), asyncHandl
  * @access  Private (Admin / Principal)
  */
 router.post('/test-provider', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
-    const { provider } = req.body;
+    const { provider, apiKey, model } = req.body;
     if (!provider) {
-        return res.status(400).json({ success: false, message: 'Provider is required' });
+        return res.status(400).json({ success: false, message: 'Provider name is required' });
     }
 
     const t0 = Date.now();
     try {
-        const testRes = await aiService.executeChatCompletion({
-            systemPrompt: 'You are an AI diagnostic assistant. Output exactly the word: ACTIVE.',
-            messages: [{ role: 'user', content: 'Ping' }],
-            preferredProvider: provider,
-            temperature: 0.1,
-            maxTokens: 10
+        const testRes = await aiService.testProviderConnectivity({
+            provider,
+            apiKey,
+            model
         });
 
         const latencyMs = Date.now() - t0;
@@ -638,12 +636,15 @@ router.post('/test-provider', authenticate, authorize('admin', 'principal'), asy
             provider,
             model: testRes.model,
             latencyMs,
-            message: `Connection successful (${testRes.model} in ${latencyMs}ms)`
+            message: `Connection verified! (${testRes.model} in ${latencyMs}ms)`
         });
     } catch (err) {
         const latencyMs = Date.now() - t0;
-        const isQuota = Boolean(err.isQuotaExhausted || (err.message && /quota|rate limit|credit|balance|429|resource_exhausted/i.test(err.message)));
-        res.status(isQuota ? 429 : 400).json({
+        const isQuota = Boolean(err.isQuotaError || err.isQuotaExhausted || (err.message && /quota|rate limit|credit|balance|429|resource_exhausted/i.test(err.message)));
+        const isAuthOrMissing = Boolean(err.noKey || (err.message && /not entered|not configured|api key|authentication|invalid_api_key|unauthorized|401/i.test(err.message)));
+        const statusCode = isQuota ? 429 : (isAuthOrMissing ? 400 : 502);
+
+        res.status(statusCode).json({
             success: false,
             provider,
             latencyMs,

@@ -267,22 +267,65 @@ export default function SettingsPage() {
     };
 
     const handleTestProvider = async (providerKey) => {
+        const keyFieldMap = {
+            openai: 'openaiApiKey',
+            anthropic: 'anthropicApiKey',
+            deepseek: 'deepseekApiKey',
+            openrouter: 'openrouterApiKey',
+            gemini: 'geminiApiKey',
+            groq: 'groqApiKey',
+            sambanova: 'sambanovaApiKey'
+        };
+
+        const fieldName = keyFieldMap[providerKey];
+        const rawInputVal = (aiKeysInput[fieldName] || '').trim();
+        const isServerConfigured = Boolean(aiConfigs?.providers?.[providerKey]?.configured);
+        const isMaskedVal = rawInputVal.includes('••••') || rawInputVal.includes('***');
+
+        // Validation: If no key is entered in the input field AND server does not already have a configured key
+        if ((!rawInputVal || (!isMaskedVal && rawInputVal.length < 5)) && !isServerConfigured) {
+            const providerTitle = providerKey.toUpperCase();
+            toast.error(`Please enter an API key for ${providerTitle} before testing.`, { icon: '⚠️' });
+            setTestResults(prev => ({
+                ...prev,
+                [providerKey]: {
+                    status: 'error',
+                    message: `API key for ${providerTitle} is not entered. Please type or paste your key first.`
+                }
+            }));
+            return;
+        }
+
         try {
             setTestingProvider(providerKey);
-            const res = await aiAPI.testProvider({ provider: providerKey });
+            // Send the raw input key if it is not a masked string, so testing works immediately before saving!
+            const apiKeyToSend = (!isMaskedVal && rawInputVal) ? rawInputVal : undefined;
+            const res = await aiAPI.testProvider({
+                provider: providerKey,
+                apiKey: apiKeyToSend
+            });
+
             if (res.data?.success) {
                 setTestResults(prev => ({
                     ...prev,
-                    [providerKey]: { status: 'success', message: res.data.message, latency: res.data.latencyMs, model: res.data.model }
+                    [providerKey]: {
+                        status: 'success',
+                        message: res.data.message || `Connected to ${res.data.model}!`,
+                        latency: res.data.latencyMs,
+                        model: res.data.model
+                    }
                 }));
-                toast.success(`${providerKey.toUpperCase()} verified! (${res.data.latencyMs}ms)`, { icon: '✅' });
+                toast.success(`${providerKey.toUpperCase()} verified with ${res.data.model}! (${res.data.latencyMs}ms)`, { icon: '✅' });
             }
         } catch (err) {
-            const isQuota = err.response?.data?.quotaExhausted;
+            const isQuota = Boolean(err.response?.data?.quotaExhausted);
             const msg = err.response?.data?.message || err.message;
             setTestResults(prev => ({
                 ...prev,
-                [providerKey]: { status: isQuota ? 'quota_exhausted' : 'error', message: msg }
+                [providerKey]: {
+                    status: isQuota ? 'quota_exhausted' : 'error',
+                    message: msg
+                }
             }));
             if (isQuota) {
                 toast.error(`⚠️ ${providerKey.toUpperCase()} Quota Exhausted: ${msg}`, { duration: 6000 });
@@ -3023,7 +3066,9 @@ export default function SettingsPage() {
                                                                 Paid / Tier 1-5
                                                             </span>
                                                         </div>
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Models: <code>gpt-4o</code>, <code>gpt-4o-mini</code>, <code>o3-mini</code></p>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                                            Models: <code>gpt-4o</code>, <code>gpt-4o-mini</code> • <span className="text-indigo-600 dark:text-indigo-400 font-medium">Mapped Test Model: <code>gpt-4o-mini</code></span>
+                                                        </p>
                                                     </div>
                                                     <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
                                                         aiConfigs?.providers?.openai?.configured 
@@ -3075,10 +3120,12 @@ export default function SettingsPage() {
                                                     <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
                                                         testResults.openai.status === 'success'
                                                             ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
+                                                            : testResults.openai.status === 'quota_exhausted'
+                                                            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200'
                                                             : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200'
                                                     }`}>
-                                                        {testResults.openai.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
-                                                        <span>{testResults.openai.message} {testResults.openai.latency ? `(${testResults.openai.latency}ms)` : ''}</span>
+                                                        {testResults.openai.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />}
+                                                        <span className="leading-tight">{testResults.openai.message} {testResults.openai.latency ? `(${testResults.openai.latency}ms)` : ''}</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -3093,7 +3140,9 @@ export default function SettingsPage() {
                                                                 Paid / Build Tier
                                                             </span>
                                                         </div>
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Models: <code>claude-3-7-sonnet</code>, <code>claude-3-5-sonnet</code></p>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                                            Models: <code>claude-3-7-sonnet</code> • <span className="text-indigo-600 dark:text-indigo-400 font-medium">Mapped Test Model: <code>claude-3-5-haiku</code></span>
+                                                        </p>
                                                     </div>
                                                     <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
                                                         aiConfigs?.providers?.anthropic?.configured 
@@ -3145,10 +3194,12 @@ export default function SettingsPage() {
                                                     <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
                                                         testResults.anthropic.status === 'success'
                                                             ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
+                                                            : testResults.anthropic.status === 'quota_exhausted'
+                                                            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200'
                                                             : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200'
                                                     }`}>
-                                                        {testResults.anthropic.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
-                                                        <span>{testResults.anthropic.message} {testResults.anthropic.latency ? `(${testResults.anthropic.latency}ms)` : ''}</span>
+                                                        {testResults.anthropic.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />}
+                                                        <span className="leading-tight">{testResults.anthropic.message} {testResults.anthropic.latency ? `(${testResults.anthropic.latency}ms)` : ''}</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -3163,7 +3214,9 @@ export default function SettingsPage() {
                                                                 Paid / Pre-funded
                                                             </span>
                                                         </div>
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Models: <code>deepseek-chat</code> (V3), <code>deepseek-reasoner</code> (R1)</p>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                                            Models: <code>deepseek-chat</code>, <code>deepseek-reasoner</code> • <span className="text-indigo-600 dark:text-indigo-400 font-medium">Mapped Test Model: <code>deepseek-chat</code></span>
+                                                        </p>
                                                     </div>
                                                     <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
                                                         aiConfigs?.providers?.deepseek?.configured 
@@ -3215,10 +3268,12 @@ export default function SettingsPage() {
                                                     <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
                                                         testResults.deepseek.status === 'success'
                                                             ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
+                                                            : testResults.deepseek.status === 'quota_exhausted'
+                                                            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200'
                                                             : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200'
                                                     }`}>
-                                                        {testResults.deepseek.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
-                                                        <span>{testResults.deepseek.message} {testResults.deepseek.latency ? `(${testResults.deepseek.latency}ms)` : ''}</span>
+                                                        {testResults.deepseek.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />}
+                                                        <span className="leading-tight">{testResults.deepseek.message} {testResults.deepseek.latency ? `(${testResults.deepseek.latency}ms)` : ''}</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -3233,7 +3288,9 @@ export default function SettingsPage() {
                                                                 Unified Paid Gateway
                                                             </span>
                                                         </div>
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Models: Auto-routes to 200+ models with prepaid credits</p>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                                            Auto-routes to 200+ models • <span className="text-indigo-600 dark:text-indigo-400 font-medium">Mapped Test Model: <code>openai/gpt-4o-mini</code></span>
+                                                        </p>
                                                     </div>
                                                     <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
                                                         aiConfigs?.providers?.openrouter?.configured 
@@ -3285,10 +3342,12 @@ export default function SettingsPage() {
                                                     <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
                                                         testResults.openrouter.status === 'success'
                                                             ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
+                                                            : testResults.openrouter.status === 'quota_exhausted'
+                                                            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200'
                                                             : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200'
                                                     }`}>
-                                                        {testResults.openrouter.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
-                                                        <span>{testResults.openrouter.message} {testResults.openrouter.latency ? `(${testResults.openrouter.latency}ms)` : ''}</span>
+                                                        {testResults.openrouter.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />}
+                                                        <span className="leading-tight">{testResults.openrouter.message} {testResults.openrouter.latency ? `(${testResults.openrouter.latency}ms)` : ''}</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -3310,7 +3369,9 @@ export default function SettingsPage() {
                                                 <div className="flex items-start justify-between gap-2">
                                                     <div>
                                                         <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">Google Gemini</h4>
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5"><code>gemini-2.0-flash</code></p>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                                            <span className="text-indigo-600 dark:text-indigo-400 font-medium">Mapped Test: <code>gemini-2.0-flash</code></span>
+                                                        </p>
                                                     </div>
                                                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
                                                         aiConfigs?.providers?.gemini?.configured 
@@ -3351,20 +3412,23 @@ export default function SettingsPage() {
                                                         type="button"
                                                         onClick={() => handleTestProvider('gemini')}
                                                         disabled={testingProvider === 'gemini'}
-                                                        className="btn btn-secondary text-xs py-1 px-2 flex items-center gap-1"
+                                                        className="btn btn-secondary text-xs py-1 px-2.5 flex items-center gap-1"
                                                     >
                                                         {testingProvider === 'gemini' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
-                                                        Test
+                                                        Test Key
                                                     </button>
                                                 </div>
 
                                                 {testResults.gemini && (
-                                                    <div className={`p-1.5 rounded-lg text-xs ${
+                                                    <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
                                                         testResults.gemini.status === 'success'
-                                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300'
-                                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300'
+                                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
+                                                            : testResults.gemini.status === 'quota_exhausted'
+                                                            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200'
+                                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200'
                                                     }`}>
-                                                        {testResults.gemini.message} {testResults.gemini.latency ? `(${testResults.gemini.latency}ms)` : ''}
+                                                        {testResults.gemini.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />}
+                                                        <span className="leading-tight">{testResults.gemini.message} {testResults.gemini.latency ? `(${testResults.gemini.latency}ms)` : ''}</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -3374,7 +3438,9 @@ export default function SettingsPage() {
                                                 <div className="flex items-start justify-between gap-2">
                                                     <div>
                                                         <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">Groq LPU</h4>
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5"><code>llama-3.3-70b-versatile</code></p>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                                            <span className="text-indigo-600 dark:text-indigo-400 font-medium">Mapped Test: <code>llama-3.3-70b-versatile</code></span>
+                                                        </p>
                                                     </div>
                                                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
                                                         aiConfigs?.providers?.groq?.configured 
@@ -3415,20 +3481,23 @@ export default function SettingsPage() {
                                                         type="button"
                                                         onClick={() => handleTestProvider('groq')}
                                                         disabled={testingProvider === 'groq'}
-                                                        className="btn btn-secondary text-xs py-1 px-2 flex items-center gap-1"
+                                                        className="btn btn-secondary text-xs py-1 px-2.5 flex items-center gap-1"
                                                     >
                                                         {testingProvider === 'groq' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
-                                                        Test
+                                                        Test Key
                                                     </button>
                                                 </div>
 
                                                 {testResults.groq && (
-                                                    <div className={`p-1.5 rounded-lg text-xs ${
+                                                    <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
                                                         testResults.groq.status === 'success'
-                                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300'
-                                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300'
+                                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
+                                                            : testResults.groq.status === 'quota_exhausted'
+                                                            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200'
+                                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200'
                                                     }`}>
-                                                        {testResults.groq.message} {testResults.groq.latency ? `(${testResults.groq.latency}ms)` : ''}
+                                                        {testResults.groq.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />}
+                                                        <span className="leading-tight">{testResults.groq.message} {testResults.groq.latency ? `(${testResults.groq.latency}ms)` : ''}</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -3438,7 +3507,9 @@ export default function SettingsPage() {
                                                 <div className="flex items-start justify-between gap-2">
                                                     <div>
                                                         <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">SambaNova</h4>
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5"><code>Llama-3.2-11B-Vision</code></p>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                                            <span className="text-indigo-600 dark:text-indigo-400 font-medium">Mapped Test: <code>Meta-Llama-3.1-70B</code></span>
+                                                        </p>
                                                     </div>
                                                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
                                                         aiConfigs?.providers?.sambanova?.configured 
@@ -3479,20 +3550,23 @@ export default function SettingsPage() {
                                                         type="button"
                                                         onClick={() => handleTestProvider('sambanova')}
                                                         disabled={testingProvider === 'sambanova'}
-                                                        className="btn btn-secondary text-xs py-1 px-2 flex items-center gap-1"
+                                                        className="btn btn-secondary text-xs py-1 px-2.5 flex items-center gap-1"
                                                     >
                                                         {testingProvider === 'sambanova' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
-                                                        Test
+                                                        Test Key
                                                     </button>
                                                 </div>
 
                                                 {testResults.sambanova && (
-                                                    <div className={`p-1.5 rounded-lg text-xs ${
+                                                    <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
                                                         testResults.sambanova.status === 'success'
-                                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300'
-                                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300'
+                                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
+                                                            : testResults.sambanova.status === 'quota_exhausted'
+                                                            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200'
+                                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200'
                                                     }`}>
-                                                        {testResults.sambanova.message} {testResults.sambanova.latency ? `(${testResults.sambanova.latency}ms)` : ''}
+                                                        {testResults.sambanova.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />}
+                                                        <span className="leading-tight">{testResults.sambanova.message} {testResults.sambanova.latency ? `(${testResults.sambanova.latency}ms)` : ''}</span>
                                                     </div>
                                                 )}
                                             </div>
