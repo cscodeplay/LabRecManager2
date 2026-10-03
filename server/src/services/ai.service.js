@@ -2170,7 +2170,7 @@ Spoken input: "${text}"
                 });
 
                 const parsed = this.parseJSONResponse(completionRes.text || '{}');
-                if (parsed && (parsed.translatedCommand || parsed.recognized || parsed.type === 'solution' || parsed.type === 'canvas_generation')) {
+                if (parsed && (parsed.translatedCommand || parsed.recognized || parsed.actions || parsed.type === 'solution' || parsed.type === 'canvas_generation')) {
                     return {
                         ...parsed,
                         recognized: parsed.recognized !== false,
