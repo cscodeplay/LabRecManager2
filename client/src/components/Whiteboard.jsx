@@ -11499,6 +11499,296 @@ export default function Whiteboard({
             return created;
         };
 
+        // Unified Background Changer (selective page / all pages / current page)
+        const applyBackgroundChange = (color, pattern, scope = 'current', targetPageNum = undefined) => {
+            const colorPalette = {
+                blue: '#1e3a8a',
+                navy: '#0f172a',
+                'dark blue': '#0f172a',
+                black: '#000000',
+                blackboard: '#000000',
+                white: '#ffffff',
+                green: '#1b4332',
+                chalkboard: '#1b4332',
+                slate: '#1e293b',
+                charcoal: '#1e293b',
+                'dark slate': '#1e293b',
+                gray: '#334155',
+                grey: '#334155',
+                purple: '#4c1d95',
+                violet: '#4c1d95',
+                cyan: '#0891b2',
+                cream: '#fdfbf7',
+                dark: '#0b0f19'
+            };
+
+            let formattedColor = null;
+            if (color) {
+                const cLower = String(color).trim().toLowerCase();
+                formattedColor = colorPalette[cLower] || (cLower.startsWith('#') ? cLower : `#${cLower}`);
+            }
+
+            let patternNormalized = pattern;
+            if (pattern) {
+                const p = String(pattern).trim().toLowerCase();
+                if (p.includes('dot')) patternNormalized = 'dotted';
+                else if (p.includes('grid') || p.includes('graph')) patternNormalized = 'grid';
+                else if (p.includes('line') || p.includes('ruled')) patternNormalized = 'lined';
+                else if (p.includes('iso')) patternNormalized = 'iso';
+                else if (p.includes('hex')) patternNormalized = 'hex';
+                else if (p.includes('music')) patternNormalized = 'music';
+                else if (p.includes('plain') || p.includes('none') || p.includes('blank')) patternNormalized = 'plain';
+            }
+
+            const pNum = targetPageNum !== undefined ? parseInt(targetPageNum, 10) : undefined;
+
+            setPageBackgrounds(prev => {
+                const next = { ...prev };
+                if (scope === 'all') {
+                    for (let i = 0; i < totalPages; i++) {
+                        next[i] = {
+                            ...(next[i] || { pattern: 'plain', color: '#ffffff' }),
+                            ...(formattedColor ? { color: formattedColor } : {}),
+                            ...(patternNormalized ? { pattern: patternNormalized } : {})
+                        };
+                    }
+                } else if (pNum !== undefined && pNum >= 1 && pNum <= totalPages) {
+                    const pIdx = pNum - 1;
+                    next[pIdx] = {
+                        ...(next[pIdx] || { pattern: 'plain', color: '#ffffff' }),
+                        ...(formattedColor ? { color: formattedColor } : {}),
+                        ...(patternNormalized ? { pattern: patternNormalized } : {})
+                    };
+                } else {
+                    next[currentPage] = {
+                        ...(next[currentPage] || { pattern: 'plain', color: '#ffffff' }),
+                        ...(formattedColor ? { color: formattedColor } : {}),
+                        ...(patternNormalized ? { pattern: patternNormalized } : {})
+                    };
+                }
+                return next;
+            });
+
+            if (pNum !== undefined && pNum >= 1 && pNum <= totalPages && scope !== 'all') {
+                loadPage(pNum - 1);
+            }
+
+            if (socket && sessionId) {
+                socket.emit('whiteboard:background-change', {
+                    sessionId,
+                    pageIndex: scope === 'all' ? 'all' : (pNum ? pNum - 1 : currentPage),
+                    bgColor: formattedColor,
+                    bgPattern: patternNormalized
+                });
+            }
+            saveToHistory();
+
+            const scopeLabel = scope === 'all' ? 'all pages' : (pNum ? `page ${pNum}` : 'current page');
+            const colorLabel = formattedColor || '';
+            const patternLabel = patternNormalized || '';
+            const msg = `🎨 Background updated (${colorLabel} ${patternLabel}) on ${scopeLabel}`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '🎨' });
+        };
+
+        // Unified Property Modification with targetId, position (x, y), dimensions (width, height), strokeStyle, etc.
+        const applyPropertyModification = (property, mode, rawValue, targetId = null) => {
+            const isRelative = mode === 'relative_delta' || mode === 'relative';
+            const val = typeof rawValue === 'number' ? rawValue : parseFloat(rawValue) || 0;
+            const targetShapeIds = targetId ? [targetId] : selectedShapeIds;
+            const target3DIds = targetId ? [targetId] : selected3DIds;
+            const targetTextIds = targetId ? [targetId] : selectedTextIds;
+            const targetImageId = targetId || selectedImageId;
+
+            // Stroke Width / Border Thickness
+            if (property === 'strokeWidth' || property === 'border' || property === 'outline' || property === 'thickness') {
+                const delta = isRelative ? val : 0;
+                const targetVal = isRelative ? 0 : Math.max(1, Math.min(40, val));
+
+                if (targetShapeIds.length > 0 || target3DIds.length > 0) {
+                    if (targetShapeIds.length > 0) {
+                        setShapeObjects(prev => prev.map(s => {
+                            if (targetShapeIds.includes(s.id)) {
+                                const curW = s.strokeWidth || 2;
+                                const newW = isRelative ? Math.max(1, Math.min(40, curW + delta)) : targetVal;
+                                return { ...s, strokeWidth: newW };
+                            }
+                            return s;
+                        }));
+                    }
+                    if (target3DIds.length > 0) {
+                        setThreeDObjects(prev => prev.map(s => {
+                            if (target3DIds.includes(s.id)) {
+                                const curW = s.edgeWidth !== undefined ? s.edgeWidth : 0.8;
+                                const newW = isRelative ? Math.max(0, Math.min(10, curW + (delta / 4))) : targetVal / 4;
+                                return { ...s, edgeWidth: newW };
+                            }
+                            return s;
+                        }));
+                    }
+                    saveToHistory();
+                    return {
+                        speech: isRelative
+                            ? `${delta < 0 ? 'Reduced' : 'Increased'} border width by ${Math.abs(delta)} pixels.`
+                            : `Set border width to ${targetVal} pixels.`,
+                        feedback: `Border: ${isRelative ? (delta < 0 ? `-${Math.abs(delta)}px` : `+${delta}px`) : `${targetVal}px`}`
+                    };
+                } else {
+                    const newW = isRelative ? Math.max(1, Math.min(40, strokeWidth + delta)) : targetVal;
+                    setStrokeWidth(newW);
+                    return { speech: `Set active border width to ${newW}px.`, feedback: `Border: ${newW}px` };
+                }
+            }
+
+            // Stroke Style (solid, dashed, dotted)
+            if (property === 'strokeStyle' || property === 'lineStyle' || property === 'dash') {
+                const styleVal = ['solid', 'dashed', 'dotted'].includes(rawValue) ? rawValue : (rawValue.includes('dash') ? 'dashed' : (rawValue.includes('dot') ? 'dotted' : 'solid'));
+                if (targetShapeIds.length > 0) {
+                    setShapeObjects(prev => prev.map(s => targetShapeIds.includes(s.id) ? { ...s, strokeStyle: styleVal } : s));
+                    saveToHistory();
+                } else {
+                    setStrokeStyle(styleVal);
+                }
+                return { speech: `Set stroke style to ${styleVal}.`, feedback: `Style: ${styleVal}` };
+            }
+
+            // Position X
+            if (property === 'x' || property === 'left' || property === 'horizontal') {
+                const updater = (obj) => {
+                    const cur = obj.x || 0;
+                    return isRelative ? cur + val : val;
+                };
+                setShapeObjects(prev => prev.map(s => targetShapeIds.includes(s.id) ? { ...s, x: updater(s) } : s));
+                setThreeDObjects(prev => prev.map(s => target3DIds.includes(s.id) ? { ...s, x: updater(s) } : s));
+                setTextObjects(prev => prev.map(t => targetTextIds.includes(t.id) ? { ...t, x: updater(t) } : t));
+                if (targetImageId) setImageObjects(prev => prev.map(img => img.id === targetImageId ? { ...img, x: updater(img) } : img));
+                saveToHistory();
+                return { speech: `Moved object horizontally.`, feedback: `Position X: ${val}` };
+            }
+
+            // Position Y
+            if (property === 'y' || property === 'top' || property === 'vertical') {
+                const updater = (obj) => {
+                    const cur = obj.y || 0;
+                    return isRelative ? cur + val : val;
+                };
+                setShapeObjects(prev => prev.map(s => targetShapeIds.includes(s.id) ? { ...s, y: updater(s) } : s));
+                setThreeDObjects(prev => prev.map(s => target3DIds.includes(s.id) ? { ...s, y: updater(s) } : s));
+                setTextObjects(prev => prev.map(t => targetTextIds.includes(t.id) ? { ...t, y: updater(t) } : t));
+                if (targetImageId) setImageObjects(prev => prev.map(img => img.id === targetImageId ? { ...img, y: updater(img) } : img));
+                saveToHistory();
+                return { speech: `Moved object vertically.`, feedback: `Position Y: ${val}` };
+            }
+
+            // Width / Size / Radius
+            if (property === 'width' || property === 'size' || property === 'radius') {
+                const updater = (obj) => {
+                    const cur = obj.width || 100;
+                    return isRelative ? Math.max(10, cur + val) : Math.max(10, val);
+                };
+                setShapeObjects(prev => prev.map(s => targetShapeIds.includes(s.id) ? { ...s, width: updater(s), ...(s.type === 'circle' || s.type === 'square' ? { height: updater(s) } : {}) } : s));
+                setThreeDObjects(prev => prev.map(s => target3DIds.includes(s.id) ? { ...s, width: updater(s), height: updater(s) } : s));
+                saveToHistory();
+                return { speech: `Resized width to ${val}px.`, feedback: `Width: ${val}px` };
+            }
+
+            // Height
+            if (property === 'height') {
+                const updater = (obj) => {
+                    const cur = obj.height || 100;
+                    return isRelative ? Math.max(10, cur + val) : Math.max(10, val);
+                };
+                setShapeObjects(prev => prev.map(s => targetShapeIds.includes(s.id) ? { ...s, height: updater(s) } : s));
+                setThreeDObjects(prev => prev.map(s => target3DIds.includes(s.id) ? { ...s, height: updater(s) } : s));
+                saveToHistory();
+                return { speech: `Resized height to ${val}px.`, feedback: `Height: ${val}px` };
+            }
+
+            // Opacity / Transparency
+            if (property === 'opacity' || property === 'transparency') {
+                const opacityVal = Math.max(0.05, Math.min(1, val > 1 ? val / 100 : val));
+                if (targetShapeIds.length > 0) {
+                    setShapeObjects(prev => prev.map(s => {
+                        if (targetShapeIds.includes(s.id)) {
+                            const cur = s.opacity !== undefined ? s.opacity : 1;
+                            const newOp = isRelative ? Math.max(0.05, Math.min(1, cur + (val > 1 ? val / 100 : val))) : opacityVal;
+                            return { ...s, opacity: Number(newOp.toFixed(2)) };
+                        }
+                        return s;
+                    }));
+                    saveToHistory();
+                    return { speech: `Adjusted opacity to ${Math.round(opacityVal * 100)} percent.`, feedback: `Opacity: ${Math.round(opacityVal * 100)}%` };
+                }
+            }
+
+            // Font Size
+            if (property === 'fontSize' || property === 'font') {
+                const delta = isRelative ? val : 0;
+                const targetVal = isRelative ? 0 : Math.max(10, Math.min(120, val));
+                if (targetTextIds.length > 0) {
+                    setTextObjects(prev => prev.map(t => {
+                        if (targetTextIds.includes(t.id)) {
+                            const cur = t.fontSize || 20;
+                            const newSize = isRelative ? Math.max(10, Math.min(120, cur + delta)) : targetVal;
+                            return { ...t, fontSize: newSize };
+                        }
+                        return t;
+                    }));
+                    saveToHistory();
+                    return { speech: `Adjusted text font size to ${targetVal || delta}px.`, feedback: `Font Size: ${targetVal || delta}px` };
+                }
+            }
+
+            // Rotation
+            if (property === 'rotation' || property === 'angle') {
+                const deg = val;
+                if (targetShapeIds.length > 0) {
+                    setShapeObjects(prev => prev.map(s => targetShapeIds.includes(s.id) ? { ...s, rotation: ((s.rotation || 0) + deg) % 360 } : s));
+                }
+                if (target3DIds.length > 0) {
+                    setThreeDObjects(prev => prev.map(s => target3DIds.includes(s.id) ? { ...s, rotation: ((s.rotation || 0) + deg) % 360 } : s));
+                }
+                if (targetImageId) {
+                    setImageObjects(prev => prev.map(img => img.id === targetImageId ? { ...img, rotation: ((img.rotation || 0) + deg) % 360 } : img));
+                }
+                if (targetTextIds.length > 0) {
+                    setTextObjects(prev => prev.map(t => targetTextIds.includes(t.id) ? { ...t, rotation: ((t.rotation || 0) + deg) % 360 } : t));
+                }
+                saveToHistory();
+                return { speech: `Rotated by ${deg} degrees.`, feedback: `Rotated ${deg}°` };
+            }
+
+            // Fill Color
+            if (property === 'fillColor' || property === 'fill') {
+                const newColor = String(rawValue);
+                if (targetShapeIds.length > 0) {
+                    setShapeObjects(prev => prev.map(s => targetShapeIds.includes(s.id) ? { ...s, fillColor: newColor } : s));
+                    saveToHistory();
+                    return { speech: `Set fill color to ${newColor}.`, feedback: `Fill: ${newColor}` };
+                } else {
+                    setFillColor(newColor);
+                    return { speech: `Set active shape fill color to ${newColor}.`, feedback: `Fill: ${newColor}` };
+                }
+            }
+
+            // Stroke / Line Color
+            if (property === 'color' || property === 'strokeColor') {
+                const newColor = String(rawValue);
+                if (targetShapeIds.length > 0) {
+                    setShapeObjects(prev => prev.map(s => targetShapeIds.includes(s.id) ? { ...s, color: newColor } : s));
+                    saveToHistory();
+                }
+                if (target3DIds.length > 0) {
+                    setThreeDObjects(prev => prev.map(s => target3DIds.includes(s.id) ? { ...s, color: newColor, materialStyle: 'shaded' } : s));
+                    saveToHistory();
+                }
+                setColor(newColor);
+                return { speech: `Set color to ${newColor}.`, feedback: `Color: ${newColor}` };
+            }
+
+            return null;
+        };
+
         const isExactLocalCommand = /^(pen|pencil|eraser|select|laser|clear|undo|redo|zoom in|zoom out|reset zoom|new page|next page|previous page)$/i.test(txt);
         
         if (!isAiRetry && !isExactLocalCommand) {
@@ -11529,8 +11819,56 @@ export default function Whiteboard({
                         if (action.type === 'UI_COMMAND' && action.command) {
                             executeVoiceCommand(action.command, true);
                         } 
+                        else if (action.type === 'SET_BACKGROUND') {
+                            applyBackgroundChange(action.color, action.pattern, action.scope || 'current', action.pageNumber);
+                        }
+                        else if (action.type === 'SET_PAGE' && action.pageNumber) {
+                            const pNum = parseInt(action.pageNumber, 10);
+                            if (pNum >= 1 && pNum <= totalPages) {
+                                loadPage(pNum - 1);
+                            } else if (pNum > totalPages) {
+                                addNewPage();
+                            }
+                        }
                         else if (action.type === 'MODIFY_PROPERTY') {
-                            applyPropertyModification(action.property, action.mode || 'absolute_value', action.value);
+                            applyPropertyModification(action.property, action.mode || 'absolute_value', action.value, action.targetId);
+                        }
+                        else if (action.type === 'MOVE_OBJECT') {
+                            const tId = action.targetId || (selectedShapeIds[0] || selected3DIds[0] || selectedTextIds[0] || selectedImageId);
+                            if (tId) {
+                                if (action.dx !== undefined) applyPropertyModification('x', 'relative_delta', Number(action.dx), tId);
+                                if (action.dy !== undefined) applyPropertyModification('y', 'relative_delta', Number(action.dy), tId);
+                                if (action.x !== undefined && action.dx === undefined) applyPropertyModification('x', 'absolute_value', Number(action.x), tId);
+                                if (action.y !== undefined && action.dy === undefined) applyPropertyModification('y', 'absolute_value', Number(action.y), tId);
+                            }
+                        }
+                        else if (action.type === 'ALIGN_OBJECT' && action.alignment) {
+                            handleAlign(action.alignment);
+                        }
+                        else if (action.type === 'DISTRIBUTE_OBJECTS' && action.axis) {
+                            handleDistribute(action.axis);
+                        }
+                        else if (action.type === 'REORDER_OBJECT') {
+                            if (action.order === 'bring_to_front') handleBringToFront(action.targetId);
+                            else if (action.order === 'send_to_back') handleSendToBack(action.targetId);
+                        }
+                        else if (action.type === 'LOCK_OBJECT') {
+                            handleToggleLock(action.targetId);
+                        }
+                        else if (action.type === 'GROUP_OBJECTS') {
+                            handleGroup();
+                        }
+                        else if (action.type === 'UNGROUP_OBJECTS') {
+                            handleUngroup();
+                        }
+                        else if (action.type === 'CONNECT_OBJECTS' && action.sourceId && action.targetId) {
+                            executeAiCanvasAction({
+                                type: 'connect_shapes',
+                                sourceId: action.sourceId,
+                                targetId: action.targetId,
+                                connectionType: action.style || 'curved',
+                                label: action.label || ''
+                            });
                         } 
                         else if (action.type === 'CREATE_OBJECT') {
                             const actStroke = action.strokeWidth !== undefined ? Number(action.strokeWidth) : (action.border !== undefined ? Number(action.border) : strokeWidth || 3);
@@ -11925,151 +12263,7 @@ export default function Whiteboard({
         }
 
         // Property Modification Engine: handles relative deltas and absolute targets
-        const applyPropertyModification = (property, mode, rawValue) => {
-            const isRelative = mode === 'relative_delta' || mode === 'relative';
-            const val = typeof rawValue === 'number' ? rawValue : parseFloat(rawValue) || 0;
-
-            if (property === 'strokeWidth' || property === 'border' || property === 'outline' || property === 'thickness') {
-                const delta = isRelative ? val : 0;
-                const targetVal = isRelative ? 0 : Math.max(1, Math.min(40, val));
-
-                if (selectedShapeIds.length > 0 || selected3DIds.length > 0) {
-                    if (selectedShapeIds.length > 0) {
-                        setShapeObjects(prev => prev.map(s => {
-                            if (selectedShapeIds.includes(s.id)) {
-                                const curW = s.strokeWidth || 2;
-                                const newW = isRelative ? Math.max(1, Math.min(40, curW + delta)) : targetVal;
-                                return { ...s, strokeWidth: newW };
-                            }
-                            return s;
-                        }));
-                    }
-                    if (selected3DIds.length > 0) {
-                        setThreeDObjects(prev => prev.map(s => {
-                            if (selected3DIds.includes(s.id)) {
-                                const curW = s.edgeWidth !== undefined ? s.edgeWidth : 0.8;
-                                const newW = isRelative ? Math.max(0, Math.min(10, curW + (delta / 4))) : targetVal / 4;
-                                return { ...s, edgeWidth: newW };
-                            }
-                            return s;
-                        }));
-                    }
-                    saveToHistory();
-                    return {
-                        speech: isRelative
-                            ? `${delta < 0 ? 'Reduced' : 'Increased'} border width by ${Math.abs(delta)} pixels on selected shape.`
-                            : `Set border width to ${targetVal} pixels on selected shape.`,
-                        feedback: `Border: ${isRelative ? (delta < 0 ? `-${Math.abs(delta)}px` : `+${delta}px`) : `${targetVal}px`}`
-                    };
-                } else {
-                    const newW = isRelative
-                        ? Math.max(1, Math.min(40, strokeWidth + delta))
-                        : targetVal;
-                    setStrokeWidth(newW);
-                    return {
-                        speech: `Set active border tool width to ${newW} pixels.`,
-                        feedback: `Border: ${newW}px`
-                    };
-                }
-            }
-
-            if (property === 'opacity' || property === 'transparency') {
-                const opacityVal = Math.max(0.05, Math.min(1, val > 1 ? val / 100 : val));
-                if (selectedShapeIds.length > 0) {
-                    setShapeObjects(prev => prev.map(s => {
-                        if (selectedShapeIds.includes(s.id)) {
-                            const cur = s.opacity !== undefined ? s.opacity : 1;
-                            const newOp = isRelative ? Math.max(0.05, Math.min(1, cur + (val > 1 ? val / 100 : val))) : opacityVal;
-                            return { ...s, opacity: Number(newOp.toFixed(2)) };
-                        }
-                        return s;
-                    }));
-                    saveToHistory();
-                    return {
-                        speech: `Adjusted opacity on selected shape to ${Math.round(opacityVal * 100)} percent.`,
-                        feedback: `Opacity: ${Math.round(opacityVal * 100)}%`
-                    };
-                }
-            }
-
-            if (property === 'fontSize' || property === 'font') {
-                const delta = isRelative ? val : 0;
-                const targetVal = isRelative ? 0 : Math.max(10, Math.min(120, val));
-                if (selectedTextIds.length > 0) {
-                    setTextObjects(prev => prev.map(t => {
-                        if (selectedTextIds.includes(t.id)) {
-                            const cur = t.fontSize || 20;
-                            const newSize = isRelative ? Math.max(10, Math.min(120, cur + delta)) : targetVal;
-                            return { ...t, fontSize: newSize };
-                        }
-                        return t;
-                    }));
-                    saveToHistory();
-                    return {
-                        speech: `Adjusted text font size to ${targetVal || 'new size'} pixels.`,
-                        feedback: `Font Size: ${targetVal || delta}px`
-                    };
-                }
-            }
-
-            if (property === 'rotation' || property === 'angle') {
-                const deg = val;
-                if (selectedShapeIds.length > 0) {
-                    setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, rotation: ((s.rotation || 0) + deg) % 360 } : s));
-                }
-                if (selected3DIds.length > 0) {
-                    setThreeDObjects(prev => prev.map(s => selected3DIds.includes(s.id) ? { ...s, rotation: ((s.rotation || 0) + deg) % 360 } : s));
-                }
-                if (selectedImageId) {
-                    setImageObjects(prev => prev.map(img => img.id === selectedImageId ? { ...img, rotation: ((img.rotation || 0) + deg) % 360 } : img));
-                }
-                if (selectedTextIds.length > 0) {
-                    setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, rotation: ((t.rotation || 0) + deg) % 360 } : t));
-                }
-                saveToHistory();
-                return {
-                    speech: `Rotated selected objects by ${deg} degrees.`,
-                    feedback: `Rotated ${deg}°`
-                };
-            }
-
-            if (property === 'fillColor' || property === 'fill') {
-                const newColor = String(rawValue);
-                if (selectedShapeIds.length > 0) {
-                    setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: newColor } : s));
-                    saveToHistory();
-                    return {
-                        speech: `Set fill color to ${newColor} on selected shape.`,
-                        feedback: `Fill: ${newColor}`
-                    };
-                } else {
-                    setFillColor(newColor);
-                    return {
-                        speech: `Set active shape fill color to ${newColor}.`,
-                        feedback: `Fill: ${newColor}`
-                    };
-                }
-            }
-
-            if (property === 'color' || property === 'strokeColor') {
-                const newColor = String(rawValue);
-                if (selectedShapeIds.length > 0) {
-                    setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, color: newColor } : s));
-                    saveToHistory();
-                }
-                if (selected3DIds.length > 0) {
-                    setThreeDObjects(prev => prev.map(s => selected3DIds.includes(s.id) ? { ...s, color: newColor, materialStyle: 'shaded' } : s));
-                    saveToHistory();
-                }
-                setColor(newColor);
-                return {
-                    speech: `Set color to ${newColor}.`,
-                    feedback: `Color: ${newColor}`
-                };
-            }
-
-            return null;
-        };
+        // (applyPropertyModification is hoisted above before AI loop)
 
         // ─── AI BOT AGENT INTENT ARBITER ─────────────────────────────────
 

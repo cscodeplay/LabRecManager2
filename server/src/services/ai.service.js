@@ -2077,15 +2077,17 @@ Output MUST be ONLY valid JSON matching this schema:
 
         if (isWhiteboard) {
             const whiteboardSystemPrompt = `You are an advanced Spatial & Generative AI reasoning engine for an interactive Whiteboard.
-You receive the user's spoken command along with a JSON representation of the current whiteboard state (objects, sizes, spatial coordinates).
+You receive the user's spoken command along with a JSON representation of the current whiteboard state (objects, sizes, spatial coordinates, pages).
 Your goal is to parse the user's intent, perform any required knowledge-base reasoning (like deriving formulas, writing code, or generating scientific explanations), and return a sequence of autonomous actions to modify the canvas.
 
 Determine what the user wants to accomplish:
-1. UI Controls (zoom, switch tools to pen/eraser, clear board)
-2. Property Modification (changing color, thickness, opacity)
-3. Object Creation (drawing shapes, text, 3D models, generative sticky notes)
-4. Spatial Operations (moving, grouping, deleting contextually chosen objects)
-5. Generative Explanations (a full multi-modal explanation involving 3D models, math, and voice).
+1. UI Controls & Multi-Page (zoom, tools, switch page, clear board)
+2. Background Customization (change background color or pattern for current page, specific page number, or all pages)
+3. Property Modification (changing color, border strokeWidth, strokeStyle, opacity, size, rotation, x/y position)
+4. Object Creation (drawing 2D shapes, text, 3D models, generative sticky notes with math)
+5. Spatial & Layer Operations (moving, aligning, distributing, grouping, reordering, deleting contextually chosen objects)
+6. Object Connections (connecting two shapes or 3D models with smart lines/arrows)
+7. Generative Explanations (a full multi-modal explanation involving 3D models, math formulas, and voice).
 
 OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
 {
@@ -2094,22 +2096,80 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
   "actions": [
     {
       "type": "UI_COMMAND",
-      "command": "zoom in | zoom out | reset zoom | eraser | pen | highlighter | select | clear whiteboard | undo | redo | new page | next page | previous page"
+      "command": "zoom in | zoom out | reset zoom | eraser | pen | highlighter | select | laser | clear whiteboard | undo | redo | new page | next page | previous page"
+    },
+    {
+      "type": "SET_BACKGROUND",
+      "color": "<hex code or standard color e.g. #000000, #ffffff, #1b4332, #1e3a8a, #0f172a, #1e293b, #334155, #4c1d95, #0891b2>",
+      "pattern": "plain | grid | dots | lines | iso | hex | music",
+      "scope": "current | all | page",
+      "pageNumber": "<1-based integer if user specifies a page, e.g. 2 for page 2>"
+    },
+    {
+      "type": "SET_PAGE",
+      "pageNumber": "<1-based integer, e.g. 2 to switch to page 2>"
+    },
+    {
+      "type": "CREATE_OBJECT",
+      "objectType": "circle | square | rectangle | triangle | line | arrow | star | diamond | pentagon | hexagon | sticky_note | text | 3d_model | lesson_board",
+      "width": "<number or omit>",
+      "height": "<number or omit>",
+      "radius": "<number for circle or omit>",
+      "size": "<number for square/star/triangle or omit>",
+      "strokeWidth": "<number in pixels, e.g. 4 for 4px border>",
+      "strokeStyle": "solid | dashed | dotted",
+      "color": "<stroke color hex or name>",
+      "fillColor": "<fill color hex or name, or 'transparent'>",
+      "text": "<For text/sticky_notes: Generated content. Supports markdown and $$LaTeX$$ formulas. YOU MUST GENERATE THIS KNOWLEDGE YOURSELF.>",
+      "fontSize": "<number for text>",
+      "modelType": "cube | sphere | pyramid | cylinder | cone | earth | sun | moon | mars | jupiter | saturn | atom | dna | rocket",
+      "x": "<Compute specific X coordinate if user requested a location, else omit to center>",
+      "y": "<Compute specific Y coordinate if user requested a location, else omit to center>"
     },
     {
       "type": "MODIFY_PROPERTY",
-      "property": "strokeWidth | opacity | fontSize | width | height | rotation | color | fillColor",
+      "property": "strokeWidth | strokeStyle | opacity | fontSize | width | height | rotation | color | fillColor | x | y",
+      "mode": "absolute_value | relative_delta",
       "value": "<number or string>",
       "targetId": "<id of the specific object, derived from CURRENT ACTIVE OBJECTS. If unspecified, applies to current selection>"
     },
     {
-      "type": "CREATE_OBJECT",
-      "objectType": "circle | square | rectangle | triangle | line | arrow | sticky_note | text | 3d_model | flowchart | lesson_board",
-      "text": "<For text/sticky_notes: Generated content. Supports markdown and $$LaTeX$$ formulas. YOU MUST GENERATE THIS KNOWLEDGE YOURSELF.>",
-      "modelType": "cube | sphere | pyramid | cylinder | cone | earth | atom | dna | rocket",
-      "color": "<hex code or standard color name>",
-      "x": "<Compute specific X coordinate if user requested a location, else omit>",
-      "y": "<Compute specific Y coordinate if user requested a location, else omit>"
+      "type": "MOVE_OBJECT",
+      "targetId": "<id of object>",
+      "dx": "<pixel delta X, e.g. 100 for right, -100 for left>",
+      "dy": "<pixel delta Y, e.g. -50 for up, 50 for down>",
+      "x": "<absolute X position if specified>",
+      "y": "<absolute Y position if specified>"
+    },
+    {
+      "type": "ALIGN_OBJECT",
+      "alignment": "left | center | right | top | middle | bottom"
+    },
+    {
+      "type": "DISTRIBUTE_OBJECTS",
+      "axis": "horizontal | vertical"
+    },
+    {
+      "type": "REORDER_OBJECT",
+      "targetId": "<id of object>",
+      "order": "bring_to_front | send_to_back"
+    },
+    {
+      "type": "LOCK_OBJECT",
+      "targetId": "<id of object>"
+    },
+    {
+      "type": "GROUP_OBJECTS"
+    },
+    {
+      "type": "UNGROUP_OBJECTS"
+    },
+    {
+      "type": "CONNECT_OBJECTS",
+      "sourceId": "<id of source object>",
+      "targetId": "<id of target object>",
+      "style": "straight | curved | orthogonal",
+      "label": "<optional connection label text>"
     },
     {
       "type": "DELETE_OBJECT",
@@ -2124,7 +2184,15 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
 }
 
 CRITICAL RULES:
+- **BACKGROUND CONTROLS**:
+  - If user says "change background to black", set color: "#000000", pattern: "plain", scope: "current".
+  - If user says "change background of all pages to navy", set color: "#0f172a", scope: "all".
+  - If user says "set page 2 background to grid", pattern: "grid", scope: "page", pageNumber: 2.
+  - If user says "make page 3 green", set color: "#1b4332", scope: "page", pageNumber: 3.
+  - If user says "notebook lines" or "ruled background", set pattern: "lines".
+  - If user says "dots background" or "dotted canvas", set pattern: "dots".
 - **NO HARDCODING**: If the user says "the circle on the extreme left" or "the biggest square", DO NOT ask for clarification. Look at the CURRENT ACTIVE OBJECTS JSON. Find the object with the lowest 'x' coordinate, or largest 'width'*'height', and output its 'id' in targetId.
+- **BORDER & PROPERTIES**: When creating or modifying shapes with border thickness (e.g. "create square of 4px border"), include "strokeWidth": 4 in CREATE_OBJECT, or "property": "strokeWidth", "value": 4 in MODIFY_PROPERTY.
 - **NO FALSE STICKY NOTES**: If the user asks for a simple shape or 3D model (e.g. "create 3D sphere"), ONLY output the CREATE_OBJECT for the sphere. DO NOT add sticky notes unless explicitly asked or generating a "lesson_board".
 - **GENERATIVE KNOWLEDGE**: If the user asks for a sticky note with a formula (e.g. "sticky note with volume of cube"), YOU must output the actual formula in LaTeX format within the 'text' property of the CREATE_OBJECT action.
 - **MULTI-MODAL EXPLANATIONS**: If asked to explain a scientific/math concept, output an array of actions: e.g., create a 3d_model, create a sticky_note with the formula, and add a speechResponse explaining it.
