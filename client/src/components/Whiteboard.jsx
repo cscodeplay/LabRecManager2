@@ -11467,6 +11467,38 @@ export default function Whiteboard({
         const cx = Math.round((cWidth / 2 - panOffset.x) / zoomLevel);
         const cy = Math.round((cHeight / 2 - panOffset.y) / zoomLevel);
 
+        // Helper to spawn shape with full text editing, measurement, and selection support
+        const spawnVoiceShape = (shapeProps) => {
+            const id = Date.now().toString();
+            const created = {
+                id,
+                rotation: 0,
+                color: color || '#3b82f6',
+                strokeWidth: strokeWidth || 3,
+                fillColor: fillColor || 'transparent',
+                strokeStyle: strokeStyle || 'solid',
+                text: '',
+                fontSize: 20,
+                fontFamily: 'sans-serif',
+                ...shapeProps
+            };
+            setShapeObjects(prev => [...prev, created]);
+            if (socket && sessionId) {
+                socket.emit('whiteboard:shape-add', { sessionId, shape: created });
+            }
+            saveToHistory();
+            setTool('select');
+            justCreatedShapeRef.current = true;
+            setSelectedShapeIds([id]);
+            setSelectedTextIds([]);
+            setSelectedImageId(null);
+            setSelectedImageIds([]);
+            setSelected3DId(null);
+            setSelected3DIds([]);
+            setSelectedMediaId(null);
+            return created;
+        };
+
         const isExactLocalCommand = /^(pen|pencil|eraser|select|laser|clear|undo|redo|zoom in|zoom out|reset zoom|new page|next page|previous page)$/i.test(txt);
         
         if (!isAiRetry && !isExactLocalCommand) {
@@ -11501,11 +11533,15 @@ export default function Whiteboard({
                             applyPropertyModification(action.property, action.mode || 'absolute_value', action.value);
                         } 
                         else if (action.type === 'CREATE_OBJECT') {
+                            const actStroke = action.strokeWidth !== undefined ? Number(action.strokeWidth) : (action.border !== undefined ? Number(action.border) : strokeWidth || 3);
+                            const actColor = action.color || color || '#3b82f6';
+                            const actFill = action.fillColor || fillColor || 'transparent';
+
                             if (action.objectType === '3d_model') {
                                 executeAiCanvasAction({ 
                                     type: 'insert_3d_model', 
                                     modelType: action.modelType, 
-                                    color: action.color,
+                                    color: actColor,
                                     x: action.x, 
                                     y: action.y 
                                 });
@@ -11518,6 +11554,147 @@ export default function Whiteboard({
                                     ...prev,
                                     [currentPage]: [...(prev[currentPage] || []), note]
                                 }));
+                            } else if (action.objectType === 'square') {
+                                const side = action.size || action.width || 100;
+                                const px = action.x !== undefined ? action.x : Math.round(cx - side / 2);
+                                const py = action.y !== undefined ? action.y : Math.round(cy - side / 2);
+                                spawnVoiceShape({
+                                    type: 'rectangle',
+                                    x: px,
+                                    y: py,
+                                    width: side,
+                                    height: side,
+                                    color: actColor,
+                                    strokeWidth: actStroke,
+                                    fillColor: actFill
+                                });
+                            } else if (action.objectType === 'rectangle') {
+                                const w = action.width || 160;
+                                const h = action.height || 100;
+                                const px = action.x !== undefined ? action.x : Math.round(cx - w / 2);
+                                const py = action.y !== undefined ? action.y : Math.round(cy - h / 2);
+                                spawnVoiceShape({
+                                    type: 'rectangle',
+                                    x: px,
+                                    y: py,
+                                    width: w,
+                                    height: h,
+                                    color: actColor,
+                                    strokeWidth: actStroke,
+                                    fillColor: actFill
+                                });
+                            } else if (action.objectType === 'circle') {
+                                const r = action.radius || (action.width ? action.width / 2 : 60);
+                                const px = action.x !== undefined ? action.x : Math.round(cx - r);
+                                const py = action.y !== undefined ? action.y : Math.round(cy - r);
+                                spawnVoiceShape({
+                                    type: 'circle',
+                                    x: px,
+                                    y: py,
+                                    width: r * 2,
+                                    height: r * 2,
+                                    color: actColor,
+                                    strokeWidth: actStroke,
+                                    fillColor: actFill
+                                });
+                            } else if (action.objectType === 'triangle') {
+                                const s = action.width || action.size || 120;
+                                const px = action.x !== undefined ? action.x : Math.round(cx - s / 2);
+                                const py = action.y !== undefined ? action.y : Math.round(cy - s / 2);
+                                spawnVoiceShape({
+                                    type: 'triangle',
+                                    x: px,
+                                    y: py,
+                                    width: s,
+                                    height: Math.round(s * 0.9),
+                                    color: actColor,
+                                    strokeWidth: actStroke,
+                                    fillColor: actFill
+                                });
+                            } else if (action.objectType === 'line') {
+                                const len = action.width || 160;
+                                const px = action.x !== undefined ? action.x : Math.round(cx - len / 2);
+                                const py = action.y !== undefined ? action.y : cy;
+                                spawnVoiceShape({
+                                    type: 'line',
+                                    x: px,
+                                    y: py,
+                                    width: len,
+                                    height: 0,
+                                    startX: 0,
+                                    startY: 0,
+                                    endX: len,
+                                    endY: 0,
+                                    color: actColor,
+                                    strokeWidth: actStroke
+                                });
+                            } else if (action.objectType === 'arrow') {
+                                const len = action.width || 160;
+                                const px = action.x !== undefined ? action.x : Math.round(cx - len / 2);
+                                const py = action.y !== undefined ? action.y : cy;
+                                spawnVoiceShape({
+                                    type: 'arrow',
+                                    x: px,
+                                    y: py,
+                                    width: len,
+                                    height: 0,
+                                    startX: 0,
+                                    startY: 0,
+                                    endX: len,
+                                    endY: 0,
+                                    color: actColor,
+                                    strokeWidth: actStroke
+                                });
+                            } else if (action.objectType === 'star') {
+                                const s = action.width || action.size || 120;
+                                spawnVoiceShape({
+                                    type: 'star',
+                                    x: action.x !== undefined ? action.x : Math.round(cx - s / 2),
+                                    y: action.y !== undefined ? action.y : Math.round(cy - s / 2),
+                                    width: s,
+                                    height: s,
+                                    color: actColor,
+                                    strokeWidth: actStroke,
+                                    fillColor: actFill
+                                });
+                            } else if (action.objectType === 'diamond') {
+                                const s = action.width || action.size || 110;
+                                spawnVoiceShape({
+                                    type: 'diamond',
+                                    x: action.x !== undefined ? action.x : Math.round(cx - s / 2),
+                                    y: action.y !== undefined ? action.y : Math.round(cy - s / 2),
+                                    width: s,
+                                    height: s,
+                                    color: actColor,
+                                    strokeWidth: actStroke,
+                                    fillColor: actFill
+                                });
+                            } else if (action.objectType === 'pentagon' || action.objectType === 'hexagon') {
+                                const s = action.width || action.size || 120;
+                                spawnVoiceShape({
+                                    type: action.objectType,
+                                    x: action.x !== undefined ? action.x : Math.round(cx - s / 2),
+                                    y: action.y !== undefined ? action.y : Math.round(cy - s / 2),
+                                    width: s,
+                                    height: action.objectType === 'hexagon' ? Math.round(s * 0.9) : s,
+                                    color: actColor,
+                                    strokeWidth: actStroke,
+                                    fillColor: actFill
+                                });
+                            } else if (action.objectType === 'text') {
+                                const px = action.x !== undefined ? action.x : cx - 100;
+                                const py = action.y !== undefined ? action.y : cy;
+                                const newText = {
+                                    id: Date.now().toString(),
+                                    text: action.text || 'Text',
+                                    x: px,
+                                    y: py,
+                                    fontSize: action.fontSize || 24,
+                                    fontFamily: 'sans-serif',
+                                    color: actColor
+                                };
+                                setTextObjects(prev => [...prev, newText]);
+                                saveToHistory();
                             } else if (action.objectType === 'lesson_board') {
                                 executeAiCanvasAction({
                                     type: 'create_lesson_board',
@@ -12164,37 +12341,7 @@ export default function Whiteboard({
             }
         }
 
-        // Helper to spawn shape with full text editing, measurement, and selection support
-        const spawnVoiceShape = (shapeProps) => {
-            const id = Date.now().toString();
-            const created = {
-                id,
-                rotation: 0,
-                color: color || '#3b82f6',
-                strokeWidth: strokeWidth || 3,
-                fillColor: fillColor || 'transparent',
-                strokeStyle: strokeStyle || 'solid',
-                text: '',
-                fontSize: 20,
-                fontFamily: 'sans-serif',
-                ...shapeProps
-            };
-            setShapeObjects(prev => [...prev, created]);
-            if (socket && sessionId) {
-                socket.emit('whiteboard:shape-add', { sessionId, shape: created });
-            }
-            saveToHistory();
-            setTool('select');
-            justCreatedShapeRef.current = true;
-            setSelectedShapeIds([id]);
-            setSelectedTextIds([]);
-            setSelectedImageId(null);
-            setSelectedImageIds([]);
-            setSelected3DId(null);
-            setSelected3DIds([]);
-            setSelectedMediaId(null);
-            return created;
-        };
+        // (spawnVoiceShape is hoisted above before AI loop)
 
         // 1. Shapes with Dimensions & Radii
         // Circle: "draw circle radius 80", "draw circle of radius 60", "circle 50", "round 70"
