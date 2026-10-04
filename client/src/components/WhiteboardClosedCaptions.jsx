@@ -35,8 +35,7 @@ function renderFormattedText(rawText) {
     });
 
     // Inline math $...$
-    html = html.replace(/\$([^\$
-]+)\$/g, (match, math) => {
+    html = html.replace(/\$([^$\n]+)\$/g, (match, math) => {
         try {
             return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false });
         } catch (e) { return match; }
