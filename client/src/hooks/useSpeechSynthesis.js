@@ -183,6 +183,8 @@ export function useSpeechSynthesis({
         }
     }, [setVoiceName, setVoiceProfile]);
 
+    const [speakingCharIndex, setSpeakingCharIndex] = useState(0);
+
     // Stop and cancel speech
     const stop = useCallback(() => {
         if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -195,6 +197,7 @@ export function useSpeechSynthesis({
         setIsSpeaking(false);
         setIsPaused(false);
         setSpeakingText('');
+        setSpeakingCharIndex(0);
     }, []);
 
     // Pause speech
@@ -244,13 +247,22 @@ export function useSpeechSynthesis({
                 setIsSpeaking(true);
                 setIsPaused(false);
                 setSpeakingText(cleaned);
+                setSpeakingCharIndex(0);
                 if (options.onStart) options.onStart();
+            };
+
+            utterance.onboundary = (e) => {
+                if (e.charIndex !== undefined) {
+                    setSpeakingCharIndex(e.charIndex);
+                    if (options.onBoundary) options.onBoundary(e);
+                }
             };
 
             utterance.onend = () => {
                 setIsSpeaking(false);
                 setIsPaused(false);
                 setSpeakingText('');
+                setSpeakingCharIndex(0);
                 window.__activeSpeechUtterance = null;
                 if (options.onEnd) options.onEnd();
             };
@@ -263,6 +275,7 @@ export function useSpeechSynthesis({
                 setIsSpeaking(false);
                 setIsPaused(false);
                 setSpeakingText('');
+                setSpeakingCharIndex(0);
                 window.__activeSpeechUtterance = null;
                 if (options.onError) options.onError(e);
             };
@@ -278,6 +291,7 @@ export function useSpeechSynthesis({
             setIsSpeaking(false);
             setIsPaused(false);
             setSpeakingText('');
+            setSpeakingCharIndex(0);
             window.__activeSpeechUtterance = null;
         }
     }, [isEnabled, selectedVoice, rate, pitch, volume, stop]);
@@ -287,6 +301,7 @@ export function useSpeechSynthesis({
         isSpeaking,
         isPaused,
         speakingText,
+        speakingCharIndex,
         voices,
         selectedVoice,
         setSelectedVoice,

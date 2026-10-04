@@ -48,6 +48,70 @@ function renderFormattedText(rawText) {
     return html;
 }
 
+// Parse text into structured, scannable bullet blocks for whiteboard teaching
+function parseContentBlocks(rawText) {
+    if (!rawText) return [];
+    const lines = rawText.split('\n');
+    const blocks = [];
+    let currentBlock = null;
+    let charOffset = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+        const lineLen = line.length + 1;
+
+        if (!trimmed) {
+            charOffset += lineLen;
+            continue;
+        }
+
+        const bulletMatch = trimmed.match(/^(?:(?:\d+[\.\)]|Step\s+\d+[:\.]?|Stage\s+\d+[:\.]?|[-*•])\s*)(.+)$/i);
+        const isHeading = trimmed.startsWith('#') || (trimmed.endsWith(':') && trimmed.length < 60 && !trimmed.includes('. '));
+
+        if (bulletMatch) {
+            if (currentBlock) blocks.push(currentBlock);
+            const prefix = trimmed.slice(0, trimmed.length - bulletMatch[1].length).trim();
+            currentBlock = {
+                id: `blk_${blocks.length}`,
+                type: 'bullet',
+                prefix: prefix || '•',
+                text: bulletMatch[1].trim(),
+                startChar: charOffset,
+                endChar: charOffset + trimmed.length
+            };
+        } else if (isHeading) {
+            if (currentBlock) blocks.push(currentBlock);
+            currentBlock = {
+                id: `blk_${blocks.length}`,
+                type: 'heading',
+                prefix: '📌',
+                text: trimmed.replace(/^#+\s*/, ''),
+                startChar: charOffset,
+                endChar: charOffset + trimmed.length
+            };
+        } else {
+            if (currentBlock && currentBlock.type === 'bullet' && !trimmed.startsWith('$$')) {
+                currentBlock.text += ' ' + trimmed;
+                currentBlock.endChar = charOffset + trimmed.length;
+            } else {
+                if (currentBlock) blocks.push(currentBlock);
+                currentBlock = {
+                    id: `blk_${blocks.length}`,
+                    type: 'paragraph',
+                    prefix: '•',
+                    text: trimmed,
+                    startChar: charOffset,
+                    endChar: charOffset + trimmed.length
+                };
+            }
+        }
+        charOffset += lineLen;
+    }
+    if (currentBlock) blocks.push(currentBlock);
+    return blocks;
+}
+
 export default function WhiteboardClosedCaptions({
     isVisible = true,
     isListening = false,
@@ -57,6 +121,7 @@ export default function WhiteboardClosedCaptions({
     isAiThinking = false,
     isAiSpeaking = false,
     aiSpeakingText = '',
+    speakingCharIndex = 0,
     aiSolution = null,
     aiResponseText = '',
     suggestedFollowUps = [],
@@ -75,9 +140,13 @@ export default function WhiteboardClosedCaptions({
     const [isPaneCollapsed, setIsPaneCollapsed] = useState(false);
     const [isPaneDismissed, setIsPaneDismissed] = useState(false);
     const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'solution'
+    const [heightMode, setHeightMode] = useState('standard'); // 'compact' | 'standard' | 'expanded'
     const [followUpInput, setFollowUpInput] = useState('');
     const [copied, setCopied] = useState(false);
     const lastResponseSeenRef = React.useRef('');
+    const scrollContainerRef = React.useRef(null);
+    const userIsScrollingRef = React.useRef(false);
+    const scrollTimeoutRef = React.useRef(null);
 
     // Determine the active display response
     const activeAiResponse = aiResponseText || aiSolution?.solutionMarkdown || aiSolution?.speechResponse || (isAiSpeaking ? aiSpeakingText : '');
@@ -100,6 +169,42 @@ export default function WhiteboardClosedCaptions({
             }
         }
     }, [transcript, isEditing]);
+
+    const displayText = (activeTab === 'solution' && aiSolution?.solutionMarkdown)
+        ? aiSolution.solutionMarkdown
+        : activeAiResponse;
+
+    const blocks = React.useMemo(() => parseContentBlocks(displayText), [displayText]);
+
+    // Track active bullet based on speakingCharIndex from speech synthesis
+    const activeBlockIndex = React.useMemo(() => {
+        if (!isAiSpeaking || blocks.length === 0) return -1;
+        const idx = blocks.findIndex(b => speakingCharIndex >= b.startChar && speakingCharIndex <= b.endChar);
+        if (idx !== -1) return idx;
+        if (speakingCharIndex > 0) {
+            for (let i = blocks.length - 1; i >= 0; i--) {
+                if (speakingCharIndex >= blocks[i].startChar) return i;
+            }
+        }
+        return 0;
+    }, [isAiSpeaking, speakingCharIndex, blocks]);
+
+    // Auto-scroll to active bullet point while dictating (respecting user manual scrolling)
+    useEffect(() => {
+        if (!isAiSpeaking || userIsScrollingRef.current || activeBlockIndex < 0) return;
+        const el = document.getElementById(`cc-block-${activeBlockIndex}`);
+        if (el && scrollContainerRef.current) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }, [activeBlockIndex, isAiSpeaking]);
+
+    const handleUserScroll = () => {
+        userIsScrollingRef.current = true;
+        if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+        scrollTimeoutRef.current = setTimeout(() => {
+            userIsScrollingRef.current = false;
+        }, 3000);
+    };
 
     if (!isVisible) return null;
 
@@ -158,6 +263,16 @@ export default function WhiteboardClosedCaptions({
 
                         {/* Right Header Controls */}
                         <div className="flex items-center gap-1">
+                            {/* Whiteboard Space Mode (Compact vs Standard vs Expanded) */}
+                            <button
+                                type="button"
+                                onClick={() => setHeightMode(prev => prev === 'compact' ? 'standard' : prev === 'standard' ? 'expanded' : 'compact')}
+                                className="px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition"
+                                title={`Whiteboard Space Mode: ${heightMode} (Toggle Compact/Standard/Expanded)`}
+                            >
+                                {heightMode === 'compact' ? '🗜️ Mini' : heightMode === 'expanded' ? '↕️ Max' : '📐 Normal'}
+                            </button>
+
                             {/* Copy button */}
                             <button
                                 type="button"
@@ -195,31 +310,79 @@ export default function WhiteboardClosedCaptions({
                         </div>
                     </div>
 
-                    {/* Expandable Content Area */}
+                    {/* Expandable Content Area with Synchronized Dictation Scrolling */}
                     {!isPaneCollapsed && (
-                        <div className="p-3 text-xs text-slate-200 space-y-2.5 max-h-64 overflow-y-auto custom-scrollbar">
-                            {/* Rendered Markdown & Math Text */}
-                            <div
-                                className="leading-relaxed whitespace-pre-wrap select-text text-slate-200 text-[12px]"
-                                dangerouslySetInnerHTML={{
-                                    __html: renderFormattedText(
-                                        (activeTab === 'solution' && aiSolution?.solutionMarkdown)
-                                            ? aiSolution.solutionMarkdown
-                                            : activeAiResponse
-                                    )
-                                }}
-                            />
+                        <div className="flex flex-col">
+                            {/* Dictating Status Banner if active */}
+                            {isAiSpeaking && blocks.length > 0 && activeBlockIndex >= 0 && (
+                                <div className="px-3 py-1 bg-indigo-950/70 border-b border-indigo-500/20 flex items-center justify-between text-[11px] text-indigo-300">
+                                    <div className="flex items-center gap-1.5 font-medium">
+                                        <Volume2 className="w-3 h-3 text-indigo-400 animate-pulse" />
+                                        <span>Dictating Point {activeBlockIndex + 1} of {blocks.length}</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400 italic">Auto-scrolling with voice</span>
+                                </div>
+                            )}
+
+                            {/* Scannable Bullet Points Container */}
+                            <div 
+                                ref={scrollContainerRef}
+                                onScroll={handleUserScroll}
+                                onWheel={handleUserScroll}
+                                onTouchStart={handleUserScroll}
+                                className={`p-3 text-xs text-slate-200 space-y-2 overflow-y-auto custom-scrollbar select-text transition-all duration-200 ${
+                                    heightMode === 'compact' ? 'max-h-36' : heightMode === 'expanded' ? 'max-h-96' : 'max-h-60'
+                                }`}
+                            >
+                                {blocks.length > 0 ? (
+                                    blocks.map((block, idx) => {
+                                        const isActive = isAiSpeaking && (idx === activeBlockIndex);
+                                        return (
+                                            <div
+                                                id={`cc-block-${idx}`}
+                                                key={block.id || idx}
+                                                className={`p-2 rounded-xl transition-all duration-200 border ${
+                                                    isActive
+                                                        ? 'bg-indigo-600/25 border-indigo-400 text-white ring-1 ring-indigo-400/40 shadow-md scale-[1.01]'
+                                                        : 'bg-slate-900/60 hover:bg-slate-900/90 border-slate-800/80 text-slate-300'
+                                                }`}
+                                            >
+                                                <div className="flex items-start gap-2">
+                                                    <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                                                        isActive ? 'bg-indigo-500 text-white shadow-xs' : 'bg-slate-800 text-indigo-300 border border-slate-700/80'
+                                                    }`}>
+                                                        {block.prefix || (idx + 1)}
+                                                    </span>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div
+                                                            className="leading-relaxed text-[12px]"
+                                                            dangerouslySetInnerHTML={{ __html: renderFormattedText(block.text) }}
+                                                        />
+                                                    </div>
+                                                    {isActive && (
+                                                        <span className="shrink-0 flex items-center gap-1 text-[9px] text-indigo-300 font-semibold px-1 py-0.5 rounded bg-indigo-950/80 border border-indigo-500/40 animate-pulse">
+                                                            <Volume2 className="w-2.5 h-2.5 text-indigo-400" />
+                                                            <span>Reading</span>
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                ) : (
+                                    <div
+                                        className="leading-relaxed whitespace-pre-wrap select-text text-slate-200 text-[12px]"
+                                        dangerouslySetInnerHTML={{ __html: renderFormattedText(displayText) }}
+                                    />
+                                )}
+                            </div>
 
                             {/* Suggested Follow-up Action Pills */}
-                            <div className="pt-2 border-t border-slate-800/90 flex flex-wrap gap-1.5 items-center">
+                            <div className="p-3 pt-2 border-t border-slate-800/90 flex flex-wrap gap-1.5 items-center bg-slate-950/40">
                                 {/* 1. Create sticky note of above */}
                                 <button
                                     type="button"
-                                    onClick={() => onCreateStickyNote(
-                                        (activeTab === 'solution' && aiSolution?.solutionMarkdown)
-                                            ? aiSolution.solutionMarkdown
-                                            : activeAiResponse
-                                    )}
+                                    onClick={() => onCreateStickyNote(displayText)}
                                     className="px-2.5 py-1 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 text-[11px] font-medium flex items-center gap-1 transition shadow-sm hover:scale-105 active:scale-95"
                                     title="Create a yellow sticky note on canvas with this response"
                                 >
@@ -230,11 +393,7 @@ export default function WhiteboardClosedCaptions({
                                 {/* 2. Insert as text */}
                                 <button
                                     type="button"
-                                    onClick={() => onInsertAsText(
-                                        (activeTab === 'solution' && aiSolution?.solutionMarkdown)
-                                            ? aiSolution.solutionMarkdown
-                                            : activeAiResponse
-                                    )}
+                                    onClick={() => onInsertAsText(displayText)}
                                     className="px-2.5 py-1 rounded-full bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/50 text-[11px] font-medium flex items-center gap-1 transition shadow-sm hover:scale-105 active:scale-95"
                                     title="Place this response directly on canvas as a text object"
                                 >

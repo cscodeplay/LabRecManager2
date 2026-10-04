@@ -1016,6 +1016,7 @@ export default function Whiteboard({
         isSupported: isTtsSupported,
         isSpeaking: isAiSpeaking,
         speakingText: aiSpeakingText,
+        speakingCharIndex,
         voices: ttsVoices,
         selectedVoice: ttsSelectedVoice,
         setSelectedVoice: setTtsSelectedVoice,
@@ -9979,6 +9980,7 @@ export default function Whiteboard({
         setPages(prev => [...prev, null]);
         setTotalPages(prev => prev + 1);
         setCurrentPage(newIndex);
+        currentPageRef.current = newIndex;
 
         // Initialize background for new page
         setPageBackgrounds(prev => ({
@@ -10333,7 +10335,25 @@ export default function Whiteboard({
             };
         });
 
+        const totalActiveObjects = currentShapes.length + current3D.length + currentTexts.length + currentImages.length;
+        const centerOccupied = currentShapes.some(s => {
+            const scx = (s.x || 0) + (s.width || 0) / 2;
+            const scy = (s.y || 0) + (s.height || 0) / 2;
+            return Math.hypot(scx - baseCx, scy - baseCy) < 170;
+        }) || current3D.some(o => {
+            const ocx = (o.x || 0) + (o.width || 240) / 2;
+            const ocy = (o.y || 0) + (o.height || 240) / 2;
+            return Math.hypot(ocx - baseCx, ocy - baseCy) < 170;
+        });
+        const isBoardCrowded = totalActiveObjects >= 3 || (totalActiveObjects >= 2 && centerOccupied);
+        const hasSufficientSpace = !isBoardCrowded;
+
         return {
+            currentPage: currentPage + 1,
+            totalPages,
+            activeObjectsCount: totalActiveObjects,
+            isBoardCrowded,
+            hasSufficientSpace,
             shapes: [...currentShapes, ...current3D],
             threeDObjects: current3D,
             texts: currentTexts,
@@ -10351,7 +10371,7 @@ export default function Whiteboard({
             lastActionTarget: lastActionTargetRef.current,
             selectedShapeIds
         };
-    }, [currentPage, pageShapeObjects, page3DObjects, pageTextObjects, pageImageObjects, canvasWidth, canvasHeight, panOffset, zoomLevel, laserPos, selectedShapeIds]);
+    }, [currentPage, totalPages, pageShapeObjects, page3DObjects, pageTextObjects, pageImageObjects, canvasWidth, canvasHeight, panOffset, zoomLevel, laserPos, selectedShapeIds]);
 
     // 2. Intelligent Space Allocation & Collision Avoidance
     const findAvailableCanvasSpace = useCallback((desiredW = 160, desiredH = 160, preference = null) => {
@@ -10364,26 +10384,59 @@ export default function Whiteboard({
         const baseCy = Math.round((yMin + yMax) / 2);
 
         const activeShapes = pageShapeObjects[currentPage] || [];
-        const obstacles = activeShapes.map(s => ({
-            x1: s.x || 0,
-            y1: s.y || 0,
-            x2: (s.x || 0) + (s.width || 0),
-            y2: (s.y || 0) + (s.height || 0),
-            id: s.id,
-            cx: (s.x || 0) + (s.width || 0) / 2,
-            cy: (s.y || 0) + (s.height || 0) / 2
-        }));
+        const active3D = page3DObjects[currentPage] || [];
+        const activeTexts = pageTextObjects[currentPage] || [];
+        const activeImages = pageImageObjects[currentPage] || [];
+
+        const obstacles = [
+            ...activeShapes.map(s => ({
+                x1: s.x || 0,
+                y1: s.y || 0,
+                x2: (s.x || 0) + (s.width || 0),
+                y2: (s.y || 0) + (s.height || 0),
+                id: s.id,
+                cx: (s.x || 0) + (s.width || 0) / 2,
+                cy: (s.y || 0) + (s.height || 0) / 2
+            })),
+            ...active3D.map(o => ({
+                x1: o.x || 0,
+                y1: o.y || 0,
+                x2: (o.x || 0) + (o.width || 240),
+                y2: (o.y || 0) + (o.height || 240),
+                id: o.id,
+                cx: (o.x || 0) + (o.width || 240) / 2,
+                cy: (o.y || 0) + (o.height || 240) / 2
+            })),
+            ...activeTexts.map(t => ({
+                x1: t.x || 0,
+                y1: t.y || 0,
+                x2: (t.x || 0) + (t.width || 140),
+                y2: (t.y || 0) + (t.height || 50),
+                id: t.id,
+                cx: (t.x || 0) + (t.width || 140) / 2,
+                cy: (t.y || 0) + (t.height || 50) / 2
+            })),
+            ...activeImages.map(i => ({
+                x1: i.x || 0,
+                y1: i.y || 0,
+                x2: (i.x || 0) + (i.width || 200),
+                y2: (i.y || 0) + (i.height || 200),
+                id: i.id,
+                cx: (i.x || 0) + (i.width || 200) / 2,
+                cy: (i.y || 0) + (i.height || 200) / 2
+            }))
+        ];
 
         // Case A: User explicitly pointed with laser or gave coordinate preference
         if (preference?.atLaser && latestLaserPosRef.current) {
             const lx = Math.max(xMin, Math.min(xMax - desiredW, latestLaserPosRef.current.x - desiredW / 2));
             const ly = Math.max(yMin, Math.min(yMax - desiredH, latestLaserPosRef.current.y - desiredH / 2));
-            return { x: Math.round(lx), y: Math.round(ly), width: desiredW, height: desiredH };
+            return { x: Math.round(lx), y: Math.round(ly), width: desiredW, height: desiredH, hasSpace: true, overlapCount: 0 };
         }
 
         // Case B: Relative spatial command (e.g. "below the square", "above the circle", "right of the box")
         if (preference?.relativeToId) {
-            const refShape = activeShapes.find(s => s.id === preference.relativeToId);
+            const refShape = [...activeShapes, ...active3D].find(s => s.id === preference.relativeToId);
             if (refShape) {
                 const refX = refShape.x || 0;
                 const refY = refShape.y || 0;
@@ -10401,25 +10454,25 @@ export default function Whiteboard({
                     }
                     const targetY = Math.min(yMax - finalH, refY + refH + 25);
                     const targetX = Math.max(xMin, Math.min(xMax - finalW, refCx - finalW / 2));
-                    return { x: Math.round(targetX), y: Math.round(targetY), width: finalW, height: finalH };
+                    return { x: Math.round(targetX), y: Math.round(targetY), width: finalW, height: finalH, hasSpace: true, overlapCount: 0 };
                 }
 
                 if (preference.direction === 'above') {
                     const targetY = Math.max(yMin, refY - desiredH - 25);
                     const targetX = Math.max(xMin, Math.min(xMax - desiredW, refCx - desiredW / 2));
-                    return { x: Math.round(targetX), y: Math.round(targetY), width: desiredW, height: desiredH };
+                    return { x: Math.round(targetX), y: Math.round(targetY), width: desiredW, height: desiredH, hasSpace: true, overlapCount: 0 };
                 }
 
                 if (preference.direction === 'right') {
                     const targetX = Math.min(xMax - desiredW, refX + refW + 25);
                     const targetY = Math.max(yMin, Math.min(yMax - desiredH, refY + (refH - desiredH) / 2));
-                    return { x: Math.round(targetX), y: Math.round(targetY), width: desiredW, height: desiredH };
+                    return { x: Math.round(targetX), y: Math.round(targetY), width: desiredW, height: desiredH, hasSpace: true, overlapCount: 0 };
                 }
 
                 if (preference.direction === 'left') {
                     const targetX = Math.max(xMin, refX - desiredW - 25);
                     const targetY = Math.max(yMin, Math.min(yMax - desiredH, refY + (refH - desiredH) / 2));
-                    return { x: Math.round(targetX), y: Math.round(targetY), width: desiredW, height: desiredH };
+                    return { x: Math.round(targetX), y: Math.round(targetY), width: desiredW, height: desiredH, hasSpace: true, overlapCount: 0 };
                 }
             }
         }
@@ -10456,9 +10509,11 @@ export default function Whiteboard({
             x: Math.round(Math.max(xMin, Math.min(xMax - desiredW, bestZone.x))),
             y: Math.round(Math.max(yMin, Math.min(yMax - desiredH, bestZone.y))),
             width: desiredW,
-            height: desiredH
+            height: desiredH,
+            hasSpace: minOverlapScore === 0,
+            overlapCount: minOverlapScore
         };
-    }, [currentPage, pageShapeObjects, panOffset, zoomLevel]);
+    }, [currentPage, pageShapeObjects, page3DObjects, pageTextObjects, pageImageObjects, panOffset, zoomLevel]);
 
     // 3. 60fps Teacher Laser Glide Animation Engine
     const animateTeacherLaserPath = useCallback((waypoints = [], duration = 700, onStep = null, onComplete = null) => {
@@ -10750,6 +10805,18 @@ export default function Whiteboard({
             const dType = canvasAction.diagramType || canvasAction.shapeType || 'right_triangle';
             const reqW = canvasAction.width ? Number(canvasAction.width) : (dType === 'circle' ? 180 : 240);
             const reqH = canvasAction.height ? Number(canvasAction.height) : (dType === 'circle' ? 180 : 180);
+
+            // Intelligent board space check: auto-paginate if current board has 3+ objects or no clear space
+            const activeCount = (pageShapeObjects[currentPageRef.current]?.length || 0) + (page3DObjects[currentPageRef.current]?.length || 0);
+            if (activeCount >= 3) {
+                const spaceCheck = findAvailableCanvasSpace(reqW, reqH);
+                if (!spaceCheck.hasSpace) {
+                    addNewPage();
+                    toast.info('📄 Board was crowded — opened a fresh board for this diagram', { icon: '✨' });
+                }
+            }
+
+            const activeTargetPage = currentPageRef.current;
             const posX = canvasAction.x !== undefined ? Number(canvasAction.x) : Math.max(30, Math.round(baseCx - reqW / 2));
             const posY = canvasAction.y !== undefined ? Number(canvasAction.y) : Math.max(30, Math.round(baseCy - reqH / 2));
 
@@ -10779,12 +10846,38 @@ export default function Whiteboard({
 
             setPageShapeObjects(prev => ({
                 ...prev,
-                [currentPage]: [...(prev[currentPage] || []), mathShape]
+                [activeTargetPage]: [...(prev[activeTargetPage] || []), mathShape]
             }));
             setSelectedShapeIds([mathShape.id]);
             setTool('select');
             saveToHistory();
             toast.success(`Drawn ${dType.replace('_', ' ')} diagram on whiteboard!`, { icon: '📐' });
+
+            // Automated Teacher Laser Walkthrough: Glides across vertices and edges to explain markings
+            if (dType === 'right_triangle') {
+                const waypoints = [
+                    { x: posX + 20, y: posY + 20, label: 'AI Teacher', action: 'Vertex A (Altitude)' },
+                    { x: posX + 20, y: posY + reqH - 20, label: 'AI Teacher', action: '90° Right Angle (Vertex B)' },
+                    { x: posX + reqW - 20, y: posY + reqH - 20, label: 'AI Teacher', action: 'Base side a (Vertex C)' },
+                    { x: Math.round(posX + reqW / 2), y: Math.round(posY + reqH / 2), label: 'AI Teacher', action: 'Hypotenuse c' }
+                ];
+                setTimeout(() => {
+                    animateTeacherLaserPath(waypoints, 1200, null, () => {
+                        setTimeout(() => setTeacherLaser(null), 600);
+                    });
+                }, 300);
+            } else if (dType === 'circle') {
+                const waypoints = [
+                    { x: posX + reqW / 2, y: posY + reqH / 2, label: 'AI Teacher', action: 'Center Point O' },
+                    { x: posX + reqW - 10, y: posY + reqH / 2, label: 'AI Teacher', action: 'Radius r' }
+                ];
+                setTimeout(() => {
+                    animateTeacherLaserPath(waypoints, 1000, null, () => {
+                        setTimeout(() => setTeacherLaser(null), 600);
+                    });
+                }, 300);
+            }
+
             return true;
         }
 
@@ -11931,8 +12024,13 @@ export default function Whiteboard({
                         });
                     }
                     
+                    let hasAutoPagedForTurn = false;
+
                     for (const action of data.actions) {
                         if (action.type === 'UI_COMMAND' && action.command) {
+                            if (action.command.includes('new page') || action.command.includes('add page')) {
+                                hasAutoPagedForTurn = true;
+                            }
                             executeVoiceCommand(action.command, true);
                         } 
                         else if (action.type === 'SET_BACKGROUND') {
@@ -11944,6 +12042,7 @@ export default function Whiteboard({
                                 loadPage(pNum - 1);
                             } else if (pNum > totalPages) {
                                 addNewPage();
+                                hasAutoPagedForTurn = true;
                             }
                         }
                         else if (action.type === 'MODIFY_PROPERTY') {
@@ -11987,6 +12086,14 @@ export default function Whiteboard({
                             });
                         } 
                         else if (action.type === 'CREATE_OBJECT') {
+                            const isMathOrLesson = ['right_triangle', 'triangle', 'coordinate_system', 'cartesian_plane', 'circle', 'lesson_board'].includes(action.objectType);
+                            const activeCount = (pageShapeObjects[currentPageRef.current]?.length || 0) + (page3DObjects[currentPageRef.current]?.length || 0);
+                            if (!hasAutoPagedForTurn && isMathOrLesson && activeCount >= 3) {
+                                hasAutoPagedForTurn = true;
+                                addNewPage();
+                                toast.info('📄 Board was full — created fresh board for new problem', { icon: '✨' });
+                            }
+
                             const actStroke = action.strokeWidth !== undefined ? Number(action.strokeWidth) : (action.border !== undefined ? Number(action.border) : strokeWidth || 3);
                             const actColor = action.color || color || '#3b82f6';
                             const actFill = action.fillColor || fillColor || 'transparent';
@@ -21933,6 +22040,7 @@ export default function Whiteboard({
                 isAiThinking={isAiThinking}
                 isAiSpeaking={isAiSpeaking}
                 aiSpeakingText={aiSpeakingText}
+                speakingCharIndex={speakingCharIndex}
                 aiSolution={aiSolutionData}
                 aiResponseText={aiSolutionData?.speechResponse || aiSpeakingText}
                 suggestedFollowUps={aiSolutionData?.suggestedFollowUps || []}
