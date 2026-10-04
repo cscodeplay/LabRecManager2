@@ -55,6 +55,7 @@ import WhiteboardMicSelector from './WhiteboardMicSelector';
 import WhiteboardClosedCaptions from './WhiteboardClosedCaptions';
 import WhiteboardAIAssistantModal from './WhiteboardAIAssistantModal';
 import DomainShapeLibraryModal, { DOMAIN_SHAPES } from './DomainShapeLibrary';
+import { getBuiltinIllustration, getBuiltinIllustrationSvg } from './WhiteboardIllustrations';
 import WhiteboardShortcutsModal from './WhiteboardShortcutsModal';
 import WhiteboardClipboardPanel from './WhiteboardClipboardPanel';
 import WhiteboardMediaPlayer from './WhiteboardMediaPlayer';
@@ -8442,8 +8443,8 @@ export default function Whiteboard({
                 continue;
             }
 
-            // Domain Shapes (Check if DOM SVG is present and serialize it for 100% precision)
-            if (DOMAIN_SHAPES && DOMAIN_SHAPES[shpObj.type]) {
+            // Domain Shapes & Vector Drawings (Check if DOM SVG is present and serialize it for 100% precision)
+            if ((DOMAIN_SHAPES && DOMAIN_SHAPES[shpObj.type]) || shpObj.type === 'drawing' || shpObj.type === 'svg' || shpObj.type === 'sketch' || shpObj.svg) {
                 const shapeEl = document.querySelector(`[data-shape-id="${shpObj.id}"] svg`);
                 if (shapeEl) {
                     try {
@@ -12313,20 +12314,63 @@ export default function Whiteboard({
                                     strokeWidth: actStroke,
                                     fillColor: actFill
                                 });
-                            } else if (action.objectType === 'text') {
-                                const px = action.x !== undefined ? action.x : cx - 100;
-                                const py = action.y !== undefined ? action.y : cy;
-                                const newText = {
-                                    id: Date.now().toString(),
-                                    text: action.text || 'Text',
+                            } else if (action.objectType === 'drawing' || action.objectType === 'svg' || action.objectType === 'sketch' || action.svg || (action.objectType === 'text' && /\b(draw|sketch|illustrate)\b/i.test(rawText))) {
+                                const promptSubject = action.title || action.prompt || action.name || (rawText.match(/\b(?:draw|sketch|illustrate)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-]+)/i) || [])[1] || action.text || 'drawing';
+                                const item = getBuiltinIllustration(promptSubject) || getBuiltinIllustration(rawText);
+                                const rawSvg = action.svg || (item ? item.svg : getBuiltinIllustrationSvg(promptSubject, actColor));
+                                const title = action.title || (item ? item.title : (promptSubject ? promptSubject.replace(/^(draw\s+a\s+|draw\s+an\s+|draw\s+)/i, '') : 'Drawing'));
+                                const w = Number(action.width) || (item ? item.width : 280);
+                                const h = Number(action.height) || (item ? item.height : 280);
+                                const defaultPx = Math.round(cx - w / 2);
+                                const defaultPy = Math.round(cy - h / 2);
+                                const px = (action.x !== undefined && action.x < (canvas?.width || 1200) - w - 40) ? Number(action.x) : defaultPx;
+                                const py = (action.y !== undefined && action.y < (canvas?.height || 800) - h - 40) ? Number(action.y) : defaultPy;
+                                spawnVoiceShape({
+                                    type: 'drawing',
+                                    title: title,
+                                    svg: rawSvg,
                                     x: px,
                                     y: py,
-                                    fontSize: action.fontSize || 24,
-                                    fontFamily: 'sans-serif',
-                                    color: actColor
-                                };
-                                setTextObjects(prev => [...prev, newText]);
-                                saveToHistory();
+                                    width: w,
+                                    height: h,
+                                    color: actColor,
+                                    strokeWidth: actStroke,
+                                    fillColor: actFill
+                                });
+                            } else if (action.objectType === 'text') {
+                                const trimmed = (action.text || '').trim();
+                                const isEmoji = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F)$/u.test(trimmed);
+                                const illustrationFromText = getBuiltinIllustration(rawText) || getBuiltinIllustration(trimmed);
+                                if (isEmoji && illustrationFromText) {
+                                    const w = illustrationFromText.width || 280;
+                                    const h = illustrationFromText.height || 280;
+                                    spawnVoiceShape({
+                                        type: 'drawing',
+                                        title: illustrationFromText.title,
+                                        svg: illustrationFromText.svg,
+                                        x: Math.round(cx - w / 2),
+                                        y: Math.round(cy - h / 2),
+                                        width: w,
+                                        height: h,
+                                        color: actColor,
+                                        strokeWidth: actStroke,
+                                        fillColor: actFill
+                                    });
+                                } else {
+                                    const px = action.x !== undefined ? action.x : cx - 100;
+                                    const py = action.y !== undefined ? action.y : cy;
+                                    const newText = {
+                                        id: Date.now().toString(),
+                                        text: action.text || 'Text',
+                                        x: px,
+                                        y: py,
+                                        fontSize: action.fontSize || 24,
+                                        fontFamily: 'sans-serif',
+                                        color: actColor
+                                    };
+                                    setTextObjects(prev => [...prev, newText]);
+                                    saveToHistory();
+                                }
                             } else if (action.objectType === 'lesson_board') {
                                 executeAiCanvasAction({
                                     type: 'create_lesson_board',
@@ -12387,6 +12431,17 @@ export default function Whiteboard({
                                             return true;
                                         });
                                         if (matchShape) tId = matchShape.id;
+                                    }
+
+                                    // 2.1 Check for drawings & vector art (e.g. cat, dog, car, tree, house, etc.)
+                                    if (!tId) {
+                                        const matchDrawing = curShapes.find(s => {
+                                            if (s.type !== 'drawing' && s.type !== 'svg' && s.type !== 'sketch' && !s.svg) return false;
+                                            const sTitle = (s.title || '').toLowerCase();
+                                            const combined = ((action.targetId || '') + ' ' + (action.targetType || '') + ' ' + rawText).toLowerCase();
+                                            return sTitle && combined.includes(sTitle);
+                                        });
+                                        if (matchDrawing) tId = matchDrawing.id;
                                     }
                                 }
 
@@ -12462,6 +12517,34 @@ export default function Whiteboard({
                 }
             }
             
+            // If AI didn't recognize it or failed, check for local drawing command
+            const localDrawMatch = !isAiRetry && /\b(draw|sketch|illustrate)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-\s]+)/i.exec(txt);
+            if (localDrawMatch) {
+                const query = localDrawMatch[2].trim();
+                const item = getBuiltinIllustration(query);
+                const title = item ? item.title : query;
+                const drawingSvg = getBuiltinIllustrationSvg(query, color || '#3b82f6');
+                const w = item ? item.width : 280;
+                const h = item ? item.height : 280;
+                spawnVoiceShape({
+                    type: 'drawing',
+                    title: title,
+                    svg: drawingSvg,
+                    x: Math.round(cx - w / 2),
+                    y: Math.round(cy - h / 2),
+                    width: w,
+                    height: h,
+                    color: color || '#3b82f6',
+                    strokeWidth: strokeWidth || 3,
+                    fillColor: 'transparent'
+                });
+                const speech = `Here is a vector drawing of a ${title} for the whiteboard!`;
+                if (aiSpeechEnabled) speakAiResponse(speech);
+                toast.success(speech, { icon: '🎨' });
+                setVoiceFeedback(speech);
+                return;
+            }
+
             // If AI didn't recognize it or failed, we can optionally fallback, but we'll just return.
             setVoiceFeedback(`Unrecognized by AI: "${rawText}"`);
             return;
@@ -19199,6 +19282,31 @@ export default function Whiteboard({
                                         })}
                                     </g>
                                 );
+                            }
+                            if (shpObj.type === 'drawing' || shpObj.type === 'svg' || shpObj.type === 'sketch' || shpObj.svg) {
+                                let svgContent = shpObj.svg;
+                                if (!svgContent && shpObj.title) {
+                                    svgContent = getBuiltinIllustrationSvg(shpObj.title, shpObj.color);
+                                }
+                                if (svgContent) {
+                                    const vbMatch = svgContent.match(/viewBox=["']([^"']+)["']/i);
+                                    const viewBox = vbMatch ? vbMatch[1] : `0 0 ${shpObj.width || 280} ${shpObj.height || 280}`;
+                                    const innerMatch = svgContent.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
+                                    const inner = innerMatch ? innerMatch[1] : svgContent;
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <svg
+                                                x={0}
+                                                y={0}
+                                                width={shpObj.width || 280}
+                                                height={shpObj.height || 280}
+                                                viewBox={viewBox}
+                                                preserveAspectRatio="xMidYMid meet"
+                                                dangerouslySetInnerHTML={{ __html: inner }}
+                                            />
+                                        </g>
+                                    );
+                                }
                             }
                             if (DOMAIN_SHAPES && DOMAIN_SHAPES[shpObj.type]) {
                                 const ds = DOMAIN_SHAPES[shpObj.type];

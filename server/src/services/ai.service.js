@@ -2114,7 +2114,9 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
     },
     {
       "type": "CREATE_OBJECT",
-      "objectType": "right_triangle | triangle | circle | square | rectangle | coordinate_system | line | arrow | star | diamond | pentagon | hexagon | sticky_note | text | 3d_model | lesson_board",
+      "objectType": "right_triangle | triangle | circle | square | rectangle | coordinate_system | line | arrow | star | diamond | pentagon | hexagon | sticky_note | text | 3d_model | lesson_board | drawing",
+      "title": "<name or subject of drawing, e.g. 'cat', 'dog', 'car', 'tree', 'house', 'apple', 'flower', 'fish', 'rocket', 'robot'>",
+      "svg": "<optional custom SVG string or omit to use builtin illustration library>",
       "width": "<number or omit>",
       "height": "<number or omit>",
       "radius": "<number for circle or omit>",
@@ -2292,6 +2294,13 @@ CRITICAL RULES:
 - **NO FALSE STICKY NOTES**: If the user asks for a simple shape or 3D model (e.g. "create 3D sphere"), ONLY output the CREATE_OBJECT for the sphere. DO NOT add sticky notes unless explicitly asked or generating a "lesson_board".
 - **GENERATIVE KNOWLEDGE**: If the user asks for a sticky note with a formula (e.g. "sticky note with volume of cube"), YOU must output the actual formula in LaTeX format within the 'text' property of the CREATE_OBJECT action.
 - **MULTI-MODAL EXPLANATIONS**: If asked to explain a scientific/math concept, output an array of actions: e.g., create a 3d_model, create a sticky_note with the formula, and add a speechResponse explaining it.
+- **CREATIVE VECTOR DRAWING & SKETCHING (DRAW A CAT, DOG, CAR, TREE, HOUSE, APPLE, ETC.)**:
+  When the user commands to "draw [something]" or "sketch [something]" (e.g. "draw a cat", "draw a dog", "draw a car", "draw a house", "draw an apple", "sketch a tree"):
+  1. STRICTLY NEVER OUTPUT A TEXT BOX WITH AN EMOJI (e.g. NEVER type '🐱' or any emoji in a text box)! The user specifically requested a DRAWING on the whiteboard, not an emoji typed in a font!
+  2. ALWAYS output objectType: "drawing".
+  3. Include "title": "<subject, e.g. 'cat', 'dog', 'car', 'tree', 'house'>" and optionally an SVG vector representation in "svg".
+  4. Specify width: 280, height: 280, and omit x and y (or place centrally) so it renders prominently in the visible viewport.
+  5. In 'speechResponse', give a natural, delightful confirmation: "Here is a drawing of a cat for your whiteboard!"
 
 ${context.currentPage ? `ACTIVE WHITEBOARD PAGE: Page ${context.currentPage} of ${context.totalPages || 1}
 BOARD SPACE STATUS: ${context.isBoardCrowded ? 'CROWDED (Insufficient free space on current board - open a new page!)' : 'AVAILABLE (Sufficient free space)'} (Objects on current board: ${context.activeObjectsCount || 0})
@@ -2345,6 +2354,23 @@ Spoken input: "${text}"
 
                 const parsed = this.parseJSONResponse(completionRes.text || '{}');
                 if (parsed && (parsed.translatedCommand || parsed.recognized || parsed.actions || parsed.type === 'solution' || parsed.type === 'canvas_generation')) {
+                    if (Array.isArray(parsed.actions)) {
+                        const isDrawingCommand = /\b(draw|sketch|illustrate)\b/i.test(text);
+                        parsed.actions = parsed.actions.map(act => {
+                            if (act.type === 'CREATE_OBJECT' && act.objectType === 'text' && isDrawingCommand) {
+                                const subject = (text.match(/\b(?:draw|sketch|illustrate)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-]+)/i) || [])[1] || act.text || 'drawing';
+                                return {
+                                    ...act,
+                                    objectType: 'drawing',
+                                    title: subject,
+                                    text: undefined,
+                                    width: act.width || 280,
+                                    height: act.height || 280
+                                };
+                            }
+                            return act;
+                        });
+                    }
                     return {
                         ...parsed,
                         recognized: parsed.recognized !== false,
@@ -2652,6 +2678,35 @@ Spoken input: "${text}"
                 translatedCommand = 'draw line';
                 intent = 'draw_line';
                 spokenFeedback = 'Drawing straight line';
+            }
+            // Creative Vector Drawings & Illustrations (e.g. "draw a cat", "draw a dog", "sketch a car", "draw a house")
+            else if (!isDeleteCommand && (/\b(draw|sketch|illustrate|paint)\b/i.test(low))) {
+                const artMatch = low.match(/\b(?:draw|sketch|illustrate|paint)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-]+)/i);
+                const subject = artMatch ? artMatch[1].trim() : 'drawing';
+                const isGeometric = ['circle', 'square', 'rectangle', 'triangle', 'star', 'diamond', 'pentagon', 'hexagon', 'arrow', 'line'].includes(subject);
+                if (!isGeometric) {
+                    return {
+                        recognized: true,
+                        type: 'action',
+                        speechResponse: `Here is a vector drawing of a ${subject} for the whiteboard!`,
+                        spokenFeedback: `Drawing a ${subject}`,
+                        actions: [
+                            {
+                                type: 'CREATE_OBJECT',
+                                objectType: 'drawing',
+                                title: subject,
+                                width: 280,
+                                height: 280
+                            }
+                        ],
+                        suggestedFollowUps: [
+                            `🎨 Change ${subject} color`,
+                            `🔍 Enlarge ${subject}`,
+                            `✨ Animate ${subject}`,
+                            `📄 Clear board`
+                        ]
+                    };
+                }
             }
             // Shape styling & units
             else if (low.includes('show units') || low.includes('display units') || low.includes('show dimensions') || low.includes('measurements on')) {
