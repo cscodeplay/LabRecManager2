@@ -8625,6 +8625,21 @@ export default function Whiteboard({
                         ctx.stroke();
                     }
                 }
+            } else if (shpObj.type === 'right_triangle') {
+                ctx.moveTo(shpObj.x, shpObj.y);
+                ctx.lineTo(shpObj.x, shpObj.y + shpObj.height);
+                ctx.lineTo(shpObj.x + shpObj.width, shpObj.y + shpObj.height);
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+                if (shpObj.showRightAngle !== false) {
+                    const sq = Math.min(20, Math.max(10, Math.min(shpObj.width, shpObj.height) * 0.15));
+                    ctx.beginPath();
+                    ctx.moveTo(shpObj.x, shpObj.y + shpObj.height - sq);
+                    ctx.lineTo(shpObj.x + sq, shpObj.y + shpObj.height - sq);
+                    ctx.lineTo(shpObj.x + sq, shpObj.y + shpObj.height);
+                    ctx.stroke();
+                }
             } else if (shpObj.type === 'triangle') {
                 ctx.moveTo(shpObj.x + shpObj.width / 2, shpObj.y);
                 ctx.lineTo(shpObj.x, shpObj.y + shpObj.height);
@@ -10412,12 +10427,12 @@ export default function Whiteboard({
         // Case C: Unspecified location - quadrant analysis to find largest open whitespace
         const zones = [
             { id: 'center', x: baseCx - desiredW / 2, y: baseCy - desiredH / 2 },
-            { id: 'top_left', x: xMin + 20, y: yMin + 20 },
-            { id: 'top_right', x: xMax - desiredW - 20, y: yMin + 20 },
-            { id: 'bottom_left', x: xMin + 20, y: yMax - desiredH - 20 },
-            { id: 'bottom_right', x: xMax - desiredW - 20, y: yMax - desiredH - 20 },
-            { id: 'middle_right', x: baseCx + 180, y: baseCy - desiredH / 2 },
-            { id: 'middle_left', x: baseCx - desiredW - 180, y: baseCy - desiredH / 2 }
+            { id: 'middle_left', x: baseCx - desiredW - 140, y: baseCy - desiredH / 2 },
+            { id: 'middle_right', x: baseCx + 140, y: baseCy - desiredH / 2 },
+            { id: 'top_left', x: xMin + 40, y: yMin + 40 },
+            { id: 'top_right', x: xMax - desiredW - 40, y: yMin + 40 },
+            { id: 'bottom_left', x: xMin + 40, y: yMax - desiredH - 40 },
+            { id: 'bottom_right', x: xMax - desiredW - 40, y: yMax - desiredH - 40 }
         ];
 
         let bestZone = zones[0];
@@ -10730,8 +10745,48 @@ export default function Whiteboard({
     const executeAiCanvasAction = useCallback((canvasAction, options = {}) => {
         if (!canvasAction || !canvasAction.type) return false;
 
-        const baseCx = Math.round((-panOffset.x + (containerRef.current?.clientWidth || 1200) / 2) / zoomLevel);
-        const baseCy = Math.round((-panOffset.y + (containerRef.current?.clientHeight || 800) / 2) / zoomLevel);
+        // 0. Draw Native Math Diagram with Geometry Markings (Right Triangle, Triangle, Circle, Coordinate System, Rectangle)
+        if (canvasAction.type === 'draw_math_diagram') {
+            const dType = canvasAction.diagramType || canvasAction.shapeType || 'right_triangle';
+            const reqW = canvasAction.width ? Number(canvasAction.width) : (dType === 'circle' ? 180 : 240);
+            const reqH = canvasAction.height ? Number(canvasAction.height) : (dType === 'circle' ? 180 : 180);
+            const posX = canvasAction.x !== undefined ? Number(canvasAction.x) : Math.max(30, Math.round(baseCx - reqW / 2));
+            const posY = canvasAction.y !== undefined ? Number(canvasAction.y) : Math.max(30, Math.round(baseCy - reqH / 2));
+
+            const mathShape = {
+                id: `math_shp_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                type: dType,
+                x: posX,
+                y: posY,
+                width: reqW,
+                height: reqH,
+                color: canvasAction.color || '#3b82f6',
+                strokeWidth: canvasAction.strokeWidth || 3,
+                fillColor: canvasAction.fillColor || 'transparent',
+                strokeStyle: canvasAction.strokeStyle || 'solid',
+                showRightAngle: canvasAction.showRightAngle !== false,
+                vertexLabels: canvasAction.vertexLabels || (dType === 'right_triangle' ? ['A', 'B', 'C'] : null),
+                edgeLabels: canvasAction.edgeLabels || [],
+                angleLabels: canvasAction.angleLabels || null,
+                dashedAltitude: canvasAction.dashedAltitude || false,
+                altitudeLabel: canvasAction.altitudeLabel || 'h',
+                showCenter: canvasAction.showCenter || false,
+                centerLabel: canvasAction.centerLabel || null,
+                showRadius: canvasAction.showRadius || false,
+                radiusLabel: canvasAction.radiusLabel || null,
+                plottedPoints: canvasAction.plottedPoints || null
+            };
+
+            setPageShapeObjects(prev => ({
+                ...prev,
+                [currentPage]: [...(prev[currentPage] || []), mathShape]
+            }));
+            setSelectedShapeIds([mathShape.id]);
+            setTool('select');
+            saveToHistory();
+            toast.success(`Drawn ${dType.replace('_', ' ')} diagram on whiteboard!`, { icon: '📐' });
+            return true;
+        }
 
         // 1. Insert Native Interactive 3D Model
         if (canvasAction.type === 'insert_3d_model') {
@@ -11243,10 +11298,21 @@ export default function Whiteboard({
                 height: space.height,
                 rotation: 0,
                 color: reqColor,
-                strokeWidth: 2.5,
-                strokeStyle: 'solid',
+                strokeWidth: canvasAction.strokeWidth || 2.5,
+                strokeStyle: canvasAction.strokeStyle || 'solid',
                 text: canvasAction.text || '',
-                fontSize: 16
+                fontSize: 16,
+                showRightAngle: canvasAction.showRightAngle !== undefined ? canvasAction.showRightAngle : (shpType === 'right_triangle'),
+                vertexLabels: canvasAction.vertexLabels || (shpType === 'right_triangle' ? ['A', 'B', 'C'] : null),
+                edgeLabels: canvasAction.edgeLabels || null,
+                angleLabels: canvasAction.angleLabels || null,
+                dashedAltitude: canvasAction.dashedAltitude || false,
+                altitudeLabel: canvasAction.altitudeLabel || 'h',
+                showCenter: canvasAction.showCenter || false,
+                centerLabel: canvasAction.centerLabel || null,
+                showRadius: canvasAction.showRadius || false,
+                radiusLabel: canvasAction.radiusLabel || null,
+                plottedPoints: canvasAction.plottedPoints || null
             };
 
             animateTeacherToolbarSelection(shpType, reqColor, () => {
@@ -11947,10 +12013,54 @@ export default function Whiteboard({
                                     ...prev,
                                     [currentPage]: [...(prev[currentPage] || []), note]
                                 }));
+                            } else if (action.objectType === 'right_triangle') {
+                                const w = Number(action.width) || 240;
+                                const h = Number(action.height) || 180;
+                                const defaultPx = Math.round(cx - w / 2);
+                                const defaultPy = Math.round(cy - h / 2);
+                                const px = (action.x !== undefined && action.x < (canvas?.width || 1200) - w - 40) ? Number(action.x) : defaultPx;
+                                const py = (action.y !== undefined && action.y < (canvas?.height || 800) - h - 40) ? Number(action.y) : defaultPy;
+                                spawnVoiceShape({
+                                    type: 'right_triangle',
+                                    x: px,
+                                    y: py,
+                                    width: w,
+                                    height: h,
+                                    color: actColor,
+                                    strokeWidth: actStroke,
+                                    fillColor: actFill,
+                                    showRightAngle: action.showRightAngle !== false,
+                                    vertexLabels: action.vertexLabels || ['A', 'B', 'C'],
+                                    edgeLabels: action.edgeLabels || [],
+                                    angleLabels: action.angleLabels || null
+                                });
+                            } else if (action.objectType === 'triangle') {
+                                const w = Number(action.width) || Number(action.size) || 200;
+                                const h = Number(action.height) || Math.round(w * 0.86);
+                                const defaultPx = Math.round(cx - w / 2);
+                                const defaultPy = Math.round(cy - h / 2);
+                                const px = (action.x !== undefined && action.x < (canvas?.width || 1200) - w - 40) ? Number(action.x) : defaultPx;
+                                const py = (action.y !== undefined && action.y < (canvas?.height || 800) - h - 40) ? Number(action.y) : defaultPy;
+                                spawnVoiceShape({
+                                    type: 'triangle',
+                                    x: px,
+                                    y: py,
+                                    width: w,
+                                    height: h,
+                                    color: actColor,
+                                    strokeWidth: actStroke,
+                                    fillColor: actFill,
+                                    vertexLabels: action.vertexLabels || null,
+                                    edgeLabels: action.edgeLabels || null,
+                                    dashedAltitude: action.dashedAltitude || false,
+                                    altitudeLabel: action.altitudeLabel || 'h'
+                                });
                             } else if (action.objectType === 'square') {
-                                const side = action.size || action.width || 100;
-                                const px = action.x !== undefined ? action.x : Math.round(cx - side / 2);
-                                const py = action.y !== undefined ? action.y : Math.round(cy - side / 2);
+                                const side = Number(action.size) || Number(action.width) || 140;
+                                const defaultPx = Math.round(cx - side / 2);
+                                const defaultPy = Math.round(cy - side / 2);
+                                const px = (action.x !== undefined && action.x < (canvas?.width || 1200) - side - 40) ? Number(action.x) : defaultPx;
+                                const py = (action.y !== undefined && action.y < (canvas?.height || 800) - side - 40) ? Number(action.y) : defaultPy;
                                 spawnVoiceShape({
                                     type: 'rectangle',
                                     x: px,
@@ -11959,13 +12069,18 @@ export default function Whiteboard({
                                     height: side,
                                     color: actColor,
                                     strokeWidth: actStroke,
-                                    fillColor: actFill
+                                    fillColor: actFill,
+                                    showRightAngle: action.showRightAngle || false,
+                                    vertexLabels: action.vertexLabels || null,
+                                    edgeLabels: action.edgeLabels || null
                                 });
                             } else if (action.objectType === 'rectangle') {
-                                const w = action.width || 160;
-                                const h = action.height || 100;
-                                const px = action.x !== undefined ? action.x : Math.round(cx - w / 2);
-                                const py = action.y !== undefined ? action.y : Math.round(cy - h / 2);
+                                const w = Number(action.width) || 220;
+                                const h = Number(action.height) || 140;
+                                const defaultPx = Math.round(cx - w / 2);
+                                const defaultPy = Math.round(cy - h / 2);
+                                const px = (action.x !== undefined && action.x < (canvas?.width || 1200) - w - 40) ? Number(action.x) : defaultPx;
+                                const py = (action.y !== undefined && action.y < (canvas?.height || 800) - h - 40) ? Number(action.y) : defaultPy;
                                 spawnVoiceShape({
                                     type: 'rectangle',
                                     x: px,
@@ -11974,12 +12089,17 @@ export default function Whiteboard({
                                     height: h,
                                     color: actColor,
                                     strokeWidth: actStroke,
-                                    fillColor: actFill
+                                    fillColor: actFill,
+                                    showRightAngle: action.showRightAngle || false,
+                                    vertexLabels: action.vertexLabels || null,
+                                    edgeLabels: action.edgeLabels || null
                                 });
                             } else if (action.objectType === 'circle') {
-                                const r = action.radius || (action.width ? action.width / 2 : 60);
-                                const px = action.x !== undefined ? action.x : Math.round(cx - r);
-                                const py = action.y !== undefined ? action.y : Math.round(cy - r);
+                                const r = Number(action.radius) || (action.width ? Number(action.width) / 2 : 75);
+                                const defaultPx = Math.round(cx - r);
+                                const defaultPy = Math.round(cy - r);
+                                const px = (action.x !== undefined && action.x < (canvas?.width || 1200) - r * 2 - 40) ? Number(action.x) : defaultPx;
+                                const py = (action.y !== undefined && action.y < (canvas?.height || 800) - r * 2 - 40) ? Number(action.y) : defaultPy;
                                 spawnVoiceShape({
                                     type: 'circle',
                                     x: px,
@@ -11988,21 +12108,29 @@ export default function Whiteboard({
                                     height: r * 2,
                                     color: actColor,
                                     strokeWidth: actStroke,
-                                    fillColor: actFill
+                                    fillColor: actFill,
+                                    showCenter: action.showCenter !== undefined ? action.showCenter : !!action.centerLabel,
+                                    centerLabel: action.centerLabel || (action.showCenter ? 'O' : null),
+                                    showRadius: action.showRadius !== undefined ? action.showRadius : !!action.radiusLabel,
+                                    radiusLabel: action.radiusLabel || (action.showRadius ? 'r' : null),
+                                    diameterLabel: action.diameterLabel || null
                                 });
-                            } else if (action.objectType === 'triangle') {
-                                const s = action.width || action.size || 120;
-                                const px = action.x !== undefined ? action.x : Math.round(cx - s / 2);
-                                const py = action.y !== undefined ? action.y : Math.round(cy - s / 2);
+                            } else if (action.objectType === 'coordinate_system' || action.objectType === 'cartesian_plane') {
+                                const w = Number(action.width) || 300;
+                                const h = Number(action.height) || 300;
+                                const defaultPx = Math.round(cx - w / 2);
+                                const defaultPy = Math.round(cy - h / 2);
+                                const px = (action.x !== undefined && action.x < (canvas?.width || 1200) - w - 40) ? Number(action.x) : defaultPx;
+                                const py = (action.y !== undefined && action.y < (canvas?.height || 800) - h - 40) ? Number(action.y) : defaultPy;
                                 spawnVoiceShape({
-                                    type: 'triangle',
+                                    type: 'coordinate_system',
                                     x: px,
                                     y: py,
-                                    width: s,
-                                    height: Math.round(s * 0.9),
+                                    width: w,
+                                    height: h,
                                     color: actColor,
-                                    strokeWidth: actStroke,
-                                    fillColor: actFill
+                                    strokeWidth: actStroke || 2,
+                                    plottedPoints: action.plottedPoints || null
                                 });
                             } else if (action.objectType === 'line') {
                                 const len = action.width || 160;
@@ -17881,6 +18009,7 @@ export default function Whiteboard({
                                 {shapePreview.type === 'rounded_rect' && <rect x="0" y="0" width={shapePreview.width} height={shapePreview.height} rx={Math.min(20, shapePreview.width/4, shapePreview.height/4)} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
                                 {shapePreview.type === 'circle' && <ellipse cx={shapePreview.width/2} cy={shapePreview.height/2} rx={shapePreview.width/2} ry={shapePreview.height/2} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
                                 {shapePreview.type === 'triangle' && <polygon points={`${shapePreview.width/2},0 0,${shapePreview.height} ${shapePreview.width},${shapePreview.height}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
+                                {shapePreview.type === 'right_triangle' && <polygon points={`0,0 0,${shapePreview.height} ${shapePreview.width},${shapePreview.height}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
                                 {shapePreview.type === 'diamond' && <polygon points={`${shapePreview.width/2},0 ${shapePreview.width},${shapePreview.height/2} ${shapePreview.width/2},${shapePreview.height} 0,${shapePreview.height/2}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
                                 {shapePreview.type === 'hexagon' && <polygon points={`${shapePreview.width*0.25},0 ${shapePreview.width*0.75},0 ${shapePreview.width},${shapePreview.height*0.5} ${shapePreview.width*0.75},${shapePreview.height} ${shapePreview.width*0.25},${shapePreview.height} 0,${shapePreview.height*0.5}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
                                 {shapePreview.type === 'arc' && <path d={`M 0 ${shapePreview.height} Q ${shapePreview.width/2} 0 ${shapePreview.width} ${shapePreview.height}`} fill="none" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinecap="round" />}
@@ -17932,28 +18061,83 @@ export default function Whiteboard({
                                     ? `${Math.max(2, shpObj.strokeWidth || 2)},${Math.max(3, (shpObj.strokeWidth || 2) * 1.5)}`
                                     : undefined;
 
+                            const renderSvgLabel = (lx, ly, txt, anchor = 'middle', fSize = 13, bold = true) => {
+                                if (txt === undefined || txt === null || String(txt).trim() === '') return null;
+                                return (
+                                    <text
+                                        x={lx}
+                                        y={ly}
+                                        textAnchor={anchor}
+                                        fill={shpObj.textColor || shpObj.color || '#1e293b'}
+                                        stroke="rgba(255, 255, 255, 0.95)"
+                                        strokeWidth={3.5}
+                                        paintOrder="stroke fill"
+                                        strokeLinejoin="round"
+                                        fontSize={fSize}
+                                        fontWeight={bold ? 'bold' : '600'}
+                                        fontFamily="Inter, system-ui, -apple-system, sans-serif"
+                                        style={{ pointerEvents: 'none', userSelect: 'none' }}
+                                    >
+                                        {txt}
+                                    </text>
+                                );
+                            };
+
                             if (shpObj.type === 'rectangle') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const vLabels = Array.isArray(shpObj.vertexLabels) ? shpObj.vertexLabels : [];
+                                const eLabels = Array.isArray(shpObj.edgeLabels) ? shpObj.edgeLabels : [];
+                                const showRA = !!shpObj.showRightAngle;
+                                const sq = Math.min(18, Math.max(10, Math.min(w, h) * 0.12));
+
                                 if (bStyle === 'double') {
                                     const sw = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.45));
                                     const gap = Math.max(2, Math.round((shpObj.strokeWidth || 2) * 0.6));
                                     const inset = sw + gap;
                                     return (
                                         <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
-                                            <rect x="0" y="0" width={shpObj.width} height={shpObj.height} fill={fill} stroke={shpObj.color} strokeWidth={sw} />
-                                            {shpObj.width > inset * 2 && shpObj.height > inset * 2 && (
-                                                <rect x={inset} y={inset} width={shpObj.width - inset * 2} height={shpObj.height - inset * 2} fill="none" stroke={shpObj.color} strokeWidth={sw} />
+                                            <rect x="0" y="0" width={w} height={h} fill={fill} stroke={shpObj.color} strokeWidth={sw} />
+                                            {w > inset * 2 && h > inset * 2 && (
+                                                <rect x={inset} y={inset} width={w - inset * 2} height={h - inset * 2} fill="none" stroke={shpObj.color} strokeWidth={sw} />
                                             )}
+                                            {vLabels[0] && renderSvgLabel(-10, -8, vLabels[0], 'end', 13)}
+                                            {vLabels[1] && renderSvgLabel(w + 10, -8, vLabels[1], 'start', 13)}
+                                            {vLabels[2] && renderSvgLabel(w + 10, h + 14, vLabels[2], 'start', 13)}
+                                            {vLabels[3] && renderSvgLabel(-10, h + 14, vLabels[3], 'end', 13)}
                                         </g>
                                     );
                                 }
-                                return <rect style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} x="0" y="0" width={shpObj.width} height={shpObj.height} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeDasharray={dashArray} />;
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        <rect x="0" y="0" width={w} height={h} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeDasharray={dashArray} />
+                                        {showRA && (
+                                            <>
+                                                <path d={`M 0 ${sq} L ${sq} ${sq} L ${sq} 0`} fill="none" stroke={shpObj.color} strokeWidth={1.5} />
+                                                <path d={`M ${w - sq} 0 L ${w - sq} ${sq} L ${w} ${sq}`} fill="none" stroke={shpObj.color} strokeWidth={1.5} />
+                                                <path d={`M 0 ${h - sq} L ${sq} ${h - sq} L ${sq} ${h}`} fill="none" stroke={shpObj.color} strokeWidth={1.5} />
+                                                <path d={`M ${w - sq} ${h} L ${w - sq} ${h - sq} L ${w} ${h - sq}`} fill="none" stroke={shpObj.color} strokeWidth={1.5} />
+                                            </>
+                                        )}
+                                        {vLabels[0] && renderSvgLabel(-10, -8, vLabels[0], 'end', 13)}
+                                        {vLabels[1] && renderSvgLabel(w + 10, -8, vLabels[1], 'start', 13)}
+                                        {vLabels[2] && renderSvgLabel(w + 10, h + 14, vLabels[2], 'start', 13)}
+                                        {vLabels[3] && renderSvgLabel(-10, h + 14, vLabels[3], 'end', 13)}
+                                        {eLabels[0] && renderSvgLabel(w / 2, -10, eLabels[0], 'middle', 13)}
+                                        {eLabels[1] && renderSvgLabel(w / 2, h + 20, eLabels[1] || eLabels[0], 'middle', 13)}
+                                        {eLabels[2] && renderSvgLabel(-14, h / 2 + 5, eLabels[2] || eLabels[1], 'end', 13)}
+                                        {eLabels[3] && renderSvgLabel(w + 14, h / 2 + 5, eLabels[3] || eLabels[2] || eLabels[1], 'start', 13)}
+                                    </g>
+                                );
                             } else if (shpObj.type === 'circle') {
+                                const rx = shpObj.width / 2;
+                                const ry = shpObj.height / 2;
+                                const showC = shpObj.showCenter || !!shpObj.centerLabel;
+                                const showR = shpObj.showRadius || !!shpObj.radiusLabel;
+
                                 if (bStyle === 'double') {
                                     const sw = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.45));
                                     const gap = Math.max(2, Math.round((shpObj.strokeWidth || 2) * 0.6));
                                     const inset = sw + gap;
-                                    const rx = shpObj.width / 2;
-                                    const ry = shpObj.height / 2;
                                     return (
                                         <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
                                             <ellipse cx={rx} cy={ry} rx={rx} ry={ry} fill={fill} stroke={shpObj.color} strokeWidth={sw} />
@@ -17963,9 +18147,91 @@ export default function Whiteboard({
                                         </g>
                                     );
                                 }
-                                return <ellipse style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeDasharray={dashArray} />;
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        <ellipse cx={rx} cy={ry} rx={rx} ry={ry} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeDasharray={dashArray} />
+                                        {showC && (
+                                            <>
+                                                <circle cx={rx} cy={ry} r={3.5} fill={shpObj.color} />
+                                                {renderSvgLabel(rx - 10, ry - 6, shpObj.centerLabel || 'O', 'end', 13)}
+                                            </>
+                                        )}
+                                        {showR && (
+                                            <>
+                                                <line x1={rx} y1={ry} x2={shpObj.width} y2={ry} stroke={shpObj.color} strokeWidth={Math.max(1.5, (shpObj.strokeWidth || 2) * 0.7)} strokeDasharray="4,3" />
+                                                {renderSvgLabel((rx + shpObj.width) / 2, ry - 8, shpObj.radiusLabel || 'r', 'middle', 12)}
+                                            </>
+                                        )}
+                                        {shpObj.diameterLabel && (
+                                            <>
+                                                <line x1={0} y1={ry} x2={shpObj.width} y2={ry} stroke={shpObj.color} strokeWidth={Math.max(1.5, (shpObj.strokeWidth || 2) * 0.7)} strokeDasharray="4,3" />
+                                                {renderSvgLabel(rx, ry + 16, shpObj.diameterLabel, 'middle', 12)}
+                                            </>
+                                        )}
+                                    </g>
+                                );
+                            } else if (shpObj.type === 'right_triangle') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const vLabels = Array.isArray(shpObj.vertexLabels) ? shpObj.vertexLabels : [];
+                                const eLabels = Array.isArray(shpObj.edgeLabels) ? shpObj.edgeLabels : [];
+                                const showRA = shpObj.showRightAngle !== false;
+                                const sq = Math.min(22, Math.max(12, Math.min(w, h) * 0.15));
+                                const thetaLabel = (shpObj.angleLabels && (shpObj.angleLabels.C || shpObj.angleLabels.theta || shpObj.angleLabels['2'])) || shpObj.thetaLabel;
+                                const arcR = Math.min(32, Math.min(w, h) * 0.25);
+                                const thetaAngle = Math.atan2(h, w);
+
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        {/* Main Right Triangle Polygon: Top (0,0), Right-Angle (0,h), Base (w,h) */}
+                                        <polygon 
+                                            points={`0,0 0,${h} ${w},${h}`} 
+                                            fill={fill} 
+                                            stroke={shpObj.color} 
+                                            strokeWidth={shpObj.strokeWidth} 
+                                            strokeLinejoin="round" 
+                                            strokeDasharray={dashArray} 
+                                        />
+
+                                        {/* Right Angle Corner Square (at bottom-left 0, h) */}
+                                        {showRA && (
+                                            <path 
+                                                d={`M 0 ${h - sq} L ${sq} ${h - sq} L ${sq} ${h}`} 
+                                                fill="none" 
+                                                stroke={shpObj.color} 
+                                                strokeWidth={Math.max(1.5, (shpObj.strokeWidth || 2) * 0.75)} 
+                                            />
+                                        )}
+
+                                        {/* Angle Theta Arc at Base Corner (w, h) */}
+                                        {thetaLabel && (
+                                            <g>
+                                                <path 
+                                                    d={`M ${w - arcR} ${h} A ${arcR} ${arcR} 0 0 1 ${w - arcR * Math.cos(thetaAngle)} ${h - arcR * Math.sin(thetaAngle)}`} 
+                                                    fill="rgba(99, 102, 241, 0.12)" 
+                                                    stroke={shpObj.color} 
+                                                    strokeWidth={Math.max(1.5, (shpObj.strokeWidth || 2) * 0.7)} 
+                                                />
+                                                {renderSvgLabel(w - arcR - 10, h - 8, thetaLabel, 'end', 13)}
+                                            </g>
+                                        )}
+
+                                        {/* Vertex Labels (Corners): A at top, B at 90 deg corner, C at base */}
+                                        {vLabels[0] && renderSvgLabel(0, -10, vLabels[0], 'middle', 14)}
+                                        {vLabels[1] && renderSvgLabel(-14, h + 16, vLabels[1], 'end', 14)}
+                                        {vLabels[2] && renderSvgLabel(w + 14, h + 16, vLabels[2], 'start', 14)}
+
+                                        {/* Edge Labels (Sides): vertical altitude (b), base (a), hypotenuse (c) */}
+                                        {eLabels[0] && renderSvgLabel(-14, h / 2 + 5, eLabels[0], 'end', 13)}
+                                        {eLabels[1] && renderSvgLabel(w / 2, h + 20, eLabels[1], 'middle', 13)}
+                                        {eLabels[2] && renderSvgLabel(w / 2 + 14, h / 2 - 10, eLabels[2], 'start', 13)}
+                                    </g>
+                                );
                             } else if (shpObj.type === 'triangle') {
                                 const w = shpObj.width, h = shpObj.height;
+                                const vLabels = Array.isArray(shpObj.vertexLabels) ? shpObj.vertexLabels : [];
+                                const eLabels = Array.isArray(shpObj.edgeLabels) ? shpObj.edgeLabels : [];
+                                const showAlt = !!shpObj.dashedAltitude;
+
                                 if (bStyle === 'double') {
                                     const sw = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.45));
                                     const gap = Math.max(2, Math.round((shpObj.strokeWidth || 2) * 0.6));
@@ -17985,7 +18251,47 @@ export default function Whiteboard({
                                         </g>
                                     );
                                 }
-                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" strokeDasharray={dashArray} />;
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        <polygon 
+                                            points={`${w/2},0 0,${h} ${w},${h}`} 
+                                            fill={fill} 
+                                            stroke={shpObj.color} 
+                                            strokeWidth={shpObj.strokeWidth} 
+                                            strokeLinejoin="round" 
+                                            strokeDasharray={dashArray} 
+                                        />
+
+                                        {/* Optional Dashed Altitude Line with right angle marker */}
+                                        {showAlt && (
+                                            <g>
+                                                <line 
+                                                    x1={w / 2} y1={0} x2={w / 2} y2={h} 
+                                                    stroke={shpObj.color} 
+                                                    strokeWidth={Math.max(1.5, (shpObj.strokeWidth || 2) * 0.7)} 
+                                                    strokeDasharray="4,4" 
+                                                />
+                                                <path 
+                                                    d={`M ${w/2} ${h - 12} L ${w/2 + 12} ${h - 12} L ${w/2 + 12} ${h}`} 
+                                                    fill="none" 
+                                                    stroke={shpObj.color} 
+                                                    strokeWidth={1.5} 
+                                                />
+                                                {renderSvgLabel(w / 2 + 16, h / 2 + 5, shpObj.altitudeLabel || 'h', 'start', 12)}
+                                            </g>
+                                        )}
+
+                                        {/* Vertex Labels: Top, Bottom-Left, Bottom-Right */}
+                                        {vLabels[0] && renderSvgLabel(w / 2, -10, vLabels[0], 'middle', 14)}
+                                        {vLabels[1] && renderSvgLabel(-14, h + 16, vLabels[1], 'end', 14)}
+                                        {vLabels[2] && renderSvgLabel(w + 14, h + 16, vLabels[2], 'start', 14)}
+
+                                        {/* Edge Labels: Left side, Base, Right side */}
+                                        {eLabels[0] && renderSvgLabel(w / 4 - 14, h / 2, eLabels[0], 'end', 13)}
+                                        {eLabels[1] && renderSvgLabel(w / 2, h + 20, eLabels[1], 'middle', 13)}
+                                        {eLabels[2] && renderSvgLabel((3 * w) / 4 + 14, h / 2, eLabels[2], 'start', 13)}
+                                    </g>
+                                );
                             } else if (shpObj.type === 'star') {
                                 const cx = shpObj.width / 2;
                                 const cy = shpObj.height / 2;
@@ -18612,6 +18918,46 @@ export default function Whiteboard({
                                             }}
                                         />
                                     </foreignObject>
+                                );
+                            } else if (shpObj.type === 'coordinate_system' || shpObj.type === 'cartesian_plane') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const cx = w / 2, cy = h / 2;
+                                const arrS = 8;
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        <rect x="0" y="0" width={w} height={h} fill="rgba(241, 245, 249, 0.5)" stroke="rgba(148, 163, 184, 0.4)" strokeWidth={1} rx={8} />
+                                        {[-0.35, -0.18, 0.18, 0.35].map((f, i) => (
+                                            <g key={i}>
+                                                <line x1={cx + f * w} y1={10} x2={cx + f * w} y2={h - 10} stroke="rgba(148, 163, 184, 0.25)" strokeDasharray="3,3" />
+                                                <line x1={10} y1={cy + f * h} x2={w - 10} y2={cy + f * h} stroke="rgba(148, 163, 184, 0.25)" strokeDasharray="3,3" />
+                                            </g>
+                                        ))}
+                                        {/* X Axis */}
+                                        <line x1={10} y1={cy} x2={w - 10} y2={cy} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth || 2} />
+                                        <polygon points={`${w-10},${cy} ${w-10-arrS},${cy-arrS/2} ${w-10-arrS},${cy+arrS/2}`} fill={shpObj.color} />
+                                        {renderSvgLabel(w - 6, cy - 8, 'X', 'start', 13)}
+
+                                        {/* Y Axis */}
+                                        <line x1={cx} y1={h - 10} x2={cx} y2={10} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth || 2} />
+                                        <polygon points={`${cx},10 ${cx-arrS/2},${10+arrS} ${cx+arrS/2},${10+arrS}`} fill={shpObj.color} />
+                                        {renderSvgLabel(cx + 8, 14, 'Y', 'start', 13)}
+
+                                        {/* Origin */}
+                                        <circle cx={cx} cy={cy} r={3} fill={shpObj.color} />
+                                        {renderSvgLabel(cx - 12, cy + 16, 'O(0,0)', 'end', 11)}
+
+                                        {/* Plotted Points */}
+                                        {Array.isArray(shpObj.plottedPoints) && shpObj.plottedPoints.map((pt, idx) => {
+                                            const px = cx + (Number(pt.x) || 0);
+                                            const py = cy - (Number(pt.y) || 0);
+                                            return (
+                                                <g key={idx}>
+                                                    <circle cx={px} cy={py} r={4.5} fill="#ef4444" stroke="#ffffff" strokeWidth={1.5} />
+                                                    {renderSvgLabel(px + 8, py - 6, pt.label || `(${pt.x}, ${pt.y})`, 'start', 12)}
+                                                </g>
+                                            );
+                                        })}
+                                    </g>
                                 );
                             }
                             if (DOMAIN_SHAPES && DOMAIN_SHAPES[shpObj.type]) {

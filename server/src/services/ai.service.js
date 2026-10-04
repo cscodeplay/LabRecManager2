@@ -2114,7 +2114,7 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
     },
     {
       "type": "CREATE_OBJECT",
-      "objectType": "circle | square | rectangle | triangle | line | arrow | star | diamond | pentagon | hexagon | sticky_note | text | 3d_model | lesson_board",
+      "objectType": "right_triangle | triangle | circle | square | rectangle | coordinate_system | line | arrow | star | diamond | pentagon | hexagon | sticky_note | text | 3d_model | lesson_board",
       "width": "<number or omit>",
       "height": "<number or omit>",
       "radius": "<number for circle or omit>",
@@ -2123,6 +2123,16 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
       "strokeStyle": "solid | dashed | dotted",
       "color": "<stroke color hex or name>",
       "fillColor": "<fill color hex or name, or 'transparent'>",
+      "showRightAngle": "<true for 90-degree square corner indicator on right_triangle or rectangle>",
+      "vertexLabels": ["<Label A for vertex 0>", "<Label B for vertex 1>", "<Label C for vertex 2>"],
+      "edgeLabels": ["<Side 1 label e.g. 'b = 3' or 'altitude'>", "<Side 2 label e.g. 'a = 4' or 'base'>", "<Side 3 label e.g. 'c = 5' or 'hypotenuse'>"],
+      "angleLabels": { "<vertex_key, e.g. 'C'>": "<angle symbol e.g. 'θ' or '30°'>" },
+      "dashedAltitude": "<true to draw dashed perpendicular altitude line on triangle with altitudeLabel 'h'>",
+      "altitudeLabel": "<string for altitude e.g. 'h'>",
+      "showCenter": "<true to draw center dot on circle>",
+      "centerLabel": "<string e.g. 'O'>",
+      "showRadius": "<true to draw radius line on circle with radiusLabel>",
+      "radiusLabel": "<string e.g. 'r = 5 cm'>",
       "text": "<For text/sticky_notes: Generated content. Supports markdown and $$LaTeX$$ formulas. YOU MUST GENERATE THIS KNOWLEDGE YOURSELF.>",
       "fontSize": "<number for text>",
       "modelType": "cube | sphere | pyramid | cylinder | cone | earth | sun | moon | mars | jupiter | saturn | atom | dna | rocket",
@@ -2187,6 +2197,28 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
 }
 
 CRITICAL RULES:
+- **MATHEMATICAL & GEOMETRY PROBLEM SOLVING (Pythagoras, Trigonometry, Geometry Diagrams, Marking Corners & Edges)**:
+  When the user asks for a step-by-step solution, proof, derivation, or explanation of a mathematical problem or theorem involving geometry (e.g. "step by step solution for pythagoras theorem", "solve triangle with sides 3 and 4", "trigonometry sin cos tan", "area of circle with radius 7", "perimeter of rectangle"):
+  1. ALWAYS create an accurately constructed, cleanly labeled geometry diagram placed in the central visible area of the whiteboard:
+     - PLACEMENT: Use the visible viewport center (e.g. center.x - 120, center.y - 100) or omit x and y so it automatically centers. NEVER place in the bottom-right corner or off-screen!
+  2. PYTHAGOREAN THEOREM & RIGHT-ANGLED TRIANGLES:
+     - Use objectType: "right_triangle".
+     - Set showRightAngle: true to display the right-angle corner indicator (small square).
+     - Set vertexLabels: ["A", "B", "C"] (A at top, B at right angle, C at base).
+     - Proportions (Relative vs Absolute Dimensions):
+       * If numerical values are given (e.g. legs 3 and 4): use proportional dimensions (width: 200, height: 150 for 4:3 ratio) and set edgeLabels: ["b = 3", "a = 4", "c = 5"] (or ["3", "4", "5"]).
+       * If general/relative dimensions (e.g. standard theorem derivation): set width: 240, height: 180, edgeLabels: ["b", "a", "c"] (altitude b, base a, hypotenuse c).
+  3. TRIGONOMETRY:
+     - Use objectType: "right_triangle", vertexLabels: ["A", "B", "C"], showRightAngle: true, edgeLabels: ["Opposite", "Adjacent", "Hypotenuse"], angleLabels: { "C": "θ" }.
+  4. GENERAL TRIANGLES (Equilateral, Isosceles, Area = 1/2 b h):
+     - Use objectType: "triangle", vertexLabels: ["A", "B", "C"], edgeLabels: ["a", "b", "c"]. If area/height is involved, set dashedAltitude: true, altitudeLabel: "h".
+  5. CIRCLE THEOREMS & DIMENSIONS:
+     - Use objectType: "circle", showCenter: true, centerLabel: "O", showRadius: true, radiusLabel: "r" (or specific radius value e.g. "r = 7 cm").
+  6. RECTANGLE / SQUARE / AREA / PERIMETER:
+     - Use objectType: "rectangle", vertexLabels: ["A", "B", "C", "D"], edgeLabels: ["length (l)", "width (w)"], showRightAngle: true.
+  7. EXPLANATION:
+     - Provide the step-by-step mathematical reasoning, formulas in LaTeX ($$...$$), and calculations inside speechResponse and solutionMarkdown.
+     - The interactive diagram on canvas visually anchors the vertices, edges, and angles!
 - **DYNAMIC AI GENERATED ACTION PILLS (suggestedFollowUps)**:
   For every response, generate 3 to 4 highly contextual, actionable follow-up suggestion pills tailored to the topic (e.g. for physics: ["📐 Show formula", "✨ Show in 3D model", "💡 Give real-world example"], for math: ["🔢 Solve with numbers", "📈 Graph this function", "📝 Step-by-step derivation"], for biology: ["🌿 Show cell diagram", "🔬 Explain function", "📝 Key definitions"]). Each should start with a relevant emoji.
 - **STRICTLY NO AUTOMATIC STICKY NOTES ON ANSWERS / EXPLANATIONS**:
