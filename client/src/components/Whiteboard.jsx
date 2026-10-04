@@ -10354,7 +10354,7 @@ export default function Whiteboard({
             activeObjectsCount: totalActiveObjects,
             isBoardCrowded,
             hasSufficientSpace,
-            shapes: [...currentShapes, ...current3D],
+            shapes: [...currentShapes, ...current3D, ...currentTexts, ...currentImages],
             threeDObjects: current3D,
             texts: currentTexts,
             images: currentImages,
@@ -12011,7 +12011,10 @@ export default function Whiteboard({
                 setIsAiThinking(false);
 
                 if (data?.recognized && Array.isArray(data.actions)) {
-                    if (data.speechResponse) {
+                    const hasDeleteActions = data.actions.some(a => a.type === 'DELETE_OBJECT');
+
+                    // If NOT a deletion action, provide standard narration & solution card immediately
+                    if (!hasDeleteActions && data.speechResponse) {
                         conversationHistoryRef.current.push({ role: 'assistant', content: data.speechResponse });
                         if (aiSpeechEnabled) speakAiResponse(data.speechResponse);
                         toast.success(data.speechResponse, { icon: '🤖' });
@@ -12025,6 +12028,7 @@ export default function Whiteboard({
                     }
                     
                     let hasAutoPagedForTurn = false;
+                    let deletedCount = 0;
 
                     for (const action of data.actions) {
                         if (action.type === 'UI_COMMAND' && action.command) {
@@ -12333,24 +12337,62 @@ export default function Whiteboard({
                         }
                         else if (action.type === 'DELETE_OBJECT') {
                             let tId = action.targetId;
-                            const curShapes = pageShapeObjects[currentPage] || [];
-                            const cur3D = page3DObjects[currentPage] || [];
-                            const curTexts = pageTextObjects[currentPage] || [];
-                            const curImages = pageImageObjects[currentPage] || [];
+                            const curPageIdx = currentPageRef.current !== undefined ? currentPageRef.current : currentPage;
+                            const curShapes = pageShapeObjects[curPageIdx] || [];
+                            const cur3D = page3DObjects[curPageIdx] || [];
+                            const curTexts = pageTextObjects[curPageIdx] || [];
+                            const curImages = pageImageObjects[curPageIdx] || [];
 
-                            if (!tId || (!curShapes.some(s => s.id === tId) && !cur3D.some(o => o.id === tId) && !curTexts.some(t => t.id === tId))) {
-                                if (action.targetType === 'sphere' || (action.targetId && /sphere/i.test(action.targetId)) || /sphere/i.test(rawText)) {
-                                    const sphereObj = cur3D.find(o => o.modelType === 'sphere' || (o.name && /sphere/i.test(o.name)));
-                                    if (sphereObj) tId = sphereObj.id;
-                                } else if (action.targetType || action.targetId) {
-                                    const q = String(action.targetType || action.targetId).toLowerCase();
-                                    const match3D = cur3D.find(o => o.modelType === q || (o.name && o.name.toLowerCase().includes(q)));
-                                    const matchShape = curShapes.find(s => s.type === q);
+                            // Verify direct ID match
+                            let directMatch = curShapes.find(s => s.id === tId) || cur3D.find(o => o.id === tId) || curTexts.find(t => t.id === tId) || curImages.find(i => i.id === tId);
+
+                            if (!directMatch) {
+                                // 1. Check for 3D model names (e.g. rocket, sphere, cube, earth, etc.)
+                                const model3DTypes = ['rocket', 'sphere', 'cube', 'pyramid', 'cylinder', 'cone', 'earth', 'sun', 'moon', 'mars', 'jupiter', 'saturn', 'atom', 'dna', 'molecule', 'laptop', 'router', 'switch'];
+                                const targeted3D = model3DTypes.find(mt => 
+                                    new RegExp(`\\b${mt}\\b`, 'i').test(rawText) || 
+                                    new RegExp(`\\b${mt}\\b`, 'i').test(action.targetId || '') || 
+                                    new RegExp(`\\b${mt}\\b`, 'i').test(action.targetType || '')
+                                );
+                                if (targeted3D) {
+                                    const match3D = cur3D.find(o => o.modelType === targeted3D || (o.name && new RegExp(targeted3D, 'i').test(o.name)) || (o.id && new RegExp(targeted3D, 'i').test(o.id)));
                                     if (match3D) tId = match3D.id;
-                                    else if (matchShape) tId = matchShape.id;
                                 }
-                                if (!tId && (selected3DIds.length > 0 || selectedShapeIds.length > 0)) {
-                                    tId = selected3DIds[0] || selectedShapeIds[0];
+
+                                // 2. Check for shapes & sticky notes
+                                if (!tId) {
+                                    const shapeKeywords = [
+                                        { key: 'sticky', type: 'sticky_note' },
+                                        { key: 'note', type: 'sticky_note' },
+                                        { key: 'circle', type: 'circle' },
+                                        { key: 'square', type: 'square' },
+                                        { key: 'rectangle', type: 'rectangle' },
+                                        { key: 'triangle', type: 'triangle' },
+                                        { key: 'star', type: 'star' },
+                                        { key: 'diamond', type: 'diamond' },
+                                        { key: 'arrow', type: 'arrow' },
+                                        { key: 'line', type: 'line' }
+                                    ];
+                                    const colorKeywords = ['red', 'blue', 'green', 'yellow', 'black', 'white', 'purple', 'pink', 'orange', 'cyan'];
+                                    const targetedShape = shapeKeywords.find(sk => new RegExp(`\\b${sk.key}\\b`, 'i').test(rawText) || new RegExp(`\\b${sk.key}\\b`, 'i').test(action.targetId || '') || new RegExp(`\\b${sk.key}\\b`, 'i').test(action.targetType || ''));
+                                    const targetedColor = colorKeywords.find(c => new RegExp(`\\b${c}\\b`, 'i').test(rawText) || new RegExp(`\\b${c}\\b`, 'i').test(action.targetId || ''));
+
+                                    if (targetedShape) {
+                                        const matchShape = curShapes.find(s => {
+                                            const typeMatch = s.type === targetedShape.type || (targetedShape.type === 'sticky_note' && s.type === 'rectangle' && s.fillColor && s.fillColor.includes('fef08a'));
+                                            if (!typeMatch) return false;
+                                            if (targetedColor) {
+                                                return (s.color && s.color.toLowerCase().includes(targetedColor)) || (s.fillColor && s.fillColor.toLowerCase().includes(targetedColor));
+                                            }
+                                            return true;
+                                        });
+                                        if (matchShape) tId = matchShape.id;
+                                    }
+                                }
+
+                                // 3. Fallback selection
+                                if (!tId && (selected3DIds.length > 0 || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedImageIds.length > 0)) {
+                                    tId = selected3DIds[0] || selectedShapeIds[0] || selectedTextIds[0] || selectedImageIds[0];
                                 }
                             }
 
@@ -12361,8 +12403,13 @@ export default function Whiteboard({
                                 setImageObjects(prev => prev.filter(s => s.id !== tId));
                                 setSelected3DIds(prev => prev.filter(x => x !== tId));
                                 setSelectedShapeIds(prev => prev.filter(x => x !== tId));
+                                setSelectedTextIds(prev => prev.filter(x => x !== tId));
+                                setSelectedImageIds(prev => prev.filter(x => x !== tId));
                                 saveToHistory();
-                                toast.success('Deleted object from whiteboard', { icon: '🗑️' });
+                                if (socket && sessionId) {
+                                    socket.emit('whiteboard:shape-delete', { sessionId, shapeId: tId });
+                                }
+                                deletedCount++;
                             }
                         }
                         else if (action.type === 'SPATIAL_CLARIFICATION') {
@@ -12370,6 +12417,23 @@ export default function Whiteboard({
                             if (aiSpeechEnabled) speakAiResponse(action.message);
                             toast(action.message, { icon: '❓' });
                             // In Phase 3, we would dispatch laser pointer UI events here using action.candidateIds
+                        }
+                    }
+
+                    // Post-action verification for deletion requests: suppress false positives!
+                    if (hasDeleteActions) {
+                        if (deletedCount > 0) {
+                            const successMsg = data.speechResponse || `Deleted ${deletedCount} object(s) from whiteboard`;
+                            conversationHistoryRef.current.push({ role: 'assistant', content: successMsg });
+                            if (aiSpeechEnabled) speakAiResponse(successMsg);
+                            toast.success(successMsg, { icon: '🗑️' });
+                            setVoiceFeedback(successMsg);
+                        } else {
+                            const notFoundMsg = "Could not find the requested object(s) on the whiteboard to delete.";
+                            conversationHistoryRef.current.push({ role: 'assistant', content: notFoundMsg });
+                            if (aiSpeechEnabled) speakAiResponse(notFoundMsg);
+                            toast.error(notFoundMsg, { icon: '⚠️' });
+                            setVoiceFeedback(notFoundMsg);
                         }
                     }
                     return;
@@ -14106,8 +14170,77 @@ export default function Whiteboard({
         }
 
         if (txt.includes('delete') || txt.includes('remove')) {
-            handleDelete();
-            setVoiceFeedback('🗑️ Deleted selected item(s)');
+            const curPageIdx = currentPageRef.current !== undefined ? currentPageRef.current : currentPage;
+            const curShapes = pageShapeObjects[curPageIdx] || [];
+            const cur3D = page3DObjects[curPageIdx] || [];
+
+            // 1. Check if user specified a 3D model (e.g. "delete rocket", "delete sphere")
+            const model3DTypes = ['rocket', 'sphere', 'cube', 'pyramid', 'cylinder', 'cone', 'earth', 'sun', 'moon', 'mars', 'jupiter', 'saturn', 'atom', 'dna', 'molecule', 'laptop', 'router', 'switch'];
+            const targeted3DType = model3DTypes.find(mt => new RegExp(`\\b${mt}\\b`, 'i').test(txt));
+            if (targeted3DType) {
+                const targetObj = cur3D.find(o => o.modelType === targeted3DType || (o.name && new RegExp(targeted3DType, 'i').test(o.name)) || new RegExp(targeted3DType, 'i').test(o.id));
+                if (targetObj) {
+                    setThreeDObjects(prev => prev.filter(o => o.id !== targetObj.id));
+                    setSelected3DIds(prev => prev.filter(x => x !== targetObj.id));
+                    saveToHistory();
+                    if (socket && sessionId) socket.emit('whiteboard:shape-delete', { sessionId, shapeId: targetObj.id });
+                    narrateAction(`Deleted ${targeted3DType} from whiteboard.`, `🗑️ Deleted ${targeted3DType}`);
+                    return;
+                } else {
+                    narrateAction(`There is no ${targeted3DType} on the whiteboard to delete.`, `⚠️ No ${targeted3DType} on board`);
+                    return;
+                }
+            }
+
+            // 2. Check if user specified shapes or sticky notes (e.g. "delete sticky note", "delete circle")
+            const shapeKeywords = [
+                { key: 'sticky', type: 'sticky_note', label: 'sticky note' },
+                { key: 'note', type: 'sticky_note', label: 'sticky note' },
+                { key: 'circle', type: 'circle', label: 'circle' },
+                { key: 'square', type: 'square', label: 'square' },
+                { key: 'rectangle', type: 'rectangle', label: 'rectangle' },
+                { key: 'triangle', type: 'triangle', label: 'triangle' },
+                { key: 'star', type: 'star', label: 'star' },
+                { key: 'diamond', type: 'diamond', label: 'diamond' }
+            ];
+            const targetedShape = shapeKeywords.find(sk => new RegExp(`\\b${sk.key}\\b`, 'i').test(txt));
+            const colors = ['red', 'blue', 'green', 'yellow', 'black', 'white', 'purple', 'pink', 'orange', 'cyan'];
+            const targetedColor = colors.find(c => new RegExp(`\\b${c}\\b`, 'i').test(txt));
+
+            if (targetedShape) {
+                const targetObj = curShapes.find(s => {
+                    const typeMatch = s.type === targetedShape.type || (targetedShape.type === 'sticky_note' && s.type === 'rectangle' && s.fillColor && s.fillColor.includes('fef08a'));
+                    if (!typeMatch) return false;
+                    if (targetedColor) {
+                        return (s.color && s.color.toLowerCase().includes(targetedColor)) || (s.fillColor && s.fillColor.toLowerCase().includes(targetedColor));
+                    }
+                    return true;
+                });
+                if (targetObj) {
+                    setShapeObjects(prev => prev.filter(s => s.id !== targetObj.id));
+                    setSelectedShapeIds(prev => prev.filter(x => x !== targetObj.id));
+                    saveToHistory();
+                    if (socket && sessionId) socket.emit('whiteboard:shape-delete', { sessionId, shapeId: targetObj.id });
+                    const label = targetedColor ? `${targetedColor} ${targetedShape.label}` : targetedShape.label;
+                    narrateAction(`Deleted ${label} from whiteboard.`, `🗑️ Deleted ${label}`);
+                    return;
+                } else {
+                    const label = targetedColor ? `${targetedColor} ${targetedShape.label}` : targetedShape.label;
+                    narrateAction(`There is no ${label} on the whiteboard to delete.`, `⚠️ No ${label} on board`);
+                    return;
+                }
+            }
+
+            // 3. Fallback: delete selection if selected
+            const hasSelection = selectedShapeIds.length > 0 || selected3DIds.length > 0 || selectedTextIds.length > 0 || selectedImageIds.length > 0 || selectedImageId;
+            if (hasSelection) {
+                handleDelete();
+                setVoiceFeedback('🗑️ Deleted selected item(s)');
+                toast.success('Deleted selected item(s)', { icon: '🗑️' });
+            } else {
+                setVoiceFeedback('⚠️ Please select an item or specify what to delete');
+                toast('Please select an item or say what to delete (e.g. "delete rocket")', { icon: 'ℹ️' });
+            }
             return;
         }
         if (txt.includes('copy')) {

@@ -2219,15 +2219,20 @@ CRITICAL RULES:
   7. EXPLANATION:
      - Provide the step-by-step mathematical reasoning, formulas in LaTeX ($$...$$), and calculations inside speechResponse and solutionMarkdown.
      - The interactive diagram on canvas visually anchors the vertices, edges, and angles!
-- **CONCISE BULLET POINTS FOR WHITEBOARD TEACHING & DICTATION SCROLLING**:
-  When explaining any concept, question, math problem, scientific law, or step-by-step theorem:
-  - ALWAYS format both 'speechResponse' and 'solutionMarkdown' as **3 to 5 concise, scannable bullet points** (or numbered steps):
-    • 📌 **Concept & Given**: What we are solving in 1 crisp sentence.
-    • 📐 **Governing Formula**: Core law in clean LaTeX ($$...$$ or $...$).
-    • 🔢 **Step-by-Step Calculation**: Step 1 $\rightarrow$ Step 2 $\rightarrow$ Result.
-    • 🎯 **Conclusion & Intuition**: Key takeaway.
-  - STRICTLY AVOID large walls of text, narrative essays, or unbroken paragraphs! Whiteboard teaching requires high visual clarity and minimal cognitive load so students can read each point while listening to dictation.
-  - The spoken version in 'speechResponse' should use natural spoken transitions ('First, ... Next, ... Finally, ...') synchronized with the on-screen bullets.
+- **ADAPTIVE RESPONSE FORMATTING (BULLET STEPS FOR DERIVATIONS VS CONCISE PROSE FOR DEFINITIONS)**:
+  Adapt your response format to the specific pedagogical nature of the user's prompt:
+  1. FOR MULTI-STEP PROBLEMS, THEOREMS, DERIVATIONS, & PROOFS (e.g. "step by step solution for pythagoras theorem", "solve triangle with sides 3 and 4", "derive kinetic energy", "how does photosynthesis work"):
+     - Use 3 to 4 concise, scannable bullet points or numbered steps for both 'speechResponse' and 'solutionMarkdown':
+       • 📌 **Concept & Given**: What is being solved in 1 crisp sentence.
+       • 📐 **Formula**: Core equation in clean LaTeX ($$...$$).
+       • 🔢 **Step-by-Step Calculation**: Step 1 → Step 2 → Result.
+       • 🎯 **Conclusion & Intuition**: Key takeaway.
+     - Synchronize spoken dictation with visual whiteboard presentation so students can easily follow along.
+  2. FOR DEFINITIONS, CORE CONCEPTS & SINGLE-FACT QUESTIONS (e.g. "what is velocity?", "define gravity", "what is inertia?", "explain Ohm's law"):
+     - DO NOT force artificial bullet points!
+     - Provide a direct, cohesive explanation (2 to 3 sentences) giving the formal scientific definition, physical intuition, and key equation/units if applicable.
+     - Keep it crisp and direct so it fits neatly on screen and sounds completely natural when spoken.
+  3. STRICTLY AVOID large walls of text, narrative essays, or unbroken paragraphs! Whiteboard teaching requires high visual clarity and minimal cognitive load.
 - **INTELLIGENT BOARD SPACE MANAGEMENT & AUTO-PAGINATION**:
   Inspect BOARD SPACE STATUS below. If BOARD SPACE STATUS is 'CROWDED' or the board already contains 3+ objects, and the user asks a new question, theorem, math problem, or diagram:
   1. PREPEND action at the start of actions array:
@@ -2261,10 +2266,23 @@ CRITICAL RULES:
   - Sphere 1: width: 100, height: 100, x: 500, y: 350.
   - Sphere 2: width: 150, height: 150, x: 675 (separated center-to-center by specified distance), y: 325.
   - Return separate CREATE_OBJECT actions in the array with these explicit width, height, x, and y values!
+- **STRICT WHITEBOARD GROUNDING & DELETION VERIFICATION (NEVER HALLUCINATE DELETIONS)**:
+  BEFORE deleting or modifying any object, you MUST verify it against CURRENT ACTIVE OBJECTS ON WHITEBOARD:
+  1. If the user asks to delete, remove, or modify an object (e.g. "Delete the red sticky note and the blue circle", "delete rocket", "delete sphere", "delete the green triangle"):
+     - Check if ANY matching object exists in CURRENT ACTIVE OBJECTS ON WHITEBOARD.
+     - Match using shape type (e.g. 'sticky_note', 'circle', 'rectangle', 'triangle'), 3D modelType (e.g. 'rocket', 'sphere', 'cube', 'earth', 'sun'), color (e.g. 'red', 'blue', hex code), or text/label.
+     - If the requested objects DO NOT EXIST in the active objects list (or if CURRENT ACTIVE OBJECTS is NONE):
+       * YOU MUST NOT OUTPUT 'DELETE_OBJECT' ACTIONS for non-existent objects!
+       * YOU MUST NOT CLAIM THAT YOU DELETED THEM! (Strictly NO false positive confirmation!)
+       * Instead, inform the user honestly in 'speechResponse':
+         "There is no [requested object(s)] on the whiteboard to delete."
+     - If matching objects DO exist:
+       * Output DELETE_OBJECT actions with 'targetId' set to their exact 'id' from CURRENT ACTIVE OBJECTS.
+       * In 'speechResponse', accurately state: "I've removed the [object(s)] from the whiteboard."
 - **DELETING 3D MODELS & 2D SHAPES**:
-  When asked to delete an object (e.g. "delete the sphere", "delete the cube", "delete circle on left"):
+  When asked to delete an object (e.g. "delete rocket", "delete the sphere", "delete the cube", "delete circle on left"):
   - Inspect CURRENT ACTIVE OBJECTS ON WHITEBOARD.
-  - Match by modelType (e.g. sphere, cube) or shape type (e.g. circle, square).
+  - Match by modelType (e.g. rocket, sphere, cube) or shape type (e.g. circle, square, sticky_note).
   - Output DELETE_OBJECT with targetId set to that exact object's id. DO NOT hallucinate that it was deleted without outputting DELETE_OBJECT!
 - **CONNECTING OBJECTS & 3D MODELS**:
   When asked to connect objects (e.g. "connect two spheres by arrow", "connect cube to cylinder"):
@@ -2278,9 +2296,8 @@ CRITICAL RULES:
 ${context.currentPage ? `ACTIVE WHITEBOARD PAGE: Page ${context.currentPage} of ${context.totalPages || 1}
 BOARD SPACE STATUS: ${context.isBoardCrowded ? 'CROWDED (Insufficient free space on current board - open a new page!)' : 'AVAILABLE (Sufficient free space)'} (Objects on current board: ${context.activeObjectsCount || 0})
 ` : ''}
-${context.shapes && context.shapes.length > 0 ? `CURRENT ACTIVE OBJECTS ON WHITEBOARD:
-${JSON.stringify(context.shapes.slice(0, 30))}
-` : ''}
+CURRENT ACTIVE OBJECTS ON WHITEBOARD:
+${context.shapes && context.shapes.length > 0 ? JSON.stringify(context.shapes.slice(0, 40)) : 'NONE (The whiteboard is currently completely empty — 0 objects on board!)'}
 ${context.viewport ? `BOARD VIEWPORT & BOUNDS: ${JSON.stringify(context.viewport)}\n` : ''}
 ${context.conversationHistory && context.conversationHistory.length > 0 ? `RECENT CONVERSATION TURNS:
 ${JSON.stringify(context.conversationHistory.slice(-5))}
@@ -2469,14 +2486,121 @@ Spoken input: "${text}"
                 intent = 'bg_hex';
                 spokenFeedback = 'Setting background to hexagons';
             }
-            // Shapes Drawing
-            else if (low.includes('circle') || (/\b(round\s+shape|round\s+circle|disc|ring)\b/i.test(low)) || (/\bround\b/i.test(low) && !low.includes('background') && !low.includes('ground') && !low.includes('around') && !low.includes('surround'))) {
+            // Object Deletion & Clear Operations (Must evaluate before shape drawing!)
+            const isDeleteCommand = /\b(delete|remove|erase|rub|trash|discard)\b/i.test(low);
+            if (isDeleteCommand) {
+                const activeShapes = Array.isArray(context.shapes) ? context.shapes : [];
+
+                // Page deletion
+                if (low.includes('page')) {
+                    translatedCommand = 'delete page';
+                    intent = 'delete_page';
+                    spokenFeedback = 'Deleted current page';
+                }
+                // Complete canvas wipe
+                else if (low.includes('all') || low.includes('everything') || low.includes('wipe') || low.includes('clear')) {
+                    translatedCommand = 'clear the board';
+                    intent = 'clear_canvas';
+                    spokenFeedback = 'Clearing the canvas';
+                }
+                // If board is completely empty, never claim to delete objects
+                else if (activeShapes.length === 0) {
+                    return {
+                        recognized: true,
+                        type: 'clarification',
+                        speechResponse: "The whiteboard is currently empty, so there is nothing to delete.",
+                        spokenFeedback: "Whiteboard is currently empty",
+                        actions: []
+                    };
+                }
+                // Targeted object deletion from context
+                else {
+                    const matchedDeleteActions = [];
+                    const matchedNames = [];
+
+                    // 1. Check for 3D model names
+                    const modelTypes = ['rocket', 'sphere', 'cube', 'pyramid', 'cylinder', 'cone', 'earth', 'sun', 'moon', 'mars', 'jupiter', 'saturn', 'atom', 'dna', 'molecule', 'laptop', 'router', 'switch'];
+                    for (const mt of modelTypes) {
+                        if (low.includes(mt)) {
+                            const found = activeShapes.find(s => (s.modelType === mt) || (s.name && s.name.toLowerCase().includes(mt)) || (s.type === '3d_model' && String(s.id).includes(mt)));
+                            if (found && !matchedDeleteActions.some(a => a.targetId === found.id)) {
+                                matchedDeleteActions.push({ type: 'DELETE_OBJECT', targetId: found.id, targetType: mt });
+                                matchedNames.push(mt);
+                            }
+                        }
+                    }
+
+                    // 2. Check for shapes & sticky notes (with optional color keywords)
+                    const shapeTypes = [
+                        { key: 'sticky', type: 'sticky_note', label: 'sticky note' },
+                        { key: 'note', type: 'sticky_note', label: 'sticky note' },
+                        { key: 'circle', type: 'circle', label: 'circle' },
+                        { key: 'square', type: 'square', label: 'square' },
+                        { key: 'rectangle', type: 'rectangle', label: 'rectangle' },
+                        { key: 'triangle', type: 'triangle', label: 'triangle' },
+                        { key: 'star', type: 'star', label: 'star' },
+                        { key: 'diamond', type: 'diamond', label: 'diamond' },
+                        { key: 'arrow', type: 'arrow', label: 'arrow' },
+                        { key: 'line', type: 'line', label: 'line' },
+                        { key: 'text', type: 'text', label: 'text' }
+                    ];
+
+                    const colors = ['red', 'blue', 'green', 'yellow', 'black', 'white', 'purple', 'pink', 'orange', 'cyan'];
+                    const mentionedColor = colors.find(c => low.includes(c));
+
+                    for (const st of shapeTypes) {
+                        if (low.includes(st.key)) {
+                            const found = activeShapes.find(s => {
+                                const typeMatch = s.type === st.type || (st.type === 'sticky_note' && s.type === 'rectangle' && s.fillColor && s.fillColor.includes('fef08a'));
+                                if (!typeMatch) return false;
+                                if (mentionedColor) {
+                                    const colMatch = (s.color && s.color.toLowerCase().includes(mentionedColor)) ||
+                                                     (s.fillColor && s.fillColor.toLowerCase().includes(mentionedColor));
+                                    return colMatch;
+                                }
+                                return true;
+                            });
+                            if (found && !matchedDeleteActions.some(a => a.targetId === found.id)) {
+                                matchedDeleteActions.push({ type: 'DELETE_OBJECT', targetId: found.id, targetType: st.type });
+                                matchedNames.push(mentionedColor ? `${mentionedColor} ${st.label}` : st.label);
+                            }
+                        }
+                    }
+
+                    if (matchedDeleteActions.length > 0) {
+                        return {
+                            recognized: true,
+                            type: 'action',
+                            speechResponse: `I've removed the ${matchedNames.join(' and ')} from the whiteboard.`,
+                            spokenFeedback: `Deleted ${matchedNames.join(', ')}`,
+                            actions: matchedDeleteActions
+                        };
+                    } else if (low.includes('circle') || low.includes('sticky') || low.includes('note') || low.includes('rocket') || low.includes('sphere') || low.includes('cube') || low.includes('triangle') || low.includes('square')) {
+                        // User named specific items that were NOT found on the board
+                        return {
+                            recognized: true,
+                            type: 'clarification',
+                            speechResponse: "I couldn't find the requested object on the whiteboard to delete.",
+                            spokenFeedback: "Requested object not found on board",
+                            actions: []
+                        };
+                    } else {
+                        // Generic selection delete
+                        translatedCommand = 'delete';
+                        intent = 'delete_item';
+                        spokenFeedback = 'Deleted selection';
+                    }
+                }
+            }
+
+            // Shapes Drawing (strictly non-deletion)
+            else if (!isDeleteCommand && (low.includes('circle') || (/\b(round\s+shape|round\s+circle|disc|ring)\b/i.test(low)) || (/\bround\b/i.test(low) && !low.includes('background') && !low.includes('ground') && !low.includes('around') && !low.includes('surround')))) {
                 const num = (low.match(/\d+/) || [60])[0];
                 translatedCommand = `draw circle radius ${num}`;
                 intent = 'draw_circle';
                 spokenFeedback = `Drawing circle with radius ${num}px`;
             }
-            else if (low.includes('square')) {
+            else if (!isDeleteCommand && low.includes('square')) {
                 const num = (low.match(/\d+/) || [100])[0];
                 translatedCommand = `draw square side ${num}`;
                 intent = 'draw_square';
