@@ -2202,6 +2202,21 @@ CRITICAL RULES:
   - If user says "notebook lines" or "ruled background", set pattern: "lines".
   - If user says "dots background" or "dotted canvas", set pattern: "dots".
 - **NO HARDCODING**: If the user says "the circle on the extreme left" or "the biggest square", DO NOT ask for clarification. Look at the CURRENT ACTIVE OBJECTS JSON. Find the object with the lowest 'x' coordinate, or largest 'width'*'height', and output its 'id' in targetId.
+- **MULTIPLE OBJECTS & SPATIAL OFFSETS**:
+  When asked to create multiple objects with specific dimensions or spacing (e.g. "create two spheres 100px and 150px separated by 100px from their centers"):
+  - Calculate distinct non-overlapping (x, y) coordinates for each object.
+  - Sphere 1: width: 100, height: 100, x: 500, y: 350.
+  - Sphere 2: width: 150, height: 150, x: 675 (separated center-to-center by specified distance), y: 325.
+  - Return separate CREATE_OBJECT actions in the array with these explicit width, height, x, and y values!
+- **DELETING 3D MODELS & 2D SHAPES**:
+  When asked to delete an object (e.g. "delete the sphere", "delete the cube", "delete circle on left"):
+  - Inspect CURRENT ACTIVE OBJECTS ON WHITEBOARD.
+  - Match by modelType (e.g. sphere, cube) or shape type (e.g. circle, square).
+  - Output DELETE_OBJECT with targetId set to that exact object's id. DO NOT hallucinate that it was deleted without outputting DELETE_OBJECT!
+- **CONNECTING OBJECTS & 3D MODELS**:
+  When asked to connect objects (e.g. "connect two spheres by arrow", "connect cube to cylinder"):
+  - Find the source and target object IDs from CURRENT ACTIVE OBJECTS ON WHITEBOARD.
+  - Output action CONNECT_OBJECTS with sourceId and targetId.
 - **BORDER & PROPERTIES**: When creating or modifying shapes with border thickness (e.g. "create square of 4px border"), include "strokeWidth": 4 in CREATE_OBJECT, or "property": "strokeWidth", "value": 4 in MODIFY_PROPERTY.
 - **NO FALSE STICKY NOTES**: If the user asks for a simple shape or 3D model (e.g. "create 3D sphere"), ONLY output the CREATE_OBJECT for the sphere. DO NOT add sticky notes unless explicitly asked or generating a "lesson_board".
 - **GENERATIVE KNOWLEDGE**: If the user asks for a sticky note with a formula (e.g. "sticky note with volume of cube"), YOU must output the actual formula in LaTeX format within the 'text' property of the CREATE_OBJECT action.

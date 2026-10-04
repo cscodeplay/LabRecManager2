@@ -10295,8 +10295,32 @@ export default function Whiteboard({
             height: Math.round(i.height || 200)
         }));
 
+        const current3D = (page3DObjects[currentPage] || []).map(o => {
+            const w = Math.round(o.width || 240);
+            const h = Math.round(o.height || 240);
+            const cx = Math.round((o.x || 0) + w / 2);
+            const cy = Math.round((o.y || 0) + h / 2);
+            return {
+                id: o.id,
+                type: '3d_model',
+                modelType: o.modelType || 'sphere',
+                name: o.name || `3D ${o.modelType}`,
+                x: Math.round(o.x || 0),
+                y: Math.round(o.y || 0),
+                width: w,
+                height: h,
+                radius: Math.round(w / 2),
+                center: { x: cx, y: cy },
+                color: o.color,
+                verticalRank: cy < baseCy - 100 ? 'top' : cy > baseCy + 100 ? 'bottom' : 'middle',
+                horizontalRank: cx < baseCx - 150 ? 'left' : cx > baseCx + 150 ? 'right' : 'center',
+                isLocked: !!o.isLocked
+            };
+        });
+
         return {
-            shapes: currentShapes,
+            shapes: [...currentShapes, ...current3D],
+            threeDObjects: current3D,
             texts: currentTexts,
             images: currentImages,
             viewport: {
@@ -10312,7 +10336,7 @@ export default function Whiteboard({
             lastActionTarget: lastActionTargetRef.current,
             selectedShapeIds
         };
-    }, [currentPage, pageShapeObjects, pageTextObjects, pageImageObjects, canvasWidth, canvasHeight, panOffset, zoomLevel, laserPos, selectedShapeIds]);
+    }, [currentPage, pageShapeObjects, page3DObjects, pageTextObjects, pageImageObjects, canvasWidth, canvasHeight, panOffset, zoomLevel, laserPos, selectedShapeIds]);
 
     // 2. Intelligent Space Allocation & Collision Avoidance
     const findAvailableCanvasSpace = useCallback((desiredW = 160, desiredH = 160, preference = null) => {
@@ -10717,15 +10741,20 @@ export default function Whiteboard({
             const dims = canvasAction.dimensions || getDefaultDimensions(mType);
             const resolvedColor = canvasAction.color || (isEarth ? '#38bdf8' : '#6366f1');
 
+            const reqW = canvasAction.width ? Number(canvasAction.width) : 240;
+            const reqH = canvasAction.height ? Number(canvasAction.height) : reqW;
+            const posX = canvasAction.x !== undefined ? Number(canvasAction.x) : Math.max(20, baseCx - reqW / 2);
+            const posY = canvasAction.y !== undefined ? Number(canvasAction.y) : Math.max(20, baseCy - reqH / 2);
+
             const new3D = {
                 id: `3d_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
                 modelType: mType,
                 meshData: null,
                 name: canvasAction.name || `3D ${mType.charAt(0).toUpperCase() + mType.slice(1)}`,
-                x: Math.max(20, baseCx - 110),
-                y: Math.max(20, baseCy - 110),
-                width: 240,
-                height: 240,
+                x: posX,
+                y: posY,
+                width: reqW,
+                height: reqH,
                 color: resolvedColor,
                 rotX: -25,
                 rotY: 45,
@@ -11136,8 +11165,23 @@ export default function Whiteboard({
         // 4. Connect Shapes with Teacher Glide & Smart Anchors
         if (canvasAction.type === 'connect_shapes') {
             const currentShapes = pageShapeObjects[currentPage] || [];
-            const srcObj = currentShapes.find(s => s.id === canvasAction.sourceId);
-            const tgtObj = currentShapes.find(s => s.id === canvasAction.targetId);
+            const current3D = page3DObjects[currentPage] || [];
+            const allConnectable = [...currentShapes, ...current3D];
+
+            let srcObj = allConnectable.find(s => s.id === canvasAction.sourceId);
+            let tgtObj = allConnectable.find(s => s.id === canvasAction.targetId);
+
+            if (!srcObj || !tgtObj) {
+                // Fallback matching: if user asked to connect spheres or two objects
+                const spheres = allConnectable.filter(o => o.modelType === 'sphere' || o.type === 'circle' || (o.name && /sphere/i.test(o.name)));
+                if (spheres.length >= 2) {
+                    srcObj = spheres[0];
+                    tgtObj = spheres[1];
+                } else if (allConnectable.length >= 2) {
+                    srcObj = allConnectable[allConnectable.length - 2];
+                    tgtObj = allConnectable[allConnectable.length - 1];
+                }
+            }
 
             if (srcObj && tgtObj && srcObj.id !== tgtObj.id) {
                 const sAnchor = canvasAction.sourceAnchor || (srcObj.x <= tgtObj.x ? 'right' : 'bottom');
@@ -11882,12 +11926,17 @@ export default function Whiteboard({
                             const actFill = action.fillColor || fillColor || 'transparent';
 
                             if (action.objectType === '3d_model') {
+                                const rawSize = action.size || action.width || (action.radius ? action.radius * 2 : 240);
+                                const size = Math.max(30, Number(rawSize));
                                 executeAiCanvasAction({ 
                                     type: 'insert_3d_model', 
-                                    modelType: action.modelType, 
+                                    modelType: action.modelType || 'sphere', 
                                     color: actColor,
-                                    x: action.x, 
-                                    y: action.y 
+                                    width: size,
+                                    height: size,
+                                    x: action.x !== undefined ? Number(action.x) : undefined, 
+                                    y: action.y !== undefined ? Number(action.y) : undefined,
+                                    edgeWidth: action.strokeWidth !== undefined ? Number(action.strokeWidth) : undefined
                                 });
                             } else if (action.objectType === 'sticky_note') {
                                 const nx = action.x || cx - 100;
@@ -12047,11 +12096,39 @@ export default function Whiteboard({
                                 });
                             }
                         }
-                        else if (action.type === 'DELETE_OBJECT' && action.targetId) {
-                            setShapeObjects(prev => prev.filter(s => s.id !== action.targetId));
-                            setThreeDObjects(prev => prev.filter(s => s.id !== action.targetId));
-                            setTextObjects(prev => prev.filter(s => s.id !== action.targetId));
-                            setImageObjects(prev => prev.filter(s => s.id !== action.targetId));
+                        else if (action.type === 'DELETE_OBJECT') {
+                            let tId = action.targetId;
+                            const curShapes = pageShapeObjects[currentPage] || [];
+                            const cur3D = page3DObjects[currentPage] || [];
+                            const curTexts = pageTextObjects[currentPage] || [];
+                            const curImages = pageImageObjects[currentPage] || [];
+
+                            if (!tId || (!curShapes.some(s => s.id === tId) && !cur3D.some(o => o.id === tId) && !curTexts.some(t => t.id === tId))) {
+                                if (action.targetType === 'sphere' || (action.targetId && /sphere/i.test(action.targetId)) || /sphere/i.test(rawText)) {
+                                    const sphereObj = cur3D.find(o => o.modelType === 'sphere' || (o.name && /sphere/i.test(o.name)));
+                                    if (sphereObj) tId = sphereObj.id;
+                                } else if (action.targetType || action.targetId) {
+                                    const q = String(action.targetType || action.targetId).toLowerCase();
+                                    const match3D = cur3D.find(o => o.modelType === q || (o.name && o.name.toLowerCase().includes(q)));
+                                    const matchShape = curShapes.find(s => s.type === q);
+                                    if (match3D) tId = match3D.id;
+                                    else if (matchShape) tId = matchShape.id;
+                                }
+                                if (!tId && (selected3DIds.length > 0 || selectedShapeIds.length > 0)) {
+                                    tId = selected3DIds[0] || selectedShapeIds[0];
+                                }
+                            }
+
+                            if (tId) {
+                                setShapeObjects(prev => prev.filter(s => s.id !== tId));
+                                setThreeDObjects(prev => prev.filter(s => s.id !== tId));
+                                setTextObjects(prev => prev.filter(s => s.id !== tId));
+                                setImageObjects(prev => prev.filter(s => s.id !== tId));
+                                setSelected3DIds(prev => prev.filter(x => x !== tId));
+                                setSelectedShapeIds(prev => prev.filter(x => x !== tId));
+                                saveToHistory();
+                                toast.success('Deleted object from whiteboard', { icon: '🗑️' });
+                            }
                         }
                         else if (action.type === 'SPATIAL_CLARIFICATION') {
                             setVoiceFeedback(action.message);
