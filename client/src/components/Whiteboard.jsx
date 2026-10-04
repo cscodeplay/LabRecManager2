@@ -3641,44 +3641,93 @@ export default function Whiteboard({
     }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DIds, selectedGraphId, saveToHistory]);
 
     // Alignment tools
-    const handleAlign = useCallback((alignment) => {
-        if (selectedShapeIds.length < 2) return;
+    const handleAlign = useCallback((alignment = 'horizontal', targetIds = null) => {
+        let candidateIds = Array.isArray(targetIds) && targetIds.length >= 2 
+            ? targetIds 
+            : (selectedShapeIds.length >= 2 ? selectedShapeIds : null);
+
+        if (!candidateIds) {
+            const curShapes = pageShapeObjects[currentPage] || [];
+            if (curShapes.length >= 2) {
+                candidateIds = curShapes.map(s => s.id);
+            }
+        }
+
+        if (!candidateIds || candidateIds.length < 2) {
+            toast('Need at least 2 shapes on canvas to align', { icon: '📐' });
+            return;
+        }
+
+        const normAlign = (alignment || 'horizontal').toLowerCase().trim();
 
         setShapeObjects(prev => {
-            const selected = prev.filter(s => selectedShapeIds.includes(s.id));
-            if (selected.length === 0) return prev;
+            const selected = prev.filter(s => candidateIds.includes(s.id));
+            if (selected.length < 2) return prev;
 
             let minX = Math.min(...selected.map(s => s.x));
             let minY = Math.min(...selected.map(s => s.y));
-            let maxX = Math.max(...selected.map(s => s.x + s.width));
-            let maxY = Math.max(...selected.map(s => s.y + s.height));
+            let maxX = Math.max(...selected.map(s => s.x + (s.width || 100)));
+            let maxY = Math.max(...selected.map(s => s.y + (s.height || 100)));
+
+            // Horizontal alignment along vertical center line (middle Y axis)
+            if (normAlign === 'horizontal' || normAlign === 'middle' || normAlign === 'center_y' || normAlign === 'row') {
+                const centerY = minY + (maxY - minY) / 2;
+                const sortedByX = [...selected].sort((a, b) => (a.x || 0) - (b.x || 0));
+
+                let prevRight = -Infinity;
+                let hasOverlap = false;
+                for (const s of sortedByX) {
+                    if (s.x < prevRight + 15) { hasOverlap = true; break; }
+                    prevRight = s.x + (s.width || 100);
+                }
+
+                return prev.map(s => {
+                    if (!candidateIds.includes(s.id)) return s;
+                    const newY = Math.round(centerY - (s.height || 100) / 2);
+                    if (hasOverlap) {
+                        const idx = sortedByX.findIndex(item => item.id === s.id);
+                        let computedX = minX;
+                        for (let i = 0; i < idx; i++) {
+                            computedX += (sortedByX[i].width || 100) + 30;
+                        }
+                        return { ...s, x: Math.round(computedX), y: newY };
+                    }
+                    return { ...s, y: newY };
+                });
+            }
 
             return prev.map(s => {
-                if (!selectedShapeIds.includes(s.id)) return s;
-                
+                if (!candidateIds.includes(s.id)) return s;
                 let newX = s.x;
                 let newY = s.y;
-                
-                switch (alignment) {
+                switch (normAlign) {
                     case 'left': newX = minX; break;
-                    case 'center': newX = minX + (maxX - minX) / 2 - s.width / 2; break;
-                    case 'right': newX = maxX - s.width; break;
+                    case 'center': newX = minX + (maxX - minX) / 2 - (s.width || 100) / 2; break;
+                    case 'right': newX = maxX - (s.width || 100); break;
                     case 'top': newY = minY; break;
-                    case 'middle': newY = minY + (maxY - minY) / 2 - s.height / 2; break;
-                    case 'bottom': newY = maxY - s.height; break;
+                    case 'bottom': newY = maxY - (s.height || 100); break;
                 }
-                return { ...s, x: newX, y: newY };
+                return { ...s, x: Math.round(newX), y: Math.round(newY) };
             });
         });
+
         saveToHistory();
-    }, [selectedShapeIds, saveToHistory]);
+        toast.success(`Shapes aligned ${normAlign}`, { icon: '📐' });
+    }, [selectedShapeIds, pageShapeObjects, currentPage, saveToHistory]);
 
     // Distribution tools
     const handleDistribute = useCallback((axis) => {
-        if (selectedShapeIds.length < 3) return;
+        let candidateIds = selectedShapeIds.length >= 3 ? selectedShapeIds : null;
+        if (!candidateIds) {
+            const curShapes = pageShapeObjects[currentPage] || [];
+            if (curShapes.length >= 3) {
+                candidateIds = curShapes.map(s => s.id);
+            }
+        }
+        if (!candidateIds || candidateIds.length < 3) return;
 
         setShapeObjects(prev => {
-            const selected = prev.filter(s => selectedShapeIds.includes(s.id));
+            const selected = prev.filter(s => candidateIds.includes(s.id));
             if (selected.length < 3) return prev;
 
             // Sort shapes by their coordinate
@@ -3694,7 +3743,7 @@ export default function Whiteboard({
                 
                 let currentX = first.x;
                 return prev.map(s => {
-                    if (!selectedShapeIds.includes(s.id)) return s;
+                    if (!candidateIds.includes(s.id)) return s;
                     const index = sorted.findIndex(sortedShape => sortedShape.id === s.id);
                     if (index === 0) { currentX += s.width + space; return s; }
                     if (index === sorted.length - 1) return s;
@@ -3710,7 +3759,7 @@ export default function Whiteboard({
                 
                 let currentY = first.y;
                 return prev.map(s => {
-                    if (!selectedShapeIds.includes(s.id)) return s;
+                    if (!candidateIds.includes(s.id)) return s;
                     const index = sorted.findIndex(sortedShape => sortedShape.id === s.id);
                     if (index === 0) { currentY += s.height + space; return s; }
                     if (index === sorted.length - 1) return s;
@@ -10337,17 +10386,46 @@ export default function Whiteboard({
         });
 
         const totalActiveObjects = currentShapes.length + current3D.length + currentTexts.length + currentImages.length;
-        const centerOccupied = currentShapes.some(s => {
-            const scx = (s.x || 0) + (s.width || 0) / 2;
-            const scy = (s.y || 0) + (s.height || 0) / 2;
-            return Math.hypot(scx - baseCx, scy - baseCy) < 170;
-        }) || current3D.some(o => {
-            const ocx = (o.x || 0) + (o.width || 240) / 2;
-            const ocy = (o.y || 0) + (o.height || 240) / 2;
-            return Math.hypot(ocx - baseCx, ocy - baseCy) < 170;
-        });
-        const isBoardCrowded = totalActiveObjects >= 3 || (totalActiveObjects >= 2 && centerOccupied);
-        const hasSufficientSpace = !isBoardCrowded;
+        const obstacles = [
+            ...currentShapes.map(s => ({ x1: s.x, y1: s.y, x2: s.x + (s.width || 120), y2: s.y + (s.height || 120) })),
+            ...current3D.map(o => ({ x1: o.x, y1: o.y, x2: o.x + (o.width || 240), y2: o.y + (o.height || 240) })),
+            ...currentTexts.map(t => ({ x1: t.x, y1: t.y, x2: t.x + (t.width || 140), y2: t.y + (t.height || 50) })),
+            ...currentImages.map(i => ({ x1: i.x, y1: i.y, x2: i.x + (i.width || 200), y2: i.y + (i.height || 200) }))
+        ];
+
+        // Check if a standard contiguous slot (220x180) fits anywhere in the visible viewport
+        const testW = 220, testH = 180, gapMargin = 35;
+        let hasContiguousSlot = obstacles.length === 0;
+
+        if (!hasContiguousSlot) {
+            const candXs = new Set([xMin]);
+            const candYs = new Set([yMin]);
+            for (const obs of obstacles) {
+                if (obs.x2 + gapMargin <= xMax - testW) candXs.add(obs.x2 + gapMargin);
+                if (obs.x1 - testW - gapMargin >= xMin) candXs.add(obs.x1 - testW - gapMargin);
+                if (obs.y2 + gapMargin <= yMax - testH) candYs.add(obs.y2 + gapMargin);
+                if (obs.y1 - testH - gapMargin >= yMin) candYs.add(obs.y1 - testH - gapMargin);
+            }
+            for (let x = xMin; x <= xMax - testW; x += 60) candXs.add(x);
+            for (let y = yMin; y <= yMax - testH; y += 60) candYs.add(y);
+
+            const sortedXs = Array.from(candXs).map(x => Math.round(x)).filter(x => x >= xMin && x <= xMax - testW).sort((a, b) => a - b);
+            const sortedYs = Array.from(candYs).map(y => Math.round(y)).filter(y => y >= yMin && y <= yMax - testH).sort((a, b) => a - b);
+
+            for (const cx of sortedXs) {
+                for (const cy of sortedYs) {
+                    const collides = obstacles.some(obs => !(cx + testW < obs.x1 - 10 || cx > obs.x2 + 10 || cy + testH < obs.y1 - 10 || cy > obs.y2 + 10));
+                    if (!collides) {
+                        hasContiguousSlot = true;
+                        break;
+                    }
+                }
+                if (hasContiguousSlot) break;
+            }
+        }
+
+        const isBoardCrowded = !hasContiguousSlot;
+        const hasSufficientSpace = hasContiguousSlot;
 
         return {
             currentPage: currentPage + 1,
@@ -10478,41 +10556,66 @@ export default function Whiteboard({
             }
         }
 
-        // Case C: Unspecified location - quadrant analysis to find largest open whitespace
-        const zones = [
-            { id: 'center', x: baseCx - desiredW / 2, y: baseCy - desiredH / 2 },
-            { id: 'middle_left', x: baseCx - desiredW - 140, y: baseCy - desiredH / 2 },
-            { id: 'middle_right', x: baseCx + 140, y: baseCy - desiredH / 2 },
-            { id: 'top_left', x: xMin + 40, y: yMin + 40 },
-            { id: 'top_right', x: xMax - desiredW - 40, y: yMin + 40 },
-            { id: 'bottom_left', x: xMin + 40, y: yMax - desiredH - 40 },
-            { id: 'bottom_right', x: xMax - desiredW - 40, y: yMax - desiredH - 40 }
-        ];
+        // Case C: Contiguous whitespace scanner prioritizing left-most available space first (User Mandate)
+        const candXs = new Set([xMin]);
+        const candYs = new Set([yMin]);
 
-        let bestZone = zones[0];
-        let minOverlapScore = Infinity;
-
-        for (const zone of zones) {
-            const zBox = { x1: zone.x, y1: zone.y, x2: zone.x + desiredW, y2: zone.y + desiredH };
-            let overlapCount = 0;
-            for (const obs of obstacles) {
-                const overlap = !(zBox.x2 < obs.x1 || zBox.x1 > obs.x2 || zBox.y2 < obs.y1 || zBox.y1 > obs.y2);
-                if (overlap) overlapCount++;
-            }
-            if (overlapCount < minOverlapScore) {
-                minOverlapScore = overlapCount;
-                bestZone = zone;
-                if (overlapCount === 0) break;
-            }
+        for (const obs of obstacles) {
+            if (obs.x2 + margin <= xMax - desiredW) candXs.add(obs.x2 + margin);
+            if (obs.x1 - desiredW - margin >= xMin) candXs.add(obs.x1 - desiredW - margin);
+            if (obs.y2 + margin <= yMax - desiredH) candYs.add(obs.y2 + margin);
+            if (obs.y1 - desiredH - margin >= yMin) candYs.add(obs.y1 - desiredH - margin);
         }
 
+        // Add regular grid sweep across viewport to discover free gaps between shapes
+        for (let x = xMin; x <= xMax - desiredW; x += 60) candXs.add(x);
+        for (let y = yMin; y <= yMax - desiredH; y += 60) candYs.add(y);
+
+        // Sort candidate positions: X ascending (prioritizing left-most first), then Y ascending (top-most second)
+        const sortedXs = Array.from(candXs).map(x => Math.round(x)).filter(x => x >= xMin && x <= xMax - desiredW).sort((a, b) => a - b);
+        const sortedYs = Array.from(candYs).map(y => Math.round(y)).filter(y => y >= yMin && y <= yMax - desiredH).sort((a, b) => a - b);
+
+        let bestSlot = null;
+
+        for (const cx of sortedXs) {
+            for (const cy of sortedYs) {
+                const boxX1 = cx;
+                const boxY1 = cy;
+                const boxX2 = cx + desiredW;
+                const boxY2 = cy + desiredH;
+
+                const collides = obstacles.some(obs => {
+                    const noOverlap = (boxX2 < obs.x1 - 10) || (boxX1 > obs.x2 + 10) || (boxY2 < obs.y1 - 10) || (boxY1 > obs.y2 + 10);
+                    return !noOverlap;
+                });
+
+                if (!collides) {
+                    bestSlot = { x: cx, y: cy };
+                    break;
+                }
+            }
+            if (bestSlot) break;
+        }
+
+        if (bestSlot) {
+            return {
+                x: bestSlot.x,
+                y: bestSlot.y,
+                width: desiredW,
+                height: desiredH,
+                hasSpace: true,
+                overlapCount: 0
+            };
+        }
+
+        // If no contiguous slot fits without collision, mark page as having no space
         return {
-            x: Math.round(Math.max(xMin, Math.min(xMax - desiredW, bestZone.x))),
-            y: Math.round(Math.max(yMin, Math.min(yMax - desiredH, bestZone.y))),
+            x: Math.round(xMin),
+            y: Math.round(yMin),
             width: desiredW,
             height: desiredH,
-            hasSpace: minOverlapScore === 0,
-            overlapCount: minOverlapScore
+            hasSpace: false,
+            overlapCount: 1
         };
     }, [currentPage, pageShapeObjects, page3DObjects, pageTextObjects, pageImageObjects, panOffset, zoomLevel]);
 
@@ -10600,6 +10703,44 @@ export default function Whiteboard({
 
         requestAnimationFrame(frame);
     }, []);
+
+    // 3.1 Immersive Live Teacher AI Action Dispatcher (Pointer glides to target, speaks inline, then executes)
+    const dispatchTeacherAction = useCallback(async ({ x, y, actionText = 'Teaching...', duration = 380, onExecute }) => {
+        const cWidth = canvasRef.current?.width || 1200;
+        const cHeight = canvasRef.current?.height || 800;
+        const curX = teacherLaser ? teacherLaser.x : Math.round((cWidth / 2 - panOffset.x) / zoomLevel);
+        const curY = teacherLaser ? teacherLaser.y : Math.round((cHeight / 2 - panOffset.y) / zoomLevel);
+
+        const targetX = Math.round(x !== undefined ? x : curX);
+        const targetY = Math.round(y !== undefined ? y : curY);
+
+        const waypoints = [
+            { x: curX, y: curY, label: '👨‍🏫 AI Teacher', action: actionText },
+            { x: targetX, y: targetY, label: '👨‍🏫 AI Teacher', action: actionText }
+        ];
+
+        return new Promise(resolve => {
+            animateTeacherLaserPath(waypoints, duration, null, () => {
+                setTeacherLaser({
+                    x: targetX,
+                    y: targetY,
+                    active: true,
+                    label: '👨‍🏫 AI Teacher',
+                    action: actionText
+                });
+                try {
+                    onExecute && onExecute();
+                } catch (e) {
+                    console.error('Error in teacher action execution:', e);
+                }
+                setTimeout(() => {
+                    setTeacherLaser(null);
+                    setTeacherLaserTrail([]);
+                    resolve();
+                }, 550);
+            });
+        });
+    }, [teacherLaser, animateTeacherLaserPath, panOffset, zoomLevel]);
 
     // 4. Simulated Teacher Toolbar Selection (AI glides pointer to toolbar, clicks tool, returns to canvas)
     const animateTeacherToolbarSelection = useCallback((targetToolName = 'shape', targetLabel = 'Selecting Tool', onComplete = null) => {
@@ -12063,7 +12204,16 @@ export default function Whiteboard({
                             }
                         }
                         else if (action.type === 'ALIGN_OBJECT' && action.alignment) {
-                            handleAlign(action.alignment);
+                            const curShapes = pageShapeObjects[currentPageRef.current] || [];
+                            const alignX = curShapes.length > 0 ? Math.round((curShapes[0].x || cx) + (curShapes[0].width || 100) / 2) : cx;
+                            const alignY = curShapes.length > 0 ? Math.round((curShapes[0].y || cy) + (curShapes[0].height || 100) / 2) : cy;
+                            await dispatchTeacherAction({
+                                x: alignX,
+                                y: alignY,
+                                actionText: `Aligning shapes ${action.alignment}...`,
+                                duration: 320,
+                                onExecute: () => handleAlign(action.alignment)
+                            });
                         }
                         else if (action.type === 'DISTRIBUTE_OBJECTS' && action.axis) {
                             handleDistribute(action.axis);
@@ -12091,293 +12241,293 @@ export default function Whiteboard({
                             });
                         } 
                         else if (action.type === 'CREATE_OBJECT') {
-                            const isMathOrLesson = ['right_triangle', 'triangle', 'coordinate_system', 'cartesian_plane', 'circle', 'lesson_board'].includes(action.objectType);
+                            // Calculate bounding box for incoming object to scan available contiguous spaces
+                            let objW = 240;
+                            let objH = 200;
+                            if (action.objectType === '3d_model') {
+                                const rawSize = action.size || action.width || (action.radius ? action.radius * 2 : 240);
+                                objW = Math.max(30, Number(rawSize));
+                                objH = objW;
+                            } else if (action.objectType === 'sticky_note') {
+                                objW = 200; objH = 180;
+                            } else if (action.objectType === 'right_triangle') {
+                                objW = Number(action.width) || 240; objH = Number(action.height) || 180;
+                            } else if (action.objectType === 'triangle') {
+                                objW = Number(action.width) || Number(action.size) || 200; objH = Number(action.height) || Math.round(objW * 0.86);
+                            } else if (action.objectType === 'square') {
+                                objW = Number(action.size) || Number(action.width) || 140; objH = objW;
+                            } else if (action.objectType === 'rectangle') {
+                                objW = Number(action.width) || 220; objH = Number(action.height) || 140;
+                            } else if (action.objectType === 'circle') {
+                                const r = Number(action.radius) || (action.width ? Number(action.width) / 2 : 75);
+                                objW = r * 2; objH = r * 2;
+                            } else if (action.objectType === 'coordinate_system' || action.objectType === 'cartesian_plane') {
+                                objW = Number(action.width) || 300; objH = Number(action.height) || 300;
+                            } else if (action.objectType === 'line' || action.objectType === 'arrow') {
+                                objW = Number(action.width) || 160; objH = 40;
+                            } else if (action.objectType === 'drawing' || action.objectType === 'svg' || action.objectType === 'sketch' || action.svg) {
+                                objW = Number(action.width) || 280; objH = Number(action.height) || 280;
+                            }
+
+                            // Scan available contiguous spaces prioritizing left-most slot first (User Mandate)
+                            const freeSpace = findAvailableCanvasSpace(objW, objH);
                             const activeCount = (pageShapeObjects[currentPageRef.current]?.length || 0) + (page3DObjects[currentPageRef.current]?.length || 0);
-                            if (!hasAutoPagedForTurn && isMathOrLesson && activeCount >= 3) {
+
+                            // Only auto-page if current page genuinely has NO contiguous space that fits the object and already has 4+ objects
+                            if (!hasAutoPagedForTurn && !freeSpace.hasSpace && activeCount >= 4) {
                                 hasAutoPagedForTurn = true;
                                 addNewPage();
-                                toast.info('📄 Board was full — created fresh board for new problem', { icon: '✨' });
+                                toast.info('📄 Board was full — created fresh board for new content', { icon: '✨' });
                             }
 
                             const actStroke = action.strokeWidth !== undefined ? Number(action.strokeWidth) : (action.border !== undefined ? Number(action.border) : strokeWidth || 3);
                             const actColor = action.color || color || '#3b82f6';
                             const actFill = action.fillColor || fillColor || 'transparent';
 
-                            if (action.objectType === '3d_model') {
-                                const rawSize = action.size || action.width || (action.radius ? action.radius * 2 : 240);
-                                const size = Math.max(30, Number(rawSize));
-                                executeAiCanvasAction({ 
-                                    type: 'insert_3d_model', 
-                                    modelType: action.modelType || 'sphere', 
-                                    color: actColor,
-                                    width: size,
-                                    height: size,
-                                    x: action.x !== undefined ? Number(action.x) : undefined, 
-                                    y: action.y !== undefined ? Number(action.y) : undefined,
-                                    edgeWidth: action.strokeWidth !== undefined ? Number(action.strokeWidth) : undefined
-                                });
-                            } else if (action.objectType === 'sticky_note') {
-                                const nx = action.x || cx - 100;
-                                const ny = action.y || cy - 100;
-                                const note = createStickyNoteObject(nx, ny, action.color || 'yellow');
-                                note.text = action.text || '';
-                                setPageShapeObjects(prev => ({
-                                    ...prev,
-                                    [currentPage]: [...(prev[currentPage] || []), note]
-                                }));
-                            } else if (action.objectType === 'right_triangle') {
-                                const w = Number(action.width) || 240;
-                                const h = Number(action.height) || 180;
-                                const defaultPx = Math.round(cx - w / 2);
-                                const defaultPy = Math.round(cy - h / 2);
-                                const px = (action.x !== undefined && action.x < (canvas?.width || 1200) - w - 40) ? Number(action.x) : defaultPx;
-                                const py = (action.y !== undefined && action.y < (canvas?.height || 800) - h - 40) ? Number(action.y) : defaultPy;
-                                spawnVoiceShape({
-                                    type: 'right_triangle',
-                                    x: px,
-                                    y: py,
-                                    width: w,
-                                    height: h,
-                                    color: actColor,
-                                    strokeWidth: actStroke,
-                                    fillColor: actFill,
-                                    showRightAngle: action.showRightAngle !== false,
-                                    vertexLabels: action.vertexLabels || ['A', 'B', 'C'],
-                                    edgeLabels: action.edgeLabels || [],
-                                    angleLabels: action.angleLabels || null
-                                });
-                            } else if (action.objectType === 'triangle') {
-                                const w = Number(action.width) || Number(action.size) || 200;
-                                const h = Number(action.height) || Math.round(w * 0.86);
-                                const defaultPx = Math.round(cx - w / 2);
-                                const defaultPy = Math.round(cy - h / 2);
-                                const px = (action.x !== undefined && action.x < (canvas?.width || 1200) - w - 40) ? Number(action.x) : defaultPx;
-                                const py = (action.y !== undefined && action.y < (canvas?.height || 800) - h - 40) ? Number(action.y) : defaultPy;
-                                spawnVoiceShape({
-                                    type: 'triangle',
-                                    x: px,
-                                    y: py,
-                                    width: w,
-                                    height: h,
-                                    color: actColor,
-                                    strokeWidth: actStroke,
-                                    fillColor: actFill,
-                                    vertexLabels: action.vertexLabels || null,
-                                    edgeLabels: action.edgeLabels || null,
-                                    dashedAltitude: action.dashedAltitude || false,
-                                    altitudeLabel: action.altitudeLabel || 'h'
-                                });
-                            } else if (action.objectType === 'square') {
-                                const side = Number(action.size) || Number(action.width) || 140;
-                                const defaultPx = Math.round(cx - side / 2);
-                                const defaultPy = Math.round(cy - side / 2);
-                                const px = (action.x !== undefined && action.x < (canvas?.width || 1200) - side - 40) ? Number(action.x) : defaultPx;
-                                const py = (action.y !== undefined && action.y < (canvas?.height || 800) - side - 40) ? Number(action.y) : defaultPy;
-                                spawnVoiceShape({
-                                    type: 'rectangle',
-                                    x: px,
-                                    y: py,
-                                    width: side,
-                                    height: side,
-                                    color: actColor,
-                                    strokeWidth: actStroke,
-                                    fillColor: actFill,
-                                    showRightAngle: action.showRightAngle || false,
-                                    vertexLabels: action.vertexLabels || null,
-                                    edgeLabels: action.edgeLabels || null
-                                });
-                            } else if (action.objectType === 'rectangle') {
-                                const w = Number(action.width) || 220;
-                                const h = Number(action.height) || 140;
-                                const defaultPx = Math.round(cx - w / 2);
-                                const defaultPy = Math.round(cy - h / 2);
-                                const px = (action.x !== undefined && action.x < (canvas?.width || 1200) - w - 40) ? Number(action.x) : defaultPx;
-                                const py = (action.y !== undefined && action.y < (canvas?.height || 800) - h - 40) ? Number(action.y) : defaultPy;
-                                spawnVoiceShape({
-                                    type: 'rectangle',
-                                    x: px,
-                                    y: py,
-                                    width: w,
-                                    height: h,
-                                    color: actColor,
-                                    strokeWidth: actStroke,
-                                    fillColor: actFill,
-                                    showRightAngle: action.showRightAngle || false,
-                                    vertexLabels: action.vertexLabels || null,
-                                    edgeLabels: action.edgeLabels || null
-                                });
-                            } else if (action.objectType === 'circle') {
-                                const r = Number(action.radius) || (action.width ? Number(action.width) / 2 : 75);
-                                const defaultPx = Math.round(cx - r);
-                                const defaultPy = Math.round(cy - r);
-                                const px = (action.x !== undefined && action.x < (canvas?.width || 1200) - r * 2 - 40) ? Number(action.x) : defaultPx;
-                                const py = (action.y !== undefined && action.y < (canvas?.height || 800) - r * 2 - 40) ? Number(action.y) : defaultPy;
-                                spawnVoiceShape({
-                                    type: 'circle',
-                                    x: px,
-                                    y: py,
-                                    width: r * 2,
-                                    height: r * 2,
-                                    color: actColor,
-                                    strokeWidth: actStroke,
-                                    fillColor: actFill,
-                                    showCenter: action.showCenter !== undefined ? action.showCenter : !!action.centerLabel,
-                                    centerLabel: action.centerLabel || (action.showCenter ? 'O' : null),
-                                    showRadius: action.showRadius !== undefined ? action.showRadius : !!action.radiusLabel,
-                                    radiusLabel: action.radiusLabel || (action.showRadius ? 'r' : null),
-                                    diameterLabel: action.diameterLabel || null
-                                });
-                            } else if (action.objectType === 'coordinate_system' || action.objectType === 'cartesian_plane') {
-                                const w = Number(action.width) || 300;
-                                const h = Number(action.height) || 300;
-                                const defaultPx = Math.round(cx - w / 2);
-                                const defaultPy = Math.round(cy - h / 2);
-                                const px = (action.x !== undefined && action.x < (canvas?.width || 1200) - w - 40) ? Number(action.x) : defaultPx;
-                                const py = (action.y !== undefined && action.y < (canvas?.height || 800) - h - 40) ? Number(action.y) : defaultPy;
-                                spawnVoiceShape({
-                                    type: 'coordinate_system',
-                                    x: px,
-                                    y: py,
-                                    width: w,
-                                    height: h,
-                                    color: actColor,
-                                    strokeWidth: actStroke || 2,
-                                    plottedPoints: action.plottedPoints || null
-                                });
-                            } else if (action.objectType === 'line') {
-                                const len = action.width || 160;
-                                const px = action.x !== undefined ? action.x : Math.round(cx - len / 2);
-                                const py = action.y !== undefined ? action.y : cy;
-                                spawnVoiceShape({
-                                    type: 'line',
-                                    x: px,
-                                    y: py,
-                                    width: len,
-                                    height: 0,
-                                    startX: 0,
-                                    startY: 0,
-                                    endX: len,
-                                    endY: 0,
-                                    color: actColor,
-                                    strokeWidth: actStroke
-                                });
-                            } else if (action.objectType === 'arrow') {
-                                const len = action.width || 160;
-                                const px = action.x !== undefined ? action.x : Math.round(cx - len / 2);
-                                const py = action.y !== undefined ? action.y : cy;
-                                spawnVoiceShape({
-                                    type: 'arrow',
-                                    x: px,
-                                    y: py,
-                                    width: len,
-                                    height: 0,
-                                    startX: 0,
-                                    startY: 0,
-                                    endX: len,
-                                    endY: 0,
-                                    color: actColor,
-                                    strokeWidth: actStroke
-                                });
-                            } else if (action.objectType === 'star') {
-                                const s = action.width || action.size || 120;
-                                spawnVoiceShape({
-                                    type: 'star',
-                                    x: action.x !== undefined ? action.x : Math.round(cx - s / 2),
-                                    y: action.y !== undefined ? action.y : Math.round(cy - s / 2),
-                                    width: s,
-                                    height: s,
-                                    color: actColor,
-                                    strokeWidth: actStroke,
-                                    fillColor: actFill
-                                });
-                            } else if (action.objectType === 'diamond') {
-                                const s = action.width || action.size || 110;
-                                spawnVoiceShape({
-                                    type: 'diamond',
-                                    x: action.x !== undefined ? action.x : Math.round(cx - s / 2),
-                                    y: action.y !== undefined ? action.y : Math.round(cy - s / 2),
-                                    width: s,
-                                    height: s,
-                                    color: actColor,
-                                    strokeWidth: actStroke,
-                                    fillColor: actFill
-                                });
-                            } else if (action.objectType === 'pentagon' || action.objectType === 'hexagon') {
-                                const s = action.width || action.size || 120;
-                                spawnVoiceShape({
-                                    type: action.objectType,
-                                    x: action.x !== undefined ? action.x : Math.round(cx - s / 2),
-                                    y: action.y !== undefined ? action.y : Math.round(cy - s / 2),
-                                    width: s,
-                                    height: action.objectType === 'hexagon' ? Math.round(s * 0.9) : s,
-                                    color: actColor,
-                                    strokeWidth: actStroke,
-                                    fillColor: actFill
-                                });
-                            } else if (action.objectType === 'drawing' || action.objectType === 'svg' || action.objectType === 'sketch' || action.svg || (action.objectType === 'text' && /\b(draw|sketch|illustrate)\b/i.test(rawText))) {
-                                const promptSubject = action.title || action.prompt || action.name || (rawText.match(/\b(?:draw|sketch|illustrate)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-]+)/i) || [])[1] || action.text || 'drawing';
-                                const item = getBuiltinIllustration(promptSubject) || getBuiltinIllustration(rawText);
-                                const rawSvg = action.svg || (item ? item.svg : getBuiltinIllustrationSvg(promptSubject, actColor));
-                                const title = action.title || (item ? item.title : (promptSubject ? promptSubject.replace(/^(draw\s+a\s+|draw\s+an\s+|draw\s+)/i, '') : 'Drawing'));
-                                const w = Number(action.width) || (item ? item.width : 280);
-                                const h = Number(action.height) || (item ? item.height : 280);
-                                const defaultPx = Math.round(cx - w / 2);
-                                const defaultPy = Math.round(cy - h / 2);
-                                const px = (action.x !== undefined && action.x < (canvas?.width || 1200) - w - 40) ? Number(action.x) : defaultPx;
-                                const py = (action.y !== undefined && action.y < (canvas?.height || 800) - h - 40) ? Number(action.y) : defaultPy;
-                                spawnVoiceShape({
-                                    type: 'drawing',
-                                    title: title,
-                                    svg: rawSvg,
-                                    x: px,
-                                    y: py,
-                                    width: w,
-                                    height: h,
-                                    color: actColor,
-                                    strokeWidth: actStroke,
-                                    fillColor: actFill
-                                });
-                            } else if (action.objectType === 'text') {
-                                const trimmed = (action.text || '').trim();
-                                const isEmoji = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F)$/u.test(trimmed);
-                                const illustrationFromText = getBuiltinIllustration(rawText) || getBuiltinIllustration(trimmed);
-                                if (isEmoji && illustrationFromText) {
-                                    const w = illustrationFromText.width || 280;
-                                    const h = illustrationFromText.height || 280;
+                            // Determine target position: use user-specified coords or available contiguous space (prioritize left-most first)
+                            const defaultPx = freeSpace.hasSpace ? freeSpace.x : Math.max(20, Math.round(cx - objW / 2));
+                            const defaultPy = freeSpace.hasSpace ? freeSpace.y : Math.max(20, Math.round(cy - objH / 2));
+                            const targetPx = action.x !== undefined ? Number(action.x) : defaultPx;
+                            const targetPy = action.y !== undefined ? Number(action.y) : defaultPy;
+
+                            const performCreation = () => {
+                                if (action.objectType === '3d_model') {
+                                    executeAiCanvasAction({ 
+                                        type: 'insert_3d_model', 
+                                        modelType: action.modelType || 'sphere', 
+                                        color: actColor,
+                                        width: objW,
+                                        height: objH,
+                                        x: targetPx, 
+                                        y: targetPy,
+                                        edgeWidth: action.strokeWidth !== undefined ? Number(action.strokeWidth) : undefined
+                                    });
+                                } else if (action.objectType === 'sticky_note') {
+                                    const note = createStickyNoteObject(targetPx, targetPy, action.color || 'yellow');
+                                    note.text = action.text || '';
+                                    setPageShapeObjects(prev => ({
+                                        ...prev,
+                                        [currentPage]: [...(prev[currentPage] || []), note]
+                                    }));
+                                } else if (action.objectType === 'right_triangle') {
                                     spawnVoiceShape({
-                                        type: 'drawing',
-                                        title: illustrationFromText.title,
-                                        svg: illustrationFromText.svg,
-                                        x: Math.round(cx - w / 2),
-                                        y: Math.round(cy - h / 2),
-                                        width: w,
-                                        height: h,
+                                        type: 'right_triangle',
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: objH,
+                                        color: actColor,
+                                        strokeWidth: actStroke,
+                                        fillColor: actFill,
+                                        showRightAngle: action.showRightAngle !== false,
+                                        vertexLabels: action.vertexLabels || ['A', 'B', 'C'],
+                                        edgeLabels: action.edgeLabels || [],
+                                        angleLabels: action.angleLabels || null
+                                    });
+                                } else if (action.objectType === 'triangle') {
+                                    spawnVoiceShape({
+                                        type: 'triangle',
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: objH,
+                                        color: actColor,
+                                        strokeWidth: actStroke,
+                                        fillColor: actFill,
+                                        vertexLabels: action.vertexLabels || null,
+                                        edgeLabels: action.edgeLabels || null,
+                                        dashedAltitude: action.dashedAltitude || false,
+                                        altitudeLabel: action.altitudeLabel || 'h'
+                                    });
+                                } else if (action.objectType === 'square') {
+                                    spawnVoiceShape({
+                                        type: 'rectangle',
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: objH,
+                                        color: actColor,
+                                        strokeWidth: actStroke,
+                                        fillColor: actFill,
+                                        showRightAngle: action.showRightAngle || false,
+                                        vertexLabels: action.vertexLabels || null,
+                                        edgeLabels: action.edgeLabels || null
+                                    });
+                                } else if (action.objectType === 'rectangle') {
+                                    spawnVoiceShape({
+                                        type: 'rectangle',
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: objH,
+                                        color: actColor,
+                                        strokeWidth: actStroke,
+                                        fillColor: actFill,
+                                        showRightAngle: action.showRightAngle || false,
+                                        vertexLabels: action.vertexLabels || null,
+                                        edgeLabels: action.edgeLabels || null
+                                    });
+                                } else if (action.objectType === 'circle') {
+                                    const r = Math.round(objW / 2);
+                                    spawnVoiceShape({
+                                        type: 'circle',
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: r * 2,
+                                        height: r * 2,
+                                        color: actColor,
+                                        strokeWidth: actStroke,
+                                        fillColor: actFill,
+                                        showCenter: action.showCenter !== undefined ? action.showCenter : !!action.centerLabel,
+                                        centerLabel: action.centerLabel || (action.showCenter ? 'O' : null),
+                                        showRadius: action.showRadius !== undefined ? action.showRadius : !!action.radiusLabel,
+                                        radiusLabel: action.radiusLabel || (action.showRadius ? 'r' : null),
+                                        diameterLabel: action.diameterLabel || null
+                                    });
+                                } else if (action.objectType === 'coordinate_system' || action.objectType === 'cartesian_plane') {
+                                    spawnVoiceShape({
+                                        type: 'coordinate_system',
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: objH,
+                                        color: actColor,
+                                        strokeWidth: actStroke || 2,
+                                        plottedPoints: action.plottedPoints || null
+                                    });
+                                } else if (action.objectType === 'line') {
+                                    spawnVoiceShape({
+                                        type: 'line',
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: 0,
+                                        startX: 0,
+                                        startY: 0,
+                                        endX: objW,
+                                        endY: 0,
+                                        color: actColor,
+                                        strokeWidth: actStroke
+                                    });
+                                } else if (action.objectType === 'arrow') {
+                                    spawnVoiceShape({
+                                        type: 'arrow',
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: 0,
+                                        startX: 0,
+                                        startY: 0,
+                                        endX: objW,
+                                        endY: 0,
+                                        color: actColor,
+                                        strokeWidth: actStroke
+                                    });
+                                } else if (action.objectType === 'star') {
+                                    spawnVoiceShape({
+                                        type: 'star',
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: objH,
                                         color: actColor,
                                         strokeWidth: actStroke,
                                         fillColor: actFill
                                     });
-                                } else {
-                                    const px = action.x !== undefined ? action.x : cx - 100;
-                                    const py = action.y !== undefined ? action.y : cy;
-                                    const newText = {
-                                        id: Date.now().toString(),
-                                        text: action.text || 'Text',
-                                        x: px,
-                                        y: py,
-                                        fontSize: action.fontSize || 24,
-                                        fontFamily: 'sans-serif',
-                                        color: actColor
-                                    };
-                                    setTextObjects(prev => [...prev, newText]);
-                                    saveToHistory();
+                                } else if (action.objectType === 'diamond') {
+                                    spawnVoiceShape({
+                                        type: 'diamond',
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: objH,
+                                        color: actColor,
+                                        strokeWidth: actStroke,
+                                        fillColor: actFill
+                                    });
+                                } else if (action.objectType === 'pentagon' || action.objectType === 'hexagon') {
+                                    spawnVoiceShape({
+                                        type: action.objectType,
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: action.objectType === 'hexagon' ? Math.round(objW * 0.9) : objH,
+                                        color: actColor,
+                                        strokeWidth: actStroke,
+                                        fillColor: actFill
+                                    });
+                                } else if (action.objectType === 'drawing' || action.objectType === 'svg' || action.objectType === 'sketch' || action.svg || (action.objectType === 'text' && /\b(draw|sketch|illustrate)\b/i.test(rawText))) {
+                                    const promptSubject = action.title || action.prompt || action.name || (rawText.match(/\b(?:draw|sketch|illustrate)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-]+)/i) || [])[1] || action.text || 'drawing';
+                                    const item = getBuiltinIllustration(promptSubject) || getBuiltinIllustration(rawText);
+                                    const rawSvg = action.svg || (item ? item.svg : getBuiltinIllustrationSvg(promptSubject, actColor));
+                                    const title = action.title || (item ? item.title : (promptSubject ? promptSubject.replace(/^(draw\s+a\s+|draw\s+an\s+|draw\s+)/i, '') : 'Drawing'));
+                                    spawnVoiceShape({
+                                        type: 'drawing',
+                                        title: title,
+                                        svg: rawSvg,
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: objH,
+                                        color: actColor,
+                                        strokeWidth: actStroke,
+                                        fillColor: actFill
+                                    });
+                                } else if (action.objectType === 'text') {
+                                    const trimmed = (action.text || '').trim();
+                                    const isEmoji = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F)$/u.test(trimmed);
+                                    const illustrationFromText = getBuiltinIllustration(rawText) || getBuiltinIllustration(trimmed);
+                                    if (isEmoji && illustrationFromText) {
+                                        spawnVoiceShape({
+                                            type: 'drawing',
+                                            title: illustrationFromText.title,
+                                            svg: illustrationFromText.svg,
+                                            x: targetPx,
+                                            y: targetPy,
+                                            width: illustrationFromText.width || 280,
+                                            height: illustrationFromText.height || 280,
+                                            color: actColor,
+                                            strokeWidth: actStroke,
+                                            fillColor: actFill
+                                        });
+                                    } else {
+                                        const newText = {
+                                            id: Date.now().toString(),
+                                            text: action.text || 'Text',
+                                            x: targetPx,
+                                            y: targetPy,
+                                            fontSize: action.fontSize || 24,
+                                            fontFamily: 'sans-serif',
+                                            color: actColor
+                                        };
+                                        setTextObjects(prev => [...prev, newText]);
+                                        saveToHistory();
+                                    }
+                                } else if (action.objectType === 'lesson_board') {
+                                    executeAiCanvasAction({
+                                        type: 'create_lesson_board',
+                                        title: 'AI Explanation',
+                                        notes: [{ title: 'Explanation', text: action.text || '' }]
+                                    });
                                 }
-                            } else if (action.objectType === 'lesson_board') {
-                                executeAiCanvasAction({
-                                    type: 'create_lesson_board',
-                                    title: 'AI Explanation',
-                                    notes: [{ title: 'Explanation', text: action.text || '' }]
-                                });
-                            }
+                            };
+
+                            let teacherComment = 'Creating ' + (action.title || action.objectType || 'shape');
+                            if (action.objectType === 'drawing') teacherComment = 'Drawing ' + (action.title || 'illustration') + '...';
+                            else if (action.objectType === '3d_model') teacherComment = 'Spawning 3D ' + (action.modelType || 'model') + '...';
+                            else if (action.objectType === 'sticky_note') teacherComment = 'Writing note...';
+                            else if (action.objectType === 'text') teacherComment = 'Typing explanation...';
+                            else if (action.objectType === 'right_triangle' || action.objectType === 'triangle') teacherComment = 'Constructing geometry diagram...';
+                            else if (action.objectType === 'circle') teacherComment = 'Drawing circle...';
+                            else if (action.objectType === 'coordinate_system' || action.objectType === 'cartesian_plane') teacherComment = 'Plotting Cartesian grid...';
+
+                            await dispatchTeacherAction({
+                                x: targetPx + Math.round(objW / 2),
+                                y: targetPy + Math.round(objH / 2),
+                                actionText: teacherComment,
+                                duration: 340,
+                                onExecute: performCreation
+                            });
                         }
                         else if (action.type === 'DELETE_OBJECT') {
                             let tId = action.targetId;
@@ -12452,18 +12602,31 @@ export default function Whiteboard({
                             }
 
                             if (tId) {
-                                setShapeObjects(prev => prev.filter(s => s.id !== tId));
-                                setThreeDObjects(prev => prev.filter(s => s.id !== tId));
-                                setTextObjects(prev => prev.filter(s => s.id !== tId));
-                                setImageObjects(prev => prev.filter(s => s.id !== tId));
-                                setSelected3DIds(prev => prev.filter(x => x !== tId));
-                                setSelectedShapeIds(prev => prev.filter(x => x !== tId));
-                                setSelectedTextIds(prev => prev.filter(x => x !== tId));
-                                setSelectedImageIds(prev => prev.filter(x => x !== tId));
-                                saveToHistory();
-                                if (socket && sessionId) {
-                                    socket.emit('whiteboard:shape-delete', { sessionId, shapeId: tId });
-                                }
+                                const targetObj = curShapes.find(s => s.id === tId) || cur3D.find(o => o.id === tId) || curTexts.find(t => t.id === tId) || curImages.find(i => i.id === tId);
+                                const targetX = targetObj ? Math.round((targetObj.x || 0) + (targetObj.width || 80) / 2) : cx;
+                                const targetY = targetObj ? Math.round((targetObj.y || 0) + (targetObj.height || 80) / 2) : cy;
+                                const targetName = targetObj ? (targetObj.title || targetObj.modelType || targetObj.name || targetObj.type || 'object') : 'object';
+
+                                await dispatchTeacherAction({
+                                    x: targetX,
+                                    y: targetY,
+                                    actionText: `Deleting ${targetName}...`,
+                                    duration: 320,
+                                    onExecute: () => {
+                                        setShapeObjects(prev => prev.filter(s => s.id !== tId));
+                                        setThreeDObjects(prev => prev.filter(s => s.id !== tId));
+                                        setTextObjects(prev => prev.filter(s => s.id !== tId));
+                                        setImageObjects(prev => prev.filter(s => s.id !== tId));
+                                        setSelected3DIds(prev => prev.filter(x => x !== tId));
+                                        setSelectedShapeIds(prev => prev.filter(x => x !== tId));
+                                        setSelectedTextIds(prev => prev.filter(x => x !== tId));
+                                        setSelectedImageIds(prev => prev.filter(x => x !== tId));
+                                        saveToHistory();
+                                        if (socket && sessionId) {
+                                            socket.emit('whiteboard:shape-delete', { sessionId, shapeId: tId });
+                                        }
+                                    }
+                                });
                                 deletedCount++;
                             }
                         }
@@ -12517,8 +12680,9 @@ export default function Whiteboard({
                 }
             }
             
-            // If AI didn't recognize it or failed, check for local drawing command
-            const localDrawMatch = !isAiRetry && /\b(draw|sketch|illustrate)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-\s]+)/i.exec(txt);
+            // If AI didn't recognize it or failed, check for local drawing command (strictly excluding 3D model requests)
+            const is3DModelRequest = txt.includes('3d') || ['sphere', 'cube', 'box', 'pyramid', 'cylinder', 'cone', 'earth', 'sun', 'moon', 'mars', 'jupiter', 'saturn', 'rocket', 'atom', 'dna', 'molecule'].some(m => new RegExp(`\\b${m}\\b`, 'i').test(txt));
+            const localDrawMatch = !isAiRetry && !is3DModelRequest && /\b(draw|sketch|illustrate)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-\s]+)/i.exec(txt);
             if (localDrawMatch) {
                 const query = localDrawMatch[2].trim();
                 const item = getBuiltinIllustration(query);
@@ -12526,18 +12690,31 @@ export default function Whiteboard({
                 const drawingSvg = getBuiltinIllustrationSvg(query, color || '#3b82f6');
                 const w = item ? item.width : 280;
                 const h = item ? item.height : 280;
-                spawnVoiceShape({
-                    type: 'drawing',
-                    title: title,
-                    svg: drawingSvg,
-                    x: Math.round(cx - w / 2),
-                    y: Math.round(cy - h / 2),
-                    width: w,
-                    height: h,
-                    color: color || '#3b82f6',
-                    strokeWidth: strokeWidth || 3,
-                    fillColor: 'transparent'
+                const slot = findAvailableCanvasSpace(w, h);
+                const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - w / 2));
+                const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - h / 2));
+
+                await dispatchTeacherAction({
+                    x: targetX + Math.round(w / 2),
+                    y: targetY + Math.round(h / 2),
+                    actionText: `Drawing ${title}...`,
+                    duration: 350,
+                    onExecute: () => {
+                        spawnVoiceShape({
+                            type: 'drawing',
+                            title: title,
+                            svg: drawingSvg,
+                            x: targetX,
+                            y: targetY,
+                            width: w,
+                            height: h,
+                            color: color || '#3b82f6',
+                            strokeWidth: strokeWidth || 3,
+                            fillColor: 'transparent'
+                        });
+                    }
                 });
+
                 const speech = `Here is a vector drawing of a ${title} for the whiteboard!`;
                 if (aiSpeechEnabled) speakAiResponse(speech);
                 toast.success(speech, { icon: '🎨' });
@@ -12930,15 +13107,20 @@ export default function Whiteboard({
         }
 
         // Intent 2: Direct 3D Model Generative Action
-        // (e.g. "draw 3D earth", "insert 3D sun", "create 3D atom", "3D router", "3D DNA")
+        // (e.g. "draw 3D sphere", "insert 3D cube", "draw pyramid", "create 3D cylinder", "3D cone", "3D earth", "3D rocket")
         const is3DModelCommand =
-            (txt.includes('draw') || txt.includes('create') || txt.includes('insert') || txt.includes('show') || txt.includes('place') || txt.includes('make') || txt.includes('render') || txt.includes('spawn')) &&
-            (txt.includes('earth') || txt.includes('globe') || txt.includes('sun') || txt.includes('atom') || txt.includes('dna') || txt.includes('router') || txt.includes('rocket') || txt.includes('saturn') || txt.includes('mars') || txt.includes('jupiter') || txt.includes('moon') || txt.includes('molecule') || (txt.includes('3d') && !txt.includes('library') && !txt.includes('modal')));
+            (txt.includes('draw') || txt.includes('create') || txt.includes('insert') || txt.includes('show') || txt.includes('place') || txt.includes('make') || txt.includes('render') || txt.includes('spawn') || txt.includes('add')) &&
+            (txt.includes('earth') || txt.includes('globe') || txt.includes('sun') || txt.includes('atom') || txt.includes('dna') || txt.includes('router') || txt.includes('rocket') || txt.includes('saturn') || txt.includes('mars') || txt.includes('jupiter') || txt.includes('moon') || txt.includes('molecule') || txt.includes('sphere') || txt.includes('cube') || txt.includes('box') || txt.includes('pyramid') || txt.includes('cylinder') || txt.includes('cone') || (txt.includes('3d') && !txt.includes('library') && !txt.includes('modal')));
 
         if (is3DModelCommand) {
-            let modelType = 'earth';
-            let modelLabel = 'Planet Earth';
-            if (txt.includes('sun')) { modelType = 'sun'; modelLabel = 'The Sun'; }
+            let modelType = 'sphere';
+            let modelLabel = 'Sphere';
+            if (txt.includes('sphere')) { modelType = 'sphere'; modelLabel = 'Sphere'; }
+            else if (txt.includes('cube') || txt.includes('box')) { modelType = 'cube'; modelLabel = 'Cube'; }
+            else if (txt.includes('pyramid')) { modelType = 'pyramid'; modelLabel = 'Pyramid'; }
+            else if (txt.includes('cylinder')) { modelType = 'cylinder'; modelLabel = 'Cylinder'; }
+            else if (txt.includes('cone')) { modelType = 'cone'; modelLabel = 'Cone'; }
+            else if (txt.includes('sun')) { modelType = 'sun'; modelLabel = 'The Sun'; }
             else if (txt.includes('atom')) { modelType = 'atom'; modelLabel = 'Bohr Atom Model'; }
             else if (txt.includes('dna')) { modelType = 'dna_double_helix'; modelLabel = 'DNA Double Helix'; }
             else if (txt.includes('router')) { modelType = 'multwan_router'; modelLabel = 'Network Router'; }
@@ -12948,13 +13130,31 @@ export default function Whiteboard({
             else if (txt.includes('jupiter')) { modelType = 'jupiter'; modelLabel = 'Planet Jupiter'; }
             else if (txt.includes('moon')) { modelType = 'moon'; modelLabel = 'The Moon'; }
             else if (txt.includes('molecule')) { modelType = 'molecule'; modelLabel = 'Chemical Molecule'; }
+            else if (txt.includes('earth') || txt.includes('globe')) { modelType = 'earth'; modelLabel = 'Planet Earth'; }
 
-            executeAiCanvasAction({
-                type: 'insert_3d_model',
-                modelType,
-                name: `3D ${modelLabel}`,
-                color: '#6366f1'
+            const slot = findAvailableCanvasSpace(240, 240);
+            const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - 120));
+            const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - 120));
+
+            await dispatchTeacherAction({
+                x: targetX + 120,
+                y: targetY + 120,
+                actionText: `Spawning 3D ${modelLabel}...`,
+                duration: 350,
+                onExecute: () => {
+                    executeAiCanvasAction({
+                        type: 'insert_3d_model',
+                        modelType,
+                        name: `3D ${modelLabel}`,
+                        color: '#6366f1',
+                        x: targetX,
+                        y: targetY,
+                        width: 240,
+                        height: 240
+                    });
+                }
             });
+
             narrateAction(
                 `Placing interactive 3D model of ${modelLabel} on the whiteboard canvas. You can rotate it freely in 3D.`,
                 `🪐 Placed 3D ${modelLabel}`
@@ -14159,6 +14359,20 @@ export default function Whiteboard({
         }
 
         // 9. Object Manipulation, Alignment, Transformation & Image Filters
+        if (txt.includes('align horizontal') || txt.includes('align horizontally') || txt.includes('align objects horizontally') || txt.includes('align shapes horizontally') || txt.includes('align in a row') || txt.includes('line up horizontally')) {
+            const curShapes = pageShapeObjects[currentPage] || [];
+            const alignX = curShapes.length > 0 ? Math.round((curShapes[0].x || cx) + (curShapes[0].width || 100) / 2) : cx;
+            const alignY = curShapes.length > 0 ? Math.round((curShapes[0].y || cy) + (curShapes[0].height || 100) / 2) : cy;
+            await dispatchTeacherAction({
+                x: alignX,
+                y: alignY,
+                actionText: 'Aligning shapes horizontally...',
+                duration: 320,
+                onExecute: () => handleAlign('horizontal')
+            });
+            setVoiceFeedback('⇹ Aligned horizontally');
+            return;
+        }
         if (txt.includes('align left')) {
             handleAlign('left');
             setVoiceFeedback('⇤ Aligned left');
@@ -19293,8 +19507,27 @@ export default function Whiteboard({
                                     const viewBox = vbMatch ? vbMatch[1] : `0 0 ${shpObj.width || 280} ${shpObj.height || 280}`;
                                     const innerMatch = svgContent.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
                                     const inner = innerMatch ? innerMatch[1] : svgContent;
+                                    const isRecent = (Date.now() - (Number(shpObj.id) || 0)) < 7000;
                                     return (
-                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        <g className={isRecent ? `wb-drawing-anim-${shpObj.id}` : ''} style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            {isRecent && (
+                                                <style>{`
+                                                    @keyframes wbDrawProgress_${shpObj.id} {
+                                                        0% { stroke-dashoffset: 1600; fill-opacity: 0; }
+                                                        70% { stroke-dashoffset: 0; fill-opacity: 0.1; }
+                                                        100% { stroke-dashoffset: 0; fill-opacity: 1; }
+                                                    }
+                                                    .wb-drawing-anim-${shpObj.id} path,
+                                                    .wb-drawing-anim-${shpObj.id} line,
+                                                    .wb-drawing-anim-${shpObj.id} polyline,
+                                                    .wb-drawing-anim-${shpObj.id} polygon,
+                                                    .wb-drawing-anim-${shpObj.id} circle,
+                                                    .wb-drawing-anim-${shpObj.id} ellipse {
+                                                        stroke-dasharray: 1600;
+                                                        animation: wbDrawProgress_${shpObj.id} 1.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+                                                    }
+                                                `}</style>
+                                            )}
                                             <svg
                                                 x={0}
                                                 y={0}
@@ -20927,28 +21160,28 @@ export default function Whiteboard({
 
                     {teacherLaser && (
                         <div
-                            className="absolute pointer-events-none z-50 flex items-center transition-all duration-75"
+                            className="absolute pointer-events-none z-50 transition-all duration-100 ease-out"
                             style={{
                                 left: teacherLaser.x,
                                 top: teacherLaser.y,
                                 transform: 'translate(-50%, -50%)'
                             }}
                         >
-                            {/* Pulsing teacher laser emitter */}
-                            <div className="relative w-6 h-6 flex items-center justify-center">
-                                <div className="absolute inset-0 rounded-full bg-indigo-500 animate-ping opacity-75" />
-                                <div className="w-3.5 h-3.5 rounded-full bg-indigo-500 border-2 border-white shadow-lg shadow-indigo-500/80 ring-2 ring-indigo-300" />
-                                <div className="absolute -inset-1 rounded-full border border-indigo-400/50 animate-pulse" />
+                            {/* Pulsing teacher laser emitter with target ripple */}
+                            <div className="relative w-8 h-8 flex items-center justify-center">
+                                <div className={`absolute inset-0 rounded-full animate-ping opacity-75 ${teacherLaser.action?.toLowerCase().includes('delet') ? 'bg-rose-500' : 'bg-indigo-500'}`} />
+                                <div className={`w-4 h-4 rounded-full border-2 border-white shadow-xl ring-2 ${teacherLaser.action?.toLowerCase().includes('delet') ? 'bg-rose-600 ring-rose-300 shadow-rose-500/80' : 'bg-indigo-600 ring-indigo-300 shadow-indigo-500/80'}`} />
+                                <div className="absolute -inset-1.5 rounded-full border border-indigo-400/50 animate-pulse" />
                             </div>
-                            {/* Teacher label / action badge */}
-                            <div className="ml-2 px-2.5 py-1 bg-slate-900/95 text-white text-[11px] font-bold rounded-lg shadow-xl border border-indigo-500/50 backdrop-blur-md flex items-center gap-1.5 whitespace-nowrap">
-                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                                <span className="text-indigo-300 font-semibold">{teacherLaser.label || '👨‍🏫 AI Teacher'}</span>
-                                {teacherLaser.action && (
-                                    <span className="text-slate-300 font-normal border-l border-slate-700 pl-1.5">
-                                        {teacherLaser.action}
-                                    </span>
-                                )}
+                            {/* Teacher Talking Comic Speech Bubble with animated tail */}
+                            <div className="absolute left-6 -top-9 px-3 py-1.5 bg-slate-900/98 text-white text-xs font-semibold rounded-xl shadow-2xl border border-indigo-500/60 backdrop-blur-md flex items-center gap-2 whitespace-nowrap animate-in fade-in zoom-in-95 duration-150">
+                                <span className={`w-2.5 h-2.5 rounded-full animate-pulse shrink-0 ${teacherLaser.action?.toLowerCase().includes('delet') ? 'bg-rose-400' : 'bg-emerald-400'}`} />
+                                <span className="text-indigo-300 font-bold">{teacherLaser.label || '👨‍🏫 AI Teacher'}:</span>
+                                <span className="text-slate-100 font-medium">
+                                    {teacherLaser.action || 'Co-teaching...'}
+                                </span>
+                                {/* Small comic speech tail pointing to laser nib */}
+                                <div className="absolute -left-1.5 top-4 w-3 h-3 bg-slate-900 border-l border-b border-indigo-500/60 transform rotate-45" />
                             </div>
                         </div>
                     )}

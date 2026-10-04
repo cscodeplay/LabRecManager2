@@ -2235,13 +2235,13 @@ CRITICAL RULES:
      - Provide a direct, cohesive explanation (2 to 3 sentences) giving the formal scientific definition, physical intuition, and key equation/units if applicable.
      - Keep it crisp and direct so it fits neatly on screen and sounds completely natural when spoken.
   3. STRICTLY AVOID large walls of text, narrative essays, or unbroken paragraphs! Whiteboard teaching requires high visual clarity and minimal cognitive load.
-- **INTELLIGENT BOARD SPACE MANAGEMENT & AUTO-PAGINATION**:
-  Inspect BOARD SPACE STATUS below. If BOARD SPACE STATUS is 'CROWDED' or the board already contains 3+ objects, and the user asks a new question, theorem, math problem, or diagram:
-  1. PREPEND action at the start of actions array:
-     { "type": "UI_COMMAND", "command": "new page" }
-  2. In 'speechResponse', open with a brief natural teacher transition:
-     "Since our current board is full, let's open a fresh board to work through this cleanly."
-  3. Place your labeled diagram and lesson elements centered on the new board!
+- **INTELLIGENT BOARD SPACE MANAGEMENT & CONTIGUOUS SPACES**:
+  Inspect BOARD SPACE STATUS below.
+  ONLY prepend action '{ "type": "UI_COMMAND", "command": "new page" }' if:
+  1. The user explicitly asks for a "new page", "new board", or "clean board", OR
+  2. BOARD SPACE STATUS is explicitly 'CROWDED (Insufficient free space on current board - open a new page!)'.
+  If BOARD SPACE STATUS is 'AVAILABLE (Sufficient free space)', DO NOT create a new page!
+  The whiteboard automatically calculates object sizes and places objects into the available contiguous free space, prioritizing the left-most free slot first.
 - **REAL-LIFE PEDAGOGICAL TEACHING AUTOMATION**:
   Teach interactively like a master educator:
   - Connect spoken explanations to the visual diagram (refer explicitly to Vertex A, right angle B, base a, hypotenuse c).
@@ -2301,6 +2301,15 @@ CRITICAL RULES:
   3. Include "title": "<subject, e.g. 'cat', 'dog', 'car', 'tree', 'house'>" and optionally an SVG vector representation in "svg".
   4. Specify width: 280, height: 280, and omit x and y (or place centrally) so it renders prominently in the visible viewport.
   5. In 'speechResponse', give a natural, delightful confirmation: "Here is a drawing of a cat for your whiteboard!"
+- **3D OBJECTS & GEOMETRIC SOLIDS (SPHERE, CUBE, PYRAMID, CYLINDER, CONE, ROCKET, EARTH, ATOM, DNA, ETC.)**:
+  When the user asks to draw or create 3D objects (e.g. "draw 3D sphere", "draw a 3D cube", "draw cube", "draw pyramid", "create 3D cylinder", "draw 3D cone", "draw 3D earth", "3D rocket"):
+  1. ALWAYS output objectType: "3d_model" with modelType: "sphere | cube | pyramid | cylinder | cone | earth | sun | moon | mars | jupiter | saturn | atom | dna | rocket".
+  2. NEVER output objectType: "drawing" or text emojis for 3D requests! 3D models are full interactive Three.js 3D solids.
+  3. In 'speechResponse', state: "I've placed an interactive 3D [model] on the whiteboard."
+- **HORIZONTAL & VERTICAL ALIGNMENT**:
+  When the user asks to "align objects horizontally", "align shapes horizontally", or "line them up horizontally":
+  1. ALWAYS output action: '{ "type": "ALIGN_OBJECT", "alignment": "horizontal" }'.
+  2. In 'speechResponse', state: "I've aligned the shapes horizontally along the center axis."
 
 ${context.currentPage ? `ACTIVE WHITEBOARD PAGE: Page ${context.currentPage} of ${context.totalPages || 1}
 BOARD SPACE STATUS: ${context.isBoardCrowded ? 'CROWDED (Insufficient free space on current board - open a new page!)' : 'AVAILABLE (Sufficient free space)'} (Objects on current board: ${context.activeObjectsCount || 0})
@@ -2679,11 +2688,74 @@ Spoken input: "${text}"
                 intent = 'draw_line';
                 spokenFeedback = 'Drawing straight line';
             }
+            // Horizontal & Vertical Alignment
+            else if (low.includes('align horizontal') || low.includes('align horizontally') || low.includes('align objects horizontally') || low.includes('align shapes horizontally') || low.includes('horizontal align') || low.includes('align in a row') || low.includes('line up horizontally')) {
+                return {
+                    recognized: true,
+                    type: 'action',
+                    speechResponse: "I've aligned the shapes horizontally along the center axis.",
+                    spokenFeedback: "Aligned shapes horizontally",
+                    actions: [
+                        {
+                            type: 'ALIGN_OBJECT',
+                            alignment: 'horizontal'
+                        }
+                    ],
+                    suggestedFollowUps: [
+                        "⋯ Distribute horizontally",
+                        "⇤ Align left",
+                        "⇥ Align right",
+                        "📄 New blank board"
+                    ]
+                };
+            }
             // Creative Vector Drawings & Illustrations (e.g. "draw a cat", "draw a dog", "sketch a car", "draw a house")
-            else if (!isDeleteCommand && (/\b(draw|sketch|illustrate|paint)\b/i.test(low))) {
-                const artMatch = low.match(/\b(?:draw|sketch|illustrate|paint)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-]+)/i);
-                const subject = artMatch ? artMatch[1].trim() : 'drawing';
+            else if (!isDeleteCommand && (/\b(draw|sketch|illustrate|paint|spawn|render)\b/i.test(low))) {
+                const artMatch = low.match(/\b(?:draw|sketch|illustrate|paint|spawn|render)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-]+)/i);
+                let subject = artMatch ? artMatch[1].trim() : 'drawing';
                 const isGeometric = ['circle', 'square', 'rectangle', 'triangle', 'star', 'diamond', 'pentagon', 'hexagon', 'arrow', 'line'].includes(subject);
+                const is3DModel = ['sphere', 'cube', 'box', 'pyramid', 'cylinder', 'cone', 'earth', 'sun', 'moon', 'mars', 'jupiter', 'saturn', 'rocket', 'atom', 'dna', 'molecule'].includes(subject) || low.includes('3d');
+
+                if (is3DModel) {
+                    let mType = 'sphere';
+                    if (low.includes('cube') || low.includes('box')) mType = 'cube';
+                    else if (low.includes('pyramid')) mType = 'pyramid';
+                    else if (low.includes('cylinder')) mType = 'cylinder';
+                    else if (low.includes('cone')) mType = 'cone';
+                    else if (low.includes('sun')) mType = 'sun';
+                    else if (low.includes('atom')) mType = 'atom';
+                    else if (low.includes('dna')) mType = 'dna_double_helix';
+                    else if (low.includes('rocket')) mType = 'rocket';
+                    else if (low.includes('earth') || low.includes('globe')) mType = 'earth';
+                    else if (low.includes('saturn')) mType = 'saturn';
+                    else if (low.includes('mars')) mType = 'mars';
+                    else if (low.includes('jupiter')) mType = 'jupiter';
+                    else if (low.includes('moon')) mType = 'moon';
+                    else if (low.includes('sphere')) mType = 'sphere';
+
+                    return {
+                        recognized: true,
+                        type: 'action',
+                        speechResponse: `I've placed an interactive 3D ${mType} model onto the whiteboard.`,
+                        spokenFeedback: `Inserted 3D ${mType}`,
+                        actions: [
+                            {
+                                type: 'CREATE_OBJECT',
+                                objectType: '3d_model',
+                                modelType: mType,
+                                width: 240,
+                                height: 240
+                            }
+                        ],
+                        suggestedFollowUps: [
+                            `🔄 Rotate 3D ${mType}`,
+                            `🎨 Change ${mType} color`,
+                            `📐 Show dimensions`,
+                            `📄 Clear board`
+                        ]
+                    };
+                }
+
                 if (!isGeometric) {
                     return {
                         recognized: true,
