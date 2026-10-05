@@ -776,6 +776,25 @@ export const driveAdminAPI = {
     disconnectAccount: (accountId) => api.post('/drive/admin/accounts/disconnect', { accountId }),
 };
 
+// AI Quiz Maker API
+export const quizAPI = {
+    generate: (data) => api.post('/quiz/generate', data),
+    create: (data) => api.post('/quiz', data),
+    update: (id, data) => api.put(`/quiz/${id}`, data),
+    getAll: (params) => api.get('/quiz', { params }),
+    getMyResults: () => api.get('/quiz/my-results'),
+    getForTaking: (idOrCode) => api.get(`/quiz/take/${idOrCode}`),
+    getById: (id) => api.get(`/quiz/${id}`),
+    submit: (id, data) => api.post(`/quiz/${id}/submit`, data),
+    getResults: (id) => api.get(`/quiz/${id}/results`),
+    getSubmission: (submissionId) => api.get(`/quiz/submission/${submissionId}`),
+    delete: (id) => api.delete(`/quiz/${id}`),
+};
 
+// Research Browser API
+export const browserAPI = {
+    search: (params) => api.get('/browser/search', { params }),
+    getArticle: (params) => api.get('/browser/article', { params }),
+};
 
-
+export default api;

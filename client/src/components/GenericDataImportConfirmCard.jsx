@@ -32,32 +32,50 @@ const TABLE_FIELD_DEFINITIONS = {
     users: [
         { key: 'firstName', label: 'First Name', required: true, desc: 'Student first name' },
         { key: 'lastName', label: 'Last Name', required: false, desc: 'Student surname / last name' },
-        { key: 'email', label: 'Email', required: false, desc: 'Login email (auto-generated if empty)' },
-        { key: 'studentId', label: 'Student / Admission No', required: false, desc: 'Unique admission ID' },
+        { key: 'parentName', label: 'Father / Parent Name', required: false, desc: 'Father / guardian name' },
+        { key: 'email', label: 'Email Address', required: true, desc: 'Login email (auto-formatted with requested domain)' },
+        { key: 'studentId', label: 'Student / Admission No', required: false, desc: 'Unique admission / registration ID' },
         { key: 'rollNumber', label: 'Roll Number', required: false, desc: 'Class roll number' },
-        { key: 'phone', label: 'Contact Phone', required: false, desc: 'Mobile / parent contact' }
+        { key: 'phone', label: 'Contact Phone', required: false, desc: 'Mobile / parent contact' },
+        { key: 'gender', label: 'Gender', required: false, desc: 'Male / Female' }
     ],
     lab_items: [
-        { key: 'itemNumber', label: 'Item / Asset Number', required: false, desc: 'Asset identifier' },
-        { key: 'itemType', label: 'Equipment Type', required: false, desc: 'pc, monitor, keyboard, switch, etc.' },
+        { key: 'itemNumber', label: 'Item / Asset Number', required: true, desc: 'Asset identifier' },
+        { key: 'itemType', label: 'Equipment Type', required: true, desc: 'pc, monitor, keyboard, switch, etc.' },
         { key: 'brand', label: 'Brand / Make', required: false, desc: 'Dell, HP, Lenovo, Cisco, etc.' },
         { key: 'modelNo', label: 'Model Number', required: false, desc: 'Hardware model' },
         { key: 'serialNo', label: 'Serial Number', required: false, desc: 'Hardware serial tag' },
-        { key: 'status', label: 'Status / Condition', required: false, desc: 'working, maintenance, inactive' },
-        { key: 'specifications', label: 'Specifications', required: false, desc: 'RAM, CPU, storage, ports' }
+        { key: 'status', label: 'Status / Condition', required: false, desc: 'active, maintenance, inactive' },
+        { key: 'specs', label: 'Specifications', required: false, desc: 'RAM, CPU, storage, ports' }
     ],
     classes: [
-        { key: 'name', label: 'Class Name', required: true, desc: 'e.g. Class 11-A' },
-        { key: 'code', label: 'Class Code', required: false, desc: 'Unique code' },
-        { key: 'gradeLevel', label: 'Grade Level', required: false, desc: 'e.g. 10, 11, 12' },
-        { key: 'section', label: 'Section / Stream', required: false, desc: 'e.g. Science, A, B' },
-        { key: 'capacity', label: 'Capacity', required: false, desc: 'Max student capacity' }
+        { key: 'name', label: 'Class Name', required: true, desc: 'e.g. 11 Non-Medical A' },
+        { key: 'gradeLevel', label: 'Grade Level', required: true, desc: 'e.g. 10, 11, 12' },
+        { key: 'section', label: 'Section', required: false, desc: 'e.g. A, B, C' },
+        { key: 'stream', label: 'Stream', required: false, desc: 'Medical, Non-Medical, Arts, Commerce' },
+        { key: 'maxStudents', label: 'Capacity / Max Students', required: false, desc: 'Maximum student limit' }
     ],
     subjects: [
-        { key: 'name', label: 'Subject Name', required: true, desc: 'e.g. Engineering Mathematics' },
-        { key: 'code', label: 'Subject Code', required: false, desc: 'Subject code' },
-        { key: 'department', label: 'Department', required: false, desc: 'e.g. Computer Science' },
-        { key: 'credits', label: 'Credits', required: false, desc: 'Academic credits' }
+        { key: 'name', label: 'Subject Name', required: true, desc: 'e.g. Computer Science' },
+        { key: 'code', label: 'Subject Code', required: true, desc: 'e.g. CS101' },
+        { key: 'gradeLevel', label: 'Grade Level', required: false, desc: 'e.g. 11' },
+        { key: 'subjectType', label: 'Subject Type', required: false, desc: 'Theory / Practical / Vocational' },
+        { key: 'totalTheoryMarks', label: 'Theory Marks', required: false, desc: 'Max theory marks' },
+        { key: 'totalPracticalMarks', label: 'Practical Marks', required: false, desc: 'Max practical marks' }
+    ],
+    tickets: [
+        { key: 'title', label: 'Ticket Title', required: true, desc: 'Subject / issue summary' },
+        { key: 'description', label: 'Description', required: true, desc: 'Detailed explanation of problem' },
+        { key: 'category', label: 'Category', required: false, desc: 'hardware, software, network, other' },
+        { key: 'priority', label: 'Priority', required: false, desc: 'low, medium, high, urgent' },
+        { key: 'status', label: 'Status', required: false, desc: 'open, in_progress, resolved, closed' }
+    ],
+    procurement_requests: [
+        { key: 'itemName', label: 'Item Name', required: true, desc: 'Equipment or supply requested' },
+        { key: 'quantity', label: 'Quantity', required: true, desc: 'Number of units needed' },
+        { key: 'estimatedCost', label: 'Estimated Cost', required: false, desc: 'Approximate price' },
+        { key: 'priority', label: 'Priority', required: false, desc: 'low, medium, high' },
+        { key: 'justification', label: 'Justification', required: false, desc: 'Reason for procurement' }
     ]
 };
 
@@ -68,11 +86,11 @@ export default function GenericDataImportConfirmCard({ action }) {
     const [targetTable, setTargetTable] = useState(detectedTable);
     const [records, setRecords] = useState(() => (action.records || []).map((r, idx) => ({ ...r, _selected: true, _idx: idx })));
     const [columnMapping, setColumnMapping] = useState(() => action.columnMapping || {});
-    const [isMappingExpanded, setIsMappingExpanded] = useState(false);
+    const [isMappingExpanded, setIsMappingExpanded] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [loading, setLoading] = useState(false);
     const [isConfirmed, setIsConfirmed] = useState(action.isConfirmed || false);
-    const [importResult, setImportResult] = useState(null);
+    const [importResult, setImportResult] = useState(() => action.importResult || null);
     const [showErrorDetails, setShowErrorDetails] = useState(true);
     const [copiedError, setCopiedError] = useState(false);
 
@@ -112,8 +130,46 @@ export default function GenericDataImportConfirmCard({ action }) {
         return Object.keys(first).filter(k => !k.startsWith('_'));
     }, [records]);
 
+    const tableOptions = useMemo(() => {
+        if (action.tableOptions && Array.isArray(action.tableOptions) && action.tableOptions.length > 0) {
+            return action.tableOptions;
+        }
+        return [
+            { id: 'users', label: 'Students / Users (users)' },
+            { id: 'lab_items', label: 'Lab Inventory & Hardware (lab_items)' },
+            { id: 'classes', label: 'Academic Classes (classes)' },
+            { id: 'subjects', label: 'Curriculum Subjects (subjects)' },
+            { id: 'tickets', label: 'Helpdesk & Lab Tickets (tickets)' },
+            { id: 'procurement_requests', label: 'Procurement Requests (procurement_requests)' }
+        ];
+    }, [action.tableOptions]);
+
     // Table field options
-    const tableFields = TABLE_FIELD_DEFINITIONS[targetTable] || [];
+    const tableFields = useMemo(() => {
+        const opt = tableOptions.find(t => t.id === targetTable);
+        if (opt?.fields && Array.isArray(opt.fields) && opt.fields.length > 0) {
+            return opt.fields;
+        }
+        return TABLE_FIELD_DEFINITIONS[targetTable] || action.availableFields || [];
+    }, [targetTable, tableOptions, action.availableFields]);
+
+    const handleTableChange = (newTable) => {
+        setTargetTable(newTable);
+        const fields = TABLE_FIELD_DEFINITIONS[newTable] || tableOptions.find(t => t.id === newTable)?.fields || [];
+        const newMapping = {};
+        sourceHeaders.forEach(h => {
+            const normH = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+            for (const f of fields) {
+                const normK = f.key.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const aliases = (f.aliases || []).map(a => a.toLowerCase().replace(/[^a-z0-9]/g, ''));
+                if (normH === normK || aliases.includes(normH) || normH.includes(normK) || normK.includes(normH)) {
+                    newMapping[h] = f.key;
+                    break;
+                }
+            }
+        });
+        setColumnMapping(newMapping);
+    };
 
     // Filtered records for preview
     const filteredRecords = useMemo(() => {
@@ -163,7 +219,8 @@ export default function GenericDataImportConfirmCard({ action }) {
                 classId: selectedClassId,
                 labId: selectedLabId,
                 records: itemsToImport,
-                columnMapping
+                columnMapping,
+                emailDomain: action.emailDomain
             });
 
             if (res.data?.success) {
@@ -309,20 +366,18 @@ export default function GenericDataImportConfirmCard({ action }) {
                     )}
 
                     <div className="flex items-center gap-1.5">
-                        <label className="font-medium text-slate-500 dark:text-slate-400">Target Table:</label>
+                        <label className="font-semibold text-slate-700 dark:text-slate-300">Target Table:</label>
                         <select
                             value={targetTable}
                             disabled={isConfirmed}
-                            onChange={(e) => {
-                                setTargetTable(e.target.value);
-                                setColumnMapping({});
-                            }}
-                            className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-[11px] text-slate-700 dark:text-slate-300 font-mono"
+                            onChange={(e) => handleTableChange(e.target.value)}
+                            className="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold text-indigo-700 dark:text-indigo-300 shadow-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                         >
-                            <option value="users">users (Students)</option>
-                            <option value="lab_items">lab_items (Inventory)</option>
-                            <option value="classes">classes</option>
-                            <option value="subjects">subjects</option>
+                            {tableOptions.map(t => (
+                                <option key={t.id} value={t.id}>
+                                    🗄️ {t.label || t.id}
+                                </option>
+                            ))}
                         </select>
                     </div>
                 </div>
@@ -334,7 +389,7 @@ export default function GenericDataImportConfirmCard({ action }) {
                         className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 flex items-center gap-1 transition"
                     >
                         {isMappingExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                        Column Mapping ({Object.keys(columnMapping).length} mapped)
+                        Column Mapping ({Object.keys(columnMapping).filter(k => columnMapping[k] && columnMapping[k] !== '__ignore__').length} mapped)
                     </button>
                     <button
                         type="button"
@@ -347,64 +402,95 @@ export default function GenericDataImportConfirmCard({ action }) {
                 </div>
             </div>
 
-            {/* Collapsible Column Mapping Section */}
+            {/* Side-by-Side Column Mapping Section */}
             {isMappingExpanded && (
-                <div className="p-3.5 bg-indigo-50/40 dark:bg-indigo-950/30 border-b border-indigo-100 dark:border-indigo-900/50">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                            <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                            File Header to Database Field Mapping
-                        </span>
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                            Verify and adjust fields before importing
+                <div className="p-4 bg-slate-50/90 dark:bg-slate-900/80 border-b border-indigo-100 dark:border-indigo-900/50">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center">
+                                <FileSpreadsheet className="w-3.5 h-3.5" />
+                            </div>
+                            <div>
+                                <span className="font-bold text-slate-800 dark:text-slate-100 text-xs">
+                                    Side-by-Side Column Matching (AI-Auto-Mapped)
+                                </span>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    Review and customize how uploaded file columns map into destination <strong>{targetTable}</strong> fields.
+                                </p>
+                            </div>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
+                            {Object.keys(columnMapping).filter(k => columnMapping[k] && columnMapping[k] !== '__ignore__').length} of {sourceHeaders.length} Columns Mapped
                         </span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                        {sourceHeaders.map(header => {
-                            const currentTarget = columnMapping[header] || '';
-                            const isMapped = !!currentTarget;
-                            return (
-                                <div
-                                    key={header}
-                                    className={`p-2.5 rounded-xl border flex flex-col gap-1.5 transition ${
-                                        isMapped
-                                            ? 'bg-white dark:bg-slate-800 border-indigo-200 dark:border-indigo-800/80 shadow-xs'
-                                            : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800'
-                                    }`}
-                                >
-                                    <div className="flex items-center justify-between">
-                                        <span className="font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate" title={header}>
-                                            {header}
-                                        </span>
-                                        <span className={`text-[9px] px-1.5 py-0.2 rounded font-medium ${
-                                            isMapped
-                                                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                                                : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
-                                        }`}>
-                                            {isMapped ? 'Mapped' : 'Ignored'}
-                                        </span>
-                                    </div>
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
+                        <table className="w-full text-left text-xs border-collapse">
+                            <thead>
+                                <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-semibold text-[11px]">
+                                    <th className="py-2.5 px-3 w-5/12">📄 Uploaded File Column</th>
+                                    <th className="py-2.5 px-2 w-1/12 text-center">AI Match</th>
+                                    <th className="py-2.5 px-3 w-5/12">🗄️ Destination Table Field ({targetTable})</th>
+                                    <th className="py-2.5 px-3 w-1/12 text-center">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                                {sourceHeaders.map(header => {
+                                    const currentTarget = columnMapping[header] || '';
+                                    const sampleVal = records[0]?.[header];
+                                    const isMapped = currentTarget && currentTarget !== '__ignore__';
 
-                                    <div className="flex items-center gap-1.5">
-                                        <ArrowRight className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                                        <select
-                                            value={currentTarget || '__ignore__'}
-                                            disabled={isConfirmed}
-                                            onChange={(e) => handleMappingChange(header, e.target.value)}
-                                            className="w-full text-[11px] px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-                                        >
-                                            <option value="__ignore__">-- Ignore Column --</option>
-                                            {tableFields.map(f => (
-                                                <option key={f.key} value={f.key}>
-                                                    {f.label} {f.required ? '(*required)' : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-                            );
-                        })}
+                                    return (
+                                        <tr key={header} className="hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 transition-colors">
+                                            <td className="py-2.5 px-3 align-middle">
+                                                <div className="flex flex-col">
+                                                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-xs">
+                                                        {header}
+                                                    </span>
+                                                    {sampleVal !== undefined && (
+                                                        <span className="text-[10px] text-slate-400 truncate max-w-xs" title={String(sampleVal)}>
+                                                            Sample: <strong className="text-slate-600 dark:text-slate-300 font-normal">"{String(sampleVal).slice(0, 35)}{String(sampleVal).length > 35 ? '...' : ''}"</strong>
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="py-2.5 px-2 text-center align-middle">
+                                                <div className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                                                    <ArrowRight className="w-3.5 h-3.5" />
+                                                </div>
+                                            </td>
+                                            <td className="py-2.5 px-3 align-middle">
+                                                <select
+                                                    value={currentTarget || '__ignore__'}
+                                                    disabled={isConfirmed}
+                                                    onChange={(e) => handleMappingChange(header, e.target.value)}
+                                                    className="w-full text-xs px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                                >
+                                                    <option value="__ignore__">-- Ignore Column (Do Not Ingest) --</option>
+                                                    {tableFields.map(f => (
+                                                        <option key={f.key} value={f.key}>
+                                                            {f.label} {f.required ? '(*required)' : ''}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </td>
+                                            <td className="py-2.5 px-3 text-center align-middle whitespace-nowrap">
+                                                {isMapped ? (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                                        <Check className="w-2.5 h-2.5" />
+                                                        Mapped
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                                                        Ignored
+                                                    </span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             )}

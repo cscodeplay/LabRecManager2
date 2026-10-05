@@ -46,6 +46,9 @@ const chatbotRoutes = require('./routes/chatbot.routes');
 const adminNotesRoutes = require('./routes/admin-notes.routes');
 const compilerRoutes = require('./routes/compiler.routes');
 const implementationPlansRoutes = require('./routes/implementation-plans.routes');
+const quizRoutes = require('./routes/quiz.routes');
+const browserRoutes = require('./routes/browser.routes');
+const initQuizTables = require('./scripts/init-quiz-tables');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -181,6 +184,11 @@ app.use('/api/compiler', compilerRoutes);
 app.use('/api/search', require('./routes/search.routes'));
 app.use('/api/admin/implementation-plans', implementationPlansRoutes);
 app.use('/api/drive', require('./routes/drive.routes'));
+app.use('/api/quiz', quizRoutes);
+app.use('/api/browser', browserRoutes);
+
+// Initialize quiz tables
+initQuizTables().catch(err => console.warn('[App] Quiz tables init warning:', err.message));
 
 const prisma = require('./config/database');
 

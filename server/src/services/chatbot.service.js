@@ -407,22 +407,63 @@ TABLE tickets:
         return { isValid: true };
     }
 
-    // ═══ SQL EXECUTION (via Prisma — no separate pg dependency needed) ═══
+    // ═══ SQL EXECUTION (via Prisma — handles SELECT, UPDATE, INSERT, DELETE) ═══
     async executeSQL(sql) {
         try {
-            const rawRows = await prisma.$queryRawUnsafe(sql);
-            // Convert BigInt values (from COUNT/SUM) to Number for JSON serialization
-            const rows = rawRows.map(row => {
-                const fixed = {};
-                for (const [key, val] of Object.entries(row)) {
-                    fixed[key] = typeof val === 'bigint' ? Number(val) : val;
+            const trimmed = sql.trim().replace(/;+$/, '');
+            const isMutation = /^(UPDATE|INSERT|DELETE)\b/i.test(trimmed);
+            const command = trimmed.split(/\s+/)[0].toUpperCase();
+
+            let rows = [];
+            let rowCount = 0;
+
+            if (isMutation) {
+                // If query already contains RETURNING clause, use $queryRawUnsafe
+                if (/\bRETURNING\b/i.test(trimmed)) {
+                    const rawRows = await prisma.$queryRawUnsafe(trimmed);
+                    rows = (rawRows || []).map(row => {
+                        const fixed = {};
+                        for (const [key, val] of Object.entries(row)) {
+                            fixed[key] = typeof val === 'bigint' ? Number(val) : val;
+                        }
+                        return fixed;
+                    });
+                    rowCount = rows.length;
+                } else {
+                    // Try with RETURNING * first so user sees affected records
+                    try {
+                        const rawRows = await prisma.$queryRawUnsafe(`${trimmed} RETURNING *`);
+                        rows = (rawRows || []).map(row => {
+                            const fixed = {};
+                            for (const [key, val] of Object.entries(row)) {
+                                fixed[key] = typeof val === 'bigint' ? Number(val) : val;
+                            }
+                            return fixed;
+                        });
+                        rowCount = rows.length;
+                    } catch (returningErr) {
+                        // Fall back to executeRawUnsafe
+                        const count = await prisma.$executeRawUnsafe(trimmed);
+                        rowCount = count;
+                        rows = [{ affected_rows: count, message: `Successfully executed ${command} on ${count} record(s)` }];
+                    }
                 }
-                return fixed;
-            });
+            } else {
+                const rawRows = await prisma.$queryRawUnsafe(trimmed);
+                rows = (rawRows || []).map(row => {
+                    const fixed = {};
+                    for (const [key, val] of Object.entries(row)) {
+                        fixed[key] = typeof val === 'bigint' ? Number(val) : val;
+                    }
+                    return fixed;
+                });
+                rowCount = rows.length;
+            }
+
             const fields = rows.length > 0
                 ? Object.keys(rows[0]).map(name => ({ name }))
                 : [];
-            return { success: true, rows, rowCount: rows.length, fields, command: sql.trim().split(/\s+/)[0].toUpperCase() };
+            return { success: true, rows, rowCount, fields, command };
         } catch (error) {
             if (error.message && (error.message.includes('does not exist') || error.message.includes('UndefinedTable') || error.message.includes('UndefinedColumn'))) {
                 this.refreshSchema().catch(e => console.warn('[ChatBot] Background schema refresh failed:', e.message));
@@ -581,15 +622,15 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
   * ALWAYS include \`%\` wildcards around the search term in \`ILIKE '%keyword%'\`. Never use exact equality \`=\` or \`ILIKE 'keyword'\` without wildcards, because note titles and bodies contain full phrases/paragraphs!
   * Also consider root word variations (e.g. \`title ILIKE '%schedul%' OR content ILIKE '%schedul%'\` to match both 'scheduled' and 'schedule').
 
-17. **AUTOMATIC FUTURE TABLE & COLUMN INTERPRETATION**:
-- The DATABASE SCHEMA section above is introspected live from the PostgreSQL database.
-- Any newly created tables, columns, foreign keys, or enum types added across this application appear directly in the schema above.
-- You are fully authorized to query ANY table listed in the DATABASE SCHEMA, including newly added custom tables, modules, or imported datasets.
-- When the user asks about a table, entity, or feature:
-  1. Inspect the TABLE definition in the schema to identify relevant column names, data types, and primary keys.
-  2. Inspect the FOREIGN KEYS section to determine relationships and foreign key joins to other tables.
-  3. Generate standard PostgreSQL queries using proper joins, case-insensitive matching (\`ILIKE\`), and grouping (\`INITCAP(TRIM(...))\`).
-  4. Always output the complete \`\`\`sql block with <!--EXEC_SQL:...:END_SQL--> so the application executes it and visualizes the result.
+18. **BULK COLUMN UPDATES & COLUMN TRANSFORMATIONS (EMAILS, STATUS, CODES, ROLLS)**:
+- When an admin user asks to update, modify, standardize, format, or generate values for a column across records in any table (e.g. "update email id of all students to end with @msldh.com", "update email id of all students to firstname.lastname@msldh.com", "update status of lab items to active", "update section of class 10 to A"):
+  1. Generate a clean PostgreSQL UPDATE query.
+  2. For student email generation with custom domains (e.g. @msldh.com):
+     \`UPDATE users SET email = LOWER(CONCAT(REGEXP_REPLACE(first_name, '[^a-zA-Z0-9]', '', 'g'), '.', REGEXP_REPLACE(CASE WHEN last_name = 'Student' OR last_name IS NULL THEN '' ELSE last_name END, '[^a-zA-Z0-9]', '', 'g'), CASE WHEN last_name = 'Student' OR last_name IS NULL THEN '' ELSE '.' END, COALESCE(admission_number, SUBSTRING(id::text, 1, 4)), '@domain.com')) WHERE role = 'student' RETURNING id, first_name, last_name, email, role::text;\`
+     Or if updating domain suffix while keeping existing username prefix:
+     \`UPDATE users SET email = LOWER(CONCAT(SPLIT_PART(email, '@', 1), '@domain.com')) WHERE role = 'student' RETURNING id, first_name, last_name, email;\`
+  3. ALWAYS append \`RETURNING *\` (or key identifiers and the updated column) to every generated UPDATE statement so that the execution engine returns the updated rows and renders an interactive result table for the user.
+  4. Wrap the query in \`\`\`sql ... \`\`\` and append <!--EXEC_SQL:...:END_SQL--> for auto-execution.
 ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     }
 
@@ -2037,14 +2078,27 @@ Generate the 2-chapter curriculum JSON following the exact schema. Ensure the ex
             }
         }
 
-        // Detect referenced file in prompt: \filename, @filename, or "from filename.ext"
-        const fileRefMatch = message.match(/[\\@]([a-zA-Z0-9_\-.\s\(\)\[\]]+?\.[a-zA-Z0-9]{2,5})\b/) ||
-                              message.match(/[\\@]([a-zA-Z0-9_\-. \(\)\[\]]+)/) ||
+        // Strip out email addresses / domains so "@msldh.com" is never mistakenly parsed as a file reference!
+        const msgWithoutEmails = message.replace(/(?:[a-zA-Z0-9._%+-]+)?@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g, ' ');
+
+        // Detect referenced file in prompt: \filename, @filename, or "from filename.ext", "file los2026", "attached a file los2026 in documents"
+        const fileRefMatch = msgWithoutEmails.match(/[\\@]([a-zA-Z0-9_\-.\s\(\)\[\]]+?\.[a-zA-Z0-9]{2,5})\b/) ||
+                              msgWithoutEmails.match(/[\\@]([a-zA-Z0-9_\-. \(\)\[\]]+)/) ||
                               message.match(/\b(?:from|using|file|in|load|import|analyze|book|ebook|syllabus)\s+([a-zA-Z0-9_\-.\s\(\)\[\]]+?\.(?:csv|xlsx|xls|pdf|txt|json|doc|docx))\b/i) ||
+                              message.match(/\b(?:attached|upload|uploaded|have|add|added)\s+(?:a\s+)?(?:file|document)\s+["']?([a-zA-Z0-9_\-.]{2,60})["']?\s+(?:in\s+documents|to\s+documents|in\s+document)/i) ||
+                              message.match(/\b(?:file|document)\s+["']?([a-zA-Z0-9_\-.]{2,60})["']?\s+(?:in\s+documents|to\s+documents|in\s+document)/i) ||
+                              message.match(/\b(?:from|in|using)\s+["']?([a-zA-Z0-9_\-.]{2,60})["']?\s+(?:in\s+documents|document|file)/i) ||
+                              message.match(/\b(?:file|document)\s+["']?([a-zA-Z0-9_\-]{2,40}\d{0,4})["']?\b/i) ||
                               message.match(/\b(?:from|using|file|load|import|analyze|book|ebook|syllabus)\s+["']?([a-zA-Z0-9_\-.\s\(\)\[\]]{3,60})["']?\s+(?:ebook|book|file|syllabus|document|doc|pdf)\b/i);
 
         if (fileRefMatch) {
-            referencedFileName = fileRefMatch[1].trim();
+            const rawDetected = fileRefMatch[1].trim();
+            // Ensure detected string is not an email domain
+            if (!rawDetected.endsWith('.com') && !rawDetected.endsWith('.org') && !rawDetected.endsWith('.edu') && !rawDetected.endsWith('.net') && !rawDetected.endsWith('.in')) {
+                referencedFileName = rawDetected;
+            } else if (rawDetected.match(/\.(csv|xlsx|xls|pdf|txt|json|doc|docx)$/i)) {
+                referencedFileName = rawDetected;
+            }
         }
 
         // If not explicitly detected in prompt, inspect activeDocContext header
@@ -2151,48 +2205,152 @@ Generate the 2-chapter curriculum JSON following the exact schema. Ensure the ex
                                     { fileName: { contains: cleanRef, mode: 'insensitive' } },
                                     { name: { contains: cleanRef, mode: 'insensitive' } },
                                     { description: { contains: cleanRef, mode: 'insensitive' } }
-                                ]
-                            }
+                                ],
+                                ...(schoolId ? { schoolId } : {}),
+                                deletedAt: null
+                            },
+                            orderBy: { createdAt: 'desc' }
                         }).catch(() => null);
 
                         if (dbDoc && dbDoc.url) {
-                            console.log(`[ChatBot] Fetching remote referenced document "${dbDoc.fileName || dbDoc.name}" from ${dbDoc.url}...`);
-                            const axios = require('axios');
-                            const resp = await axios.get(dbDoc.url, { responseType: 'arraybuffer', timeout: 60000 });
-                            const buf = Buffer.from(resp.data);
-
-                            // Cache locally for instantaneous subsequent access
-                            let localCachePath = null;
-                            try {
-                                const cachePaths = [
-                                    path.join(__dirname, '../../../RAG', dbDoc.fileName || referencedFileName),
+                            console.log(`[ChatBot] Fetching referenced document "${dbDoc.fileName || dbDoc.name}" from ${dbDoc.url}...`);
+                            let buf = null;
+                            const urlStr = dbDoc.url || '';
+                            if (urlStr.startsWith('/uploads/') || !urlStr.startsWith('http')) {
+                                const possibleLocalPaths = [
+                                    path.join(__dirname, '../../../', urlStr),
+                                    path.join(__dirname, '../../', urlStr),
+                                    path.join(process.cwd(), urlStr),
+                                    path.join(__dirname, '../../../uploads', path.basename(urlStr)),
+                                    path.join(__dirname, '../../uploads', path.basename(urlStr)),
+                                    path.join(process.cwd(), 'uploads', path.basename(urlStr)),
                                     path.join(__dirname, '../../../uploads', dbDoc.fileName || referencedFileName),
                                     path.join(process.cwd(), 'uploads', dbDoc.fileName || referencedFileName)
                                 ];
-                                for (const cp of cachePaths) {
-                                    fs.mkdirSync(path.dirname(cp), { recursive: true });
-                                    fs.writeFileSync(cp, buf);
-                                    localCachePath = cp;
+                                for (const lp of possibleLocalPaths) {
+                                    if (fs.existsSync(lp)) {
+                                        try {
+                                            buf = fs.readFileSync(lp);
+                                            console.log(`[ChatBot] Loaded local document file from disk: ${lp} (${buf.length} bytes)`);
+                                            break;
+                                        } catch (rdErr) {}
+                                    }
                                 }
-                            } catch(cErr) {}
+                            }
+                            if (!buf && urlStr.startsWith('http')) {
+                                try {
+                                    const axios = require('axios');
+                                    const resp = await axios.get(urlStr, { responseType: 'arraybuffer', timeout: 60000 });
+                                    buf = Buffer.from(resp.data);
+                                } catch (netErr) {
+                                    console.warn(`[ChatBot] Failed to download document from URL ${urlStr}:`, netErr.message);
+                                }
+                            }
 
-                            const extracted = await this.getOrExtractDocumentText(
-                                localCachePath,
-                                dbDoc.mimeType || 'application/pdf',
-                                dbDoc.fileName,
-                                buf
-                            );
-                            if (extracted) {
-                                if (isDocPlaceholder(activeDocContext)) {
-                                    activeDocContext = `=== [Document: ${dbDoc.fileName || dbDoc.name}] ===\n${extracted}\n\n`;
-                                } else {
-                                    activeDocContext = `=== [Document: ${dbDoc.fileName || dbDoc.name}] ===\n${extracted}\n\n` + activeDocContext;
+                            if (buf && buf.length > 0) {
+                                // Cache locally for instantaneous subsequent access
+                                let localCachePath = null;
+                                try {
+                                    const cachePaths = [
+                                        path.join(__dirname, '../../../RAG', dbDoc.fileName || referencedFileName),
+                                        path.join(__dirname, '../../../uploads', dbDoc.fileName || referencedFileName),
+                                        path.join(process.cwd(), 'uploads', dbDoc.fileName || referencedFileName)
+                                    ];
+                                    for (const cp of cachePaths) {
+                                        fs.mkdirSync(path.dirname(cp), { recursive: true });
+                                        fs.writeFileSync(cp, buf);
+                                        localCachePath = cp;
+                                    }
+                                } catch(cErr) {}
+
+                                const extracted = await this.getOrExtractDocumentText(
+                                    localCachePath,
+                                    dbDoc.mimeType || 'application/pdf',
+                                    dbDoc.fileName,
+                                    buf
+                                );
+                                if (extracted) {
+                                    if (isDocPlaceholder(activeDocContext)) {
+                                        activeDocContext = `=== [Document: ${dbDoc.fileName || dbDoc.name}] ===\n${extracted}\n\n`;
+                                    } else {
+                                        activeDocContext = `=== [Document: ${dbDoc.fileName || dbDoc.name}] ===\n${extracted}\n\n` + activeDocContext;
+                                    }
                                 }
                             }
                         }
                     }
                 } catch (readErr) {
                     console.warn('[ChatBot] Could not read referenced local/remote file:', readErr.message);
+                }
+            }
+
+            // Fallback: If no document content loaded yet, but message mentions "in documents" / "attached file" / "los"
+            if (isDocPlaceholder(activeDocContext) && (msgLower.includes('document') || msgLower.includes('file') || msgLower.includes('attached') || msgLower.includes('los'))) {
+                try {
+                    const candidateDoc = await prisma.document.findFirst({
+                        where: {
+                            OR: [
+                                { name: { contains: 'los', mode: 'insensitive' } },
+                                { fileName: { contains: 'los', mode: 'insensitive' } }
+                            ],
+                            ...(schoolId ? { schoolId } : {}),
+                            deletedAt: null
+                        },
+                        orderBy: { createdAt: 'desc' }
+                    }) || await prisma.document.findFirst({
+                        where: {
+                            ...(schoolId ? { schoolId } : {}),
+                            deletedAt: null
+                        },
+                        orderBy: { createdAt: 'desc' }
+                    });
+
+                    if (candidateDoc && candidateDoc.url) {
+                        console.log(`[ChatBot] Auto-loading recent document "${candidateDoc.fileName || candidateDoc.name}" from repository...`);
+                        let buf = null;
+                        const urlStr = candidateDoc.url || '';
+                        if (urlStr.startsWith('/uploads/') || !urlStr.startsWith('http')) {
+                            const possibleLocalPaths = [
+                                path.join(__dirname, '../../../', urlStr),
+                                path.join(__dirname, '../../', urlStr),
+                                path.join(process.cwd(), urlStr),
+                                path.join(__dirname, '../../../uploads', path.basename(urlStr)),
+                                path.join(__dirname, '../../uploads', path.basename(urlStr)),
+                                path.join(process.cwd(), 'uploads', path.basename(urlStr)),
+                                path.join(__dirname, '../../../uploads', candidateDoc.fileName),
+                                path.join(process.cwd(), 'uploads', candidateDoc.fileName)
+                            ];
+                            for (const lp of possibleLocalPaths) {
+                                if (fs.existsSync(lp)) {
+                                    try {
+                                        buf = fs.readFileSync(lp);
+                                        break;
+                                    } catch (e) {}
+                                }
+                            }
+                        }
+                        if (!buf && urlStr.startsWith('http')) {
+                            try {
+                                const axios = require('axios');
+                                const resp = await axios.get(urlStr, { responseType: 'arraybuffer', timeout: 60000 });
+                                buf = Buffer.from(resp.data);
+                            } catch (e) {}
+                        }
+                        if (buf) {
+                            const extracted = await this.getOrExtractDocumentText(
+                                null,
+                                candidateDoc.mimeType || 'application/pdf',
+                                candidateDoc.fileName,
+                                buf
+                            );
+                            if (extracted) {
+                                activeDocContext = `=== [Document: ${candidateDoc.fileName || candidateDoc.name}] ===\n${extracted}\n\n`;
+                                if (!referencedFileName) referencedFileName = candidateDoc.fileName || candidateDoc.name;
+                            }
+                        }
+                    }
+                } catch (recErr) {
+                    console.warn('[ChatBot] Fallback recent document fetch error:', recErr.message);
                 }
             }
 
@@ -2503,95 +2661,342 @@ Generate the 2-chapter curriculum JSON following the exact schema. Ensure the ex
             }
         }
 
-        // ─── Intent B: Student / Inventory / Generic Tabular Data Import from Referenced File or Context ───
-        const isDataImportIntent = (
-            ((msgLower.includes('student') || msgLower.includes('roster') || msgLower.includes('candidate') || msgLower.includes('pupil')) &&
-             (msgLower.includes('load') || msgLower.includes('import') || msgLower.includes('insert') || msgLower.includes('add') || msgLower.includes('save') || msgLower.includes('csv') || msgLower.includes('excel'))) ||
-            ((msgLower.includes('inventory') || msgLower.includes('equipment') || msgLower.includes('hardware') || msgLower.includes('stock')) &&
-             (msgLower.includes('load') || msgLower.includes('import') || msgLower.includes('insert') || msgLower.includes('add') || msgLower.includes('save') || msgLower.includes('csv'))) ||
-            (referencedFileName.match(/\.(csv|xlsx|xls)$/i) && (msgLower.includes('import') || msgLower.includes('load') || msgLower.includes('insert') || msgLower.includes('save')))
+        // ─── Intent A2: Bulk Column Update / Column Transformation (e.g. Student Emails, Status, etc.) ───
+        const isBulkColumnUpdateIntent = (
+            (msgLower.includes('update') || msgLower.includes('change') || msgLower.includes('set') || msgLower.includes('format') || msgLower.includes('standardize')) &&
+            (
+                (msgLower.includes('email') || msgLower.includes('emailid') || msgLower.includes('email id')) ||
+                ((msgLower.includes('column') || msgLower.includes('field') || msgLower.includes('status') || msgLower.includes('priority')) && (msgLower.includes('all') || msgLower.includes('table') || msgLower.includes('where')))
+            ) &&
+            !msgLower.includes('create user') && !msgLower.includes('import') && !msgLower.includes('upload')
         );
+
+        if (isBulkColumnUpdateIntent) {
+            try {
+                console.log('[ChatBot] Bulk Column Update intent detected:', message);
+
+                // Case 1: Student / User Email Bulk Update (e.g. "update email id of all student so ending emailid should be @msldh.com")
+                if (msgLower.includes('email') && (msgLower.includes('student') || msgLower.includes('user') || msgLower.includes('pupil') || msgLower.includes('all'))) {
+                    const domainMatch = message.match(/(?:ending\s+)?(?:email|emailid|email\s+id)\s*(?:should\s+be|must\s+be|ending\s+with|to\s+be|with|ending|to)?\s*[:=@]?\s*@?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i) ||
+                                        message.match(/@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+                    const targetDomain = domainMatch ? domainMatch[1].replace(/^@/, '').trim().toLowerCase() : 'msldh.com';
+
+                    const isNameBasedFormat = msgLower.includes('firstname') || msgLower.includes('first.last') || msgLower.includes('name') || msgLower.includes('first_name');
+
+                    let sql = '';
+                    if (isNameBasedFormat || msgLower.includes('clean') || msgLower.includes('format')) {
+                        sql = `UPDATE users SET email = LOWER(CONCAT(REGEXP_REPLACE("firstName", '[^a-zA-Z0-9]', '', 'g'), '.', REGEXP_REPLACE(CASE WHEN "lastName" = 'Student' OR "lastName" IS NULL THEN '' ELSE "lastName" END, '[^a-zA-Z0-9]', '', 'g'), CASE WHEN "lastName" = 'Student' OR "lastName" IS NULL THEN '' ELSE '.' END, COALESCE("admissionNumber", SUBSTRING(id::text, 1, 4)), '@${targetDomain}')) WHERE role = 'student' ${schoolId ? `AND "schoolId" = '${schoolId}'` : ''} RETURNING id, "firstName", "lastName", email;`;
+                    } else {
+                        sql = `UPDATE users SET email = LOWER(CONCAT(SPLIT_PART(email, '@', 1), '@${targetDomain}')) WHERE role = 'student' ${schoolId ? `AND "schoolId" = '${schoolId}'` : ''} RETURNING id, "firstName", "lastName", email;`;
+                    }
+
+                    const execResult = await this.executeSQL(sql);
+
+                    let responseMarkdown = `✅ **Student Email Addresses Successfully Updated to \`@${targetDomain}\`!**\n\n` +
+                        `I have executed an UPDATE query on the **\`users\`** table to update student email IDs to end with **\`@${targetDomain}\`**.\n\n` +
+                        `- 📧 **Target Domain:** \`@${targetDomain}\`\n` +
+                        `- 👥 **Records Updated:** **${execResult.rowCount || 0} student(s)**\n\n`;
+
+                    if (execResult.success && Array.isArray(execResult.rows) && execResult.rows.length > 0) {
+                        const previewRows = execResult.rows.slice(0, 8).map((r, i) =>
+                            `| ${i + 1} | **${r.firstName || ''} ${r.lastName || ''}** | \`${r.email}\` | ✅ Updated |`
+                        ).join('\n');
+                        responseMarkdown += `### 📋 Preview of Updated Accounts:\n` +
+                            `| # | Student Name | Updated Email | Status |\n` +
+                            `|---|--------------|---------------|--------|\n` +
+                            `${previewRows}\n\n`;
+                    }
+
+                    return {
+                        message: responseMarkdown,
+                        sql,
+                        executionResult: execResult,
+                        queryResult: execResult,
+                        chartData: null,
+                        reportAction: null,
+                        meetingAction: null,
+                        calendarAction: null,
+                        assignmentAction: null,
+                        noteAction: null,
+                        classAction: null,
+                        userAction: null,
+                        ticketAction: null,
+                        procurementAction: null,
+                        trainingAction: null,
+                        timetableAction: null,
+                        periodTimingAction: null,
+                        provider: 'auto'
+                    };
+                }
+            } catch (bulkUpdateErr) {
+                console.warn('[ChatBot] Bulk Column Update intent warning:', bulkUpdateErr.message);
+            }
+        }
+
+        // ─── Intent B: Student / User / Inventory Data Extraction & Import from Referenced File or Context ───
+        const hasUserOrStudentKeyword = (
+            msgLower.includes('user') || msgLower.includes('student') || msgLower.includes('pupil') ||
+            msgLower.includes('candidate') || msgLower.includes('roster') || msgLower.includes('account') ||
+            msgLower.includes('people') || msgLower.includes('admission') || msgLower.includes('member') ||
+            msgLower.includes('los')
+        );
+        const hasImportOrActionKeyword = (
+            msgLower.includes('create') || msgLower.includes('load') || msgLower.includes('import') ||
+            msgLower.includes('insert') || msgLower.includes('add') || msgLower.includes('save') ||
+            msgLower.includes('extract') || msgLower.includes('generate') || msgLower.includes('populate') ||
+            msgLower.includes('register') || msgLower.includes('enroll')
+        );
+        const hasInventoryKeyword = (
+            msgLower.includes('inventory') || msgLower.includes('equipment') || msgLower.includes('hardware') ||
+            msgLower.includes('stock')
+        );
+        const isDataImportIntent = (
+            !msgLower.includes('update email') && !msgLower.startsWith('update ') && (
+                (hasUserOrStudentKeyword && (hasImportOrActionKeyword || msgLower.includes('ending email') || msgLower.includes('@'))) ||
+                (hasInventoryKeyword && hasImportOrActionKeyword) ||
+                ((referencedFileName.match(/\.(csv|xlsx|xls)$/i) || msgLower.includes('los')) && (hasImportOrActionKeyword || msgLower.includes('user') || msgLower.includes('table')))
+            )
+        );
+
+        // If data import intent detected but activeDocContext is empty or placeholder, attempt local file / DB document retrieval
+        if (isDataImportIntent && (!activeDocContext || isDocPlaceholder(activeDocContext))) {
+            const candidateNames = [referencedFileName, 'los2026.csv', 'los2026.xlsx', 'los2026', 'students.csv'].filter(Boolean);
+            const searchDirs = [
+                path.join(__dirname, '../../../uploads'),
+                path.join(__dirname, '../../uploads'),
+                path.join(process.cwd(), 'uploads'),
+                path.join(__dirname, '../../../RAG'),
+                path.join(__dirname, '../../../client/public/sample-data')
+            ];
+            for (const cName of candidateNames) {
+                for (const sDir of searchDirs) {
+                    const fullP = path.join(sDir, cName);
+                    if (fs.existsSync(fullP) && !fullP.endsWith('.txt')) {
+                        try {
+                            const extracted = await this.getOrExtractDocumentText(
+                                fullP,
+                                fullP.endsWith('.pdf') ? 'application/pdf' : 'text/plain',
+                                path.basename(fullP)
+                            );
+                            if (extracted && extracted.length > 20) {
+                                activeDocContext = `=== [File: ${path.basename(fullP)}] ===\n${extracted}\n\n`;
+                                if (!referencedFileName) referencedFileName = path.basename(fullP);
+                                break;
+                            }
+                        } catch (e) {}
+                    }
+                }
+                if (activeDocContext && !isDocPlaceholder(activeDocContext)) break;
+            }
+        }
 
         if (isDataImportIntent && activeDocContext) {
             try {
                 // Parse CSV / Delimited rows from context
-                const lines = activeDocContext.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-                const tableLines = lines.filter(l => !l.startsWith('===') && !l.startsWith('---') && l.includes(','));
+                const rawLines = activeDocContext.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+                const cleanLines = rawLines.filter(l => !l.startsWith('===') && !l.startsWith('---'));
 
-                if (tableLines.length >= 2) {
-                    const headers = tableLines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, ''));
-                    const records = [];
+                let headers = [];
+                let records = [];
 
-                    for (let r = 1; r < tableLines.length; r++) {
-                        const vals = tableLines[r].split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
-                        if (vals.length === 0 || (vals.length === 1 && !vals[0])) continue;
+                // Detect custom email domain requested by user (e.g. "ending emailid should be @msldh.com" -> msldh.com)
+                const domainMatch = message.match(/(?:ending\s+)?(?:email|emailid|email\s+id)\s*(?:should\s+be|must\s+be|ending\s+with|to\s+be|with|ending)?\s*[:=@]?\s*@?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i) ||
+                                    message.match(/@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+                const customEmailDomain = domainMatch ? domainMatch[1].replace(/^@/, '').trim().toLowerCase() : null;
+
+                // Smart header index detection: scan first 15 lines for table header row
+                let headerIdx = -1;
+                let delimiter = ',';
+                for (let i = 0; i < Math.min(cleanLines.length, 15); i++) {
+                    const line = cleanLines[i];
+                    let d = ',';
+                    if (line.includes('\t')) d = '\t';
+                    else if (line.includes(';') && !line.includes(',')) d = ';';
+                    else if (line.includes('|') && !line.includes(',')) d = '|';
+
+                    const pLower = line.toLowerCase();
+                    const hasKeyCols = (pLower.includes('name') || pLower.includes('student') || pLower.includes('candidate')) &&
+                        (pLower.includes('roll') || pLower.includes('id') || pLower.includes('adm') || pLower.includes('reg') || pLower.includes('class') || pLower.includes('phone') || pLower.includes('email') || pLower.includes('gender') || pLower.includes('item') || pLower.includes('serial'));
+                    if (hasKeyCols) {
+                        headerIdx = i;
+                        delimiter = d;
+                        break;
+                    }
+                }
+
+                if (headerIdx === -1 && cleanLines.length >= 2) {
+                    if (cleanLines[0].includes(',') || cleanLines[0].includes('\t') || cleanLines[0].includes('|')) {
+                        headerIdx = 0;
+                        if (cleanLines[0].includes('\t')) delimiter = '\t';
+                        else if (cleanLines[0].includes('|')) delimiter = '|';
+                    }
+                }
+
+                if (headerIdx !== -1) {
+                    headers = cleanLines[headerIdx].split(delimiter).map(h => h.trim().replace(/^["']|["']$/g, ''));
+                    for (let r = headerIdx + 1; r < cleanLines.length; r++) {
+                        const rowVals = cleanLines[r].split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
+                        if (rowVals.length === 0 || (rowVals.length === 1 && !rowVals[0])) continue;
                         const rowObj = {};
                         headers.forEach((h, idx) => {
-                            rowObj[h] = vals[idx] !== undefined ? vals[idx] : '';
+                            rowObj[h] = rowVals[idx] !== undefined ? rowVals[idx] : '';
                         });
-                        rowObj._originalRowIndex = r;
+                        rowObj._originalRowIndex = r - headerIdx;
                         rowObj.selected = true;
                         records.push(rowObj);
                     }
+                }
 
-                    if (records.length > 0) {
-                        const detection = detectTableAndMapping(headers, records.slice(0, 10));
+                // Fallback to AI structured extraction if delimiter parsing yielded no rows
+                if (records.length === 0 && activeDocContext.length > 30) {
+                    try {
+                        const aiExtracted = await this.extractStructuredUsersWithAI(activeDocContext, customEmailDomain);
+                        if (Array.isArray(aiExtracted) && aiExtracted.length > 0) {
+                            records = aiExtracted.map((r, i) => ({ ...r, _originalRowIndex: i + 1, selected: true }));
+                            headers = Object.keys(records[0]).filter(k => !k.startsWith('_'));
+                        }
+                    } catch (aiErr) {
+                        console.warn('[ChatBot] Fallback AI extraction failed:', aiErr.message);
+                    }
+                }
 
-                        if (detection.detectedTable === 'users' || msgLower.includes('student')) {
-                            const classes = await prisma.class.findMany({
+                if (records.length > 0) {
+                    const detection = detectTableAndMapping(headers, records.slice(0, 10));
+
+                    if (detection.detectedTable === 'users' || hasUserOrStudentKeyword) {
+                        let classes = [];
+                        try {
+                            classes = await prisma.class.findMany({
                                 where: schoolId ? { schoolId } : {},
                                 select: { id: true, name: true, gradeLevel: true, section: true },
                                 orderBy: { name: 'asc' }
                             });
+                        } catch (e) {}
 
-                            // Try to match specific class from prompt (e.g. "Class 11 Non-Medical A", "Class 10")
-                            let matchedClass = null;
-                            for (const c of classes) {
-                                if (msgLower.includes(c.name.toLowerCase()) ||
-                                    (c.section && msgLower.includes(`class ${c.gradeLevel}`) && msgLower.includes(c.section.toLowerCase()))) {
-                                    matchedClass = c;
-                                    break;
+                        // Try to match specific class from prompt (e.g. "Class 11", "Class 10")
+                        let matchedClass = null;
+                        for (const c of classes) {
+                            if (msgLower.includes(c.name.toLowerCase()) ||
+                                (c.section && msgLower.includes(`class ${c.gradeLevel}`) && msgLower.includes(c.section.toLowerCase()))) {
+                                matchedClass = c;
+                                break;
+                            }
+                        }
+                        if (!matchedClass && classes.length > 0) matchedClass = classes[0];
+
+                        // Normalize and format student records according to user prompt rules (e.g. @msldh.com)
+                        const usedEmails = new Set();
+                        records.forEach((rec, idx) => {
+                            let candidateFullName = rec.candidate_name || rec["Candidate Name"] || rec.student_name || rec["Student Name"] || rec.name || rec["Name"] || rec.firstName || rec.first_name || '';
+                            let fatherName = rec.father_name || rec["Father's Name"] || rec["Father Name"] || rec.parentName || rec.parent_name || '';
+
+                            let firstName = rec.firstName || '';
+                            let lastName = rec.lastName || '';
+
+                            if (candidateFullName && candidateFullName.includes(' ')) {
+                                const parts = candidateFullName.trim().split(/\s+/);
+                                firstName = parts[0];
+                                lastName = parts.slice(1).join(' ');
+                            } else if (candidateFullName) {
+                                firstName = candidateFullName.trim();
+                                if (!lastName || lastName === 'Student' || lastName === fatherName) {
+                                    lastName = 'Student';
                                 }
                             }
-                            if (!matchedClass && classes.length > 0) matchedClass = classes[0];
+                            if (!firstName) firstName = `Student${idx + 1}`;
+                            if (!lastName) lastName = 'Student';
 
-                            const studentImportAction = {
-                                actionType: 'student_import',
-                                targetTable: 'users',
-                                targetLabel: 'Students / Users (users)',
-                                title: `👥 Import ${records.length} Students from ${referencedFileName || 'CSV'}`,
-                                fileName: referencedFileName || 'students.csv',
-                                classId: matchedClass?.id || null,
-                                className: matchedClass?.name || 'Select Class',
-                                availableClasses: classes,
-                                columns: headers,
-                                columnMapping: detection.columnMapping,
-                                availableFields: detection.availableFields,
-                                records: records.slice(0, 100),
-                                isConfirmed: false
-                            };
+                            rec.firstName = firstName;
+                            rec.lastName = lastName;
+                            if (fatherName) rec.parentName = fatherName;
 
-                            return {
-                                message: `👥 **Student Data Ingestion Draft Prepared (Pending Confirmation)**\n\nI have analyzed **"${referencedFileName || 'Uploaded CSV'}"** and detected **${records.length} student records**.\n\n- 🏫 **Target Class:** \`${matchedClass?.name || 'Select Class'}\`\n- 📋 **Detected Columns (${headers.length}):** ${headers.slice(0, 5).join(', ')}${headers.length > 5 ? '...' : ''}\n\nPlease review the **column mapping** and **preview table** below to check correctness, select your target class, and click **Confirm & Import** to load into the database:`,
-                                sql: null,
-                                executionResult: null,
-                                chartData: null,
-                                reportAction: null,
-                                meetingAction: null,
-                                calendarAction: null,
-                                assignmentAction: null,
-                                noteAction: null,
-                                classAction: null,
-                                userAction: null,
-                                ticketAction: null,
-                                procurementAction: null,
-                                trainingAction: null,
-                                timetableAction: null,
-                                periodTimingAction: null,
-                                studentImportAction,
-                                dataImportAction: studentImportAction,
-                                provider: 'auto'
-                            };
+                            const rollNo = rec.rollNumber || rec.roll_no || rec.roll || rec["Roll No"] || rec["Roll Number"] || rec["S.No"] || (idx + 1);
+                            const admNo = rec.studentId || rec.student_id || rec.admission_no || rec.reg_no || rec["Reg No"] || rec["Adm No"] || `ADM-2026-${String(idx + 1).padStart(3, '0')}`;
+                            rec.rollNumber = rollNo;
+                            rec.studentId = admNo;
+                            rec.admissionNumber = admNo;
+                            rec.role = 'student';
+
+                            // Generate email matching requested custom domain (e.g. @msldh.com)
+                            if (customEmailDomain) {
+                                const cleanFirst = String(firstName).toLowerCase().replace(/[^a-z0-9]/g, '');
+                                const cleanLast = String(lastName && lastName !== 'Student' ? lastName : '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                                let emailPrefix = cleanLast ? `${cleanFirst}.${cleanLast}` : cleanFirst;
+                                let userEmail = `${emailPrefix}@${customEmailDomain}`;
+                                if (usedEmails.has(userEmail)) {
+                                    userEmail = `${emailPrefix}.${rollNo || idx + 1}@${customEmailDomain}`;
+                                }
+                                usedEmails.add(userEmail);
+                                rec.email = userEmail;
+                            } else if (!rec.email) {
+                                const cleanFirst = String(firstName).toLowerCase().replace(/[^a-z0-9]/g, '');
+                                const cleanLast = String(lastName && lastName !== 'Student' ? lastName : '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                                const emailPrefix = cleanLast ? `${cleanFirst}.${cleanLast}` : cleanFirst;
+                                rec.email = `${emailPrefix}.${rollNo || idx + 1}@student.school.edu`;
+                            }
+                        });
+
+                        // Ensure column mapping maps key fields properly
+                        detection.columnMapping['firstName'] = 'firstName';
+                        detection.columnMapping['lastName'] = 'lastName';
+                        detection.columnMapping['email'] = 'email';
+                        detection.columnMapping['rollNumber'] = 'rollNumber';
+                        detection.columnMapping['studentId'] = 'studentId';
+
+                        const studentImportAction = {
+                            actionType: 'student_import',
+                            targetTable: 'users',
+                            targetLabel: 'Students / Users (users)',
+                            title: `👥 Import ${records.length} Users from ${referencedFileName || 'Uploaded File'}`,
+                            fileName: referencedFileName || 'Uploaded File',
+                            classId: matchedClass?.id || null,
+                            className: matchedClass?.name || 'Select Class',
+                            availableClasses: classes,
+                            columns: headers,
+                            columnMapping: detection.columnMapping,
+                            availableFields: detection.availableFields,
+                            tableOptions: detection.tableOptions,
+                            records: records.slice(0, 100),
+                            emailDomain: customEmailDomain || 'msldh.com',
+                            isConfirmed: false
+                        };
+
+                        const previewTableRows = records.slice(0, 8).map((r, i) =>
+                            `| ${i + 1} | **${r.firstName} ${r.lastName}** | \`${r.email}\` | ${r.rollNumber || '-'} | ${r.studentId || '-'} | ⏳ Ready |`
+                        ).join('\n');
+
+                        const responseMessage = `👥 **Student Data Ingestion Draft Prepared (${records.length} Records Detected)**\n\n` +
+                              `I have analyzed **"${referencedFileName || 'Uploaded File'}"** and matched it to the **\`users\`** table with login email IDs formatted to end with **\`@${customEmailDomain || 'msldh.com'}\`**.\n\n` +
+                              `- 🏫 **Target Class:** \`${matchedClass?.name || 'Select Class'}\`\n` +
+                              `- 📧 **Configured Email Domain:** \`@${customEmailDomain || 'msldh.com'}\`\n` +
+                              `- 📋 **Detected Columns (${headers.length}):** ${headers.slice(0, 5).join(', ')}${headers.length > 5 ? '...' : ''}\n\n` +
+                              `### 📋 Data Preview (Emails ending in @${customEmailDomain || 'msldh.com'}):\n` +
+                              `| # | Name | Email | Roll No | Admission No | Status |\n` +
+                              `|---|------|-------|---------|--------------|--------|\n` +
+                              `${previewTableRows}\n\n` +
+                              `Review the **side-by-side column mapping** and **preview table** below to adjust fields if needed, then click **Confirm & Import** to generate user accounts in the database:`;
+
+                        return {
+                            message: responseMessage,
+                            sql: null,
+                            executionResult: null,
+                            chartData: null,
+                            reportAction: null,
+                            meetingAction: null,
+                            calendarAction: null,
+                            assignmentAction: null,
+                            noteAction: null,
+                            classAction: null,
+                            userAction: null,
+                            ticketAction: null,
+                            procurementAction: null,
+                            trainingAction: null,
+                            timetableAction: null,
+                            periodTimingAction: null,
+                            studentImportAction,
+                            dataImportAction: studentImportAction,
+                            provider: 'auto'
+                        };
                         } else if (detection.detectedTable === 'lab_items' || msgLower.includes('inventory') || msgLower.includes('lab')) {
                             const labs = await prisma.lab.findMany({
                                 where: schoolId ? { schoolId } : {},
@@ -2620,12 +3025,13 @@ Generate the 2-chapter curriculum JSON following the exact schema. Ensure the ex
                                 columns: headers,
                                 columnMapping: detection.columnMapping,
                                 availableFields: detection.availableFields,
+                                tableOptions: detection.tableOptions,
                                 records: records.slice(0, 100),
                                 isConfirmed: false
                             };
 
                             return {
-                                message: `📦 **Lab Inventory Ingestion Draft Prepared (Pending Confirmation)**\n\nI have analyzed **"${referencedFileName || 'Uploaded CSV'}"** and detected **${records.length} equipment items**.\n\n- 🏢 **Target Lab:** \`${matchedLab?.name || 'Select Lab'}\`\n- 📋 **Detected Columns (${headers.length}):** ${headers.slice(0, 5).join(', ')}${headers.length > 5 ? '...' : ''}\n\nPlease review the **column mapping** and **preview table** below to check correctness, select your target lab, and click **Confirm & Load** to import:`,
+                                message: `📦 **Lab Inventory Ingestion Draft Prepared (Pending Confirmation)**\n\nI have analyzed **"${referencedFileName || 'Uploaded CSV'}"** and detected **${records.length} equipment items**.\n\n- 🏢 **Target Lab:** \`${matchedLab?.name || 'Select Lab'}\`\n- 📋 **Detected Columns (${headers.length}):** ${headers.slice(0, 5).join(', ')}${headers.length > 5 ? '...' : ''}\n\nPlease review the **side-by-side column mapping** and **preview table** below to check correctness, select your target lab, and click **Confirm & Load** to import:`,
                                 sql: null,
                                 executionResult: null,
                                 chartData: null,
@@ -2646,13 +3052,50 @@ Generate the 2-chapter curriculum JSON following the exact schema. Ensure the ex
                                 dataLoadingAction: inventoryImportAction,
                                 provider: 'auto'
                             };
+                        } else {
+                            // Generalized handler for any other detected table (classes, subjects, tickets, etc.)
+                            const genericImportAction = {
+                                actionType: 'generic_import',
+                                targetTable: detection.detectedTable,
+                                targetLabel: detection.targetLabel,
+                                title: `📋 Ingest ${records.length} Records into ${detection.targetLabel}`,
+                                fileName: referencedFileName || 'Uploaded File',
+                                columns: headers,
+                                columnMapping: detection.columnMapping,
+                                availableFields: detection.availableFields,
+                                tableOptions: detection.tableOptions,
+                                records: records.slice(0, 100),
+                                isConfirmed: false
+                            };
+
+                            return {
+                                message: `📋 **Data Ingestion Draft Prepared (${records.length} Records Detected)**\n\nI have analyzed **"${referencedFileName || 'Uploaded File'}"** and matched it to the **\`${detection.targetLabel}\`** table.\n\n- 🎯 **Target Table:** \`${detection.detectedTable}\`\n- 📋 **Detected Columns (${headers.length}):** ${headers.slice(0, 5).join(', ')}${headers.length > 5 ? '...' : ''}\n\nPlease review the **side-by-side column mapping** and **preview table** below to adjust fields if needed, then click **Confirm & Import** to generate the records:`,
+                                sql: null,
+                                executionResult: null,
+                                chartData: null,
+                                reportAction: null,
+                                meetingAction: null,
+                                calendarAction: null,
+                                assignmentAction: null,
+                                noteAction: null,
+                                classAction: null,
+                                userAction: null,
+                                ticketAction: null,
+                                procurementAction: null,
+                                trainingAction: null,
+                                timetableAction: null,
+                                periodTimingAction: null,
+                                dataImportAction: genericImportAction,
+                                provider: 'auto'
+                            };
                         }
                     }
-                }
-            } catch (importIntentErr) {
+                } catch (importIntentErr) {
                 console.error('[ChatBot] Data import intent error:', importIntentErr);
             }
         }
+
+
 
         // Intent detection: Inventory / Equipment / Hardware / Stock Register Data Insertion
         const isInventoryInsertIntent = (
@@ -7235,6 +7678,70 @@ ${documentContext || message}
             seriesKeys: ['value'],
             colors: defaultPalette
         };
+    }
+
+    /**
+     * AI-Powered structured student/user extraction from unstructured document text or PDF dumps
+     */
+    async extractStructuredUsersWithAI(text, emailDomain = null) {
+        if (!text || text.trim().length === 0) return [];
+        const cleanDomain = emailDomain ? emailDomain.replace(/^@/, '').trim().toLowerCase() : 'msldh.com';
+
+        const prompt = `Extract all student, candidate, or user records from the document text below into a clean JSON array.
+For each person found, extract:
+- "firstName": person's given name or first word of full name (string, required)
+- "lastName": surname or father's name or rest of name (string, optional or default "Student")
+- "rollNumber": roll number or serial number (integer or string, optional)
+- "studentId": admission number, registration number, or student ID (string, optional)
+- "phone": contact phone number (string, optional)
+- "gender": "male" or "female" (string, optional)
+- "className": grade or class if mentioned (string, optional)
+- "email": generated login email ending in "@${cleanDomain}" (e.g. firstname.lastname@${cleanDomain})
+
+Document Text:
+"""
+${text.substring(0, 15000)}
+"""
+
+Return JSON ONLY in this format:
+{"records": [{"firstName": "...", "lastName": "...", "rollNumber": "...", "studentId": "...", "phone": "...", "gender": "...", "className": "...", "email": "..."}]}`;
+
+        if (this.groqClient) {
+            try {
+                const res = await this.groqClient.chat.completions.create({
+                    model: 'openai/gpt-oss-120b',
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature: 0.1,
+                    response_format: { type: 'json_object' }
+                });
+                const raw = res.choices[0]?.message?.content || '{}';
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed.records) && parsed.records.length > 0) {
+                    return parsed.records;
+                }
+            } catch (e) {
+                console.warn('[ChatBot] Groq structured student extraction fallback error:', e.message);
+            }
+        }
+
+        if (this.geminiModels && this.geminiModels.length > 0) {
+            try {
+                const model = this.geminiModels[0];
+                const res = await model.generateContent({
+                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                    generationConfig: { responseMimeType: 'application/json' }
+                });
+                const raw = res.response?.text() || '{}';
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed.records) && parsed.records.length > 0) {
+                    return parsed.records;
+                }
+            } catch (e) {
+                console.warn('[ChatBot] Gemini structured student extraction fallback error:', e.message);
+            }
+        }
+
+        return [];
     }
 
     // ═══ LAZY / ON-DEMAND DOCUMENT EXTRACTION & DISK CACHING ═══

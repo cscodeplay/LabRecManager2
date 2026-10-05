@@ -10,13 +10,14 @@ const TABLE_SCHEMAS = {
         label: 'Students / Users (users)',
         targetEntity: 'student',
         fields: [
-            { key: 'firstName', label: 'First Name', required: true, aliases: ['first_name', 'firstname', 'name', 'student_name', 'candidate_name', 'studentname', 'given_name'] },
-            { key: 'lastName', label: 'Last Name', required: false, aliases: ['last_name', 'lastname', 'surname', 'father_name', 'fathername', 'family_name'] },
-            { key: 'email', label: 'Email Address', required: true, aliases: ['email', 'email_address', 'mail', 'email_id', 'student_email'] },
-            { key: 'studentId', label: 'Student ID / Admission No', required: false, aliases: ['student_id', 'studentid', 'admission_number', 'admission_no', 'reg_no', 'registration_no', 'epunjab_id', 'enrollment_no'] },
+            { key: 'firstName', label: 'First Name', required: true, aliases: ['first_name', 'firstname', 'name', 'student_name', 'candidate_name', 'cand_name', 'candidate', 'student', 'studentname', 'given_name', 'name_of_candidate', 'name_of_student', 'candidates_name', 'full_name', 'fullname'] },
+            { key: 'lastName', label: 'Last Name', required: false, aliases: ['last_name', 'lastname', 'surname', 'family_name'] },
+            { key: 'parentName', label: 'Father / Parent Name', required: false, aliases: ['father_name', 'fathername', 'fathers_name', 'father_s_name', 'mother_name', 'mother_s_name', 'parent_name', 'guardian_name'] },
+            { key: 'email', label: 'Email Address', required: true, aliases: ['email', 'email_address', 'mail', 'email_id', 'emailid', 'student_email', 'ending_emailid'] },
+            { key: 'studentId', label: 'Student ID / Admission No', required: false, aliases: ['student_id', 'studentid', 'admission_number', 'admission_no', 'admn_no', 'adm_no', 'reg_no', 'regn_no', 'registration_no', 'registration_number', 'epunjab_id', 'enrollment_no', 'id_no'] },
             { key: 'phone', label: 'Phone Number', required: false, aliases: ['phone', 'mobile', 'mobile_no', 'contact', 'contact_no', 'phone_number', 'telephone'] },
             { key: 'gender', label: 'Gender', required: false, aliases: ['gender', 'sex'] },
-            { key: 'rollNumber', label: 'Class Roll No', required: false, aliases: ['class_roll_no', 'roll_number', 'roll_no', 'roll', 'sr_no', 'serial_number'] }
+            { key: 'rollNumber', label: 'Class Roll No', required: false, aliases: ['class_roll_no', 'roll_number', 'roll_no', 'roll', 'sr_no', 'srno', 's_no', 'sl_no', 'serial_number', 'serial_no', 'r_no', 'rno'] }
         ]
     },
     lab_items: {
@@ -192,7 +193,7 @@ function detectTableAndMapping(rawHeaders = [], sampleRows = []) {
         confidence: Math.max(0.1, Math.min(1.0, (highestScore / (normHeaders.length * 10)))),
         columnMapping: bestMappings,
         availableFields: selectedSchema.fields,
-        tableOptions: Object.values(TABLE_SCHEMAS).map(t => ({ id: t.id, label: t.label }))
+        tableOptions: Object.values(TABLE_SCHEMAS).map(t => ({ id: t.id, label: t.label, fields: t.fields }))
     };
 }
 
@@ -203,8 +204,9 @@ function detectTableAndMapping(rawHeaders = [], sampleRows = []) {
  * @param {string} targetTable - Table ID
  * @returns {Array<Object>} Cleaned records
  */
-function applyMapping(records = [], columnMapping = {}, targetTable = 'users') {
+function applyMapping(records = [], columnMapping = {}, targetTable = 'users', options = {}) {
     if (!Array.isArray(records)) return [];
+    const customEmailDomain = options?.emailDomain ? options.emailDomain.replace(/^@/, '').trim().toLowerCase() : null;
 
     return records.map((row, idx) => {
         const item = { _originalRowIndex: idx + 1 };
@@ -220,16 +222,23 @@ function applyMapping(records = [], columnMapping = {}, targetTable = 'users') {
 
         // Specific post-processing heuristics
         if (targetTable === 'users') {
-            // Split combined student name if lastName is missing
-            if (item.firstName && !item.lastName && item.firstName.includes(' ')) {
-                const parts = item.firstName.split(' ');
+            // Split combined student name into firstName and lastName
+            if (item.firstName && item.firstName.includes(' ')) {
+                const parts = item.firstName.trim().split(/\s+/);
                 item.firstName = parts[0];
-                item.lastName = parts.slice(1).join(' ');
+                if (!item.lastName || item.lastName === 'Student' || item.lastName === item.parentName) {
+                    item.lastName = parts.slice(1).join(' ');
+                }
             }
             if (!item.lastName) item.lastName = 'Student';
 
-            // Auto-generate student email if missing
-            if (!item.email && item.firstName) {
+            // Auto-generate student email if missing or enforce custom email domain
+            if (customEmailDomain) {
+                const cleanFirst = String(item.firstName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '');
+                const cleanLast = String(item.lastName && item.lastName !== 'Student' ? item.lastName : '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                const baseEmail = cleanLast ? `${cleanFirst}.${cleanLast}` : cleanFirst;
+                item.email = `${baseEmail}@${customEmailDomain}`;
+            } else if (!item.email && item.firstName) {
                 const cleanFirst = String(item.firstName).toLowerCase().replace(/[^a-z0-9]/g, '');
                 const cleanLast = String(item.lastName).toLowerCase().replace(/[^a-z0-9]/g, '');
                 const idTag = item.studentId ? String(item.studentId).toLowerCase().replace(/[^a-z0-9]/g, '') : Math.floor(100 + Math.random() * 900);
@@ -256,6 +265,49 @@ function applyMapping(records = [], columnMapping = {}, targetTable = 'users') {
             if (!item.itemType) item.itemType = 'pc';
             if (!item.status) item.status = 'active';
             if (!item.itemNumber) item.itemNumber = `ITEM-${Date.now().toString().slice(-4)}-${idx + 1}`;
+        }
+
+        if (targetTable === 'classes') {
+            if (item.gradeLevel) {
+                const gl = parseInt(item.gradeLevel, 10);
+                if (!isNaN(gl)) item.gradeLevel = gl;
+            }
+            if (item.maxStudents) {
+                const ms = parseInt(item.maxStudents, 10);
+                if (!isNaN(ms)) item.maxStudents = ms;
+            }
+        }
+
+        if (targetTable === 'subjects') {
+            if (item.gradeLevel) {
+                const gl = parseInt(item.gradeLevel, 10);
+                if (!isNaN(gl)) item.gradeLevel = gl;
+            }
+            if (item.totalTheoryMarks) {
+                const tm = parseInt(item.totalTheoryMarks, 10);
+                if (!isNaN(tm)) item.totalTheoryMarks = tm;
+            }
+            if (item.totalPracticalMarks) {
+                const pm = parseInt(item.totalPracticalMarks, 10);
+                if (!isNaN(pm)) item.totalPracticalMarks = pm;
+            }
+        }
+
+        if (targetTable === 'tickets') {
+            if (!item.priority) item.priority = 'medium';
+            if (!item.status) item.status = 'open';
+            if (!item.category) item.category = 'other';
+        }
+
+        if (targetTable === 'procurement_requests') {
+            if (item.quantity) {
+                const q = parseInt(item.quantity, 10);
+                if (!isNaN(q)) item.quantity = q;
+            }
+            if (item.estimatedCost) {
+                const c = parseFloat(item.estimatedCost);
+                if (!isNaN(c)) item.estimatedCost = c;
+            }
         }
 
         return item;

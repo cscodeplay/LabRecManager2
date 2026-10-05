@@ -67,6 +67,9 @@ import GameSelectorModal from './games/GameSelectorModal';
 import WhiteboardShooterGame from './games/WhiteboardShooterGame';
 import WhiteboardSnakeGame from './games/WhiteboardSnakeGame';
 import { convertToGameObjects, generateRandomObstacles } from './games/obstacleConverter';
+import WhiteboardQuizSideroll from './WhiteboardQuizSideroll';
+import WhiteboardBrowserSideroll from './WhiteboardBrowserSideroll';
+import WhiteboardPageQuizWidget from './WhiteboardPageQuizWidget';
 import api, { aiAPI } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { useAuthStore, useVoiceStore } from '@/lib/store';
@@ -1579,6 +1582,54 @@ export default function Whiteboard({
     const graphObjects = pageGraphObjects[currentPage] || [];
     const [selectedGraphId, setSelectedGraphId] = useState(null);
 
+    // ─── AI Quiz Attached Objects State & Sideroll Overlay States ───
+    const [pageQuizObjects, setPageQuizObjects] = useState({ 0: [] });
+    const quizObjects = pageQuizObjects[currentPage] || [];
+    const [leftSiderollMode, setLeftSiderollMode] = useState('closed'); // 'closed' | 'partial' | 'full'
+    const [rightSiderollMode, setRightSiderollMode] = useState('closed'); // 'closed' | 'partial' | 'full'
+    const [activeTakingQuiz, setActiveTakingQuiz] = useState(null);
+
+    const attachQuizToPage = useCallback((quiz, targetPage = currentPage) => {
+        setPageQuizObjects(prev => ({
+            ...prev,
+            [targetPage]: [
+                ...(prev[targetPage] || []).filter(q => (q.id || q.code) !== (quiz.id || quiz.code)),
+                { ...quiz, x: 60, y: 60 }
+            ]
+        }));
+    }, [currentPage]);
+
+    const detachQuizFromPage = useCallback((quizId, targetPage = currentPage) => {
+        setPageQuizObjects(prev => ({
+            ...prev,
+            [targetPage]: (prev[targetPage] || []).filter(q => (q.id || q.code) !== quizId)
+        }));
+    }, [currentPage]);
+
+    const handleAddTextFromBrowser = useCallback((text) => {
+        if (!text || !text.trim()) return;
+        const canvas = canvasRef.current;
+        const newTextObj = {
+            id: `txt_${Date.now()}`,
+            type: 'text',
+            text: text.trim(),
+            x: canvas ? Math.max(50, Math.round(canvas.width / 2 - 160)) : 100,
+            y: canvas ? Math.max(50, Math.round(canvas.height / 2 - 80)) : 100,
+            width: 320,
+            height: 140,
+            fontSize: 16,
+            color: '#1e293b',
+            backgroundColor: '#fef08a',
+            zIndex: 20
+        };
+        setTextObjects(prev => [...prev, newTextObj]);
+    }, [setTextObjects]);
+
+    const handleAddImageFromBrowser = useCallback((imageUrl) => {
+        if (!imageUrl) return;
+        insertImageFromSrc(imageUrl);
+    }, [insertImageFromSrc]);
+
     // Global Shift key tracking for geometric aspect-ratio (circles) and straight-line constraints
     const [isShiftDown, setIsShiftDown] = useState(false);
     useEffect(() => {
@@ -1865,6 +1916,7 @@ export default function Whiteboard({
                     if (state.pagePdfObjects) setPagePdfObjects(state.pagePdfObjects);
                     if (state.page3DObjects) setPage3DObjects(state.page3DObjects);
                     if (state.pageGraphObjects) setPageGraphObjects(state.pageGraphObjects);
+                    if (state.pageQuizObjects) setPageQuizObjects(state.pageQuizObjects);
                     if (state.whiteboardTasks) setWhiteboardTasks(state.whiteboardTasks);
                     if (state.color) setColor(state.color);
                     if (state.fillColor) setFillColor(state.fillColor);
@@ -1936,6 +1988,7 @@ export default function Whiteboard({
                     pagePdfObjects,
                     page3DObjects,
                     pageGraphObjects,
+                    pageQuizObjects,
                     whiteboardTasks,
                     color,
                     fillColor,
@@ -10046,6 +10099,7 @@ export default function Whiteboard({
         setPagePdfObjects(prev => ({ ...prev, [newIndex]: [] }));
         setPage3DObjects(prev => ({ ...prev, [newIndex]: [] }));
         setPageGraphObjects(prev => ({ ...prev, [newIndex]: [] }));
+        setPageQuizObjects(prev => ({ ...prev, [newIndex]: [] }));
 
         // Clear active selections
         setSelectedImageIds([]);
@@ -10101,6 +10155,10 @@ export default function Whiteboard({
         setPageGraphObjects(prev => ({
             ...prev,
             [newIndex]: (prev[currentPage] || []).map(g => ({ ...g, id: `graph_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }))
+        }));
+        setPageQuizObjects(prev => ({
+            ...prev,
+            [newIndex]: (prev[currentPage] || []).map(q => ({ ...q, id: `quiz_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }))
         }));
 
         loadPage(newIndex);
@@ -14764,8 +14822,49 @@ export default function Whiteboard({
     return (
         <div
             ref={containerRef}
-            className={`relative bg-white rounded-xl shadow-2xl flex flex-col ${isFullscreen ? 'h-full w-full border-0 rounded-none' : ''}`}
+            className={`relative bg-slate-900 rounded-xl shadow-2xl flex flex-row overflow-hidden ${isFullscreen ? 'h-full w-full border-0 rounded-none' : 'w-full h-full'}`}
         >
+            {/* Left Sideroll: AI Quiz Hub (Closed / Partial / Full) */}
+            <WhiteboardQuizSideroll
+                mode={leftSiderollMode}
+                onModeChange={setLeftSiderollMode}
+                currentPage={currentPage}
+                isInstructor={isInstructor}
+                user={useAuthStore.getState().user}
+                attachedQuizzes={quizObjects}
+                onAttachQuizToPage={attachQuizToPage}
+                onDetachQuizFromPage={detachQuizFromPage}
+                activeTakingQuiz={activeTakingQuiz}
+                onClearActiveTakingQuiz={() => setActiveTakingQuiz(null)}
+            />
+
+            {/* Center Canvas Area (Dynamic Width Adjustment) */}
+            <div className="flex-1 h-full min-w-0 relative flex flex-col overflow-hidden bg-white">
+                {/* Left Edge Open Button when closed */}
+                {leftSiderollMode === 'closed' && (
+                    <button
+                        onClick={() => setLeftSiderollMode('partial')}
+                        className="absolute left-0 top-1/2 -translate-y-1/2 z-40 bg-slate-900/90 hover:bg-indigo-600 text-white p-2 py-3 rounded-r-2xl shadow-xl border border-l-0 border-slate-700/80 transition flex items-center gap-1 group"
+                        title="Open AI Quiz Hub"
+                    >
+                        <HelpCircle className="w-4 h-4 text-indigo-400 group-hover:text-white" />
+                        <span className="text-[11px] font-bold pr-1 hidden group-hover:inline">AI Quiz</span>
+                        <ChevronRight className="w-3 h-3 text-slate-400 group-hover:text-white" />
+                    </button>
+                )}
+
+                {/* Right Edge Open Button when closed */}
+                {rightSiderollMode === 'closed' && (
+                    <button
+                        onClick={() => setRightSiderollMode('partial')}
+                        className="absolute right-0 top-1/2 -translate-y-1/2 z-40 bg-slate-900/90 hover:bg-emerald-600 text-white p-2 py-3 rounded-l-2xl shadow-xl border border-r-0 border-slate-700/80 transition flex items-center gap-1 group"
+                        title="Open Research Browser"
+                    >
+                        <ChevronLeft className="w-3 h-3 text-slate-400 group-hover:text-white" />
+                        <span className="text-[11px] font-bold pl-1 hidden group-hover:inline">Research</span>
+                        <Globe className="w-4 h-4 text-emerald-400 group-hover:text-white" />
+                    </button>
+                )}
             {/* Whiteboard Workspace Container */}
 
             {/* Floating Sleek Toolbar / View-Only Status Pill */}
@@ -21819,8 +21918,8 @@ export default function Whiteboard({
 
                     {/* 3D Objects Layer (3D perspective mesh projection, 3D trackball rotation, 2D controls) */}
                     {(page3DObjects[currentPage] || []).map((obj3d) => (
-                        
                         <Whiteboard3DObject
+                            key={obj3d.id}
                             obj={obj3d}
                             isSelected={selected3DIds.includes(obj3d.id)}
                             scale={currentZoom}
@@ -22039,6 +22138,34 @@ export default function Whiteboard({
                             }}
                             onBringForward={() => handleBringForward(graphObj.id)}
                             onSendBackward={() => handleSendBackward(graphObj.id)}
+                        />
+                    ))}
+
+                    {/* Page-Attached AI Quizzes Layer */}
+                    {(pageQuizObjects[currentPage] || []).filter(Boolean).map((quizObj) => (
+                        <WhiteboardPageQuizWidget
+                            key={quizObj.id || quizObj.code}
+                            quiz={quizObj}
+                            pageIndex={currentPage}
+                            isInstructor={isInstructor}
+                            onTakeQuiz={(q) => {
+                                setActiveTakingQuiz(q);
+                                setLeftSiderollMode('partial');
+                            }}
+                            onViewResults={(q) => {
+                                setActiveTakingQuiz(q);
+                                setLeftSiderollMode('partial');
+                            }}
+                            onDetach={(quizId) => {
+                                detachQuizFromPage(quizId, currentPage);
+                                toast.success('Quiz detached from this page');
+                            }}
+                            onPositionChange={(quizId, newX, newY) => {
+                                setPageQuizObjects(prev => ({
+                                    ...prev,
+                                    [currentPage]: (prev[currentPage] || []).map(q => (q.id || q.code) === quizId ? { ...q, x: newX, y: newY } : q)
+                                }));
+                            }}
                         />
                     ))}
                 </div>
@@ -23291,6 +23418,16 @@ export default function Whiteboard({
                     onExit={() => setActiveGame(null)}
                 />
             )}
+
+            </div>
+
+            {/* Right Sideroll: Research Browser & Asset Clipper (Closed / Partial / Full) */}
+            <WhiteboardBrowserSideroll
+                mode={rightSiderollMode}
+                onModeChange={setRightSiderollMode}
+                onAddTextToBoard={handleAddTextFromBrowser}
+                onAddImageToBoard={handleAddImageFromBrowser}
+            />
 
         </div>
     );

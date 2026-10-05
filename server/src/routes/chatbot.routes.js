@@ -261,28 +261,41 @@ router.post('/upload', authenticate, authorize('admin', 'principal', 'instructor
         let parsedRows = [];
 
         // Check if any file was CSV/Excel/Text with delimited structure
-        const csvFile = processedResults.find(f => f.fileName?.match(/\.(csv|tsv|txt)$/i));
+        const csvFile = processedResults.find(f => f.fileName?.match(/\.(csv|tsv|txt|xlsx|xls|pdf|docx)$/i) || f.extractedText?.includes(','));
         if (csvFile && csvFile.extractedText) {
-            const lines = csvFile.extractedText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-            if (lines.length >= 2) {
-                // Check delimiter: comma, tab, semicolon, or pipe
-                const firstLine = lines[0];
+            const rawLines = csvFile.extractedText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+            const cleanLines = rawLines.filter(l => !l.startsWith('===') && !l.startsWith('---'));
+            if (cleanLines.length >= 2) {
+                // Find best header row (in case sheet has title lines at top)
+                let headerIdx = 0;
                 let delim = ',';
-                if (firstLine.includes('\t')) delim = '\t';
-                else if (firstLine.includes(';') && !firstLine.includes(',')) delim = ';';
-                else if (firstLine.includes('|') && !firstLine.includes(',')) delim = '|';
+                for (let i = 0; i < Math.min(cleanLines.length, 15); i++) {
+                    const line = cleanLines[i];
+                    let d = ',';
+                    if (line.includes('\t')) d = '\t';
+                    else if (line.includes(';') && !line.includes(',')) d = ';';
+                    else if (line.includes('|') && !line.includes(',')) d = '|';
 
-                const rawH = firstLine.split(delim).map(h => h.trim().replace(/^["']|["']$/g, ''));
+                    const pLower = line.toLowerCase();
+                    if ((pLower.includes('name') || pLower.includes('student') || pLower.includes('candidate')) &&
+                        (pLower.includes('roll') || pLower.includes('id') || pLower.includes('adm') || pLower.includes('class') || pLower.includes('phone') || pLower.includes('email') || pLower.includes('gender') || pLower.includes('item'))) {
+                        headerIdx = i;
+                        delim = d;
+                        break;
+                    }
+                }
+
+                const rawH = cleanLines[headerIdx].split(delim).map(h => h.trim().replace(/^["']|["']$/g, ''));
                 if (rawH.length >= 2) {
                     parsedHeaders = rawH;
-                    for (let r = 1; r < lines.length; r++) {
-                        const rowVals = lines[r].split(delim).map(c => c.trim().replace(/^["']|["']$/g, ''));
+                    for (let r = headerIdx + 1; r < cleanLines.length; r++) {
+                        const rowVals = cleanLines[r].split(delim).map(c => c.trim().replace(/^["']|["']$/g, ''));
                         if (rowVals.length === 0 || (rowVals.length === 1 && !rowVals[0])) continue;
                         const rowObj = {};
                         rawH.forEach((h, idx) => {
                             rowObj[h] = rowVals[idx] !== undefined ? rowVals[idx] : '';
                         });
-                        rowObj._originalRowIndex = r;
+                        rowObj._originalRowIndex = r - headerIdx;
                         rowObj.selected = true;
                         parsedRows.push(rowObj);
                     }
@@ -630,9 +643,11 @@ router.post('/load-data', authenticate, authorize('admin', 'principal', 'instruc
     }
 
     const effectiveTable = targetTable || (actionType === 'student_import' ? 'users' : 'lab_items');
+    const customEmailDomain = (req.body.emailDomain ? String(req.body.emailDomain).replace(/^@/, '').trim().toLowerCase() : null);
+
     // Apply column mapping if provided
     const records = columnMapping && Object.keys(columnMapping).length > 0
-        ? applyMapping(rawRecords, columnMapping, effectiveTable)
+        ? applyMapping(rawRecords, columnMapping, effectiveTable, { emailDomain: customEmailDomain })
         : rawRecords;
 
     const failedRows = [];
@@ -656,17 +671,28 @@ router.post('/load-data', authenticate, authorize('admin', 'principal', 'instruc
             const rowIdx = rec._originalRowIndex || (i + 1);
 
             try {
+                // If firstName contains multiple words and lastName is missing or default, split it
+                if (rec.firstName && (!rec.lastName || rec.lastName === 'Student') && String(rec.firstName).includes(' ')) {
+                    const parts = String(rec.firstName).trim().split(/\s+/);
+                    rec.firstName = parts[0];
+                    rec.lastName = parts.slice(1).join(' ');
+                }
+
                 if (!rec.firstName || !String(rec.firstName).trim()) {
                     throw new Error('First name is required');
                 }
 
-                // Generate email if missing
+                // Generate email if missing or enforce custom domain if requested
                 let email = rec.email ? String(rec.email).trim().toLowerCase() : null;
+                if (customEmailDomain && email && !email.endsWith(`@${customEmailDomain}`)) {
+                    email = `${email.split('@')[0]}@${customEmailDomain}`;
+                }
                 if (!email) {
                     const cleanFirst = String(rec.firstName).toLowerCase().replace(/[^a-z0-9]/g, '');
-                    const cleanLast = (rec.lastName ? String(rec.lastName) : 'stu').toLowerCase().replace(/[^a-z0-9]/g, '');
-                    const cleanId = rec.studentId ? String(rec.studentId).toLowerCase().replace(/[^a-z0-9]/g, '') : `${Date.now().toString().slice(-4)}${i}`;
-                    email = `${cleanFirst}.${cleanLast}.${cleanId}@student.school.edu`;
+                    const cleanLast = (rec.lastName && rec.lastName !== 'Student' ? String(rec.lastName) : '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const domain = customEmailDomain || 'student.school.edu';
+                    const emailPrefix = cleanLast ? `${cleanFirst}.${cleanLast}` : cleanFirst;
+                    email = `${emailPrefix}@${domain}`;
                 }
 
                 // Check existing user
@@ -841,6 +867,198 @@ router.post('/load-data', authenticate, authorize('admin', 'principal', 'instruc
             message: failedRows.length === 0
                 ? `Successfully loaded all ${createdItems.length} inventory items into "${labName}"!`
                 : `Loaded ${createdItems.length} items into "${labName}". ${failedRows.length} row(s) failed.`
+        });
+    }
+
+    // Case C: Classes Import into classes table
+    if (effectiveTable === 'classes') {
+        const academicYear = await prisma.academicYear.findFirst({
+            where: { ...(schoolId ? { schoolId } : {}), isCurrent: true }
+        }) || await prisma.academicYear.findFirst({ where: schoolId ? { schoolId } : {} });
+
+        if (!academicYear) {
+            return res.status(400).json({ success: false, message: 'No academic year configured for school. Please create an academic year first.' });
+        }
+
+        let successCount = 0;
+        const createdClasses = [];
+
+        for (let i = 0; i < records.length; i++) {
+            const item = records[i];
+            const rowIdx = item._originalRowIndex || (i + 1);
+
+            try {
+                const name = item.name ? String(item.name).trim() : null;
+                if (!name) throw new Error('Class name is required');
+                const gradeLevel = item.gradeLevel ? parseInt(item.gradeLevel, 10) : 11;
+                const section = item.section ? String(item.section).trim() : null;
+                const stream = item.stream ? String(item.stream).trim() : null;
+                const maxStudents = item.maxStudents ? parseInt(item.maxStudents, 10) : 60;
+
+                const existing = await prisma.class.findFirst({
+                    where: { schoolId, name, academicYearId: academicYear.id }
+                });
+
+                if (existing) {
+                    const updated = await prisma.class.update({
+                        where: { id: existing.id },
+                        data: {
+                            gradeLevel: isNaN(gradeLevel) ? existing.gradeLevel : gradeLevel,
+                            section: section || existing.section,
+                            stream: stream || existing.stream,
+                            maxStudents: isNaN(maxStudents) ? existing.maxStudents : maxStudents
+                        }
+                    });
+                    createdClasses.push(updated);
+                } else {
+                    const created = await prisma.class.create({
+                        data: {
+                            schoolId,
+                            academicYearId: academicYear.id,
+                            name,
+                            gradeLevel: isNaN(gradeLevel) ? 11 : gradeLevel,
+                            section,
+                            stream,
+                            maxStudents: isNaN(maxStudents) ? 60 : maxStudents
+                        }
+                    });
+                    createdClasses.push(created);
+                }
+                successCount++;
+            } catch (err) {
+                failedRows.push({
+                    row: rowIdx,
+                    identifier: item.name || `Row ${rowIdx}`,
+                    error: err.message
+                });
+            }
+        }
+
+        chatbotService.refreshSchema().catch(e => console.warn('[ChatBot] Post-import schema refresh failed:', e.message));
+
+        return res.json({
+            success: true,
+            count: successCount,
+            failedCount: failedRows.length,
+            failedRows,
+            items: createdClasses,
+            message: failedRows.length === 0
+                ? `Successfully imported all ${successCount} classes into the registry!`
+                : `Imported ${successCount} classes. ${failedRows.length} row(s) failed.`
+        });
+    }
+
+    // Case D: Subjects Import into subjects table
+    if (effectiveTable === 'subjects') {
+        let successCount = 0;
+        const createdSubjects = [];
+
+        for (let i = 0; i < records.length; i++) {
+            const item = records[i];
+            const rowIdx = item._originalRowIndex || (i + 1);
+
+            try {
+                const name = item.name ? String(item.name).trim() : null;
+                if (!name) throw new Error('Subject name is required');
+                const code = item.code ? String(item.code).trim().toUpperCase() : name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 8).toUpperCase();
+
+                const existing = await prisma.subject.findFirst({
+                    where: { schoolId, code }
+                });
+
+                if (existing) {
+                    const updated = await prisma.subject.update({
+                        where: { id: existing.id },
+                        data: {
+                            name,
+                            hasLab: item.hasLab !== undefined ? Boolean(item.hasLab) : existing.hasLab,
+                            labHoursPerWeek: item.labHoursPerWeek ? parseInt(item.labHoursPerWeek, 10) : existing.labHoursPerWeek,
+                            theoryHoursPerWeek: item.theoryHoursPerWeek ? parseInt(item.theoryHoursPerWeek, 10) : existing.theoryHoursPerWeek
+                        }
+                    });
+                    createdSubjects.push(updated);
+                } else {
+                    const created = await prisma.subject.create({
+                        data: {
+                            schoolId,
+                            name,
+                            code,
+                            hasLab: Boolean(item.hasLab || item.labHoursPerWeek),
+                            labHoursPerWeek: item.labHoursPerWeek ? parseInt(item.labHoursPerWeek, 10) : 0,
+                            theoryHoursPerWeek: item.theoryHoursPerWeek ? parseInt(item.theoryHoursPerWeek, 10) : 4
+                        }
+                    });
+                    createdSubjects.push(created);
+                }
+                successCount++;
+            } catch (err) {
+                failedRows.push({
+                    row: rowIdx,
+                    identifier: item.name || item.code || `Row ${rowIdx}`,
+                    error: err.message
+                });
+            }
+        }
+
+        chatbotService.refreshSchema().catch(e => console.warn('[ChatBot] Post-import schema refresh failed:', e.message));
+
+        return res.json({
+            success: true,
+            count: successCount,
+            failedCount: failedRows.length,
+            failedRows,
+            items: createdSubjects,
+            message: failedRows.length === 0
+                ? `Successfully imported all ${successCount} curriculum subjects!`
+                : `Imported ${successCount} subjects. ${failedRows.length} row(s) failed.`
+        });
+    }
+
+    // Case E: Tickets Import into tickets table
+    if (effectiveTable === 'tickets') {
+        let successCount = 0;
+        const createdTickets = [];
+
+        for (let i = 0; i < records.length; i++) {
+            const item = records[i];
+            const rowIdx = item._originalRowIndex || (i + 1);
+
+            try {
+                const title = item.title ? String(item.title).trim() : null;
+                if (!title) throw new Error('Ticket title is required');
+                const description = item.description ? String(item.description).trim() : title;
+                const ticketNumber = `TKT-${Date.now().toString().slice(-4)}-${i + 1}`;
+
+                const created = await prisma.ticket.create({
+                    data: {
+                        ticketNumber,
+                        title,
+                        description,
+                        category: item.category || 'other',
+                        priority: item.priority || 'medium',
+                        status: item.status || 'open',
+                        createdById: req.user.id,
+                        labId: labId || null
+                    }
+                });
+                createdTickets.push(created);
+                successCount++;
+            } catch (err) {
+                failedRows.push({
+                    row: rowIdx,
+                    identifier: item.title || `Row ${rowIdx}`,
+                    error: err.message
+                });
+            }
+        }
+
+        return res.json({
+            success: true,
+            count: successCount,
+            failedCount: failedRows.length,
+            failedRows,
+            items: createdTickets,
+            message: `Successfully created ${successCount} support tickets!`
         });
     }
 

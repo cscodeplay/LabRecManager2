@@ -54,6 +54,7 @@ model School {
   schoolCalendar        SchoolCalendar[]
   lecturePlans          LecturePlan[]
   whiteboardFiles       WhiteboardFile[]
+  quizzes               Quiz[]
 
   @@map("schools")
 }
@@ -227,6 +228,8 @@ model User {
   adminNotes                                     AdminNote[]                @relation("AdminNotesAuthor")
   DocumentViewLog                                DocumentViewLog[]
   ChatSession                                    ChatSession[]
+  quizzesCreated                                 Quiz[]                     @relation("QuizCreator")
+  quizSubmissions                                QuizSubmission[]           @relation("QuizStudent")
 
   @@unique([schoolId, studentId], map: "unique_student_id_per_school")
   @@index([email], map: "idx_users_email")
@@ -2429,4 +2432,47 @@ model ChatMessage {
   session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@map("chat_messages")
+}
+
+model Quiz {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code             String           @unique @db.VarChar(10)
+  title            String           @db.VarChar(255)
+  description      String?          @db.Text
+  keywords         String?          @db.Text
+  difficulty       String?          @default("medium") @db.VarChar(50)
+  totalQuestions   Int              @default(5) @map("total_questions")
+  timeLimitMinutes Int              @default(10) @map("time_limit_minutes")
+  questions        Json             @default("[]")
+  status           String           @default("published") @db.VarChar(50)
+  createdById      String?          @map("created_by_id") @db.Uuid
+  schoolId         String?          @map("school_id") @db.Uuid
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  creator          User?            @relation("QuizCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  school           School?          @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  submissions      QuizSubmission[]
+
+  @@map("quizzes")
+}
+
+model QuizSubmission {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quizId           String    @map("quiz_id") @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  score            Float     @default(0)
+  maxScore         Float     @default(0) @map("max_score")
+  percentage       Float     @default(0)
+  correctAnswers   Int       @default(0) @map("correct_answers")
+  totalQuestions   Int       @default(0) @map("total_questions")
+  timeTakenSeconds Int       @default(0) @map("time_taken_seconds")
+  answers          Json      @default("[]")
+  isTimedOut       Boolean   @default(false) @map("is_timed_out")
+  submittedAt      DateTime  @default(now()) @map("submitted_at") @db.Timestamp(6)
+
+  quiz             Quiz      @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  user             User      @relation("QuizStudent", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("quiz_submissions")
 }
