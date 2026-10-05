@@ -718,8 +718,6 @@ export const aiAPI = {
     testProvider: (data) => api.post('/ai/test-provider', data),
 };
 
-export default api;
-
 export const subjectsAPI = {
     getAll: () => api.get('/subjects'),
 };
