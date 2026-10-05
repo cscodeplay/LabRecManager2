@@ -234,11 +234,21 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         const toastId = toast.loading(`Switching to ${emailOrId}...`);
         try {
             const res = await googleDriveAPI.switchAccount(emailOrId);
-            if (res.data?.requiresAuth && res.data?.authUrl) {
+            if (res.data?.requiresAuth) {
                 toast.dismiss(toastId);
-                toast(`Redirecting to Google to authorize ${emailOrId}...`, { icon: '🔐' });
                 setIsAccountDropdownOpen(false);
-                window.location.href = res.data.authUrl;
+                if (res.data.authUrl) {
+                    toast(`Redirecting to Google to authorize ${emailOrId}...`, { icon: '🔐' });
+                    window.location.href = res.data.authUrl;
+                } else {
+                    await handleConnectOAuth(true, emailOrId);
+                }
+                return;
+            }
+            if (res.data && res.data.success === false) {
+                toast.dismiss(toastId);
+                setIsAccountDropdownOpen(false);
+                toast.error(res.data.message || 'Failed to switch Google account');
                 return;
             }
             setIsAccountDropdownOpen(false);
@@ -250,14 +260,24 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         } catch (err) {
             console.error('Failed to switch Google account:', err);
             const errData = err.response?.data;
-            if (errData?.requiresAuth && errData?.authUrl) {
+            if (errData?.requiresAuth) {
                 toast.dismiss(toastId);
-                toast(`Redirecting to Google to authorize ${emailOrId}...`, { icon: '🔐' });
                 setIsAccountDropdownOpen(false);
-                window.location.href = errData.authUrl;
+                if (errData.authUrl) {
+                    toast(`Redirecting to Google to authorize ${emailOrId}...`, { icon: '🔐' });
+                    window.location.href = errData.authUrl;
+                } else {
+                    await handleConnectOAuth(true, emailOrId);
+                }
                 return;
             }
-            if (errData?.message?.includes('not authorized') || errData?.message?.includes('OAuth')) {
+            if (
+                errData?.message?.includes('not authorized') ||
+                errData?.message?.includes('OAuth') ||
+                errData?.message?.includes('credentials') ||
+                errData?.message?.includes('expired') ||
+                err.response?.status === 500
+            ) {
                 toast.dismiss(toastId);
                 setIsAccountDropdownOpen(false);
                 await handleConnectOAuth(true, emailOrId);

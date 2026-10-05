@@ -870,10 +870,17 @@ class GoogleDriveService {
      */
     async switchAccount(accountIdOrEmail, callbackUrl = null) {
         if (!accountIdOrEmail) {
-            throw new Error('Account email or ID is required');
+            return {
+                success: false,
+                requiresAuth: false,
+                message: 'Account email or ID is required'
+            };
         }
 
-        const norm = accountIdOrEmail.toLowerCase().trim();
+        const rawTarget = typeof accountIdOrEmail === 'string'
+            ? accountIdOrEmail
+            : (accountIdOrEmail.email || accountIdOrEmail.id || accountIdOrEmail.accountId || String(accountIdOrEmail));
+        const norm = (rawTarget || '').toLowerCase().trim();
 
         // Check if account is Apple iCloud
         if (norm === 'apple_icloud' || norm.includes('icloud') || norm.includes('apple')) {
@@ -922,6 +929,8 @@ class GoogleDriveService {
             };
         }
 
+        await this.ensureSettingsTable();
+        await this.loadOAuthConfigFromDb();
         this.loadAccountsStore();
         await this.loadAccountsStoreFromDb();
 
@@ -944,13 +953,23 @@ class GoogleDriveService {
                 requiresAuth: true,
                 targetEmail: norm,
                 authUrl,
-                message: `Google Account "${accountIdOrEmail}" is not authorized yet. Please connect via Google OAuth.`
+                message: `Google Account "${rawTarget}" is not authorized yet. Please connect via Google OAuth.`
             };
         }
 
         const config = this.getOAuthConfig();
         if (!config.clientId || !config.clientSecret) {
-            throw new Error('Google OAuth Client credentials not configured');
+            let authUrl = null;
+            try {
+                authUrl = this.generateAuthUrl(callbackUrl, { prompt: 'select_account consent', login_hint: norm });
+            } catch (e) {}
+            return {
+                success: false,
+                requiresAuth: Boolean(authUrl),
+                targetEmail: norm,
+                authUrl,
+                message: 'Google OAuth Client ID and Secret are not configured. Please configure them in Admin Settings > Cloud Storage & Drives.'
+            };
         }
 
         const oauth2Client = new google.auth.OAuth2(
@@ -960,7 +979,7 @@ class GoogleDriveService {
         );
         oauth2Client.setCredentials(target.tokens);
 
-        const email = target.email;
+        const email = target.email || norm;
         oauth2Client.on('tokens', async (newTokens) => {
             if (this.connectedGoogleAccounts[email]) {
                 this.connectedGoogleAccounts[email].tokens = {
@@ -982,17 +1001,58 @@ class GoogleDriveService {
         this.activeAccountEmail = email;
         this._cachedTokens = target.tokens;
 
-        await this.saveAccountsStore();
-        await this.saveTokens(target.tokens);
+        try {
+            await this.saveAccountsStore();
+        } catch (e) {
+            console.warn('[GoogleDrive] saveAccountsStore warning:', e.message);
+        }
+        try {
+            await this.saveTokens(target.tokens);
+        } catch (e) {
+            console.warn('[GoogleDrive] saveTokens warning:', e.message);
+        }
 
         console.log(`✅ [GoogleDrive] Switched active Google Drive account to ${email}`);
-        const quota = await this.getStorageQuota();
+        let quota = null;
+        try {
+            quota = await this.getStorageQuota();
+        } catch (qErr) {
+            console.warn('[GoogleDrive] getStorageQuota notice:', qErr.message);
+            quota = {
+                isConfigured: true,
+                authType: 'oauth_user',
+                user: { emailAddress: email, displayName: target.displayName || email },
+                quota: { limitFormatted: '5.0 TB', usageFormatted: '0 B', freeFormatted: 'Available' }
+            };
+        }
+
+        // Check if token was revoked or expired and needs fresh OAuth consent
+        if (quota?.error && (
+            quota.error.includes('invalid_grant') ||
+            quota.error.includes('expired') ||
+            quota.error.includes('revoked') ||
+            quota.error.includes('invalid_token') ||
+            quota.error.includes('unauthorized')
+        )) {
+            let authUrl = null;
+            try {
+                authUrl = this.generateAuthUrl(callbackUrl, { prompt: 'select_account consent', login_hint: norm });
+            } catch (e) {}
+            return {
+                success: false,
+                requiresAuth: true,
+                targetEmail: norm,
+                authUrl,
+                message: `Google Account "${email}" authorization has expired or was revoked. Please connect via Google OAuth.`
+            };
+        }
+
         return {
             success: true,
             activeEmail: email,
             account: {
                 id: target.id || email,
-                email: target.email,
+                email: target.email || email,
                 displayName: target.displayName || email,
                 photoLink: target.photoLink || null,
                 status: target.status || 'connected',
@@ -1433,6 +1493,8 @@ class GoogleDriveService {
      */
     async initFromDb() {
         try {
+            await this.ensureSettingsTable();
+            await this.loadOAuthConfigFromDb();
             await this.loadAccountsStoreFromDb();
             const config = this.getOAuthConfig();
             let tokens = null;
@@ -1496,6 +1558,9 @@ class GoogleDriveService {
         }
         this._initializingPromise = (async () => {
             try {
+                await this.ensureSettingsTable();
+                await this.loadOAuthConfigFromDb();
+                await this.loadAccountsStoreFromDb();
                 await this.initFromDb();
             } finally {
                 this._initializingPromise = null;

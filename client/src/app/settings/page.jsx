@@ -761,10 +761,14 @@ export default function SettingsPage() {
         const toastId = toast.loading(`Switching active drive to ${accountIdOrEmail}...`);
         try {
             const res = await driveAdminAPI.switchAccount(accountIdOrEmail);
-            if (res.data?.requiresAuth && res.data?.authUrl) {
+            if (res.data?.requiresAuth) {
                 toast.dismiss(toastId);
-                toast(`Redirecting to Google to authorize ${accountIdOrEmail}...`, { icon: '🔐' });
-                window.location.href = res.data.authUrl;
+                if (res.data.authUrl) {
+                    toast(`Redirecting to Google to authorize ${accountIdOrEmail}...`, { icon: '🔐' });
+                    window.location.href = res.data.authUrl;
+                } else {
+                    handleConnectCloudOAuth('google', accountIdOrEmail);
+                }
                 return;
             }
             toast.success(res.data?.message || `Active drive switched to ${accountIdOrEmail}!`, { id: toastId });
@@ -772,10 +776,14 @@ export default function SettingsPage() {
         } catch (error) {
             console.error('Failed to switch drive account:', error);
             const errData = error.response?.data;
-            if (errData?.requiresAuth && errData?.authUrl) {
+            if (errData?.requiresAuth) {
                 toast.dismiss(toastId);
-                toast(`Redirecting to authorize ${accountIdOrEmail}...`, { icon: '🔐' });
-                window.location.href = errData.authUrl;
+                if (errData.authUrl) {
+                    toast(`Redirecting to authorize ${accountIdOrEmail}...`, { icon: '🔐' });
+                    window.location.href = errData.authUrl;
+                } else {
+                    handleConnectCloudOAuth('google', accountIdOrEmail);
+                }
                 return;
             }
             if (errData?.provider && errData.provider !== 'google') {

@@ -279,35 +279,50 @@ router.get('/providers', asyncHandler(async (req, res) => {
  * @desc    Switch active Google Drive account dynamically
  */
 router.post('/switch-account', asyncHandler(async (req, res) => {
-    const { accountId, email } = req.body || {};
-    const target = accountId || email;
-    if (!target) {
-        return res.status(400).json({ success: false, message: 'Account identifier is required' });
-    }
-    const callbackUrl = getCallbackUrl(req);
-    const result = await googleDriveService.switchAccount(target, callbackUrl);
-    if (result.requiresAuth) {
-        return res.json({
-            success: false,
-            requiresAuth: true,
-            authUrl: result.authUrl,
-            provider: result.provider || 'google',
-            message: result.message || 'Authorization required for this Google account',
+    try {
+        const { accountId, email } = req.body || {};
+        const target = accountId || email;
+        if (!target) {
+            return res.status(400).json({ success: false, message: 'Account identifier is required' });
+        }
+        const callbackUrl = getCallbackUrl(req);
+        const result = await googleDriveService.switchAccount(target, callbackUrl);
+        if (result.requiresAuth) {
+            return res.json({
+                success: false,
+                requiresAuth: true,
+                authUrl: result.authUrl,
+                provider: result.provider || 'google',
+                message: result.message || 'Authorization required for this Google account',
+                data: result
+            });
+        }
+        if (!result.success) {
+            return res.status(400).json({
+                success: false,
+                provider: result.provider || 'google',
+                message: result.message || 'Failed to switch account'
+            });
+        }
+        res.json({
+            success: true,
+            message: result.message || `Switched active Google Drive account to ${result.activeEmail}`,
             data: result
         });
-    }
-    if (!result.success) {
+    } catch (err) {
+        console.error('[DriveRouter] switch-account error:', err);
+        const callbackUrl = getCallbackUrl(req);
+        let authUrl = null;
+        try {
+            authUrl = googleDriveService.generateAuthUrl(callbackUrl, { prompt: 'select_account consent' });
+        } catch (e) {}
         return res.status(400).json({
             success: false,
-            provider: result.provider,
-            message: result.message || 'Failed to switch account'
+            requiresAuth: Boolean(authUrl),
+            authUrl,
+            message: err.message || 'Failed to switch Google account'
         });
     }
-    res.json({
-        success: true,
-        message: result.message || `Switched active Google Drive account to ${result.activeEmail}`,
-        data: result
-    });
 }));
 
 /**
