@@ -1606,30 +1606,6 @@ export default function Whiteboard({
         }));
     }, [currentPage]);
 
-    const handleAddTextFromBrowser = useCallback((text) => {
-        if (!text || !text.trim()) return;
-        const canvas = canvasRef.current;
-        const newTextObj = {
-            id: `txt_${Date.now()}`,
-            type: 'text',
-            text: text.trim(),
-            x: canvas ? Math.max(50, Math.round(canvas.width / 2 - 160)) : 100,
-            y: canvas ? Math.max(50, Math.round(canvas.height / 2 - 80)) : 100,
-            width: 320,
-            height: 140,
-            fontSize: 16,
-            color: '#1e293b',
-            backgroundColor: '#fef08a',
-            zIndex: 20
-        };
-        setTextObjects(prev => [...prev, newTextObj]);
-    }, [setTextObjects]);
-
-    const handleAddImageFromBrowser = useCallback((imageUrl) => {
-        if (!imageUrl) return;
-        insertImageFromSrc(imageUrl);
-    }, [insertImageFromSrc]);
-
     // Global Shift key tracking for geometric aspect-ratio (circles) and straight-line constraints
     const [isShiftDown, setIsShiftDown] = useState(false);
     useEffect(() => {
@@ -10367,6 +10343,31 @@ export default function Whiteboard({
             setTool(toolId);
         }
     }, []);
+
+    // ─── Research Browser Sideroll Clippers ───
+    const handleAddTextFromBrowser = useCallback((text) => {
+        if (!text || !text.trim()) return;
+        const canvas = canvasRef.current;
+        const newTextObj = {
+            id: `txt_${Date.now()}`,
+            type: 'text',
+            text: text.trim(),
+            x: canvas ? Math.max(50, Math.round(canvas.width / 2 - 160)) : 100,
+            y: canvas ? Math.max(50, Math.round(canvas.height / 2 - 80)) : 100,
+            width: 320,
+            height: 140,
+            fontSize: 16,
+            color: '#1e293b',
+            backgroundColor: '#fef08a',
+            zIndex: 20
+        };
+        setTextObjects(prev => [...prev, newTextObj]);
+    }, [setTextObjects]);
+
+    const handleAddImageFromBrowser = useCallback((imageUrl) => {
+        if (!imageUrl) return;
+        insertImageFromSrc(imageUrl);
+    }, [insertImageFromSrc]);
 
     // ─── TEACHER DEMONSTRATION & SPATIAL REASONING ENGINE ──────────────
     // 1. Gather rich spatial and conversational context of active board
