@@ -5,7 +5,7 @@ import {
     Globe, Search, ArrowLeft, ArrowRight, RotateCw, 
     ExternalLink, Copy, Check, Plus, Image as ImageIcon, 
     BookOpen, Sparkles, X, Maximize2, Minimize2, MoveRight,
-    MousePointer, HelpCircle, Layers, Bookmark
+    MousePointer, HelpCircle, Layers, Bookmark, Layout, CheckCircle2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { browserAPI } from '@/lib/api';
@@ -24,12 +24,13 @@ export default function WhiteboardBrowserSideroll({
     mode = 'closed', // 'closed' | 'partial' | 'full'
     onModeChange,
     onAddTextToBoard,
-    onAddImageToBoard
+    onAddImageToBoard,
+    onAddAIPanelToBoard
 }) {
     const [searchQuery, setSearchQuery] = useState('');
-    const [activeTab, setActiveTab] = useState('all'); // 'all' | 'articles' | 'images'
+    const [activeTab, setActiveTab] = useState('all'); // 'all' | 'ai' | 'articles' | 'images'
     const [isLoading, setIsLoading] = useState(false);
-    const [searchResults, setSearchResults] = useState({ query: '', articles: [], images: [] });
+    const [searchResults, setSearchResults] = useState({ query: '', aiOverview: null, articles: [], images: [] });
     
     // Detailed Article View inside Browser
     const [currentArticle, setCurrentArticle] = useState(null);
@@ -53,12 +54,12 @@ export default function WhiteboardBrowserSideroll({
         try {
             setIsLoading(true);
             setCurrentArticle(null);
-            const res = await browserAPI.search({ q, type: activeTab });
-            if (res.data.success) {
+            const res = await browserAPI.search({ q, type: activeTab, includeAi: 'true' });
+            if (res.data?.success) {
                 setSearchResults(res.data.data);
             }
         } catch (err) {
-            console.error('Browser search failed', err);
+            console.error('Browser search error:', err);
             toast.error('Search failed to load results');
         } finally {
             setIsLoading(false);
@@ -69,7 +70,7 @@ export default function WhiteboardBrowserSideroll({
         try {
             setIsLoadingArticle(true);
             const res = await browserAPI.getArticle({ title: articleTitle });
-            if (res.data.success) {
+            if (res.data?.success) {
                 setCurrentArticle(res.data.data);
             }
         } catch (err) {
@@ -116,6 +117,36 @@ export default function WhiteboardBrowserSideroll({
         }
     };
 
+    // 1-Click Transfer AI Overview with Diagrams as an Editable Panel
+    const handleTransferAIPanel = () => {
+        if (!onAddAIPanelToBoard) {
+            toast.error('Panel transfer not supported on this board');
+            return;
+        }
+
+        const overview = searchResults.aiOverview;
+        const panelData = {
+            id: `aipanel_${Date.now()}`,
+            title: overview?.title || searchResults.query || 'Research Topic',
+            summary: overview?.summary || (searchResults.articles[0]?.extract ? searchResults.articles[0].extract.slice(0, 300) : 'Academic research summary.'),
+            keyPoints: overview?.keyPoints || [
+                `Overview of ${searchResults.query}`,
+                'Core concepts and foundational principles',
+                'Visual and practical applications'
+            ],
+            formulaOrEquation: overview?.formulaOrEquation || null,
+            images: searchResults.images || [],
+            diagramUrl: overview?.aiDiagramUrl || (searchResults.images[0]?.url || null),
+            x: 80,
+            y: 80,
+            width: 440,
+            height: 'auto'
+        };
+
+        onAddAIPanelToBoard(panelData);
+        toast.success('Transferred to whiteboard as interactive editable panel!', { icon: '✨' });
+    };
+
     if (mode === 'closed') {
         return null;
     }
@@ -158,7 +189,7 @@ export default function WhiteboardBrowserSideroll({
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search Wikipedia, articles, or diagrams..."
+                            placeholder="Search Wikipedia, AI Overview & diagrams..."
                             className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
                         />
                         {searchQuery && (
@@ -211,21 +242,32 @@ export default function WhiteboardBrowserSideroll({
                 ))}
             </div>
 
-            {/* Filter Tabs: All, Articles, Images */}
-            <div className="flex items-center border-b border-slate-800 px-3 py-1.5 gap-2 bg-slate-950/40 text-xs flex-shrink-0">
+            {/* Filter Tabs: All, AI Overview, Articles, Images */}
+            <div className="flex items-center border-b border-slate-800 px-3 py-1.5 gap-1.5 bg-slate-950/40 text-xs flex-shrink-0 overflow-x-auto">
                 <button
                     onClick={() => setActiveTab('all')}
-                    className={`px-3 py-1 rounded-lg font-medium transition ${
+                    className={`px-2.5 py-1 rounded-lg font-medium transition ${
                         activeTab === 'all'
                             ? 'bg-emerald-600 text-white shadow'
                             : 'text-slate-400 hover:text-slate-200'
                     }`}
                 >
-                    All Research
+                    All Results
+                </button>
+                <button
+                    onClick={() => setActiveTab('ai')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 ${
+                        activeTab === 'ai'
+                            ? 'bg-indigo-600 text-white shadow'
+                            : 'text-indigo-400 hover:text-indigo-300'
+                    }`}
+                >
+                    <Sparkles className="w-3 h-3" />
+                    <span>AI Overview</span>
                 </button>
                 <button
                     onClick={() => setActiveTab('articles')}
-                    className={`px-3 py-1 rounded-lg font-medium transition ${
+                    className={`px-2.5 py-1 rounded-lg font-medium transition ${
                         activeTab === 'articles'
                             ? 'bg-emerald-600 text-white shadow'
                             : 'text-slate-400 hover:text-slate-200'
@@ -235,20 +277,20 @@ export default function WhiteboardBrowserSideroll({
                 </button>
                 <button
                     onClick={() => setActiveTab('images')}
-                    className={`px-3 py-1 rounded-lg font-medium transition ${
+                    className={`px-2.5 py-1 rounded-lg font-medium transition ${
                         activeTab === 'images'
                             ? 'bg-emerald-600 text-white shadow'
                             : 'text-slate-400 hover:text-slate-200'
                     }`}
                 >
-                    Diagrams & Images ({searchResults.images.length})
+                    Figures ({searchResults.images.length})
                 </button>
             </div>
 
             {/* Selected Text Floating Action Bar */}
             {selectedText && (
                 <div className="bg-indigo-600 text-white px-3 py-2 flex items-center justify-between text-xs font-bold shadow-lg animate-in slide-in-from-top duration-200 z-50 flex-shrink-0">
-                    <span className="truncate max-w-[260px]">
+                    <span className="truncate max-w-[240px]">
                         "{selectedText.slice(0, 35)}..."
                     </span>
                     <button
@@ -269,8 +311,8 @@ export default function WhiteboardBrowserSideroll({
             >
                 {isLoading || isLoadingArticle ? (
                     <div className="py-16 text-center space-y-3">
-                        <RotateCw className="w-6 h-6 animate-spin text-emerald-400 mx-auto" />
-                        <p className="text-xs text-slate-400">Loading research & visual materials...</p>
+                        <RotateCw className="w-7 h-7 animate-spin text-emerald-400 mx-auto" />
+                        <p className="text-xs text-slate-400 font-medium">Synthesizing AI overview & fetching diagrams...</p>
                     </div>
                 ) : currentArticle ? (
                     /* ARTICLE DETAIL VIEW */
@@ -295,6 +337,7 @@ export default function WhiteboardBrowserSideroll({
                                     src={currentArticle.heroImage}
                                     alt={currentArticle.title}
                                     className="w-full max-h-56 object-cover"
+                                    crossOrigin="anonymous"
                                 />
                                 <button
                                     onClick={() => handleCopyImageToBoard(currentArticle.heroImage)}
@@ -335,28 +378,111 @@ export default function WhiteboardBrowserSideroll({
                 ) : (
                     /* SEARCH RESULTS GRID & LIST */
                     <div className="space-y-4">
-                        {/* 1. Diagrams & Visuals Row */}
+                        {/* 🌟 1. GOOGLE SEARCH AI-STYLE OVERVIEW CARD 🌟 */}
+                        {(activeTab === 'all' || activeTab === 'ai') && searchResults.aiOverview && (
+                            <div className="relative rounded-2xl bg-gradient-to-br from-indigo-950/90 via-slate-900 to-indigo-950/70 border border-indigo-500/40 p-4 shadow-xl space-y-3">
+                                <div className="flex items-center justify-between border-b border-indigo-500/20 pb-2">
+                                    <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-300">
+                                        <div className="p-1 rounded-lg bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                                            <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                                        </div>
+                                        <span>AI Overview</span>
+                                    </div>
+
+                                    {/* One-Click Transfer to Canvas as Editable Panel */}
+                                    <button
+                                        onClick={handleTransferAIPanel}
+                                        className="px-2.5 py-1 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl text-xs font-semibold shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                                        title="Transfer this summary and diagrams to the whiteboard as an editable, resizable panel"
+                                    >
+                                        <Layout className="w-3.5 h-3.5" />
+                                        <span>Transfer to Board as Panel</span>
+                                    </button>
+                                </div>
+
+                                <div>
+                                    <h3 className="text-sm font-bold text-white mb-1">
+                                        {searchResults.aiOverview.title}
+                                    </h3>
+                                    <p className="text-xs text-slate-200 leading-relaxed font-normal">
+                                        {searchResults.aiOverview.summary}
+                                    </p>
+                                </div>
+
+                                {/* Key Insights / Bullet points */}
+                                {searchResults.aiOverview.keyPoints?.length > 0 && (
+                                    <div className="space-y-1.5 bg-slate-900/70 p-3 rounded-xl border border-indigo-500/20 text-xs">
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 block mb-1">
+                                            Key Principles:
+                                        </span>
+                                        <ul className="space-y-1.5">
+                                            {searchResults.aiOverview.keyPoints.map((pt, idx) => (
+                                                <li key={idx} className="flex items-start gap-2 text-slate-300">
+                                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+                                                    <span className="leading-snug">{pt}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+
+                                {/* Formula or Equation highlight */}
+                                {searchResults.aiOverview.formulaOrEquation && (
+                                    <div className="bg-amber-950/40 border border-amber-500/30 p-2 rounded-xl text-xs flex items-center gap-2">
+                                        <span className="text-[10px] font-bold uppercase text-amber-400 bg-amber-500/20 px-1.5 py-0.5 rounded">
+                                            Equation
+                                        </span>
+                                        <span className="font-mono text-amber-200 font-semibold">
+                                            {searchResults.aiOverview.formulaOrEquation}
+                                        </span>
+                                    </div>
+                                )}
+
+                                {/* AI Diagram Preview */}
+                                {searchResults.aiOverview.aiDiagramUrl && (
+                                    <div className="relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950 group">
+                                        <img
+                                            src={searchResults.aiOverview.aiDiagramUrl}
+                                            alt={searchResults.aiOverview.title}
+                                            className="w-full h-36 object-contain bg-black/30"
+                                            crossOrigin="anonymous"
+                                        />
+                                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/90 to-transparent p-2 flex items-center justify-between text-[11px]">
+                                            <span className="text-slate-300 truncate max-w-[200px]">
+                                                {searchResults.aiOverview.diagramPrompt || 'AI Concept Diagram'}
+                                            </span>
+                                            <button
+                                                onClick={() => handleCopyImageToBoard(searchResults.aiOverview.aiDiagramUrl)}
+                                                className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-semibold flex items-center gap-1"
+                                            >
+                                                <ImageIcon className="w-3 h-3" />
+                                                <span>Drop on Board</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* 2. Diagrams & Visual Figures Row */}
                         {(activeTab === 'all' || activeTab === 'images') && searchResults.images.length > 0 && (
                             <div className="space-y-2">
                                 <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
-                                    <span>Educational Diagrams & Images</span>
-                                    <span className="text-[10px] text-slate-500">Click or Drag to Canvas</span>
+                                    <span>Diagrams & Figures ({searchResults.images.length})</span>
+                                    <span className="text-[10px] text-slate-500">Click to Drop on Canvas</span>
                                 </h4>
                                 <div className="grid grid-cols-2 gap-2">
                                     {searchResults.images.map((img, idx) => (
                                         <div
                                             key={idx}
-                                            draggable
-                                            onDragStart={(e) => {
-                                                e.dataTransfer.setData('text/plain', img.url);
-                                            }}
-                                            className="group relative bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow transition hover:border-emerald-500 cursor-grab active:cursor-grabbing"
+                                            className="group relative bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow transition hover:border-emerald-500 cursor-pointer"
                                         >
                                             <img
                                                 src={img.thumbnail || img.url}
                                                 alt={img.title}
                                                 className="w-full h-28 object-cover group-hover:scale-105 transition duration-300"
                                                 loading="lazy"
+                                                crossOrigin="anonymous"
                                             />
                                             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition p-2 flex flex-col justify-end">
                                                 <p className="text-[10px] font-bold text-white truncate mb-1">
@@ -376,11 +502,11 @@ export default function WhiteboardBrowserSideroll({
                             </div>
                         )}
 
-                        {/* 2. Educational Articles & Summaries */}
+                        {/* 3. Educational Articles & Summaries */}
                         {(activeTab === 'all' || activeTab === 'articles') && (
                             <div className="space-y-2">
                                 <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                                    Research Articles & Notes
+                                    Wikipedia Articles & Notes
                                 </h4>
                                 {searchResults.articles.length === 0 ? (
                                     <div className="py-6 text-center text-xs text-slate-500">

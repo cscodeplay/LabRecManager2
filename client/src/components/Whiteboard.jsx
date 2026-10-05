@@ -70,6 +70,8 @@ import { convertToGameObjects, generateRandomObstacles } from './games/obstacleC
 import WhiteboardQuizSideroll from './WhiteboardQuizSideroll';
 import WhiteboardBrowserSideroll from './WhiteboardBrowserSideroll';
 import WhiteboardPageQuizWidget from './WhiteboardPageQuizWidget';
+import WhiteboardAIPanel from './WhiteboardAIPanel';
+import WhiteboardAISlideShow from './WhiteboardAISlideShow';
 import api, { aiAPI } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { useAuthStore, useVoiceStore } from '@/lib/store';
@@ -1606,6 +1608,41 @@ export default function Whiteboard({
         }));
     }, [currentPage]);
 
+    // ─── AI Academic Research Panels State ───
+    const [pageAIPanels, setPageAIPanels] = useState({ 0: [] });
+    const aiPanels = pageAIPanels[currentPage] || [];
+
+    const handleAddAIPanelToBoard = useCallback((panelData, targetPage = currentPage) => {
+        setPageAIPanels(prev => ({
+            ...prev,
+            [targetPage]: [
+                ...(prev[targetPage] || []),
+                {
+                    ...panelData,
+                    id: panelData.id || `aipanel_${Date.now()}`,
+                    x: panelData.x || 80,
+                    y: panelData.y || 80,
+                    width: panelData.width || 440
+                }
+            ]
+        }));
+    }, [currentPage]);
+
+    const handleUpdateAIPanel = useCallback((panelId, updatedFields, targetPage = currentPage) => {
+        setPageAIPanels(prev => ({
+            ...prev,
+            [targetPage]: (prev[targetPage] || []).map(p => p.id === panelId ? { ...p, ...updatedFields } : p)
+        }));
+    }, [currentPage]);
+
+    const handleDeleteAIPanel = useCallback((panelId, targetPage = currentPage) => {
+        setPageAIPanels(prev => ({
+            ...prev,
+            [targetPage]: (prev[targetPage] || []).filter(p => p.id !== panelId)
+        }));
+        toast.success('Research panel removed');
+    }, [currentPage]);
+
     // Global Shift key tracking for geometric aspect-ratio (circles) and straight-line constraints
     const [isShiftDown, setIsShiftDown] = useState(false);
     useEffect(() => {
@@ -1893,6 +1930,7 @@ export default function Whiteboard({
                     if (state.page3DObjects) setPage3DObjects(state.page3DObjects);
                     if (state.pageGraphObjects) setPageGraphObjects(state.pageGraphObjects);
                     if (state.pageQuizObjects) setPageQuizObjects(state.pageQuizObjects);
+                    if (state.pageAIPanels) setPageAIPanels(state.pageAIPanels);
                     if (state.whiteboardTasks) setWhiteboardTasks(state.whiteboardTasks);
                     if (state.color) setColor(state.color);
                     if (state.fillColor) setFillColor(state.fillColor);
@@ -1965,6 +2003,7 @@ export default function Whiteboard({
                     page3DObjects,
                     pageGraphObjects,
                     pageQuizObjects,
+                    pageAIPanels,
                     whiteboardTasks,
                     color,
                     fillColor,
@@ -10136,6 +10175,10 @@ export default function Whiteboard({
             ...prev,
             [newIndex]: (prev[currentPage] || []).map(q => ({ ...q, id: `quiz_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }))
         }));
+        setPageAIPanels(prev => ({
+            ...prev,
+            [newIndex]: (prev[currentPage] || []).map(p => ({ ...p, id: `aipanel_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }))
+        }));
 
         loadPage(newIndex);
         toast.success(`Duplicated Page ${currentPage + 1} to Page ${newIndex + 1}!`, { icon: '📋' });
@@ -10183,6 +10226,8 @@ export default function Whiteboard({
         shiftMap(setPagePdfObjects);
         shiftMap(setPage3DObjects);
         shiftMap(setPageGraphObjects);
+        shiftMap(setPageQuizObjects);
+        shiftMap(setPageAIPanels);
 
         setTotalPages(prev => prev - 1);
         
@@ -10368,6 +10413,33 @@ export default function Whiteboard({
         if (!imageUrl) return;
         insertImageFromSrc(imageUrl);
     }, [insertImageFromSrc]);
+
+    // Whiteboard text context helper for AI Slide Show
+    const getWhiteboardTextContext = useCallback(() => {
+        try {
+            const currentTexts = (pageTextObjects[currentPage] || []).map(t => t.text).filter(Boolean).join('\n');
+            const stickyTexts = (pageShapeObjects[currentPage] || []).filter(s => s.type === 'sticky').map(s => s.text).filter(Boolean).join('\n');
+            return `${currentTexts}\n${stickyTexts}`.trim();
+        } catch {
+            return '';
+        }
+    }, [currentPage, pageTextObjects, pageShapeObjects]);
+
+    // Stamp slide onto whiteboard page handler
+    const handleStampSlideToBoard = useCallback((slide) => {
+        if (!slide) return;
+        handleAddAIPanelToBoard({
+            id: `aipanel_slide_${Date.now()}`,
+            title: slide.title || 'Slide Presentation Note',
+            summary: slide.subtitle || '',
+            keyPoints: slide.bullets || [],
+            diagramUrl: slide.diagramUrl || null,
+            images: slide.diagramUrl ? [{ url: slide.diagramUrl, title: slide.title }] : [],
+            x: 80,
+            y: 80,
+            width: 480
+        });
+    }, [handleAddAIPanelToBoard]);
 
     // ─── TEACHER DEMONSTRATION & SPATIAL REASONING ENGINE ──────────────
     // 1. Gather rich spatial and conversational context of active board
@@ -14866,6 +14938,23 @@ export default function Whiteboard({
                         <Globe className="w-4 h-4 text-emerald-400 group-hover:text-white" />
                     </button>
                 )}
+
+                {/* Top Edge Tab for Roll-Down AI Slide Show & Screen Curtain */}
+                <button
+                    onClick={() => {
+                        setIsCurtainActive(prev => {
+                            const next = !prev;
+                            if (next) toast('AI Slide Show & Screen Curtain rolled down', { icon: '🎭' });
+                            return next;
+                        });
+                    }}
+                    className="absolute top-0 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 hover:bg-violet-600 text-white px-3.5 py-1.5 rounded-b-2xl shadow-xl border border-t-0 border-slate-700/80 transition-all flex items-center gap-1.5 group text-xs font-bold"
+                    title={isCurtainActive ? "Hide AI Slides & Screen Curtain" : "Roll Down AI Slide Show & Screen Curtain"}
+                >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400 group-hover:rotate-12 transition-transform" />
+                    <span>AI Slides & Curtain</span>
+                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-transform ${isCurtainActive ? 'rotate-180' : ''}`} />
+                </button>
             {/* Whiteboard Workspace Container */}
 
             {/* Floating Sleek Toolbar / View-Only Status Pill */}
@@ -21811,74 +21900,15 @@ export default function Whiteboard({
                         </div>
                     )}
 
-                    {/* Screen Shade / Curtain Tool (BenQ EZWrite & ViewSonic myViewBoard) */}
+                    {/* Screen Shade / AI Slide Show Curtain Tool */}
                     {isCurtainActive && (
-                        <div 
-                            className="whiteboard-curtain-container absolute top-0 left-0 right-0 z-40 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 shadow-2xl transition-[height] duration-75 overflow-hidden flex flex-col justify-between select-none"
-                            style={{ height: `${curtainHeight}%` }}
-                            onPointerDown={(e) => e.stopPropagation()}
-                        >
-                            <div className="flex-1 flex flex-col items-center justify-center text-slate-500 text-xs font-medium tracking-wider uppercase opacity-70">
-                                <StickyNoteIcon className="w-6 h-6 mb-1 text-slate-400" />
-                                <span>Screen Shade (Drag bottom bar down/up)</span>
-                            </div>
-
-                            {/* Resizable bottom grab bar */}
-                            <div
-                                className="w-full h-8 bg-gradient-to-r from-indigo-700 via-purple-700 to-indigo-700 hover:from-indigo-600 hover:to-purple-600 flex items-center justify-between px-4 cursor-ns-resize text-white shadow-md border-t border-white/20 select-none"
-                                onPointerDown={(e) => {
-                                    if (e.target.closest('button')) return;
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    const startY = e.clientY;
-                                    const startHeight = curtainHeight;
-                                    const wrapperRect = canvasWrapperRef.current?.getBoundingClientRect();
-                                    const totalH = wrapperRect?.height || window.innerHeight;
-
-                                    const onPointerMove = (moveEvent) => {
-                                        const deltaY = moveEvent.clientY - startY;
-                                        const deltaPct = (deltaY / totalH) * 100;
-                                        setCurtainHeight(Math.max(10, Math.min(100, startHeight + deltaPct)));
-                                    };
-                                    const onPointerUp = () => {
-                                        window.removeEventListener('pointermove', onPointerMove);
-                                        window.removeEventListener('pointerup', onPointerUp);
-                                    };
-                                    window.addEventListener('pointermove', onPointerMove);
-                                    window.addEventListener('pointerup', onPointerUp);
-                                }}
-                            >
-                                <div className="flex items-center gap-2 text-xs font-semibold">
-                                    <GripHorizontal className="w-4 h-4 text-white/70" />
-                                    <span>Drag to reveal content ({Math.round(curtainHeight)}%)</span>
-                                </div>
-                                <div className="flex items-center gap-2" onPointerDown={(e) => e.stopPropagation()}>
-                                    <button
-                                        type="button"
-                                        onPointerDown={(e) => e.stopPropagation()}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setCurtainHeight(h => h > 50 ? 20 : 80);
-                                        }}
-                                        className="text-[11px] px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white/90 cursor-pointer pointer-events-auto"
-                                    >
-                                        {curtainHeight > 50 ? 'Roll Up' : 'Roll Down'}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onPointerDown={(e) => e.stopPropagation()}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setIsCurtainActive(false);
-                                        }}
-                                        className="p-1 rounded hover:bg-white/20 text-white/80 hover:text-white cursor-pointer pointer-events-auto"
-                                        title="Close Screen Shade"
-                                    >
-                                        <X className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+                        <WhiteboardAISlideShow
+                            curtainHeight={curtainHeight}
+                            onCurtainHeightChange={setCurtainHeight}
+                            onClose={() => setIsCurtainActive(false)}
+                            onStampSlideToBoard={handleStampSlideToBoard}
+                            boardContextText={getWhiteboardTextContext()}
+                        />
                     )}
                     {/* Embedded Canvas Media Players (Local video/audio, YouTube, Web Embeds) */}
                     {(pageMediaObjects[currentPage] || []).map((mediaObj) => (
@@ -22167,6 +22197,18 @@ export default function Whiteboard({
                                     [currentPage]: (prev[currentPage] || []).map(q => (q.id || q.code) === quizId ? { ...q, x: newX, y: newY } : q)
                                 }));
                             }}
+                        />
+                    ))}
+
+                    {/* Page-Attached AI Academic Research Panels Layer */}
+                    {(pageAIPanels[currentPage] || []).filter(Boolean).map((panel) => (
+                        <WhiteboardAIPanel
+                            key={panel.id}
+                            panel={panel}
+                            scale={currentZoom}
+                            onUpdate={(panelId, updatedFields) => handleUpdateAIPanel(panelId, updatedFields)}
+                            onDelete={(panelId) => handleDeleteAIPanel(panelId)}
+                            onSendToCanvasImage={(imageUrl) => insertImageFromSrc(imageUrl)}
                         />
                     ))}
                 </div>
@@ -23428,6 +23470,7 @@ export default function Whiteboard({
                 onModeChange={setRightSiderollMode}
                 onAddTextToBoard={handleAddTextFromBrowser}
                 onAddImageToBoard={handleAddImageFromBrowser}
+                onAddAIPanelToBoard={handleAddAIPanelToBoard}
             />
 
         </div>
