@@ -95,6 +95,33 @@ function repairAndParseJson(rawText) {
     return JSON.parse(repaired);
 }
 
+// Helper to normalize bare \ce without braces or un-delimited chemical formulas into proper $\ce{...}$
+function cleanLatexChemistry(str) {
+    if (!str || typeof str !== 'string') return '';
+
+    let out = str;
+
+    // 0. Dollar-wrapped bare \ce: $\ce Na^+$ -> $\ce{Na^+}$ or $\ce Al^{3+}$ -> $\ce{Al^{3+}}$
+    out = out.replace(/\$\s*\\ce\s+([A-Za-z0-9\[\]\(\)\{\}\^\_\+\-\=\.\s]+?)\s*\$/g, (match, formula) => {
+        return `$\\ce{${formula.trim()}}$`;
+    });
+
+    // 1. Braced \ce{...} not yet wrapped in $ (supports nested braces like \ce{Al^{3+}} or \ce{SO4^{2-}})
+    out = out.replace(/(?<!\$)\\ce\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}(?!\$)/g, '$\\ce{$1}$');
+
+    // 2. Bare \ce formula with optional internal bond spaces (e.g. "R - CH2OH", "Na^+", "Al^{3+}", "Ne")
+    out = out.replace(/(?<!\$)\\ce\s+([A-Za-z0-9\[\]\(\)\{\}\^\_\+\-\=\.]+(?:\s+[\-\+\=\>]+\s+[A-Za-z0-9\[\]\(\)\{\}\^\_\+\-\=\.]+)*)(?=(?:[\s\)\,\;\.\?\:\!]*(?:[\)\,\;\.\?\:\!]|\s+[a-z]{2,}\b|\s+[A-Z][a-z]{2,}\b|\s*$)))/g, (match, formula) => {
+        return `$\\ce{${formula.trim()}}$`;
+    });
+
+    // 3. Fallback: Any remaining stray \ce <formula> that didn't hit previous lookaheads
+    out = out.replace(/(?<!\$)\\ce\s+([A-Za-z0-9\[\]\(\)\{\}\^\_\+\-\=\.]+)(?!\$)/g, (match, formula) => {
+        return `$\\ce{${formula.trim()}}$`;
+    });
+
+    return out;
+}
+
 /**
  * @route   POST /api/quiz/generate
  * @desc    Generate AI 4-choice questions using Gemini/Groq
@@ -138,7 +165,7 @@ CRITICAL RULES:
    - For Physics, Mathematics, Biology, and Chemistry questions, format equations, formulas, and scientific units using LaTeX:
      * Inline math / variables / units: wrap in single dollar signs, e.g. $F = ma$, $\\lambda = \\frac{h}{p}$, $\\int_{0}^{1} x^2 dx$, $25^\\circ\\text{C}$, $\\mu\\text{m}$, $\\alpha, \\beta$.
      * Block equations: wrap in double dollar signs, e.g. $$\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$$.
-     * Chemistry formulas & reactions: use mhchem notation inside dollar signs, e.g. $\\ce{2H2 + O2 -> 2H2O}$, $\\ce{CaCO3 -> CaO + CO2}$, $\\ce{SO4^{2-}}$, $\\ce{H2SO4}$.
+     * Chemistry formulas & reactions: ALWAYS wrap with $\\ce{...}$ including curly braces for ALL formulas, ions, and elements (e.g. $\\ce{Na+}$, $\\ce{Mg^{2+}}$, $\\ce{Al^{3+}}$, $\\ce{F^-}$, $\\ce{Ne}$, $\\ce{2H2 + O2 -> 2H2O}$, $\\ce{CaCO3 -> CaO + CO2}$, $\\ce{SO4^{2-}}$, $\\ce{H2SO4}$). NEVER write bare \\ce without curly braces.
    - CRITICAL JSON ESCAPING: Backslashes in JSON strings MUST be escaped as \\\\ (e.g. "\\\\ce{...}", "\\\\alpha", "\\\\frac{...}"). Never output invalid unescaped backslashes.
 
 JSON SCHEMA TO RETURN (RETURN ONLY VALID JSON, NO MARKDOWN, NO CODEBLOCKS):
@@ -165,7 +192,7 @@ DIFFICULTY: ${validDifficulty}
 ESTIMATED TIME: ${timeLimitMinutes} minutes
 ${customInstructions ? `ADDITIONAL INSTRUCTIONS: ${customInstructions}` : ''}
 
-Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and an explanation. If the topic involves Physics, Chemistry, Math, or Biology, properly format equations and formulas using LaTeX ($...$) and chemical formulas with $\\ce{...}$. Remember to escape backslashes properly in JSON (\\\\). Return ONLY valid JSON array.`;
+Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and an explanation. If the topic involves Physics, Chemistry, Math, or Biology, properly format equations and formulas using LaTeX ($...$) and chemical formulas with $\\ce{...}$ (e.g. $\\ce{Na+}$, $\\ce{Al^{3+}}$, $\\ce{Ne}$). Remember to escape backslashes properly in JSON (\\\\). Return ONLY valid JSON array.`;
 
     try {
         const response = await aiService.executeChatCompletion({
@@ -190,17 +217,6 @@ Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a
         if (!Array.isArray(questions) || questions.length === 0) {
             throw new Error('AI returned an empty question list');
         }
-
-        // Helper to normalize bare \ce without braces into proper $\ce{...}$
-        const cleanLatexChemistry = (str) => {
-            if (!str || typeof str !== 'string') return '';
-            let s = str;
-            s = s.replace(/(?<!\$)\\ce\{([^{}]+)\}(?!\$)/g, '$\\ce{$1}$');
-            s = s.replace(/(?<!\$)\\ce\s+([A-Za-z0-9][A-Za-z0-9\s\-\+\=\_\^\.\(\)]*?)(?=(?:[\)\,\;\.\?\:\!]|\s+in\b|\s+directly\b|\s+without\b|\s+followed\b|\s+to\b|\s+and\b|\s*$))/g, (match, formula) => {
-                return `$\\ce{${formula.trim()}}$`;
-            });
-            return s;
-        };
 
         // Normalize and validate sequential order and 4 options
         const normalizedQuestions = questions.map((q, idx) => {
@@ -287,7 +303,7 @@ router.post('/', authenticate, asyncHandler(async (req, res) => {
         }
         const normalizedOpts = standardKeys.map((key, optIdx) => ({
             key,
-            text: opts[optIdx]?.text || `Option ${key}`
+            text: cleanLatexChemistry(opts[optIdx]?.text || `Option ${key}`)
         }));
 
         let correctOpt = (q.correctOption || 'A').toUpperCase();
@@ -295,10 +311,10 @@ router.post('/', authenticate, asyncHandler(async (req, res) => {
 
         return {
             id: seqId,
-            question: q.question || `Question ${seqId}`,
+            question: cleanLatexChemistry(q.question || `Question ${seqId}`),
             options: normalizedOpts,
             correctOption: correctOpt,
-            explanation: q.explanation || '',
+            explanation: cleanLatexChemistry(q.explanation || ''),
             difficulty: q.difficulty || difficulty || 'medium',
             points: q.points || 1
         };
@@ -380,7 +396,7 @@ router.put('/:id', authenticate, asyncHandler(async (req, res) => {
             }
             const normalizedOpts = standardKeys.map((key, optIdx) => ({
                 key,
-                text: opts[optIdx]?.text || `Option ${key}`
+                text: cleanLatexChemistry(opts[optIdx]?.text || `Option ${key}`)
             }));
 
             let correctOpt = (q.correctOption || 'A').toUpperCase();
@@ -388,10 +404,10 @@ router.put('/:id', authenticate, asyncHandler(async (req, res) => {
 
             return {
                 id: seqId,
-                question: q.question || `Question ${seqId}`,
+                question: cleanLatexChemistry(q.question || `Question ${seqId}`),
                 options: normalizedOpts,
                 correctOption: correctOpt,
-                explanation: q.explanation || '',
+                explanation: cleanLatexChemistry(q.explanation || ''),
                 difficulty: q.difficulty || difficulty || existing.difficulty,
                 points: q.points || 1
             };

@@ -2,7 +2,16 @@
 
 import React, { useMemo } from 'react';
 import katex from 'katex';
-import 'katex/dist/contrib/mhchem';
+import 'katex/contrib/mhchem';
+
+// Ensure \ce macro is registered in KaTeX (even across different bundler environments)
+try {
+    katex.renderToString('\\ce{H}', { throwOnError: true });
+} catch (e) {
+    if (typeof katex !== 'undefined' && typeof katex.__defineMacro === 'function') {
+        katex.__defineMacro('\\ce', (context) => '\\mathrm{' + context + '}');
+    }
+}
 
 /**
  * Robust LaTeX, Physics, Chemistry, and Markdown renderer.
@@ -47,21 +56,30 @@ export default function MathRenderer({
 /**
  * Normalizes bare LaTeX and chemistry formulas.
  * Handles cases where LLMs write:
- * - Bare \ce without braces: `\ce KMnO4`, `\ce R - CH2OH`, `\ce CrO3`
+ * - Bare \ce without braces: `\ce KMnO4`, `\ce R - CH2OH`, `\ce CrO3`, `\ce Na^+`, `\ce Al^{3+}`
  * - Braced \ce without math delimiters: `\ce{H2SO4}` -> `$\ce{H2SO4}$`
+ * - Dollar math with unbraced \ce: `$\ce Na^+$` -> `$\ce{Na^+}$`
  */
 function normalizeChemicalAndLatex(str) {
     if (!str || typeof str !== 'string') return '';
 
     let out = str;
 
-    // 1. Wrap un-delimited \ce{...} that lacks enclosing $ signs
-    out = out.replace(/(?<!\$)\\ce\{([^{}]+)\}(?!\$)/g, '$\\ce{$1}$');
+    // 0. Dollar-wrapped bare \ce: $\ce Na^+$ -> $\ce{Na^+}$ or $\ce Al^{3+}$ -> $\ce{Al^{3+}}$
+    out = out.replace(/\$\s*\\ce\s+([A-Za-z0-9\[\]\(\)\{\}\^\_\+\-\=\.\s]+?)\s*\$/g, (match, formula) => {
+        return `$\\ce{${formula.trim()}}$`;
+    });
 
-    // 2. Handle bare \ce followed by formula without braces:
-    // e.g. "(\ce R - CH2OH)" -> "($\ce{R - CH2OH}$)"
-    // e.g. "Acidified \ce KMnO4" -> "Acidified $\ce{KMnO4}$"
-    out = out.replace(/(?<!\$)\\ce\s+([A-Za-z0-9][A-Za-z0-9\s\-\+\=\_\^\.\(\)]*?)(?=(?:[\)\,\;\.\?\:\!]|\s+in\b|\s+directly\b|\s+without\b|\s+followed\b|\s+to\b|\s+and\b|\s*$))/g, (match, formula) => {
+    // 1. Braced \ce{...} not yet wrapped in $ (supports nested braces like \ce{Al^{3+}} or \ce{SO4^{2-}})
+    out = out.replace(/(?<!\$)\\ce\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}(?!\$)/g, '$\\ce{$1}$');
+
+    // 2. Bare \ce formula with optional internal bond spaces (e.g. "R - CH2OH", "Na^+", "Al^{3+}", "Ne")
+    out = out.replace(/(?<!\$)\\ce\s+([A-Za-z0-9\[\]\(\)\{\}\^\_\+\-\=\.]+(?:\s+[\-\+\=\>]+\s+[A-Za-z0-9\[\]\(\)\{\}\^\_\+\-\=\.]+)*)(?=(?:[\s\)\,\;\.\?\:\!]*(?:[\)\,\;\.\?\:\!]|\s+[a-z]{2,}\b|\s+[A-Z][a-z]{2,}\b|\s*$)))/g, (match, formula) => {
+        return `$\\ce{${formula.trim()}}$`;
+    });
+
+    // 3. Fallback: Any remaining stray \ce <formula> that didn't hit previous lookaheads
+    out = out.replace(/(?<!\$)\\ce\s+([A-Za-z0-9\[\]\(\)\{\}\^\_\+\-\=\.]+)(?!\$)/g, (match, formula) => {
         return `$\\ce{${formula.trim()}}$`;
     });
 
@@ -73,7 +91,11 @@ function normalizeChemicalAndLatex(str) {
  */
 function renderKatexToString(mathStr, displayMode = false) {
     try {
-        return katex.renderToString(mathStr.trim(), {
+        let clean = (mathStr || '').trim();
+        // If math string starts with bare \ce without braces (e.g. "\ce Na^+")
+        clean = clean.replace(/^\\ce\s+([A-Za-z0-9\[\]\(\)\{\}\^\_\+\-\=\.]+)$/, '\\ce{$1}');
+
+        return katex.renderToString(clean, {
             displayMode,
             throwOnError: false,
             strict: false,
@@ -478,7 +500,7 @@ function renderInlineFormattedText(rawText, size = 'base', textClassName = '') {
     if (!rawText) return null;
 
     // Tokenize inline code (`...`), inline math ($...$ or \(...\)), and standalone LaTeX commands (\rightleftharpoons, \Delta, etc.)
-    const tokenRegex = /(?:`([^`\n]+)`)|(?:\$([^\$\n]+?)\$)|(?:\\\(([\s\S]*?)\\\))|(?:(\\(?:rightleftharpoons|leftarrow|rightarrow|Leftarrow|Rightarrow|Leftrightarrow|Delta|nabla|infty|alpha|beta|gamma|theta|lambda|mu|pi|sigma|omega|times|pm|approx|neq|le|ge|frac\{[^{}]*\}\{[^{}]*\}|ce\{[^{}]*\})))/g;
+    const tokenRegex = /(?:`([^`\n]+)`)|(?:\$([^\$\n]+?)\$)|(?:\\\(([\s\S]*?)\\\))|(?:(\\(?:rightleftharpoons|leftarrow|rightarrow|Leftarrow|Rightarrow|Leftrightarrow|Delta|nabla|infty|alpha|beta|gamma|theta|lambda|mu|pi|sigma|omega|times|pm|approx|neq|le|ge|frac\{[^{}]*\}\{[^{}]*\}|ce\{(?:[^{}]*(?:\{[^{}]*\}[^{}]*)*)\})))/g;
     const tokens = [];
     let lastIdx = 0;
     let match;
