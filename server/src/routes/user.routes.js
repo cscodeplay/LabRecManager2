@@ -58,7 +58,9 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
         };
     }
 
-    const [users, total] = await Promise.all([
+    const schoolWhere = { ...(req.user.schoolId && { schoolId: req.user.schoolId }) };
+
+    const [users, total, totalSchoolUsers, activeSchoolUsers, inactiveSchoolUsers, studentCount, instructorCount] = await Promise.all([
         prisma.user.findMany({
             where,
             skip,
@@ -90,7 +92,12 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
                 }
             }
         }),
-        prisma.user.count({ where })
+        prisma.user.count({ where }),
+        prisma.user.count({ where: schoolWhere }),
+        prisma.user.count({ where: { ...schoolWhere, isActive: true } }),
+        prisma.user.count({ where: { ...schoolWhere, isActive: false } }),
+        prisma.user.count({ where: { ...schoolWhere, role: 'student' } }),
+        prisma.user.count({ where: { ...schoolWhere, role: 'instructor' } })
     ]);
 
     res.json({
@@ -102,6 +109,13 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
                 limit: parseInt(limit),
                 total,
                 pages: Math.ceil(total / parseInt(limit))
+            },
+            stats: {
+                total: totalSchoolUsers,
+                active: activeSchoolUsers,
+                inactive: inactiveSchoolUsers,
+                students: studentCount,
+                instructors: instructorCount
             }
         }
     });
@@ -544,6 +558,89 @@ router.delete('/:id', authenticate, authorize('admin', 'principal'), asyncHandle
             messageHindi: 'उपयोगकर्ता निष्क्रिय किया गया'
         });
     }
+}));
+
+/**
+ * @route   POST /api/users/bulk-delete
+ * @desc    Bulk delete users (soft delete/deactivate or permanent delete)
+ * @access  Private (Admin, Principal)
+ */
+router.post('/bulk-delete', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { userIds, permanent, hardDelete } = req.body;
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+        return res.status(400).json({ success: false, message: 'userIds array is required' });
+    }
+
+    // Exclude current authenticated user from self-deletion
+    const cleanIds = userIds.filter(id => id !== req.user.id);
+    if (cleanIds.length === 0) {
+        return res.status(400).json({ success: false, message: 'Cannot delete your own account' });
+    }
+
+    const isPermanent = permanent === true || permanent === 'true' || hardDelete === true || hardDelete === 'true';
+
+    if (isPermanent) {
+        await prisma.$transaction(async (tx) => {
+            await tx.studentGroupMember.deleteMany({ where: { studentId: { in: cleanIds } } });
+            await tx.studentGroup.deleteMany({ where: { createdById: { in: cleanIds } } });
+            await tx.classEnrollment.deleteMany({ where: { studentId: { in: cleanIds } } });
+            await tx.assignmentTarget.deleteMany({ where: { targetStudentId: { in: cleanIds } } });
+            await tx.submission.deleteMany({ where: { studentId: { in: cleanIds } } });
+            await tx.codingSubmission.deleteMany({ where: { studentId: { in: cleanIds } } });
+            await tx.labAttendance.deleteMany({ where: { studentId: { in: cleanIds } } });
+            await tx.lectureAttendance.deleteMany({ where: { studentId: { in: cleanIds } } });
+            await tx.vivaParticipant.deleteMany({ where: { studentId: { in: cleanIds } } });
+            await tx.notification.deleteMany({ where: { userId: { in: cleanIds } } });
+            await tx.userSession.deleteMany({ where: { userId: { in: cleanIds } } });
+            await tx.user.deleteMany({ where: { id: { in: cleanIds } } });
+        });
+
+        return res.json({
+            success: true,
+            message: `Successfully permanently deleted ${cleanIds.length} user(s).`,
+            count: cleanIds.length
+        });
+    } else {
+        const updateResult = await prisma.user.updateMany({
+            where: { id: { in: cleanIds } },
+            data: { isActive: false }
+        });
+
+        return res.json({
+            success: true,
+            message: `Successfully deactivated ${updateResult.count} user(s).`,
+            count: updateResult.count
+        });
+    }
+}));
+
+/**
+ * @route   POST /api/users/bulk-status
+ * @desc    Bulk activate / deactivate users
+ * @access  Private (Admin, Principal)
+ */
+router.post('/bulk-status', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { userIds, isActive } = req.body;
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+        return res.status(400).json({ success: false, message: 'userIds array is required' });
+    }
+    const targetStatus = Boolean(isActive);
+
+    // Prevent deactivating own account
+    const cleanIds = (!targetStatus)
+        ? userIds.filter(id => id !== req.user.id)
+        : userIds;
+
+    const result = await prisma.user.updateMany({
+        where: { id: { in: cleanIds } },
+        data: { isActive: targetStatus }
+    });
+
+    return res.json({
+        success: true,
+        message: `Successfully ${targetStatus ? 'activated' : 'deactivated'} ${result.count} user(s).`,
+        count: result.count
+    });
 }));
 
 module.exports = router;

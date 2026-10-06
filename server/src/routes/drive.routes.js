@@ -52,6 +52,13 @@ function getCallbackUrl(req) {
     return process.env.GOOGLE_REDIRECT_URI || `${protocol}://${host}/api/drive/auth/callback`;
 }
 
+function getDriveService(req) {
+    if (req?.user) {
+        return googleDriveService.forUser(req.user) || googleDriveService;
+    }
+    return googleDriveService;
+}
+
 /**
  * @route   GET /api/drive/auth/callback
  * @desc    OAuth 2.0 redirect callback endpoint from Google consent screen
@@ -60,12 +67,18 @@ function getCallbackUrl(req) {
 router.get('/auth/callback', asyncHandler(async (req, res) => {
     const { code, error, state } = req.query;
     let clientBase = getClientBaseUrl(req);
+    let targetUserId = null;
+    let targetUserRole = null;
 
     if (state) {
         try {
             const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
             if (decoded && decoded.returnTo) {
                 clientBase = decoded.returnTo;
+            }
+            if (decoded && decoded.userId) {
+                targetUserId = decoded.userId;
+                targetUserRole = decoded.userRole || null;
             }
         } catch (e) {}
     }
@@ -81,7 +94,10 @@ router.get('/auth/callback', asyncHandler(async (req, res) => {
 
     try {
         const callbackUrl = getCallbackUrl(req);
-        await googleDriveService.handleOAuthCallback(code, callbackUrl);
+        const targetService = targetUserId
+            ? (googleDriveService.forUser({ id: targetUserId, role: targetUserRole }) || googleDriveService)
+            : googleDriveService;
+        await targetService.handleOAuthCallback(code, callbackUrl);
         return res.redirect(`${clientBase}/documents?tab=drive&oauth=success`);
     } catch (err) {
         console.error('[GoogleDrive OAuth Callback Exchange Error]:', err.message);
@@ -93,10 +109,16 @@ router.get('/auth/callback', asyncHandler(async (req, res) => {
 const handleOneDriveCallback = async (req, res) => {
     const { code, error, state } = req.query;
     let clientBase = getClientBaseUrl(req);
+    let targetUserId = null;
+    let targetUserRole = null;
     if (state) {
         try {
             const dec = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
             if (dec?.returnTo) clientBase = dec.returnTo;
+            if (dec?.userId) {
+                targetUserId = dec.userId;
+                targetUserRole = dec.userRole || null;
+            }
         } catch (e) {}
     }
     if (error) {
@@ -104,7 +126,10 @@ const handleOneDriveCallback = async (req, res) => {
     }
     if (code) {
         try {
-            await googleDriveService.saveConnectedAccount('microsoft_onedrive', {
+            const targetService = targetUserId
+                ? (googleDriveService.forUser({ id: targetUserId, role: targetUserRole }) || googleDriveService)
+                : googleDriveService;
+            await targetService.saveConnectedAccount('microsoft_onedrive', {
                 email: 'onedrive.user@campus.edu',
                 name: 'Microsoft OneDrive Connected',
                 provider: 'microsoft_onedrive',
@@ -122,10 +147,16 @@ const handleOneDriveCallback = async (req, res) => {
 const handleDropboxCallback = async (req, res) => {
     const { code, error, state } = req.query;
     let clientBase = getClientBaseUrl(req);
+    let targetUserId = null;
+    let targetUserRole = null;
     if (state) {
         try {
             const dec = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
             if (dec?.returnTo) clientBase = dec.returnTo;
+            if (dec?.userId) {
+                targetUserId = dec.userId;
+                targetUserRole = dec.userRole || null;
+            }
         } catch (e) {}
     }
     if (error) {
@@ -133,7 +164,10 @@ const handleDropboxCallback = async (req, res) => {
     }
     if (code) {
         try {
-            await googleDriveService.saveConnectedAccount('dropbox', {
+            const targetService = targetUserId
+                ? (googleDriveService.forUser({ id: targetUserId, role: targetUserRole }) || googleDriveService)
+                : googleDriveService;
+            await targetService.saveConnectedAccount('dropbox', {
                 email: 'dropbox.user@storage.com',
                 name: 'Dropbox Connected',
                 provider: 'dropbox',
@@ -157,7 +191,8 @@ router.use(authenticate);
 
 // Auto-restore Google Drive OAuth from persistent DB if needed
 router.use(asyncHandler(async (req, res, next) => {
-    await googleDriveService.ensureInitialized();
+    const driveService = getDriveService(req);
+    await driveService.ensureInitialized();
     next();
 }));
 
@@ -166,21 +201,22 @@ router.use(asyncHandler(async (req, res, next) => {
  * @desc    Check Google Drive integration status, auth mode, and storage quota
  */
 router.get('/status', asyncHandler(async (req, res) => {
-    const quotaData = await googleDriveService.getStorageQuota();
-    const oauthConfig = googleDriveService.getOAuthConfig();
-    const connectedUser = googleDriveService.getConnectedUser();
-    const effectiveAuthType = quotaData.authType || googleDriveService.authType;
+    const driveService = getDriveService(req);
+    const quotaData = await driveService.getStorageQuota();
+    const oauthConfig = driveService.getOAuthConfig();
+    const connectedUser = driveService.getConnectedUser();
+    const effectiveAuthType = quotaData.authType || driveService.authType;
     const isOAuthConnected = effectiveAuthType === 'oauth_user' || Boolean(connectedUser?.emailAddress);
     const resolvedUser = quotaData.user || connectedUser || null;
-    const connectedAccounts = await googleDriveService.getConnectedAccounts();
+    const connectedAccounts = await driveService.getConnectedAccounts();
 
     res.json({
         success: true,
         data: {
-            isConfigured: googleDriveService.isConfigured() || Boolean(connectedUser),
+            isConfigured: driveService.isConfigured() || Boolean(connectedUser),
             authType: effectiveAuthType,
             isOAuthConnected,
-            activeAccountEmail: googleDriveService.activeAccountEmail || resolvedUser?.emailAddress || null,
+            activeAccountEmail: driveService.activeAccountEmail || resolvedUser?.emailAddress || null,
             connectedAccounts,
             authError: quotaData.error || null,
             scopeNotice: quotaData.scopeNotice || null,
@@ -188,7 +224,7 @@ router.get('/status', asyncHandler(async (req, res) => {
             clientId: oauthConfig.clientId ? `${oauthConfig.clientId.substring(0, 16)}...` : null,
             user: resolvedUser,
             quota: quotaData.quota || null,
-            folderId: googleDriveService.folderId,
+            folderId: driveService.folderId,
             serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || null,
             ulrmsFolderUrl: 'https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp',
             ulrmsFilesFolderUrl: 'https://drive.google.com/drive/folders/1R6SmhanodL-ghLTOoBhX_EgQ5Farf853',
@@ -204,25 +240,26 @@ router.get('/status', asyncHandler(async (req, res) => {
  * @desc    Get status of all multi-cloud storage accounts (Google Drive primary/secondary, Microsoft OneDrive, Apple iCloud, Dropbox)
  */
 router.get('/providers', asyncHandler(async (req, res) => {
-    const quotaData = await googleDriveService.getStorageQuota();
-    const connectedUser = googleDriveService.getConnectedUser();
-    const effectiveAuthType = quotaData.authType || googleDriveService.authType;
+    const driveService = getDriveService(req);
+    const quotaData = await driveService.getStorageQuota();
+    const connectedUser = driveService.getConnectedUser();
+    const effectiveAuthType = quotaData.authType || driveService.authType;
     const resolvedUser = quotaData.user || connectedUser || null;
     const isGoogleConnected = effectiveAuthType === 'oauth_user' || Boolean(connectedUser?.emailAddress);
 
-    const connectedAccounts = await googleDriveService.getConnectedAccounts();
+    const connectedAccounts = await driveService.getConnectedAccounts();
 
     res.json({
         success: true,
         data: {
-            activeProvider: googleDriveService.activeAccountEmail || 'google_drive_primary',
+            activeProvider: driveService.activeAccountEmail || 'google_drive_primary',
             connectedAccounts,
             providers: [
                 {
                     id: 'google_drive_primary',
                     type: 'google_drive',
                     name: 'Google Drive (Primary)',
-                    account: resolvedUser?.emailAddress || 'charan881130@gmail.com',
+                    account: resolvedUser?.emailAddress || null,
                     status: isGoogleConnected ? 'connected' : 'service_account',
                     plan: 'Google Drive',
                     isDefault: true,
@@ -285,8 +322,9 @@ router.post('/switch-account', asyncHandler(async (req, res) => {
         if (!target) {
             return res.status(400).json({ success: false, message: 'Account identifier is required' });
         }
+        const driveService = getDriveService(req);
         const callbackUrl = getCallbackUrl(req);
-        const result = await googleDriveService.switchAccount(target, callbackUrl);
+        const result = await driveService.switchAccount(target, callbackUrl);
         if (result.requiresAuth) {
             return res.json({
                 success: false,
@@ -311,10 +349,11 @@ router.post('/switch-account', asyncHandler(async (req, res) => {
         });
     } catch (err) {
         console.error('[DriveRouter] switch-account error:', err);
+        const driveService = getDriveService(req);
         const callbackUrl = getCallbackUrl(req);
         let authUrl = null;
         try {
-            authUrl = googleDriveService.generateAuthUrl(callbackUrl, { prompt: 'select_account consent' });
+            authUrl = driveService.generateAuthUrl(callbackUrl, { prompt: 'select_account consent' });
         } catch (e) {}
         return res.status(400).json({
             success: false,
@@ -330,12 +369,13 @@ router.post('/switch-account', asyncHandler(async (req, res) => {
  * @desc    Get all connected cloud drive accounts with active indicator
  */
 router.get('/accounts', asyncHandler(async (req, res) => {
-    const accounts = await googleDriveService.getConnectedAccounts();
+    const driveService = getDriveService(req);
+    const accounts = await driveService.getConnectedAccounts();
     res.json({
         success: true,
         data: {
             accounts,
-            activeAccountEmail: googleDriveService.activeAccountEmail
+            activeAccountEmail: driveService.activeAccountEmail
         }
     });
 }));
@@ -346,16 +386,22 @@ router.get('/accounts', asyncHandler(async (req, res) => {
  */
 router.get('/auth/url', asyncHandler(async (req, res) => {
     try {
+        const driveService = getDriveService(req);
         const callbackUrl = getCallbackUrl(req);
         const clientBase = getClientBaseUrl(req);
         const returnTo = req.query.returnTo || clientBase;
         const prompt = req.query.prompt || 'select_account consent';
         const loginHint = req.query.login_hint || req.query.loginHint || undefined;
-        const state = Buffer.from(JSON.stringify({ returnTo, t: Date.now() })).toString('base64');
+        const state = Buffer.from(JSON.stringify({
+            returnTo,
+            userId: req.user?.id || null,
+            userRole: req.user?.role || null,
+            t: Date.now()
+        })).toString('base64');
         const provider = (req.query.provider || 'google').toLowerCase().trim();
 
         if (provider === 'onedrive' || provider === 'microsoft') {
-            const configs = await googleDriveService.getAllProvidersConfig();
+            const configs = await driveService.getAllProvidersConfig();
             const oneConf = configs.onedrive || configs.microsoft_onedrive;
             if (!oneConf?.clientId) {
                 return res.status(400).json({
@@ -378,7 +424,7 @@ router.get('/auth/url', asyncHandler(async (req, res) => {
         }
 
         if (provider === 'dropbox') {
-            const configs = await googleDriveService.getAllProvidersConfig();
+            const configs = await driveService.getAllProvidersConfig();
             const dropConf = configs.dropbox;
             if (!dropConf?.appKey) {
                 return res.status(400).json({
@@ -407,7 +453,7 @@ router.get('/auth/url', asyncHandler(async (req, res) => {
             });
         }
 
-        const authUrl = googleDriveService.generateAuthUrl(callbackUrl, { prompt, state, login_hint: loginHint });
+        const authUrl = driveService.generateAuthUrl(callbackUrl, { prompt, state, login_hint: loginHint });
         res.json({
             success: true,
             data: {
@@ -434,8 +480,9 @@ router.get('/admin/config', asyncHandler(async (req, res) => {
     if (!['admin', 'principal'].includes(req.user?.role)) {
         return res.status(403).json({ success: false, message: 'Admin access required' });
     }
+    const driveService = getDriveService(req);
     const callbackUrl = getCallbackUrl(req);
-    const configs = await googleDriveService.getAllProvidersConfig();
+    const configs = await driveService.getAllProvidersConfig();
     
     const callbackUrls = {
         google: configs.google?.redirectUri || callbackUrl,
@@ -468,8 +515,9 @@ router.post('/admin/config', asyncHandler(async (req, res) => {
         return res.status(400).json({ success: false, message: 'Provider identifier is required' });
     }
 
-    await googleDriveService.saveProviderConfig(provider, configData);
-    const allConfigs = await googleDriveService.getAllProvidersConfig();
+    const driveService = getDriveService(req);
+    await driveService.saveProviderConfig(provider, configData);
+    const allConfigs = await driveService.getAllProvidersConfig();
     const callbackUrl = getCallbackUrl(req);
     const callbackUrls = {
         google: allConfigs.google?.redirectUri || callbackUrl,
@@ -494,7 +542,8 @@ router.post('/admin/config', asyncHandler(async (req, res) => {
  * @access  Protected
  */
 router.get('/admin/accounts', asyncHandler(async (req, res) => {
-    const accounts = await googleDriveService.getConnectedAccounts();
+    const driveService = getDriveService(req);
+    const accounts = await driveService.getConnectedAccounts();
     res.json({
         success: true,
         data: {
@@ -510,7 +559,8 @@ router.get('/admin/accounts', asyncHandler(async (req, res) => {
  */
 router.post('/admin/accounts/disconnect', asyncHandler(async (req, res) => {
     const { accountId } = req.body;
-    const result = await googleDriveService.disconnectAccount(accountId);
+    const driveService = getDriveService(req);
+    const result = await driveService.disconnectAccount(accountId);
     res.json(result);
 }));
 
@@ -523,7 +573,8 @@ router.post('/auth/config', asyncHandler(async (req, res) => {
     if (!clientId || !clientSecret) {
         return res.status(400).json({ success: false, message: 'Both Client ID and Client Secret are required' });
     }
-    const saved = await googleDriveService.saveOAuthConfig({ clientId, clientSecret, redirectUri, folderId });
+    const driveService = getDriveService(req);
+    const saved = await driveService.saveOAuthConfig({ clientId, clientSecret, redirectUri, folderId });
     res.json({
         success: true,
         message: 'Google OAuth client credentials saved successfully',
@@ -540,7 +591,8 @@ router.post('/auth/config', asyncHandler(async (req, res) => {
  */
 router.post('/auth/disconnect', asyncHandler(async (req, res) => {
     const { accountId } = req.body || {};
-    await googleDriveService.disconnectAccount(accountId || 'google_primary');
+    const driveService = getDriveService(req);
+    await driveService.disconnectAccount(accountId || 'google_primary');
     res.json({
         success: true,
         message: 'Google OAuth account disconnected. Reverted to standard configuration.'
@@ -553,8 +605,9 @@ router.post('/auth/disconnect', asyncHandler(async (req, res) => {
  */
 router.get('/files', asyncHandler(async (req, res) => {
     const { folderId, query, search, mimeType, pageSize, scope, recursive } = req.query;
+    const driveService = getDriveService(req);
 
-    const files = await googleDriveService.listFiles({
+    const files = await driveService.listFiles({
         folderId: folderId || null,
         query: query || search || '',
         mimeType: mimeType || null,
@@ -567,8 +620,8 @@ router.get('/files', asyncHandler(async (req, res) => {
         success: true,
         data: {
             files,
-            isConfigured: googleDriveService.isConfigured(),
-            folderId: folderId || googleDriveService.folderId
+            isConfigured: driveService.isConfigured(),
+            folderId: folderId || driveService.folderId
         }
     });
 }));
@@ -579,7 +632,8 @@ router.get('/files', asyncHandler(async (req, res) => {
  */
 router.get('/files/:id', asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const metadata = await googleDriveService.getFileMetadata(id);
+    const driveService = getDriveService(req);
+    const metadata = await driveService.getFileMetadata(id);
 
     res.json({
         success: true,
@@ -593,8 +647,9 @@ router.get('/files/:id', asyncHandler(async (req, res) => {
  */
 router.get('/files/:id/content', asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const metadata = await googleDriveService.getFileMetadata(id);
-    const buffer = await googleDriveService.downloadFileBuffer(id);
+    const driveService = getDriveService(req);
+    const metadata = await driveService.getFileMetadata(id);
+    const buffer = await driveService.downloadFileBuffer(id);
 
     let filename = metadata.name || 'download';
     let mimeType = metadata.mimeType || 'application/octet-stream';
@@ -624,6 +679,7 @@ router.get('/files/:id/content', asyncHandler(async (req, res) => {
  */
 router.post('/export-from-documents', authenticate, asyncHandler(async (req, res) => {
     const { documentIds, targetFolderId = null, isMove = false } = req.body;
+    const driveService = getDriveService(req);
 
     if (!Array.isArray(documentIds) || documentIds.length === 0) {
         return res.status(400).json({ success: false, message: 'No document IDs provided' });
@@ -673,7 +729,7 @@ router.post('/export-from-documents', authenticate, asyncHandler(async (req, res
             const mimeType = doc.mimeType || 'application/octet-stream';
 
             // Upload to Google Drive
-            const driveFile = await googleDriveService.uploadFile(
+            const driveFile = await driveService.uploadFile(
                 fileBuffer,
                 fileName,
                 mimeType,
@@ -726,8 +782,9 @@ router.post('/export-from-documents', authenticate, asyncHandler(async (req, res
  */
 router.get('/files/:id/text', asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const metadata = await googleDriveService.getFileMetadata(id);
-    const buffer = await googleDriveService.downloadFileBuffer(id);
+    const driveService = getDriveService(req);
+    const metadata = await driveService.getFileMetadata(id);
+    const buffer = await driveService.downloadFileBuffer(id);
 
     const extractedText = await chatbotService.getOrExtractDocumentText(
         null,
@@ -775,7 +832,8 @@ router.post('/upload', upload.single('file'), asyncHandler(async (req, res) => {
         return res.status(400).json({ success: false, message: 'No file or content provided' });
     }
 
-    const uploaded = await googleDriveService.uploadFile(
+    const driveService = getDriveService(req);
+    const uploaded = await driveService.uploadFile(
         fileBuffer,
         fileName,
         mimeType,
@@ -802,8 +860,9 @@ router.post('/upload', upload.single('file'), asyncHandler(async (req, res) => {
  * Helper: Import a single Google Drive file to Documents repository with storage quota validation
  */
 async function importSingleDriveFile({ fileId, folderId, name, category, description, userId, schoolId }) {
-    await googleDriveService.ensureInitialized();
-    const metadata = await googleDriveService.getFileMetadata(fileId);
+    const driveService = googleDriveService.forUser(userId) || googleDriveService;
+    await driveService.ensureInitialized();
+    const metadata = await driveService.getFileMetadata(fileId);
 
     // Resolve valid schoolId
     let targetSchoolId = schoolId;
@@ -836,7 +895,7 @@ async function importSingleDriveFile({ fileId, folderId, name, category, descrip
 
     let buffer;
     try {
-        buffer = await googleDriveService.downloadFileBuffer(fileId);
+        buffer = await driveService.downloadFileBuffer(fileId);
     } catch (dlErr) {
         throw new Error(`Failed to download "${metadata.name || 'file'}" from Google Drive: ${dlErr.message}`);
     }
@@ -1011,8 +1070,9 @@ router.post('/import-batch', asyncHandler(async (req, res) => {
                     });
                 }
                 const subTargetFolderId = localFolder ? localFolder.id : cleanTargetFolderId;
+                const driveService = getDriveService(req);
 
-                const folderStats = await googleDriveService.getFolderStats(item.id);
+                const folderStats = await driveService.getFolderStats(item.id);
                 if (folderStats.files.length === 0) {
                     results.push({
                         id: item.id,
@@ -1107,7 +1167,8 @@ router.post('/import-batch', asyncHandler(async (req, res) => {
  */
 router.get('/folder-tree/:id', asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const stats = await googleDriveService.getFolderStats(id);
+    const driveService = getDriveService(req);
+    const stats = await driveService.getFolderStats(id);
     res.json({
         success: true,
         data: stats
@@ -1146,7 +1207,8 @@ router.post('/folders', asyncHandler(async (req, res) => {
     if (!name || !name.trim()) {
         return res.status(400).json({ success: false, message: 'Folder name is required' });
     }
-    const folder = await googleDriveService.createFolder(name.trim(), parentFolderId || null);
+    const driveService = getDriveService(req);
+    const folder = await driveService.createFolder(name.trim(), parentFolderId || null);
     res.status(201).json({
         success: true,
         data: folder,

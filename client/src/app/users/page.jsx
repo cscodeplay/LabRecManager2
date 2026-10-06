@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Users, Search, Plus, Book, BarChart3, Mail, KeyRound, ToggleLeft, ToggleRight, Trash2, Copy, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, Search, Plus, Book, BarChart3, Mail, KeyRound, ToggleLeft, ToggleRight, Trash2, Copy, X, ChevronLeft, ChevronRight, CheckSquare } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { useConfirm } from '@/components/ConfirmDialog';
 import api, { adminAPI } from '@/lib/api';
@@ -18,6 +18,19 @@ export default function UsersPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [roleFilter, setRoleFilter] = useState('all');
+
+    // School-wide scoreboard stats
+    const [stats, setStats] = useState({
+        total: 0,
+        active: 0,
+        inactive: 0,
+        students: 0,
+        instructors: 0
+    });
+
+    // Bulk selection state
+    const [selectedUserIds, setSelectedUserIds] = useState(new Set());
+    const [bulkLoading, setBulkLoading] = useState(false);
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
@@ -69,6 +82,9 @@ export default function UsersPage() {
             setUsers(res.data.data.users || []);
             setTotalUsers(res.data.data.pagination?.total || 0);
             setTotalPages(res.data.data.pagination?.pages || 1);
+            if (res.data.data.stats) {
+                setStats(res.data.data.stats);
+            }
         } catch (error) {
             toast.error('Failed to load users');
         } finally {
@@ -144,6 +160,114 @@ export default function UsersPage() {
         toast.success('Copied to clipboard');
     };
 
+    // Bulk selection helpers
+    const isAllSelected = users.length > 0 && users.every(u => selectedUserIds.has(u.id));
+    const isSomeSelected = users.some(u => selectedUserIds.has(u.id)) && !isAllSelected;
+
+    const handleSelectAll = (e) => {
+        const next = new Set(selectedUserIds);
+        if (e.target.checked) {
+            users.forEach(u => next.add(u.id));
+        } else {
+            users.forEach(u => next.delete(u.id));
+        }
+        setSelectedUserIds(next);
+    };
+
+    const handleSelectUser = (id) => {
+        const next = new Set(selectedUserIds);
+        if (next.has(id)) {
+            next.delete(id);
+        } else {
+            next.add(id);
+        }
+        setSelectedUserIds(next);
+    };
+
+    const clearSelection = () => {
+        setSelectedUserIds(new Set());
+    };
+
+    // Bulk Deactivate
+    const handleBulkDeactivate = async () => {
+        if (selectedUserIds.size === 0) return;
+        const count = selectedUserIds.size;
+        const ok = await confirm({
+            title: `Deactivate ${count} User(s)`,
+            message: `Are you sure you want to deactivate ${count} selected user(s)? Deactivated users will not be able to log in.`,
+            confirmText: 'Deactivate Users',
+            cancelText: 'Cancel',
+            type: 'warning'
+        });
+        if (!ok) return;
+
+        setBulkLoading(true);
+        try {
+            const res = await api.post('/users/bulk-status', {
+                userIds: Array.from(selectedUserIds),
+                isActive: false
+            });
+            toast.success(res.data.message || `Deactivated ${count} users`);
+            clearSelection();
+            loadUsers();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to deactivate users');
+        } finally {
+            setBulkLoading(false);
+        }
+    };
+
+    // Bulk Activate
+    const handleBulkActivate = async () => {
+        if (selectedUserIds.size === 0) return;
+        const count = selectedUserIds.size;
+        setBulkLoading(true);
+        try {
+            const res = await api.post('/users/bulk-status', {
+                userIds: Array.from(selectedUserIds),
+                isActive: true
+            });
+            toast.success(res.data.message || `Activated ${count} users`);
+            clearSelection();
+            loadUsers();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to activate users');
+        } finally {
+            setBulkLoading(false);
+        }
+    };
+
+    // Bulk Delete (Soft or Permanent)
+    const handleBulkDelete = async (permanent = false) => {
+        if (selectedUserIds.size === 0) return;
+        const count = selectedUserIds.size;
+        const ok = await confirm({
+            title: permanent ? `Permanently Delete ${count} User(s)` : `Bulk Delete / Deactivate ${count} User(s)`,
+            message: permanent
+                ? `CAUTION: Are you sure you want to PERMANENTLY DELETE ${count} selected user(s)? All their enrollments, submissions, and records will be purged from the database. This action CANNOT be undone.`
+                : `Are you sure you want to delete ${count} selected user(s)? They will be marked as inactive and soft-deleted.`,
+            confirmText: permanent ? 'Permanently Delete' : 'Delete Users',
+            cancelText: 'Cancel',
+            type: 'danger'
+        });
+        if (!ok) return;
+
+        setBulkLoading(true);
+        try {
+            const res = await api.post('/users/bulk-delete', {
+                userIds: Array.from(selectedUserIds),
+                permanent
+            });
+            toast.success(res.data.message || `Processed ${count} users`);
+            clearSelection();
+            loadUsers();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to delete users');
+        } finally {
+            setBulkLoading(false);
+        }
+    };
+
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -199,31 +323,95 @@ export default function UsersPage() {
                     </div>
                 </div>
 
-                {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                {/* Scoreboard Stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
                     <div className="card p-4 text-center">
-                        <p className="text-2xl font-bold text-primary-600">{users.length}</p>
+                        <p className="text-2xl font-bold text-primary-600">{stats.total || totalUsers || users.length}</p>
                         <p className="text-sm text-slate-500">Total Users</p>
                     </div>
                     <div className="card p-4 text-center">
                         <p className="text-2xl font-bold text-emerald-600">
-                            {users.filter(u => u.role === 'student').length}
+                            {stats.students ?? users.filter(u => u.role === 'student').length}
                         </p>
                         <p className="text-sm text-slate-500">Students</p>
                     </div>
                     <div className="card p-4 text-center">
                         <p className="text-2xl font-bold text-blue-600">
-                            {users.filter(u => u.role === 'instructor').length}
+                            {stats.instructors ?? users.filter(u => u.role === 'instructor').length}
                         </p>
                         <p className="text-sm text-slate-500">Instructors</p>
                     </div>
                     <div className="card p-4 text-center">
-                        <p className="text-2xl font-bold text-amber-600">
-                            {users.filter(u => u.isActive).length}
+                        <p className="text-2xl font-bold text-teal-600">
+                            {stats.active ?? users.filter(u => u.isActive).length}
                         </p>
                         <p className="text-sm text-slate-500">Active</p>
                     </div>
+                    <div className="card p-4 text-center">
+                        <p className="text-2xl font-bold text-rose-600">
+                            {stats.inactive ?? users.filter(u => !u.isActive).length}
+                        </p>
+                        <p className="text-sm text-slate-500">Inactive</p>
+                    </div>
                 </div>
+
+                {/* Bulk Actions Bar */}
+                {selectedUserIds.size > 0 && (
+                    <div className="card p-4 mb-6 bg-primary-50/70 border-primary-200 border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-in fade-in">
+                        <div className="flex items-center gap-3">
+                            <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-primary-600 text-white font-bold text-xs shadow-xs">
+                                {selectedUserIds.size}
+                            </span>
+                            <span className="text-sm font-semibold text-primary-950">
+                                {selectedUserIds.size} {selectedUserIds.size === 1 ? 'user' : 'users'} selected
+                            </span>
+                            <button
+                                onClick={clearSelection}
+                                className="text-xs text-primary-700 hover:text-primary-900 underline font-medium ml-1 cursor-pointer"
+                            >
+                                Clear selection
+                            </button>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                                onClick={handleBulkActivate}
+                                disabled={bulkLoading}
+                                className="btn btn-sm bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 text-xs font-semibold py-1.5 px-3 rounded-lg shadow-2xs"
+                                title="Activate selected users"
+                            >
+                                <ToggleLeft className="w-3.5 h-3.5 text-emerald-600" />
+                                Activate
+                            </button>
+                            <button
+                                onClick={handleBulkDeactivate}
+                                disabled={bulkLoading}
+                                className="btn btn-sm bg-white border border-amber-300 text-amber-700 hover:bg-amber-50 text-xs font-semibold py-1.5 px-3 rounded-lg shadow-2xs"
+                                title="Deactivate selected users"
+                            >
+                                <ToggleRight className="w-3.5 h-3.5 text-amber-600" />
+                                Deactivate
+                            </button>
+                            <button
+                                onClick={() => handleBulkDelete(false)}
+                                disabled={bulkLoading}
+                                className="btn btn-sm bg-white border border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-semibold py-1.5 px-3 rounded-lg shadow-2xs"
+                                title="Bulk delete (deactivate) selected users"
+                            >
+                                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                                Bulk Delete
+                            </button>
+                            <button
+                                onClick={() => handleBulkDelete(true)}
+                                disabled={bulkLoading}
+                                className="btn btn-sm bg-rose-600 text-white hover:bg-rose-700 text-xs font-semibold py-1.5 px-3 rounded-lg shadow-2xs"
+                                title="Permanently delete from database"
+                            >
+                                <Trash2 className="w-3.5 h-3.5 text-white" />
+                                Permanent Delete
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Users Table */}
                 <div className="card overflow-hidden">
@@ -232,6 +420,18 @@ export default function UsersPage() {
                         <table className="w-full min-w-[650px]">
                             <thead className="bg-slate-50 border-b border-slate-100">
                                 <tr>
+                                    <th className="px-4 py-3 w-10 text-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={isAllSelected}
+                                            ref={(el) => {
+                                                if (el) el.indeterminate = isSomeSelected;
+                                            }}
+                                            onChange={handleSelectAll}
+                                            className="w-4 h-4 rounded text-primary-600 border-slate-300 focus:ring-primary-500 cursor-pointer"
+                                            aria-label="Select all users on this page"
+                                        />
+                                    </th>
                                     <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Name</th>
                                     <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Email</th>
                                     <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Role</th>
@@ -241,95 +441,116 @@ export default function UsersPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {users.map((u) => (
-                                    <tr key={u.id} className="hover:bg-slate-50 transition">
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-medium">
-                                                    {u.firstName?.[0]}{u.lastName?.[0]}
+                                {users.map((u) => {
+                                    const isSelected = selectedUserIds.has(u.id);
+                                    return (
+                                        <tr key={u.id} className={`${isSelected ? 'bg-primary-50/40 hover:bg-primary-50/70' : 'hover:bg-slate-50'} transition`}>
+                                            <td className="px-4 py-4 text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    onChange={() => handleSelectUser(u.id)}
+                                                    className="w-4 h-4 rounded text-primary-600 border-slate-300 focus:ring-primary-500 cursor-pointer"
+                                                    aria-label={`Select ${u.firstName} ${u.lastName}`}
+                                                />
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-medium">
+                                                        {u.firstName?.[0]}{u.lastName?.[0]}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-medium text-slate-900">
+                                                            {u.firstName} {u.lastName}
+                                                        </p>
+                                                        {u.firstNameHindi && (
+                                                            <p className="text-sm text-slate-500">{u.firstNameHindi} {u.lastNameHindi}</p>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <p className="font-medium text-slate-900">
-                                                        {u.firstName} {u.lastName}
-                                                    </p>
-                                                    {u.firstNameHindi && (
-                                                        <p className="text-sm text-slate-500">{u.firstNameHindi} {u.lastNameHindi}</p>
+                                            </td>
+                                            <td className="px-6 py-4 text-slate-600">{u.email}</td>
+                                            <td className="px-6 py-4">
+                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleBadge(u.role)}`}>
+                                                    {u.role.replace('_', ' ')}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-slate-600 font-mono text-sm">
+                                                {u.studentId || u.admissionNumber || u.employeeId || '-'}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`flex items-center gap-1 text-sm ${u.isActive ? 'text-emerald-600' : 'text-red-500'}`}>
+                                                    <span className={`w-2 h-2 rounded-full ${u.isActive ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                                                    {u.isActive ? 'Active' : 'Inactive'}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-1">
+                                                    {u.role === 'student' && (
+                                                        <button
+                                                            onClick={() => handleGeneratePin(u)}
+                                                            disabled={generatingPin === u.id}
+                                                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
+                                                            title="Generate PIN"
+                                                        >
+                                                            <KeyRound className="w-4 h-4" />
+                                                        </button>
                                                     )}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-600">{u.email}</td>
-                                        <td className="px-6 py-4">
-                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleBadge(u.role)}`}>
-                                                {u.role.replace('_', ' ')}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-600 font-mono text-sm">
-                                            {u.studentId || u.admissionNumber || u.employeeId || '-'}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className={`flex items-center gap-1 text-sm ${u.isActive ? 'text-emerald-600' : 'text-red-500'}`}>
-                                                <span className={`w-2 h-2 rounded-full ${u.isActive ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
-                                                {u.isActive ? 'Active' : 'Inactive'}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-1">
-                                                {u.role === 'student' && (
                                                     <button
-                                                        onClick={() => handleGeneratePin(u)}
-                                                        disabled={generatingPin === u.id}
-                                                        className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
-                                                        title="Generate PIN"
+                                                        onClick={() => handleToggleActive(u)}
+                                                        className={`p-1.5 rounded ${u.isActive ? 'text-slate-500 hover:bg-slate-50' : 'text-emerald-600 hover:bg-emerald-50'}`}
+                                                        title={u.isActive ? 'Deactivate' : 'Activate'}
                                                     >
-                                                        <KeyRound className="w-4 h-4" />
+                                                        {u.isActive ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
                                                     </button>
-                                                )}
-                                                <button
-                                                    onClick={() => handleToggleActive(u)}
-                                                    className={`p-1.5 rounded ${u.isActive ? 'text-slate-500 hover:bg-slate-50' : 'text-emerald-600 hover:bg-emerald-50'}`}
-                                                    title={u.isActive ? 'Deactivate' : 'Activate'}
-                                                >
-                                                    {u.isActive ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDeleteUser(u)}
-                                                    className="p-1.5 text-red-500 hover:bg-red-50 rounded"
-                                                    title="Delete user"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
+                                                    <button
+                                                        onClick={() => handleDeleteUser(u)}
+                                                        className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                                                        title="Delete user"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
 
                     {/* Mobile User Cards */}
                     <div className="md:hidden divide-y divide-slate-100">
-                        {users.map((u) => (
-                            <div key={`mob-${u.id}`} className="p-4 hover:bg-slate-50 transition bg-white">
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-medium shrink-0">
-                                            {u.firstName?.[0]}{u.lastName?.[0]}
+                        {users.map((u) => {
+                            const isSelected = selectedUserIds.has(u.id);
+                            return (
+                                <div key={`mob-${u.id}`} className={`p-4 transition ${isSelected ? 'bg-primary-50/40' : 'bg-white hover:bg-slate-50'}`}>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={() => handleSelectUser(u.id)}
+                                                className="w-4 h-4 rounded text-primary-600 border-slate-300 focus:ring-primary-500 cursor-pointer shrink-0 mt-0.5"
+                                                aria-label={`Select ${u.firstName} ${u.lastName}`}
+                                            />
+                                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-medium shrink-0">
+                                                {u.firstName?.[0]}{u.lastName?.[0]}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="font-semibold text-slate-900 truncate">
+                                                    {u.firstName} {u.lastName}
+                                                </p>
+                                                {u.firstNameHindi && (
+                                                    <p className="text-xs text-slate-500 truncate">{u.firstNameHindi} {u.lastNameHindi}</p>
+                                                )}
+                                                <p className="text-xs text-slate-500 truncate mt-0.5">{u.email}</p>
+                                            </div>
                                         </div>
-                                        <div className="min-w-0 flex-1">
-                                            <p className="font-semibold text-slate-900 truncate">
-                                                {u.firstName} {u.lastName}
-                                            </p>
-                                            {u.firstNameHindi && (
-                                                <p className="text-xs text-slate-500 truncate">{u.firstNameHindi} {u.lastNameHindi}</p>
-                                            )}
-                                            <p className="text-xs text-slate-500 truncate mt-0.5">{u.email}</p>
-                                        </div>
+                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${getRoleBadge(u.role)}`}>
+                                            {u.role.replace('_', ' ')}
+                                        </span>
                                     </div>
-                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${getRoleBadge(u.role)}`}>
-                                        {u.role.replace('_', ' ')}
-                                    </span>
-                                </div>
 
                                 <div className="flex items-center justify-between text-xs text-slate-500 mt-3 pt-2.5 border-t border-slate-100">
                                     <div>

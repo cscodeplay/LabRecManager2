@@ -635,6 +635,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
 
             {/* Google Drive Status & Account Bar */}
             {status?.isOAuthConnected ? (
+                <>
                 <div className="bg-white rounded-2xl border border-slate-200 p-2.5 sm:p-3 shadow-xs flex items-center justify-between gap-3">
                     {/* Account Icon Dropdown Trigger (Icon Only with Active Status Badge & Tooltip) */}
                     <div className="relative inline-block text-left" ref={accountDropdownRef}>
@@ -870,6 +871,69 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                         </button>
                     </div>
                 </div>
+
+                {/* Connected Google Drive Storage Quota Display */}
+                {status?.quota && (
+                    <div className="bg-gradient-to-r from-emerald-50/70 via-teal-50/40 to-slate-50 border border-emerald-200/80 rounded-2xl p-3 sm:p-4 shadow-xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-2">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-emerald-600/10 text-emerald-700 flex items-center justify-center font-bold">
+                                    <Database className="w-4 h-4 text-emerald-600" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-slate-800">Google Drive Storage</span>
+                                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                                            (status.quota.percentUsed || 0) > 90
+                                                ? 'bg-rose-100 text-rose-800'
+                                                : (status.quota.percentUsed || 0) > 75
+                                                ? 'bg-amber-100 text-amber-800'
+                                                : 'bg-emerald-100 text-emerald-800'
+                                        }`}>
+                                            {status.quota.percentUsed || 0}% Used
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500">
+                                        {status.user?.emailAddress ? `${status.user.emailAddress} • ` : ''}
+                                        {status.quota.usageFormatted || '0 Bytes'} of {status.quota.limitFormatted || 'Storage'} used
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 text-xs text-slate-600 self-end sm:self-auto">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                    <span className="text-[11px] font-medium text-slate-600">
+                                        Free Space: <strong className="text-slate-800">{status.quota.freeFormatted || 'Available'}</strong>
+                                    </span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={refreshStatus}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/50 transition cursor-pointer"
+                                    title="Refresh storage quota"
+                                >
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Storage Progress Bar */}
+                        <div className="w-full h-2 rounded-full bg-slate-200/80 overflow-hidden">
+                            <div
+                                className={`h-full transition-all duration-500 rounded-full ${
+                                    (status.quota.percentUsed || 0) > 90
+                                        ? 'bg-rose-500'
+                                        : (status.quota.percentUsed || 0) > 75
+                                        ? 'bg-amber-500'
+                                        : 'bg-emerald-500'
+                                }`}
+                                style={{ width: `${Math.min(100, Math.max(1, status.quota.percentUsed || 0))}%` }}
+                            />
+                        </div>
+                    </div>
+                )}
+            </>
             ) : (
                 <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -1202,7 +1266,11 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                                 className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4 flex-shrink-0"
                                                 title="Select file"
                                             />
-                                            <div className="w-9 h-9 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                            <div 
+                                                className="w-9 h-9 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer hover:opacity-80 transition"
+                                                onClick={() => handlePreview(file)}
+                                                title={`Preview ${file.name}`}
+                                            >
                                                 {((file.thumbnailLink || file.mimeType?.startsWith('image/')) && !failedThumbnails.has(file.id)) ? (
                                                     <img
                                                         src={file.thumbnailLink || `/api/drive/files/${file.id}/content`}
@@ -1264,7 +1332,11 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                             )}
                                         </div>
                                     </div>
-                                    <h5 className="text-xs font-semibold text-slate-800 line-clamp-2 mb-1" title={file.name}>
+                                    <h5 
+                                        className="text-xs font-semibold text-slate-800 line-clamp-2 mb-1 cursor-pointer hover:text-indigo-600 transition" 
+                                        title={`Preview ${file.name}`}
+                                        onClick={() => handlePreview(file)}
+                                    >
                                         {file.name}
                                     </h5>
                                 </div>
@@ -1344,8 +1416,12 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                             />
                                         </td>
                                         <td className="py-2.5 px-3">
-                                            <div className="flex items-center gap-2.5">
-                                                <div className="w-7 h-7 rounded-md bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                            <div 
+                                                className="flex items-center gap-2.5 cursor-pointer hover:text-indigo-600 transition group"
+                                                onClick={() => handlePreview(file)}
+                                                title={`Preview ${file.name}`}
+                                            >
+                                                <div className="w-7 h-7 rounded-md bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden group-hover:ring-1 group-hover:ring-indigo-400">
                                                     {((file.thumbnailLink || file.mimeType?.startsWith('image/')) && !failedThumbnails.has(file.id)) ? (
                                                         <img
                                                             src={file.thumbnailLink || `/api/drive/files/${file.id}/content`}
@@ -1358,7 +1434,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                                         getFileIcon(file)
                                                     )}
                                                 </div>
-                                                <span className="font-medium text-slate-800 truncate max-w-sm" title={file.name}>
+                                                <span className="font-medium text-slate-800 group-hover:text-indigo-600 truncate max-w-sm transition" title={file.name}>
                                                     {file.name}
                                                 </span>
                                             </div>

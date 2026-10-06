@@ -32,15 +32,25 @@ function decodeJwtPayload(token) {
 }
 
 // Google Drive service for file uploads, OAuth2 user authorization, and document interactions
+// NOTE: Each application user gets their own instance (see GoogleDriveService.forUser) so that
+// Google OAuth tokens and connected accounts are never shared across user accounts.
+const userInstances = new Map();
+
 class GoogleDriveService {
-    constructor() {
+    constructor(userId = null, userRole = null) {
+        this.userId = userId || null;
+        this.userRole = userRole || null;
+        const suffix = this.userId ? `_${this.userId}` : '';
         this.drive = null;
         this.oauth2Client = null;
         this.authType = 'none'; // 'oauth_user', 'service_account', or 'local_sync'
-        this.folderId = process.env.GOOGLE_DRIVE_FOLDER_ID || '1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp';
-        this.localSyncDir = path.join(__dirname, '../../uploads/google_drive');
-        this.tokenPath = path.join(__dirname, '../../uploads/google_oauth_tokens.json');
-        this.accountsPath = path.join(__dirname, '../../uploads/google_oauth_accounts.json');
+        // Per-user instances browse the user's own "My Drive" root by default
+        this.folderId = this.userId ? 'root' : (process.env.GOOGLE_DRIVE_FOLDER_ID || '1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp');
+        this.localSyncDir = this.userId
+            ? path.join(__dirname, '../../uploads/google_drive/users', String(this.userId))
+            : path.join(__dirname, '../../uploads/google_drive');
+        this.tokenPath = path.join(__dirname, `../../uploads/google_oauth_tokens${suffix}.json`);
+        this.accountsPath = path.join(__dirname, `../../uploads/google_oauth_accounts${suffix}.json`);
         this.configPath = path.join(__dirname, '../../uploads/google_oauth_client_config.json');
         this.cloudConfigPath = path.join(__dirname, '../../uploads/cloud_providers_config.json');
         this.connectedGoogleAccounts = {};
@@ -49,6 +59,7 @@ class GoogleDriveService {
         this._cachedConfig = null;
         this._initializingPromise = null;
         this._settingsTableChecked = false;
+        this._isLegacyOwner = false;
 
         const uploadsDir = path.join(__dirname, '../../uploads');
         if (!fs.existsSync(uploadsDir)) {
@@ -60,6 +71,30 @@ class GoogleDriveService {
         this.initialize();
         // Asynchronously attempt to ensure table exists and restore OAuth from persistent DB
         this.ensureSettingsTable().then(() => this.initFromDb()).catch(() => {});
+    }
+
+    /**
+     * Get (or create) the isolated Drive service instance for an application user
+     */
+    static forUser(user) {
+        const userId = typeof user === 'object' ? user?.id : user;
+        const role = typeof user === 'object' ? user?.role : null;
+        if (!userId) return null;
+        let inst = userInstances.get(userId);
+        if (!inst) {
+            inst = new GoogleDriveService(userId, role);
+            userInstances.set(userId, inst);
+        } else if (role && !inst.userRole) {
+            inst.userRole = role;
+        }
+        return inst;
+    }
+
+    /**
+     * Scope a system_settings key to the current application user
+     */
+    _scopedKey(base) {
+        return this.userId ? `${base}:user:${this.userId}` : base;
     }
 
     /**
@@ -164,19 +199,66 @@ class GoogleDriveService {
         await this.ensureSettingsTable();
         try {
             const rows = await prisma.$queryRawUnsafe(`
-                SELECT "value" FROM "system_settings" WHERE "key" = 'google_drive_connected_accounts' LIMIT 1
-            `);
+                SELECT "value" FROM "system_settings" WHERE "key" = $1 LIMIT 1
+            `, this._scopedKey('google_drive_connected_accounts'));
+            let dbData = null;
             if (rows && rows.length > 0 && rows[0].value) {
-                const dbData = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
-                if (dbData && dbData.accounts && typeof dbData.accounts === 'object') {
-                    this.connectedGoogleAccounts = { ...this.connectedGoogleAccounts, ...dbData.accounts };
-                    if (dbData.activeEmail && this.connectedGoogleAccounts[dbData.activeEmail]) {
-                        this.activeAccountEmail = dbData.activeEmail;
-                    }
+                dbData = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
+            } else if (this.userId) {
+                dbData = await this.claimLegacyAccountsStore();
+            }
+            if (dbData && dbData.accounts && typeof dbData.accounts === 'object') {
+                this.connectedGoogleAccounts = { ...this.connectedGoogleAccounts, ...dbData.accounts };
+                if (dbData.activeEmail && this.connectedGoogleAccounts[dbData.activeEmail]) {
+                    this.activeAccountEmail = dbData.activeEmail;
                 }
+                if (this.userId && dbData.folderId) this.folderId = dbData.folderId;
+                if (dbData.legacyOwner) this._isLegacyOwner = true;
             }
         } catch (e) {
             console.warn('[GoogleDrive] loadAccountsStoreFromDb notice:', e.message);
+        }
+    }
+
+    /**
+     * One-time migration: the pre-isolation global Google connection is handed to the first
+     * admin/principal who opens Drive. It is then marked as claimed so no other user inherits it.
+     */
+    async claimLegacyAccountsStore() {
+        if (!this.userId || !['admin', 'principal'].includes(this.userRole)) return null;
+        try {
+            const rows = await prisma.$queryRawUnsafe(`
+                SELECT "value" FROM "system_settings" WHERE "key" = 'google_drive_connected_accounts' LIMIT 1
+            `);
+            if (!rows || rows.length === 0 || !rows[0].value) return null;
+            const legacy = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
+            if (!legacy || legacy.claimedByUserId || !legacy.accounts || Object.keys(legacy.accounts).length === 0) return null;
+
+            const claimed = {
+                accounts: legacy.accounts,
+                activeEmail: legacy.activeEmail || null,
+                folderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp',
+                legacyOwner: true,
+                updatedAt: Date.now()
+            };
+            await prisma.$executeRawUnsafe(`
+                INSERT INTO "system_settings" ("key", "value", "updated_at")
+                VALUES ($1, $2::jsonb, CURRENT_TIMESTAMP)
+                ON CONFLICT ("key") DO NOTHING
+            `, this._scopedKey('google_drive_connected_accounts'), JSON.stringify(claimed));
+            await prisma.$executeRawUnsafe(`
+                UPDATE "system_settings" SET "value" = $1::jsonb, "updated_at" = CURRENT_TIMESTAMP
+                WHERE "key" = 'google_drive_connected_accounts'
+            `, JSON.stringify({ accounts: {}, activeEmail: null, claimedByUserId: this.userId, claimedAt: Date.now() }));
+            await prisma.$executeRawUnsafe(`DELETE FROM "system_settings" WHERE "key" = 'google_drive_oauth_tokens'`).catch(() => {});
+            for (const legacyFile of ['google_oauth_tokens.json', 'google_oauth_accounts.json']) {
+                try { fs.unlinkSync(path.join(__dirname, '../../uploads', legacyFile)); } catch (e) {}
+            }
+            console.log(`[GoogleDrive] Legacy shared Google Drive connection migrated to user ${this.userId}`);
+            return claimed;
+        } catch (e) {
+            console.warn('[GoogleDrive] claimLegacyAccountsStore notice:', e.message);
+            return null;
         }
     }
 
@@ -187,6 +269,8 @@ class GoogleDriveService {
         const dataToSave = {
             accounts: this.connectedGoogleAccounts,
             activeEmail: this.activeAccountEmail,
+            ...(this.userId && this.folderId && this.folderId !== 'root' ? { folderId: this.folderId } : {}),
+            ...(this._isLegacyOwner ? { legacyOwner: true } : {}),
             updatedAt: Date.now()
         };
 
@@ -203,10 +287,10 @@ class GoogleDriveService {
         try {
             await prisma.$executeRawUnsafe(`
                 INSERT INTO "system_settings" ("key", "value", "updated_at")
-                VALUES ('google_drive_connected_accounts', $1::jsonb, CURRENT_TIMESTAMP)
+                VALUES ($2, $1::jsonb, CURRENT_TIMESTAMP)
                 ON CONFLICT ("key")
                 DO UPDATE SET "value" = $1::jsonb, "updated_at" = CURRENT_TIMESTAMP
-            `, JSON.stringify(dataToSave));
+            `, JSON.stringify(dataToSave), this._scopedKey('google_drive_connected_accounts'));
         } catch (dbErr) {
             console.warn('[GoogleDrive] Failed to save accounts to DB:', dbErr.message);
         }
@@ -692,34 +776,6 @@ class GoogleDriveService {
             }
         } catch (e) {}
 
-        // Guarantee both known user accounts (charan881130@gmail.com and charan117@gmail.com) are listed
-        const primaryKnown = ['charan881130@gmail.com', 'charan117@gmail.com'];
-        for (const known of primaryKnown) {
-            const normKnown = known.toLowerCase();
-            if (!seenGoogleEmails.has(normKnown)) {
-                seenGoogleEmails.add(normKnown);
-                const hasTokens = Boolean(this.connectedGoogleAccounts[normKnown]?.tokens);
-                accounts.push({
-                    id: normKnown,
-                    accountId: normKnown,
-                    provider: 'google',
-                    providerName: 'Google Drive',
-                    name: `Google Drive (${normKnown})`,
-                    email: normKnown,
-                    displayName: normKnown.split('@')[0],
-                    photoLink: null,
-                    plan: 'Google Drive Account',
-                    percentUsed: 0,
-                    usageFormatted: '0 GB',
-                    limitFormatted: 'Google Drive',
-                    status: hasTokens ? 'connected' : 'needs_reconnect',
-                    hasTokens: hasTokens,
-                    isActive: false,
-                    isDefault: false
-                });
-            }
-        }
-
         // Microsoft OneDrive account if stored in DB or config
         try {
             const rows = await prisma.$queryRawUnsafe(`
@@ -1188,10 +1244,10 @@ class GoogleDriveService {
         try {
             await prisma.$executeRawUnsafe(`
                 INSERT INTO "system_settings" ("key", "value", "updated_at")
-                VALUES ('google_drive_oauth_tokens', $1::jsonb, CURRENT_TIMESTAMP)
+                VALUES ($2, $1::jsonb, CURRENT_TIMESTAMP)
                 ON CONFLICT ("key") 
                 DO UPDATE SET "value" = $1::jsonb, "updated_at" = CURRENT_TIMESTAMP
-            `, JSON.stringify(merged));
+            `, JSON.stringify(merged), this._scopedKey('google_drive_oauth_tokens'));
             console.log('✅ [GoogleDrive] OAuth tokens persisted to PostgreSQL database successfully');
         } catch (dbErr) {
             console.warn('[GoogleDrive] Failed to save tokens to database:', dbErr.message);
@@ -1204,8 +1260,8 @@ class GoogleDriveService {
     async loadTokensFromDb() {
         try {
             const rows = await prisma.$queryRawUnsafe(`
-                SELECT "value" FROM "system_settings" WHERE "key" = 'google_drive_oauth_tokens' LIMIT 1
-            `);
+                SELECT "value" FROM "system_settings" WHERE "key" = $1 LIMIT 1
+            `, this._scopedKey('google_drive_oauth_tokens'));
             if (rows && rows.length > 0 && rows[0].value) {
                 const dbTokens = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
                 if (dbTokens && (dbTokens.refresh_token || dbTokens.access_token)) {
@@ -1246,16 +1302,28 @@ class GoogleDriveService {
      */
     async disconnectOAuth() {
         this._cachedTokens = null;
+        this.connectedGoogleAccounts = {};
+        this.activeAccountEmail = null;
         try {
             if (fs.existsSync(this.tokenPath)) {
                 fs.unlinkSync(this.tokenPath);
             }
         } catch (e) {}
+        try {
+            if (fs.existsSync(this.accountsPath)) {
+                fs.unlinkSync(this.accountsPath);
+            }
+        } catch (e) {}
 
         try {
             await prisma.$executeRawUnsafe(`
-                DELETE FROM "system_settings" WHERE "key" = 'google_drive_oauth_tokens'
-            `);
+                DELETE FROM "system_settings" WHERE "key" = $1
+            `, this._scopedKey('google_drive_oauth_tokens'));
+        } catch (e) {}
+        try {
+            await prisma.$executeRawUnsafe(`
+                DELETE FROM "system_settings" WHERE "key" = $1
+            `, this._scopedKey('google_drive_connected_accounts'));
         } catch (e) {}
 
         this.drive = null;
@@ -2021,5 +2089,8 @@ class GoogleDriveService {
         }
     }
 }
+const defaultGoogleDriveService = new GoogleDriveService();
+defaultGoogleDriveService.GoogleDriveService = GoogleDriveService;
+defaultGoogleDriveService.forUser = GoogleDriveService.forUser;
 
-module.exports = new GoogleDriveService();
+module.exports = defaultGoogleDriveService;

@@ -687,6 +687,100 @@ export default function MediaPreviewModal({
                         </div>
                     )}
                 </div>
+
+                {/* Dedicated Action Toolbar Directly Under Preview */}
+                <div className="px-5 py-3.5 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 flex-shrink-0 shadow-xs">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate max-w-xs sm:max-w-md" title={file.name}>
+                            {file.name}
+                        </span>
+                        {file.size ? (
+                            <span className="text-[11px] text-slate-400 font-mono">
+                                • {formatBytes(file.size)}
+                            </span>
+                        ) : null}
+                    </div>
+
+                    <div className="flex items-center flex-wrap gap-2">
+                        {/* Import to Documents */}
+                        {onImport && (
+                            <button
+                                type="button"
+                                onClick={() => onImport(file)}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+                                title="Import this file to ULRMS Documents"
+                            >
+                                <FolderPlus className="w-4 h-4" />
+                                <span>Import to Documents</span>
+                            </button>
+                        )}
+
+                        {/* Download File */}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (fileBlob) {
+                                    const url = URL.createObjectURL(fileBlob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = file.fileName || file.name || 'download';
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    URL.revokeObjectURL(url);
+                                } else if (onDownload) {
+                                    onDownload(file);
+                                } else if (file.url) {
+                                    const a = document.createElement('a');
+                                    a.href = file.url;
+                                    a.download = file.fileName || file.name || 'download';
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                }
+                            }}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+                            title="Download file to computer"
+                        >
+                            <Download className="w-4 h-4" />
+                            <span>Download File</span>
+                        </button>
+
+                        {/* Open in Google Drive */}
+                        {file.webViewLink && (
+                            <a
+                                href={file.webViewLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-medium transition cursor-pointer"
+                                title="Open file directly in Google Drive"
+                            >
+                                <ExternalLink className="w-4 h-4" />
+                                <span>Open in Drive</span>
+                            </a>
+                        )}
+
+                        {/* Attach / Ask AI Bot */}
+                        <button
+                            type="button"
+                            onClick={handleAttachCurrentFile}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-xl text-xs font-medium transition cursor-pointer"
+                            title="Attach file to AI Assistant"
+                        >
+                            <Bot className="w-4 h-4" />
+                            <span>Ask AI</span>
+                        </button>
+
+                        {/* Close button */}
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="px-3.5 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-medium transition cursor-pointer"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     );
