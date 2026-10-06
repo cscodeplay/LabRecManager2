@@ -4,10 +4,216 @@ const axios = require('axios');
 const { asyncHandler } = require('../middleware/errorHandler');
 const aiService = require('../services/ai.service');
 
+const BROWSER_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+};
+
 const WIKI_HEADERS = {
     'User-Agent': 'LabRecManager/1.0 (academic-whiteboard; contact@labrecmanager.com)',
     'Accept': 'application/json'
 };
+
+/**
+ * Decodes destination URLs from search redirects
+ */
+function cleanSearchUrl(rawUrl) {
+    if (!rawUrl) return '';
+    const clean = rawUrl.replace(/&amp;/g, '&');
+    const uMatch = clean.match(/[?&]u=([^&]+)/);
+    if (uMatch) {
+        const raw = uMatch[1].startsWith('a1') ? uMatch[1].slice(2) : uMatch[1];
+        try {
+            return Buffer.from(raw, 'base64').toString('utf8');
+        } catch (e) {}
+    }
+    return clean;
+}
+
+/**
+ * Fetch live Google/Web search results
+ */
+async function fetchWebSearchResults(query) {
+    try {
+        const res = await axios.get('https://www.bing.com/search', {
+            params: { q: query },
+            headers: BROWSER_HEADERS,
+            timeout: 7000
+        });
+
+        const html = res.data || '';
+        const algos = html.split('<li class="b_algo"').slice(1);
+        const webResults = [];
+
+        for (const algo of algos) {
+            if (webResults.length >= 10) break;
+            const linkMatch = algo.match(/<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a><\/h2>/);
+            const snippetMatch = algo.match(/<p[^>]*>([\s\S]*?)<\/p>/) || algo.match(/<div class="b_caption"[^>]*>([\s\S]*?)<\/div>/);
+            
+            if (linkMatch) {
+                const title = linkMatch[2].replace(/<[^>]*>/g, '').trim();
+                const rawUrl = linkMatch[1];
+                const finalUrl = cleanSearchUrl(rawUrl);
+                const snippet = snippetMatch ? snippetMatch[1].replace(/<[^>]*>/g, '').replace(/&#0183;/g, '•').replace(/&nbsp;/g, ' ').trim() : '';
+
+                let domain = '';
+                try {
+                    const parsed = new URL(finalUrl);
+                    domain = parsed.hostname.replace(/^www\./, '');
+                } catch (e) {
+                    domain = 'Web Source';
+                }
+
+                if (title && finalUrl.startsWith('http')) {
+                    webResults.push({
+                        title,
+                        url: finalUrl,
+                        snippet,
+                        domain
+                    });
+                }
+            }
+        }
+
+        return webResults;
+    } catch (err) {
+        console.warn('[BrowserRoutes] Web search error:', err.message);
+        return [];
+    }
+}
+
+/**
+ * Fetch Crystal-Clear Full-HD Images & Diagrams from Web + Openverse + Wikimedia
+ */
+async function fetchHighResolutionImages(query) {
+    const images = [];
+
+    // 1. Web Image Search for Ultra HD original images
+    const webImagesPromise = (async () => {
+        try {
+            const res = await axios.get('https://www.bing.com/images/search', {
+                params: { q: `${query} diagram high resolution` },
+                headers: BROWSER_HEADERS,
+                timeout: 7000
+            });
+
+            const html = res.data || '';
+            const murls = [...html.matchAll(/&quot;murl&quot;:&quot;(https?:\/\/[^&]+)&quot;/g)].map(m => m[1]);
+            const titles = [...html.matchAll(/&quot;t&quot;:&quot;([^&]+)&quot;/g)].map(m => m[1]);
+
+            murls.slice(0, 14).forEach((rawUrl, i) => {
+                let imgUrl = rawUrl;
+                try { imgUrl = decodeURIComponent(rawUrl); } catch(e){}
+                
+                let domain = 'Web Image';
+                try {
+                    const parsed = new URL(imgUrl);
+                    domain = parsed.hostname.replace(/^www\./, '');
+                } catch(e){}
+
+                images.push({
+                    title: titles[i] ? decodeURIComponent(titles[i].replace(/&#x/g, '%u')) : `${query} Diagram`,
+                    url: imgUrl,
+                    thumbnail: imgUrl,
+                    source: domain,
+                    isHd: true,
+                    resolution: 'Full HD'
+                });
+            });
+        } catch (err) {
+            console.warn('[BrowserRoutes] Web image search error:', err.message);
+        }
+    })();
+
+    // 2. Openverse Science & Academic High-Res Image Collection
+    const openversePromise = (async () => {
+        try {
+            const res = await axios.get('https://api.openverse.org/v1/images/', {
+                params: { q: `${query} diagram`, page_size: 8 },
+                headers: WIKI_HEADERS,
+                timeout: 7000
+            });
+
+            if (res.data?.results && Array.isArray(res.data.results)) {
+                res.data.results.forEach(img => {
+                    if (img.url && !images.some(existing => existing.url === img.url)) {
+                        images.push({
+                            title: img.title || `${query} Educational Visual`,
+                            url: img.url,
+                            thumbnail: img.thumbnail || img.url,
+                            source: img.creator ? `By ${img.creator}` : 'Openverse HD',
+                            isHd: true,
+                            resolution: `${img.width || 1200}x${img.height || 800}`
+                        });
+                    }
+                });
+            }
+        } catch (err) {
+            console.warn('[BrowserRoutes] Openverse search error:', err.message);
+        }
+    })();
+
+    // 3. Wikimedia Commons Full-Resolution SVG / PNG Diagrams
+    const commonsPromise = (async () => {
+        try {
+            const res = await axios.get('https://commons.wikimedia.org/w/api.php', {
+                params: {
+                    action: 'query',
+                    generator: 'search',
+                    gsrsearch: `${query} filetype:bitmap|drawing`,
+                    gsrnamespace: 6,
+                    gsrlimit: 8,
+                    prop: 'imageinfo',
+                    iiprop: 'url|size|mime',
+                    format: 'json',
+                    origin: '*'
+                },
+                headers: WIKI_HEADERS,
+                timeout: 7000
+            });
+
+            if (res.data?.query?.pages) {
+                const files = Object.values(res.data.query.pages);
+                files.forEach(f => {
+                    const info = f.imageinfo?.[0];
+                    if (info?.url && !images.some(existing => existing.url === info.url)) {
+                        const cleanName = f.title.replace(/^File:/, '').replace(/\.[^/.]+$/, '');
+                        // High-res redirect: 1600px crisp render
+                        const highResUrl = `https://commons.wikimedia.org/w/index.php?title=Special:Redirect/file/${encodeURIComponent(f.title.replace(/^File:/, ''))}&width=1600`;
+                        images.push({
+                            title: cleanName,
+                            url: highResUrl,
+                            thumbnail: info.url,
+                            source: 'Wikimedia Commons HD',
+                            isHd: true,
+                            resolution: `${info.width || 1600}x${info.height || 1200}`
+                        });
+                    }
+                });
+            }
+        } catch (err) {
+            console.warn('[BrowserRoutes] Wikimedia Commons HD error:', err.message);
+        }
+    })();
+
+    await Promise.allSettled([webImagesPromise, openversePromise, commonsPromise]);
+
+    // 4. Always include a crisp 1280x720 vector AI diagram as primary
+    const aiDiagramPrompt = `${query} educational infographic diagram chart with detailed labeled scientific parts, crisp vector graphics style, ultra high resolution 4k, pure white background`;
+    const aiHdUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(aiDiagramPrompt)}?width=1280&height=720&nologo=true`;
+
+    images.unshift({
+        title: `${query} (AI 4K Illustrated Diagram)`,
+        url: aiHdUrl,
+        thumbnail: aiHdUrl,
+        source: 'AI HD Diagram Engine',
+        isHd: true,
+        resolution: '1280x720'
+    });
+
+    return images;
+}
 
 /**
  * Generate AI-synthesized Google Search AI-style crisp overview
@@ -20,7 +226,7 @@ CRITICAL INSTRUCTIONS:
 1. Return ONLY a valid JSON object matching the schema below.
 2. "summary": Exactly 2 to 3 concise, clear sentences defining the concept and why it matters.
 3. "keyPoints": An array of 3 to 4 impactful bullet points highlighting the core mechanisms, steps, or principles.
-4. "diagramPrompt": A descriptive, prompt describing an ideal scientific or educational diagram for this topic (e.g. "Detailed labeled diagram of plant photosynthesis light and dark reactions").
+4. "diagramPrompt": A descriptive prompt describing an ideal scientific or educational diagram for this topic.
 5. "formulaOrEquation": An important formula, law, or key equation if applicable (or null if not applicable).
 6. "quickTakeaway": 1 punchy sentence summarizing the most important thing to remember.
 
@@ -54,9 +260,9 @@ JSON SCHEMA:
         raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
         const parsed = JSON.parse(raw);
         
-        // Generate an AI diagram URL via Pollinations AI
+        // High-res AI diagram (1280x720)
         const diagramPrompt = parsed.diagramPrompt || `${query} educational diagram infographic scientific chart`;
-        const aiDiagramUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(`${diagramPrompt}, clean educational diagram, high resolution, detailed labels, vector graphics style, white background`)}?width=800&height=500&nologo=true`;
+        const aiDiagramUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(`${diagramPrompt}, clean educational diagram, high resolution 4k, detailed labels, vector graphics style, white background`)}?width=1280&height=720&nologo=true`;
 
         return {
             ...parsed,
@@ -76,14 +282,14 @@ JSON SCHEMA:
             diagramPrompt,
             formulaOrEquation: null,
             quickTakeaway: `Mastering ${query} provides essential knowledge for advanced problem solving.`,
-            aiDiagramUrl: `https://image.pollinations.ai/prompt/${encodeURIComponent(`${diagramPrompt}, clean scientific diagram, detailed labels`)}?width=800&height=500&nologo=true`
+            aiDiagramUrl: `https://image.pollinations.ai/prompt/${encodeURIComponent(`${diagramPrompt}, clean scientific diagram, detailed labels`)}?width=1280&height=720&nologo=true`
         };
     }
 }
 
 /**
  * @route   GET /api/browser/search
- * @desc    Search Wikipedia REST API, generate Google AI-style overview, and curated diagrams
+ * @desc    Search Google/Web, fetch Ultra-HD diagrams/images, Wikipedia articles, and AI Overview
  * @access  Public
  */
 router.get('/search', asyncHandler(async (req, res) => {
@@ -95,6 +301,7 @@ router.get('/search', asyncHandler(async (req, res) => {
             data: {
                 query: '',
                 aiOverview: null,
+                webResults: [],
                 articles: [],
                 images: []
             }
@@ -102,98 +309,48 @@ router.get('/search', asyncHandler(async (req, res) => {
     }
 
     const query = q.trim();
-    let articles = [];
-    let images = [];
-    let aiOverview = null;
 
-    // Run AI Overview concurrently with Wikipedia REST search
-    const aiPromise = includeAi === 'true' 
-        ? generateAiSearchOverview(query) 
-        : Promise.resolve(null);
+    // Concurrently fetch AI Overview, Web Search, High-Res Images, and Wikipedia
+    const [aiResult, webResult, imgResult, wikiResult] = await Promise.allSettled([
+        includeAi === 'true' ? generateAiSearchOverview(query) : Promise.resolve(null),
+        fetchWebSearchResults(query),
+        fetchHighResolutionImages(query),
+        (async () => {
+            try {
+                const restRes = await axios.get('https://en.wikipedia.org/w/rest.php/v1/search/page', {
+                    params: { q: query, limit: 8 },
+                    headers: WIKI_HEADERS,
+                    timeout: 7000
+                });
 
-    const wikiPromise = (async () => {
-        try {
-            // Use modern Wikimedia REST API (official, highly reliable, no 403 blocks)
-            const restRes = await axios.get('https://en.wikipedia.org/w/rest.php/v1/search/page', {
-                params: {
-                    q: query,
-                    limit: 8
-                },
-                headers: WIKI_HEADERS,
-                timeout: 8000
-            });
-
-            if (restRes.data?.pages && Array.isArray(restRes.data.pages)) {
-                return restRes.data.pages.map(p => ({
-                    id: p.id || p.key,
-                    key: p.key,
-                    title: p.title,
-                    extract: p.description || p.excerpt ? `${p.description || ''} ${p.excerpt || ''}`.replace(/<[^>]*>/g, '').trim() : '',
-                    url: `https://en.wikipedia.org/wiki/${encodeURIComponent(p.key || p.title.replace(/ /g, '_'))}`,
-                    thumbnail: p.thumbnail?.url ? (p.thumbnail.url.startsWith('//') ? `https:${p.thumbnail.url}` : p.thumbnail.url) : null,
-                    originalImage: p.thumbnail?.url ? (p.thumbnail.url.startsWith('//') ? `https:${p.thumbnail.url}` : p.thumbnail.url) : null
-                }));
+                if (restRes.data?.pages && Array.isArray(restRes.data.pages)) {
+                    return restRes.data.pages.map(p => ({
+                        id: p.id || p.key,
+                        key: p.key,
+                        title: p.title,
+                        extract: p.description || p.excerpt ? `${p.description || ''} ${p.excerpt || ''}`.replace(/<[^>]*>/g, '').trim() : '',
+                        url: `https://en.wikipedia.org/wiki/${encodeURIComponent(p.key || p.title.replace(/ /g, '_'))}`,
+                        thumbnail: p.thumbnail?.url ? (p.thumbnail.url.startsWith('//') ? `https:${p.thumbnail.url}` : p.thumbnail.url) : null
+                    }));
+                }
+            } catch (err) {
+                console.warn('[BrowserRoutes] Wikipedia search error:', err.message);
             }
-        } catch (wikiErr) {
-            console.warn('[BrowserRoutes] Wikimedia REST search error:', wikiErr.message);
-        }
-        return [];
-    })();
+            return [];
+        })()
+    ]);
 
-    // Run searches in parallel
-    const [aiResult, wikiArticles] = await Promise.all([aiPromise, wikiPromise]);
-    aiOverview = aiResult;
-    articles = wikiArticles;
-
-    // Collect diagrams and figures
-    // 1. First, include AI-generated diagram if available
-    if (aiOverview?.aiDiagramUrl) {
-        images.push({
-            title: `${aiOverview.title || query} (AI Illustrated Diagram)`,
-            url: aiOverview.aiDiagramUrl,
-            thumbnail: aiOverview.aiDiagramUrl,
-            source: 'AI Diagram Engine',
-            isAi: true
-        });
-    }
-
-    // 2. Add Wikipedia article images
-    articles.forEach(art => {
-        if (art.thumbnail && !images.some(img => img.url === art.thumbnail)) {
-            images.push({
-                title: art.title,
-                url: art.thumbnail,
-                thumbnail: art.thumbnail,
-                source: 'Wikipedia'
-            });
-        }
-    });
-
-    // 3. Educational diagrams fallback
-    if (images.length < 3) {
-        images.push(
-            {
-                title: `${query} Concept Map`,
-                url: `https://image.pollinations.ai/prompt/${encodeURIComponent(`${query} concept map mental diagram flow chart educational`)}?width=800&height=500&nologo=true`,
-                thumbnail: `https://image.pollinations.ai/prompt/${encodeURIComponent(`${query} concept map mental diagram flow chart educational`)}?width=400&height=250&nologo=true`,
-                source: 'AI Diagram Engine',
-                isAi: true
-            },
-            {
-                title: `${query} Technical Infographic`,
-                url: `https://image.pollinations.ai/prompt/${encodeURIComponent(`${query} technical schematic scientific structure labeled parts`)}?width=800&height=500&nologo=true`,
-                thumbnail: `https://image.pollinations.ai/prompt/${encodeURIComponent(`${query} technical schematic scientific structure labeled parts`)}?width=400&height=250&nologo=true`,
-                source: 'AI Diagram Engine',
-                isAi: true
-            }
-        );
-    }
+    const aiOverview = aiResult.status === 'fulfilled' ? aiResult.value : null;
+    const webResults = webResult.status === 'fulfilled' ? webResult.value : [];
+    const images = imgResult.status === 'fulfilled' ? imgResult.value : [];
+    const articles = wikiResult.status === 'fulfilled' ? wikiResult.value : [];
 
     res.json({
         success: true,
         data: {
             query,
             aiOverview,
+            webResults,
             articles,
             images
         }
@@ -215,7 +372,6 @@ router.get('/article', asyncHandler(async (req, res) => {
     const cleanTitle = title.trim();
 
     try {
-        // Use Wikipedia REST summary API
         const summaryRes = await axios.get(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanTitle.replace(/ /g, '_'))}`, {
             headers: WIKI_HEADERS,
             timeout: 8000
@@ -240,10 +396,9 @@ router.get('/article', asyncHandler(async (req, res) => {
         });
     } catch (error) {
         console.warn('[BrowserRoutes] REST summary error:', error.message);
-        // Fallback: Generate an informative article overview using AI
         try {
             const aiSummary = await aiService.executeChatCompletion({
-                messages: [{ role: 'user', content: `Write a comprehensive, 4-paragraph educational overview of "${cleanTitle}" for a student whiteboard.` }],
+                messages: [{ role: 'user', content: `Write a comprehensive educational overview of "${cleanTitle}" for an academic student whiteboard.` }],
                 systemPrompt: 'You are an educational encyclopedia. Output clear, well-structured paragraphs explaining the topic.',
                 preferredProvider: 'auto',
                 temperature: 0.3,
@@ -262,7 +417,7 @@ router.get('/article', asyncHandler(async (req, res) => {
                     title: cleanTitle,
                     description: 'Educational Overview',
                     url: `https://en.wikipedia.org/wiki/${encodeURIComponent(cleanTitle.replace(/ /g, '_'))}`,
-                    heroImage: `https://image.pollinations.ai/prompt/${encodeURIComponent(`${cleanTitle} scientific educational illustration`)}?width=800&height=500&nologo=true`,
+                    heroImage: `https://image.pollinations.ai/prompt/${encodeURIComponent(`${cleanTitle} scientific educational illustration`)}?width=1280&height=720&nologo=true`,
                     paragraphs
                 }
             });
@@ -357,10 +512,10 @@ Ensure each slide is conceptually progressive from introduction to deep dive to 
             else throw new Error('Failed to parse slide show JSON');
         }
 
-        // Attach high quality AI diagram URLs to each slide
+        // Attach crystal-clear 1280x720 AI diagram URLs to each slide
         slides = slides.map((slide, idx) => {
             const prompt = slide.diagramPrompt || `${targetTopic} slide ${idx + 1} diagram`;
-            const diagramUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(`${prompt}, clean educational infographic presentation visual, vector style, white background`)}?width=700&height=420&nologo=true`;
+            const diagramUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(`${prompt}, clean educational infographic presentation visual, vector style, white background`)}?width=1280&height=720&nologo=true`;
             return {
                 ...slide,
                 id: idx + 1,

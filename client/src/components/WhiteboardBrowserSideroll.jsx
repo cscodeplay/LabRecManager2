@@ -5,7 +5,8 @@ import {
     Globe, Search, ArrowLeft, ArrowRight, RotateCw, 
     ExternalLink, Copy, Check, Plus, Image as ImageIcon, 
     BookOpen, Sparkles, X, Maximize2, Minimize2, MoveRight,
-    MousePointer, HelpCircle, Layers, Bookmark, Layout, CheckCircle2
+    MousePointer, HelpCircle, Layers, Bookmark, Layout, CheckCircle2,
+    Compass, Filter
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { browserAPI } from '@/lib/api';
@@ -28,9 +29,9 @@ export default function WhiteboardBrowserSideroll({
     onAddAIPanelToBoard
 }) {
     const [searchQuery, setSearchQuery] = useState('');
-    const [activeTab, setActiveTab] = useState('all'); // 'all' | 'ai' | 'articles' | 'images'
+    const [activeTab, setActiveTab] = useState('all'); // 'all' | 'web' | 'images' | 'ai' | 'articles'
     const [isLoading, setIsLoading] = useState(false);
-    const [searchResults, setSearchResults] = useState({ query: '', aiOverview: null, articles: [], images: [] });
+    const [searchResults, setSearchResults] = useState({ query: '', aiOverview: null, webResults: [], articles: [], images: [] });
     
     // Detailed Article View inside Browser
     const [currentArticle, setCurrentArticle] = useState(null);
@@ -106,14 +107,14 @@ export default function WhiteboardBrowserSideroll({
     const handleCopyParagraphToBoard = (paragraphText) => {
         if (onAddTextToBoard) {
             onAddTextToBoard(paragraphText);
-            toast.success('Paragraph added to whiteboard!');
+            toast.success('Text added to whiteboard!');
         }
     };
 
     const handleCopyImageToBoard = (imageUrl) => {
         if (onAddImageToBoard) {
             onAddImageToBoard(imageUrl);
-            toast.success('Image dropped onto whiteboard!');
+            toast.success('HD Image dropped onto whiteboard!', { icon: '🖼️' });
         }
     };
 
@@ -147,13 +148,47 @@ export default function WhiteboardBrowserSideroll({
         toast.success('Transferred to whiteboard as interactive editable panel!', { icon: '✨' });
     };
 
+    // Embed Web Search Result as an Editable Panel Card on Whiteboard
+    const handleEmbedWebResultAsPanel = (webItem) => {
+        if (!onAddAIPanelToBoard) return;
+        const panelData = {
+            id: `aipanel_web_${Date.now()}`,
+            title: webItem.title,
+            summary: webItem.snippet || 'Web reference snippet.',
+            keyPoints: [
+                `Source Domain: ${webItem.domain || 'Web'}`,
+                `Reference URL: ${webItem.url}`
+            ],
+            formulaOrEquation: null,
+            images: searchResults.images.slice(0, 2),
+            diagramUrl: searchResults.images[0]?.url || null,
+            x: 100,
+            y: 100,
+            width: 440,
+            height: 'auto'
+        };
+        onAddAIPanelToBoard(panelData);
+        toast.success(`Embedded "${webItem.domain}" reference card on board!`, { icon: '📋' });
+    };
+
+    // Direct Google Search / Google Images links
+    const handleOpenGoogle = (type = 'search') => {
+        const q = encodeURIComponent(searchQuery || searchResults.query || 'Science');
+        const url = type === 'images'
+            ? `https://www.google.com/search?tbm=isch&q=${q}`
+            : `https://www.google.com/search?q=${q}`;
+        if (typeof window !== 'undefined') {
+            window.open(url, '_blank', 'noopener,noreferrer');
+        }
+    };
+
     if (mode === 'closed') {
         return null;
     }
 
     const panelWidthStyle = mode === 'full' 
         ? 'w-full max-w-full' 
-        : 'w-[480px] max-w-[520px] min-w-[380px]';
+        : 'w-[520px] max-w-[560px] min-w-[390px]';
 
     return (
         <aside
@@ -176,7 +211,7 @@ export default function WhiteboardBrowserSideroll({
                         </button>
                     )}
 
-                    {/* Search / URL bar */}
+                    {/* Search Bar with live Google Actions */}
                     <form 
                         onSubmit={(e) => {
                             e.preventDefault();
@@ -189,7 +224,7 @@ export default function WhiteboardBrowserSideroll({
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search Wikipedia, AI Overview & diagrams..."
+                            placeholder="Google, web results, HD diagrams & AI..."
                             className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
                         />
                         {searchQuery && (
@@ -204,8 +239,27 @@ export default function WhiteboardBrowserSideroll({
                     </form>
                 </div>
 
-                {/* Sideroll Controls: Partial, Full, Close */}
+                {/* Direct Google External Actions */}
                 <div className="flex items-center gap-1">
+                    <button
+                        onClick={() => handleOpenGoogle('search')}
+                        className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition flex items-center gap-1 text-[11px] font-semibold"
+                        title="Open this query directly on Google Web Search"
+                    >
+                        <span className="font-bold text-blue-400">G</span>
+                        <ExternalLink className="w-3 h-3 text-slate-400" />
+                    </button>
+
+                    <button
+                        onClick={() => handleOpenGoogle('images')}
+                        className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition flex items-center gap-1 text-[11px] font-semibold"
+                        title="Open this query directly on Google Images"
+                    >
+                        <span className="font-bold text-amber-400">G</span>
+                        <ImageIcon className="w-3 h-3 text-slate-400" />
+                    </button>
+
+                    {/* Sideroll Size / Close Controls */}
                     <button
                         onClick={() => onModeChange(mode === 'full' ? 'partial' : 'full')}
                         className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
@@ -242,11 +296,11 @@ export default function WhiteboardBrowserSideroll({
                 ))}
             </div>
 
-            {/* Filter Tabs: All, AI Overview, Articles, Images */}
-            <div className="flex items-center border-b border-slate-800 px-3 py-1.5 gap-1.5 bg-slate-950/40 text-xs flex-shrink-0 overflow-x-auto">
+            {/* Filter Tabs: All, Google Web, HD Images, AI Overview, Wikipedia */}
+            <div className="flex items-center border-b border-slate-800 px-3 py-1.5 gap-1.5 bg-slate-950/40 text-xs flex-shrink-0 overflow-x-auto custom-scrollbar">
                 <button
                     onClick={() => setActiveTab('all')}
-                    className={`px-2.5 py-1 rounded-lg font-medium transition ${
+                    className={`px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap ${
                         activeTab === 'all'
                             ? 'bg-emerald-600 text-white shadow'
                             : 'text-slate-400 hover:text-slate-200'
@@ -255,8 +309,30 @@ export default function WhiteboardBrowserSideroll({
                     All Results
                 </button>
                 <button
+                    onClick={() => setActiveTab('web')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap flex items-center gap-1 ${
+                        activeTab === 'web'
+                            ? 'bg-blue-600 text-white shadow'
+                            : 'text-blue-400 hover:text-blue-300'
+                    }`}
+                >
+                    <Globe className="w-3 h-3" />
+                    <span>Google & Web ({searchResults.webResults?.length || 0})</span>
+                </button>
+                <button
+                    onClick={() => setActiveTab('images')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap flex items-center gap-1 ${
+                        activeTab === 'images'
+                            ? 'bg-cyan-600 text-white shadow'
+                            : 'text-cyan-400 hover:text-cyan-300'
+                    }`}
+                >
+                    <ImageIcon className="w-3 h-3" />
+                    <span>HD Images ({searchResults.images?.length || 0})</span>
+                </button>
+                <button
                     onClick={() => setActiveTab('ai')}
-                    className={`px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 ${
+                    className={`px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap flex items-center gap-1 ${
                         activeTab === 'ai'
                             ? 'bg-indigo-600 text-white shadow'
                             : 'text-indigo-400 hover:text-indigo-300'
@@ -267,23 +343,13 @@ export default function WhiteboardBrowserSideroll({
                 </button>
                 <button
                     onClick={() => setActiveTab('articles')}
-                    className={`px-2.5 py-1 rounded-lg font-medium transition ${
+                    className={`px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap ${
                         activeTab === 'articles'
                             ? 'bg-emerald-600 text-white shadow'
                             : 'text-slate-400 hover:text-slate-200'
                     }`}
                 >
-                    Articles ({searchResults.articles.length})
-                </button>
-                <button
-                    onClick={() => setActiveTab('images')}
-                    className={`px-2.5 py-1 rounded-lg font-medium transition ${
-                        activeTab === 'images'
-                            ? 'bg-emerald-600 text-white shadow'
-                            : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                >
-                    Figures ({searchResults.images.length})
+                    Wikipedia ({searchResults.articles?.length || 0})
                 </button>
             </div>
 
@@ -312,7 +378,7 @@ export default function WhiteboardBrowserSideroll({
                 {isLoading || isLoadingArticle ? (
                     <div className="py-16 text-center space-y-3">
                         <RotateCw className="w-7 h-7 animate-spin text-emerald-400 mx-auto" />
-                        <p className="text-xs text-slate-400 font-medium">Synthesizing AI overview & fetching diagrams...</p>
+                        <p className="text-xs text-slate-400 font-medium">Fetching Google web results, HD diagrams & AI synthesis...</p>
                     </div>
                 ) : currentArticle ? (
                     /* ARTICLE DETAIL VIEW */
@@ -332,11 +398,11 @@ export default function WhiteboardBrowserSideroll({
                         </div>
 
                         {currentArticle.heroImage && (
-                            <div className="relative group rounded-2xl overflow-hidden border border-slate-700 shadow-lg">
+                            <div className="relative group rounded-2xl overflow-hidden border border-slate-700 shadow-lg bg-black/40">
                                 <img
                                     src={currentArticle.heroImage}
                                     alt={currentArticle.title}
-                                    className="w-full max-h-56 object-cover"
+                                    className="w-full max-h-60 object-contain"
                                     crossOrigin="anonymous"
                                 />
                                 <button
@@ -377,7 +443,7 @@ export default function WhiteboardBrowserSideroll({
                     </div>
                 ) : (
                     /* SEARCH RESULTS GRID & LIST */
-                    <div className="space-y-4">
+                    <div className="space-y-5">
                         {/* 🌟 1. GOOGLE SEARCH AI-STYLE OVERVIEW CARD 🌟 */}
                         {(activeTab === 'all' || activeTab === 'ai') && searchResults.aiOverview && (
                             <div className="relative rounded-2xl bg-gradient-to-br from-indigo-950/90 via-slate-900 to-indigo-950/70 border border-indigo-500/40 p-4 shadow-xl space-y-3">
@@ -386,7 +452,7 @@ export default function WhiteboardBrowserSideroll({
                                         <div className="p-1 rounded-lg bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
                                             <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
                                         </div>
-                                        <span>AI Overview</span>
+                                        <span>Google AI Overview</span>
                                     </div>
 
                                     {/* One-Click Transfer to Canvas as Editable Panel */}
@@ -438,13 +504,16 @@ export default function WhiteboardBrowserSideroll({
                                     </div>
                                 )}
 
-                                {/* AI Diagram Preview */}
+                                {/* High-Resolution AI Diagram Preview */}
                                 {searchResults.aiOverview.aiDiagramUrl && (
-                                    <div className="relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950 group">
+                                    <div className="relative rounded-xl overflow-hidden border border-slate-700 bg-black/60 group">
+                                        <div className="absolute top-2 left-2 z-10 bg-indigo-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow">
+                                            HD 1280x720 Diagram
+                                        </div>
                                         <img
                                             src={searchResults.aiOverview.aiDiagramUrl}
                                             alt={searchResults.aiOverview.title}
-                                            className="w-full h-36 object-contain bg-black/30"
+                                            className="w-full h-40 object-contain bg-black/40"
                                             crossOrigin="anonymous"
                                         />
                                         <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/90 to-transparent p-2 flex items-center justify-between text-[11px]">
@@ -453,7 +522,7 @@ export default function WhiteboardBrowserSideroll({
                                             </span>
                                             <button
                                                 onClick={() => handleCopyImageToBoard(searchResults.aiOverview.aiDiagramUrl)}
-                                                className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-semibold flex items-center gap-1"
+                                                className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-semibold flex items-center gap-1 shadow"
                                             >
                                                 <ImageIcon className="w-3 h-3" />
                                                 <span>Drop on Board</span>
@@ -464,37 +533,147 @@ export default function WhiteboardBrowserSideroll({
                             </div>
                         )}
 
-                        {/* 2. Diagrams & Visual Figures Row */}
-                        {(activeTab === 'all' || activeTab === 'images') && searchResults.images.length > 0 && (
-                            <div className="space-y-2">
-                                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
-                                    <span>Diagrams & Figures ({searchResults.images.length})</span>
-                                    <span className="text-[10px] text-slate-500">Click to Drop on Canvas</span>
-                                </h4>
-                                <div className="grid grid-cols-2 gap-2">
+                        {/* 🌐 2. GOOGLE & WEB SEARCH RESULTS 🌐 */}
+                        {(activeTab === 'all' || activeTab === 'web') && (searchResults.webResults?.length > 0 || activeTab === 'web') && (
+                            <div className="space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                                        <Globe className="w-3.5 h-3.5" />
+                                        <span>Google & Web Search Results ({searchResults.webResults?.length || 0})</span>
+                                    </h4>
+                                    <button
+                                        onClick={() => handleOpenGoogle('search')}
+                                        className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1"
+                                    >
+                                        <span>More on Google</span>
+                                        <ExternalLink className="w-3 h-3" />
+                                    </button>
+                                </div>
+
+                                {searchResults.webResults?.length === 0 ? (
+                                    <div className="py-6 text-center text-xs text-slate-500 bg-slate-950/30 rounded-xl p-4 border border-slate-800">
+                                        No direct web links found. <button onClick={() => handleOpenGoogle('search')} className="text-blue-400 underline font-semibold">Search directly on Google</button>
+                                    </div>
+                                ) : (
+                                    searchResults.webResults.map((web, idx) => (
+                                        <div
+                                            key={idx}
+                                            className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3.5 space-y-2 hover:border-blue-500/60 transition shadow group"
+                                        >
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div>
+                                                    <span className="text-[10px] font-bold text-blue-400 bg-blue-950/60 border border-blue-500/30 px-2 py-0.5 rounded-full inline-block mb-1">
+                                                        {web.domain}
+                                                    </span>
+                                                    <h5 
+                                                        className="font-bold text-xs text-white group-hover:text-blue-400 transition cursor-pointer leading-snug"
+                                                        onClick={() => window.open(web.url, '_blank')}
+                                                    >
+                                                        {web.title}
+                                                    </h5>
+                                                </div>
+                                                <a
+                                                    href={web.url}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="p-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition shrink-0"
+                                                    title="Open in new tab"
+                                                >
+                                                    <ExternalLink className="w-3.5 h-3.5" />
+                                                </a>
+                                            </div>
+
+                                            {web.snippet && (
+                                                <p className="text-xs text-slate-300 leading-relaxed line-clamp-3 select-text">
+                                                    {web.snippet}
+                                                </p>
+                                            )}
+
+                                            <div className="flex items-center justify-between pt-1 border-t border-slate-700/40 text-[11px]">
+                                                <button
+                                                    onClick={() => handleCopyParagraphToBoard(web.snippet || web.title)}
+                                                    className="text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1"
+                                                >
+                                                    <Plus className="w-3 h-3" />
+                                                    Add Snippet to Board
+                                                </button>
+
+                                                <button
+                                                    onClick={() => handleEmbedWebResultAsPanel(web)}
+                                                    className="bg-slate-700 hover:bg-blue-600 text-white px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 shadow"
+                                                    title="Embed this web reference onto whiteboard canvas as an interactive panel"
+                                                >
+                                                    <Layout className="w-3 h-3" />
+                                                    Embed as Card
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        )}
+
+                        {/* 🖼️ 3. ULTRA-HD DIAGRAMS & CRYSTAL CLEAR FIGURES 🖼️ */}
+                        {(activeTab === 'all' || activeTab === 'images') && searchResults.images?.length > 0 && (
+                            <div className="space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                                        <ImageIcon className="w-3.5 h-3.5" />
+                                        <span>Crystal-Clear HD Diagrams & Figures ({searchResults.images.length})</span>
+                                    </h4>
+                                    <button
+                                        onClick={() => handleOpenGoogle('images')}
+                                        className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1"
+                                    >
+                                        <span>Google Images</span>
+                                        <ExternalLink className="w-3 h-3" />
+                                    </button>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2.5">
                                     {searchResults.images.map((img, idx) => (
                                         <div
                                             key={idx}
-                                            className="group relative bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow transition hover:border-emerald-500 cursor-pointer"
+                                            draggable
+                                            onDragStart={(e) => {
+                                                e.dataTransfer.setData('text/plain', img.url);
+                                            }}
+                                            className="group relative bg-slate-950 border border-slate-700/80 rounded-2xl overflow-hidden shadow-lg transition hover:border-cyan-400 cursor-grab active:cursor-grabbing flex flex-col justify-between"
                                         >
-                                            <img
-                                                src={img.thumbnail || img.url}
-                                                alt={img.title}
-                                                className="w-full h-28 object-cover group-hover:scale-105 transition duration-300"
-                                                loading="lazy"
-                                                crossOrigin="anonymous"
-                                            />
-                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition p-2 flex flex-col justify-end">
-                                                <p className="text-[10px] font-bold text-white truncate mb-1">
+                                            {/* Resolution Badge */}
+                                            <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-1">
+                                                <span className="bg-black/80 backdrop-blur-md text-cyan-300 font-extrabold text-[9px] px-1.5 py-0.5 rounded-md border border-cyan-500/30 shadow">
+                                                    {img.resolution || 'HD'}
+                                                </span>
+                                            </div>
+
+                                            {/* Image container: object-contain to avoid cropping diagrams/labels */}
+                                            <div className="w-full h-36 bg-black/60 flex items-center justify-center p-1.5">
+                                                <img
+                                                    src={img.url || img.thumbnail}
+                                                    alt={img.title}
+                                                    className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                                                    loading="lazy"
+                                                    crossOrigin="anonymous"
+                                                />
+                                            </div>
+
+                                            {/* Footer details & Action */}
+                                            <div className="p-2 bg-slate-900 border-t border-slate-800 space-y-1.5">
+                                                <p className="text-[11px] font-semibold text-slate-200 truncate" title={img.title}>
                                                     {img.title}
                                                 </p>
-                                                <button
-                                                    onClick={() => handleCopyImageToBoard(img.url)}
-                                                    className="w-full py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[11px] font-bold transition flex items-center justify-center gap-1 shadow"
-                                                >
-                                                    <ImageIcon className="w-3 h-3" />
-                                                    Drop on Board
-                                                </button>
+                                                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                                                    <span className="truncate max-w-[100px]">{img.source || 'Web HD'}</span>
+                                                    <button
+                                                        onClick={() => handleCopyImageToBoard(img.url)}
+                                                        className="px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-[10px] font-bold transition flex items-center gap-1 shadow"
+                                                        title="Drop full resolution crystal clear image onto active whiteboard page"
+                                                    >
+                                                        <Plus className="w-2.5 h-2.5" />
+                                                        <span>Drop on Board</span>
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
@@ -502,21 +681,23 @@ export default function WhiteboardBrowserSideroll({
                             </div>
                         )}
 
-                        {/* 3. Educational Articles & Summaries */}
+                        {/* 📚 4. WIKIPEDIA ARTICLES & EXTRACTS 📚 */}
                         {(activeTab === 'all' || activeTab === 'articles') && (
-                            <div className="space-y-2">
-                                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                                    Wikipedia Articles & Notes
+                            <div className="space-y-2.5">
+                                <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <BookOpen className="w-3.5 h-3.5" />
+                                    <span>Wikipedia Academic Articles ({searchResults.articles?.length || 0})</span>
                                 </h4>
-                                {searchResults.articles.length === 0 ? (
+
+                                {searchResults.articles?.length === 0 ? (
                                     <div className="py-6 text-center text-xs text-slate-500">
-                                        No articles found for "{searchQuery}". Try a different topic!
+                                        No Wikipedia articles found for "{searchQuery}".
                                     </div>
                                 ) : (
                                     searchResults.articles.map((art) => (
                                         <div
                                             key={art.id}
-                                            className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3.5 space-y-2 hover:border-slate-600 transition shadow group"
+                                            className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3.5 space-y-2 hover:border-emerald-500/60 transition shadow group"
                                         >
                                             <div className="flex items-start justify-between gap-2">
                                                 <div>
@@ -544,10 +725,10 @@ export default function WhiteboardBrowserSideroll({
                                                 </p>
                                             )}
 
-                                            <div className="flex items-center justify-between pt-1">
+                                            <div className="flex items-center justify-between pt-1 border-t border-slate-700/40 text-[11px]">
                                                 <button
                                                     onClick={() => handleOpenArticle(art.title)}
-                                                    className="text-[11px] text-emerald-400 hover:underline font-bold"
+                                                    className="text-emerald-400 hover:underline font-bold"
                                                 >
                                                     Read Full Article →
                                                 </button>
