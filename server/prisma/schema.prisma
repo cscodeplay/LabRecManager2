@@ -230,6 +230,8 @@ model User {
   ChatSession                                    ChatSession[]
   quizzesCreated                                 Quiz[]                     @relation("QuizCreator")
   quizSubmissions                                QuizSubmission[]           @relation("QuizStudent")
+  quizAssignmentsCreated                         QuizAssignment[]           @relation("QuizAssignedBy")
+  quizAssignmentsTargeted                        QuizAssignment[]           @relation("QuizTargetStudent")
 
   @@unique([schoolId, studentId], map: "unique_student_id_per_school")
   @@index([email], map: "idx_users_email")
@@ -306,6 +308,7 @@ model Class {
   whiteboardSessions WhiteboardSession[]
   timetables         Timetable[]
   lecturePlans       LecturePlan[]
+  quizAssignments    QuizAssignment[]
 
   @@unique([schoolId, name, academicYearId], name: "unique_class_name_per_school")
   @@index([academicYearId])
@@ -350,6 +353,7 @@ model StudentGroup {
   createdBy          User                       @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   submissions        Submission[]
   whiteboardSessions WhiteboardSession[]
+  quizAssignments    QuizAssignment[]
 
   @@unique([classId, name], name: "unique_group_name_per_class")
   @@map("student_groups")
@@ -2443,6 +2447,7 @@ model Quiz {
   difficulty       String?          @default("medium") @db.VarChar(50)
   totalQuestions   Int              @default(5) @map("total_questions")
   timeLimitMinutes Int              @default(10) @map("time_limit_minutes")
+  maxAttempts      Int              @default(1) @map("max_attempts")
   questions        Json             @default("[]")
   status           String           @default("published") @db.VarChar(50)
   createdById      String?          @map("created_by_id") @db.Uuid
@@ -2453,6 +2458,7 @@ model Quiz {
   creator          User?            @relation("QuizCreator", fields: [createdById], references: [id], onDelete: SetNull)
   school           School?          @relation(fields: [schoolId], references: [id], onDelete: SetNull)
   submissions      QuizSubmission[]
+  assignments      QuizAssignment[]
 
   @@map("quizzes")
 }
@@ -2475,4 +2481,27 @@ model QuizSubmission {
   user             User      @relation("QuizStudent", fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("quiz_submissions")
+}
+
+model QuizAssignment {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quizId          String        @map("quiz_id") @db.Uuid
+  targetType      String        @map("target_type") @db.VarChar(50)
+  targetClassId   String?       @map("target_class_id") @db.Uuid
+  targetGroupId   String?       @map("target_group_id") @db.Uuid
+  targetStudentId String?       @map("target_student_id") @db.Uuid
+  assignedById    String        @map("assigned_by_id") @db.Uuid
+  assignedAt      DateTime      @default(now()) @map("assigned_at") @db.Timestamp(6)
+
+  quiz            Quiz          @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  class           Class?        @relation(fields: [targetClassId], references: [id], onDelete: Cascade)
+  group           StudentGroup? @relation(fields: [targetGroupId], references: [id], onDelete: Cascade)
+  student         User?         @relation("QuizTargetStudent", fields: [targetStudentId], references: [id], onDelete: Cascade)
+  assignedBy      User          @relation("QuizAssignedBy", fields: [assignedById], references: [id], onDelete: Cascade)
+
+  @@index([quizId])
+  @@index([targetClassId])
+  @@index([targetGroupId])
+  @@index([targetStudentId])
+  @@map("quiz_assignments")
 }

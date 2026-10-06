@@ -787,6 +787,9 @@ export const quizAPI = {
     getResults: (id) => api.get(`/quiz/${id}/results`),
     getSubmission: (submissionId) => api.get(`/quiz/submission/${submissionId}`),
     delete: (id) => api.delete(`/quiz/${id}`),
+    assign: (id, data) => api.post(`/quiz/${id}/assign`, data),
+    getAssignments: (id) => api.get(`/quiz/${id}/assignments`),
+    deleteAssignment: (quizId, assignmentId) => api.delete(`/quiz/${quizId}/assignments/${assignmentId}`),
 };
 
 // Research Browser API

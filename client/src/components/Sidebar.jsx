@@ -98,7 +98,7 @@ const navItems = {
         { href: '/my-work', labelKey: 'nav.myWork', icon: ClipboardCheck },
         { href: '/submissions', labelKey: 'nav.mySubmissions', icon: FileText },
         { href: '/training', labelKey: 'Training', icon: GraduationCap },
-        { href: '/quiz', labelKey: 'AI Quiz Maker', icon: HelpCircle },
+        { href: '/quiz', labelKey: 'Quizzes & Tests', icon: HelpCircle },
         { href: '/documents', labelKey: 'nav.sharedDocs', icon: FolderOpen },
         { href: '/grades', labelKey: 'nav.myGrades', icon: Award },
         { href: '/meetings', labelKey: 'Meetings', icon: Video },
