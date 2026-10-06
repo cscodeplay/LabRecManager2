@@ -643,28 +643,105 @@ export default function QuizJoinPage() {
                                             : 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/40 text-rose-900 dark:text-rose-200'
                                     }`}
                                 >
-                                    <div className="flex items-center justify-between font-bold">
-                                        <div className="flex-1 pr-2">
+                                    {/* Question Title */}
+                                    <div className="flex items-start justify-between gap-3 font-bold">
+                                        <div className="flex-1">
                                             <span className="font-semibold text-slate-500 dark:text-slate-400 mr-1.5">Q{idx + 1}:</span>
                                             <MathRenderer content={ans.questionText} inline />
                                         </div>
                                         {ans.isCorrect ? (
-                                            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 shrink-0">
+                                            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 shrink-0 font-bold">
                                                 <CheckCircle2 className="w-4 h-4" /> Correct
                                             </span>
                                         ) : (
-                                            <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 shrink-0">
+                                            <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 shrink-0 font-bold">
                                                 <XCircle className="w-4 h-4" /> Incorrect
                                             </span>
                                         )}
                                     </div>
-                                    <div className="text-slate-700 dark:text-slate-300 text-xs">
-                                        Your Answer: <strong className="font-mono">{ans.selectedOption || 'Not Answered'}</strong> • Correct Answer: <strong className="font-mono text-emerald-600 dark:text-emerald-400">{ans.correctOption}</strong>
-                                    </div>
+
+                                    {/* All 4 Choices with Green / Red Response Highlighting */}
+                                    {(() => {
+                                        // Retrieve options list from answer payload, or fallback to the quiz question
+                                        const originalQ = (quiz?.questions || []).find(q => String(q.id) === String(ans.questionId));
+                                        const optList = (ans.options && ans.options.length > 0) ? ans.options : (originalQ?.options || []);
+
+                                        if (!optList || optList.length === 0) {
+                                            return (
+                                                <div className="text-slate-700 dark:text-slate-300 text-xs">
+                                                    Your Answer: <strong className="font-mono">{ans.selectedOption || 'Not Answered'}</strong> • Correct Answer: <strong className="font-mono text-emerald-600 dark:text-emerald-400">{ans.correctOption}</strong>
+                                                </div>
+                                            );
+                                        }
+
+                                        return (
+                                            <div className="space-y-1.5 pt-1">
+                                                {optList.map((opt) => {
+                                                    const optKey = String(opt.key || '').toUpperCase();
+                                                    const isUserSelected = optKey === String(ans.selectedOption || '').toUpperCase();
+                                                    const isCorrectOption = optKey === String(ans.correctOption || '').toUpperCase();
+
+                                                    let badgeClass = 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700';
+                                                    let pillClass = 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300';
+
+                                                    if (isCorrectOption) {
+                                                        // Highlight CORRECT option in GREEN
+                                                        pillClass = 'bg-emerald-500/15 border-emerald-500 text-emerald-900 dark:text-emerald-200 font-semibold ring-1 ring-emerald-500/40';
+                                                        badgeClass = 'bg-emerald-600 text-white border-emerald-600';
+                                                    } else if (isUserSelected && !isCorrectOption) {
+                                                        // Highlight WRONG student choice in RED
+                                                        pillClass = 'bg-rose-500/15 border-rose-500 text-rose-900 dark:text-rose-200 font-semibold ring-1 ring-rose-500/40';
+                                                        badgeClass = 'bg-rose-600 text-white border-rose-600';
+                                                    }
+
+                                                    return (
+                                                        <div
+                                                            key={optKey}
+                                                            className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-colors ${pillClass}`}
+                                                        >
+                                                            <div className="flex items-center gap-2.5 flex-1">
+                                                                <span className={`w-6 h-6 rounded-lg font-bold font-mono text-xs flex items-center justify-center shrink-0 border ${badgeClass}`}>
+                                                                    {optKey}
+                                                                </span>
+                                                                <span className="flex-1 text-xs">
+                                                                    <MathRenderer content={opt.text || ''} inline />
+                                                                </span>
+                                                            </div>
+
+                                                            <div className="shrink-0 flex items-center gap-1.5 text-[11px] font-bold">
+                                                                {isCorrectOption && (
+                                                                    <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-500/30">
+                                                                        <CheckCircle2 className="w-3.5 h-3.5" /> Correct Answer
+                                                                    </span>
+                                                                )}
+                                                                {isUserSelected && !isCorrectOption && (
+                                                                    <span className="text-rose-600 dark:text-rose-400 bg-rose-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 border border-rose-500/30">
+                                                                        <XCircle className="w-3.5 h-3.5" /> Your Choice
+                                                                    </span>
+                                                                )}
+                                                                {isUserSelected && isCorrectOption && (
+                                                                    <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-500/30">
+                                                                        (Your Choice)
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {/* Correct Answer Explanation Box */}
                                     {ans.explanation && (
-                                        <div className="text-[11px] text-slate-600 dark:text-slate-400 bg-white/80 dark:bg-slate-950/80 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 leading-relaxed">
-                                            <span className="font-semibold text-amber-500 mr-1">💡</span>
-                                            <MathRenderer content={ans.explanation} inline />
+                                        <div className="text-[11px] text-slate-700 dark:text-slate-300 bg-amber-500/10 dark:bg-amber-950/20 p-3 rounded-xl border border-amber-300 dark:border-amber-800/50 leading-relaxed space-y-1">
+                                            <div className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                                                <span>💡</span>
+                                                <span>Explanation</span>
+                                            </div>
+                                            <div>
+                                                <MathRenderer content={ans.explanation} inline />
+                                            </div>
                                         </div>
                                     )}
                                 </div>

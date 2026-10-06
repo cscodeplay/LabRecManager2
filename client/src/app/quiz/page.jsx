@@ -686,8 +686,9 @@ export default function QuizDashboardPage() {
                                                                             : 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/40 text-slate-800 dark:text-rose-200'
                                                                     }`}
                                                                 >
-                                                                    <div className="flex items-center justify-between font-bold">
-                                                                        <div className="flex-1 pr-2">
+                                                                    {/* Question Title */}
+                                                                    <div className="flex items-start justify-between gap-2.5 font-bold">
+                                                                        <div className="flex-1">
                                                                             <span className="text-slate-400 mr-1.5">Q{idx + 1}:</span>
                                                                             <MathRenderer content={ans.questionText} inline />
                                                                         </div>
@@ -701,13 +702,71 @@ export default function QuizDashboardPage() {
                                                                             </span>
                                                                         )}
                                                                     </div>
-                                                                    <div className="text-slate-600 dark:text-slate-300">
-                                                                        Your Answer: <strong className="font-mono">{ans.selectedOption || 'None'}</strong> • Correct Answer: <strong className="font-mono text-emerald-600 dark:text-emerald-400">{ans.correctOption}</strong>
-                                                                    </div>
+
+                                                                    {/* All 4 Choices with Green / Red Response Highlighting */}
+                                                                    {ans.options && ans.options.length > 0 ? (
+                                                                        <div className="space-y-1.5 pt-1">
+                                                                            {ans.options.map((opt) => {
+                                                                                const optKey = String(opt.key || '').toUpperCase();
+                                                                                const isUserSelected = optKey === String(ans.selectedOption || '').toUpperCase();
+                                                                                const isCorrectOption = optKey === String(ans.correctOption || '').toUpperCase();
+
+                                                                                let badgeClass = 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700';
+                                                                                let pillClass = 'bg-white/80 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300';
+
+                                                                                if (isCorrectOption) {
+                                                                                    pillClass = 'bg-emerald-500/15 border-emerald-500 text-emerald-900 dark:text-emerald-200 font-semibold ring-1 ring-emerald-500/40';
+                                                                                    badgeClass = 'bg-emerald-600 text-white border-emerald-600';
+                                                                                } else if (isUserSelected && !isCorrectOption) {
+                                                                                    pillClass = 'bg-rose-500/15 border-rose-500 text-rose-900 dark:text-rose-200 font-semibold ring-1 ring-rose-500/40';
+                                                                                    badgeClass = 'bg-rose-600 text-white border-rose-600';
+                                                                                }
+
+                                                                                return (
+                                                                                    <div
+                                                                                        key={optKey}
+                                                                                        className={`p-2 rounded-xl border flex items-center justify-between gap-2 text-xs transition-colors ${pillClass}`}
+                                                                                    >
+                                                                                        <div className="flex items-center gap-2 flex-1">
+                                                                                            <span className={`w-5 h-5 rounded font-bold font-mono text-[11px] flex items-center justify-center shrink-0 border ${badgeClass}`}>
+                                                                                                {optKey}
+                                                                                            </span>
+                                                                                            <span className="flex-1">
+                                                                                                <MathRenderer content={opt.text || ''} inline />
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        <div className="shrink-0 text-[10px] font-bold">
+                                                                                            {isCorrectOption && (
+                                                                                                <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                                                                                                    ✓ Correct
+                                                                                                </span>
+                                                                                            )}
+                                                                                            {isUserSelected && !isCorrectOption && (
+                                                                                                <span className="text-rose-600 dark:text-rose-400 bg-rose-500/20 px-1.5 py-0.5 rounded border border-rose-500/30">
+                                                                                                    ✗ Your Choice
+                                                                                                </span>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="text-slate-600 dark:text-slate-300">
+                                                                            Your Answer: <strong className="font-mono">{ans.selectedOption || 'None'}</strong> • Correct Answer: <strong className="font-mono text-emerald-600 dark:text-emerald-400">{ans.correctOption}</strong>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Correct Answer Explanation Box */}
                                                                     {ans.explanation && (
-                                                                        <div className="text-[11px] text-slate-500 dark:text-slate-400 bg-white/80 dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800">
-                                                                            <span className="text-amber-500 font-semibold mr-1">💡</span>
-                                                                            <MathRenderer content={ans.explanation} inline />
+                                                                        <div className="text-[11px] text-slate-700 dark:text-slate-300 bg-amber-500/10 dark:bg-amber-950/20 p-2.5 rounded-xl border border-amber-300 dark:border-amber-800/40 space-y-1">
+                                                                            <div className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                                                                                <span>💡</span>
+                                                                                <span>Explanation</span>
+                                                                            </div>
+                                                                            <div>
+                                                                                <MathRenderer content={ans.explanation} inline />
+                                                                            </div>
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -1167,8 +1226,9 @@ export default function QuizDashboardPage() {
                                                                                     : 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800 text-slate-800 dark:text-rose-200'
                                                                             }`}
                                                                         >
-                                                                            <div className="flex items-center justify-between font-bold">
-                                                                                <div className="flex-1 pr-2">
+                                                                            {/* Question Statement */}
+                                                                            <div className="flex items-start justify-between gap-2 font-bold">
+                                                                                <div className="flex-1">
                                                                                     <span className="text-slate-400 mr-1.5">Q{aIdx + 1}:</span>
                                                                                     <MathRenderer content={ans.questionText} inline />
                                                                                 </div>
@@ -1176,13 +1236,71 @@ export default function QuizDashboardPage() {
                                                                                     {ans.isCorrect ? '✓ Correct' : '✗ Incorrect'}
                                                                                 </span>
                                                                             </div>
-                                                                            <div className="text-slate-600 dark:text-slate-300">
-                                                                                Selected: <strong className="font-mono">{ans.selectedOption || 'None'}</strong> • Correct: <strong className="font-mono text-emerald-600">{ans.correctOption}</strong>
-                                                                            </div>
+
+                                                                            {/* All 4 Choices with Green / Red Response Highlighting */}
+                                                                            {ans.options && ans.options.length > 0 ? (
+                                                                                <div className="space-y-1 pt-0.5">
+                                                                                    {ans.options.map((opt) => {
+                                                                                        const optKey = String(opt.key || '').toUpperCase();
+                                                                                        const isUserSelected = optKey === String(ans.selectedOption || '').toUpperCase();
+                                                                                        const isCorrectOption = optKey === String(ans.correctOption || '').toUpperCase();
+
+                                                                                        let badgeClass = 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-300 dark:border-slate-700';
+                                                                                        let pillClass = 'bg-white/80 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300';
+
+                                                                                        if (isCorrectOption) {
+                                                                                            pillClass = 'bg-emerald-500/15 border-emerald-500 text-emerald-900 dark:text-emerald-200 font-semibold ring-1 ring-emerald-500/40';
+                                                                                            badgeClass = 'bg-emerald-600 text-white border-emerald-600';
+                                                                                        } else if (isUserSelected && !isCorrectOption) {
+                                                                                            pillClass = 'bg-rose-500/15 border-rose-500 text-rose-900 dark:text-rose-200 font-semibold ring-1 ring-rose-500/40';
+                                                                                            badgeClass = 'bg-rose-600 text-white border-rose-600';
+                                                                                        }
+
+                                                                                        return (
+                                                                                            <div
+                                                                                                key={optKey}
+                                                                                                className={`p-1.5 rounded-lg border flex items-center justify-between gap-2 text-[10px] ${pillClass}`}
+                                                                                            >
+                                                                                                <div className="flex items-center gap-1.5 flex-1">
+                                                                                                    <span className={`w-4 h-4 rounded font-bold font-mono text-[10px] flex items-center justify-center shrink-0 border ${badgeClass}`}>
+                                                                                                        {optKey}
+                                                                                                    </span>
+                                                                                                    <span className="flex-1">
+                                                                                                        <MathRenderer content={opt.text || ''} inline />
+                                                                                                    </span>
+                                                                                                </div>
+                                                                                                <div className="shrink-0 font-bold">
+                                                                                                    {isCorrectOption && (
+                                                                                                        <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/20 px-1 py-0.2 rounded border border-emerald-500/30">
+                                                                                                            ✓ Correct
+                                                                                                        </span>
+                                                                                                    )}
+                                                                                                    {isUserSelected && !isCorrectOption && (
+                                                                                                        <span className="text-rose-600 dark:text-rose-400 bg-rose-500/20 px-1 py-0.2 rounded border border-rose-500/30">
+                                                                                                            ✗ Selected
+                                                                                                        </span>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })}
+                                                                                </div>
+                                                                            ) : (
+                                                                                <div className="text-slate-600 dark:text-slate-300">
+                                                                                    Selected: <strong className="font-mono">{ans.selectedOption || 'None'}</strong> • Correct: <strong className="font-mono text-emerald-600">{ans.correctOption}</strong>
+                                                                                </div>
+                                                                            )}
+
+                                                                            {/* Explanation Box */}
                                                                             {ans.explanation && (
-                                                                                <div className="text-[10px] text-slate-500 bg-white/70 dark:bg-slate-900 p-1.5 rounded border border-slate-200 dark:border-slate-800">
-                                                                                    <span className="text-amber-500 font-semibold mr-1">💡</span>
-                                                                                    <MathRenderer content={ans.explanation} inline />
+                                                                                <div className="text-[10px] text-slate-700 dark:text-slate-300 bg-amber-500/10 dark:bg-amber-950/20 p-2 rounded-lg border border-amber-300 dark:border-amber-800/40 space-y-0.5">
+                                                                                    <div className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                                                                                        <span>💡</span>
+                                                                                        <span>Explanation</span>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <MathRenderer content={ans.explanation} inline />
+                                                                                    </div>
                                                                                 </div>
                                                                             )}
                                                                         </div>

@@ -712,6 +712,10 @@ router.post('/:id/submit', authenticate, asyncHandler(async (req, res) => {
         return {
             questionId: q.id,
             questionText: q.question,
+            options: (q.options || []).map(opt => ({
+                key: String(opt.key || '').toUpperCase(),
+                text: opt.text || ''
+            })),
             selectedOption,
             correctOption,
             isCorrect,
