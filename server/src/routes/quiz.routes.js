@@ -16,36 +16,83 @@ function generateQuizCode() {
     return code;
 }
 
-// Helper to verify if a quiz is assigned to a student (via studentId, enrolled class, or group)
-async function checkStudentQuizAssignment(quizId, userId) {
+// Robust JSON parser for AI outputs containing raw LaTeX backslashes (e.g. \ce, \alpha, \frac)
+function repairAndParseJson(rawText) {
+    // 1. Clean markdown code fences if present
+    let text = (rawText || '')
+        .replace(/^```json\s*/i, '')
+        .replace(/^```\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+
+    // 2. Direct parse attempt
     try {
-        const enrollments = await prisma.classEnrollment.findMany({
-            where: { studentId: userId, status: 'active' },
-            select: { classId: true }
-        });
-        const studentClassIds = enrollments.map(e => e.classId);
-
-        const groupMembers = await prisma.groupMember.findMany({
-            where: { studentId: userId },
-            select: { groupId: true }
-        });
-        const studentGroupIds = groupMembers.map(g => g.groupId);
-
-        const assignment = await prisma.quizAssignment.findFirst({
-            where: {
-                quizId,
-                OR: [
-                    { targetType: 'class', targetClassId: { in: studentClassIds } },
-                    { targetType: 'group', targetGroupId: { in: studentGroupIds } },
-                    { targetType: 'student', targetStudentId: userId }
-                ]
-            }
-        });
-        return Boolean(assignment);
-    } catch (err) {
-        console.error('[QuizRoutes] checkStudentQuizAssignment error:', err);
-        return false;
+        return JSON.parse(text);
+    } catch (_) {
+        // Fall through to regex extraction and backslash repair
     }
+
+    // 3. Extract array block if surrounded by extraneous thoughts/text
+    const arrayMatch = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
+    if (arrayMatch) {
+        text = arrayMatch[0];
+    }
+
+    try {
+        return JSON.parse(text);
+    } catch (_) {
+        // Fall through to string-aware escape repair
+    }
+
+    // 4. Tokenize and fix invalid JSON escape sequences
+    // In JSON, only \", \\, \/, \b, \f, \n, \r, \t, \uXXXX are valid.
+    // In LaTeX equations, backslashes are pervasive (\ce, \alpha, \frac, \beta, \text, \mu, etc.).
+    // If the LLM generates a single backslash instead of escaping it (e.g. "\ce{CH3COCH3}"),
+    // standard JSON.parse fails with "Bad escaped character in JSON".
+    let inString = false;
+    let escaped = false;
+    let repaired = '';
+
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+
+        if (char === '"' && !escaped) {
+            inString = !inString;
+            repaired += char;
+            continue;
+        }
+
+        if (inString) {
+            if (char === '\\') {
+                const nextChar = text[i + 1];
+
+                // Detect LaTeX commands that might accidentally match JSON escapes \f or \b
+                const isLatexFrac = text.slice(i, i + 5) === '\\frac';
+                const isLatexBeta = text.slice(i, i + 5) === '\\beta';
+
+                if (isLatexFrac || isLatexBeta) {
+                    repaired += '\\\\';
+                } else if ('"\\/nrt'.includes(nextChar)) {
+                    // Valid standard JSON escape
+                    repaired += char;
+                    repaired += nextChar;
+                    i++;
+                } else if (nextChar === 'u' && /^[0-9a-fA-F]{4}$/.test(text.slice(i + 2, i + 6))) {
+                    // Valid unicode escape \uXXXX
+                    repaired += char;
+                } else {
+                    // Unescaped LaTeX backslash (e.g. \c, \a, \s, \t, etc.): double escape it
+                    repaired += '\\\\';
+                }
+            } else {
+                repaired += char;
+            }
+        } else {
+            repaired += char;
+        }
+    }
+
+    return JSON.parse(repaired);
 }
 
 /**
@@ -88,17 +135,17 @@ CRITICAL RULES:
 5. Provide a clear, educational 'explanation' for why the correct option is right.
 6. The questions must strictly follow 1-based sequential numbering (id: 1, 2, 3, ...).
 7. PCMB & SCIENTIFIC EQUATION FORMATTING:
-   - For Physics, Mathematics, Biology, and Chemistry questions, ALWAYS use standard LaTeX delimiters for equations, formulas, and scientific units:
+   - For Physics, Mathematics, Biology, and Chemistry questions, format equations, formulas, and scientific units using LaTeX:
      * Inline math / variables / units: wrap in single dollar signs, e.g. $F = ma$, $\\lambda = \\frac{h}{p}$, $\\int_{0}^{1} x^2 dx$, $25^\\circ\\text{C}$, $\\mu\\text{m}$, $\\alpha, \\beta$.
      * Block equations: wrap in double dollar signs, e.g. $$\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$$.
      * Chemistry formulas & reactions: use mhchem notation inside dollar signs, e.g. $\\ce{2H2 + O2 -> 2H2O}$, $\\ce{CaCO3 -> CaO + CO2}$, $\\ce{SO4^{2-}}$, $\\ce{H2SO4}$.
-   - Apply this consistently to the question text, each option text, and the explanation.
+   - CRITICAL JSON ESCAPING: Backslashes in JSON strings MUST be escaped as \\\\ (e.g. "\\\\ce{...}", "\\\\alpha", "\\\\frac{...}"). Never output invalid unescaped backslashes.
 
 JSON SCHEMA TO RETURN (RETURN ONLY VALID JSON, NO MARKDOWN, NO CODEBLOCKS):
 [
   {
     "id": 1,
-    "question": "Clear and concise question text (use LaTeX like $E = mc^2$ or $\\ce{H2O}$ where applicable)",
+    "question": "Clear and concise question text (use LaTeX like $E = mc^2$ or $\\\\ce{H2O}$ where applicable)",
     "options": [
       { "key": "A", "text": "First choice" },
       { "key": "B", "text": "Second choice" },
@@ -118,7 +165,7 @@ DIFFICULTY: ${validDifficulty}
 ESTIMATED TIME: ${timeLimitMinutes} minutes
 ${customInstructions ? `ADDITIONAL INSTRUCTIONS: ${customInstructions}` : ''}
 
-Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and an explanation. If the topic involves Physics, Chemistry, Math, or Biology, properly format equations and formulas using LaTeX ($...$) and chemical formulas with $\\ce{...}$. Return ONLY valid JSON array.`;
+Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and an explanation. If the topic involves Physics, Chemistry, Math, or Biology, properly format equations and formulas using LaTeX ($...$) and chemical formulas with $\\ce{...}$. Remember to escape backslashes properly in JSON (\\\\). Return ONLY valid JSON array.`;
 
     try {
         const response = await aiService.executeChatCompletion({
@@ -130,21 +177,14 @@ Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a
             jsonMode: true
         });
 
-        let rawText = response.text || '';
-        // Clean markdown backticks if present
-        rawText = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
-
+        const rawText = response.text || '';
         let questions = [];
+
         try {
-            questions = JSON.parse(rawText);
+            questions = repairAndParseJson(rawText);
         } catch (jsonErr) {
-            // Attempt regex array extraction
-            const arrayMatch = rawText.match(/\[\s*\{[\s\S]*\}\s*\]/);
-            if (arrayMatch) {
-                questions = JSON.parse(arrayMatch[0]);
-            } else {
-                throw new Error('Failed to parse AI output into valid questions JSON');
-            }
+            console.error('[QuizRoutes] Failed to parse AI questions JSON:', jsonErr.message, 'Raw was:', rawText.slice(0, 300));
+            throw new Error(`Failed to parse AI output into valid questions JSON: ${jsonErr.message}`);
         }
 
         if (!Array.isArray(questions) || questions.length === 0) {
