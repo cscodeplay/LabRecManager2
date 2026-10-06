@@ -914,6 +914,37 @@ router.get('/submission/:submissionId', authenticate, asyncHandler(async (req, r
 }));
 
 /**
+ * @route   POST /api/quiz/bulk-delete
+ * @desc    Delete multiple quizzes at once
+ * @access  Private (Creator or Admin)
+ */
+router.post('/bulk-delete', authenticate, asyncHandler(async (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ success: false, message: 'No quiz IDs provided' });
+    }
+
+    const isAdmin = ['admin', 'principal'].includes(req.user.role);
+    const validUuids = ids.filter(id => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim()));
+
+    if (validUuids.length === 0) {
+        return res.status(400).json({ success: false, message: 'No valid quiz IDs provided' });
+    }
+
+    const where = isAdmin 
+        ? { id: { in: validUuids } }
+        : { id: { in: validUuids }, createdById: req.user.id };
+
+    const deleteResult = await prisma.quiz.deleteMany({ where });
+
+    res.json({
+        success: true,
+        message: `Successfully deleted ${deleteResult.count} quizzes`,
+        count: deleteResult.count
+    });
+}));
+
+/**
  * @route   DELETE /api/quiz/:id
  * @desc    Delete a quiz
  * @access  Private (Creator or Admin)

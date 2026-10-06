@@ -6,7 +6,9 @@ import {
     Sparkles, HelpCircle, Play, Clock, 
     Share2, QrCode, Copy, Check, Trash2, Search, ArrowRight,
     Award, CheckCircle2, XCircle, RefreshCw, ChevronDown, ChevronUp,
-    Users, Send, BarChart3, FileText, X, CheckSquare, Square
+    Users, Send, BarChart3, FileText, X, CheckSquare, Square,
+    Edit3, Plus, LayoutGrid, List, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+    Wand2, ArrowUp, ArrowDown, Settings2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import QRCode from 'qrcode';
@@ -26,6 +28,39 @@ export default function QuizDashboardPage() {
     const [quizzes, setQuizzes] = useState([]);
     const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
     const [searchFilter, setSearchFilter] = useState('');
+
+    // View Mode & Selection (Grid / List & Check All / Bulk Delete)
+    const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
+    const [selectedQuizIds, setSelectedQuizIds] = useState(new Set());
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+    // Pagination & Page Jumper
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(9);
+    const [pageJumperInput, setPageJumperInput] = useState('');
+
+    // Edit Quiz Modal State
+    const [editingQuiz, setEditingQuiz] = useState(null);
+    const [editFormData, setEditFormData] = useState({
+        title: '',
+        description: '',
+        keywords: '',
+        difficulty: 'medium',
+        timeLimitMinutes: 10,
+        maxAttempts: 1,
+        status: 'published',
+        questions: []
+    });
+    const [expandedQuestionIndices, setExpandedQuestionIndices] = useState(new Set([0]));
+    const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+    // Add More Questions with AI Panel State
+    const [showAiAddPanel, setShowAiAddPanel] = useState(false);
+    const [aiMoreKeywords, setAiMoreKeywords] = useState('');
+    const [aiMoreCount, setAiMoreCount] = useState(3);
+    const [aiMoreDifficulty, setAiMoreDifficulty] = useState('medium');
+    const [isGeneratingMoreAI, setIsGeneratingMoreAI] = useState(false);
+    const [aiImprovingQuestionIdx, setAiImprovingQuestionIdx] = useState(null);
 
     // List of completed submissions for student
     const [myResults, setMyResults] = useState([]);
@@ -150,6 +185,367 @@ export default function QuizDashboardPage() {
         } catch (err) {
             console.error('Failed to delete quiz', err);
             toast.error('Failed to delete quiz');
+        }
+    };
+
+    // Filtered quizzes based on search filter
+    const filteredQuizzes = quizzes.filter(q => 
+        !searchFilter || 
+        q.title.toLowerCase().includes(searchFilter.toLowerCase()) || 
+        q.code.includes(searchFilter.toUpperCase()) ||
+        (q.keywords && q.keywords.toLowerCase().includes(searchFilter.toLowerCase()))
+    );
+
+    const totalQuizzes = filteredQuizzes.length;
+    const totalPages = Math.max(1, Math.ceil(totalQuizzes / pageSize));
+
+    // Clamp currentPage when filtered items shrink
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [totalPages, currentPage]);
+
+    // Reset page to 1 when search filter changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchFilter]);
+
+    // Paginated slice for current page
+    const paginatedQuizzes = filteredQuizzes.slice(
+        (currentPage - 1) * pageSize,
+        currentPage * pageSize
+    );
+
+    // Selection helpers for bulk actions
+    const isAllSelected = paginatedQuizzes.length > 0 && paginatedQuizzes.every(q => selectedQuizIds.has(q.id));
+    const isSomeSelected = paginatedQuizzes.some(q => selectedQuizIds.has(q.id));
+
+    const handleToggleSelectAll = () => {
+        if (isAllSelected) {
+            setSelectedQuizIds(prev => {
+                const next = new Set(prev);
+                paginatedQuizzes.forEach(q => next.delete(q.id));
+                return next;
+            });
+        } else {
+            setSelectedQuizIds(prev => {
+                const next = new Set(prev);
+                paginatedQuizzes.forEach(q => next.add(q.id));
+                return next;
+            });
+        }
+    };
+
+    const handleToggleSelectOne = (quizId) => {
+        setSelectedQuizIds(prev => {
+            const next = new Set(prev);
+            if (next.has(quizId)) next.delete(quizId);
+            else next.add(quizId);
+            return next;
+        });
+    };
+
+    const handleSelectAllFiltered = () => {
+        setSelectedQuizIds(new Set(filteredQuizzes.map(q => q.id)));
+    };
+
+    const handleClearSelection = () => {
+        setSelectedQuizIds(new Set());
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedQuizIds.size === 0) return;
+        const count = selectedQuizIds.size;
+        if (!confirm(`Are you sure you want to delete ${count} selected quiz${count > 1 ? 'zes' : ''}? This action cannot be undone.`)) {
+            return;
+        }
+        try {
+            setIsBulkDeleting(true);
+            const res = await quizAPI.bulkDelete(Array.from(selectedQuizIds));
+            if (res.data.success) {
+                toast.success(`Deleted ${res.data.count || count} quizzes successfully`);
+                setSelectedQuizIds(new Set());
+                fetchQuizzes();
+            }
+        } catch (err) {
+            console.error('Bulk delete failed, attempting fallback', err);
+            try {
+                let deletedCount = 0;
+                for (const id of selectedQuizIds) {
+                    await quizAPI.delete(id);
+                    deletedCount++;
+                }
+                toast.success(`Deleted ${deletedCount} quizzes`);
+                setSelectedQuizIds(new Set());
+                fetchQuizzes();
+            } catch (fallbackErr) {
+                toast.error('Failed to delete some quizzes');
+            }
+        } finally {
+            setIsBulkDeleting(false);
+        }
+    };
+
+    const handlePageJump = (e) => {
+        if (e) e.preventDefault();
+        const pageNum = parseInt(pageJumperInput);
+        if (isNaN(pageNum) || pageNum < 1 || pageNum > totalPages) {
+            toast.error(`Please enter a page between 1 and ${totalPages}`);
+            return;
+        }
+        setCurrentPage(pageNum);
+        setPageJumperInput('');
+    };
+
+    // ============================================
+    // EDIT QUIZ HANDLERS
+    // ============================================
+    const handleOpenEditQuiz = (quiz) => {
+        setEditingQuiz(quiz);
+        const standardKeys = ['A', 'B', 'C', 'D'];
+        const safeQuestions = (Array.isArray(quiz.questions) ? quiz.questions : []).map((q, qIdx) => {
+            const opts = (Array.isArray(q.options) ? q.options : []).map((opt, oIdx) => ({
+                key: standardKeys[oIdx] || 'A',
+                text: typeof opt === 'string' ? opt : (opt?.text || '')
+            }));
+            while (opts.length < 4) {
+                opts.push({ key: standardKeys[opts.length], text: '' });
+            }
+            return {
+                id: q.id || qIdx + 1,
+                question: q.question || '',
+                options: opts.slice(0, 4),
+                correctOption: (q.correctOption || 'A').toUpperCase(),
+                explanation: q.explanation || '',
+                difficulty: q.difficulty || quiz.difficulty || 'medium',
+                points: q.points || 1
+            };
+        });
+
+        setEditFormData({
+            title: quiz.title || '',
+            description: quiz.description || '',
+            keywords: quiz.keywords || '',
+            difficulty: quiz.difficulty || 'medium',
+            timeLimitMinutes: quiz.timeLimitMinutes || 10,
+            maxAttempts: quiz.maxAttempts || 1,
+            status: quiz.status || 'published',
+            questions: safeQuestions
+        });
+        setExpandedQuestionIndices(new Set([0]));
+        setShowAiAddPanel(false);
+        setAiMoreKeywords(quiz.keywords || quiz.title || '');
+        setAiMoreDifficulty(quiz.difficulty || 'medium');
+        setAiMoreCount(3);
+    };
+
+    const handleUpdateQuestionField = (qIdx, field, value) => {
+        setEditFormData(prev => {
+            const updated = [...prev.questions];
+            updated[qIdx] = { ...updated[qIdx], [field]: value };
+            return { ...prev, questions: updated };
+        });
+    };
+
+    const handleUpdateOptionText = (qIdx, optKey, text) => {
+        setEditFormData(prev => {
+            const updated = [...prev.questions];
+            const q = { ...updated[qIdx] };
+            q.options = q.options.map(opt => opt.key === optKey ? { ...opt, text } : opt);
+            updated[qIdx] = q;
+            return { ...prev, questions: updated };
+        });
+    };
+
+    const handleSetCorrectOption = (qIdx, optKey) => {
+        setEditFormData(prev => {
+            const updated = [...prev.questions];
+            updated[qIdx] = { ...updated[qIdx], correctOption: optKey };
+            return { ...prev, questions: updated };
+        });
+    };
+
+    const toggleQuestionExpanded = (qIdx) => {
+        setExpandedQuestionIndices(prev => {
+            const next = new Set(prev);
+            if (next.has(qIdx)) next.delete(qIdx);
+            else next.add(qIdx);
+            return next;
+        });
+    };
+
+    const handleExpandAllQuestions = () => {
+        setExpandedQuestionIndices(new Set(editFormData.questions.map((_, idx) => idx)));
+    };
+
+    const handleCollapseAllQuestions = () => {
+        setExpandedQuestionIndices(new Set());
+    };
+
+    const handleAddQuestionManual = () => {
+        const newQ = {
+            id: editFormData.questions.length + 1,
+            question: '',
+            options: [
+                { key: 'A', text: '' },
+                { key: 'B', text: '' },
+                { key: 'C', text: '' },
+                { key: 'D', text: '' },
+            ],
+            correctOption: 'A',
+            explanation: '',
+            difficulty: editFormData.difficulty || 'medium',
+            points: 1
+        };
+        const updated = [...editFormData.questions, newQ];
+        setEditFormData(prev => ({ ...prev, questions: updated }));
+        setExpandedQuestionIndices(prev => new Set(prev).add(updated.length - 1));
+        toast.success(`Question ${updated.length} added!`);
+    };
+
+    const handleAddMoreWithAI = async () => {
+        const kw = (aiMoreKeywords || editFormData.keywords || editFormData.title || '').trim();
+        if (!kw) {
+            toast.error('Please enter keywords or topics for the new questions');
+            return;
+        }
+        try {
+            setIsGeneratingMoreAI(true);
+            const res = await quizAPI.generate({
+                keywords: kw,
+                difficulty: aiMoreDifficulty,
+                numberOfQuestions: Math.max(1, parseInt(aiMoreCount) || 3),
+                timeLimitMinutes: editFormData.timeLimitMinutes || 10
+            });
+            if (res.data.success && Array.isArray(res.data.data.questions)) {
+                const newQs = res.data.data.questions.map((q, idx) => ({
+                    ...q,
+                    id: editFormData.questions.length + idx + 1
+                }));
+                setEditFormData(prev => ({
+                    ...prev,
+                    questions: [...prev.questions, ...newQs]
+                }));
+                toast.success(`Added ${newQs.length} new AI-generated questions!`);
+                setShowAiAddPanel(false);
+            }
+        } catch (err) {
+            console.error('Failed to generate more questions with AI', err);
+            toast.error(err.response?.data?.message || 'Failed to generate questions');
+        } finally {
+            setIsGeneratingMoreAI(false);
+        }
+    };
+
+    const handleImproveQuestionWithAI = async (qIdx) => {
+        const currentQ = editFormData.questions[qIdx];
+        if (!currentQ || (!currentQ.question.trim() && !editFormData.keywords.trim())) {
+            toast.error('Question must have some text or topic to improve');
+            return;
+        }
+        try {
+            setAiImprovingQuestionIdx(qIdx);
+            const promptKeywords = currentQ.question.trim() || editFormData.keywords || editFormData.title;
+            const res = await quizAPI.generate({
+                keywords: promptKeywords,
+                difficulty: currentQ.difficulty || editFormData.difficulty || 'medium',
+                numberOfQuestions: 1,
+                customInstructions: `Improve and rephrase this multiple-choice question: "${currentQ.question}". Ensure exactly 4 high quality options and a clear educational explanation.`
+            });
+            if (res.data.success && res.data.data.questions?.[0]) {
+                const improved = res.data.data.questions[0];
+                const updatedQuestions = [...editFormData.questions];
+                updatedQuestions[qIdx] = {
+                    ...updatedQuestions[qIdx],
+                    question: improved.question,
+                    options: improved.options,
+                    correctOption: improved.correctOption,
+                    explanation: improved.explanation || updatedQuestions[qIdx].explanation
+                };
+                setEditFormData(prev => ({ ...prev, questions: updatedQuestions }));
+                toast.success(`Question #${qIdx + 1} refined with AI!`);
+            }
+        } catch (err) {
+            console.error('Failed to improve question with AI', err);
+            toast.error(err.response?.data?.message || 'Failed to refine question');
+        } finally {
+            setAiImprovingQuestionIdx(null);
+        }
+    };
+
+    const handleDeleteQuestion = (qIdx) => {
+        if (editFormData.questions.length <= 1) {
+            toast.error('A quiz must have at least 1 question');
+            return;
+        }
+        const filtered = editFormData.questions.filter((_, idx) => idx !== qIdx).map((q, idx) => ({
+            ...q,
+            id: idx + 1
+        }));
+        setEditFormData(prev => ({ ...prev, questions: filtered }));
+        toast.success(`Removed question #${qIdx + 1}`);
+    };
+
+    const handleMoveQuestion = (fromIdx, toIdx) => {
+        if (toIdx < 0 || toIdx >= editFormData.questions.length) return;
+        const updated = [...editFormData.questions];
+        const [moved] = updated.splice(fromIdx, 1);
+        updated.splice(toIdx, 0, moved);
+        const reindexed = updated.map((q, idx) => ({ ...q, id: idx + 1 }));
+        setEditFormData(prev => ({ ...prev, questions: reindexed }));
+        setExpandedQuestionIndices(new Set([toIdx]));
+    };
+
+    const handleSaveEditedQuiz = async () => {
+        if (!editFormData.title.trim()) {
+            toast.error('Please enter a quiz title');
+            return;
+        }
+        if (editFormData.questions.length === 0) {
+            toast.error('A quiz must have at least 1 question');
+            return;
+        }
+
+        // Validate that questions are not completely empty
+        for (let i = 0; i < editFormData.questions.length; i++) {
+            const q = editFormData.questions[i];
+            if (!q.question.trim()) {
+                toast.error(`Question #${i + 1} prompt cannot be empty`);
+                setExpandedQuestionIndices(prev => new Set(prev).add(i));
+                return;
+            }
+            for (let j = 0; j < q.options.length; j++) {
+                if (!q.options[j].text.trim()) {
+                    toast.error(`Option ${q.options[j].key} in Question #${i + 1} cannot be empty`);
+                    setExpandedQuestionIndices(prev => new Set(prev).add(i));
+                    return;
+                }
+            }
+        }
+
+        try {
+            setIsSavingEdit(true);
+            const res = await quizAPI.update(editingQuiz.id, {
+                title: editFormData.title.trim(),
+                description: editFormData.description,
+                keywords: editFormData.keywords.trim(),
+                difficulty: editFormData.difficulty,
+                timeLimitMinutes: Math.max(parseInt(editFormData.timeLimitMinutes) || 10, 1),
+                maxAttempts: Math.max(parseInt(editFormData.maxAttempts) || 1, 1),
+                questions: editFormData.questions,
+                status: editFormData.status
+            });
+            if (res.data.success) {
+                toast.success(`Quiz "${res.data.data.title}" updated successfully!`);
+                setEditingQuiz(null);
+                fetchQuizzes();
+            }
+        } catch (err) {
+            console.error('Failed to update quiz', err);
+            toast.error(err.response?.data?.message || 'Failed to update quiz');
+        } finally {
+            setIsSavingEdit(false);
         }
     };
 
@@ -465,8 +861,9 @@ export default function QuizDashboardPage() {
                 {/* TAB 1: AVAILABLE / ASSIGNED QUIZZES */}
                 {activeTab === 'created' && (
                     <div className="space-y-4">
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="relative flex-1 max-w-md">
+                        {/* Toolbar: Search, View Mode, Items per page, Refresh */}
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="relative flex-1 min-w-[200px] max-w-md">
                                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                 <input
                                     type="text"
@@ -476,49 +873,167 @@ export default function QuizDashboardPage() {
                                     className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-primary-500 shadow-sm"
                                 />
                             </div>
-                            <button
-                                onClick={fetchQuizzes}
-                                className="p-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl transition border border-slate-200 dark:border-slate-700 shadow-sm"
-                                title="Refresh"
-                            >
-                                <RefreshCw className={`w-4 h-4 ${isLoadingQuizzes ? 'animate-spin' : ''}`} />
-                            </button>
+
+                            <div className="flex items-center gap-2.5">
+                                {/* Items per page */}
+                                <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                                    <span className="hidden sm:inline">Show:</span>
+                                    <select
+                                        value={pageSize}
+                                        onChange={(e) => {
+                                            setPageSize(Number(e.target.value));
+                                            setCurrentPage(1);
+                                        }}
+                                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500 shadow-sm"
+                                    >
+                                        <option value={6}>6</option>
+                                        <option value={9}>9</option>
+                                        <option value={12}>12</option>
+                                        <option value={24}>24</option>
+                                        <option value={48}>48</option>
+                                    </select>
+                                </div>
+
+                                {/* View Switcher: Grid vs List */}
+                                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    <button
+                                        type="button"
+                                        onClick={() => setViewMode('grid')}
+                                        className={`p-1.5 rounded-lg transition ${
+                                            viewMode === 'grid'
+                                                ? 'bg-white dark:bg-slate-900 text-primary-600 dark:text-primary-400 shadow-xs'
+                                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                                        }`}
+                                        title="Grid View"
+                                    >
+                                        <LayoutGrid className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setViewMode('list')}
+                                        className={`p-1.5 rounded-lg transition ${
+                                            viewMode === 'list'
+                                                ? 'bg-white dark:bg-slate-900 text-primary-600 dark:text-primary-400 shadow-xs'
+                                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                                        }`}
+                                        title="List View"
+                                    >
+                                        <List className="w-4 h-4" />
+                                    </button>
+                                </div>
+
+                                <button
+                                    onClick={fetchQuizzes}
+                                    className="p-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl transition border border-slate-200 dark:border-slate-700 shadow-sm"
+                                    title="Refresh Quizzes"
+                                >
+                                    <RefreshCw className={`w-4 h-4 ${isLoadingQuizzes ? 'animate-spin' : ''}`} />
+                                </button>
+                            </div>
                         </div>
+
+                        {/* Bulk Action / Selection Bar (when instructor/admin) */}
+                        {isInstructorOrAdmin && filteredQuizzes.length > 0 && (
+                            <div className="flex flex-wrap items-center justify-between gap-2.5 bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs">
+                                <div className="flex items-center gap-3">
+                                    <label className="flex items-center gap-2 cursor-pointer select-none font-semibold text-slate-700 dark:text-slate-300">
+                                        <input
+                                            type="checkbox"
+                                            checked={isAllSelected}
+                                            onChange={handleToggleSelectAll}
+                                            className="w-4 h-4 text-primary-600 rounded border-slate-300 dark:border-slate-700 cursor-pointer"
+                                        />
+                                        <span>Select All ({paginatedQuizzes.length} on page)</span>
+                                    </label>
+                                    {selectedQuizIds.size > 0 && selectedQuizIds.size < totalQuizzes && (
+                                        <button
+                                            type="button"
+                                            onClick={handleSelectAllFiltered}
+                                            className="text-primary-600 dark:text-primary-400 hover:underline font-bold"
+                                        >
+                                            Select all {totalQuizzes} quizzes across pages
+                                        </button>
+                                    )}
+                                </div>
+
+                                {selectedQuizIds.size > 0 && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                                            {selectedQuizIds.size} selected
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={handleClearSelection}
+                                            className="py-1 px-2.5 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 rounded-xl transition"
+                                        >
+                                            Clear
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleBulkDelete}
+                                            disabled={isBulkDeleting}
+                                            className="py-1 px-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl font-bold transition flex items-center gap-1.5 shadow-sm"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                            {isBulkDeleting ? 'Deleting...' : `Delete Selected (${selectedQuizIds.size})`}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {isLoadingQuizzes ? (
                             <div className="py-16 text-center text-slate-500 text-xs animate-pulse">
                                 Loading quizzes...
                             </div>
-                        ) : quizzes.length === 0 ? (
+                        ) : filteredQuizzes.length === 0 ? (
                             <div className="py-16 text-center space-y-3 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-8">
                                 <HelpCircle className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
                                 <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                                    {isInstructorOrAdmin ? 'No Quizzes Created Yet' : 'No Quizzes Assigned to You'}
+                                    {searchFilter ? 'No matching quizzes found' : (isInstructorOrAdmin ? 'No Quizzes Created Yet' : 'No Quizzes Assigned to You')}
                                 </h3>
                                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-                                    {isInstructorOrAdmin 
-                                        ? 'Click "Create AI Quiz" to generate an assessment with AI and assign it to classes or students.' 
-                                        : 'Any quizzes assigned to your class or group by your instructor will appear here.'}
+                                    {searchFilter 
+                                        ? 'Try searching with a different keyword, topic, or quiz code.'
+                                        : (isInstructorOrAdmin 
+                                            ? 'Click "Create AI Quiz" to generate an assessment with AI and assign it to classes or students.' 
+                                            : 'Any quizzes assigned to your class or group by your instructor will appear here.')}
                                 </p>
                             </div>
-                        ) : (
+                        ) : viewMode === 'grid' ? (
+                            /* GRID VIEW */
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {quizzes
-                                    .filter(q => !searchFilter || q.title.toLowerCase().includes(searchFilter.toLowerCase()) || q.code.includes(searchFilter.toUpperCase()))
-                                    .map((quiz) => (
+                                {paginatedQuizzes.map((quiz) => {
+                                    const isSelected = selectedQuizIds.has(quiz.id);
+                                    return (
                                         <div
                                             key={quiz.id}
-                                            className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 space-y-4 hover:border-primary-400 dark:hover:border-primary-500 transition shadow-sm group flex flex-col justify-between"
+                                            className={`bg-white dark:bg-slate-800 border rounded-2xl p-5 space-y-4 hover:border-primary-400 dark:hover:border-primary-500 transition shadow-sm group flex flex-col justify-between ${
+                                                isSelected 
+                                                    ? 'border-primary-500 dark:border-primary-500 ring-2 ring-primary-500/20' 
+                                                    : 'border-slate-200 dark:border-slate-700'
+                                            }`}
                                         >
                                             <div className="space-y-2.5">
                                                 <div className="flex items-center justify-between gap-2">
-                                                    <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
-                                                        quiz.status === 'published'
-                                                            ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700/40'
-                                                            : 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-700/40'
-                                                    }`}>
-                                                        {quiz.status}
-                                                    </span>
+                                                    <div className="flex items-center gap-2">
+                                                        {isInstructorOrAdmin && (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected}
+                                                                onChange={() => handleToggleSelectOne(quiz.id)}
+                                                                className="w-4 h-4 text-primary-600 rounded border-slate-300 dark:border-slate-700 cursor-pointer"
+                                                                title="Select quiz"
+                                                            />
+                                                        )}
+                                                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+                                                            quiz.status === 'published'
+                                                                ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700/40'
+                                                                : 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-700/40'
+                                                        }`}>
+                                                            {quiz.status}
+                                                        </span>
+                                                    </div>
                                                     <span className="font-mono text-xs font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-950/40 px-2 py-0.5 rounded border border-primary-200 dark:border-primary-800">
                                                         {quiz.code}
                                                     </span>
@@ -561,9 +1076,16 @@ export default function QuizDashboardPage() {
                                                     Take Quiz
                                                 </button>
 
-                                                {/* Staff Actions: Assign, Submissions, Delete */}
+                                                {/* Staff Actions: Edit, Assign, Submissions, Delete */}
                                                 {isInstructorOrAdmin && (
                                                     <>
+                                                        <button
+                                                            onClick={() => handleOpenEditQuiz(quiz)}
+                                                            className="p-2 bg-slate-100 dark:bg-slate-700 hover:bg-amber-50 hover:text-amber-600 text-slate-700 dark:text-slate-300 rounded-xl transition"
+                                                            title="Edit Quiz & Questions"
+                                                        >
+                                                            <Edit3 className="w-4 h-4" />
+                                                        </button>
                                                         <button
                                                             onClick={() => handleOpenAssignModal(quiz)}
                                                             className="p-2 bg-slate-100 dark:bg-slate-700 hover:bg-primary-50 hover:text-primary-600 text-slate-700 dark:text-slate-300 rounded-xl transition"
@@ -600,7 +1122,253 @@ export default function QuizDashboardPage() {
                                                 )}
                                             </div>
                                         </div>
-                                    ))}
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            /* LIST VIEW */
+                            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse text-xs">
+                                        <thead>
+                                            <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[11px]">
+                                                {isInstructorOrAdmin && (
+                                                    <th className="p-3.5 w-10 text-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isAllSelected}
+                                                            onChange={handleToggleSelectAll}
+                                                            className="w-4 h-4 text-primary-600 rounded border-slate-300 dark:border-slate-700 cursor-pointer"
+                                                            title={isAllSelected ? 'Deselect All' : 'Select All'}
+                                                        />
+                                                    </th>
+                                                )}
+                                                <th className="p-3.5">Code</th>
+                                                <th className="p-3.5">Title & Topic</th>
+                                                <th className="p-3.5 text-center">Questions</th>
+                                                <th className="p-3.5 text-center">Time</th>
+                                                <th className="p-3.5 text-center">Attempts</th>
+                                                <th className="p-3.5 text-center">Status</th>
+                                                <th className="p-3.5 text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                                            {paginatedQuizzes.map((quiz) => {
+                                                const isSelected = selectedQuizIds.has(quiz.id);
+                                                return (
+                                                    <tr 
+                                                        key={quiz.id}
+                                                        className={`hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition ${
+                                                            isSelected ? 'bg-primary-50/40 dark:bg-primary-950/20' : ''
+                                                        }`}
+                                                    >
+                                                        {isInstructorOrAdmin && (
+                                                            <td className="p-3.5 text-center">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isSelected}
+                                                                    onChange={() => handleToggleSelectOne(quiz.id)}
+                                                                    className="w-4 h-4 text-primary-600 rounded border-slate-300 dark:border-slate-700 cursor-pointer"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        <td className="p-3.5">
+                                                            <span className="font-mono font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-950/40 px-2 py-0.5 rounded border border-primary-200 dark:border-primary-800 text-[11px]">
+                                                                {quiz.code}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-3.5">
+                                                            <div className="font-bold text-slate-900 dark:text-white leading-tight">
+                                                                {quiz.title}
+                                                            </div>
+                                                            {quiz.keywords && (
+                                                                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-xs mt-0.5">
+                                                                    {quiz.keywords}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-3.5 text-center font-semibold text-slate-700 dark:text-slate-300">
+                                                            {quiz.totalQuestions}
+                                                        </td>
+                                                        <td className="p-3.5 text-center text-slate-600 dark:text-slate-400 font-medium">
+                                                            {quiz.timeLimitMinutes}m
+                                                        </td>
+                                                        <td className="p-3.5 text-center text-slate-600 dark:text-slate-400 font-medium">
+                                                            {quiz.maxAttempts || 1}
+                                                        </td>
+                                                        <td className="p-3.5 text-center">
+                                                            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+                                                                quiz.status === 'published'
+                                                                    ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700/40'
+                                                                    : 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-700/40'
+                                                            }`}>
+                                                                {quiz.status}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-3.5 text-right">
+                                                            <div className="flex items-center justify-end gap-1.5">
+                                                                <button
+                                                                    onClick={() => router.push(`/quiz/join/${quiz.code}`)}
+                                                                    className="py-1 px-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                                                                    title="Take Quiz"
+                                                                >
+                                                                    <Play className="w-3 h-3 fill-current" />
+                                                                    Take
+                                                                </button>
+                                                                {isInstructorOrAdmin && (
+                                                                    <>
+                                                                        <button
+                                                                            onClick={() => handleOpenEditQuiz(quiz)}
+                                                                            className="p-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-amber-50 hover:text-amber-600 text-slate-700 dark:text-slate-300 rounded-lg transition"
+                                                                            title="Edit Quiz & Questions"
+                                                                        >
+                                                                            <Edit3 className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleOpenAssignModal(quiz)}
+                                                                            className="p-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-primary-50 hover:text-primary-600 text-slate-700 dark:text-slate-300 rounded-lg transition"
+                                                                            title="Assign to Class/Group/Student"
+                                                                        >
+                                                                            <Users className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleOpenSubmissionsModal(quiz)}
+                                                                            className="p-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-lg transition"
+                                                                            title="View Submissions"
+                                                                        >
+                                                                            <BarChart3 className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                                <button
+                                                                    onClick={() => handleOpenShare(quiz)}
+                                                                    className="p-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-lg transition"
+                                                                    title="Share Code & QR"
+                                                                >
+                                                                    <Share2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                {isInstructorOrAdmin && (
+                                                                    <button
+                                                                        onClick={() => handleDeleteQuiz(quiz.id)}
+                                                                        className="p-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-rose-50 hover:text-rose-600 text-slate-500 rounded-lg transition"
+                                                                        title="Delete Quiz"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* PAGINATION & PAGE JUMPER */}
+                        {!isLoadingQuizzes && totalQuizzes > 0 && (
+                            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs">
+                                <div className="text-slate-500 dark:text-slate-400">
+                                    Showing <span className="font-semibold text-slate-700 dark:text-slate-200">{(currentPage - 1) * pageSize + 1}</span> to <span className="font-semibold text-slate-700 dark:text-slate-200">{Math.min(currentPage * pageSize, totalQuizzes)}</span> of <span className="font-semibold text-slate-700 dark:text-slate-200">{totalQuizzes}</span> quizzes
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {/* Pagination Controls */}
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => setCurrentPage(1)}
+                                            disabled={currentPage === 1}
+                                            className="p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg disabled:opacity-40 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                                            title="First Page"
+                                        >
+                                            <ChevronsLeft className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                            disabled={currentPage === 1}
+                                            className="p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg disabled:opacity-40 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                                            title="Previous Page"
+                                        >
+                                            <ChevronLeft className="w-3.5 h-3.5" />
+                                        </button>
+
+                                        {/* Page Numbers */}
+                                        <div className="flex items-center gap-1 px-1">
+                                            {Array.from({ length: totalPages }, (_, i) => i + 1)
+                                                .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                                                .reduce((acc, p, idx, arr) => {
+                                                    if (idx > 0 && p - arr[idx - 1] > 1) {
+                                                        acc.push('ellipsis-' + p);
+                                                    }
+                                                    acc.push(p);
+                                                    return acc;
+                                                }, [])
+                                                .map(item => {
+                                                    if (typeof item === 'string') {
+                                                        return <span key={item} className="px-1 text-slate-400">...</span>;
+                                                    }
+                                                    return (
+                                                        <button
+                                                            key={item}
+                                                            type="button"
+                                                            onClick={() => setCurrentPage(item)}
+                                                            className={`min-w-[28px] h-7 px-1.5 rounded-lg font-bold text-xs transition ${
+                                                                currentPage === item
+                                                                    ? 'bg-primary-600 text-white shadow-xs'
+                                                                    : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                                            }`}
+                                                        >
+                                                            {item}
+                                                        </button>
+                                                    );
+                                                })}
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                            disabled={currentPage === totalPages}
+                                            className="p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg disabled:opacity-40 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                                            title="Next Page"
+                                        >
+                                            <ChevronRight className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setCurrentPage(totalPages)}
+                                            disabled={currentPage === totalPages}
+                                            className="p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg disabled:opacity-40 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                                            title="Last Page"
+                                        >
+                                            <ChevronsRight className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+
+                                    {/* Page Jumper */}
+                                    <form onSubmit={handlePageJump} className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 pl-2 sm:border-l sm:border-slate-200 sm:dark:border-slate-700">
+                                        <span className="hidden sm:inline">Page:</span>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            max={totalPages}
+                                            value={pageJumperInput}
+                                            onChange={(e) => setPageJumperInput(e.target.value)}
+                                            placeholder={String(currentPage)}
+                                            className="w-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 py-1 text-center font-bold text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                        />
+                                        <span className="text-[11px]">/ {totalPages}</span>
+                                        <button
+                                            type="submit"
+                                            className="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-primary-50 hover:text-primary-600 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg font-bold transition"
+                                        >
+                                            Go
+                                        </button>
+                                    </form>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -780,6 +1548,485 @@ export default function QuizDashboardPage() {
                                 })}
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* MODAL 0: EDIT QUIZ & QUESTIONS */}
+                {editingQuiz && (
+                    <div
+                        className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5"
+                        onClick={() => setEditingQuiz(null)}
+                    >
+                        <div
+                            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden text-left"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Header */}
+                            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+                                        <Edit3 className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                                            Edit Quiz & Questions
+                                            <span className="font-mono text-xs font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-950/40 px-2 py-0.5 rounded border border-primary-200 dark:border-primary-800">
+                                                {editingQuiz.code}
+                                            </span>
+                                        </h3>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                                            Update quiz details, edit questions manually, or add more with AI.
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setEditingQuiz(null)}
+                                    className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl transition"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* Scrollable Body */}
+                            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+                                {/* 1. Quiz Settings Section */}
+                                <div className="bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3.5">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                                            <Settings2 className="w-4 h-4 text-primary-500" />
+                                            General Quiz Settings
+                                        </h4>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[11px] font-semibold text-slate-500">Status:</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditFormData(p => ({ ...p, status: p.status === 'published' ? 'draft' : 'published' }))}
+                                                className={`text-xs font-bold px-2.5 py-0.5 rounded-full border transition ${
+                                                    editFormData.status === 'published'
+                                                        ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+                                                        : 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700'
+                                                }`}
+                                            >
+                                                {editFormData.status === 'published' ? '● Published' : '○ Draft'}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                                Quiz Title <span className="text-rose-500">*</span>
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={editFormData.title}
+                                                onChange={(e) => setEditFormData(p => ({ ...p, title: e.target.value }))}
+                                                placeholder="Quiz Title"
+                                                className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                                Topic / Keywords
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={editFormData.keywords}
+                                                onChange={(e) => setEditFormData(p => ({ ...p, keywords: e.target.value }))}
+                                                placeholder="e.g. Organic Chemistry, Ketones"
+                                                className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                                Difficulty
+                                            </label>
+                                            <select
+                                                value={editFormData.difficulty}
+                                                onChange={(e) => setEditFormData(p => ({ ...p, difficulty: e.target.value }))}
+                                                className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                            >
+                                                <option value="easy">Easy</option>
+                                                <option value="medium">Medium</option>
+                                                <option value="hard">Hard</option>
+                                                <option value="mixed">Mixed</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                                Time Limit (Mins)
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="180"
+                                                value={editFormData.timeLimitMinutes}
+                                                onChange={(e) => setEditFormData(p => ({ ...p, timeLimitMinutes: e.target.value }))}
+                                                className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                                Max Attempts
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="50"
+                                                value={editFormData.maxAttempts}
+                                                onChange={(e) => setEditFormData(p => ({ ...p, maxAttempts: e.target.value }))}
+                                                className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 2. Questions Header & Action Bar */}
+                                <div className="space-y-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2.5">
+                                        <div className="flex items-center gap-2">
+                                            <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                                                Questions ({editFormData.questions.length})
+                                            </h4>
+                                            <div className="flex items-center gap-1 text-[11px]">
+                                                <button
+                                                    type="button"
+                                                    onClick={handleExpandAllQuestions}
+                                                    className="text-primary-600 dark:text-primary-400 hover:underline font-semibold"
+                                                >
+                                                    Expand All
+                                                </button>
+                                                <span className="text-slate-400">•</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleCollapseAllQuestions}
+                                                    className="text-slate-500 hover:underline font-semibold"
+                                                >
+                                                    Collapse All
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={handleAddQuestionManual}
+                                                className="py-1.5 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 shadow-xs"
+                                            >
+                                                <Plus className="w-3.5 h-3.5" />
+                                                Add Manually
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowAiAddPanel(!showAiAddPanel)}
+                                                className={`py-1.5 px-3 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs ${
+                                                    showAiAddPanel
+                                                        ? 'bg-indigo-600 text-white'
+                                                        : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60'
+                                                }`}
+                                            >
+                                                <Sparkles className="w-3.5 h-3.5" />
+                                                Add with AI
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* AI Add More Questions Sub-panel */}
+                                    {showAiAddPanel && (
+                                        <div className="bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-indigo-500/5 dark:from-indigo-950/40 dark:via-purple-950/30 dark:to-slate-900 border border-indigo-200 dark:border-indigo-800/80 rounded-2xl p-4 space-y-3 animate-fadeIn">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                                    <h5 className="text-xs font-bold text-indigo-950 dark:text-indigo-200">
+                                                        Generate & Append More Questions with AI
+                                                    </h5>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowAiAddPanel(false)}
+                                                    className="text-slate-400 hover:text-slate-600 text-xs"
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                                <div className="sm:col-span-1">
+                                                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                                                        Topic / Specific Focus
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={aiMoreKeywords}
+                                                        onChange={(e) => setAiMoreKeywords(e.target.value)}
+                                                        placeholder="e.g. Oxidation reactions, Mechanism"
+                                                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                                                        Number of Questions
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        max="10"
+                                                        value={aiMoreCount}
+                                                        onChange={(e) => setAiMoreCount(e.target.value)}
+                                                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                                                        Difficulty
+                                                    </label>
+                                                    <select
+                                                        value={aiMoreDifficulty}
+                                                        onChange={(e) => setAiMoreDifficulty(e.target.value)}
+                                                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                                                    >
+                                                        <option value="easy">Easy</option>
+                                                        <option value="medium">Medium</option>
+                                                        <option value="hard">Hard</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={handleAddMoreWithAI}
+                                                disabled={isGeneratingMoreAI}
+                                                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm"
+                                            >
+                                                <Sparkles className={`w-3.5 h-3.5 ${isGeneratingMoreAI ? 'animate-spin' : ''}`} />
+                                                {isGeneratingMoreAI ? 'Generating New Questions...' : `Generate & Add ${aiMoreCount} Questions`}
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Questions Cards List */}
+                                    <div className="space-y-3.5">
+                                        {editFormData.questions.map((q, qIdx) => {
+                                            const isExpanded = expandedQuestionIndices.has(qIdx);
+                                            const isImproving = aiImprovingQuestionIdx === qIdx;
+
+                                            return (
+                                                <div
+                                                    key={`q-${qIdx}`}
+                                                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs transition hover:border-slate-300 dark:hover:border-slate-700"
+                                                >
+                                                    {/* Question Card Header */}
+                                                    <div 
+                                                        className="p-3.5 flex items-center justify-between gap-3 bg-slate-50/70 dark:bg-slate-800/40 cursor-pointer select-none"
+                                                        onClick={() => toggleQuestionExpanded(qIdx)}
+                                                    >
+                                                        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                                            <span className="w-7 h-7 rounded-lg bg-primary-600 text-white text-xs font-extrabold flex items-center justify-center shrink-0">
+                                                                {qIdx + 1}
+                                                            </span>
+                                                            <div className="truncate text-xs font-bold text-slate-800 dark:text-slate-200 flex-1">
+                                                                {q.question ? (
+                                                                    <span className="truncate">{q.question}</span>
+                                                                ) : (
+                                                                    <span className="text-amber-500 italic">Empty Question Prompt</span>
+                                                                )}
+                                                            </div>
+                                                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shrink-0">
+                                                                Ans: {q.correctOption}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleMoveQuestion(qIdx, qIdx - 1)}
+                                                                disabled={qIdx === 0}
+                                                                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 rounded text-slate-500 transition"
+                                                                title="Move Up"
+                                                            >
+                                                                <ArrowUp className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleMoveQuestion(qIdx, qIdx + 1)}
+                                                                disabled={qIdx === editFormData.questions.length - 1}
+                                                                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 rounded text-slate-500 transition"
+                                                                title="Move Down"
+                                                            >
+                                                                <ArrowDown className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => toggleQuestionExpanded(qIdx)}
+                                                                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-500 transition"
+                                                                title={isExpanded ? 'Collapse' : 'Expand'}
+                                                            >
+                                                                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDeleteQuestion(qIdx)}
+                                                                className="p-1 hover:bg-rose-50 hover:text-rose-600 rounded text-slate-400 transition"
+                                                                title="Delete Question"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Question Card Expanded Body */}
+                                                    {isExpanded && (
+                                                        <div className="p-4 space-y-4 border-t border-slate-100 dark:border-slate-800">
+                                                            {/* Question Prompt */}
+                                                            <div className="space-y-1.5">
+                                                                <div className="flex items-center justify-between">
+                                                                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                                                                        Question Prompt <span className="text-rose-500">*</span>
+                                                                    </label>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleImproveQuestionWithAI(qIdx)}
+                                                                        disabled={isImproving}
+                                                                        className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 flex items-center gap-1 disabled:opacity-50"
+                                                                    >
+                                                                        <Sparkles className={`w-3 h-3 ${isImproving ? 'animate-spin' : ''}`} />
+                                                                        {isImproving ? 'Polishing with AI...' : 'Rephrase with AI'}
+                                                                    </button>
+                                                                </div>
+                                                                <textarea
+                                                                    rows={2}
+                                                                    value={q.question}
+                                                                    onChange={(e) => handleUpdateQuestionField(qIdx, 'question', e.target.value)}
+                                                                    placeholder="Enter question text. LaTeX ($E = mc^2$) and Chemistry ($\ce{H2O}$) formulas supported."
+                                                                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-primary-500 font-sans leading-relaxed"
+                                                                />
+                                                                {/* Live Math Preview */}
+                                                                {q.question && (
+                                                                    <div className="p-2 bg-slate-100/60 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-700/60 text-xs">
+                                                                        <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Preview:</span>
+                                                                        <MathRenderer content={q.question} />
+                                                                    </div>
+                                                                )}
+                                                            </div>
+
+                                                            {/* Options Grid (A, B, C, D) */}
+                                                            <div className="space-y-2">
+                                                                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                                                                    Options & Correct Answer Selection:
+                                                                </label>
+                                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                                                    {q.options.map((opt) => {
+                                                                        const isCorrect = q.correctOption === opt.key;
+                                                                        return (
+                                                                            <div
+                                                                                key={opt.key}
+                                                                                className={`p-2.5 rounded-xl border transition ${
+                                                                                    isCorrect
+                                                                                        ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-400 dark:border-emerald-600/60'
+                                                                                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700'
+                                                                                }`}
+                                                                            >
+                                                                                <div className="flex items-center justify-between mb-1.5">
+                                                                                    <span className="font-mono font-extrabold text-xs text-slate-700 dark:text-slate-300">
+                                                                                        Choice {opt.key}
+                                                                                    </span>
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleSetCorrectOption(qIdx, opt.key)}
+                                                                                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition flex items-center gap-1 ${
+                                                                                            isCorrect
+                                                                                                ? 'bg-emerald-600 text-white shadow-xs'
+                                                                                                : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-300'
+                                                                                        }`}
+                                                                                    >
+                                                                                        {isCorrect ? '✓ Correct Answer' : 'Mark Correct'}
+                                                                                    </button>
+                                                                                </div>
+                                                                                <input
+                                                                                    type="text"
+                                                                                    value={opt.text}
+                                                                                    onChange={(e) => handleUpdateOptionText(qIdx, opt.key, e.target.value)}
+                                                                                    placeholder={`Text for Option ${opt.key}`}
+                                                                                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                                                                />
+                                                                                {opt.text && (
+                                                                                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-300 px-1">
+                                                                                        <MathRenderer content={opt.text} inline />
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Explanation */}
+                                                            <div className="space-y-1">
+                                                                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                                                                    Explanation (Why the correct option is right):
+                                                                </label>
+                                                                <textarea
+                                                                    rows={2}
+                                                                    value={q.explanation}
+                                                                    onChange={(e) => handleUpdateQuestionField(qIdx, 'explanation', e.target.value)}
+                                                                    placeholder="Detailed explanation of the solution..."
+                                                                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-primary-500"
+                                                                />
+                                                                {q.explanation && (
+                                                                    <div className="p-2 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-800/40 text-xs">
+                                                                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase block mb-0.5">Explanation Preview:</span>
+                                                                        <MathRenderer content={q.explanation} inline />
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Footer */}
+                            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 flex items-center justify-between gap-3">
+                                <div className="text-xs text-slate-500">
+                                    <span className="font-bold text-slate-800 dark:text-slate-200">{editFormData.questions.length} Questions</span>
+                                    <span className="mx-1.5">•</span>
+                                    <span>{editFormData.timeLimitMinutes} Mins</span>
+                                    <span className="mx-1.5">•</span>
+                                    <span className="capitalize">{editFormData.difficulty}</span>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setEditingQuiz(null)}
+                                        className="py-2 px-4 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold border border-slate-300 dark:border-slate-700 transition"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveEditedQuiz}
+                                        disabled={isSavingEdit}
+                                        className="py-2 px-5 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                                    >
+                                        {isSavingEdit ? (
+                                            <>
+                                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                                Saving Changes...
+                                            </>
+                                        ) : (
+                                            'Save Quiz Changes'
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
 
