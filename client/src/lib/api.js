@@ -789,6 +789,7 @@ export const quizAPI = {
     delete: (id) => api.delete(`/quiz/${id}`),
     bulkDelete: (ids) => api.post('/quiz/bulk-delete', { ids }),
     assign: (id, data) => api.post(`/quiz/${id}/assign`, data),
+    bulkAssign: (data) => api.post('/quiz/bulk-assign', data),
     getAssignments: (id) => api.get(`/quiz/${id}/assignments`),
     deleteAssignment: (quizId, assignmentId) => api.delete(`/quiz/${quizId}/assignments/${assignmentId}`),
 };

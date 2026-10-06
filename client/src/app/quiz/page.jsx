@@ -8,7 +8,7 @@ import {
     Award, CheckCircle2, XCircle, RefreshCw, ChevronDown, ChevronUp,
     Users, Send, BarChart3, FileText, X, CheckSquare, Square,
     Edit3, Plus, LayoutGrid, List, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-    Wand2, ArrowUp, ArrowDown, Settings2
+    Wand2, ArrowUp, ArrowDown, Settings2, Filter, Layers, UserCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import QRCode from 'qrcode';
@@ -85,15 +85,21 @@ export default function QuizDashboardPage() {
     const [quizStatus, setQuizStatus] = useState('published');
     const [isSaving, setIsSaving] = useState(false);
 
-    // Assign Quiz Modal State
-    const [assignQuizTarget, setAssignQuizTarget] = useState(null);
+    // Assign Quiz Modal State (Multi-Quiz, Multi-Class, Multi-Group, Filtered/Persisted Students)
+    const [assignQuizTargets, setAssignQuizTargets] = useState([]); // Array of quizzes to assign
+    const [assignQuizSearch, setAssignQuizSearch] = useState('');
     const [classList, setClassList] = useState([]);
-    const [selectedAssignClass, setSelectedAssignClass] = useState('');
+    const [selectedAssignClasses, setSelectedAssignClasses] = useState([]); // array of classIds
+    const [assignClassSearch, setAssignClassSearch] = useState('');
     const [assignTargetType, setAssignTargetType] = useState('class'); // 'class' | 'group' | 'student'
-    const [groupList, setGroupList] = useState([]);
-    const [selectedAssignGroup, setSelectedAssignGroup] = useState('');
-    const [studentList, setStudentList] = useState([]);
-    const [selectedAssignStudents, setSelectedAssignStudents] = useState([]);
+    const [allClassGroups, setAllClassGroups] = useState([]); // { id, name, classId, className }
+    const [selectedAssignGroups, setSelectedAssignGroups] = useState([]); // array of groupIds
+    const [assignGroupSearch, setAssignGroupSearch] = useState('');
+    const [allClassStudents, setAllClassStudents] = useState([]); // { id, firstName, lastName, email, studentId, classId, className }
+    const [selectedAssignStudents, setSelectedAssignStudents] = useState([]); // array of studentIds (persisted!)
+    const [studentClassFilter, setStudentClassFilter] = useState('all'); // 'all' or classId
+    const [assignStudentSearch, setAssignStudentSearch] = useState('');
+    const [showSelectedStudentsPreview, setShowSelectedStudentsPreview] = useState(false);
     const [activeAssignments, setActiveAssignments] = useState([]);
     const [isLoadingAssignments, setIsLoadingAssignments] = useState(false);
     const [isAssigning, setIsAssigning] = useState(false);
@@ -635,111 +641,230 @@ export default function QuizDashboardPage() {
         }
     };
 
-    // Open Assign Modal for a Quiz
+    // Open Assign Modal for a single quiz
     const handleOpenAssignModal = async (quiz) => {
-        setAssignQuizTarget(quiz);
-        setSelectedAssignClass('');
-        setAssignTargetType('class');
-        setSelectedAssignGroup('');
+        setAssignQuizTargets([quiz]);
+        await initializeAssignModalData([quiz]);
+    };
+
+    // Open Assign Modal for multiple selected quizzes (bulk)
+    const handleOpenBulkAssignModal = async () => {
+        const selectedList = quizzes.filter(q => selectedQuizIds.has(q.id));
+        if (selectedList.length === 0) {
+            toast.error('Please select at least one quiz to assign');
+            return;
+        }
+        setAssignQuizTargets(selectedList);
+        await initializeAssignModalData(selectedList);
+    };
+
+    // Add or remove a quiz from the targets in the modal
+    const handleAddQuizToAssignTargets = (quiz) => {
+        if (!assignQuizTargets.some(q => q.id === quiz.id)) {
+            setAssignQuizTargets(prev => [...prev, quiz]);
+        }
+        setAssignQuizSearch('');
+    };
+
+    const handleRemoveQuizFromAssignTargets = (quizId) => {
+        if (assignQuizTargets.length <= 1) {
+            toast.error('At least one quiz must be selected for assignment');
+            return;
+        }
+        setAssignQuizTargets(prev => prev.filter(q => q.id !== quizId));
+    };
+
+    // Initialize assign modal data
+    const initializeAssignModalData = async (targetQuizzes) => {
+        setSelectedAssignClasses([]);
+        setSelectedAssignGroups([]);
         setSelectedAssignStudents([]);
-        setGroupList([]);
-        setStudentList([]);
+        setAssignClassSearch('');
+        setAssignGroupSearch('');
+        setAssignStudentSearch('');
+        setStudentClassFilter('all');
+        setAssignTargetType('class');
+        setActiveAssignments([]);
+        setIsLoadingAssignments(true);
 
         try {
-            setIsLoadingAssignments(true);
             const [classesRes, assignRes] = await Promise.all([
                 classesAPI.getAll(),
-                quizAPI.getAssignments(quiz.id)
+                targetQuizzes.length === 1 ? quizAPI.getAssignments(targetQuizzes[0].id) : Promise.resolve({ data: { data: [] } })
             ]);
 
             const loadedClasses = classesRes.data?.data?.classes || classesRes.data?.data || classesRes.data?.classes || [];
             setClassList(loadedClasses);
-            if (loadedClasses.length > 0) {
-                setSelectedAssignClass(loadedClasses[0].id);
-                loadClassTargets(loadedClasses[0].id);
+
+            if (assignRes.data?.success) {
+                setActiveAssignments(assignRes.data.data || []);
             }
 
-            if (assignRes.data.success) {
-                setActiveAssignments(assignRes.data.data || []);
+            if (loadedClasses.length > 0) {
+                await loadAllClassesData(loadedClasses);
             }
         } catch (err) {
             console.error('Failed to load assignment data', err);
-            toast.error('Failed to load classes or current assignments');
+            toast.error('Failed to load classes or assignments');
         } finally {
             setIsLoadingAssignments(false);
         }
     };
 
-    const loadClassTargets = async (classId) => {
-        if (!classId) return;
+    // Load groups and students across all classes
+    const loadAllClassesData = async (classes) => {
         try {
-            const [groupsRes, studentsRes] = await Promise.all([
-                classesAPI.getGroups(classId).catch(() => ({ data: { data: [] } })),
-                classesAPI.getStudents(classId).catch(() => ({ data: { data: [] } }))
+            const groupFetches = classes.map(c =>
+                classesAPI.getGroups(c.id)
+                    .then(res => {
+                        const grps = res.data?.data?.groups || res.data?.data || [];
+                        return grps.map(g => ({
+                            ...g,
+                            classId: c.id,
+                            className: `${c.name} ${c.section ? `(${c.section})` : ''}`
+                        }));
+                    })
+                    .catch(() => [])
+            );
+
+            const studentFetches = classes.map(c =>
+                classesAPI.getStudents(c.id)
+                    .then(res => {
+                        const stds = res.data?.data?.students || res.data?.data || [];
+                        return stds.map(s => ({
+                            ...s,
+                            classId: c.id,
+                            className: `${c.name} ${c.section ? `(${c.section})` : ''}`
+                        }));
+                    })
+                    .catch(() => [])
+            );
+
+            const [groupsArrays, studentsArrays] = await Promise.all([
+                Promise.all(groupFetches),
+                Promise.all(studentFetches)
             ]);
-            const groups = groupsRes.data?.data?.groups || groupsRes.data?.data || [];
-            const students = studentsRes.data?.data?.students || studentsRes.data?.data || [];
-            setGroupList(groups);
-            setStudentList(students);
-            if (groups.length > 0) setSelectedAssignGroup(groups[0].id);
+
+            setAllClassGroups(groupsArrays.flat());
+
+            const studentMap = new Map();
+            studentsArrays.flat().forEach(s => {
+                if (!studentMap.has(s.id)) {
+                    studentMap.set(s.id, s);
+                }
+            });
+            setAllClassStudents(Array.from(studentMap.values()));
         } catch (err) {
             console.error('Failed to load class groups or students', err);
         }
     };
 
-    const handleAssignClassChange = (classId) => {
-        setSelectedAssignClass(classId);
-        loadClassTargets(classId);
+    // Class selection handlers
+    const handleToggleClassSelection = (classId) => {
+        setSelectedAssignClasses(prev =>
+            prev.includes(classId) ? prev.filter(id => id !== classId) : [...prev, classId]
+        );
     };
 
+    const handleSelectAllFilteredClasses = (filteredClasses) => {
+        const ids = filteredClasses.map(c => c.id);
+        setSelectedAssignClasses(prev => Array.from(new Set([...prev, ...ids])));
+    };
+
+    const handleDeselectFilteredClasses = (filteredClasses) => {
+        const idSet = new Set(filteredClasses.map(c => c.id));
+        setSelectedAssignClasses(prev => prev.filter(id => !idSet.has(id)));
+    };
+
+    // Group selection handlers
+    const handleToggleGroupSelection = (groupId) => {
+        setSelectedAssignGroups(prev =>
+            prev.includes(groupId) ? prev.filter(id => id !== groupId) : [...prev, groupId]
+        );
+    };
+
+    const handleSelectAllFilteredGroups = (filteredGroups) => {
+        const ids = filteredGroups.map(g => g.id);
+        setSelectedAssignGroups(prev => Array.from(new Set([...prev, ...ids])));
+    };
+
+    const handleDeselectFilteredGroups = (filteredGroups) => {
+        const idSet = new Set(filteredGroups.map(g => g.id));
+        setSelectedAssignGroups(prev => prev.filter(id => !idSet.has(id)));
+    };
+
+    // Student selection handlers (PERSISTENT across class filter and search!)
     const handleToggleStudentSelection = (studentId) => {
-        setSelectedAssignStudents(prev => {
-            if (prev.includes(studentId)) {
-                return prev.filter(id => id !== studentId);
-            } else {
-                return [...prev, studentId];
-            }
-        });
+        setSelectedAssignStudents(prev =>
+            prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]
+        );
     };
 
+    const handleSelectAllFilteredStudents = (filteredStudents) => {
+        const ids = filteredStudents.map(s => s.id);
+        setSelectedAssignStudents(prev => Array.from(new Set([...prev, ...ids])));
+    };
+
+    const handleDeselectFilteredStudents = (filteredStudents) => {
+        const idSet = new Set(filteredStudents.map(s => s.id));
+        setSelectedAssignStudents(prev => prev.filter(id => !idSet.has(id)));
+    };
+
+    const handleClearAllSelectedStudents = () => {
+        setSelectedAssignStudents([]);
+    };
+
+    // Save Assignment (to Classes, Groups, and/or Students)
     const handleSaveAssignment = async () => {
-        if (!assignQuizTarget || !selectedAssignClass) {
-            toast.error('Please select a class');
+        if (assignQuizTargets.length === 0) {
+            toast.error('No quiz selected');
+            return;
+        }
+
+        const hasClass = selectedAssignClasses.length > 0;
+        const hasGroup = selectedAssignGroups.length > 0;
+        const hasStudent = selectedAssignStudents.length > 0;
+
+        if (!hasClass && !hasGroup && !hasStudent) {
+            toast.error('Please select at least one class, group, or student to assign');
             return;
         }
 
         try {
             setIsAssigning(true);
             const payload = {
-                targetType: assignTargetType,
-                targetClassId: selectedAssignClass
+                targetType: 'multi',
+                targetClassIds: selectedAssignClasses,
+                targetGroupIds: selectedAssignGroups,
+                targetStudentIds: selectedAssignStudents
             };
 
-            if (assignTargetType === 'group') {
-                if (!selectedAssignGroup) {
-                    toast.error('Please select a group');
-                    return;
-                }
-                payload.targetGroupId = selectedAssignGroup;
-            } else if (assignTargetType === 'student') {
-                if (selectedAssignStudents.length === 0) {
-                    toast.error('Please select at least one student');
-                    return;
-                }
-                payload.targetStudentIds = selectedAssignStudents;
+            if (assignQuizTargets.length === 1) {
+                await quizAPI.assign(assignQuizTargets[0].id, payload);
+            } else {
+                await quizAPI.bulkAssign({
+                    quizIds: assignQuizTargets.map(q => q.id),
+                    ...payload
+                });
             }
 
-            const res = await quizAPI.assign(assignQuizTarget.id, payload);
-            if (res.data.success) {
-                toast.success('Quiz assigned successfully!');
-                // Refresh active assignments
-                const updated = await quizAPI.getAssignments(assignQuizTarget.id);
-                if (updated.data.success) {
+            const targetSummary = [
+                hasClass ? `${selectedAssignClasses.length} class(es)` : null,
+                hasGroup ? `${selectedAssignGroups.length} group(s)` : null,
+                hasStudent ? `${selectedAssignStudents.length} student(s)` : null
+            ].filter(Boolean).join(', ');
+
+            toast.success(`Successfully assigned to ${targetSummary}!`);
+
+            // Refresh active assignments if single quiz
+            if (assignQuizTargets.length === 1) {
+                const updated = await quizAPI.getAssignments(assignQuizTargets[0].id);
+                if (updated.data?.success) {
                     setActiveAssignments(updated.data.data || []);
                 }
-                setSelectedAssignStudents([]);
-                fetchQuizzes();
             }
+
+            fetchQuizzes();
         } catch (err) {
             console.error('Failed to assign quiz', err);
             toast.error(err.response?.data?.message || 'Failed to assign quiz');
@@ -749,9 +874,10 @@ export default function QuizDashboardPage() {
     };
 
     const handleRemoveAssignment = async (assignmentId) => {
-        if (!assignQuizTarget) return;
+        const targetQuizId = assignQuizTargets[0]?.id;
+        if (!targetQuizId) return;
         try {
-            const res = await quizAPI.deleteAssignment(assignQuizTarget.id, assignmentId);
+            const res = await quizAPI.deleteAssignment(targetQuizId, assignmentId);
             if (res.data.success) {
                 toast.success('Assignment removed');
                 setActiveAssignments(prev => prev.filter(a => a.id !== assignmentId));
@@ -967,6 +1093,15 @@ export default function QuizDashboardPage() {
                                             className="py-1 px-2.5 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 rounded-xl transition"
                                         >
                                             Clear
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleOpenBulkAssignModal}
+                                            className="py-1 px-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-bold transition flex items-center gap-1.5 shadow-sm"
+                                            title="Assign selected quizzes to classes, groups, or students"
+                                        >
+                                            <Users className="w-3.5 h-3.5" />
+                                            Assign Selected ({selectedQuizIds.size})
                                         </button>
                                         <button
                                             type="button"
@@ -2167,168 +2302,524 @@ export default function QuizDashboardPage() {
                     </div>
                 )}
 
-                {/* MODAL 2: ASSIGN QUIZ (TO CLASS, GROUP, OR STUDENT) */}
-                {assignQuizTarget && (
+                {/* MODAL 2: ASSIGN QUIZ (TO CLASSES, GROUPS, AND/OR STUDENTS) */}
+                {assignQuizTargets.length > 0 && (
                     <div
-                        className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
-                        onClick={() => setAssignQuizTarget(null)}
+                        className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+                        onClick={() => setAssignQuizTargets([])}
                     >
                         <div
-                            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl text-left"
+                            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-5 sm:p-6 space-y-4 shadow-2xl text-left my-auto max-h-[92vh] flex flex-col"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                                <div className="flex items-center gap-2">
-                                    <Users className="w-5 h-5 text-primary-600" />
-                                    <div>
-                                        <h3 className="font-bold text-sm text-slate-900 dark:text-white">Assign Quiz</h3>
-                                        <p className="text-[11px] text-slate-500 truncate max-w-xs">{assignQuizTarget.title}</p>
+                            {/* Modal Header & Quiz Selection */}
+                            <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-3 flex-shrink-0">
+                                <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                        <Users className="w-5 h-5 text-primary-600" />
+                                        <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                                            Assign Quiz {assignQuizTargets.length > 1 ? `(${assignQuizTargets.length} Quizzes Selected)` : ''}
+                                        </h3>
                                     </div>
+                                    <p className="text-xs text-slate-500">
+                                        Assign selected quiz(zes) to multiple classes, groups, or individual students.
+                                    </p>
                                 </div>
                                 <button
-                                    onClick={() => setAssignQuizTarget(null)}
-                                    className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 rounded-lg"
+                                    onClick={() => setAssignQuizTargets([])}
+                                    className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 rounded-lg transition"
                                 >
-                                    ✕
+                                    <X className="w-5 h-5" />
                                 </button>
                             </div>
 
-                            {/* Assignment Target Selector */}
-                            <div className="space-y-3">
-                                <div>
-                                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        Select Class <span className="text-rose-500">*</span>
+                            {/* Quizzes to Assign (Pills + Search/Add) */}
+                            <div className="bg-slate-50 dark:bg-slate-950/70 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2 flex-shrink-0">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                                        Quizzes to Assign ({assignQuizTargets.length})
                                     </label>
-                                    <select
-                                        value={selectedAssignClass}
-                                        onChange={(e) => handleAssignClassChange(e.target.value)}
-                                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
-                                    >
-                                        {classList.map(c => (
-                                            <option key={c.id} value={c.id}>
-                                                {c.name} {c.section ? `(${c.section})` : ''} - Grade {c.gradeLevel}
-                                            </option>
-                                        ))}
-                                    </select>
+                                    {quizzes.length > assignQuizTargets.length && (
+                                        <span className="text-[11px] text-slate-400">
+                                            Add more quizzes below
+                                        </span>
+                                    )}
                                 </div>
-
-                                <div>
-                                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        Assignment Scope
-                                    </label>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {[
-                                            { id: 'class', label: 'Entire Class' },
-                                            { id: 'group', label: 'Specific Group' },
-                                            { id: 'student', label: 'Specific Students' }
-                                        ].map(t => (
-                                            <button
-                                                key={t.id}
-                                                type="button"
-                                                onClick={() => setAssignTargetType(t.id)}
-                                                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition border ${
-                                                    assignTargetType === t.id
-                                                        ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
-                                                        : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-                                                }`}
-                                            >
-                                                {t.label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Group Selection */}
-                                {assignTargetType === 'group' && (
-                                    <div>
-                                        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                            Select Group
-                                        </label>
-                                        {groupList.length === 0 ? (
-                                            <p className="text-xs text-slate-400 py-2">No groups created for this class.</p>
-                                        ) : (
-                                            <select
-                                                value={selectedAssignGroup}
-                                                onChange={(e) => setSelectedAssignGroup(e.target.value)}
-                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
-                                            >
-                                                {groupList.map(g => (
-                                                    <option key={g.id} value={g.id}>{g.name}</option>
-                                                ))}
-                                            </select>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* Students Multi-select */}
-                                {assignTargetType === 'student' && (
-                                    <div>
-                                        <div className="flex items-center justify-between mb-1">
-                                            <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                                                Select Students ({selectedAssignStudents.length} selected)
-                                            </label>
-                                            {studentList.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar">
+                                    {assignQuizTargets.map(q => (
+                                        <span
+                                            key={q.id}
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-slate-900 border border-primary-200 dark:border-primary-800 text-xs font-semibold text-primary-700 dark:text-primary-300 shadow-xs"
+                                        >
+                                            <span className="font-mono text-[10px] text-primary-500">{q.code}</span>
+                                            <span className="truncate max-w-[180px]">{q.title}</span>
+                                            {assignQuizTargets.length > 1 && (
                                                 <button
                                                     type="button"
-                                                    onClick={() => {
-                                                        if (selectedAssignStudents.length === studentList.length) setSelectedAssignStudents([]);
-                                                        else setSelectedAssignStudents(studentList.map(s => s.id));
-                                                    }}
-                                                    className="text-[11px] text-primary-600 hover:underline font-bold"
+                                                    onClick={() => handleRemoveQuizFromAssignTargets(q.id)}
+                                                    className="p-0.5 hover:bg-rose-100 dark:hover:bg-rose-950/60 text-slate-400 hover:text-rose-600 rounded"
+                                                    title="Remove from batch"
                                                 >
-                                                    {selectedAssignStudents.length === studentList.length ? 'Deselect All' : 'Select All'}
+                                                    <X className="w-3 h-3" />
                                                 </button>
                                             )}
+                                        </span>
+                                    ))}
+                                </div>
+
+                                {/* Add more quizzes picker if multiple available */}
+                                {quizzes.filter(q => !assignQuizTargets.some(t => t.id === q.id)).length > 0 && (
+                                    <div className="flex items-center gap-2 pt-1">
+                                        <select
+                                            value=""
+                                            onChange={(e) => {
+                                                const found = quizzes.find(q => q.id === e.target.value);
+                                                if (found) handleAddQuizToAssignTargets(found);
+                                            }}
+                                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:border-primary-500"
+                                        >
+                                            <option value="">+ Add another quiz to this assignment...</option>
+                                            {quizzes
+                                                .filter(q => !assignQuizTargets.some(t => t.id === q.id))
+                                                .map(q => (
+                                                    <option key={q.id} value={q.id}>
+                                                        {q.code} - {q.title} ({q.totalQuestions}Q)
+                                                    </option>
+                                                ))}
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Scope Selector Tabs */}
+                            <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl border border-slate-200 dark:border-slate-700 flex-shrink-0">
+                                {[
+                                    { id: 'class', label: 'Entire Classes', count: selectedAssignClasses.length },
+                                    { id: 'group', label: 'Student Groups', count: selectedAssignGroups.length },
+                                    { id: 'student', label: 'Specific Students', count: selectedAssignStudents.length }
+                                ].map(tab => (
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => setAssignTargetType(tab.id)}
+                                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                                            assignTargetType === tab.id
+                                                ? 'bg-white dark:bg-slate-900 text-primary-600 dark:text-primary-400 shadow-sm'
+                                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                        }`}
+                                    >
+                                        <span>{tab.label}</span>
+                                        {tab.count > 0 && (
+                                            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300">
+                                                {tab.count}
+                                            </span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* TAB 1: ENTIRE CLASSES */}
+                            {assignTargetType === 'class' && (() => {
+                                const filteredClasses = classList.filter(c => {
+                                    if (!assignClassSearch.trim()) return true;
+                                    const q = assignClassSearch.toLowerCase().trim();
+                                    const name = (c.name || '').toLowerCase();
+                                    const sec = (c.section || '').toLowerCase();
+                                    const grade = String(c.gradeLevel || '').toLowerCase();
+                                    return name.includes(q) || sec.includes(q) || grade.includes(q);
+                                });
+
+                                return (
+                                    <div className="space-y-2.5 flex-1 min-h-0 flex flex-col">
+                                        {/* Search & Actions */}
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                            <div className="relative flex-1">
+                                                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                                <input
+                                                    type="text"
+                                                    value={assignClassSearch}
+                                                    onChange={(e) => setAssignClassSearch(e.target.value)}
+                                                    placeholder="Search classes by name, section, or grade..."
+                                                    className="w-full pl-8.5 pr-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                                />
+                                            </div>
+                                            {filteredClasses.length > 0 && (
+                                                <div className="flex items-center gap-1.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleSelectAllFilteredClasses(filteredClasses)}
+                                                        className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-[11px] font-bold transition"
+                                                    >
+                                                        Select All
+                                                    </button>
+                                                    {selectedAssignClasses.length > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeselectFilteredClasses(filteredClasses)}
+                                                            className="px-2.5 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 rounded-xl text-[11px] font-medium transition"
+                                                        >
+                                                            Clear
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
-                                        <div className="max-h-40 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl p-2 space-y-1 bg-slate-50 dark:bg-slate-950 custom-scrollbar">
-                                            {studentList.length === 0 ? (
-                                                <p className="text-xs text-slate-400 py-2 text-center">No enrolled students found.</p>
+
+                                        {/* Class list */}
+                                        <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2 space-y-1.5 bg-slate-50/50 dark:bg-slate-950/50 max-h-56 custom-scrollbar">
+                                            {filteredClasses.length === 0 ? (
+                                                <p className="text-xs text-slate-400 py-6 text-center">
+                                                    {assignClassSearch ? 'No classes match your search query.' : 'No classes found.'}
+                                                </p>
                                             ) : (
-                                                studentList.map(s => {
-                                                    const isChecked = selectedAssignStudents.includes(s.id);
+                                                filteredClasses.map(c => {
+                                                    const isChecked = selectedAssignClasses.includes(c.id);
                                                     return (
                                                         <div
-                                                            key={s.id}
-                                                            onClick={() => handleToggleStudentSelection(s.id)}
-                                                            className="flex items-center gap-2 p-1.5 hover:bg-white dark:hover:bg-slate-900 rounded-lg cursor-pointer text-xs transition"
+                                                            key={c.id}
+                                                            onClick={() => handleToggleClassSelection(c.id)}
+                                                            className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer text-xs transition border ${
+                                                                isChecked
+                                                                    ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
+                                                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                                                            }`}
                                                         >
-                                                            {isChecked ? (
-                                                                <CheckSquare className="w-4 h-4 text-primary-600" />
-                                                            ) : (
-                                                                <Square className="w-4 h-4 text-slate-400" />
-                                                            )}
-                                                            <span className="font-medium text-slate-800 dark:text-slate-200">
-                                                                {s.firstName} {s.lastName}
-                                                            </span>
-                                                            <span className="text-[10px] text-slate-400">
-                                                                {s.studentId ? `(${s.studentId})` : s.email}
-                                                            </span>
+                                                            <div className="flex items-center gap-2.5">
+                                                                {isChecked ? (
+                                                                    <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
+                                                                ) : (
+                                                                    <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                                                )}
+                                                                <div>
+                                                                    <span className="font-bold text-slate-900 dark:text-white">
+                                                                        {c.name}
+                                                                    </span>
+                                                                    {c.section && (
+                                                                        <span className="ml-1.5 text-slate-500 dark:text-slate-400 font-medium">
+                                                                            ({c.section})
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                {c.gradeLevel && (
+                                                                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400">
+                                                                        Grade {c.gradeLevel}
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     );
                                                 })
                                             )}
                                         </div>
                                     </div>
-                                )}
+                                );
+                            })()}
 
+                            {/* TAB 2: STUDENT GROUPS */}
+                            {assignTargetType === 'group' && (() => {
+                                const filteredGroups = allClassGroups.filter(g => {
+                                    if (selectedAssignClasses.length > 0 && !selectedAssignClasses.includes(g.classId)) {
+                                        return false;
+                                    }
+                                    if (!assignGroupSearch.trim()) return true;
+                                    const q = assignGroupSearch.toLowerCase().trim();
+                                    const name = (g.name || '').toLowerCase();
+                                    const cName = (g.className || '').toLowerCase();
+                                    return name.includes(q) || cName.includes(q);
+                                });
+
+                                return (
+                                    <div className="space-y-2.5 flex-1 min-h-0 flex flex-col">
+                                        {/* Search & Actions */}
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                            <div className="relative flex-1">
+                                                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                                <input
+                                                    type="text"
+                                                    value={assignGroupSearch}
+                                                    onChange={(e) => setAssignGroupSearch(e.target.value)}
+                                                    placeholder="Search groups by group name or class name..."
+                                                    className="w-full pl-8.5 pr-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                                />
+                                            </div>
+                                            {filteredGroups.length > 0 && (
+                                                <div className="flex items-center gap-1.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleSelectAllFilteredGroups(filteredGroups)}
+                                                        className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-[11px] font-bold transition"
+                                                    >
+                                                        Select All
+                                                    </button>
+                                                    {selectedAssignGroups.length > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeselectFilteredGroups(filteredGroups)}
+                                                            className="px-2.5 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 rounded-xl text-[11px] font-medium transition"
+                                                        >
+                                                            Clear
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {selectedAssignClasses.length > 0 && (
+                                            <p className="text-[11px] text-slate-500 dark:text-slate-400 flex-shrink-0">
+                                                Filtering groups from {selectedAssignClasses.length} selected class(es).
+                                            </p>
+                                        )}
+
+                                        {/* Groups List */}
+                                        <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2 space-y-1.5 bg-slate-50/50 dark:bg-slate-950/50 max-h-56 custom-scrollbar">
+                                            {filteredGroups.length === 0 ? (
+                                                <p className="text-xs text-slate-400 py-6 text-center">
+                                                    {assignGroupSearch ? 'No groups match your search query.' : 'No groups available.'}
+                                                </p>
+                                            ) : (
+                                                filteredGroups.map(g => {
+                                                    const isChecked = selectedAssignGroups.includes(g.id);
+                                                    return (
+                                                        <div
+                                                            key={g.id}
+                                                            onClick={() => handleToggleGroupSelection(g.id)}
+                                                            className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer text-xs transition border ${
+                                                                isChecked
+                                                                    ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
+                                                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center gap-2.5">
+                                                                {isChecked ? (
+                                                                    <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
+                                                                ) : (
+                                                                    <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                                                )}
+                                                                <div>
+                                                                    <span className="font-bold text-slate-900 dark:text-white">
+                                                                        {g.name}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            {g.className && (
+                                                                <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400">
+                                                                    {g.className}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* TAB 3: SPECIFIC STUDENTS (FILTER BY CLASS, SEARCH & PERSIST) */}
+                            {assignTargetType === 'student' && (() => {
+                                const filteredStudents = allClassStudents.filter(s => {
+                                    if (studentClassFilter !== 'all' && s.classId !== studentClassFilter) {
+                                        return false;
+                                    }
+                                    if (!assignStudentSearch.trim()) return true;
+                                    const q = assignStudentSearch.toLowerCase().trim();
+                                    const fullName = `${s.firstName || ''} ${s.lastName || ''}`.toLowerCase();
+                                    const email = (s.email || '').toLowerCase();
+                                    const sId = (s.studentId || '').toLowerCase();
+                                    return fullName.includes(q) || email.includes(q) || sId.includes(q);
+                                });
+
+                                return (
+                                    <div className="space-y-2.5 flex-1 min-h-0 flex flex-col">
+                                        {/* Class Filter Bar + Student Search */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-shrink-0">
+                                            {/* Filter Students by Class (Preserves Selections!) */}
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                                                    Filter by Class
+                                                </label>
+                                                <select
+                                                    value={studentClassFilter}
+                                                    onChange={(e) => setStudentClassFilter(e.target.value)}
+                                                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                                >
+                                                    <option value="all">All Enrolled Classes ({allClassStudents.length} students)</option>
+                                                    {classList.map(c => (
+                                                        <option key={c.id} value={c.id}>
+                                                            {c.name} {c.section ? `(${c.section})` : ''} - Grade {c.gradeLevel}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            {/* Search inside students */}
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                                                    Search Student
+                                                </label>
+                                                <div className="relative">
+                                                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                                    <input
+                                                        type="text"
+                                                        value={assignStudentSearch}
+                                                        onChange={(e) => setAssignStudentSearch(e.target.value)}
+                                                        placeholder="Name, email, roll ID..."
+                                                        className="w-full pl-8.5 pr-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Persistent Selection Summary & Quick Actions */}
+                                        <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 text-xs flex-shrink-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-bold text-slate-800 dark:text-slate-200">
+                                                    {selectedAssignStudents.length} selected across classes
+                                                </span>
+                                                {selectedAssignStudents.length > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowSelectedStudentsPreview(prev => !prev)}
+                                                        className="text-[11px] text-primary-600 dark:text-primary-400 hover:underline font-bold"
+                                                    >
+                                                        {showSelectedStudentsPreview ? 'Hide Details' : 'View Selected'}
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center gap-1.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleSelectAllFilteredStudents(filteredStudents)}
+                                                    className="px-2 py-1 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] font-bold text-slate-700 dark:text-slate-300 transition"
+                                                >
+                                                    Select Filtered ({filteredStudents.length})
+                                                </button>
+                                                {selectedAssignStudents.length > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleClearAllSelectedStudents}
+                                                        className="px-2 py-1 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 rounded-lg text-[11px] font-medium transition"
+                                                    >
+                                                        Clear All
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Expandable Preview Chips of Persisted Selected Students */}
+                                        {showSelectedStudentsPreview && selectedAssignStudents.length > 0 && (
+                                            <div className="p-2.5 bg-primary-50/50 dark:bg-primary-950/20 border border-primary-200 dark:border-primary-800 rounded-xl max-h-24 overflow-y-auto custom-scrollbar flex flex-wrap gap-1.5 flex-shrink-0">
+                                                {selectedAssignStudents.map(sId => {
+                                                    const s = allClassStudents.find(item => item.id === sId);
+                                                    return (
+                                                        <span
+                                                            key={sId}
+                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white dark:bg-slate-900 border border-primary-200 dark:border-primary-700 text-[11px] font-medium text-slate-800 dark:text-slate-200"
+                                                        >
+                                                            <span>{s ? `${s.firstName} ${s.lastName}` : 'Student'}</span>
+                                                            {s?.className && (
+                                                                <span className="text-[9px] text-slate-400">({s.className})</span>
+                                                            )}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleToggleStudentSelection(sId)}
+                                                                className="hover:text-rose-500 rounded ml-0.5"
+                                                            >
+                                                                <X className="w-2.5 h-2.5" />
+                                                            </button>
+                                                        </span>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+
+                                        {/* Students list */}
+                                        <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2 space-y-1 bg-slate-50/50 dark:bg-slate-950/50 max-h-56 custom-scrollbar">
+                                            {filteredStudents.length === 0 ? (
+                                                <p className="text-xs text-slate-400 py-6 text-center">
+                                                    {assignStudentSearch ? 'No students match your search filter.' : 'No students found in this class.'}
+                                                </p>
+                                            ) : (
+                                                filteredStudents.map(s => {
+                                                    const isChecked = selectedAssignStudents.includes(s.id);
+                                                    return (
+                                                        <div
+                                                            key={s.id}
+                                                            onClick={() => handleToggleStudentSelection(s.id)}
+                                                            className={`flex items-center justify-between p-2 rounded-xl cursor-pointer text-xs transition border ${
+                                                                isChecked
+                                                                    ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
+                                                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center gap-2.5">
+                                                                {isChecked ? (
+                                                                    <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
+                                                                ) : (
+                                                                    <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                                                )}
+                                                                <div>
+                                                                    <div className="font-bold text-slate-900 dark:text-white">
+                                                                        {s.firstName} {s.lastName}
+                                                                    </div>
+                                                                    <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                                                                        {s.studentId && <span>ID: {s.studentId}</span>}
+                                                                        {s.email && <span>• {s.email}</span>}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            {s.className && (
+                                                                <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400 flex-shrink-0">
+                                                                    {s.className}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Confirm Assignment Button */}
+                            <div className="pt-2 flex-shrink-0 space-y-2">
                                 <button
                                     onClick={handleSaveAssignment}
-                                    disabled={isAssigning}
-                                    className="w-full py-2.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm"
+                                    disabled={
+                                        isAssigning ||
+                                        (selectedAssignClasses.length === 0 &&
+                                            selectedAssignGroups.length === 0 &&
+                                            selectedAssignStudents.length === 0)
+                                    }
+                                    className="w-full py-2.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm"
                                 >
-                                    <Send className="w-3.5 h-3.5" />
-                                    {isAssigning ? 'Assigning...' : 'Confirm Assignment'}
+                                    <Send className="w-4 h-4" />
+                                    {isAssigning
+                                        ? 'Assigning Targets...'
+                                        : `Confirm Assignment (${[
+                                              selectedAssignClasses.length > 0 ? `${selectedAssignClasses.length} Classes` : '',
+                                              selectedAssignGroups.length > 0 ? `${selectedAssignGroups.length} Groups` : '',
+                                              selectedAssignStudents.length > 0 ? `${selectedAssignStudents.length} Students` : ''
+                                          ]
+                                              .filter(Boolean)
+                                              .join(' • ') || 'Select Targets'})`}
                                 </button>
                             </div>
 
-                            {/* Active Assignments List */}
-                            <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                            {/* Active Assignments List (for first selected quiz) */}
+                            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex-shrink-0">
                                 <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
                                     Currently Assigned Targets ({activeAssignments.length})
                                 </h4>
-                                <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                                <div className="max-h-28 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
                                     {activeAssignments.length === 0 ? (
-                                        <p className="text-xs text-slate-400 py-1">This quiz is not currently assigned to any class, group, or student.</p>
+                                        <p className="text-xs text-slate-400 py-1">
+                                            {isLoadingAssignments ? 'Loading assignments...' : 'No targets currently assigned to this quiz.'}
+                                        </p>
                                     ) : (
                                         activeAssignments.map(a => (
                                             <div
@@ -2345,7 +2836,7 @@ export default function QuizDashboardPage() {
                                                 </div>
                                                 <button
                                                     onClick={() => handleRemoveAssignment(a.id)}
-                                                    className="p-1 text-slate-400 hover:text-rose-500 rounded"
+                                                    className="p-1 text-slate-400 hover:text-rose-500 rounded transition"
                                                     title="Remove assignment"
                                                 >
                                                     <X className="w-3.5 h-3.5" />

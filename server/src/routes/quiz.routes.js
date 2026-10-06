@@ -976,8 +976,134 @@ router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
 }));
 
 /**
+ * Helper to assign targets to a specific quiz
+ */
+async function assignQuizTargets(quizId, { targetType, targetClassId, targetClassIds, targetGroupId, targetGroupIds, targetStudentId, targetStudentIds, assignedById }) {
+    const createdAssignments = [];
+    const classIds = Array.isArray(targetClassIds) ? targetClassIds : (targetClassId ? [targetClassId] : []);
+    const groupIds = Array.isArray(targetGroupIds) ? targetGroupIds : (targetGroupId ? [targetGroupId] : []);
+    const studentIds = Array.isArray(targetStudentIds) ? targetStudentIds : (targetStudentId ? [targetStudentId] : []);
+
+    // 1. Classes
+    if (targetType === 'class' || (!targetType && classIds.length > 0) || targetType === 'multi') {
+        for (const cId of classIds) {
+            if (!cId) continue;
+            const existing = await prisma.quizAssignment.findFirst({
+                where: { quizId, targetType: 'class', targetClassId: cId }
+            });
+            if (!existing) {
+                const assign = await prisma.quizAssignment.create({
+                    data: {
+                        quizId,
+                        targetType: 'class',
+                        targetClassId: cId,
+                        assignedById
+                    }
+                });
+                createdAssignments.push(assign);
+            }
+        }
+    }
+
+    // 2. Groups
+    if (targetType === 'group' || (!targetType && groupIds.length > 0) || targetType === 'multi') {
+        for (const gId of groupIds) {
+            if (!gId) continue;
+            const existing = await prisma.quizAssignment.findFirst({
+                where: { quizId, targetType: 'group', targetGroupId: gId }
+            });
+            if (!existing) {
+                let classIdForGroup = targetClassId || null;
+                if (!classIdForGroup) {
+                    const grp = await prisma.studentGroup.findUnique({ where: { id: gId }, select: { classId: true } });
+                    if (grp) classIdForGroup = grp.classId;
+                }
+                const assign = await prisma.quizAssignment.create({
+                    data: {
+                        quizId,
+                        targetType: 'group',
+                        targetGroupId: gId,
+                        targetClassId: classIdForGroup,
+                        assignedById
+                    }
+                });
+                createdAssignments.push(assign);
+            }
+        }
+    }
+
+    // 3. Students
+    if (targetType === 'student' || (!targetType && studentIds.length > 0) || targetType === 'multi') {
+        for (const sId of studentIds) {
+            if (!sId) continue;
+            const existing = await prisma.quizAssignment.findFirst({
+                where: { quizId, targetType: 'student', targetStudentId: sId }
+            });
+            if (!existing) {
+                const assign = await prisma.quizAssignment.create({
+                    data: {
+                        quizId,
+                        targetType: 'student',
+                        targetStudentId: sId,
+                        targetClassId: targetClassId || null,
+                        assignedById
+                    }
+                });
+                createdAssignments.push(assign);
+            }
+        }
+    }
+
+    return createdAssignments;
+}
+
+/**
+ * @route   POST /api/quiz/bulk-assign
+ * @desc    Assign multiple quizzes to multiple classes, groups, or students
+ * @access  Private (Staff)
+ */
+router.post('/bulk-assign', authenticate, asyncHandler(async (req, res) => {
+    const isStaff = ['admin', 'instructor', 'principal', 'lab_assistant'].includes(req.user.role);
+    if (!isStaff) {
+        return res.status(403).json({ success: false, message: 'Only instructors and administrators can assign quizzes.' });
+    }
+
+    const { quizIds, targetType, targetClassId, targetClassIds, targetGroupId, targetGroupIds, targetStudentId, targetStudentIds } = req.body;
+    if (!Array.isArray(quizIds) || quizIds.length === 0) {
+        return res.status(400).json({ success: false, message: 'Please provide at least one quiz to assign.' });
+    }
+
+    let allCreatedAssignments = [];
+    for (const qId of quizIds) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(qId).trim());
+        const quiz = await prisma.quiz.findFirst({
+            where: isUuid ? { id: String(qId).trim() } : { code: String(qId).trim().toUpperCase() }
+        });
+        if (!quiz) continue;
+
+        const created = await assignQuizTargets(quiz.id, {
+            targetType,
+            targetClassId,
+            targetClassIds,
+            targetGroupId,
+            targetGroupIds,
+            targetStudentId,
+            targetStudentIds,
+            assignedById: req.user.id
+        });
+        allCreatedAssignments.push(...created);
+    }
+
+    res.json({
+        success: true,
+        message: `Successfully processed assignments for ${quizIds.length} quiz(zes)`,
+        data: allCreatedAssignments
+    });
+}));
+
+/**
  * @route   POST /api/quiz/:id/assign
- * @desc    Assign quiz to a class, group, or student(s)
+ * @desc    Assign quiz to class(es), group(s), or student(s)
  * @access  Private (Staff: Admin, Instructor, Principal, Lab Assistant)
  */
 router.post('/:id/assign', authenticate, asyncHandler(async (req, res) => {
@@ -987,7 +1113,7 @@ router.post('/:id/assign', authenticate, asyncHandler(async (req, res) => {
     }
 
     const { id } = req.params;
-    const { targetType, targetClassId, targetGroupId, targetStudentIds } = req.body;
+    const { targetType, targetClassId, targetClassIds, targetGroupId, targetGroupIds, targetStudentId, targetStudentIds } = req.body;
 
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim());
     const quiz = await prisma.quiz.findFirst({
@@ -998,72 +1124,16 @@ router.post('/:id/assign', authenticate, asyncHandler(async (req, res) => {
         return res.status(404).json({ success: false, message: 'Quiz not found' });
     }
 
-    if (!['class', 'group', 'student'].includes(targetType)) {
-        return res.status(400).json({ success: false, message: 'Target type must be class, group, or student.' });
-    }
-
-    const createdAssignments = [];
-
-    if (targetType === 'class') {
-        if (!targetClassId) {
-            return res.status(400).json({ success: false, message: 'Class selection is required.' });
-        }
-        const existing = await prisma.quizAssignment.findFirst({
-            where: { quizId: quiz.id, targetType: 'class', targetClassId }
-        });
-        if (!existing) {
-            const assign = await prisma.quizAssignment.create({
-                data: {
-                    quizId: quiz.id,
-                    targetType: 'class',
-                    targetClassId,
-                    assignedById: req.user.id
-                }
-            });
-            createdAssignments.push(assign);
-        }
-    } else if (targetType === 'group') {
-        if (!targetGroupId) {
-            return res.status(400).json({ success: false, message: 'Group selection is required.' });
-        }
-        const existing = await prisma.quizAssignment.findFirst({
-            where: { quizId: quiz.id, targetType: 'group', targetGroupId }
-        });
-        if (!existing) {
-            const assign = await prisma.quizAssignment.create({
-                data: {
-                    quizId: quiz.id,
-                    targetType: 'group',
-                    targetGroupId,
-                    targetClassId: targetClassId || null,
-                    assignedById: req.user.id
-                }
-            });
-            createdAssignments.push(assign);
-        }
-    } else if (targetType === 'student') {
-        const studentIds = Array.isArray(targetStudentIds) ? targetStudentIds : (targetStudentIds ? [targetStudentIds] : []);
-        if (studentIds.length === 0) {
-            return res.status(400).json({ success: false, message: 'At least one student must be selected.' });
-        }
-        for (const sId of studentIds) {
-            const existing = await prisma.quizAssignment.findFirst({
-                where: { quizId: quiz.id, targetType: 'student', targetStudentId: sId }
-            });
-            if (!existing) {
-                const assign = await prisma.quizAssignment.create({
-                    data: {
-                        quizId: quiz.id,
-                        targetType: 'student',
-                        targetStudentId: sId,
-                        targetClassId: targetClassId || null,
-                        assignedById: req.user.id
-                    }
-                });
-                createdAssignments.push(assign);
-            }
-        }
-    }
+    const createdAssignments = await assignQuizTargets(quiz.id, {
+        targetType,
+        targetClassId,
+        targetClassIds,
+        targetGroupId,
+        targetGroupIds,
+        targetStudentId,
+        targetStudentIds,
+        assignedById: req.user.id
+    });
 
     res.json({
         success: true,

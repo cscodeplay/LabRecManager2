@@ -19,12 +19,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 
     const isAdmin = ['admin', 'principal'].includes(req.user.role);
     if (!isAdmin) {
-        conditions.push({
-            OR: [
-                { createdById: req.user.id },
-                { createdBy: { role: { in: ['admin', 'principal'] } } }
-            ]
-        });
+        conditions.push({ createdById: req.user.id });
     }
 
     if (search) {

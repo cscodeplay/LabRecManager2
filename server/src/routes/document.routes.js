@@ -115,13 +115,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 
     const isAdmin = ['admin', 'principal'].includes(req.user.role);
     if (!isAdmin) {
-        conditions.push({
-            OR: [
-                { uploadedById: req.user.id },
-                { isPublic: true },
-                { uploadedBy: { role: { in: ['admin', 'principal'] } } }
-            ]
-        });
+        conditions.push({ uploadedById: req.user.id });
     }
 
     if (category) conditions.push({ category });
