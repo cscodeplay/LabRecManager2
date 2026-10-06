@@ -13,6 +13,7 @@ import {
 import { useAuthStore } from '@/lib/store';
 import LanguageSelector from './LanguageSelector';
 import UserAvatar from './UserAvatar';
+import CommitInfoBadge from './CommitInfoBadge';
 
 const navItems = {
     admin: [
@@ -182,19 +183,9 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                         <div>
                             <h1 className="font-bold text-slate-900 dark:text-slate-100 text-lg leading-none truncate max-w-[150px]" title={schoolInfo.name}>{schoolInfo.name}</h1>
                             <p className="text-xs text-slate-500 dark:text-slate-400">{t('sidebar.unifiedLabRecords')}</p>
-                            {process.env.NEXT_PUBLIC_COMMIT_HASH && (
-                                <div className="mt-0.5">
-                                    <p className="text-[10px] font-mono text-slate-400 dark:text-slate-500 flex items-center gap-1">
-                                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                                        {process.env.NEXT_PUBLIC_COMMIT_HASH}
-                                    </p>
-                                    {process.env.NEXT_PUBLIC_COMMIT_TIME && (
-                                        <p className="text-[9px] font-mono text-slate-400 dark:text-slate-500 opacity-75 mt-0.5">
-                                            {process.env.NEXT_PUBLIC_COMMIT_TIME}
-                                        </p>
-                                    )}
-                                </div>
-                            )}
+                            <div className="mt-1">
+                                <CommitInfoBadge />
+                            </div>
                         </div>
                     </Link>
                 )}

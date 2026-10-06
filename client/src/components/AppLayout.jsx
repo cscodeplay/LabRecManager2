@@ -8,6 +8,7 @@ import NotificationBell from './NotificationBell';
 import ProfileDropdown from './ProfileDropdown';
 import SessionSelector, { ReadOnlyBanner } from './SessionSelector';
 import { DatabaseStatusBadge } from './DatabaseStatus';
+import CommitInfoBadge from './CommitInfoBadge';
 import FloatingChatbot from './FloatingChatbot';
 import GlobalSearch from './GlobalSearch';
 import VoiceHUD from './VoiceHUD';
@@ -139,6 +140,7 @@ export default function AppLayout({ children }) {
                         {/* Right side - Session, Status, Notifications, Profile */}
                         <div className="flex items-center gap-2">
                             <SessionSelector />
+                            <CommitInfoBadge />
                             <DatabaseStatusBadge />
                             <NotificationBell />
                             <ProfileDropdown />

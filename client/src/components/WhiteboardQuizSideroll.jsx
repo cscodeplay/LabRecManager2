@@ -11,6 +11,7 @@ import {
 import toast from 'react-hot-toast';
 import QRCode from 'qrcode';
 import { quizAPI } from '@/lib/api';
+import MathRenderer from '@/components/MathRenderer';
 
 const DEFAULT_OPTIONS = [
     { key: 'A', text: '' },
@@ -1027,13 +1028,16 @@ export default function WhiteboardQuizSideroll({
                                             }`}
                                         >
                                             <div className="flex items-center justify-between font-bold">
-                                                <span>Q{idx + 1}: {ans.questionText || `Question ${idx + 1}`}</span>
+                                                <div className="flex-1 pr-2">
+                                                    <span className="text-slate-400 mr-1.5">Q{idx + 1}:</span>
+                                                    <MathRenderer content={ans.questionText || `Question ${idx + 1}`} inline />
+                                                </div>
                                                 {ans.isCorrect ? (
-                                                    <span className="flex items-center gap-1 text-emerald-400">
+                                                    <span className="flex items-center gap-1 text-emerald-400 shrink-0">
                                                         <CheckCircle2 className="w-4 h-4" /> Correct
                                                     </span>
                                                 ) : (
-                                                    <span className="flex items-center gap-1 text-rose-400">
+                                                    <span className="flex items-center gap-1 text-rose-400 shrink-0">
                                                         <XCircle className="w-4 h-4" /> Incorrect
                                                     </span>
                                                 )}
@@ -1043,7 +1047,8 @@ export default function WhiteboardQuizSideroll({
                                             </div>
                                             {ans.explanation && (
                                                 <div className="text-[11px] text-slate-400 bg-slate-900/60 p-2 rounded-xl mt-1">
-                                                    💡 {ans.explanation}
+                                                    <span className="text-amber-400 font-semibold mr-1">💡</span>
+                                                    <MathRenderer content={ans.explanation} inline />
                                                 </div>
                                             )}
                                         </div>
@@ -1095,9 +1100,9 @@ export default function WhiteboardQuizSideroll({
                                                 </span>
                                             </div>
 
-                                            <h4 className="text-sm font-bold text-white">
-                                                {currentQ.question}
-                                            </h4>
+                                            <div className="text-sm font-bold text-white">
+                                                <MathRenderer content={currentQ.question} />
+                                            </div>
 
                                             {/* 4 Choices */}
                                             <div className="space-y-2 pt-1">
@@ -1105,21 +1110,23 @@ export default function WhiteboardQuizSideroll({
                                                     const isSelected = currentAnswer === opt.key;
                                                     return (
                                                         <button
-                                                            key={opt.key}
-                                                            onClick={() => handleSelectAnswer(currentQ.id, opt.key)}
-                                                            className={`w-full p-2.5 rounded-xl border text-left text-xs font-medium transition flex items-center gap-3 ${
-                                                                isSelected
-                                                                    ? 'bg-indigo-600 border-indigo-400 text-white shadow-md'
-                                                                    : 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-700'
-                                                            }`}
-                                                        >
-                                                            <span className={`w-6 h-6 rounded-lg font-bold font-mono text-xs flex items-center justify-center flex-shrink-0 ${
-                                                                isSelected ? 'bg-white text-indigo-700' : 'bg-slate-800 text-slate-400'
-                                                            }`}>
-                                                                {opt.key}
-                                                            </span>
-                                                            <span className="flex-1">{opt.text}</span>
-                                                        </button>
+                                                             key={opt.key}
+                                                             onClick={() => handleSelectAnswer(currentQ.id, opt.key)}
+                                                             className={`w-full p-2.5 rounded-xl border text-left text-xs font-medium transition flex items-center gap-3 ${
+                                                                 isSelected
+                                                                     ? 'bg-indigo-600 border-indigo-400 text-white shadow-md'
+                                                                     : 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-700'
+                                                             }`}
+                                                         >
+                                                             <span className={`w-6 h-6 rounded-lg font-bold font-mono text-xs flex items-center justify-center flex-shrink-0 ${
+                                                                 isSelected ? 'bg-white text-indigo-700' : 'bg-slate-800 text-slate-400'
+                                                             }`}>
+                                                                 {opt.key}
+                                                             </span>
+                                                             <span className="flex-1">
+                                                                 <MathRenderer content={opt.text} inline />
+                                                             </span>
+                                                         </button>
                                                     );
                                                 })}
                                             </div>

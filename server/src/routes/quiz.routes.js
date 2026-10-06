@@ -87,12 +87,18 @@ CRITICAL RULES:
 4. The distractors (wrong options) must be plausible and conceptually meaningful, not trivial.
 5. Provide a clear, educational 'explanation' for why the correct option is right.
 6. The questions must strictly follow 1-based sequential numbering (id: 1, 2, 3, ...).
+7. PCMB & SCIENTIFIC EQUATION FORMATTING:
+   - For Physics, Mathematics, Biology, and Chemistry questions, ALWAYS use standard LaTeX delimiters for equations, formulas, and scientific units:
+     * Inline math / variables / units: wrap in single dollar signs, e.g. $F = ma$, $\\lambda = \\frac{h}{p}$, $\\int_{0}^{1} x^2 dx$, $25^\\circ\\text{C}$, $\\mu\\text{m}$, $\\alpha, \\beta$.
+     * Block equations: wrap in double dollar signs, e.g. $$\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$$.
+     * Chemistry formulas & reactions: use mhchem notation inside dollar signs, e.g. $\\ce{2H2 + O2 -> 2H2O}$, $\\ce{CaCO3 -> CaO + CO2}$, $\\ce{SO4^{2-}}$, $\\ce{H2SO4}$.
+   - Apply this consistently to the question text, each option text, and the explanation.
 
 JSON SCHEMA TO RETURN (RETURN ONLY VALID JSON, NO MARKDOWN, NO CODEBLOCKS):
 [
   {
     "id": 1,
-    "question": "Clear and concise question text",
+    "question": "Clear and concise question text (use LaTeX like $E = mc^2$ or $\\ce{H2O}$ where applicable)",
     "options": [
       { "key": "A", "text": "First choice" },
       { "key": "B", "text": "Second choice" },
@@ -112,7 +118,7 @@ DIFFICULTY: ${validDifficulty}
 ESTIMATED TIME: ${timeLimitMinutes} minutes
 ${customInstructions ? `ADDITIONAL INSTRUCTIONS: ${customInstructions}` : ''}
 
-Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and an explanation. Return ONLY valid JSON array.`;
+Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and an explanation. If the topic involves Physics, Chemistry, Math, or Biology, properly format equations and formulas using LaTeX ($...$) and chemical formulas with $\\ce{...}$. Return ONLY valid JSON array.`;
 
     try {
         const response = await aiService.executeChatCompletion({

@@ -1,10 +1,19 @@
 const { execSync } = require('child_process');
 
 let commitHash = 'dev';
+let commitFullHash = '';
 let commitTime = '';
+let commitMessage = '';
+let commitAuthor = '';
+let commitBranch = '';
+
 try {
     commitHash = execSync('git rev-parse --short HEAD').toString().trim();
+    commitFullHash = execSync('git rev-parse HEAD').toString().trim();
     commitTime = execSync('git show -s --format=%ci HEAD').toString().trim();
+    commitMessage = execSync('git show -s --format=%s HEAD').toString().trim();
+    commitAuthor = execSync('git show -s --format=%an HEAD').toString().trim();
+    commitBranch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
 } catch (e) {
     // fallback if git not available (e.g. Docker)
 }
@@ -18,7 +27,11 @@ const nextConfig = {
     transpilePackages: ['lucide-react'],
     env: {
         NEXT_PUBLIC_COMMIT_HASH: commitHash,
+        NEXT_PUBLIC_COMMIT_FULL_HASH: commitFullHash,
         NEXT_PUBLIC_COMMIT_TIME: commitTime,
+        NEXT_PUBLIC_COMMIT_MESSAGE: commitMessage,
+        NEXT_PUBLIC_COMMIT_AUTHOR: commitAuthor,
+        NEXT_PUBLIC_COMMIT_BRANCH: commitBranch,
     },
     images: {
         domains: ['localhost'],

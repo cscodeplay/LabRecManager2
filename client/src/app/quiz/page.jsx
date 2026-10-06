@@ -13,6 +13,7 @@ import QRCode from 'qrcode';
 import PageHeader from '@/components/PageHeader';
 import { useAuthStore } from '@/lib/store';
 import { quizAPI, classesAPI } from '@/lib/api';
+import MathRenderer from '@/components/MathRenderer';
 
 export default function QuizDashboardPage() {
     const router = useRouter();
@@ -686,13 +687,16 @@ export default function QuizDashboardPage() {
                                                                     }`}
                                                                 >
                                                                     <div className="flex items-center justify-between font-bold">
-                                                                        <span>Q{idx + 1}: {ans.questionText}</span>
+                                                                        <div className="flex-1 pr-2">
+                                                                            <span className="text-slate-400 mr-1.5">Q{idx + 1}:</span>
+                                                                            <MathRenderer content={ans.questionText} inline />
+                                                                        </div>
                                                                         {ans.isCorrect ? (
-                                                                            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
+                                                                            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold shrink-0">
                                                                                 <CheckCircle2 className="w-3.5 h-3.5" /> Correct
                                                                             </span>
                                                                         ) : (
-                                                                            <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-bold">
+                                                                            <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-bold shrink-0">
                                                                                 <XCircle className="w-3.5 h-3.5" /> Incorrect
                                                                             </span>
                                                                         )}
@@ -702,7 +706,8 @@ export default function QuizDashboardPage() {
                                                                     </div>
                                                                     {ans.explanation && (
                                                                         <div className="text-[11px] text-slate-500 dark:text-slate-400 bg-white/80 dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800">
-                                                                            💡 {ans.explanation}
+                                                                            <span className="text-amber-500 font-semibold mr-1">💡</span>
+                                                                            <MathRenderer content={ans.explanation} inline />
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -1163,8 +1168,11 @@ export default function QuizDashboardPage() {
                                                                             }`}
                                                                         >
                                                                             <div className="flex items-center justify-between font-bold">
-                                                                                <span>Q{aIdx + 1}: {ans.questionText}</span>
-                                                                                <span className={ans.isCorrect ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'}>
+                                                                                <div className="flex-1 pr-2">
+                                                                                    <span className="text-slate-400 mr-1.5">Q{aIdx + 1}:</span>
+                                                                                    <MathRenderer content={ans.questionText} inline />
+                                                                                </div>
+                                                                                <span className={ans.isCorrect ? 'text-emerald-600 font-bold shrink-0' : 'text-rose-600 font-bold shrink-0'}>
                                                                                     {ans.isCorrect ? '✓ Correct' : '✗ Incorrect'}
                                                                                 </span>
                                                                             </div>
@@ -1173,7 +1181,8 @@ export default function QuizDashboardPage() {
                                                                             </div>
                                                                             {ans.explanation && (
                                                                                 <div className="text-[10px] text-slate-500 bg-white/70 dark:bg-slate-900 p-1.5 rounded border border-slate-200 dark:border-slate-800">
-                                                                                    {ans.explanation}
+                                                                                    <span className="text-amber-500 font-semibold mr-1">💡</span>
+                                                                                    <MathRenderer content={ans.explanation} inline />
                                                                                 </div>
                                                                             )}
                                                                         </div>

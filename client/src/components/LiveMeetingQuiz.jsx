@@ -7,6 +7,7 @@ import {
     Check, X, Plus, Trash2, ArrowRight, History, Layers
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import MathRenderer from '@/components/MathRenderer';
 
 const DEFAULT_OPTIONS = [
     { key: 'A', text: '' },
@@ -310,9 +311,9 @@ export default function LiveMeetingQuiz({
                         <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 mb-1 flex items-center gap-1">
                             <HelpCircle className="w-3 h-3" /> Question
                         </div>
-                        <h4 className="text-sm font-semibold text-white leading-relaxed">
-                            {displayQuiz.question}
-                        </h4>
+                        <div className="text-sm font-semibold text-white leading-relaxed">
+                            <MathRenderer content={displayQuiz.question} />
+                        </div>
                     </div>
 
                     {/* Options List */}
@@ -365,7 +366,9 @@ export default function LiveMeetingQuiz({
                                             }`}>
                                                 {opt.key}
                                             </span>
-                                            <span className="text-[12px] font-medium leading-snug">{opt.text}</span>
+                                            <span className="text-[12px] font-medium leading-snug">
+                                                <MathRenderer content={opt.text} inline />
+                                            </span>
                                         </div>
 
                                         <div className="flex items-center gap-2">

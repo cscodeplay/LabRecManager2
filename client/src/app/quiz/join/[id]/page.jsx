@@ -9,6 +9,7 @@ import {
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/lib/store';
 import { quizAPI, authAPI } from '@/lib/api';
+import MathRenderer from '@/components/MathRenderer';
 
 export default function QuizJoinPage() {
     const params = useParams();
@@ -539,9 +540,9 @@ export default function QuizJoinPage() {
                                         </span>
                                     </div>
 
-                                    <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-snug">
-                                        {q.question}
-                                    </h3>
+                                    <div className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-snug">
+                                        <MathRenderer content={q.question} />
+                                    </div>
 
                                     {/* 4 Choices */}
                                     <div className="space-y-2.5 pt-2">
@@ -562,7 +563,9 @@ export default function QuizJoinPage() {
                                                     }`}>
                                                         {opt.key}
                                                     </span>
-                                                    <span className="flex-1">{opt.text}</span>
+                                                    <span className="flex-1">
+                                                        <MathRenderer content={opt.text} inline />
+                                                    </span>
                                                 </button>
                                             );
                                         })}
@@ -641,13 +644,16 @@ export default function QuizJoinPage() {
                                     }`}
                                 >
                                     <div className="flex items-center justify-between font-bold">
-                                        <span>Q{idx + 1}: {ans.questionText}</span>
+                                        <div className="flex-1 pr-2">
+                                            <span className="font-semibold text-slate-500 dark:text-slate-400 mr-1.5">Q{idx + 1}:</span>
+                                            <MathRenderer content={ans.questionText} inline />
+                                        </div>
                                         {ans.isCorrect ? (
-                                            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                                            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 shrink-0">
                                                 <CheckCircle2 className="w-4 h-4" /> Correct
                                             </span>
                                         ) : (
-                                            <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400">
+                                            <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 shrink-0">
                                                 <XCircle className="w-4 h-4" /> Incorrect
                                             </span>
                                         )}
@@ -657,7 +663,8 @@ export default function QuizJoinPage() {
                                     </div>
                                     {ans.explanation && (
                                         <div className="text-[11px] text-slate-600 dark:text-slate-400 bg-white/80 dark:bg-slate-950/80 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 leading-relaxed">
-                                            💡 {ans.explanation}
+                                            <span className="font-semibold text-amber-500 mr-1">💡</span>
+                                            <MathRenderer content={ans.explanation} inline />
                                         </div>
                                     )}
                                 </div>

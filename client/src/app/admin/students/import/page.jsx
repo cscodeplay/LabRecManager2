@@ -153,6 +153,30 @@ export default function ImportStudentsPage() {
         setStep(3);
     };
 
+    const parseCSVLine = (line) => {
+        const result = [];
+        let current = '';
+        let inQuotes = false;
+        for (let j = 0; j < line.length; j++) {
+            const char = line[j];
+            if (char === '"') {
+                if (inQuotes && line[j + 1] === '"') {
+                    current += '"';
+                    j++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (char === ',' && !inQuotes) {
+                result.push(current.trim().replace(/^["']|["']$/g, ''));
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        result.push(current.trim().replace(/^["']|["']$/g, ''));
+        return result;
+    };
+
     const parseCSV = (text) => {
         const lines = text.split('\n').filter(line => line.trim());
         if (lines.length < 2) {
@@ -160,10 +184,13 @@ export default function ImportStudentsPage() {
             return;
         }
 
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[\s-]/g, '_'));
+        const rawHeaders = parseCSVLine(lines[0]);
+        const headers = rawHeaders.map(h => h.trim().toLowerCase().replace(/[\s-]/g, '_'));
+        const addressColIdx = headers.findIndex(h => h.includes('address') || h.includes('addr') || h.includes('location'));
         const data = [];
+        const usedEmails = new Set();
 
-        // Map common header names
+        // Map common header names (email intentionally excluded from mapping)
         const headerMap = {
             'student_id': 'studentId',
             'studentid': 'studentId',
@@ -174,21 +201,34 @@ export default function ImportStudentsPage() {
             'firstname': 'firstName',
             'last_name': 'lastName',
             'lastname': 'lastName',
+            'parent_name': 'parentName',
+            'father_name': 'parentName',
+            'address': 'address',
             'gender': 'gender',
             'sex': 'gender',
-            'email': 'email',
             'phone': 'phone',
             'mobile': 'phone'
         };
 
         for (let i = 1; i < lines.length; i++) {
-            const values = lines[i].split(',').map(v => v.trim().replace(/^["']|["']$/g, ''));
-            if (values.length < 3) continue; // Need at least studentId, firstName, lastName
+            let values = parseCSVLine(lines[i]);
+            if (values.length < 2) continue;
+
+            // Address comma recovery: recombine extra tokens into address column
+            if (values.length > headers.length && addressColIdx !== -1) {
+                const excess = values.length - headers.length;
+                const pre = values.slice(0, addressColIdx);
+                const addr = values.slice(addressColIdx, addressColIdx + excess + 1).join(', ');
+                const post = values.slice(addressColIdx + excess + 1);
+                values = [...pre, addr, ...post];
+            }
 
             const row = {};
             headers.forEach((header, idx) => {
                 const mappedKey = headerMap[header] || header;
-                row[mappedKey] = values[idx] || '';
+                if (mappedKey !== 'email') {
+                    row[mappedKey] = values[idx] || '';
+                }
             });
 
             // Parse gender
@@ -203,10 +243,26 @@ export default function ImportStudentsPage() {
             }
             row.gender = gender;
 
-            // Generate email if not provided
-            if (!row.email && row.firstName && row.lastName) {
-                row.email = `${row.firstName.toLowerCase()}.${row.lastName.toLowerCase()}@student.school.edu`;
+            // Generate unique email from name (Rule 2)
+            const cleanFirst = String(row.firstName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const cleanLast = String(row.lastName && row.lastName !== 'Student' ? row.lastName : '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const basePrefix = cleanLast ? `${cleanFirst}.${cleanLast}` : cleanFirst;
+            let emailCandidate = `${basePrefix}@student.school.edu`;
+
+            if (usedEmails.has(emailCandidate)) {
+                let attempts = 0;
+                while (attempts < 50) {
+                    const rand3 = Math.floor(100 + Math.random() * 900);
+                    const uniq = `${basePrefix}.${rand3}@student.school.edu`;
+                    if (!usedEmails.has(uniq)) {
+                        emailCandidate = uniq;
+                        break;
+                    }
+                    attempts++;
+                }
             }
+            usedEmails.add(emailCandidate);
+            row.email = emailCandidate;
 
             // Validate required fields
             if (row.firstName && row.lastName && row.email) {
@@ -221,7 +277,7 @@ export default function ImportStudentsPage() {
                 data.push({
                     ...row,
                     isValid: false,
-                    error: 'Missing required fields (firstName, lastName, email)'
+                    error: 'Missing required fields (firstName, lastName)'
                 });
             }
         }

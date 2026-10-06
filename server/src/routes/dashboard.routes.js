@@ -443,6 +443,20 @@ router.get('/health', asyncHandler(async (req, res) => {
         }
     }
 
+    let gitCommit = null;
+    try {
+        const { execSync } = require('child_process');
+        const hash = execSync('git rev-parse HEAD').toString().trim();
+        const shortHash = execSync('git rev-parse --short HEAD').toString().trim();
+        const author = execSync('git show -s --format=%an HEAD').toString().trim();
+        const date = execSync('git show -s --format=%cd HEAD').toString().trim();
+        const message = execSync('git show -s --format=%s HEAD').toString().trim();
+        const branch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
+        gitCommit = { hash, shortHash, author, date, message, branch };
+    } catch (e) {
+        // Git not available in some environments
+    }
+
     res.json({
         success: true,
         data: {
@@ -450,7 +464,8 @@ router.get('/health', asyncHandler(async (req, res) => {
             database: dbStatus,
             responseTime: dbResponseTime,
             timestamp: new Date().toISOString(),
-            error: dbError
+            error: dbError,
+            gitCommit
         }
     });
 }));

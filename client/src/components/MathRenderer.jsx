@@ -49,11 +49,7 @@ function renderKatexToString(mathStr, displayMode = false) {
             displayMode,
             throwOnError: false,
             strict: false,
-            trust: true,
-            macros: {
-                "\\ce": "\\text{#1}",
-                "\\pu": "\\text{#1}"
-            }
+            trust: true
         });
     } catch (err) {
         console.warn('[KaTeX Error]:', err.message);

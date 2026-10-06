@@ -18,7 +18,8 @@ const notificationService = require('./notificationService');
 const cronService = require('./cron.service');
 const reportService = require('./report.service');
 const reportEmailService = require('./report.email.service');
-const { detectTableAndMapping, applyMapping, TABLE_SCHEMAS } = require('../utils/tableSchemaDetector');
+const { detectTableAndMapping, applyMapping, TABLE_SCHEMAS, generateUniqueStudentEmail } = require('../utils/tableSchemaDetector');
+const { parseCsvContent } = require('../utils/csvParser');
 
 class ChatbotService {
     constructor() {
@@ -2804,47 +2805,14 @@ Generate the 2-chapter curriculum JSON following the exact schema. Ensure the ex
                                     message.match(/@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
                 const customEmailDomain = domainMatch ? domainMatch[1].replace(/^@/, '').trim().toLowerCase() : null;
 
-                // Smart header index detection: scan first 15 lines for table header row
-                let headerIdx = -1;
-                let delimiter = ',';
-                for (let i = 0; i < Math.min(cleanLines.length, 15); i++) {
-                    const line = cleanLines[i];
-                    let d = ',';
-                    if (line.includes('\t')) d = '\t';
-                    else if (line.includes(';') && !line.includes(',')) d = ';';
-                    else if (line.includes('|') && !line.includes(',')) d = '|';
-
-                    const pLower = line.toLowerCase();
-                    const hasKeyCols = (pLower.includes('name') || pLower.includes('student') || pLower.includes('candidate')) &&
-                        (pLower.includes('roll') || pLower.includes('id') || pLower.includes('adm') || pLower.includes('reg') || pLower.includes('class') || pLower.includes('phone') || pLower.includes('email') || pLower.includes('gender') || pLower.includes('item') || pLower.includes('serial'));
-                    if (hasKeyCols) {
-                        headerIdx = i;
-                        delimiter = d;
-                        break;
-                    }
-                }
-
-                if (headerIdx === -1 && cleanLines.length >= 2) {
-                    if (cleanLines[0].includes(',') || cleanLines[0].includes('\t') || cleanLines[0].includes('|')) {
-                        headerIdx = 0;
-                        if (cleanLines[0].includes('\t')) delimiter = '\t';
-                        else if (cleanLines[0].includes('|')) delimiter = '|';
-                    }
-                }
-
-                if (headerIdx !== -1) {
-                    headers = cleanLines[headerIdx].split(delimiter).map(h => h.trim().replace(/^["']|["']$/g, ''));
-                    for (let r = headerIdx + 1; r < cleanLines.length; r++) {
-                        const rowVals = cleanLines[r].split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
-                        if (rowVals.length === 0 || (rowVals.length === 1 && !rowVals[0])) continue;
-                        const rowObj = {};
-                        headers.forEach((h, idx) => {
-                            rowObj[h] = rowVals[idx] !== undefined ? rowVals[idx] : '';
-                        });
-                        rowObj._originalRowIndex = r - headerIdx;
-                        rowObj.selected = true;
-                        records.push(rowObj);
-                    }
+                // Robust CSV & Delimited Parsing (RFC 4180 quotes & address comma recovery)
+                const parsedCsv = parseCsvContent(cleanLines.join('\n'));
+                if (parsedCsv.headers.length >= 2 && parsedCsv.records.length > 0) {
+                    headers = parsedCsv.headers;
+                    records = parsedCsv.records;
+                } else if (cleanLines.length >= 2) {
+                    // Fallback to legacy single-line parse if full parse was empty
+                    headers = cleanLines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, ''));
                 }
 
                 // Fallback to AI structured extraction if delimiter parsing yielded no rows
@@ -2917,29 +2885,21 @@ Generate the 2-chapter curriculum JSON following the exact schema. Ensure the ex
                             rec.admissionNumber = admNo;
                             rec.role = 'student';
 
-                            // Generate email matching requested custom domain (e.g. @msldh.com)
-                            if (customEmailDomain) {
-                                const cleanFirst = String(firstName).toLowerCase().replace(/[^a-z0-9]/g, '');
-                                const cleanLast = String(lastName && lastName !== 'Student' ? lastName : '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                                let emailPrefix = cleanLast ? `${cleanFirst}.${cleanLast}` : cleanFirst;
-                                let userEmail = `${emailPrefix}@${customEmailDomain}`;
-                                if (usedEmails.has(userEmail)) {
-                                    userEmail = `${emailPrefix}.${rollNo || idx + 1}@${customEmailDomain}`;
-                                }
-                                usedEmails.add(userEmail);
-                                rec.email = userEmail;
-                            } else if (!rec.email) {
-                                const cleanFirst = String(firstName).toLowerCase().replace(/[^a-z0-9]/g, '');
-                                const cleanLast = String(lastName && lastName !== 'Student' ? lastName : '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                                const emailPrefix = cleanLast ? `${cleanFirst}.${cleanLast}` : cleanFirst;
-                                rec.email = `${emailPrefix}.${rollNo || idx + 1}@student.school.edu`;
-                            }
+                            // Internal Email Generation:
+                            // Do not map email as it is internally generated from name.
+                            // If two names generate same email, add 3-digit random number to make unique.
+                            const domain = customEmailDomain || 'student.school.edu';
+                            rec.email = generateUniqueStudentEmail(firstName, lastName, domain, usedEmails);
                         });
 
-                        // Ensure column mapping maps key fields properly
+                        // Ensure column mapping maps key fields properly (do NOT map email)
+                        if (detection.columnMapping) {
+                            delete detection.columnMapping['email'];
+                        }
                         detection.columnMapping['firstName'] = 'firstName';
-                        detection.columnMapping['lastName'] = 'lastName';
-                        detection.columnMapping['email'] = 'email';
+                        if (headers.some(h => normalizeStr(h).includes('last') || normalizeStr(h).includes('surname'))) {
+                            detection.columnMapping['lastName'] = 'lastName';
+                        }
                         detection.columnMapping['rollNumber'] = 'rollNumber';
                         detection.columnMapping['studentId'] = 'studentId';
 

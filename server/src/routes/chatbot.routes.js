@@ -16,7 +16,8 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const chatbotService = require('../services/chatbot.service');
 const prisma = require('../config/database');
 const bcrypt = require('bcryptjs');
-const { detectTableAndMapping, applyMapping, TABLE_SCHEMAS } = require('../utils/tableSchemaDetector');
+const { detectTableAndMapping, applyMapping, TABLE_SCHEMAS, generateUniqueStudentEmail, generateRandom3Digit } = require('../utils/tableSchemaDetector');
+const { parseCsvContent } = require('../utils/csvParser');
 const cloudinary = require('../services/cloudinary');
 
 // File upload config — 100MB limit
@@ -263,43 +264,10 @@ router.post('/upload', authenticate, authorize('admin', 'principal', 'instructor
         // Check if any file was CSV/Excel/Text with delimited structure
         const csvFile = processedResults.find(f => f.fileName?.match(/\.(csv|tsv|txt|xlsx|xls|pdf|docx)$/i) || f.extractedText?.includes(','));
         if (csvFile && csvFile.extractedText) {
-            const rawLines = csvFile.extractedText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-            const cleanLines = rawLines.filter(l => !l.startsWith('===') && !l.startsWith('---'));
-            if (cleanLines.length >= 2) {
-                // Find best header row (in case sheet has title lines at top)
-                let headerIdx = 0;
-                let delim = ',';
-                for (let i = 0; i < Math.min(cleanLines.length, 15); i++) {
-                    const line = cleanLines[i];
-                    let d = ',';
-                    if (line.includes('\t')) d = '\t';
-                    else if (line.includes(';') && !line.includes(',')) d = ';';
-                    else if (line.includes('|') && !line.includes(',')) d = '|';
-
-                    const pLower = line.toLowerCase();
-                    if ((pLower.includes('name') || pLower.includes('student') || pLower.includes('candidate')) &&
-                        (pLower.includes('roll') || pLower.includes('id') || pLower.includes('adm') || pLower.includes('class') || pLower.includes('phone') || pLower.includes('email') || pLower.includes('gender') || pLower.includes('item'))) {
-                        headerIdx = i;
-                        delim = d;
-                        break;
-                    }
-                }
-
-                const rawH = cleanLines[headerIdx].split(delim).map(h => h.trim().replace(/^["']|["']$/g, ''));
-                if (rawH.length >= 2) {
-                    parsedHeaders = rawH;
-                    for (let r = headerIdx + 1; r < cleanLines.length; r++) {
-                        const rowVals = cleanLines[r].split(delim).map(c => c.trim().replace(/^["']|["']$/g, ''));
-                        if (rowVals.length === 0 || (rowVals.length === 1 && !rowVals[0])) continue;
-                        const rowObj = {};
-                        rawH.forEach((h, idx) => {
-                            rowObj[h] = rowVals[idx] !== undefined ? rowVals[idx] : '';
-                        });
-                        rowObj._originalRowIndex = r - headerIdx;
-                        rowObj.selected = true;
-                        parsedRows.push(rowObj);
-                    }
-                }
+            const parsedCsv = parseCsvContent(csvFile.extractedText);
+            if (parsedCsv.headers.length >= 2 && parsedCsv.records.length > 0) {
+                parsedHeaders = parsedCsv.headers;
+                parsedRows = parsedCsv.records;
             }
         }
 
@@ -654,9 +622,15 @@ router.post('/load-data', authenticate, authorize('admin', 'principal', 'instruc
 
     // Case A: Student Import into users table + class enrollment
     if (effectiveTable === 'users' || actionType === 'student_import') {
+        let effectiveSchoolId = schoolId;
+        if (!effectiveSchoolId) {
+            const firstSchool = await prisma.school.findFirst();
+            effectiveSchoolId = firstSchool?.id;
+        }
+
         let targetClassId = classId;
         if (!targetClassId) {
-            const firstClass = await prisma.class.findFirst({ where: schoolId ? { schoolId } : {} });
+            const firstClass = await prisma.class.findFirst({ where: effectiveSchoolId ? { schoolId: effectiveSchoolId } : {} });
             targetClassId = firstClass?.id;
         }
 
@@ -665,6 +639,7 @@ router.post('/load-data', authenticate, authorize('admin', 'principal', 'instruc
         const defaultPassword = 'Student@123';
         const salt = await bcrypt.genSalt(10);
         const passwordHash = await bcrypt.hash(defaultPassword, salt);
+        const usedBatchEmails = new Set();
 
         for (let i = 0; i < records.length; i++) {
             const rec = records[i];
@@ -682,45 +657,43 @@ router.post('/load-data', authenticate, authorize('admin', 'principal', 'instruc
                     throw new Error('First name is required');
                 }
 
-                // Generate email if missing or enforce custom domain if requested
-                let email = rec.email ? String(rec.email).trim().toLowerCase() : null;
-                if (customEmailDomain && email && !email.endsWith(`@${customEmailDomain}`)) {
-                    email = `${email.split('@')[0]}@${customEmailDomain}`;
-                }
-                if (!email) {
-                    const cleanFirst = String(rec.firstName).toLowerCase().replace(/[^a-z0-9]/g, '');
-                    const cleanLast = (rec.lastName && rec.lastName !== 'Student' ? String(rec.lastName) : '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                    const domain = customEmailDomain || 'student.school.edu';
-                    const emailPrefix = cleanLast ? `${cleanFirst}.${cleanLast}` : cleanFirst;
-                    email = `${emailPrefix}@${domain}`;
-                }
+                // Rule 2: Do not map email as it is internally generated from name.
+                // Ensure email is unique: if two names generate same email, add 3-digit rand number.
+                const cleanFirst = String(rec.firstName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
+                const cleanLast = (rec.lastName && String(rec.lastName).toLowerCase() !== 'student' ? String(rec.lastName) : '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                const domain = customEmailDomain || 'student.school.edu';
+                const basePrefix = cleanLast ? `${cleanFirst}.${cleanLast}` : cleanFirst;
 
-                // Check existing user
-                let userRecord = await prisma.user.findUnique({ where: { email } });
-                if (!userRecord) {
-                    userRecord = await prisma.user.create({
-                        data: {
-                            schoolId,
-                            email,
-                            passwordHash,
-                            role: 'student',
-                            firstName: rec.firstName.trim(),
-                            lastName: rec.lastName ? rec.lastName.trim() : 'Student',
-                            phone: rec.phone ? String(rec.phone).trim() : null,
-                            admissionNumber: rec.studentId || rec.admissionNumber || null
+                let email = `${basePrefix}@${domain}`;
+                if (usedBatchEmails.has(email) || (await prisma.user.findUnique({ where: { email } }))) {
+                    let attempts = 0;
+                    while (attempts < 100) {
+                        const rand3 = generateRandom3Digit();
+                        const candidate = `${basePrefix}.${rand3}@${domain}`;
+                        if (!usedBatchEmails.has(candidate) && !(await prisma.user.findUnique({ where: { email: candidate } }))) {
+                            email = candidate;
+                            break;
                         }
-                    });
-                } else {
-                    // Update existing
-                    userRecord = await prisma.user.update({
-                        where: { id: userRecord.id },
-                        data: {
-                            firstName: rec.firstName.trim(),
-                            lastName: rec.lastName ? rec.lastName.trim() : userRecord.lastName,
-                            phone: rec.phone ? String(rec.phone).trim() : userRecord.phone
-                        }
-                    });
+                        attempts++;
+                    }
                 }
+                usedBatchEmails.add(email);
+
+                // Rule 3: Ensure users are created in PostgreSQL
+                const userRecord = await prisma.user.create({
+                    data: {
+                        schoolId: effectiveSchoolId,
+                        email,
+                        passwordHash,
+                        role: 'student',
+                        firstName: rec.firstName.trim(),
+                        lastName: rec.lastName ? rec.lastName.trim() : 'Student',
+                        phone: rec.phone ? String(rec.phone).trim() : null,
+                        admissionNumber: rec.studentId || rec.admissionNumber || null,
+                        studentId: rec.studentId || rec.admissionNumber || null,
+                        gender: rec.gender ? (String(rec.gender).toLowerCase().includes('f') ? 'female' : 'male') : 'male'
+                    }
+                });
 
                 // Enroll into target class if specified
                 if (targetClassId && userRecord) {
@@ -741,7 +714,7 @@ router.post('/load-data', authenticate, authorize('admin', 'principal', 'instruc
                                 rollNumber: rec.rollNumber ? parseInt(rec.rollNumber, 10) : undefined,
                                 status: 'active'
                             }
-                        });
+                        }).catch(() => {});
                     }
                 }
 
