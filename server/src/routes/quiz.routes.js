@@ -191,6 +191,17 @@ Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a
             throw new Error('AI returned an empty question list');
         }
 
+        // Helper to normalize bare \ce without braces into proper $\ce{...}$
+        const cleanLatexChemistry = (str) => {
+            if (!str || typeof str !== 'string') return '';
+            let s = str;
+            s = s.replace(/(?<!\$)\\ce\{([^{}]+)\}(?!\$)/g, '$\\ce{$1}$');
+            s = s.replace(/(?<!\$)\\ce\s+([A-Za-z0-9][A-Za-z0-9\s\-\+\=\_\^\.\(\)]*?)(?=(?:[\)\,\;\.\?\:\!]|\s+in\b|\s+directly\b|\s+without\b|\s+followed\b|\s+to\b|\s+and\b|\s*$))/g, (match, formula) => {
+                return `$\\ce{${formula.trim()}}$`;
+            });
+            return s;
+        };
+
         // Normalize and validate sequential order and 4 options
         const normalizedQuestions = questions.map((q, idx) => {
             const seqNumber = idx + 1;
@@ -200,9 +211,10 @@ Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a
             const standardKeys = ['A', 'B', 'C', 'D'];
             const normalizedOptions = standardKeys.map((key, optIdx) => {
                 const existing = options.find(o => (o.key || '').toUpperCase() === key) || options[optIdx];
+                const rawOptText = existing ? (typeof existing === 'string' ? existing : existing.text || '') : `Option ${key}`;
                 return {
                     key,
-                    text: existing ? (typeof existing === 'string' ? existing : existing.text || '') : `Option ${key}`
+                    text: cleanLatexChemistry(rawOptText)
                 };
             });
 
@@ -211,10 +223,10 @@ Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a
 
             return {
                 id: seqNumber,
-                question: q.question || `Question ${seqNumber}`,
+                question: cleanLatexChemistry(q.question || `Question ${seqNumber}`),
                 options: normalizedOptions,
                 correctOption: correctOpt,
-                explanation: q.explanation || 'No explanation provided.',
+                explanation: cleanLatexChemistry(q.explanation || 'No explanation provided.'),
                 difficulty: q.difficulty || validDifficulty,
                 points: q.points || 1
             };

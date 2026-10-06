@@ -21,13 +21,17 @@ export default function MathRenderer({
     textClassName = '',
     size = 'base' // 'sm' | 'base' | 'lg' | 'xl'
 }) {
+    const normalizedContent = useMemo(() => {
+        if (!content || typeof content !== 'string') return '';
+        return normalizeChemicalAndLatex(content);
+    }, [content]);
+
     const renderedElements = useMemo(() => {
-        if (!content || typeof content !== 'string') return null;
+        if (!normalizedContent) return null;
+        return parseContent(normalizedContent, textClassName, size, inline);
+    }, [normalizedContent, textClassName, size, inline]);
 
-        return parseContent(content, textClassName, size, inline);
-    }, [content, textClassName, size, inline]);
-
-    if (!content) return null;
+    if (!normalizedContent) return null;
 
     if (inline) {
         return <span className={`math-renderer-inline ${textClassName} ${className}`}>{renderedElements}</span>;
@@ -38,6 +42,30 @@ export default function MathRenderer({
             {renderedElements}
         </div>
     );
+}
+
+/**
+ * Normalizes bare LaTeX and chemistry formulas.
+ * Handles cases where LLMs write:
+ * - Bare \ce without braces: `\ce KMnO4`, `\ce R - CH2OH`, `\ce CrO3`
+ * - Braced \ce without math delimiters: `\ce{H2SO4}` -> `$\ce{H2SO4}$`
+ */
+function normalizeChemicalAndLatex(str) {
+    if (!str || typeof str !== 'string') return '';
+
+    let out = str;
+
+    // 1. Wrap un-delimited \ce{...} that lacks enclosing $ signs
+    out = out.replace(/(?<!\$)\\ce\{([^{}]+)\}(?!\$)/g, '$\\ce{$1}$');
+
+    // 2. Handle bare \ce followed by formula without braces:
+    // e.g. "(\ce R - CH2OH)" -> "($\ce{R - CH2OH}$)"
+    // e.g. "Acidified \ce KMnO4" -> "Acidified $\ce{KMnO4}$"
+    out = out.replace(/(?<!\$)\\ce\s+([A-Za-z0-9][A-Za-z0-9\s\-\+\=\_\^\.\(\)]*?)(?=(?:[\)\,\;\.\?\:\!]|\s+in\b|\s+directly\b|\s+without\b|\s+followed\b|\s+to\b|\s+and\b|\s*$))/g, (match, formula) => {
+        return `$\\ce{${formula.trim()}}$`;
+    });
+
+    return out;
 }
 
 /**
