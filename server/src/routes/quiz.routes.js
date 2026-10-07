@@ -555,6 +555,62 @@ router.get('/my-results', authenticate, asyncHandler(async (req, res) => {
 }));
 
 /**
+ * Helper to check whether a student has access to take a quiz
+ * Returns true if:
+ * 1. The quiz has no assignments configured (open to all students via join code / direct link)
+ * 2. OR the student is explicitly assigned via targetStudentId
+ * 3. OR the student is enrolled in an active class assigned via targetClassId
+ * 4. OR the student belongs to a group assigned via targetGroupId
+ */
+async function checkStudentQuizAssignment(quizId, studentId) {
+    if (!quizId || !studentId) return false;
+
+    // 1. Check if the quiz has any assignments configured
+    const totalAssignments = await prisma.quizAssignment.count({
+        where: { quizId }
+    });
+
+    // If no specific restrictions/assignments are set, it's open to all students
+    if (totalAssignments === 0) {
+        return true;
+    }
+
+    // 2. Fetch student's active class enrollments
+    const enrollments = await prisma.classEnrollment.findMany({
+        where: { studentId, status: 'active' },
+        select: { classId: true }
+    });
+    const studentClassIds = enrollments.map(e => e.classId).filter(Boolean);
+
+    // 3. Fetch student's group memberships
+    const groupMembers = await prisma.groupMember.findMany({
+        where: { studentId },
+        select: { groupId: true }
+    });
+    const studentGroupIds = groupMembers.map(g => g.groupId).filter(Boolean);
+
+    // 4. Query for any matching assignment record
+    const orConditions = [
+        { targetType: 'student', targetStudentId: studentId }
+    ];
+    if (studentClassIds.length > 0) {
+        orConditions.push({ targetType: 'class', targetClassId: { in: studentClassIds } });
+    }
+    if (studentGroupIds.length > 0) {
+        orConditions.push({ targetType: 'group', targetGroupId: { in: studentGroupIds } });
+    }
+
+    const matchingAssignment = await prisma.quizAssignment.findFirst({
+        where: {
+            quizId,
+            OR: orConditions
+        }
+    });
+
+    return !!matchingAssignment;
+}
+
+/**
  * @route   GET /api/quiz/take/:idOrCode
  * @desc    Fetch quiz for taking (STRIPS correctOption and explanation to prevent cheating)
  * @access  Public / Optional Auth (Prompts login if not authenticated)
@@ -613,11 +669,20 @@ router.get('/take/:idOrCode', optionalAuth, asyncHandler(async (req, res) => {
     const canAttempt = attemptsTaken < maxAttempts;
 
     // ANTI-CHEAT SANITIZATION: Strip answers and explanations
-    const rawQuestions = Array.isArray(quiz.questions) ? quiz.questions : [];
+    let rawQuestions = [];
+    if (Array.isArray(quiz.questions)) {
+        rawQuestions = quiz.questions;
+    } else if (typeof quiz.questions === 'string') {
+        try {
+            rawQuestions = JSON.parse(quiz.questions);
+        } catch (_) {
+            rawQuestions = [];
+        }
+    }
     const sanitizedQuestions = rawQuestions.map(q => ({
         id: q.id,
         question: q.question,
-        options: (q.options || []).map(opt => ({
+        options: (Array.isArray(q.options) ? q.options : []).map(opt => ({
             key: opt.key,
             text: opt.text
         })),
@@ -718,7 +783,16 @@ router.post('/:id/submit', authenticate, asyncHandler(async (req, res) => {
         });
     }
 
-    const groundTruth = Array.isArray(quiz.questions) ? quiz.questions : [];
+    let groundTruth = [];
+    if (Array.isArray(quiz.questions)) {
+        groundTruth = quiz.questions;
+    } else if (typeof quiz.questions === 'string') {
+        try {
+            groundTruth = JSON.parse(quiz.questions);
+        } catch (_) {
+            groundTruth = [];
+        }
+    }
     let correctCount = 0;
     let totalScore = 0;
     let maxScore = 0;

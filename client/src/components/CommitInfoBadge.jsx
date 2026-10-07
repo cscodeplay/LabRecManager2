@@ -4,8 +4,11 @@ import React, { useState, useEffect } from 'react';
 import { Info, GitCommit, Copy, Check, ExternalLink, Calendar, User, GitBranch } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { dashboardAPI } from '@/lib/api';
+import { useAuthStore } from '@/lib/store';
 
 export default function CommitInfoBadge() {
+    const { user, _hasHydrated } = useAuthStore();
+
     const [commitDetails, setCommitDetails] = useState({
         hash: process.env.NEXT_PUBLIC_COMMIT_HASH || '',
         fullHash: process.env.NEXT_PUBLIC_COMMIT_FULL_HASH || '',
@@ -38,10 +41,12 @@ export default function CommitInfoBadge() {
             });
     }, []);
 
-    const shortHash = commitDetails.hash || 'dev';
-    if (!shortHash || shortHash === 'dev' && !commitDetails.fullHash) {
-        // If neither env nor server provided git details, still display dev badge gracefully
+    // Do not display commit hash for other users except for admin
+    if (!user || user.role !== 'admin') {
+        return null;
     }
+
+    const shortHash = commitDetails.hash || 'dev';
 
     const handleCopy = (e) => {
         e.stopPropagation();

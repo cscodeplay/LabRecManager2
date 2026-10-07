@@ -208,7 +208,7 @@ con.close()
  * @access  Private
  */
 router.get('/modules', authenticate, asyncHandler(async (req, res) => {
-    const isAdmin = ['admin', 'principal', 'instructor'].includes(req.user.role);
+    const isAdmin = ['admin', 'principal', 'instructor', 'lab_assistant'].includes(req.user.role);
     let where = { schoolId: req.user.schoolId };
 
     // Students only see published modules assigned to them directly or to their class/group
@@ -250,9 +250,14 @@ router.get('/modules', authenticate, asyncHandler(async (req, res) => {
     // Filter by academic session if provided via header from client interceptor
     const sessionId = req.headers['x-academic-session'];
     if (sessionId) {
-        where.OR = [
-            { academicYearId: sessionId },
-            { academicYearId: null }
+        where.AND = [
+            ...(where.AND || []),
+            {
+                OR: [
+                    { academicYearId: sessionId },
+                    { academicYearId: null }
+                ]
+            }
         ];
     }
 

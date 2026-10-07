@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     Sparkles, HelpCircle, Play, Clock, 
@@ -99,10 +99,14 @@ export default function QuizDashboardPage() {
     const [selectedAssignStudents, setSelectedAssignStudents] = useState([]); // array of studentIds (persisted!)
     const [studentClassFilter, setStudentClassFilter] = useState('all'); // 'all' or classId
     const [assignStudentSearch, setAssignStudentSearch] = useState('');
-    const [showSelectedStudentsPreview, setShowSelectedStudentsPreview] = useState(false);
     const [activeAssignments, setActiveAssignments] = useState([]);
     const [isLoadingAssignments, setIsLoadingAssignments] = useState(false);
     const [isAssigning, setIsAssigning] = useState(false);
+
+    // Original index maps to preserve pool order when unchecking
+    const classOriginalIndexMap = useMemo(() => new Map(classList.map((c, i) => [c.id, i])), [classList]);
+    const groupOriginalIndexMap = useMemo(() => new Map(allClassGroups.map((g, i) => [g.id, i])), [allClassGroups]);
+    const studentOriginalIndexMap = useMemo(() => new Map(allClassStudents.map((s, i) => [s.id, i])), [allClassStudents]);
 
     // Submissions / Results Modal State (Admin/Instructor View)
     const [viewSubmissionsQuiz, setViewSubmissionsQuiz] = useState(null);
@@ -2420,13 +2424,23 @@ export default function QuizDashboardPage() {
 
                             {/* TAB 1: ENTIRE CLASSES */}
                             {assignTargetType === 'class' && (() => {
-                                const filteredClasses = classList.filter(c => {
-                                    if (!assignClassSearch.trim()) return true;
-                                    const q = assignClassSearch.toLowerCase().trim();
+                                const classSearchQuery = assignClassSearch.toLowerCase().trim();
+                                const visibleClasses = classList.filter(c => {
+                                    const isChecked = selectedAssignClasses.includes(c.id);
+                                    if (isChecked) return true; // checked items always visible on top
+                                    if (!classSearchQuery) return true;
                                     const name = (c.name || '').toLowerCase();
                                     const sec = (c.section || '').toLowerCase();
                                     const grade = String(c.gradeLevel || '').toLowerCase();
-                                    return name.includes(q) || sec.includes(q) || grade.includes(q);
+                                    return name.includes(classSearchQuery) || sec.includes(classSearchQuery) || grade.includes(classSearchQuery);
+                                });
+
+                                const sortedClasses = [...visibleClasses].sort((a, b) => {
+                                    const aChecked = selectedAssignClasses.includes(a.id);
+                                    const bChecked = selectedAssignClasses.includes(b.id);
+                                    if (aChecked && !bChecked) return -1;
+                                    if (!aChecked && bChecked) return 1;
+                                    return (classOriginalIndexMap.get(a.id) ?? 0) - (classOriginalIndexMap.get(b.id) ?? 0);
                                 });
 
                                 return (
@@ -2443,11 +2457,11 @@ export default function QuizDashboardPage() {
                                                     className="w-full pl-8.5 pr-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
                                                 />
                                             </div>
-                                            {filteredClasses.length > 0 && (
+                                            {sortedClasses.length > 0 && (
                                                 <div className="flex items-center gap-1.5">
                                                     <button
                                                         type="button"
-                                                        onClick={() => handleSelectAllFilteredClasses(filteredClasses)}
+                                                        onClick={() => handleSelectAllFilteredClasses(sortedClasses)}
                                                         className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-[11px] font-bold transition"
                                                     >
                                                         Select All
@@ -2455,7 +2469,7 @@ export default function QuizDashboardPage() {
                                                     {selectedAssignClasses.length > 0 && (
                                                         <button
                                                             type="button"
-                                                            onClick={() => handleDeselectFilteredClasses(filteredClasses)}
+                                                            onClick={() => setSelectedAssignClasses([])}
                                                             className="px-2.5 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 rounded-xl text-[11px] font-medium transition"
                                                         >
                                                             Clear
@@ -2467,48 +2481,60 @@ export default function QuizDashboardPage() {
 
                                         {/* Class list */}
                                         <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2 space-y-1.5 bg-slate-50/50 dark:bg-slate-950/50 max-h-56 custom-scrollbar">
-                                            {filteredClasses.length === 0 ? (
+                                            {sortedClasses.length === 0 ? (
                                                 <p className="text-xs text-slate-400 py-6 text-center">
                                                     {assignClassSearch ? 'No classes match your search query.' : 'No classes found.'}
                                                 </p>
                                             ) : (
-                                                filteredClasses.map(c => {
+                                                sortedClasses.map((c, idx) => {
                                                     const isChecked = selectedAssignClasses.includes(c.id);
+                                                    const prevItem = idx > 0 ? sortedClasses[idx - 1] : null;
+                                                    const isFirstUnchecked = !isChecked && prevItem && selectedAssignClasses.includes(prevItem.id);
+
                                                     return (
-                                                        <div
-                                                            key={c.id}
-                                                            onClick={() => handleToggleClassSelection(c.id)}
-                                                            className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer text-xs transition border ${
-                                                                isChecked
-                                                                    ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
-                                                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
-                                                            }`}
-                                                        >
-                                                            <div className="flex items-center gap-2.5">
-                                                                {isChecked ? (
-                                                                    <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
-                                                                ) : (
-                                                                    <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                                                                )}
-                                                                <div>
-                                                                    <span className="font-bold text-slate-900 dark:text-white">
-                                                                        {c.name}
+                                                        <React.Fragment key={c.id}>
+                                                            {isFirstUnchecked && (
+                                                                <div className="py-1 px-1 flex items-center gap-2">
+                                                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                                                        Available in Pool
                                                                     </span>
-                                                                    {c.section && (
-                                                                        <span className="ml-1.5 text-slate-500 dark:text-slate-400 font-medium">
-                                                                            ({c.section})
+                                                                    <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
+                                                                </div>
+                                                            )}
+                                                            <div
+                                                                onClick={() => handleToggleClassSelection(c.id)}
+                                                                className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer text-xs transition border ${
+                                                                    isChecked
+                                                                        ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
+                                                                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-center gap-2.5">
+                                                                    {isChecked ? (
+                                                                        <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
+                                                                    ) : (
+                                                                        <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                                                    )}
+                                                                    <div>
+                                                                        <span className="font-bold text-slate-900 dark:text-white">
+                                                                            {c.name}
+                                                                        </span>
+                                                                        {c.section && (
+                                                                            <span className="ml-1.5 text-slate-500 dark:text-slate-400 font-medium">
+                                                                                ({c.section})
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-2">
+                                                                    {c.gradeLevel && (
+                                                                        <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400">
+                                                                            Grade {c.gradeLevel}
                                                                         </span>
                                                                     )}
                                                                 </div>
                                                             </div>
-                                                            <div className="flex items-center gap-2">
-                                                                {c.gradeLevel && (
-                                                                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400">
-                                                                        Grade {c.gradeLevel}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
+                                                        </React.Fragment>
                                                     );
                                                 })
                                             )}
@@ -2519,15 +2545,25 @@ export default function QuizDashboardPage() {
 
                             {/* TAB 2: STUDENT GROUPS */}
                             {assignTargetType === 'group' && (() => {
-                                const filteredGroups = allClassGroups.filter(g => {
+                                const groupSearchQuery = assignGroupSearch.toLowerCase().trim();
+                                const visibleGroups = allClassGroups.filter(g => {
+                                    const isChecked = selectedAssignGroups.includes(g.id);
+                                    if (isChecked) return true; // checked groups always visible on top
                                     if (selectedAssignClasses.length > 0 && !selectedAssignClasses.includes(g.classId)) {
                                         return false;
                                     }
-                                    if (!assignGroupSearch.trim()) return true;
-                                    const q = assignGroupSearch.toLowerCase().trim();
+                                    if (!groupSearchQuery) return true;
                                     const name = (g.name || '').toLowerCase();
                                     const cName = (g.className || '').toLowerCase();
-                                    return name.includes(q) || cName.includes(q);
+                                    return name.includes(groupSearchQuery) || cName.includes(groupSearchQuery);
+                                });
+
+                                const sortedGroups = [...visibleGroups].sort((a, b) => {
+                                    const aChecked = selectedAssignGroups.includes(a.id);
+                                    const bChecked = selectedAssignGroups.includes(b.id);
+                                    if (aChecked && !bChecked) return -1;
+                                    if (!aChecked && bChecked) return 1;
+                                    return (groupOriginalIndexMap.get(a.id) ?? 0) - (groupOriginalIndexMap.get(b.id) ?? 0);
                                 });
 
                                 return (
@@ -2544,11 +2580,11 @@ export default function QuizDashboardPage() {
                                                     className="w-full pl-8.5 pr-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
                                                 />
                                             </div>
-                                            {filteredGroups.length > 0 && (
+                                            {sortedGroups.length > 0 && (
                                                 <div className="flex items-center gap-1.5">
                                                     <button
                                                         type="button"
-                                                        onClick={() => handleSelectAllFilteredGroups(filteredGroups)}
+                                                        onClick={() => handleSelectAllFilteredGroups(sortedGroups)}
                                                         className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-[11px] font-bold transition"
                                                     >
                                                         Select All
@@ -2556,7 +2592,7 @@ export default function QuizDashboardPage() {
                                                     {selectedAssignGroups.length > 0 && (
                                                         <button
                                                             type="button"
-                                                            onClick={() => handleDeselectFilteredGroups(filteredGroups)}
+                                                            onClick={() => setSelectedAssignGroups([])}
                                                             className="px-2.5 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 rounded-xl text-[11px] font-medium transition"
                                                         >
                                                             Clear
@@ -2574,41 +2610,53 @@ export default function QuizDashboardPage() {
 
                                         {/* Groups List */}
                                         <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2 space-y-1.5 bg-slate-50/50 dark:bg-slate-950/50 max-h-56 custom-scrollbar">
-                                            {filteredGroups.length === 0 ? (
+                                            {sortedGroups.length === 0 ? (
                                                 <p className="text-xs text-slate-400 py-6 text-center">
                                                     {assignGroupSearch ? 'No groups match your search query.' : 'No groups available.'}
                                                 </p>
                                             ) : (
-                                                filteredGroups.map(g => {
+                                                sortedGroups.map((g, idx) => {
                                                     const isChecked = selectedAssignGroups.includes(g.id);
+                                                    const prevItem = idx > 0 ? sortedGroups[idx - 1] : null;
+                                                    const isFirstUnchecked = !isChecked && prevItem && selectedAssignGroups.includes(prevItem.id);
+
                                                     return (
-                                                        <div
-                                                            key={g.id}
-                                                            onClick={() => handleToggleGroupSelection(g.id)}
-                                                            className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer text-xs transition border ${
-                                                                isChecked
-                                                                    ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
-                                                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
-                                                            }`}
-                                                        >
-                                                            <div className="flex items-center gap-2.5">
-                                                                {isChecked ? (
-                                                                    <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
-                                                                ) : (
-                                                                    <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                                                                )}
-                                                                <div>
-                                                                    <span className="font-bold text-slate-900 dark:text-white">
-                                                                        {g.name}
+                                                        <React.Fragment key={g.id}>
+                                                            {isFirstUnchecked && (
+                                                                <div className="py-1 px-1 flex items-center gap-2">
+                                                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                                                        Available in Pool
                                                                     </span>
+                                                                    <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
                                                                 </div>
-                                                            </div>
-                                                            {g.className && (
-                                                                <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400">
-                                                                    {g.className}
-                                                                </span>
                                                             )}
-                                                        </div>
+                                                            <div
+                                                                onClick={() => handleToggleGroupSelection(g.id)}
+                                                                className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer text-xs transition border ${
+                                                                    isChecked
+                                                                        ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
+                                                                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-center gap-2.5">
+                                                                    {isChecked ? (
+                                                                        <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
+                                                                    ) : (
+                                                                        <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                                                    )}
+                                                                    <div>
+                                                                        <span className="font-bold text-slate-900 dark:text-white">
+                                                                            {g.name}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                                {g.className && (
+                                                                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400">
+                                                                        {g.className}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </React.Fragment>
                                                     );
                                                 })
                                             )}
@@ -2619,16 +2667,26 @@ export default function QuizDashboardPage() {
 
                             {/* TAB 3: SPECIFIC STUDENTS (FILTER BY CLASS, SEARCH & PERSIST) */}
                             {assignTargetType === 'student' && (() => {
-                                const filteredStudents = allClassStudents.filter(s => {
+                                const studentSearchQuery = assignStudentSearch.toLowerCase().trim();
+                                const visibleStudents = allClassStudents.filter(s => {
+                                    const isChecked = selectedAssignStudents.includes(s.id);
+                                    if (isChecked) return true; // checked students always visible on top
                                     if (studentClassFilter !== 'all' && s.classId !== studentClassFilter) {
                                         return false;
                                     }
-                                    if (!assignStudentSearch.trim()) return true;
-                                    const q = assignStudentSearch.toLowerCase().trim();
+                                    if (!studentSearchQuery) return true;
                                     const fullName = `${s.firstName || ''} ${s.lastName || ''}`.toLowerCase();
                                     const email = (s.email || '').toLowerCase();
                                     const sId = (s.studentId || '').toLowerCase();
-                                    return fullName.includes(q) || email.includes(q) || sId.includes(q);
+                                    return fullName.includes(studentSearchQuery) || email.includes(studentSearchQuery) || sId.includes(studentSearchQuery);
+                                });
+
+                                const sortedStudents = [...visibleStudents].sort((a, b) => {
+                                    const aChecked = selectedAssignStudents.includes(a.id);
+                                    const bChecked = selectedAssignStudents.includes(b.id);
+                                    if (aChecked && !bChecked) return -1;
+                                    if (!aChecked && bChecked) return 1;
+                                    return (studentOriginalIndexMap.get(a.id) ?? 0) - (studentOriginalIndexMap.get(b.id) ?? 0);
                                 });
 
                                 return (
@@ -2678,24 +2736,15 @@ export default function QuizDashboardPage() {
                                                 <span className="font-bold text-slate-800 dark:text-slate-200">
                                                     {selectedAssignStudents.length} selected across classes
                                                 </span>
-                                                {selectedAssignStudents.length > 0 && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setShowSelectedStudentsPreview(prev => !prev)}
-                                                        className="text-[11px] text-primary-600 dark:text-primary-400 hover:underline font-bold"
-                                                    >
-                                                        {showSelectedStudentsPreview ? 'Hide Details' : 'View Selected'}
-                                                    </button>
-                                                )}
                                             </div>
 
                                             <div className="flex items-center gap-1.5">
                                                 <button
                                                     type="button"
-                                                    onClick={() => handleSelectAllFilteredStudents(filteredStudents)}
+                                                    onClick={() => handleSelectAllFilteredStudents(sortedStudents)}
                                                     className="px-2 py-1 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] font-bold text-slate-700 dark:text-slate-300 transition"
                                                 >
-                                                    Select Filtered ({filteredStudents.length})
+                                                    Select All
                                                 </button>
                                                 {selectedAssignStudents.length > 0 && (
                                                     <button
@@ -2709,74 +2758,59 @@ export default function QuizDashboardPage() {
                                             </div>
                                         </div>
 
-                                        {/* Expandable Preview Chips of Persisted Selected Students */}
-                                        {showSelectedStudentsPreview && selectedAssignStudents.length > 0 && (
-                                            <div className="p-2.5 bg-primary-50/50 dark:bg-primary-950/20 border border-primary-200 dark:border-primary-800 rounded-xl max-h-24 overflow-y-auto custom-scrollbar flex flex-wrap gap-1.5 flex-shrink-0">
-                                                {selectedAssignStudents.map(sId => {
-                                                    const s = allClassStudents.find(item => item.id === sId);
-                                                    return (
-                                                        <span
-                                                            key={sId}
-                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white dark:bg-slate-900 border border-primary-200 dark:border-primary-700 text-[11px] font-medium text-slate-800 dark:text-slate-200"
-                                                        >
-                                                            <span>{s ? `${s.firstName} ${s.lastName}` : 'Student'}</span>
-                                                            {s?.className && (
-                                                                <span className="text-[9px] text-slate-400">({s.className})</span>
-                                                            )}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleToggleStudentSelection(sId)}
-                                                                className="hover:text-rose-500 rounded ml-0.5"
-                                                            >
-                                                                <X className="w-2.5 h-2.5" />
-                                                            </button>
-                                                        </span>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-
                                         {/* Students list */}
                                         <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2 space-y-1 bg-slate-50/50 dark:bg-slate-950/50 max-h-56 custom-scrollbar">
-                                            {filteredStudents.length === 0 ? (
+                                            {sortedStudents.length === 0 ? (
                                                 <p className="text-xs text-slate-400 py-6 text-center">
                                                     {assignStudentSearch ? 'No students match your search filter.' : 'No students found in this class.'}
                                                 </p>
                                             ) : (
-                                                filteredStudents.map(s => {
+                                                sortedStudents.map((s, idx) => {
                                                     const isChecked = selectedAssignStudents.includes(s.id);
+                                                    const prevItem = idx > 0 ? sortedStudents[idx - 1] : null;
+                                                    const isFirstUnchecked = !isChecked && prevItem && selectedAssignStudents.includes(prevItem.id);
+
                                                     return (
-                                                        <div
-                                                            key={s.id}
-                                                            onClick={() => handleToggleStudentSelection(s.id)}
-                                                            className={`flex items-center justify-between p-2 rounded-xl cursor-pointer text-xs transition border ${
-                                                                isChecked
-                                                                    ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
-                                                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
-                                                            }`}
-                                                        >
-                                                            <div className="flex items-center gap-2.5">
-                                                                {isChecked ? (
-                                                                    <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
-                                                                ) : (
-                                                                    <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                                                                )}
-                                                                <div>
-                                                                    <div className="font-bold text-slate-900 dark:text-white">
-                                                                        {s.firstName} {s.lastName}
-                                                                    </div>
-                                                                    <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
-                                                                        {s.studentId && <span>ID: {s.studentId}</span>}
-                                                                        {s.email && <span>• {s.email}</span>}
+                                                        <React.Fragment key={s.id}>
+                                                            {isFirstUnchecked && (
+                                                                <div className="py-1 px-1 flex items-center gap-2">
+                                                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                                                        Available in Pool
+                                                                    </span>
+                                                                    <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
+                                                                </div>
+                                                            )}
+                                                            <div
+                                                                onClick={() => handleToggleStudentSelection(s.id)}
+                                                                className={`flex items-center justify-between p-2 rounded-xl cursor-pointer text-xs transition border ${
+                                                                    isChecked
+                                                                        ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
+                                                                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-center gap-2.5">
+                                                                    {isChecked ? (
+                                                                        <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
+                                                                    ) : (
+                                                                        <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                                                    )}
+                                                                    <div>
+                                                                        <div className="font-bold text-slate-900 dark:text-white">
+                                                                            {s.firstName} {s.lastName}
+                                                                        </div>
+                                                                        <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                                                                            {s.studentId && <span>ID: {s.studentId}</span>}
+                                                                            {s.email && <span>• {s.email}</span>}
+                                                                        </div>
                                                                     </div>
                                                                 </div>
+                                                                {s.className && (
+                                                                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400 flex-shrink-0">
+                                                                        {s.className}
+                                                                    </span>
+                                                                )}
                                                             </div>
-                                                            {s.className && (
-                                                                <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400 flex-shrink-0">
-                                                                    {s.className}
-                                                                </span>
-                                                            )}
-                                                        </div>
+                                                        </React.Fragment>
                                                     );
                                                 })
                                             )}
