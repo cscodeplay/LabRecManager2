@@ -198,6 +198,8 @@ async function main() {
                         bloomsLevel: ex.bloomsLevel,
                         starterCode: ex.starterCode || null,
                         solutionCode: ex.solutionCode || null,
+                        testCases: ex.testCases || null,
+                        hints: ex.hints || null,
                         sequenceOrder: eIdx + 1,
                         xpReward: ex.xpReward || 15
                     }
@@ -209,31 +211,51 @@ async function main() {
 
         // Create assignment for classes so students can access the module as well
         if (creatorId && classes.length > 0) {
-            for (const cls of classes) {
-                const existingAssign = await prisma.assignment.findFirst({
-                    where: { trainingModuleId: seededModule.id, schoolId: school.id }
-                });
-                if (!existingAssign) {
-                    try {
-                        const newAssign = await prisma.assignment.create({
-                            data: {
-                                schoolId: school.id,
-                                trainingModuleId: seededModule.id,
-                                title: `DBMS Module Assignment - Class ${cls.name}`,
-                                createdById: creatorId,
-                                totalPoints: 100
-                            }
-                        });
-                        await prisma.assignmentTarget.create({
-                            data: {
-                                assignment: { connect: { id: newAssign.id } },
-                                assignedBy: { connect: { id: creatorId } },
-                                targetType: 'class',
-                                targetClassId: cls.id
-                            }
-                        });
-                    } catch (targetErr) {
-                        console.warn(`[Seed] Notice on Assignment for class ${cls.name}:`, targetErr.message);
+            const subject = await prisma.subject.findFirst({ where: { schoolId: school.id } });
+            let assign = await prisma.assignment.findFirst({
+                where: { trainingModuleId: seededModule.id }
+            });
+            if (!assign && subject) {
+                try {
+                    assign = await prisma.assignment.create({
+                        data: {
+                            schoolId: school.id,
+                            subjectId: subject.id,
+                            trainingModuleId: seededModule.id,
+                            title: `Training: ${seededModule.title}`,
+                            description: 'Complete all interactive units and exercises in Database Management System',
+                            aim: 'Complete all interactive units and exercises in Database Management System',
+                            createdById: creatorId,
+                            assignmentType: 'training_module',
+                            maxMarks: 100,
+                            passingMarks: 40,
+                            status: 'published',
+                            academicYearId: academicYearId,
+                            due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+                        }
+                    });
+                } catch (assignErr) {
+                    console.warn(`[Seed] Could not create Assignment:`, assignErr.message);
+                }
+            }
+            if (assign) {
+                for (const cls of classes) {
+                    const existingTarget = await prisma.assignmentTarget.findFirst({
+                        where: { assignmentId: assign.id, targetType: 'class', targetClassId: cls.id }
+                    });
+                    if (!existingTarget) {
+                        try {
+                            await prisma.assignmentTarget.create({
+                                data: {
+                                    assignmentId: assign.id,
+                                    assignedById: creatorId,
+                                    targetType: 'class',
+                                    targetClassId: cls.id
+                                }
+                            });
+                        } catch (targetErr) {
+                            console.warn(`[Seed] Notice on Assignment for class ${cls.name}:`, targetErr.message);
+                        }
                     }
                 }
             }

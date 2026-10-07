@@ -45,9 +45,9 @@ export default function ModuleAssignmentModal({
         setLoading(true);
         try {
             const [assignRes, classRes, userRes] = await Promise.all([
-                trainingAPI.getModuleAssignments(module.id),
+                trainingAPI.getModuleAssignments(module.id).catch(() => ({ data: { data: { assignments: [] } } })),
                 classesAPI.getAll({ all: 'true' }).catch(() => ({ data: { data: { classes: [] } } })),
-                usersAPI.getAll({ role: 'student', limit: 300 }).catch(() => ({ data: { data: { users: [] } } }))
+                usersAPI.getAll({ role: 'student', all: 'true', limit: 1000 }).catch(() => ({ data: { data: { users: [] } } }))
             ]);
 
             const loadedAssignments = assignRes.data?.data?.assignments || [];
@@ -179,30 +179,53 @@ export default function ModuleAssignmentModal({
         setDeadline(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
     };
 
-    // Filters for edit search
+    // Filters for edit search with checked items pinned to the top
     const filteredClasses = useMemo(() => {
-        if (!searchQuery.trim()) return allClasses;
-        const q = searchQuery.toLowerCase();
-        return allClasses.filter(c => c.name?.toLowerCase().includes(q));
-    }, [allClasses, searchQuery]);
+        let list = allClasses;
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            list = list.filter(c => c.name?.toLowerCase().includes(q));
+        }
+        return [...list].sort((a, b) => {
+            const aSel = selectedClassIds.includes(a.id) ? 1 : 0;
+            const bSel = selectedClassIds.includes(b.id) ? 1 : 0;
+            return bSel - aSel;
+        });
+    }, [allClasses, searchQuery, selectedClassIds]);
 
     const filteredGroups = useMemo(() => {
-        if (!searchQuery.trim()) return allGroups;
-        const q = searchQuery.toLowerCase();
-        return allGroups.filter(g => 
-            g.name?.toLowerCase().includes(q) || g.className?.toLowerCase().includes(q)
-        );
-    }, [allGroups, searchQuery]);
+        let list = allGroups;
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            list = list.filter(g => 
+                g.name?.toLowerCase().includes(q) || g.className?.toLowerCase().includes(q)
+            );
+        }
+        return [...list].sort((a, b) => {
+            const aSel = selectedGroupIds.includes(a.id) ? 1 : 0;
+            const bSel = selectedGroupIds.includes(b.id) ? 1 : 0;
+            return bSel - aSel;
+        });
+    }, [allGroups, searchQuery, selectedGroupIds]);
 
     const filteredStudents = useMemo(() => {
-        if (!searchQuery.trim()) return allStudents;
-        const q = searchQuery.toLowerCase();
-        return allStudents.filter(s => 
-            `${s.firstName} ${s.lastName}`.toLowerCase().includes(q) ||
-            s.email?.toLowerCase().includes(q) ||
-            String(s.rollNumber || '').includes(q)
-        );
-    }, [allStudents, searchQuery]);
+        let list = allStudents;
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            list = list.filter(s => 
+                `${s.firstName} ${s.lastName || ''}`.toLowerCase().includes(q) ||
+                s.email?.toLowerCase().includes(q) ||
+                String(s.studentId || '').toLowerCase().includes(q) ||
+                String(s.admissionNumber || '').toLowerCase().includes(q) ||
+                String(s.rollNumber || '').toLowerCase().includes(q)
+            );
+        }
+        return [...list].sort((a, b) => {
+            const aSel = selectedStudentIds.includes(a.id) ? 1 : 0;
+            const bSel = selectedStudentIds.includes(b.id) ? 1 : 0;
+            return bSel - aSel;
+        });
+    }, [allStudents, searchQuery, selectedStudentIds]);
 
     // Computed assigned targets for view mode
     const assignedClasses = useMemo(() => {
@@ -646,9 +669,9 @@ export default function ModuleAssignmentModal({
                                                                 <div className="text-[10px] text-slate-400">{s.email}</div>
                                                             </div>
                                                         </div>
-                                                        {s.rollNumber && (
+                                                        {(s.studentId || s.admissionNumber || s.rollNumber) && (
                                                             <span className="text-[10px] font-mono text-slate-400">
-                                                                Roll #{s.rollNumber}
+                                                                {s.studentId ? `ID: ${s.studentId}` : s.admissionNumber ? `Adm: ${s.admissionNumber}` : `Roll #${s.rollNumber}`}
                                                             </span>
                                                         )}
                                                     </div>

@@ -2365,7 +2365,7 @@ router.get('/modules/:id/assignments', authenticate, authorize('admin', 'princip
             if (target.targetStudentId) {
                 const std = await prisma.user.findUnique({
                     where: { id: target.targetStudentId },
-                    select: { id: true, firstName: true, lastName: true, email: true, rollNumber: true }
+                    select: { id: true, firstName: true, lastName: true, email: true, studentId: true, admissionNumber: true }
                 });
                 target.student = std;
                 target.studentName = std ? `${std.firstName} ${std.lastName || ''}`.trim() : 'Unknown Student';
