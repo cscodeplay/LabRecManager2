@@ -592,7 +592,8 @@ export default function UsersPage() {
                                     </button>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                     {users.length === 0 && (
                         <div className="p-12 text-center text-slate-500">
