@@ -63,6 +63,15 @@ export default function SchoolProfilePage() {
             setSaving(true);
             const res = await schoolAPI.updateProfile(profile);
             if (res.data.success) {
+                try {
+                    localStorage.setItem('school_branding', JSON.stringify({
+                        name: profile.name,
+                        nameHindi: profile.nameHindi,
+                        logoUrl: profile.logoUrl
+                    }));
+                } catch (cacheErr) {
+                    // ignore
+                }
                 toast.success('School profile saved successfully');
             }
         } catch (error) {
@@ -81,8 +90,22 @@ export default function SchoolProfilePage() {
             toast.loading('Uploading logo...', { id: 'logo-upload' });
             const res = await schoolAPI.uploadLogo(file);
             if (res.data.success) {
-                setProfile(prev => ({ ...prev, logoUrl: res.data.data.url }));
-                toast.success('Logo uploaded', { id: 'logo-upload' });
+                const uploadedUrl = res.data.data.url;
+                const updatedProfile = { ...profile, logoUrl: uploadedUrl };
+                setProfile(updatedProfile);
+                
+                // Immediately persist the uploaded logo to the database
+                await schoolAPI.updateProfile(updatedProfile);
+                try {
+                    localStorage.setItem('school_branding', JSON.stringify({
+                        name: updatedProfile.name,
+                        nameHindi: updatedProfile.nameHindi,
+                        logoUrl: uploadedUrl
+                    }));
+                } catch (cacheErr) {
+                    // ignore
+                }
+                toast.success('Logo uploaded and saved', { id: 'logo-upload' });
             }
         } catch (error) {
             console.error('Logo upload error:', error);
@@ -98,8 +121,11 @@ export default function SchoolProfilePage() {
             toast.loading('Uploading letterhead...', { id: 'letterhead-upload' });
             const res = await schoolAPI.uploadLetterhead(file);
             if (res.data.success) {
-                setProfile(prev => ({ ...prev, letterheadUrl: res.data.data.url }));
-                toast.success('Letterhead uploaded', { id: 'letterhead-upload' });
+                const uploadedUrl = res.data.data.url;
+                const updatedProfile = { ...profile, letterheadUrl: uploadedUrl };
+                setProfile(updatedProfile);
+                await schoolAPI.updateProfile(updatedProfile);
+                toast.success('Letterhead uploaded and saved', { id: 'letterhead-upload' });
             }
         } catch (error) {
             console.error('Letterhead upload error:', error);
@@ -145,6 +171,15 @@ export default function SchoolProfilePage() {
                                 <Upload className="w-4 h-4" /> Upload Logo
                                 <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
                             </label>
+                            <div className="mt-3">
+                                <input
+                                    type="text"
+                                    placeholder="Or paste Logo Image URL (https://...)"
+                                    value={profile.logoUrl}
+                                    onChange={(e) => setProfile({ ...profile, logoUrl: e.target.value })}
+                                    className="input text-xs w-full text-center"
+                                />
+                            </div>
                         </div>
 
                         {/* Letterhead */}
@@ -165,6 +200,15 @@ export default function SchoolProfilePage() {
                                 <Upload className="w-4 h-4" /> Upload Letterhead
                                 <input type="file" accept="image/*" className="hidden" onChange={handleLetterheadUpload} />
                             </label>
+                            <div className="mt-3">
+                                <input
+                                    type="text"
+                                    placeholder="Or paste Letterhead Image URL (https://...)"
+                                    value={profile.letterheadUrl}
+                                    onChange={(e) => setProfile({ ...profile, letterheadUrl: e.target.value })}
+                                    className="input text-xs w-full text-center"
+                                />
+                            </div>
                         </div>
                     </div>
 

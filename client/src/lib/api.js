@@ -569,6 +569,8 @@ export const uploadAPI = {
 export const schoolAPI = {
     getProfile: () => api.get('/schools/profile'),
     updateProfile: (data) => api.put('/schools/profile', data),
+    getBranding: () => api.get('/schools/branding'),
+    getAcademicYears: () => api.get('/schools/academic-years'),
     uploadLogo: (file) => {
         const formData = new FormData();
         formData.append('file', file);

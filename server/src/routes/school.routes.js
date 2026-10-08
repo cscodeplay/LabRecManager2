@@ -43,13 +43,38 @@ router.get('/academic-years', asyncHandler(async (req, res) => {
         }
     }
 
-    // Get default school info for login page
-    const school = await prisma.school.findFirst({
+    // Helper to get active school branding for login/public pages
+    let school = await prisma.school.findFirst({
+        where: {
+            AND: [
+                { logoUrl: { not: null } },
+                { logoUrl: { not: '' } }
+            ]
+        },
+        orderBy: { updatedAt: 'desc' },
         select: {
+            id: true,
             name: true,
-            logoUrl: true
+            nameHindi: true,
+            logoUrl: true,
+            address: true,
+            boardAffiliation: true
         }
     });
+
+    if (!school) {
+        school = await prisma.school.findFirst({
+            orderBy: { updatedAt: 'desc' },
+            select: {
+                id: true,
+                name: true,
+                nameHindi: true,
+                logoUrl: true,
+                address: true,
+                boardAffiliation: true
+            }
+        });
+    }
 
     res.json({
         success: true,
@@ -57,6 +82,50 @@ router.get('/academic-years', asyncHandler(async (req, res) => {
             academicYears,
             school // Return default school info
         }
+    });
+}));
+
+/**
+ * @route   GET /api/schools/branding
+ * @desc    Get public school branding (name, logo, etc.) for login & public pages
+ * @access  Public
+ */
+router.get('/branding', asyncHandler(async (req, res) => {
+    let school = await prisma.school.findFirst({
+        where: {
+            AND: [
+                { logoUrl: { not: null } },
+                { logoUrl: { not: '' } }
+            ]
+        },
+        orderBy: { updatedAt: 'desc' },
+        select: {
+            id: true,
+            name: true,
+            nameHindi: true,
+            logoUrl: true,
+            address: true,
+            boardAffiliation: true
+        }
+    });
+
+    if (!school) {
+        school = await prisma.school.findFirst({
+            orderBy: { updatedAt: 'desc' },
+            select: {
+                id: true,
+                name: true,
+                nameHindi: true,
+                logoUrl: true,
+                address: true,
+                boardAffiliation: true
+            }
+        });
+    }
+
+    res.json({
+        success: true,
+        data: { school: school || null }
     });
 }));
 
@@ -158,9 +227,20 @@ router.put('/profile', authenticate, authorize('admin', 'principal'), asyncHandl
     if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
     if (letterheadUrl !== undefined) updateData.letterheadUrl = letterheadUrl;
     if (boardAffiliation !== undefined) updateData.boardAffiliation = boardAffiliation;
+    updateData.updatedAt = new Date();
+
+    let targetSchoolId = req.user.schoolId;
+    if (!targetSchoolId) {
+        const firstSchool = await prisma.school.findFirst();
+        if (firstSchool) targetSchoolId = firstSchool.id;
+    }
+
+    if (!targetSchoolId) {
+        return res.status(400).json({ success: false, message: 'No school found to update' });
+    }
 
     const school = await prisma.school.update({
-        where: { id: req.user.schoolId },
+        where: { id: targetSchoolId },
         data: updateData
     });
 

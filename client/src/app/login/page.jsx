@@ -148,7 +148,8 @@ export default function LoginPage() {
     const [academicYears, setAcademicYears] = useState([]);
     const [selectedYear, setSelectedYear] = useState('');
     const [loadingYears, setLoadingYears] = useState(true);
-    const [schoolInfo, setSchoolInfo] = useState({ name: '', logoUrl: '' });
+    const [schoolInfo, setSchoolInfo] = useState({ name: '', nameHindi: '', logoUrl: '' });
+    const [logoLoadError, setLogoLoadError] = useState(false);
 
     // PIN login state
     const [loginMode, setLoginMode] = useState('password');
@@ -162,6 +163,19 @@ export default function LoginPage() {
     const { register, handleSubmit, formState: { errors } } = useForm();
 
     useEffect(() => {
+        // Hydrate from localStorage for instantaneous branding display without flashing
+        try {
+            const cached = localStorage.getItem('school_branding');
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                if (parsed?.name || parsed?.logoUrl) {
+                    setSchoolInfo(prev => ({ ...prev, ...parsed }));
+                }
+            }
+        } catch (e) {
+            // ignore
+        }
+
         loadAcademicYears();
     }, []);
 
@@ -169,9 +183,29 @@ export default function LoginPage() {
         try {
             const res = await axios.get('/api/schools/academic-years');
             const years = res.data.data?.academicYears || [];
-            if (res.data.data?.school) {
-                setSchoolInfo(res.data.data.school);
+            let schoolData = res.data.data?.school;
+
+            // Also check dedicated branding endpoint if schoolData is empty or missing logo
+            if (!schoolData || !schoolData.logoUrl) {
+                try {
+                    const brandRes = await axios.get('/api/schools/branding');
+                    if (brandRes.data?.data?.school) {
+                        schoolData = { ...(schoolData || {}), ...brandRes.data.data.school };
+                    }
+                } catch (bErr) {
+                    console.warn('Could not load separate branding:', bErr.message);
+                }
             }
+
+            if (schoolData && (schoolData.name || schoolData.logoUrl)) {
+                setSchoolInfo(schoolData);
+                try {
+                    localStorage.setItem('school_branding', JSON.stringify(schoolData));
+                } catch (e) {
+                    // ignore
+                }
+            }
+
             setAcademicYears(years);
 
             // Default to current session, then latest by startDate
@@ -290,22 +324,63 @@ export default function LoginPage() {
     const displayTitle = schoolInfo.name || t('login.title');
 
     return (
-        <div className="min-h-screen flex">
+        <div className="min-h-screen flex relative">
             {/* Left Section - Gradient Background */}
             <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary-600 via-primary-700 to-accent-600 relative overflow-hidden">
                 <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-10"></div>
-                <div className="relative z-10 flex flex-col justify-center items-center text-white p-12">
-                    <div className="w-24 h-24 bg-white/10 backdrop-blur-xl rounded-2xl flex items-center justify-center mb-8 overflow-hidden">
-                        {schoolInfo.logoUrl ? (
-                            <img src={schoolInfo.logoUrl} alt={schoolInfo.name} className="w-full h-full object-contain p-2" />
+
+                {/* Top-Left Corner Brand Header (Desktop) */}
+                <div className="absolute top-6 left-6 z-20 flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-white/15 backdrop-blur-md p-1.5 flex items-center justify-center shadow-sm border border-white/20 overflow-hidden">
+                        {schoolInfo.logoUrl && !logoLoadError ? (
+                            <img
+                                src={schoolInfo.logoUrl}
+                                alt={schoolInfo.name || 'School Logo'}
+                                className="w-full h-full object-contain"
+                                onError={() => setLogoLoadError(true)}
+                            />
                         ) : (
-                            <GraduationCap className="w-12 h-12" />
+                            <GraduationCap className="w-6 h-6 text-white" />
                         )}
                     </div>
-                    <h1 className="text-4xl font-bold mb-4 text-center">{displayTitle}</h1>
-                    <p className="text-xl text-white/80 text-center max-w-md">{t('login.subtitle')}</p>
+                    <div className="flex flex-col text-left">
+                        <span className="font-bold text-white text-base tracking-tight leading-tight">
+                            {schoolInfo.name || 'LabRecManager'}
+                        </span>
+                        {schoolInfo.nameHindi && (
+                            <span className="text-xs text-white/80 font-medium leading-tight">
+                                {schoolInfo.nameHindi}
+                            </span>
+                        )}
+                    </div>
+                </div>
 
-                    <div className="mt-12 grid gap-4 text-sm">
+                <div className="relative z-10 flex flex-col justify-center items-center text-white p-12 text-center w-full">
+                    <div className="w-28 h-28 bg-white/95 backdrop-blur-xl rounded-2xl flex items-center justify-center mb-6 overflow-hidden p-3 shadow-2xl border border-white/40">
+                        {schoolInfo.logoUrl && !logoLoadError ? (
+                            <img
+                                src={schoolInfo.logoUrl}
+                                alt={schoolInfo.name || 'School Logo'}
+                                className="w-full h-full object-contain"
+                                onError={() => setLogoLoadError(true)}
+                            />
+                        ) : (
+                            <GraduationCap className="w-14 h-14 text-primary-600" />
+                        )}
+                    </div>
+                    <h1 className="text-4xl font-extrabold mb-2 text-center tracking-tight drop-shadow-sm">
+                        {displayTitle}
+                    </h1>
+                    {schoolInfo.nameHindi && (
+                        <p className="text-xl text-white/90 font-medium mb-3">
+                            {schoolInfo.nameHindi}
+                        </p>
+                    )}
+                    <p className="text-lg text-white/80 text-center max-w-md">
+                        {t('login.subtitle')}
+                    </p>
+
+                    <div className="mt-10 grid gap-3 text-sm">
                         {[
                             t('login.features.multiLanguage'),
                             t('login.features.onlineViva'),
@@ -324,7 +399,26 @@ export default function LoginPage() {
             </div>
 
             {/* Right Section - Login Form */}
-            <div className="flex-1 flex flex-col justify-center items-center p-8 bg-slate-50">
+            <div className="flex-1 flex flex-col justify-center items-center p-8 bg-slate-50 relative">
+                {/* Top-Left Corner Brand Header (Mobile) */}
+                <div className="lg:hidden absolute top-4 left-4 z-20 flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-white p-1.5 flex items-center justify-center shadow-sm border border-slate-200 overflow-hidden">
+                        {schoolInfo.logoUrl && !logoLoadError ? (
+                            <img
+                                src={schoolInfo.logoUrl}
+                                alt={schoolInfo.name || 'School Logo'}
+                                className="w-full h-full object-contain"
+                                onError={() => setLogoLoadError(true)}
+                            />
+                        ) : (
+                            <GraduationCap className="w-5 h-5 text-primary-600" />
+                        )}
+                    </div>
+                    <span className="font-bold text-slate-800 text-sm tracking-tight truncate max-w-[150px] sm:max-w-[200px]">
+                        {schoolInfo.name || 'LabRecManager'}
+                    </span>
+                </div>
+
                 {/* Language Toggle & Status */}
                 <div className="absolute top-4 right-4 flex items-center gap-4">
                     <DatabaseStatus />
@@ -332,15 +426,23 @@ export default function LoginPage() {
                 </div>
 
                 <div className="w-full max-w-md">
-                    <div className="lg:hidden text-center mb-8">
-                        <div className="w-16 h-16 bg-primary-100 rounded-2xl flex items-center justify-center mx-auto mb-4 overflow-hidden">
-                            {schoolInfo.logoUrl ? (
-                                <img src={schoolInfo.logoUrl} alt={schoolInfo.name} className="w-full h-full object-contain p-1" />
+                    <div className="lg:hidden text-center mb-8 mt-8">
+                        <div className="w-20 h-20 bg-white rounded-2xl shadow-md border border-slate-200 flex items-center justify-center mx-auto mb-3 overflow-hidden p-2">
+                            {schoolInfo.logoUrl && !logoLoadError ? (
+                                <img
+                                    src={schoolInfo.logoUrl}
+                                    alt={schoolInfo.name || 'School Logo'}
+                                    className="w-full h-full object-contain"
+                                    onError={() => setLogoLoadError(true)}
+                                />
                             ) : (
-                                <GraduationCap className="w-8 h-8 text-primary-600" />
+                                <GraduationCap className="w-10 h-10 text-primary-600" />
                             )}
                         </div>
                         <h1 className="text-2xl font-bold text-slate-900">{displayTitle}</h1>
+                        {schoolInfo.nameHindi && (
+                            <p className="text-sm text-slate-600 font-medium mt-1">{schoolInfo.nameHindi}</p>
+                        )}
                     </div>
 
                     <div className="card p-8">

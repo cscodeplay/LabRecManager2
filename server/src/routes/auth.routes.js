@@ -51,7 +51,8 @@ router.post('/login', loginValidation, asyncHandler(async (req, res) => {
                     id: true,
                     name: true,
                     nameHindi: true,
-                    primaryLanguage: true
+                    primaryLanguage: true,
+                    logoUrl: true
                 }
             }
         }
@@ -308,7 +309,8 @@ router.get('/me', authenticate, asyncHandler(async (req, res) => {
                     name: true,
                     nameHindi: true,
                     primaryLanguage: true,
-                    secondaryLanguages: true
+                    secondaryLanguages: true,
+                    logoUrl: true
                 }
             }
         }
