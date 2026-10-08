@@ -236,15 +236,20 @@ router.get('/modules', authenticate, asyncHandler(async (req, res) => {
             orTargetConditions.push({ targetType: 'group', targetGroupId: { in: groupIds } });
         }
 
-        where.assignments = {
-            some: {
-                targets: {
+        where.OR = [
+            { assignments: { none: {} } },
+            {
+                assignments: {
                     some: {
-                        OR: orTargetConditions
+                        targets: {
+                            some: {
+                                OR: orTargetConditions
+                            }
+                        }
                     }
                 }
             }
-        };
+        ];
     }
     
     // Filter by academic session if provided via header from client interceptor
@@ -387,19 +392,25 @@ router.get('/modules/:id', authenticate, asyncHandler(async (req, res) => {
             orTargetConditions.push({ targetType: 'group', targetGroupId: { in: groupIds } });
         }
 
-        const assignmentCount = await prisma.assignment.count({
-            where: {
-                trainingModuleId: moduleId,
-                targets: {
-                    some: {
-                        OR: orTargetConditions
-                    }
-                }
-            }
+        const totalAssignmentsForModule = await prisma.assignment.count({
+            where: { trainingModuleId: moduleId }
         });
 
-        if (assignmentCount === 0) {
-            return res.status(403).json({ success: false, message: 'You are not assigned to this training course module' });
+        if (totalAssignmentsForModule > 0) {
+            const assignmentCount = await prisma.assignment.count({
+                where: {
+                    trainingModuleId: moduleId,
+                    targets: {
+                        some: {
+                            OR: orTargetConditions
+                        }
+                    }
+                }
+            });
+
+            if (assignmentCount === 0) {
+                return res.status(403).json({ success: false, message: 'You are not assigned to this training course module' });
+            }
         }
     }
 

@@ -1058,6 +1058,31 @@ async function assignQuizTargets(quizId, { targetType, targetClassId, targetClas
     const groupIds = Array.isArray(targetGroupIds) ? targetGroupIds : (targetGroupId ? [targetGroupId] : []);
     const studentIds = Array.isArray(targetStudentIds) ? targetStudentIds : (targetStudentId ? [targetStudentId] : []);
 
+    // Reconcile assignments: if multi mode, remove targets that were unselected by the user
+    if (targetType === 'multi') {
+        await prisma.quizAssignment.deleteMany({
+            where: {
+                quizId,
+                targetType: 'class',
+                ...(classIds.length > 0 ? { targetClassId: { notIn: classIds } } : {})
+            }
+        });
+        await prisma.quizAssignment.deleteMany({
+            where: {
+                quizId,
+                targetType: 'group',
+                ...(groupIds.length > 0 ? { targetGroupId: { notIn: groupIds } } : {})
+            }
+        });
+        await prisma.quizAssignment.deleteMany({
+            where: {
+                quizId,
+                targetType: 'student',
+                ...(studentIds.length > 0 ? { targetStudentId: { notIn: studentIds } } : {})
+            }
+        });
+    }
+
     // 1. Classes
     if (targetType === 'class' || (!targetType && classIds.length > 0) || targetType === 'multi') {
         for (const cId of classIds) {

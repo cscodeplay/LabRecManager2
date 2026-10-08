@@ -701,7 +701,15 @@ export default function QuizDashboardPage() {
             setClassList(loadedClasses);
 
             if (assignRes.data?.success) {
-                setActiveAssignments(assignRes.data.data || []);
+                const existing = assignRes.data.data || [];
+                setActiveAssignments(existing);
+                const existingClassIds = existing.filter(a => a.targetType === 'class' && a.targetClassId).map(a => a.targetClassId);
+                const existingGroupIds = existing.filter(a => a.targetType === 'group' && a.targetGroupId).map(a => a.targetGroupId);
+                const existingStudentIds = existing.filter(a => a.targetType === 'student' && a.targetStudentId).map(a => a.targetStudentId);
+
+                setSelectedAssignClasses(existingClassIds);
+                setSelectedAssignGroups(existingGroupIds);
+                setSelectedAssignStudents(existingStudentIds);
             }
 
             if (loadedClasses.length > 0) {
@@ -2480,63 +2488,63 @@ export default function QuizDashboardPage() {
                                         </div>
 
                                         {/* Class list */}
-                                        <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2 space-y-1.5 bg-slate-50/50 dark:bg-slate-950/50 max-h-56 custom-scrollbar">
+                                        <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 max-h-64 custom-scrollbar bg-slate-50/50 dark:bg-slate-950/50">
                                             {sortedClasses.length === 0 ? (
                                                 <p className="text-xs text-slate-400 py-6 text-center">
                                                     {assignClassSearch ? 'No classes match your search query.' : 'No classes found.'}
                                                 </p>
                                             ) : (
-                                                sortedClasses.map((c, idx) => {
-                                                    const isChecked = selectedAssignClasses.includes(c.id);
-                                                    const prevItem = idx > 0 ? sortedClasses[idx - 1] : null;
-                                                    const isFirstUnchecked = !isChecked && prevItem && selectedAssignClasses.includes(prevItem.id);
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                    {sortedClasses.map((c, idx) => {
+                                                        const isChecked = selectedAssignClasses.includes(c.id);
+                                                        const prevItem = idx > 0 ? sortedClasses[idx - 1] : null;
+                                                        const isFirstUnchecked = !isChecked && prevItem && selectedAssignClasses.includes(prevItem.id);
 
-                                                    return (
-                                                        <React.Fragment key={c.id}>
-                                                            {isFirstUnchecked && (
-                                                                <div className="py-1 px-1 flex items-center gap-2">
-                                                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                                                                        Available in Pool
-                                                                    </span>
-                                                                    <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
-                                                                </div>
-                                                            )}
-                                                            <div
-                                                                onClick={() => handleToggleClassSelection(c.id)}
-                                                                className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer text-xs transition border ${
-                                                                    isChecked
-                                                                        ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
-                                                                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
-                                                                }`}
-                                                            >
-                                                                <div className="flex items-center gap-2.5">
-                                                                    {isChecked ? (
-                                                                        <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
-                                                                    ) : (
-                                                                        <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                                                                    )}
-                                                                    <div>
-                                                                        <span className="font-bold text-slate-900 dark:text-white">
-                                                                            {c.name}
+                                                        return (
+                                                            <React.Fragment key={c.id}>
+                                                                {isFirstUnchecked && (
+                                                                    <div className="col-span-full py-1 px-1 flex items-center gap-2">
+                                                                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                                                            Available in Pool
                                                                         </span>
-                                                                        {c.section && (
-                                                                            <span className="ml-1.5 text-slate-500 dark:text-slate-400 font-medium">
-                                                                                ({c.section})
-                                                                            </span>
-                                                                        )}
+                                                                        <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
                                                                     </div>
-                                                                </div>
-                                                                <div className="flex items-center gap-2">
+                                                                )}
+                                                                <div
+                                                                    onClick={() => handleToggleClassSelection(c.id)}
+                                                                    className={`flex items-center justify-between p-2 rounded-xl cursor-pointer text-xs transition border ${
+                                                                        isChecked
+                                                                            ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
+                                                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                        {isChecked ? (
+                                                                            <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
+                                                                        ) : (
+                                                                            <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                                                        )}
+                                                                        <div className="truncate">
+                                                                            <span className="font-bold text-slate-900 dark:text-white">
+                                                                                {c.name}
+                                                                            </span>
+                                                                            {c.section && (
+                                                                                <span className="ml-1 text-slate-500 dark:text-slate-400 font-medium">
+                                                                                    ({c.section})
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
                                                                     {c.gradeLevel && (
-                                                                        <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400">
-                                                                            Grade {c.gradeLevel}
+                                                                        <span className="px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400 flex-shrink-0 ml-1">
+                                                                            Gr {c.gradeLevel}
                                                                         </span>
                                                                     )}
                                                                 </div>
-                                                            </div>
-                                                        </React.Fragment>
-                                                    );
-                                                })
+                                                            </React.Fragment>
+                                                        );
+                                                    })}
+                                                </div>
                                             )}
                                         </div>
                                     </div>
@@ -2609,56 +2617,56 @@ export default function QuizDashboardPage() {
                                         )}
 
                                         {/* Groups List */}
-                                        <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2 space-y-1.5 bg-slate-50/50 dark:bg-slate-950/50 max-h-56 custom-scrollbar">
+                                        <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 max-h-64 custom-scrollbar bg-slate-50/50 dark:bg-slate-950/50">
                                             {sortedGroups.length === 0 ? (
                                                 <p className="text-xs text-slate-400 py-6 text-center">
                                                     {assignGroupSearch ? 'No groups match your search query.' : 'No groups available.'}
                                                 </p>
                                             ) : (
-                                                sortedGroups.map((g, idx) => {
-                                                    const isChecked = selectedAssignGroups.includes(g.id);
-                                                    const prevItem = idx > 0 ? sortedGroups[idx - 1] : null;
-                                                    const isFirstUnchecked = !isChecked && prevItem && selectedAssignGroups.includes(prevItem.id);
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                    {sortedGroups.map((g, idx) => {
+                                                        const isChecked = selectedAssignGroups.includes(g.id);
+                                                        const prevItem = idx > 0 ? sortedGroups[idx - 1] : null;
+                                                        const isFirstUnchecked = !isChecked && prevItem && selectedAssignGroups.includes(prevItem.id);
 
-                                                    return (
-                                                        <React.Fragment key={g.id}>
-                                                            {isFirstUnchecked && (
-                                                                <div className="py-1 px-1 flex items-center gap-2">
-                                                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                                                                        Available in Pool
-                                                                    </span>
-                                                                    <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
-                                                                </div>
-                                                            )}
-                                                            <div
-                                                                onClick={() => handleToggleGroupSelection(g.id)}
-                                                                className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer text-xs transition border ${
-                                                                    isChecked
-                                                                        ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
-                                                                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
-                                                                }`}
-                                                            >
-                                                                <div className="flex items-center gap-2.5">
-                                                                    {isChecked ? (
-                                                                        <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
-                                                                    ) : (
-                                                                        <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                                                                    )}
-                                                                    <div>
-                                                                        <span className="font-bold text-slate-900 dark:text-white">
+                                                        return (
+                                                            <React.Fragment key={g.id}>
+                                                                {isFirstUnchecked && (
+                                                                    <div className="col-span-full py-1 px-1 flex items-center gap-2">
+                                                                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                                                            Available in Pool
+                                                                        </span>
+                                                                        <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
+                                                                    </div>
+                                                                )}
+                                                                <div
+                                                                    onClick={() => handleToggleGroupSelection(g.id)}
+                                                                    className={`flex items-center justify-between p-2 rounded-xl cursor-pointer text-xs transition border ${
+                                                                        isChecked
+                                                                            ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
+                                                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                        {isChecked ? (
+                                                                            <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
+                                                                        ) : (
+                                                                            <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                                                        )}
+                                                                        <span className="font-bold text-slate-900 dark:text-white truncate">
                                                                             {g.name}
                                                                         </span>
                                                                     </div>
+                                                                    {g.className && (
+                                                                        <span className="px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400 flex-shrink-0 ml-1">
+                                                                            {g.className}
+                                                                        </span>
+                                                                    )}
                                                                 </div>
-                                                                {g.className && (
-                                                                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400">
-                                                                        {g.className}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </React.Fragment>
-                                                    );
-                                                })
+                                                            </React.Fragment>
+                                                        );
+                                                    })}
+                                                </div>
                                             )}
                                         </div>
                                     </div>
@@ -2759,60 +2767,61 @@ export default function QuizDashboardPage() {
                                         </div>
 
                                         {/* Students list */}
-                                        <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2 space-y-1 bg-slate-50/50 dark:bg-slate-950/50 max-h-56 custom-scrollbar">
+                                        <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 max-h-64 custom-scrollbar bg-slate-50/50 dark:bg-slate-950/50">
                                             {sortedStudents.length === 0 ? (
                                                 <p className="text-xs text-slate-400 py-6 text-center">
                                                     {assignStudentSearch ? 'No students match your search filter.' : 'No students found in this class.'}
                                                 </p>
                                             ) : (
-                                                sortedStudents.map((s, idx) => {
-                                                    const isChecked = selectedAssignStudents.includes(s.id);
-                                                    const prevItem = idx > 0 ? sortedStudents[idx - 1] : null;
-                                                    const isFirstUnchecked = !isChecked && prevItem && selectedAssignStudents.includes(prevItem.id);
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                    {sortedStudents.map((s, idx) => {
+                                                        const isChecked = selectedAssignStudents.includes(s.id);
+                                                        const prevItem = idx > 0 ? sortedStudents[idx - 1] : null;
+                                                        const isFirstUnchecked = !isChecked && prevItem && selectedAssignStudents.includes(prevItem.id);
 
-                                                    return (
-                                                        <React.Fragment key={s.id}>
-                                                            {isFirstUnchecked && (
-                                                                <div className="py-1 px-1 flex items-center gap-2">
-                                                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                                                                        Available in Pool
-                                                                    </span>
-                                                                    <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
-                                                                </div>
-                                                            )}
-                                                            <div
-                                                                onClick={() => handleToggleStudentSelection(s.id)}
-                                                                className={`flex items-center justify-between p-2 rounded-xl cursor-pointer text-xs transition border ${
-                                                                    isChecked
-                                                                        ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
-                                                                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
-                                                                }`}
-                                                            >
-                                                                <div className="flex items-center gap-2.5">
-                                                                    {isChecked ? (
-                                                                        <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
-                                                                    ) : (
-                                                                        <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                                                                    )}
-                                                                    <div>
-                                                                        <div className="font-bold text-slate-900 dark:text-white">
-                                                                            {s.firstName} {s.lastName}
-                                                                        </div>
-                                                                        <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
-                                                                            {s.studentId && <span>ID: {s.studentId}</span>}
-                                                                            {s.email && <span>• {s.email}</span>}
+                                                        return (
+                                                            <React.Fragment key={s.id}>
+                                                                {isFirstUnchecked && (
+                                                                    <div className="col-span-full py-1 px-1 flex items-center gap-2">
+                                                                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                                                            Available in Pool
+                                                                        </span>
+                                                                        <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
+                                                                    </div>
+                                                                )}
+                                                                <div
+                                                                    onClick={() => handleToggleStudentSelection(s.id)}
+                                                                    className={`flex items-center justify-between p-2 rounded-xl cursor-pointer text-xs transition border ${
+                                                                        isChecked
+                                                                            ? 'bg-primary-50/80 dark:bg-primary-950/40 border-primary-300 dark:border-primary-700 shadow-xs'
+                                                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                        {isChecked ? (
+                                                                            <CheckSquare className="w-4 h-4 text-primary-600 flex-shrink-0" />
+                                                                        ) : (
+                                                                            <Square className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                                                        )}
+                                                                        <div className="min-w-0">
+                                                                            <div className="font-bold text-slate-900 dark:text-white truncate">
+                                                                                {s.firstName} {s.lastName}
+                                                                            </div>
+                                                                            <div className="text-[10px] text-slate-400 truncate">
+                                                                                {s.studentId ? `ID: ${s.studentId}` : s.email}
+                                                                            </div>
                                                                         </div>
                                                                     </div>
+                                                                    {s.className && (
+                                                                        <span className="px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400 flex-shrink-0 ml-1">
+                                                                            {s.className}
+                                                                        </span>
+                                                                    )}
                                                                 </div>
-                                                                {s.className && (
-                                                                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400 flex-shrink-0">
-                                                                        {s.className}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </React.Fragment>
-                                                    );
-                                                })
+                                                            </React.Fragment>
+                                                        );
+                                                    })}
+                                                </div>
                                             )}
                                         </div>
                                     </div>
@@ -2842,43 +2851,6 @@ export default function QuizDashboardPage() {
                                               .filter(Boolean)
                                               .join(' • ') || 'Select Targets'})`}
                                 </button>
-                            </div>
-
-                            {/* Active Assignments List (for first selected quiz) */}
-                            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex-shrink-0">
-                                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
-                                    Currently Assigned Targets ({activeAssignments.length})
-                                </h4>
-                                <div className="max-h-28 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
-                                    {activeAssignments.length === 0 ? (
-                                        <p className="text-xs text-slate-400 py-1">
-                                            {isLoadingAssignments ? 'Loading assignments...' : 'No targets currently assigned to this quiz.'}
-                                        </p>
-                                    ) : (
-                                        activeAssignments.map(a => (
-                                            <div
-                                                key={a.id}
-                                                className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs"
-                                            >
-                                                <div>
-                                                    <span className="font-bold text-primary-600 capitalize mr-1.5">[{a.targetType}]</span>
-                                                    <span className="font-medium text-slate-800 dark:text-slate-200">
-                                                        {a.targetType === 'class' && (a.class?.name || 'Class')}
-                                                        {a.targetType === 'group' && `${a.group?.name || 'Group'} (${a.class?.name || ''})`}
-                                                        {a.targetType === 'student' && `${a.student?.firstName || ''} ${a.student?.lastName || 'Student'}`}
-                                                    </span>
-                                                </div>
-                                                <button
-                                                    onClick={() => handleRemoveAssignment(a.id)}
-                                                    className="p-1 text-slate-400 hover:text-rose-500 rounded transition"
-                                                    title="Remove assignment"
-                                                >
-                                                    <X className="w-3.5 h-3.5" />
-                                                </button>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
                             </div>
                         </div>
                     </div>
