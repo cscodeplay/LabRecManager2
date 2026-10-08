@@ -381,6 +381,17 @@ export default function WhiteboardPage() {
         );
     }
 
+    if (user?.role === 'student') {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-50">
+                <div className="flex flex-col items-center gap-3">
+                    <div className="animate-spin w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full"></div>
+                    <p className="text-sm font-medium text-slate-600">Connecting to Student Live Board...</p>
+                </div>
+            </div>
+        );
+    }
+
     // PHASE 2: CANVAS VIEW
     if (activeFileId) {
         return (

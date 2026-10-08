@@ -34,8 +34,7 @@ export default function WhiteboardGraphObject({
     onSendBackward
 }) {
     const containerRef = useRef(null);
-    const graph = propGraph || graphObj;
-    if (!graph) return null;
+    const graph = propGraph || graphObj || {};
 
     // Initial state normalization
     const width = Math.max(480, graph?.width || 760);
@@ -540,6 +539,8 @@ export default function WhiteboardGraphObject({
         transformOrigin: 'center center',
         zIndex: graph?.zIndex || 20
     };
+
+    if (!propGraph && !graphObj) return null;
 
     const content = (
         <div

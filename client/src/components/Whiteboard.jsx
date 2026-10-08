@@ -852,14 +852,14 @@ export default function Whiteboard({
     const [remoteCursors, setRemoteCursors] = useState({});
     const [recentLiveActions, setRecentLiveActions] = useState([]);
 
-    // Draw permission check: Instructors/Admins always have draw access. Standalone non-students have draw access. Students in meetings/live sessions are controlled via permissions.
-    const canUserDraw = isInstructor ? true : (isStudent ? Boolean(localPermissions?.canDraw) : (localPermissions?.canDraw ?? true));
-
     const [localPermissions, setLocalPermissions] = useState(() => ({
         canDraw: isInstructor ? true : (permissions && typeof permissions.canDraw === 'boolean' ? permissions.canDraw : !isStudent),
         canShareAudio: permissions?.canShareAudio ?? true,
         canShareVideo: permissions?.canShareVideo ?? true
     }));
+
+    // Draw permission check: Instructors/Admins always have draw access. Standalone non-students have draw access. Students in meetings/live sessions are controlled via permissions.
+    const canUserDraw = isInstructor ? true : (isStudent ? Boolean(localPermissions?.canDraw) : (localPermissions?.canDraw ?? true));
     const [showPermissions, setShowPermissions] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [isInWaitingRoom, setIsInWaitingRoom] = useState(false);

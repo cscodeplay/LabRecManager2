@@ -6,7 +6,7 @@ import {
     Bot, Send, Upload, Database, ChevronDown, ChevronRight, Trash2,
     Sparkles, FileText, AlertTriangle, Copy, Check, RefreshCw, X,
     Loader2, Minimize2, Maximize2, Download, Image as ImageIcon, User, BarChart2, Expand, Shrink, File,
-    HelpCircle, History, FilePlus, Maximize, Minimize, Plus,
+    HelpCircle, History, FilePlus, Maximize, Minimize, Plus, Minus,
     Calendar, Clock, Video, Users, CheckCircle, ExternalLink, Edit3, Save, Link2,
     XCircle, CalendarPlus, Undo2, BookOpen, StickyNote, GraduationCap, CheckSquare,
     LayoutGrid, Table as TableIcon, Inbox, Layers, Laptop, Server, HardDrive,
@@ -8775,6 +8775,7 @@ export default function FloatingChatbot() {
     const isAdmin = user?.role === 'admin' || user?.role === 'principal' || user?.role === 'instructor';
     const [isOpen, setIsOpen] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
+    const [isMinimized, setIsMinimized] = useState(false);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -9362,6 +9363,7 @@ export default function FloatingChatbot() {
 
             if (isJ || isSlash || isShiftK) {
                 e.preventDefault();
+                setIsMinimized(false);
                 setIsOpen(prev => {
                     const nextState = !prev;
                     if (nextState) {
@@ -9882,9 +9884,10 @@ export default function FloatingChatbot() {
     return (
         <>
             {/* ── FAB Button ── */}
+            {/* ── FAB Button (when closed) ── */}
             {!isOpen && (
                 <button
-                    onClick={() => setIsOpen(true)}
+                    onClick={() => { setIsOpen(true); setIsMinimized(false); }}
                     className="fixed bottom-6 right-6 z-[9999] w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600 text-white shadow-2xl shadow-violet-500/40 flex items-center justify-center hover:scale-110 hover:shadow-violet-500/60 transition-all duration-300 group"
                     title="LIA (⌘J / Ctrl+J)"
                 >
@@ -9900,8 +9903,70 @@ export default function FloatingChatbot() {
                 </button>
             )}
 
+            {/* ── Minimized Chat Dock Tab ── */}
+            {isOpen && isMinimized && (
+                <div
+                    className="fixed bottom-6 right-6 z-[9999] flex items-center gap-3 px-4 py-2.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 text-white rounded-full shadow-2xl shadow-indigo-600/40 border border-white/25 cursor-pointer hover:shadow-indigo-600/60 hover:scale-[1.02] active:scale-[0.98] transition-all select-none group"
+                    onClick={() => setIsMinimized(false)}
+                    title="Click to restore LIA Chat Window (⌘J)"
+                >
+                    <div className="w-6 h-6 rounded-full bg-white/20 backdrop-blur flex items-center justify-center flex-shrink-0">
+                        <Bot className="w-3.5 h-3.5 text-white" />
+                    </div>
+                    <div className="flex flex-col min-w-0 pr-1">
+                        <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs tracking-tight">LIA Assistant</span>
+                            <span className="px-1.5 py-0.2 rounded bg-white/20 text-[9px] font-mono text-white/90">Minimized</span>
+                        </div>
+                        {isLoading ? (
+                            <span className="text-[10px] text-indigo-100 flex items-center gap-1 animate-pulse">
+                                <Loader2 className="w-2.5 h-2.5 animate-spin" /> Generating response...
+                            </span>
+                        ) : messages.length > 0 ? (
+                            <span className="text-[10px] text-white/80 truncate max-w-[150px]">
+                                {messages[messages.length - 1].sender === 'bot' ? 'Answer ready' : 'Active conversation'}
+                            </span>
+                        ) : (
+                            <span className="text-[10px] text-white/80">Ready to assist</span>
+                        )}
+                    </div>
+
+                    {unread > 0 && (
+                        <span className="w-5 h-5 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center animate-bounce shadow">
+                            {unread}
+                        </span>
+                    )}
+
+                    <div className="flex items-center gap-1 pl-1.5 border-l border-white/20">
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsMinimized(false);
+                            }}
+                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white/20 text-white transition"
+                            title="Restore Chat Window"
+                        >
+                            <Maximize2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsOpen(false);
+                                setIsMinimized(false);
+                            }}
+                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-rose-500/80 text-white transition"
+                            title="Close Chat"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* ── Chat Panel ── */}
-            {isOpen && (
+            {isOpen && !isMinimized && (
                 <div 
                     ref={panelRef}
                     className={`${panelClass} flex flex-col bg-white border border-slate-200 shadow-2xl shadow-slate-900/20 overflow-hidden transition-shadow`}
@@ -9911,11 +9976,11 @@ export default function FloatingChatbot() {
                     {/* Header (Draggable Handle) */}
                     <div 
                         onPointerDown={handleHeaderPointerDown}
-                        onDoubleClick={() => !isExpanded && setPosition(null)}
+                        onDoubleClick={() => !isExpanded && setIsMinimized(true)}
                         className={`flex items-center justify-between px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 text-white flex-shrink-0 gap-2 select-none ${
                             !isExpanded ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : ''
                         }`}
-                        title={!isExpanded ? "Click & drag header to move • Double-click to reset position" : ""}
+                        title={!isExpanded ? "Click & drag header to move • Double-click to minimize" : ""}
                     >
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                             <div className="w-7 h-7 rounded-lg bg-white/20 backdrop-blur flex items-center justify-center flex-shrink-0">
@@ -9968,10 +10033,18 @@ export default function FloatingChatbot() {
                             >
                                 <Settings className="w-4 h-4" />
                             </button>
+                            <button 
+                                type="button"
+                                onClick={() => setIsMinimized(true)} 
+                                className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" 
+                                title="Minimize to Tab"
+                            >
+                                <Minus className="w-3.5 h-3.5" />
+                            </button>
                             <button onClick={() => setIsExpanded(!isExpanded)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" title={isExpanded ? "Restore Size" : "Maximize"}>
                                 {isExpanded ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
                             </button>
-                            <button onClick={() => setIsOpen(false)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-500/80 hover:text-white transition text-white flex-shrink-0 ml-0.5" title="Close Chat">
+                            <button onClick={() => { setIsOpen(false); setIsMinimized(false); }} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-500/80 hover:text-white transition text-white flex-shrink-0 ml-0.5" title="Close Chat">
                                 <X className="w-4 h-4" />
                             </button>
                         </div>
