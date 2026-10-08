@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { MessageSquare, X, Send, Users, User, Mic, MicOff, Video, VideoOff, UserMinus, Circle, ChevronDown, Check } from 'lucide-react';
+import { MessageSquare, X, Send, Users, User, Mic, MicOff, Video, VideoOff, UserMinus, Circle, ChevronDown, Check, Minus, Maximize2 } from 'lucide-react';
 
 export default function WhiteboardChatWindow({
     socket,
@@ -12,6 +12,7 @@ export default function WhiteboardChatWindow({
     onClose = () => {},
     onManagePermissions
 }) {
+    const [isMinimized, setIsMinimized] = useState(false);
     const [view, setView] = useState('participants'); // 'participants' or 'chat'
     const [activeTarget, setActiveTarget] = useState('Everyone');
     const [messages, setMessages] = useState([]);
@@ -139,16 +140,60 @@ export default function WhiteboardChatWindow({
     const offlineCount = offlineTargets.length;
     const totalCount = liveCount + offlineCount;
 
+    // Minimized Docked Bar
+    if (isMinimized) {
+        return (
+            <div className="fixed right-4 top-14 z-[60] bg-white/95 backdrop-blur-xl border border-slate-200 shadow-xl rounded-2xl p-1.5 flex items-center gap-2 animate-in fade-in select-none">
+                <div 
+                    onClick={() => setIsMinimized(false)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 rounded-xl text-indigo-700 text-xs font-semibold cursor-pointer transition"
+                    title="Click to restore Meeting Panel"
+                >
+                    <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Meeting Panel ({totalCount})</span>
+                    {messages.length > 0 && (
+                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                    )}
+                </div>
+                <button
+                    onClick={() => setIsMinimized(false)}
+                    className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-slate-700 rounded-lg transition"
+                    title="Expand Meeting Panel"
+                >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                    onClick={onClose}
+                    className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition"
+                    title="Close Meeting Panel"
+                >
+                    <X className="w-3.5 h-3.5" />
+                </button>
+            </div>
+        );
+    }
+
     return (
         <div className="fixed right-0 top-0 h-full w-80 bg-white/95 backdrop-blur-xl border-l border-slate-200 shadow-2xl flex flex-col z-[60] animate-fade-in font-sans">
             {/* Header */}
             <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
                 <div className="flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4 text-slate-700" />
+                    <MessageSquare className="w-4 h-4 text-indigo-600" />
                     <span className="font-semibold text-slate-800 text-sm">Meeting Panel</span>
                 </div>
                 <div className="flex items-center gap-1">
-                    <button onClick={onClose} className="p-1.5 hover:bg-slate-200 rounded-lg transition text-slate-500" title="Close Panel">
+                    <button 
+                        onClick={() => setIsMinimized(true)} 
+                        className="p-1.5 hover:bg-slate-200 rounded-lg transition text-slate-500 hover:text-slate-700" 
+                        title="Minimize Panel"
+                    >
+                        <Minus className="w-4 h-4" />
+                    </button>
+                    <button 
+                        onClick={onClose} 
+                        className="p-1.5 hover:bg-rose-50 rounded-lg transition text-slate-500 hover:text-rose-600" 
+                        title="Close Panel"
+                    >
                         <X className="w-4 h-4" />
                     </button>
                 </div>

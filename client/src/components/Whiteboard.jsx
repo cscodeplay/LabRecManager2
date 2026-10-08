@@ -872,6 +872,12 @@ export default function Whiteboard({
         });
     }, [permissions, isInstructor, isStudent]);
 
+    useEffect(() => {
+        if (isSharing) {
+            setIsChatOpen(true);
+        }
+    }, [isSharing]);
+
     const [isAutoShape, setIsAutoShape] = useState(false);
     const strokeHoldTimerRef = useRef(null);
     const isStrokeSnappedRef = useRef(false);
@@ -22552,8 +22558,8 @@ export default function Whiteboard({
                 </p>
             </div>
 
-            {/* Floatable Live Chat (Visible only during standalone sharing for Instructor) */}
-            {isSharing && !isMeetingMode && (
+            {/* Floatable Live Chat / Meeting Panel (Visible during standalone sharing for Instructor) */}
+            {isSharing && isChatOpen && !isMeetingMode && (
                 <WhiteboardChatWindow
                     socket={socket}
                     sessionId={sessionId}
@@ -22562,6 +22568,18 @@ export default function Whiteboard({
                     availableGroups={sharingTargets.map((name, i) => ({ id: i, name }))}
                     onClose={() => setIsChatOpen(false)}
                 />
+            )}
+
+            {/* Re-open Meeting Panel Pill when closed during sharing */}
+            {isSharing && !isChatOpen && !isMeetingMode && (
+                <button
+                    onClick={() => setIsChatOpen(true)}
+                    className="fixed right-4 top-14 z-[60] flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900/90 text-white shadow-xl border border-slate-700 hover:bg-slate-800 hover:scale-105 active:scale-95 transition-all text-xs font-semibold backdrop-blur-md"
+                    title="Open Meeting Panel"
+                >
+                    <MessageSquare className="w-4 h-4 text-amber-400" />
+                    <span>Meeting Panel</span>
+                </button>
             )}
 
             {/* AV Recorder (Standalone only, Meeting has its own recorder) */}

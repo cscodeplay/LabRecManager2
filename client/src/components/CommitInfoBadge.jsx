@@ -9,14 +9,22 @@ import { useAuthStore } from '@/lib/store';
 export default function CommitInfoBadge() {
     const { user, _hasHydrated } = useAuthStore();
 
+    const clientHash = process.env.NEXT_PUBLIC_COMMIT_HASH || '';
+    const clientFullHash = process.env.NEXT_PUBLIC_COMMIT_FULL_HASH || '';
+    const clientTime = process.env.NEXT_PUBLIC_COMMIT_TIME || '';
+    const clientMessage = process.env.NEXT_PUBLIC_COMMIT_MESSAGE || '';
+    const clientAuthor = process.env.NEXT_PUBLIC_COMMIT_AUTHOR || '';
+    const clientBranch = process.env.NEXT_PUBLIC_COMMIT_BRANCH || 'master';
+
     const [commitDetails, setCommitDetails] = useState({
-        hash: process.env.NEXT_PUBLIC_COMMIT_HASH || '',
-        fullHash: process.env.NEXT_PUBLIC_COMMIT_FULL_HASH || '',
-        time: process.env.NEXT_PUBLIC_COMMIT_TIME || '',
-        message: process.env.NEXT_PUBLIC_COMMIT_MESSAGE || '',
-        author: process.env.NEXT_PUBLIC_COMMIT_AUTHOR || '',
-        branch: process.env.NEXT_PUBLIC_COMMIT_BRANCH || 'master',
+        hash: clientHash,
+        fullHash: clientFullHash,
+        time: clientTime,
+        message: clientMessage,
+        author: clientAuthor,
+        branch: clientBranch,
     });
+    const [serverGit, setServerGit] = useState(null);
     const [copied, setCopied] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
 
@@ -25,21 +33,23 @@ export default function CommitInfoBadge() {
         dashboardAPI.getHealth()
             .then(res => {
                 const liveGit = res.data?.data?.gitCommit;
-                if (liveGit && liveGit.shortHash) {
+                if (liveGit) {
+                    setServerGit(liveGit);
                     setCommitDetails(prev => ({
-                        hash: liveGit.shortHash || prev.hash,
-                        fullHash: liveGit.hash || prev.fullHash,
-                        time: liveGit.date || prev.time,
-                        message: liveGit.message || prev.message,
-                        author: liveGit.author || prev.author,
-                        branch: liveGit.branch || prev.branch,
+                        // Preserve client build hash if available so it doesn't flash and downgrade to older server container
+                        hash: (clientHash && clientHash !== 'dev') ? clientHash : (liveGit.shortHash || prev.hash),
+                        fullHash: (clientFullHash && clientFullHash !== 'dev') ? clientFullHash : (liveGit.hash || prev.fullHash),
+                        time: prev.time || liveGit.date,
+                        message: prev.message || liveGit.message,
+                        author: prev.author || liveGit.author,
+                        branch: prev.branch || liveGit.branch,
                     }));
                 }
             })
             .catch(() => {
                 // Silently keep build-time env values
             });
-    }, []);
+    }, [clientHash, clientFullHash]);
 
     // Do not display commit hash for other users except for admin
     if (!user || user.role !== 'admin') {
@@ -142,6 +152,14 @@ export default function CommitInfoBadge() {
                                 <span className="text-slate-300 font-mono text-[10px]">{commitDetails.time}</span>
                             </div>
                         ) : null}
+
+                        {/* Scope & Sync */}
+                        <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-800">
+                            <span className="text-slate-400">Frontend: <span className="font-mono text-emerald-400 font-semibold">{commitDetails.hash}</span></span>
+                            {serverGit?.shortHash && (
+                                <span className="text-slate-400">Backend: <span className={`font-mono ${serverGit.shortHash === commitDetails.hash ? 'text-emerald-400' : 'text-amber-400'}`}>{serverGit.shortHash}</span></span>
+                            )}
+                        </div>
 
                         {/* Full Hash */}
                         {commitDetails.fullHash ? (

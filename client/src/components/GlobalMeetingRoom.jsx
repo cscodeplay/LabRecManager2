@@ -14,7 +14,7 @@ import {
     MoreVertical, UserCheck, UserX, PenTool, Coffee, Loader2,
     Info, Copy, Check, Share2, Key, LayoutGrid, ScreenShare,
     AlertTriangle, Shield, UserPlus, Link2, ExternalLink,
-    Smile, HelpCircle, Award, Zap, X
+    Smile, HelpCircle, Award, Zap, X, Minus
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { useGlobalMeeting } from '@/components/GlobalMeetingContext';
@@ -203,6 +203,7 @@ export default function GlobalMeetingRoom() {
 
     // Layout & Overlay Controls (Zoom-style floating panels)
     const [showChat, setShowChat] = useState(false);
+    const [isSidePanelMinimized, setIsSidePanelMinimized] = useState(false);
     const [activeSidePanelTab, setActiveSidePanelTab] = useState('chat'); // 'chat' | 'participants' | 'quiz' | 'invite'
     const [chatRecipient, setChatRecipient] = useState({ id: 'everyone', name: 'Everyone (in Meeting)' });
     const [participantSearchQuery, setParticipantSearchQuery] = useState('');
@@ -2943,10 +2944,50 @@ Link: ${getInviteUrl()}`;
                 </div>
             </div>
 
-            {/* ========================================================================= */}
-            {/* LAYER 2 (FLOATING OVERLAY): ZOOM-STYLE CHAT & PARTICIPANTS WINDOW         */}
-            {/* ========================================================================= */}
-            {showChat && (
+            {/* Minimized Side Panel Pill */}
+            {showChat && isSidePanelMinimized && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        right: '1rem',
+                        bottom: '5rem',
+                        zIndex: 35
+                    }}
+                    className="bg-slate-900/95 backdrop-blur-xl rounded-2xl border border-slate-700/80 shadow-2xl p-1.5 flex items-center gap-2 animate-in fade-in select-none text-white text-xs"
+                >
+                    <div
+                        onClick={() => setIsSidePanelMinimized(false)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-xl cursor-pointer transition font-medium"
+                        title="Click to restore Side Panel"
+                    >
+                        <MessageSquare className="w-3.5 h-3.5 text-primary-400" />
+                        <span className="capitalize">{activeSidePanelTab} Panel</span>
+                        {unreadChatCount > 0 && (
+                            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                        )}
+                    </div>
+                    <button
+                        onClick={() => setIsSidePanelMinimized(false)}
+                        className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
+                        title="Restore Side Panel"
+                    >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        onClick={() => {
+                            setShowChat(false);
+                            setIsSidePanelMinimized(false);
+                        }}
+                        className="p-1.5 hover:bg-rose-500/80 text-slate-400 hover:text-white rounded-lg transition"
+                        title="Close Side Panel"
+                    >
+                        <X className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+            )}
+
+            {/* LAYER 2 (FLOATING OVERLAY): ZOOM-STYLE CHAT & PARTICIPANTS WINDOW */}
+            {showChat && !isSidePanelMinimized && (
                 <div
                     style={{
                         position: 'fixed',
@@ -3046,18 +3087,32 @@ Link: ${getInviteUrl()}`;
                             </div>
                         </div>
 
-                        {/* Close Button */}
-                        <button
-                            onPointerDown={(e) => e.stopPropagation()}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setShowChat(false);
-                            }}
-                            className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition flex items-center justify-center"
-                            title="Close"
-                        >
-                            <X className="w-4 h-4" />
-                        </button>
+                        {/* Minimize & Close Buttons */}
+                        <div className="flex items-center gap-1">
+                            <button
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsSidePanelMinimized(true);
+                                }}
+                                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition flex items-center justify-center"
+                                title="Minimize"
+                            >
+                                <Minus className="w-4 h-4" />
+                            </button>
+                            <button
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowChat(false);
+                                    setIsSidePanelMinimized(false);
+                                }}
+                                className="text-slate-400 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-800 transition flex items-center justify-center"
+                                title="Close"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
 
                     {/* TAB 1: CHAT */}
@@ -4025,6 +4080,7 @@ Link: ${getInviteUrl()}`;
                         <button
                             onClick={() => {
                                 setShowChat(!showChat);
+                                setIsSidePanelMinimized(false);
                                 setUnreadChatCount(0);
                             }}
                             className={`p-1.5 rounded-full transition flex items-center justify-center relative ${
