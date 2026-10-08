@@ -879,6 +879,16 @@ export default function SettingsPage() {
                                                 <span className="text-xs uppercase font-extrabold px-2.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
                                                     {user?.role?.replace('_', ' ')}
                                                 </span>
+                                                {(user?.studentId || user?.admissionNumber) && (
+                                                    <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-950/60 text-primary-800 dark:text-primary-300 border border-primary-200 dark:border-primary-800">
+                                                        Student ID: {user.studentId || user.admissionNumber}
+                                                    </span>
+                                                )}
+                                                {user?.employeeId && (
+                                                    <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                                        Emp ID: {user.employeeId}
+                                                    </span>
+                                                )}
                                             </div>
                                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                                 Choose from live-animating characters, faculty scholars, or upload a custom photo to personalize your profile.
@@ -905,6 +915,21 @@ export default function SettingsPage() {
                                         <div><label className="label">Last Name</label><input type="text" className="input" value={profile.lastName} onChange={(e) => setProfile({ ...profile, lastName: e.target.value })} /></div>
                                         <div><label className="label">Email</label><input type="email" className="input" value={profile.email} disabled /></div>
                                         <div><label className="label">Phone</label><input type="tel" className="input" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} /></div>
+                                        {(user?.studentId || user?.admissionNumber || user?.employeeId) && (
+                                            <div className="md:col-span-2 p-3.5 bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-between">
+                                                <div>
+                                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                                        {user?.role === 'student' ? 'Student ID / Admission Number' : 'Institutional Employee ID'}
+                                                    </label>
+                                                    <p className="text-sm font-mono font-bold text-primary-600 dark:text-primary-400 mt-0.5">
+                                                        {user?.studentId || user?.admissionNumber || user?.employeeId}
+                                                    </p>
+                                                </div>
+                                                <span className="text-xs text-slate-500 bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm font-medium">
+                                                    Institutional Identifier
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="mt-4"><button onClick={handleSaveProfile} disabled={saving} className="btn btn-primary"><Save className="w-4 h-4" />{saving ? 'Saving...' : 'Save Changes'}</button></div>
                                 </div>

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
     Search, X, Video, FileText, Folder, BookOpen, Users,
     GraduationCap, Sparkles, Clock, ArrowRight, CornerDownLeft,
-    Ticket, Wrench, Calendar, ChevronRight, ExternalLink
+    Ticket, Wrench, Calendar, ChevronRight, ExternalLink, HelpCircle
 } from 'lucide-react';
 import api from '@/lib/api';
 import { formatDate } from '@/lib/dateUtils';
@@ -15,11 +15,12 @@ const CATEGORIES = [
     { key: 'all', label: 'All' },
     { key: 'meetings', label: 'Meetings' },
     { key: 'assignments', label: 'Assignments' },
+    { key: 'quizzes', label: 'Quizzes' },
+    { key: 'training', label: 'Training' },
     { key: 'documents', label: 'Documents' },
     { key: 'notes', label: 'Notes' },
     { key: 'users', label: 'Users' },
     { key: 'classes', label: 'Classes' },
-    { key: 'training', label: 'Training' },
     { key: 'tickets', label: 'Tickets' },
     { key: 'labs', label: 'Labs' },
     { key: 'plans', label: 'Lecture Plans' }
@@ -68,6 +69,7 @@ export default function GlobalSearch() {
     const [results, setResults] = useState({
         meetings: [],
         assignments: [],
+        quizzes: [],
         documents: [],
         notes: [],
         users: [],
@@ -196,6 +198,20 @@ export default function GlobalSearch() {
                 badgeColor: 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300',
                 icon: FileText,
                 url: `/assignments/${item.id}`
+            }));
+        }
+
+        if (activeCategory === 'all' || activeCategory === 'quizzes') {
+            results.quizzes?.forEach(item => items.push({
+                type: 'quiz',
+                categoryLabel: 'Quiz',
+                id: item.id,
+                title: item.title,
+                subtitle: `Code: ${item.code} • ${item.totalQuestions || 0} Questions • ${item.timeLimitMinutes || 10}m`,
+                badge: (item.difficulty || 'Quiz').toUpperCase(),
+                badgeColor: 'bg-violet-100 text-violet-800 dark:bg-violet-900/60 dark:text-violet-300',
+                icon: HelpCircle,
+                url: `/quiz`
             }));
         }
 

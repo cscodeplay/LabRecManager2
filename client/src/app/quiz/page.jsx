@@ -16,6 +16,7 @@ import PageHeader from '@/components/PageHeader';
 import { useAuthStore } from '@/lib/store';
 import { quizAPI, classesAPI } from '@/lib/api';
 import MathRenderer from '@/components/MathRenderer';
+import QuizReviewModal from '@/components/QuizReviewModal';
 
 export default function QuizDashboardPage() {
     const router = useRouter();
@@ -23,6 +24,7 @@ export default function QuizDashboardPage() {
 
     const [activeTab, setActiveTab] = useState('created'); // 'created' | 'completed'
     const [joinCodeInput, setJoinCodeInput] = useState('');
+    const [reviewModalSubmission, setReviewModalSubmission] = useState(null);
 
     // List of created/available quizzes
     const [quizzes, setQuizzes] = useState([]);
@@ -1573,10 +1575,24 @@ export default function QuizDashboardPage() {
                                                     </div>
 
                                                     <button
+                                                        type="button"
+                                                        onClick={() => setReviewModalSubmission({
+                                                            ...res,
+                                                            userName: `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'My Submission',
+                                                            quizTitle: res.quiz?.title,
+                                                            quizCode: res.quiz?.code
+                                                        })}
+                                                        className="py-1.5 px-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                                                    >
+                                                        <LayoutGrid className="w-3.5 h-3.5" />
+                                                        Question Palette
+                                                    </button>
+
+                                                    <button
                                                         onClick={() => toggleResultAccordion(res.id)}
                                                         className="py-1.5 px-3 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
                                                     >
-                                                        {isExpanded ? 'Hide Responses' : 'View Responses'}
+                                                        {isExpanded ? 'Hide List' : 'Quick List'}
                                                         {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                                                     </button>
                                                 </div>
@@ -2945,6 +2961,17 @@ export default function QuizDashboardPage() {
                                                                 </span>
                                                             </div>
                                                             <button
+                                                                type="button"
+                                                                onClick={() => setReviewModalSubmission({
+                                                                    ...sub,
+                                                                    quizTitle: activeSubmissionsQuiz?.title,
+                                                                    quizCode: activeSubmissionsQuiz?.code
+                                                                })}
+                                                                className="py-1 px-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition"
+                                                            >
+                                                                <LayoutGrid className="w-3 h-3" /> Palette
+                                                            </button>
+                                                            <button
                                                                 onClick={() => toggleSubmissionAccordion(sub.id)}
                                                                 className="py-1 px-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1 hover:bg-slate-100"
                                                             >
@@ -3116,6 +3143,15 @@ export default function QuizDashboardPage() {
                             </button>
                         </div>
                     </div>
+                )}
+
+                {/* Question Palette Detailed Review Modal */}
+                {reviewModalSubmission && (
+                    <QuizReviewModal
+                        isOpen={Boolean(reviewModalSubmission)}
+                        onClose={() => setReviewModalSubmission(null)}
+                        submission={reviewModalSubmission}
+                    />
                 )}
 
             </main>

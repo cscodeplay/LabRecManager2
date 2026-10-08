@@ -44,7 +44,194 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     // Safe ILIKE filter
     const textFilter = { contains: query, mode: 'insensitive' };
 
-    // Concurrently execute searches across all 10 domains with robust error handling
+    // If student, resolve their active class enrollments and group memberships
+    let studentClassIds = [];
+    let studentGroupIds = [];
+    if (isStudent) {
+        const [enrollments, groupMembers] = await Promise.all([
+            prisma.classEnrollment.findMany({
+                where: { studentId: userId, status: 'active' },
+                select: { classId: true }
+            }).catch(() => []),
+            prisma.studentGroupMember.findMany({
+                where: { studentId: userId },
+                select: { groupId: true }
+            }).catch(() => [])
+        ]);
+        studentClassIds = enrollments.map(e => e.classId).filter(Boolean);
+        studentGroupIds = groupMembers.map(g => g.groupId).filter(Boolean);
+    }
+
+    // Domain queries with role scoping
+    const meetingWhere = {
+        schoolId,
+        OR: [
+            { title: textFilter },
+            { meetingLink: textFilter }
+        ]
+    };
+    if (isStudent) {
+        meetingWhere.AND = [
+            {
+                OR: [
+                    { targetStudentId: userId },
+                    { targetClassId: { in: studentClassIds } },
+                    { targetGroupId: { in: studentGroupIds } },
+                    { participants: { some: { userId } } }
+                ]
+            }
+        ];
+    }
+
+    const assignmentWhere = {
+        schoolId,
+        OR: [
+            { title: textFilter },
+            { titleHindi: textFilter },
+            { description: textFilter },
+            { aim: textFilter }
+        ]
+    };
+    if (isStudent) {
+        assignmentWhere.status = 'published';
+        assignmentWhere.AND = [
+            {
+                targets: {
+                    some: {
+                        OR: [
+                            { targetStudentId: userId },
+                            { targetClassId: { in: studentClassIds } },
+                            { targetGroupId: { in: studentGroupIds } }
+                        ]
+                    }
+                }
+            }
+        ];
+    }
+
+    const documentWhere = {
+        schoolId,
+        deletedAt: null,
+        OR: [
+            { name: textFilter },
+            { fileName: textFilter },
+            { description: textFilter },
+            { category: textFilter }
+        ]
+    };
+    if (isStudent) {
+        documentWhere.AND = [
+            {
+                OR: [
+                    { isPublic: true },
+                    {
+                        shares: {
+                            some: {
+                                OR: [
+                                    { targetUserId: userId },
+                                    { targetClassId: { in: studentClassIds } },
+                                    { targetGroupId: { in: studentGroupIds } }
+                                ]
+                            }
+                        }
+                    }
+                ]
+            }
+        ];
+    }
+
+    const trainingWhere = {
+        schoolId,
+        OR: [
+            { title: textFilter },
+            { titleHindi: textFilter },
+            { description: textFilter },
+            { language: textFilter }
+        ]
+    };
+    if (isStudent) {
+        trainingWhere.isPublished = true;
+        trainingWhere.AND = [
+            {
+                OR: [
+                    { assignments: { none: {} } },
+                    {
+                        assignments: {
+                            some: {
+                                targets: {
+                                    some: {
+                                        OR: [
+                                            { targetStudentId: userId },
+                                            { targetClassId: { in: studentClassIds } },
+                                            { targetGroupId: { in: studentGroupIds } }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ];
+    }
+
+    const quizWhere = {
+        schoolId,
+        OR: [
+            { title: textFilter },
+            { description: textFilter },
+            { code: textFilter },
+            { keywords: textFilter }
+        ]
+    };
+    if (isStudent) {
+        quizWhere.status = 'published';
+        quizWhere.AND = [
+            {
+                OR: [
+                    { assignments: { none: {} } },
+                    {
+                        assignments: {
+                            some: {
+                                OR: [
+                                    { targetStudentId: userId },
+                                    { targetClassId: { in: studentClassIds } },
+                                    { targetGroupId: { in: studentGroupIds } }
+                                ]
+                            }
+                        }
+                    }
+                ]
+            }
+        ];
+    }
+
+    const ticketWhere = {
+        createdBy: { schoolId },
+        OR: [
+            { title: textFilter },
+            { description: textFilter },
+            { ticketNumber: textFilter }
+        ]
+    };
+    if (isStudent) {
+        ticketWhere.createdById = userId;
+    }
+
+    const classWhere = {
+        schoolId,
+        OR: [
+            { name: textFilter },
+            { nameHindi: textFilter },
+            { section: textFilter },
+            { stream: textFilter }
+        ]
+    };
+    if (isStudent && studentClassIds.length > 0) {
+        classWhere.id = { in: studentClassIds };
+    }
+
+    // Concurrently execute searches across all domains with robust error handling
     const [
         meetings,
         assignments,
@@ -53,19 +240,14 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
         users,
         classes,
         trainingModules,
+        quizzes,
         tickets,
         labs,
         plans
     ] = await Promise.all([
         // 1. Meetings & Viva
         prisma.meeting.findMany({
-            where: {
-                schoolId,
-                OR: [
-                    { title: textFilter },
-                    { meetingLink: textFilter }
-                ]
-            },
+            where: meetingWhere,
             take: 8,
             select: {
                 id: true,
@@ -84,15 +266,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 
         // 2. Assignments
         prisma.assignment.findMany({
-            where: {
-                schoolId,
-                OR: [
-                    { title: textFilter },
-                    { titleHindi: textFilter },
-                    { description: textFilter },
-                    { aim: textFilter }
-                ]
-            },
+            where: assignmentWhere,
             take: 8,
             select: {
                 id: true,
@@ -111,16 +285,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 
         // 3. Documents
         prisma.document.findMany({
-            where: {
-                schoolId,
-                deletedAt: null,
-                OR: [
-                    { name: textFilter },
-                    { fileName: textFilter },
-                    { description: textFilter },
-                    { category: textFilter }
-                ]
-            },
+            where: documentWhere,
             take: 8,
             select: {
                 id: true,
@@ -139,7 +304,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
             return [];
         }),
 
-        // 4. Notes (Admin Notes)
+        // 4. Notes (Admin Notes - Staff Only)
         (isSchoolAdmin || isInstructor) ? prisma.adminNote.findMany({
             where: {
                 author: { schoolId },
@@ -163,7 +328,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
             return [];
         }) : Promise.resolve([]),
 
-        // 5. Users (Students, Instructors, Admins)
+        // 5. Users (Staff Only)
         (isSchoolAdmin || isInstructor) ? prisma.user.findMany({
             where: {
                 schoolId,
@@ -197,15 +362,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 
         // 6. Classes
         prisma.class.findMany({
-            where: {
-                schoolId,
-                OR: [
-                    { name: textFilter },
-                    { nameHindi: textFilter },
-                    { section: textFilter },
-                    { stream: textFilter }
-                ]
-            },
+            where: classWhere,
             take: 8,
             select: {
                 id: true,
@@ -223,15 +380,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 
         // 7. Training Modules
         prisma.trainingModule.findMany({
-            where: {
-                schoolId,
-                OR: [
-                    { title: textFilter },
-                    { titleHindi: textFilter },
-                    { description: textFilter },
-                    { language: textFilter }
-                ]
-            },
+            where: trainingWhere,
             take: 8,
             select: {
                 id: true,
@@ -248,16 +397,29 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
             return [];
         }),
 
-        // 8. Tickets
-        prisma.ticket.findMany({
-            where: {
-                createdBy: { schoolId },
-                OR: [
-                    { title: textFilter },
-                    { description: textFilter },
-                    { ticketNumber: textFilter }
-                ]
+        // 8. Quizzes
+        prisma.quiz.findMany({
+            where: quizWhere,
+            take: 8,
+            select: {
+                id: true,
+                title: true,
+                description: true,
+                code: true,
+                difficulty: true,
+                totalQuestions: true,
+                timeLimitMinutes: true,
+                status: true
             },
+            orderBy: { createdAt: 'desc' }
+        }).catch(err => {
+            console.error('[Search] Quizzes error:', err.message);
+            return [];
+        }),
+
+        // 9. Tickets
+        prisma.ticket.findMany({
+            where: ticketWhere,
             take: 8,
             select: {
                 id: true,
@@ -275,7 +437,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
             return [];
         }),
 
-        // 9. Labs & Rooms
+        // 10. Labs & Rooms (Staff Only)
         (isSchoolAdmin || isInstructor) ? prisma.lab.findMany({
             where: {
                 schoolId,
@@ -300,7 +462,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
             return [];
         }) : Promise.resolve([]),
 
-        // 10. Teaching / Lecture Plans
+        // 11. Teaching / Lecture Plans (Staff Only)
         (isSchoolAdmin || isInstructor) ? prisma.lecturePlan.findMany({
             where: {
                 schoolId,
@@ -337,6 +499,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
         users.length +
         classes.length +
         trainingModules.length +
+        quizzes.length +
         tickets.length +
         labs.length +
         plans.length;
@@ -354,6 +517,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                 users,
                 classes,
                 training: trainingModules,
+                quizzes,
                 tickets,
                 labs,
                 plans

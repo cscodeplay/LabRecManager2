@@ -32,7 +32,7 @@ export default function DashboardPage() {
         { title: 'Class Timetable', href: '/timetable', icon: CalendarDays, category: 'academics', color: 'text-teal-600 bg-teal-50 group-hover:bg-teal-100' },
         { title: 'Coding Training', href: '/training', icon: Code2, category: 'academics', color: 'text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100' },
         { title: 'Live Meeting / Viva', href: '/meetings', icon: Video, category: 'live', color: 'text-rose-600 bg-rose-50 group-hover:bg-rose-100' },
-        { title: t('nav.whiteboard', 'Whiteboard'), href: '/whiteboard', icon: Pencil, category: 'live', color: 'text-purple-600 bg-purple-50 group-hover:bg-purple-100' },
+        { title: t('nav.liveBoard', 'Live Whiteboard'), href: '/live-board', icon: Pencil, category: 'live', color: 'text-purple-600 bg-purple-50 group-hover:bg-purple-100' },
         { title: 'Study Documents', href: '/documents', icon: Folder, category: 'live', color: 'text-sky-600 bg-sky-50 group-hover:bg-sky-100' },
         { title: t('dashboard.reportIssue', 'Report Issue'), href: '/tickets', icon: Ticket, category: 'ops', color: 'text-orange-600 bg-orange-50 group-hover:bg-orange-100' },
     ];
@@ -136,7 +136,14 @@ export default function DashboardPage() {
                     <div className="card p-6 border-l-4 border-primary-600">
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                             <div>
-                                <h2 className="text-2xl font-bold text-slate-900">{t('dashboard.welcomeBack', { name: user?.firstName })} 👋</h2>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <h2 className="text-2xl font-bold text-slate-900">{t('dashboard.welcomeBack', { name: user?.firstName })} 👋</h2>
+                                    {user?.role === 'student' && (user?.studentId || user?.admissionNumber) && (
+                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-primary-100 text-primary-800 border border-primary-200">
+                                            ID: {user.studentId || user.admissionNumber}
+                                        </span>
+                                    )}
+                                </div>
                                 <p className="text-slate-500 mt-1">{t('dashboard.labActivities')}</p>
                             </div>
                             {(user?.role === 'admin' || user?.role === 'principal') && siteUpdate && (
@@ -306,6 +313,13 @@ export default function DashboardPage() {
                             </div>
                             <h3 className="font-bold text-lg text-slate-900 mt-3">{user?.firstName} {user?.lastName}</h3>
                             <p className="text-sm text-slate-500 capitalize">{user?.role?.replace('_', ' ')}</p>
+                            
+                            {(user?.studentId || user?.admissionNumber) && (
+                                <div className="inline-flex items-center gap-1.5 mt-2 px-3 py-1 bg-primary-50 dark:bg-primary-950/40 border border-primary-200 dark:border-primary-800 rounded-full text-xs font-mono font-bold text-primary-700 dark:text-primary-300">
+                                    <span className="text-[10px] uppercase text-primary-500 font-bold">Student ID:</span>
+                                    <span>{user.studentId || user.admissionNumber}</span>
+                                </div>
+                            )}
                             
                             {user?.role === 'student' && studentProfile && (
                                 <div className="mt-4 pt-4 border-t border-slate-100 flex justify-center gap-6">

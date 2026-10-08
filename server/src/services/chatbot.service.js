@@ -632,6 +632,18 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
      \`UPDATE users SET email = LOWER(CONCAT(SPLIT_PART(email, '@', 1), '@domain.com')) WHERE role = 'student' RETURNING id, first_name, last_name, email;\`
   3. ALWAYS append \`RETURNING *\` (or key identifiers and the updated column) to every generated UPDATE statement so that the execution engine returns the updated rows and renders an interactive result table for the user.
   4. Wrap the query in \`\`\`sql ... \`\`\` and append <!--EXEC_SQL:...:END_SQL--> for auto-execution.
+
+19. **ROLE-BASED ACCESS CONTROL (RBAC) & PERMISSION DIRECTORY**:
+- The LabRecManager system enforces strict Role-Based Access Control across 7 roles: \`admin\`, \`principal\`, \`hod\`, \`faculty\`, \`lab_technician\`, \`teaching_assistant\`, and \`student\`.
+- Role Access Summary:
+  * **admin**: Superuser with full read, write, update, delete across all system routes, database, logs, user management, and the Roles & Permissions manager (\`/admin/roles-permissions\`).
+  * **principal**: Executive read & oversight across institutional analytics, logs, reports, faculty classes, and the Roles & Permissions audit page (\`/admin/roles-permissions\`).
+  * **hod**: Department manager over departmental classes, courses, faculty assignments, syllabi, lab allocations, and student performance.
+  * **faculty** (Instructor): Classroom and academic manager. Can create & grade assignments (\`/assignments\`), author & conduct quizzes (\`/quiz\`), manage coding training modules (\`/training\`), host whiteboard sessions (\`/whiteboard\`), and book labs (\`/bookings\`).
+  * **lab_technician**: Hardware & inventory maintainer. Full control over computers & peripherals (\`/computers\`), maintenance tickets (\`/tickets\`), lab shift requests, and equipment. Cannot edit academic curriculum or grade students.
+  * **teaching_assistant**: Academic assistant. Can grade student submissions, assist in whiteboard discussions (\`/live-board\`), review quiz logs, and assist with lab tickets.
+  * **student**: Learner access only. Limited strictly to assigned courses, my assignments (\`/assignments\`), assigned training modules (\`/training\`), assigned quizzes (\`/quiz\`), student whiteboard participation (\`/live-board\`), study documents (\`/documents\`), student dashboard (\`/dashboard\`), and student profile (\`/profile\`). Students CANNOT access any administrative, grading, or user configuration routes.
+- When an admin or principal asks about role permissions, configuring roles, or viewing access matrices, inform them about the dedicated Roles & Permissions dashboard at \`/admin/roles-permissions\`.
 ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     }
 

@@ -12,7 +12,7 @@ import {
     LayoutGrid, Table as TableIcon, Inbox, Layers, Laptop, Server, HardDrive,
     Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2, Ticket,
     ShoppingBag, Code, Terminal, Award, Package, Zap, Wifi, Network, Headphones, ScanLine, Cable, Camera,
-    Share2, Folder, Truck, ArrowRight, UsersRound, Search, RotateCcw, UserCheck, ShieldAlert, FolderPlus, Square,
+    Share2, Folder, Truck, ArrowRight, UsersRound, Search, RotateCcw, UserCheck, ShieldAlert, Shield, FolderPlus, Square,
     GripHorizontal, FileSpreadsheet, Settings, Palette, Sliders, CheckCheck, UserPlus, Mail
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
@@ -9831,6 +9831,16 @@ export default function FloatingChatbot() {
             prompts: [
                 "Generate PDF report of lab attendance and coding submissions for Class 11",
                 "Export Excel report of faulty lab equipment across all labs"
+            ]
+        },
+        {
+            title: "🛡️ Roles & Permissions (RBAC)",
+            icon: Shield,
+            prompts: [
+                "Show system Role-Based Access Control (RBAC) matrix and page routes",
+                "What pages can students access compared to faculty?",
+                "Explain the permissions difference between Principal and Admin",
+                "How do I open the Roles & Permissions management dashboard?"
             ]
         }
     ];

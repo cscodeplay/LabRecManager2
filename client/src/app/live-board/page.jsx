@@ -8,6 +8,7 @@ import { Pencil, ArrowLeft, AlertCircle, Radio } from 'lucide-react';
 import Whiteboard from '@/components/Whiteboard';
 import CameraOverlay from '@/components/CameraOverlay';
 import io from 'socket.io-client';
+import api from '@/lib/api';
 
 export default function LiveBoardPage() {
     const router = useRouter();
@@ -25,7 +26,7 @@ export default function LiveBoardPage() {
             return;
         }
 
-        // Check for saved session in localStorage
+        // 1. Check for saved session in localStorage
         try {
             const saved = localStorage.getItem('active_whiteboard_session');
             if (saved) {
@@ -37,6 +38,22 @@ export default function LiveBoardPage() {
         } catch (e) {
             console.error('Error loading session:', e);
         }
+
+        // 2. Proactively fetch active shared session from backend API
+        api.get('/whiteboard/active-session')
+            .then(res => {
+                if (res.data?.success && res.data.data?.session) {
+                    const activeSess = res.data.data.session;
+                    setSharedSession(activeSess);
+                    localStorage.setItem('active_whiteboard_session', JSON.stringify({
+                        ...activeSess,
+                        timestamp: Date.now()
+                    }));
+                }
+            })
+            .catch(err => {
+                console.warn('[LiveBoard] Active session check:', err?.message);
+            });
 
         // Initialize socket
         const socketUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';

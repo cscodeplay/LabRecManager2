@@ -57,6 +57,13 @@ export default function WhiteboardPage() {
             return;
         }
 
+        // Route students smoothly to the live-board interface
+        if (user?.role === 'student') {
+            const currentSearch = typeof window !== 'undefined' ? window.location.search : '';
+            router.replace(`/live-board${currentSearch}`);
+            return;
+        }
+
         // Only instructors and admins can access standalone whiteboard instances
         if (!isInstructor) {
             toast.error('Only instructors and administrators can access the whiteboard');

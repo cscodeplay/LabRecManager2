@@ -323,6 +323,88 @@ router.post('/migrate-personal', authenticate, authorize('admin', 'principal', '
 }));
 
 /**
+ * @route   GET /api/whiteboard/active-session
+ * @desc    Get currently active shared whiteboard session for user/student
+ * @access  Authenticated
+ */
+router.get('/active-session', authenticate, asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    const schoolId = req.user.schoolId;
+    const isStudent = req.user.role === 'student';
+
+    let userClassIds = [];
+    let userGroupIds = [];
+
+    if (isStudent) {
+        const [enrollments, groupMembers] = await Promise.all([
+            prisma.classEnrollment.findMany({
+                where: { studentId: userId, status: 'active' },
+                select: { classId: true }
+            }).catch(() => []),
+            prisma.studentGroupMember.findMany({
+                where: { studentId: userId },
+                select: { groupId: true }
+            }).catch(() => [])
+        ]);
+        userClassIds = enrollments.map(e => e.classId).filter(Boolean);
+        userGroupIds = groupMembers.map(g => g.groupId).filter(Boolean);
+    }
+
+    // Find any active session for this user
+    const sessionWhere = {
+        schoolId,
+        status: 'active'
+    };
+
+    if (isStudent) {
+        sessionWhere.OR = [
+            { targetClassId: { in: userClassIds } },
+            { targetGroupId: { in: userGroupIds } },
+            { participants: { some: { userId } } }
+        ];
+    } else {
+        sessionWhere.OR = [
+            { hostId: userId },
+            { participants: { some: { userId } } }
+        ];
+    }
+
+    const session = await prisma.whiteboardSession.findFirst({
+        where: sessionWhere,
+        include: {
+            host: {
+                select: { id: true, firstName: true, lastName: true, email: true, role: true }
+            },
+            targetClass: {
+                select: { id: true, name: true, gradeLevel: true, section: true }
+            },
+            targetGroup: {
+                select: { id: true, name: true }
+            }
+        },
+        orderBy: { createdAt: 'desc' }
+    });
+
+    if (!session) {
+        return res.json({ success: true, data: { session: null } });
+    }
+
+    res.json({
+        success: true,
+        data: {
+            session: {
+                sessionId: session.id,
+                title: session.title,
+                instructorId: session.hostId,
+                instructorName: `${session.host?.firstName || ''} ${session.host?.lastName || ''}`.trim(),
+                targetType: session.targetType,
+                permissions: { canDraw: true, canShareAudio: false, canShareVideo: false }
+            }
+        }
+    });
+}));
+
+/**
  * @route   GET /api/whiteboard/sessions
  * @desc    Get all active whiteboard sessions (admin only)
  * @access  Admin/Principal
