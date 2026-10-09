@@ -117,7 +117,27 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
     const { t } = useTranslation('common');
     const { user, logout } = useAuthStore();
     const [isMobile, setIsMobile] = useState(false);
-    const [schoolInfo, setSchoolInfo] = useState({ name: 'ULRMS', logoUrl: '' });
+    const [logoError, setLogoError] = useState(false);
+    const [schoolInfo, setSchoolInfo] = useState(() => {
+        try {
+            if (typeof window !== 'undefined') {
+                const cached = localStorage.getItem('school_branding');
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    if (parsed?.name || parsed?.logoUrl) {
+                        return {
+                            name: parsed.name || 'ULRMS',
+                            nameHindi: parsed.nameHindi || '',
+                            logoUrl: parsed.logoUrl || ''
+                        };
+                    }
+                }
+            }
+        } catch (e) {
+            // ignore
+        }
+        return { name: 'ULRMS', nameHindi: '', logoUrl: '' };
+    });
 
     useEffect(() => {
         const checkMobile = () => setIsMobile(window.innerWidth < 1024);
@@ -126,27 +146,68 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
-    // Fetch school info if user is logged in
+    // Sync school info from user session and backend
     useEffect(() => {
-        if (user?.schoolId) {
-            console.log('[Sidebar] Fetching school info for schoolId:', user.schoolId);
-            import('@/lib/api').then(module => {
-                const api = module.default;
-                api.get(`/schools/${user.schoolId}`)
-                    .then(res => {
-                        console.log('[Sidebar] School API response:', res.data);
-                        if (res.data.success && res.data.data.school) {
-                            console.log('[Sidebar] School logoUrl:', res.data.data.school.logoUrl);
-                            setSchoolInfo({
-                                name: res.data.data.school.name,
-                                logoUrl: res.data.data.school.logoUrl
-                            });
-                        }
-                    })
-                    .catch(err => console.error('[Sidebar] Failed to load school info', err));
-            });
+        // 1. Immediately hydrate from user object if available
+        if (user?.school?.logoUrl || user?.school?.name) {
+            setSchoolInfo(prev => ({
+                name: user.school.name || prev.name || 'ULRMS',
+                nameHindi: user.school.nameHindi || prev.nameHindi || '',
+                logoUrl: user.school.logoUrl || prev.logoUrl || ''
+            }));
+            setLogoError(false);
         }
-    }, [user?.schoolId]);
+
+        // 2. Fetch fresh school branding
+        const fetchSchool = async () => {
+            try {
+                const { schoolAPI, default: api } = await import('@/lib/api');
+                let foundSchool = null;
+
+                if (user?.schoolId) {
+                    try {
+                        const res = await api.get(`/schools/${user.schoolId}`);
+                        if (res.data?.success && res.data?.data?.school) {
+                            foundSchool = res.data.data.school;
+                        }
+                    } catch (err) {
+                        // ignore and fallback
+                    }
+                }
+
+                if (!foundSchool || !foundSchool.logoUrl) {
+                    try {
+                        const brandRes = await schoolAPI.getBranding();
+                        if (brandRes.data?.success && brandRes.data?.data?.school) {
+                            foundSchool = { ...(foundSchool || {}), ...brandRes.data.data.school };
+                        }
+                    } catch (bErr) {
+                        // ignore
+                    }
+                }
+
+                if (foundSchool && (foundSchool.name || foundSchool.logoUrl)) {
+                    setSchoolInfo({
+                        name: foundSchool.name || 'ULRMS',
+                        nameHindi: foundSchool.nameHindi || '',
+                        logoUrl: foundSchool.logoUrl || ''
+                    });
+                    setLogoError(false);
+                    try {
+                        localStorage.setItem('school_branding', JSON.stringify({
+                            name: foundSchool.name,
+                            nameHindi: foundSchool.nameHindi,
+                            logoUrl: foundSchool.logoUrl
+                        }));
+                    } catch (e) {}
+                }
+            } catch (err) {
+                console.error('[Sidebar] Failed to load school info:', err);
+            }
+        };
+
+        fetchSchool();
+    }, [user?.schoolId, user?.school]);
 
     const handleLogout = () => {
         logout();
@@ -162,29 +223,56 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
 
     const sidebarContent = (
         <>
-            {/* Logo */}
-            <div className={`p-4 border-b border-slate-200 dark:border-slate-700 flex items-center ${isCollapsed && !isMobile ? 'justify-center' : 'justify-between'}`}>
-                {(!isCollapsed || isMobile) && (
-                    <Link href="/dashboard" className="flex items-center gap-2">
-                        <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center text-white font-bold overflow-hidden">
-                            {schoolInfo.logoUrl && schoolInfo.logoUrl.length > 0 ? (
+            {/* Logo & Brand Header */}
+            <div className={`p-4 border-b border-slate-200 dark:border-slate-700 flex items-center ${isCollapsed && !isMobile ? 'justify-between' : 'justify-between'}`}>
+                {(!isCollapsed || isMobile) ? (
+                    <Link href="/dashboard" className="flex items-center gap-2.5 group min-w-0 flex-1">
+                        <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 p-1 flex items-center justify-center shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex-shrink-0 group-hover:scale-105 transition-transform">
+                            {schoolInfo.logoUrl && !logoError ? (
                                 <img
                                     src={schoolInfo.logoUrl}
-                                    alt="School Logo"
-                                    className="w-full h-full object-contain p-1 bg-white"
-                                    onError={(e) => {
-                                        console.error('[Sidebar] Logo failed to load:', schoolInfo.logoUrl);
-                                        e.target.style.display = 'none';
-                                        e.target.nextSibling?.removeAttribute('style');
-                                    }}
+                                    alt={schoolInfo.name || 'School Logo'}
+                                    className="w-full h-full object-contain"
+                                    onError={() => setLogoError(true)}
                                 />
-                            ) : null}
-                            <Beaker className={`w-6 h-6 ${schoolInfo.logoUrl && schoolInfo.logoUrl.length > 0 ? 'hidden' : ''}`} />
+                            ) : (
+                                <div className="w-full h-full rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white">
+                                    <GraduationCap className="w-5 h-5" />
+                                </div>
+                            )}
                         </div>
-                        <div>
-                            <h1 className="font-bold text-slate-900 dark:text-slate-100 text-lg leading-none truncate max-w-[150px]" title={schoolInfo.name}>{schoolInfo.name}</h1>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">{t('sidebar.unifiedLabRecords')}</p>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 leading-none">
+                                <span className="font-extrabold text-primary-600 dark:text-primary-400 text-sm tracking-wider uppercase">ULRMS</span>
+                                {schoolInfo.name && schoolInfo.name !== 'ULRMS' && (
+                                    <span className="text-slate-300 dark:text-slate-600 text-xs">•</span>
+                                )}
+                            </div>
+                            <h1 className="font-bold text-slate-900 dark:text-slate-100 text-sm leading-tight truncate max-w-[150px] mt-0.5" title={schoolInfo.name || 'ULRMS'}>
+                                {schoolInfo.name && schoolInfo.name !== 'ULRMS' ? schoolInfo.name : t('sidebar.unifiedLabRecords')}
+                            </h1>
+                            {schoolInfo.nameHindi && (
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate leading-tight mt-0.5">
+                                    {schoolInfo.nameHindi}
+                                </p>
+                            )}
                         </div>
+                    </Link>
+                ) : (
+                    /* Collapsed View: School Logo centered next to collapse button */
+                    <Link href="/dashboard" className="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 p-1 flex items-center justify-center shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex-shrink-0 hover:scale-105 transition-transform" title={schoolInfo.name || 'ULRMS'}>
+                        {schoolInfo.logoUrl && !logoError ? (
+                            <img
+                                src={schoolInfo.logoUrl}
+                                alt={schoolInfo.name || 'School Logo'}
+                                className="w-full h-full object-contain"
+                                onError={() => setLogoError(true)}
+                            />
+                        ) : (
+                            <div className="w-full h-full rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white">
+                                <GraduationCap className="w-5 h-5" />
+                            </div>
+                        )}
                     </Link>
                 )}
                 {isMobile && (
@@ -196,6 +284,7 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                     <button
                         onClick={onToggleCollapse}
                         className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition"
+                        title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                     >
                         <ChevronLeft className={`w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform ${isCollapsed ? 'rotate-180' : ''}`} />
                     </button>

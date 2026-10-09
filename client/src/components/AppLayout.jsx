@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, Mic, Keyboard, Search } from 'lucide-react';
+import { Menu, Mic, Keyboard, Search, GraduationCap } from 'lucide-react';
 import Sidebar from './Sidebar';
 import NotificationBell from './NotificationBell';
 import ProfileDropdown from './ProfileDropdown';
@@ -18,11 +18,31 @@ import { useAuthStore } from '@/lib/store';
 export default function AppLayout({ children }) {
     const pathname = usePathname();
     const router = useRouter();
-    const { isAuthenticated, _hasHydrated } = useAuthStore();
+    const { isAuthenticated, _hasHydrated, user } = useAuthStore();
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [voiceHudOpen, setVoiceHudOpen] = useState(false);
+    const [schoolInfo, setSchoolInfo] = useState(() => {
+        try {
+            if (typeof window !== 'undefined') {
+                const cached = localStorage.getItem('school_branding');
+                if (cached) return JSON.parse(cached);
+            }
+        } catch (e) {}
+        return null;
+    });
+
+    useEffect(() => {
+        if (user?.school?.logoUrl || user?.school?.name) {
+            setSchoolInfo(user.school);
+        } else {
+            try {
+                const cached = localStorage.getItem('school_branding');
+                if (cached) setSchoolInfo(JSON.parse(cached));
+            } catch (e) {}
+        }
+    }, [user?.school]);
 
     // Global keyboard shortcut for Voice HUD (Ctrl+Shift+V / Cmd+Shift+V)
     useEffect(() => {
@@ -97,6 +117,26 @@ export default function AppLayout({ children }) {
                             >
                                 <Menu className="w-5 h-5 text-slate-600" />
                             </button>
+
+                            {/* Mobile Brand: School Logo to the left of ULRMS */}
+                            <div className="lg:hidden flex items-center gap-2 mr-1">
+                                <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 p-1 flex items-center justify-center overflow-hidden shadow-xs flex-shrink-0">
+                                    {schoolInfo?.logoUrl ? (
+                                        <img
+                                            src={schoolInfo.logoUrl}
+                                            alt={schoolInfo.name || 'School Logo'}
+                                            className="w-full h-full object-contain"
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full rounded-md bg-primary-600 flex items-center justify-center text-white">
+                                            <GraduationCap className="w-4 h-4" />
+                                        </div>
+                                    )}
+                                </div>
+                                <span className="font-extrabold text-primary-600 text-sm tracking-wide">
+                                    ULRMS
+                                </span>
+                            </div>
 
                             {/* Global Search Button (Mobile, iPad & Desktop) */}
                             <button

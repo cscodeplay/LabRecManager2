@@ -157,22 +157,32 @@ router.post('/files', authenticate, authorize('admin', 'principal', 'instructor'
 /**
  * @route   GET /api/whiteboard/files/:id
  * @desc    Get full data for a single whiteboard file
- * @access  Admin/Instructor
+ * @access  Authenticated
  */
-router.get('/files/:id', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+router.get('/files/:id', authenticate, asyncHandler(async (req, res) => {
     const file = await prisma.whiteboardFile.findUnique({
         where: { id: req.params.id }
     });
     
-    if (!file || file.ownerId !== req.user.id) {
+    if (!file) {
         return res.status(404).json({ success: false, message: 'Whiteboard not found' });
     }
+
+    // Access check: owner can access; anyone in same school can view
+    const isOwner = file.ownerId === req.user.id;
+    const sameSchool = file.schoolId && req.user.schoolId && file.schoolId === req.user.schoolId;
+
+    if (!isOwner && !sameSchool && req.user.role !== 'admin' && req.user.role !== 'principal') {
+        return res.status(403).json({ success: false, message: 'Not authorized to view this whiteboard' });
+    }
     
-    // Update last opened
-    await prisma.whiteboardFile.update({
-        where: { id: file.id },
-        data: { lastOpenedAt: new Date() }
-    });
+    // Update last opened only for owner
+    if (isOwner) {
+        await prisma.whiteboardFile.update({
+            where: { id: file.id },
+            data: { lastOpenedAt: new Date() }
+        }).catch(() => {});
+    }
     
     res.json({ success: true, data: file });
 }));
@@ -350,7 +360,66 @@ router.get('/active-session', authenticate, asyncHandler(async (req, res) => {
         userGroupIds = groupMembers.map(g => g.groupId).filter(Boolean);
     }
 
-    // Find any active session for this user
+    // Check memory map of live shared whiteboards first
+    const activeShares = req.app.get('activeWhiteboardShares');
+    if (activeShares && activeShares.size > 0) {
+        for (const [sessionId, share] of activeShares.entries()) {
+            if (share.schoolId && schoolId && share.schoolId !== schoolId) {
+                continue;
+            }
+
+            if (isStudent) {
+                let isMatch = false;
+                if (share.targetType === 'all') {
+                    isMatch = true;
+                } else if (share.targetType === 'class' && share.classId && userClassIds.includes(share.classId)) {
+                    isMatch = true;
+                } else if (share.targetType === 'group' && Array.isArray(share.targets) && share.targets.some(gId => userGroupIds.includes(gId))) {
+                    isMatch = true;
+                } else if (share.targetType === 'student' && Array.isArray(share.targets) && share.targets.includes(userId)) {
+                    isMatch = true;
+                } else if (!share.targetType) {
+                    isMatch = true;
+                }
+
+                if (isMatch) {
+                    return res.json({
+                        success: true,
+                        data: {
+                            session: {
+                                sessionId: share.sessionId,
+                                whiteboardId: share.whiteboardId || null,
+                                title: share.title || `${share.instructorName || 'Instructor'}'s Whiteboard`,
+                                instructorId: share.instructorId,
+                                instructorName: share.instructorName || 'Instructor',
+                                targetType: share.targetType,
+                                permissions: share.permissions || { canDraw: true, canShareAudio: false, canShareVideo: false }
+                            }
+                        }
+                    });
+                }
+            } else {
+                if (share.instructorId === userId) {
+                    return res.json({
+                        success: true,
+                        data: {
+                            session: {
+                                sessionId: share.sessionId,
+                                whiteboardId: share.whiteboardId || null,
+                                title: share.title || 'Active Whiteboard Session',
+                                instructorId: share.instructorId,
+                                instructorName: share.instructorName,
+                                targetType: share.targetType,
+                                permissions: share.permissions
+                            }
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    // Find any active session for this user in database
     const sessionWhere = {
         schoolId,
         status: 'active'

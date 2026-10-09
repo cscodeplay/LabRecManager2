@@ -345,11 +345,15 @@ export default function LoginPage() {
                     </div>
                     <div className="flex flex-col text-left">
                         <span className="font-bold text-white text-base tracking-tight leading-tight">
-                            {schoolInfo.name || 'LabRecManager'}
+                            {schoolInfo.name || 'ULRMS'}
                         </span>
-                        {schoolInfo.nameHindi && (
+                        {schoolInfo.nameHindi ? (
                             <span className="text-xs text-white/80 font-medium leading-tight">
                                 {schoolInfo.nameHindi}
+                            </span>
+                        ) : (
+                            <span className="text-xs text-white/70 font-medium leading-tight">
+                                Lab Record Management
                             </span>
                         )}
                     </div>
@@ -415,7 +419,7 @@ export default function LoginPage() {
                         )}
                     </div>
                     <span className="font-bold text-slate-800 text-sm tracking-tight truncate max-w-[150px] sm:max-w-[200px]">
-                        {schoolInfo.name || 'LabRecManager'}
+                        {schoolInfo.name || 'ULRMS'}
                     </span>
                 </div>
 

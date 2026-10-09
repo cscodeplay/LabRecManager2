@@ -602,6 +602,7 @@ export default function Whiteboard({
     const wasDraggingRef = useRef(false);
     const justCreatedShapeRef = useRef(false);
     const spotlightOverlayRef = useRef(null);
+    const goToPageRef = useRef(null);
     const [tool, setTool] = useState('pen'); // pen, eraser, select, highlighter, shape, laser, text, image
     const [color, setColor] = useState('#000000');
     const [fillColor, setFillColor] = useState('transparent');
@@ -2135,14 +2136,14 @@ export default function Whiteboard({
                 const stateStr = JSON.stringify(state);
                 
                 if (whiteboardId && whiteboardId !== 'admin-standalone' && !whiteboardId.startsWith('standalone_')) {
-                    if (!isMeetingMode) {
+                    if (!isMeetingMode && !isStudent) {
                         api.put(`/whiteboard/files/${whiteboardId}/save`, { 
                             canvasData: stateStr,
                             pageCount: totalPages,
                             thumbnailUrl: JSON.stringify(allPageThumbnails)
                         }).catch(e => console.warn('Whiteboard auto-save deferred:', e?.message));
                     }
-                } else if (whiteboardId === 'admin-standalone') {
+                } else if (whiteboardId === 'admin-standalone' && !isStudent) {
                     api.put('/whiteboard/personal', { canvasData: stateStr })
                         .catch(e => console.warn('Whiteboard personal auto-save deferred:', e?.message));
                 } else {
@@ -2439,6 +2440,54 @@ export default function Whiteboard({
             });
         };
 
+        const handleShapeAdd = (data) => {
+            if (data.sessionId !== sessionId) return;
+            if (data.socketId && data.socketId === socket.id) return;
+            if (!data.shape) return;
+            isRemoteUpdateRef.current = true;
+            setShapeObjects(prev => {
+                if (prev.some(s => s.id === data.shape.id)) return prev;
+                return [...prev, data.shape];
+            });
+
+            // If a freehand path or sparkle path was being drawn in real time,
+            // clean up the temporary raster stroke from the 2D canvas context
+            // now that the permanent SVG path shape object has landed
+            if (data.shape.type === 'path' || data.shape.type === 'sparkle_path') {
+                const canvas = canvasRef.current;
+                if (canvas) {
+                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+                if (data.socketId && remotePathsRef.current) {
+                    delete remotePathsRef.current[data.socketId];
+                }
+            }
+        };
+
+        const handleShapeDelete = (data) => {
+            if (data.sessionId !== sessionId) return;
+            if (data.socketId && data.socketId === socket.id) return;
+            if (!data.shapeId) return;
+            isRemoteUpdateRef.current = true;
+            setShapeObjects(prev => prev.filter(s => s.id !== data.shapeId));
+        };
+
+        const handleShapeUpdate = (data) => {
+            if (data.sessionId !== sessionId) return;
+            if (data.socketId && data.socketId === socket.id) return;
+            if (!data.shape) return;
+            isRemoteUpdateRef.current = true;
+            setShapeObjects(prev => prev.map(s => s.id === data.shape.id ? { ...s, ...data.shape } : s));
+        };
+
+        const handlePageChange = (data) => {
+            if (data.sessionId !== sessionId) return;
+            if (data.pageIndex !== undefined) {
+                goToPageRef.current?.(data.pageIndex);
+            }
+        };
+
         socket.on('whiteboard:cursor-update', handleCursorUpdate);
         socket.on('whiteboard:action', handleWhiteboardAction);
 
@@ -2448,6 +2497,10 @@ export default function Whiteboard({
         socket.on('whiteboard:background-change', handleBackgroundChange);
         socket.on('whiteboard:canvas-state', handleCanvasState);
         socket.on('whiteboard:objects-update', handleObjectsUpdate);
+        socket.on('whiteboard:shape-add', handleShapeAdd);
+        socket.on('whiteboard:shape-delete', handleShapeDelete);
+        socket.on('whiteboard:shape-update', handleShapeUpdate);
+        socket.on('whiteboard:page-change', handlePageChange);
 
         return () => {
             socket.off('whiteboard:cursor-update', handleCursorUpdate);
@@ -2459,6 +2512,10 @@ export default function Whiteboard({
             socket.off('whiteboard:background-change', handleBackgroundChange);
             socket.off('whiteboard:canvas-state', handleCanvasState);
             socket.off('whiteboard:objects-update', handleObjectsUpdate);
+            socket.off('whiteboard:shape-add', handleShapeAdd);
+            socket.off('whiteboard:shape-delete', handleShapeDelete);
+            socket.off('whiteboard:shape-update', handleShapeUpdate);
+            socket.off('whiteboard:page-change', handlePageChange);
         };
     }, [isSharing, socket, sessionId]);
 
@@ -10096,7 +10153,12 @@ export default function Whiteboard({
             ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
         setCurrentPage(pageIndex);
-    }, [pages, totalPages, saveCurrentPage]);
+        if (socket && sessionId && isSharing) {
+            socket.emit('whiteboard:page-change', { sessionId, pageIndex });
+        }
+    }, [pages, totalPages, saveCurrentPage, socket, sessionId, isSharing]);
+
+    goToPageRef.current = loadPage;
 
     const addNewPage = useCallback(() => {
         saveCurrentPage();
@@ -10105,6 +10167,10 @@ export default function Whiteboard({
         setTotalPages(prev => prev + 1);
         setCurrentPage(newIndex);
         currentPageRef.current = newIndex;
+
+        if (socket && sessionId && isSharing) {
+            socket.emit('whiteboard:page-change', { sessionId, pageIndex: newIndex });
+        }
 
         // Initialize background for new page
         setPageBackgrounds(prev => ({

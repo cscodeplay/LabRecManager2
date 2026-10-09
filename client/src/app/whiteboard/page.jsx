@@ -338,8 +338,10 @@ export default function WhiteboardPage() {
         if (socketRef.current) {
             socketRef.current.emit('whiteboard:start-share', {
                 sessionId: newSessionId,
+                whiteboardId: activeFileId,
+                schoolId: user?.schoolId,
                 instructorId: user?.id,
-                instructorName: `${user?.firstName} ${user?.lastName}`,
+                instructorName: `${user?.firstName || ''} ${user?.lastName || ''}`.trim(),
                 ...shareData
             });
         }

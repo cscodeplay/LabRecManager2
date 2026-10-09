@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from '@/lib/store';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import io from 'socket.io-client';
 import toast from 'react-hot-toast';
 import { Pencil, X } from 'lucide-react';
@@ -11,6 +11,7 @@ const STORAGE_KEY = 'active_whiteboard_session';
 
 export default function WhiteboardNotificationListener() {
     const router = useRouter();
+    const pathname = usePathname();
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
     const socketRef = useRef(null);
 
@@ -86,6 +87,12 @@ export default function WhiteboardNotificationListener() {
         socketRef.current.on('whiteboard:shared-with-you', (data) => {
             console.log('[WhiteboardListener] Whiteboard shared:', data);
             setSharedSession(data);
+            
+            // If already on live-board or whiteboard, do not show pop-up toast or bottom badge
+            if (pathname?.includes('/live-board') || pathname?.includes('/whiteboard')) {
+                return;
+            }
+
             setShowBadge(true);
 
             // Show toast notification with view button
@@ -124,7 +131,9 @@ export default function WhiteboardNotificationListener() {
                 setSharedSession(null);
                 setShowBadge(false);
                 localStorage.removeItem(STORAGE_KEY);
-                toast('Whiteboard session ended', { icon: '📋' });
+                if (!pathname?.includes('/live-board')) {
+                    toast('Whiteboard session ended', { icon: '📋' });
+                }
             }
         });
 
@@ -133,7 +142,7 @@ export default function WhiteboardNotificationListener() {
                 socketRef.current.disconnect();
             }
         };
-    }, [_hasHydrated, isAuthenticated, isStudent, user, router]);
+    }, [_hasHydrated, isAuthenticated, isStudent, user, router, pathname]);
 
     const handleDismiss = () => {
         setShowBadge(false);
@@ -145,8 +154,8 @@ export default function WhiteboardNotificationListener() {
         router.push('/live-board');
     };
 
-    // Only render for students
-    if (!isStudent) return null;
+    // Only render for students, and hide floating badge if currently on /live-board or /whiteboard
+    if (!isStudent || pathname?.includes('/live-board') || pathname?.includes('/whiteboard')) return null;
 
     return (
         <>

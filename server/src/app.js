@@ -115,6 +115,10 @@ const io = new Server(server, {
 // Make io accessible in routes
 app.set('io', io);
 
+// Store active standalone whiteboard shared sessions for instant student resolution
+const activeWhiteboardShares = new Map();
+app.set('activeWhiteboardShares', activeWhiteboardShares);
+
 // Middleware
 app.set('trust proxy', 1); // Enable proxy header support (x-forwarded-proto, x-forwarded-for) for Render / Heroku
 app.use(cors(corsOptions));
@@ -566,9 +570,37 @@ io.on('connection', (socket) => {
     io.to(`meeting-${data.roomId}`).emit('session-ended');
   });
 
-  // Notifications
-  socket.on('join-user', (userId) => {
+  // Notifications & User Room Join
+  socket.on('join-user', async (userId) => {
     socket.join(`user-${userId}`);
+
+    // Auto-join class and group rooms for students so they receive whiteboard notifications & shares
+    try {
+      const [enrollments, groupMembers] = await Promise.all([
+        prisma.classEnrollment.findMany({
+          where: { studentId: userId, status: 'active' },
+          select: { classId: true }
+        }).catch(() => []),
+        prisma.studentGroupMember.findMany({
+          where: { studentId: userId },
+          select: { groupId: true }
+        }).catch(() => [])
+      ]);
+      enrollments.forEach(e => {
+        if (e.classId) {
+          socket.join(`class-${e.classId}`);
+          console.log(`[Socket] User ${userId} auto-joined class-${e.classId}`);
+        }
+      });
+      groupMembers.forEach(g => {
+        if (g.groupId) {
+          socket.join(`group-${g.groupId}`);
+          console.log(`[Socket] User ${userId} auto-joined group-${g.groupId}`);
+        }
+      });
+    } catch (err) {
+      console.warn('[Socket] Error auto-joining class/group rooms:', err.message);
+    }
   });
 
   // ===========================================
@@ -735,42 +767,81 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('whiteboard:start-share', (data) => {
-    const { sessionId, instructorId, instructorName, targetType, targets, classId } = data;
+  socket.on('whiteboard:start-share', async (data) => {
+    const { sessionId, whiteboardId, instructorId, instructorName, targetType, targets, classId, schoolId, permissions } = data;
+
+    const sessionRecord = {
+      sessionId,
+      whiteboardId: whiteboardId || null,
+      instructorId,
+      instructorName,
+      targetType,
+      targets: Array.isArray(targets) ? targets : (targets ? [targets] : []),
+      classId: classId || null,
+      schoolId: schoolId || socket.schoolId || null,
+      permissions: permissions || { canDraw: true, canShareAudio: false, canShareVideo: false },
+      createdAt: Date.now()
+    };
+
+    activeWhiteboardShares.set(sessionId, sessionRecord);
 
     // Store session info on socket for later reference
-    socket.whiteboardSession = { sessionId, instructorId, instructorName };
+    socket.whiteboardSession = sessionRecord;
 
     // Join the whiteboard room
     socket.join(`whiteboard-${sessionId}`);
 
-    console.log(`[Whiteboard] Instructor ${instructorName} started sharing session ${sessionId}`);
+    console.log(`[Whiteboard] Instructor ${instructorName} started sharing session ${sessionId} (whiteboard: ${whiteboardId}, target: ${targetType})`);
+
+    const sharePayload = {
+      sessionId,
+      whiteboardId: whiteboardId || null,
+      instructorId,
+      instructorName,
+      targetType,
+      permissions: sessionRecord.permissions
+    };
 
     // Broadcast to targets based on type
-    if (targetType === 'class') {
-      // Notify all students in the class
-      io.to(`class-${classId}`).emit('whiteboard:shared-with-you', {
-        sessionId,
-        instructorName,
-        targetType: 'class'
-      });
+    if (targetType === 'class' && classId) {
+      // Notify all students in the class room
+      io.to(`class-${classId}`).emit('whiteboard:shared-with-you', sharePayload);
+
+      // Also look up all students enrolled in this class and directly notify their user rooms
+      try {
+        const enrolledStudents = await prisma.classEnrollment.findMany({
+          where: { classId, status: 'active' },
+          select: { studentId: true }
+        });
+        enrolledStudents.forEach(e => {
+          io.to(`user-${e.studentId}`).emit('whiteboard:shared-with-you', sharePayload);
+        });
+      } catch (err) {
+        console.warn('[Whiteboard] Failed to notify enrolled students directly:', err.message);
+      }
     } else if (targetType === 'group') {
-      // Notify students in selected groups
-      targets.forEach(groupId => {
-        io.to(`group-${groupId}`).emit('whiteboard:shared-with-you', {
-          sessionId,
-          instructorName,
-          targetType: 'group'
-        });
+      const groupList = Array.isArray(targets) ? targets : (targets ? [targets] : []);
+      // Notify students in selected group rooms
+      groupList.forEach(groupId => {
+        io.to(`group-${groupId}`).emit('whiteboard:shared-with-you', sharePayload);
       });
-    } else if (targetType === 'student') {
-      // Notify specific students
-      targets.forEach(studentId => {
-        io.to(`user-${studentId}`).emit('whiteboard:shared-with-you', {
-          sessionId,
-          instructorName,
-          targetType: 'student'
+
+      // Also look up group members directly
+      try {
+        const groupMembers = await prisma.studentGroupMember.findMany({
+          where: { groupId: { in: groupList } },
+          select: { studentId: true }
         });
+        groupMembers.forEach(m => {
+          io.to(`user-${m.studentId}`).emit('whiteboard:shared-with-you', sharePayload);
+        });
+      } catch (err) {
+        console.warn('[Whiteboard] Failed to notify group members directly:', err.message);
+      }
+    } else if (targetType === 'student') {
+      const studentList = Array.isArray(targets) ? targets : (targets ? [targets] : []);
+      studentList.forEach(studentId => {
+        io.to(`user-${studentId}`).emit('whiteboard:shared-with-you', sharePayload);
       });
     }
   });
@@ -781,6 +852,7 @@ io.on('connection', (socket) => {
 
     console.log(`[Whiteboard] Session ${sessionId} stopped sharing`);
     
+    activeWhiteboardShares.delete(sessionId);
     // Clear chat history
     whiteboardChatHistory.delete(sessionId);
 
@@ -893,11 +965,19 @@ io.on('connection', (socket) => {
   });
 
   socket.on('whiteboard:shape-add', (data) => {
-    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:shape-add', data);
+    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:shape-add', { ...data, socketId: socket.id });
   });
 
   socket.on('whiteboard:shape-delete', (data) => {
-    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:shape-delete', data);
+    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:shape-delete', { ...data, socketId: socket.id });
+  });
+
+  socket.on('whiteboard:shape-update', (data) => {
+    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:shape-update', { ...data, socketId: socket.id });
+  });
+
+  socket.on('whiteboard:page-change', (data) => {
+    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:page-change', { ...data, socketId: socket.id });
   });
 
 
@@ -1034,6 +1114,15 @@ io.on('connection', (socket) => {
           participants: Array.from(session.participants.values())
         });
       }
+    }
+
+    // Clean up active shared whiteboard if this socket was the sharing host
+    if (socket.whiteboardSession?.sessionId) {
+      const sId = socket.whiteboardSession.sessionId;
+      activeWhiteboardShares.delete(sId);
+      whiteboardChatHistory.delete(sId);
+      io.to(`whiteboard-${sId}`).emit('whiteboard:ended', { sessionId: sId });
+      console.log(`[Whiteboard] Host disconnected, ended share session ${sId}`);
     }
 
     console.log('User disconnected:', socket.id);
