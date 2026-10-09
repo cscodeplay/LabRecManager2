@@ -27,6 +27,7 @@ export default function WhiteboardPage() {
     const [showShareModal, setShowShareModal] = useState(false);
     const [isSharing, setIsSharing] = useState(false);
     const [shareTargets, setShareTargets] = useState([]);
+    const [currentPermissions, setCurrentPermissions] = useState(null);
     const [sessionId, setSessionId] = useState(null);
     const [sharedFileId, setSharedFileId] = useState(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -82,7 +83,7 @@ export default function WhiteboardPage() {
         // Fetch files
         fetchFiles();
         
-        // Restore active file if refreshed
+        // Restore active file & share state if refreshed
         const savedFileId = sessionStorage.getItem('active_whiteboard_file');
         if (savedFileId) {
             setActiveFileId(savedFileId);
@@ -92,12 +93,17 @@ export default function WhiteboardPage() {
             setSessionId(savedSessionId);
         }
         const savedIsSharing = sessionStorage.getItem('active_whiteboard_is_sharing');
+        const savedSharedFileId = sessionStorage.getItem('active_whiteboard_shared_file_id');
         if (savedIsSharing === 'true') {
             setIsSharing(true);
-            setSharedFileId(savedFileId);
+            setSharedFileId(savedSharedFileId || savedFileId);
             try {
                 const targets = JSON.parse(sessionStorage.getItem('active_whiteboard_share_targets') || '[]');
                 setShareTargets(targets);
+            } catch(e) {}
+            try {
+                const perms = JSON.parse(sessionStorage.getItem('active_whiteboard_permissions') || 'null');
+                if (perms) setCurrentPermissions(perms);
             } catch(e) {}
         }
 
@@ -130,6 +136,17 @@ export default function WhiteboardPage() {
             console.log('Socket connected for whiteboard');
             if (user?.id) {
                 socketRef.current.emit('join-user', user.id);
+            }
+            // Page refresh resilience: Reconnect host to active share session
+            const savedIsSharing = sessionStorage.getItem('active_whiteboard_is_sharing');
+            const savedSessionId = sessionStorage.getItem('active_whiteboard_session_id');
+            const savedSharedFileId = sessionStorage.getItem('active_whiteboard_shared_file_id');
+            if (savedIsSharing === 'true' && savedSessionId) {
+                console.log('[Whiteboard Host] Reconnecting host to session', savedSessionId);
+                socketRef.current.emit('whiteboard:reconnect-host', {
+                    sessionId: savedSessionId,
+                    whiteboardId: savedSharedFileId
+                });
             }
         });
     };
@@ -196,15 +213,23 @@ export default function WhiteboardPage() {
         });
     }, [files, sortField, sortDirection]);
 
-    
     useEffect(() => {
         if (activeFileId) {
             sessionStorage.setItem('active_whiteboard_file', activeFileId);
-            sessionStorage.setItem('active_whiteboard_session_id', sessionId || '');
-            sessionStorage.setItem('active_whiteboard_is_sharing', isSharing ? 'true' : 'false');
-            sessionStorage.setItem('active_whiteboard_share_targets', JSON.stringify(shareTargets || []));
-        } 
-    }, [activeFileId, sessionId, isSharing, shareTargets]);
+        } else {
+            sessionStorage.removeItem('active_whiteboard_file');
+        }
+        if (sessionId) {
+            sessionStorage.setItem('active_whiteboard_session_id', sessionId);
+        }
+        sessionStorage.setItem('active_whiteboard_is_sharing', isSharing ? 'true' : 'false');
+        if (sharedFileId) {
+            sessionStorage.setItem('active_whiteboard_shared_file_id', sharedFileId);
+        } else {
+            sessionStorage.removeItem('active_whiteboard_shared_file_id');
+        }
+        sessionStorage.setItem('active_whiteboard_share_targets', JSON.stringify(shareTargets || []));
+    }, [activeFileId, sessionId, isSharing, sharedFileId, shareTargets]);
 
     // Prevent iOS Safari gestures and vertical rubber-band bounce when whiteboard canvas is active
     useEffect(() => {
@@ -332,6 +357,10 @@ export default function WhiteboardPage() {
         setIsSharing(true);
         setSharedFileId(activeFileId);
         setShareTargets(shareData.targetNames);
+        if (shareData.permissions) {
+            setCurrentPermissions(shareData.permissions);
+            sessionStorage.setItem('active_whiteboard_permissions', JSON.stringify(shareData.permissions));
+        }
         setShowShareModal(false);
 
         // Emit start sharing event
@@ -349,10 +378,26 @@ export default function WhiteboardPage() {
         toast.success(`Sharing whiteboard with ${shareData.targetNames.join(', ')}`);
     };
 
+    const handleUpdatePermissions = (newPermissions) => {
+        setCurrentPermissions(newPermissions);
+        sessionStorage.setItem('active_whiteboard_permissions', JSON.stringify(newPermissions));
+        if (socketRef.current && sessionId) {
+            socketRef.current.emit('whiteboard:update-permissions', {
+                sessionId,
+                permissions: newPermissions
+            });
+        }
+    };
+
     const handleStopSharing = () => {
         setIsSharing(false);
         setSharedFileId(null);
         setShareTargets([]);
+        setCurrentPermissions(null);
+        sessionStorage.removeItem('active_whiteboard_is_sharing');
+        sessionStorage.removeItem('active_whiteboard_shared_file_id');
+        sessionStorage.removeItem('active_whiteboard_permissions');
+        sessionStorage.removeItem('active_whiteboard_share_targets');
         if (socketRef.current && sessionId) {
             socketRef.current.emit('whiteboard:stop-share', {
                 sessionId
@@ -396,17 +441,16 @@ export default function WhiteboardPage() {
 
     // PHASE 2: CANVAS VIEW
     if (activeFileId) {
+        const isCurrentBoardShared = isSharing && sharedFileId === activeFileId;
+
         return (
             <div className="h-[100dvh] w-screen bg-slate-100 flex flex-col overflow-hidden relative touch-none select-none overscroll-none whiteboard-workspace-root">
-                {/* Top Navigation & Action Controls Bar (Minimal without title bar) */}
+                {/* Top Navigation & Action Controls Bar */}
                 <div className="absolute top-3 left-4 z-30 flex items-center gap-3">
                     <button 
                         onClick={() => {
                             setActiveFileId(null);
                             sessionStorage.removeItem('active_whiteboard_file');
-                            sessionStorage.removeItem('active_whiteboard_session_id');
-                            sessionStorage.removeItem('active_whiteboard_is_sharing');
-                            sessionStorage.removeItem('active_whiteboard_share_targets');
                             fetchFiles();
                         }}
                         className="p-2 bg-white/90 hover:bg-white text-slate-700 rounded-lg shadow-md transition" 
@@ -414,12 +458,25 @@ export default function WhiteboardPage() {
                     >
                         <ArrowLeft className="w-5 h-5" />
                     </button>
-                    {isSharing && (
+                    {isCurrentBoardShared ? (
                         <span className="flex items-center gap-1.5 text-xs bg-red-500 text-white font-bold px-2.5 py-1 rounded-full shadow-md animate-pulse">
                             <span className="w-2 h-2 bg-white rounded-full" />
                             LIVE SHARING
                         </span>
-                    )}
+                    ) : isSharing ? (
+                        <div className="flex items-center gap-2 bg-slate-900/90 text-white text-xs px-3 py-1 rounded-full shadow-md border border-slate-700">
+                            <span className="w-2 h-2 rounded-full bg-amber-400" />
+                            <span className="font-medium">Private Board (Unshared)</span>
+                            {sharedFileId && (
+                                <button
+                                    onClick={() => setActiveFileId(sharedFileId)}
+                                    className="text-amber-300 font-bold hover:underline ml-1"
+                                >
+                                    Return to Shared Board &rarr;
+                                </button>
+                            )}
+                        </div>
+                    ) : null}
                 </div>
 
                 {/* Camera toggle button placed at bottom-left of the board */}
@@ -450,12 +507,13 @@ export default function WhiteboardPage() {
                             permissions={{ canDraw: true, canShareAudio: true, canShareVideo: true }}
                             userName={user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'Instructor'}
                             userIdentifier={user?.employeeId || user?.id?.slice(0, 8) || ''}
-                            isSharing={isSharing}
+                            isSharing={isCurrentBoardShared}
                             sharingTargets={shareTargets}
                             onShare={() => setShowShareModal(true)}
                             onStopSharing={handleStopSharing}
+                            onUpdatePermissions={handleUpdatePermissions}
                             socket={socketRef.current}
-                            sessionId={sessionId}
+                            sessionId={isCurrentBoardShared ? sessionId : `personal_${user?.id}_${activeFileId}`}
                             whiteboardId={activeFileId}
                         />
                     </div>
@@ -467,8 +525,10 @@ export default function WhiteboardPage() {
                     onClose={() => setShowShareModal(false)}
                     isSharing={isSharing}
                     currentTargets={shareTargets}
+                    currentPermissions={currentPermissions}
                     onStartSharing={handleStartSharing}
                     onStopSharing={handleStopSharing}
+                    onUpdatePermissions={handleUpdatePermissions}
                 />
 
                 {/* Camera Overlay */}
@@ -533,6 +593,42 @@ export default function WhiteboardPage() {
             </header>
 
             <main className="flex-1 max-w-7xl w-full mx-auto p-6 md:p-8">
+                {/* Active Live Sharing Banner */}
+                {isSharing && sharedFileId && (
+                    <div className="mb-6 p-4 bg-gradient-to-r from-red-500 via-rose-500 to-amber-600 rounded-2xl text-white shadow-xl flex flex-wrap items-center justify-between gap-4 animate-fade-in border border-white/20">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center">
+                                <Share2 className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-black uppercase tracking-wider bg-white/30 px-2 py-0.5 rounded-full">Active Session</span>
+                                    <h3 className="font-bold text-sm">
+                                        Sharing &ldquo;{files.find(f => f.id === sharedFileId)?.title || 'Whiteboard'}&rdquo; live with students
+                                    </h3>
+                                </div>
+                                <p className="text-xs text-white/80 mt-0.5">
+                                    Opening other whiteboards from the gallery will keep them private without interrupting your students.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setActiveFileId(sharedFileId)}
+                                className="px-4 py-2 bg-white text-rose-700 hover:bg-rose-50 rounded-xl text-xs font-bold transition shadow-md flex items-center gap-1.5"
+                            >
+                                Return to Shared Board
+                            </button>
+                            <button
+                                onClick={handleStopSharing}
+                                className="px-3.5 py-2 bg-rose-800/80 hover:bg-rose-900 text-white rounded-xl text-xs font-semibold transition"
+                            >
+                                Stop Sharing
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {loadingFiles ? (
                     <div className="flex items-center justify-center h-64">
                         <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>

@@ -42,7 +42,8 @@ export default function CameraOverlay({
     onClose,
     socket,
     sessionId,
-    isInstructor = false
+    isInstructor = false,
+    permissions = null
 }) {
     const videoRef = useRef(null);
     const containerRef = useRef(null);
@@ -94,6 +95,10 @@ export default function CameraOverlay({
 
     // Start camera and microphone
     const startMedia = useCallback(async () => {
+        if (!isInstructor && permissions && permissions.canShareVideo === false) {
+            alert('Video sharing has been disabled by the instructor.');
+            return;
+        }
         try {
             const constraints = {
                 video: selectedVideoDevice
@@ -147,7 +152,7 @@ export default function CameraOverlay({
         } catch (err) {
             console.error('Error starting media:', err);
         }
-    }, [selectedVideoDevice, selectedAudioDevice, socket, sessionId]);
+    }, [isInstructor, permissions, selectedVideoDevice, selectedAudioDevice, socket, sessionId]);
 
     // Get available devices
     useEffect(() => {
@@ -170,15 +175,23 @@ export default function CameraOverlay({
 
     // Toggle camera
     const toggleCamera = useCallback(() => {
+        if (!isInstructor && permissions && permissions.canShareVideo === false) {
+            alert('Video sharing has been disabled by the instructor.');
+            return;
+        }
         if (isCameraOn) {
             stopMedia();
         } else {
             startMedia();
         }
-    }, [isCameraOn, startMedia, stopMedia]);
+    }, [isInstructor, permissions, isCameraOn, startMedia, stopMedia]);
 
     // Toggle microphone
     const toggleMic = useCallback(() => {
+        if (!isInstructor && permissions && permissions.canShareAudio === false) {
+            alert('Audio sharing has been disabled by the instructor.');
+            return;
+        }
         if (streamRef.current) {
             const audioTrack = streamRef.current.getAudioTracks()[0];
             if (audioTrack) {
@@ -186,7 +199,23 @@ export default function CameraOverlay({
                 setIsMicOn(audioTrack.enabled);
             }
         }
-    }, []);
+    }, [isInstructor, permissions]);
+
+    // Enforce live permissions revocation
+    useEffect(() => {
+        if (!isInstructor && permissions) {
+            if (permissions.canShareVideo === false && isCameraOn) {
+                stopMedia();
+            }
+            if (permissions.canShareAudio === false && isMicOn && streamRef.current) {
+                const audioTrack = streamRef.current.getAudioTracks()[0];
+                if (audioTrack) {
+                    audioTrack.enabled = false;
+                    setIsMicOn(false);
+                }
+            }
+        }
+    }, [permissions, isInstructor, isCameraOn, isMicOn, stopMedia]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -477,23 +506,28 @@ export default function CameraOverlay({
                     <div className="flex items-center justify-center gap-2 p-3 bg-slate-800">
                         <button
                             onClick={isCameraOn ? toggleCamera : startMedia}
+                            disabled={!isInstructor && permissions && permissions.canShareVideo === false}
                             className={`p-2.5 rounded-full transition ${isCameraOn
                                     ? 'bg-slate-700 hover:bg-slate-600 text-white'
                                     : 'bg-red-500 hover:bg-red-600 text-white'
-                                }`}
-                            title={isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
+                                } disabled:opacity-40 disabled:cursor-not-allowed`}
+                            title={!isInstructor && permissions && permissions.canShareVideo === false
+                                ? 'Video sharing disabled by instructor'
+                                : (isCameraOn ? 'Turn Off Camera' : 'Turn On Camera')}
                         >
                             {isCameraOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
                         </button>
 
                         <button
                             onClick={toggleMic}
-                            disabled={!isCameraOn}
+                            disabled={!isCameraOn || (!isInstructor && permissions && permissions.canShareAudio === false)}
                             className={`p-2.5 rounded-full transition ${isMicOn
                                     ? 'bg-slate-700 hover:bg-slate-600 text-white'
                                     : 'bg-red-500 hover:bg-red-600 text-white'
-                                } disabled:opacity-50 disabled:cursor-not-allowed`}
-                            title={isMicOn ? 'Mute Microphone' : 'Unmute Microphone'}
+                                } disabled:opacity-40 disabled:cursor-not-allowed`}
+                            title={!isInstructor && permissions && permissions.canShareAudio === false
+                                ? 'Audio sharing disabled by instructor'
+                                : (isMicOn ? 'Mute Microphone' : 'Unmute Microphone')}
                         >
                             {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
                         </button>

@@ -118,6 +118,7 @@ app.set('io', io);
 // Store active standalone whiteboard shared sessions for instant student resolution
 const activeWhiteboardShares = new Map();
 app.set('activeWhiteboardShares', activeWhiteboardShares);
+const pendingHostDisconnectTimeouts = new Map();
 
 // Middleware
 app.set('trust proxy', 1); // Enable proxy header support (x-forwarded-proto, x-forwarded-for) for Render / Heroku
@@ -642,20 +643,44 @@ io.on('connection', (socket) => {
   socket.on('whiteboard:update-permissions', (data) => {
     const { sessionId, targetUserId, permissions } = data;
     const session = getSession(sessionId);
-    
-    // Update locally
-    let targetSocketId = null;
-    for (const [sId, p] of session.participants.entries()) {
-      if (p.id === targetUserId) {
-        p.permissions = permissions;
-        targetSocketId = sId;
-        break;
+    const share = activeWhiteboardShares.get(sessionId);
+
+    if (share) {
+      if (targetUserId) {
+        if (!share.participantPermissions) share.participantPermissions = {};
+        share.participantPermissions[targetUserId] = {
+          ...(share.participantPermissions[targetUserId] || share.permissions),
+          ...permissions
+        };
+      } else {
+        // Room-wide default permission update
+        share.permissions = {
+          ...share.permissions,
+          ...permissions
+        };
       }
     }
-    
-    // Notify everyone (especially the target)
+
+    if (targetUserId) {
+      for (const [sId, p] of session.participants.entries()) {
+        if (p.id === targetUserId) {
+          p.permissions = { ...p.permissions, ...permissions };
+          break;
+        }
+      }
+    } else {
+      for (const [sId, p] of session.participants.entries()) {
+        if (p.role !== 'instructor') {
+          p.permissions = { ...p.permissions, ...permissions };
+        }
+      }
+    }
+
+    // Notify room and target
     io.to(`whiteboard-${sessionId}`).emit('whiteboard:permissions-updated', {
-      userId: targetUserId,
+      sessionId,
+      targetUserId: targetUserId || null,
+      userId: targetUserId || null,
       permissions
     });
   });
@@ -779,7 +804,17 @@ io.on('connection', (socket) => {
       targets: Array.isArray(targets) ? targets : (targets ? [targets] : []),
       classId: classId || null,
       schoolId: schoolId || socket.schoolId || null,
-      permissions: permissions || { canDraw: true, canShareAudio: false, canShareVideo: false },
+      permissions: permissions || {
+        canDraw: true,
+        canClearBoard: false,
+        canUploadMedia: false,
+        canShareAudio: false,
+        canShareVideo: false,
+        canChat: true,
+        canExport: true,
+        canManagePages: false,
+        showAnnotatorNames: true
+      },
       createdAt: Date.now()
     };
 
@@ -852,6 +887,11 @@ io.on('connection', (socket) => {
 
     console.log(`[Whiteboard] Session ${sessionId} stopped sharing`);
     
+    if (pendingHostDisconnectTimeouts.has(sessionId)) {
+      clearTimeout(pendingHostDisconnectTimeouts.get(sessionId));
+      pendingHostDisconnectTimeouts.delete(sessionId);
+    }
+
     activeWhiteboardShares.delete(sessionId);
     // Clear chat history
     whiteboardChatHistory.delete(sessionId);
@@ -862,6 +902,30 @@ io.on('connection', (socket) => {
     // Leave the room
     socket.leave(`whiteboard-${sessionId}`);
     socket.whiteboardSession = null;
+  });
+
+  // Instructor re-connects after page refresh or network blip
+  socket.on('whiteboard:reconnect-host', (data) => {
+    const { sessionId, whiteboardId } = data;
+    const share = activeWhiteboardShares.get(sessionId);
+    if (share) {
+      if (pendingHostDisconnectTimeouts.has(sessionId)) {
+        clearTimeout(pendingHostDisconnectTimeouts.get(sessionId));
+        pendingHostDisconnectTimeouts.delete(sessionId);
+      }
+      share.hostActive = true;
+      share.hostSocketId = socket.id;
+      socket.whiteboardSession = share;
+      socket.join(`whiteboard-${sessionId}`);
+      console.log(`[Whiteboard] Host reconnected to session ${sessionId} (socket: ${socket.id})`);
+      io.to(`whiteboard-${sessionId}`).emit('whiteboard:host-reconnected', { sessionId });
+
+      socket.emit('whiteboard:reconnect-success', {
+        sessionId,
+        permissions: share.permissions,
+        latestState: share.latestState || null
+      });
+    }
   });
 
   // Recording events
@@ -925,7 +989,26 @@ io.on('connection', (socket) => {
 
   // Clear canvas event
   socket.on('whiteboard:clear', (data) => {
-    const { sessionId } = data;
+    const { sessionId, userRole } = data;
+    const share = activeWhiteboardShares.get(sessionId);
+
+    // Zoom-grade protection: prevent students from wiping instructor whiteboard unless permitted
+    if (userRole === 'student' && !share?.permissions?.canClearBoard) {
+      console.warn(`[Whiteboard] Unauthorized clear attempt rejected for student on session ${sessionId}`);
+      return;
+    }
+
+    if (share && share.latestState) {
+      share.latestState.imageObjects = [];
+      share.latestState.textObjects = [];
+      share.latestState.shapeObjects = [];
+      share.latestState.mediaObjects = [];
+      share.latestState.pdfObjects = [];
+      share.latestState.threeDObjects = [];
+      share.latestState.graphObjects = [];
+      share.latestState.quizObjects = [];
+      share.latestState.aiPanels = [];
+    }
 
     socket.to(`whiteboard-${sessionId}`).emit('whiteboard:clear', data);
   });
@@ -933,35 +1016,31 @@ io.on('connection', (socket) => {
   // Background change event
   socket.on('whiteboard:background-change', (data) => {
     const { sessionId } = data;
+    const share = activeWhiteboardShares.get(sessionId);
+    if (share) {
+      if (!share.latestState) share.latestState = {};
+      share.latestState.bgColor = data.color;
+      share.latestState.bgPattern = data.pattern;
+    }
     socket.to(`whiteboard-${sessionId}`).emit('whiteboard:background-change', data);
   });
 
   // Instructor broadcasts canvas state to all viewers
   socket.on('whiteboard:canvas-state', (data) => {
-    const { sessionId, imageData, bgColor, bgPattern, imageObjects, textObjects, shapeObjects, laserPos } = data;
-
-    // Broadcast to all viewers in the session room
-    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:canvas-state', {
-      sessionId,
-      imageData,
-      bgColor,
-      bgPattern,
-      imageObjects,
-      textObjects,
-      shapeObjects,
-      laserPos
-    });
+    const share = activeWhiteboardShares.get(data.sessionId);
+    if (share) {
+      share.latestState = { ...(share.latestState || {}), ...data };
+    }
+    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:canvas-state', data);
   });
 
-  // Granular update for HTML overlay objects (shapes, text, images)
+  // Granular update for HTML overlay objects (shapes, text, images, media, 3D, graphs, PDFs, quizzes)
   socket.on('whiteboard:objects-update', (data) => {
-    const { sessionId, imageObjects, textObjects, shapeObjects } = data;
-    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:objects-update', {
-      sessionId,
-      imageObjects,
-      textObjects,
-      shapeObjects
-    });
+    const share = activeWhiteboardShares.get(data.sessionId);
+    if (share) {
+      share.latestState = { ...(share.latestState || {}), ...data };
+    }
+    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:objects-update', data);
   });
 
   socket.on('whiteboard:shape-add', (data) => {
@@ -977,9 +1056,13 @@ io.on('connection', (socket) => {
   });
 
   socket.on('whiteboard:page-change', (data) => {
+    const share = activeWhiteboardShares.get(data.sessionId);
+    if (share) {
+      if (!share.latestState) share.latestState = {};
+      share.latestState.currentPage = data.pageIndex;
+    }
     socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:page-change', { ...data, socketId: socket.id });
   });
-
 
   // Real-time laser pointer position
   socket.on('whiteboard:laser-update', (data) => {
@@ -991,13 +1074,16 @@ io.on('connection', (socket) => {
   });
 
   socket.on('whiteboard:cursor-update', (data) => {
-    const { sessionId, socketId, x, y, userName, tool } = data;
-    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:cursor-update', {
-      socketId,
-      x,
-      y,
-      userName,
-      tool
+    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:cursor-update', {
+      ...data,
+      socketId: socket.id
+    });
+  });
+
+  socket.on('whiteboard:action', (data) => {
+    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:action', {
+      ...data,
+      socketId: socket.id
     });
   });
 
@@ -1014,7 +1100,17 @@ io.on('connection', (socket) => {
     socket.currentWhiteboardRoom = `whiteboard-${sessionId}`;
     socket.join(`whiteboard-${sessionId}`);
 
-    // Request the instructor to send current canvas state
+    const share = activeWhiteboardShares.get(sessionId);
+    // If server has cached canvas state, immediately fulfill student request to eliminate blank screen on refresh
+    if (share && share.latestState) {
+      socket.emit('whiteboard:canvas-state', {
+        ...share.latestState,
+        sessionId,
+        permissions: share.participantPermissions?.[socket.userId] || share.permissions
+      });
+    }
+
+    // Also forward state request to instructor if host is connected
     socket.to(`whiteboard-${sessionId}`).emit('whiteboard:state-requested', {
       sessionId,
       requesterId: socket.id
@@ -1040,18 +1136,11 @@ io.on('connection', (socket) => {
 
   // Instructor sends canvas state to new viewer
   socket.on('whiteboard:send-state', (data) => {
-    const { sessionId, imageData, bgColor, bgPattern, imageObjects, textObjects, shapeObjects, laserPos, targetSocketId } = data;
-
-    io.to(targetSocketId).emit('whiteboard:canvas-state', {
-      sessionId,
-      imageData,
-      bgColor,
-      bgPattern,
-      imageObjects,
-      textObjects,
-      shapeObjects,
-      laserPos
-    });
+    const share = activeWhiteboardShares.get(data.sessionId);
+    if (share) {
+      share.latestState = { ...(share.latestState || {}), ...data };
+    }
+    io.to(data.targetSocketId).emit('whiteboard:canvas-state', data);
   });
 
   // Join class/group rooms for whiteboard notifications
@@ -1116,13 +1205,28 @@ io.on('connection', (socket) => {
       }
     }
 
-    // Clean up active shared whiteboard if this socket was the sharing host
+    // Clean up active shared whiteboard if this socket was the sharing host (with 35s grace period for refresh)
     if (socket.whiteboardSession?.sessionId) {
       const sId = socket.whiteboardSession.sessionId;
-      activeWhiteboardShares.delete(sId);
-      whiteboardChatHistory.delete(sId);
-      io.to(`whiteboard-${sId}`).emit('whiteboard:ended', { sessionId: sId });
-      console.log(`[Whiteboard] Host disconnected, ended share session ${sId}`);
+      const share = activeWhiteboardShares.get(sId);
+      if (share) {
+        share.hostActive = false;
+        console.log(`[Whiteboard] Host disconnected for session ${sId}. Waiting 35s grace period for page refresh reconnect...`);
+
+        if (pendingHostDisconnectTimeouts.has(sId)) {
+          clearTimeout(pendingHostDisconnectTimeouts.get(sId));
+        }
+
+        const timeout = setTimeout(() => {
+          pendingHostDisconnectTimeouts.delete(sId);
+          activeWhiteboardShares.delete(sId);
+          whiteboardChatHistory.delete(sId);
+          io.to(`whiteboard-${sId}`).emit('whiteboard:ended', { sessionId: sId });
+          console.log(`[Whiteboard] Host grace period expired, ended share session ${sId}`);
+        }, 35000);
+
+        pendingHostDisconnectTimeouts.set(sId, timeout);
+      }
     }
 
     console.log('User disconnected:', socket.id);

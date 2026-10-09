@@ -852,11 +852,20 @@ export default function Whiteboard({
     const lastVoiceResultIndexRef = useRef(-1);
     const [remoteCursors, setRemoteCursors] = useState({});
     const [recentLiveActions, setRecentLiveActions] = useState([]);
+    const [activeLiveIndicators, setActiveLiveIndicators] = useState({});
+    const cursorLastEmitRef = useRef(0);
 
     const [localPermissions, setLocalPermissions] = useState(() => ({
         canDraw: isInstructor ? true : (permissions && typeof permissions.canDraw === 'boolean' ? permissions.canDraw : !isStudent),
-        canShareAudio: permissions?.canShareAudio ?? true,
-        canShareVideo: permissions?.canShareVideo ?? true
+        canClearBoard: isInstructor ? true : (permissions?.canClearBoard ?? false),
+        canUploadMedia: isInstructor ? true : (permissions?.canUploadMedia ?? false),
+        canShareAudio: permissions?.canShareAudio ?? false,
+        canShareVideo: permissions?.canShareVideo ?? false,
+        canChat: permissions?.canChat ?? true,
+        canExport: isInstructor ? true : (permissions?.canExport ?? false),
+        canManagePages: isInstructor ? true : (permissions?.canManagePages ?? false),
+        showAnnotatorNames: permissions?.showAnnotatorNames ?? true,
+        ...permissions
     }));
 
     // Draw permission check: Instructors/Admins always have draw access. Standalone non-students have draw access. Students in meetings/live sessions are controlled via permissions.
@@ -866,11 +875,19 @@ export default function Whiteboard({
     const [isInWaitingRoom, setIsInWaitingRoom] = useState(false);
     
     useEffect(() => {
-        setLocalPermissions({
+        setLocalPermissions(prev => ({
+            ...prev,
             canDraw: isInstructor ? true : (permissions && typeof permissions.canDraw === 'boolean' ? permissions.canDraw : !isStudent),
-            canShareAudio: permissions?.canShareAudio ?? true,
-            canShareVideo: permissions?.canShareVideo ?? true
-        });
+            canClearBoard: isInstructor ? true : (permissions?.canClearBoard ?? false),
+            canUploadMedia: isInstructor ? true : (permissions?.canUploadMedia ?? false),
+            canShareAudio: permissions?.canShareAudio ?? false,
+            canShareVideo: permissions?.canShareVideo ?? false,
+            canChat: permissions?.canChat ?? true,
+            canExport: isInstructor ? true : (permissions?.canExport ?? false),
+            canManagePages: isInstructor ? true : (permissions?.canManagePages ?? false),
+            showAnnotatorNames: permissions?.showAnnotatorNames ?? true,
+            ...permissions
+        }));
     }, [permissions, isInstructor, isStudent]);
 
     useEffect(() => {
@@ -1717,6 +1734,37 @@ export default function Whiteboard({
     const [pressureSensitivity, setPressureSensitivity] = useState(true);
     const currentPressureRef = useRef(0.5);
 
+    // Container responsive auto-fit scaling (ensures 100% bounds visibility on all screens)
+    const canvasContainerRef = useRef(null);
+    const [containerFitScale, setContainerFitScale] = useState(1);
+    useEffect(() => {
+        const el = canvasContainerRef.current;
+        if (!el) return;
+
+        const updateFit = () => {
+            const cw = el.clientWidth || window.innerWidth;
+            const ch = el.clientHeight || window.innerHeight;
+            if (cw > 0 && ch > 0) {
+                const targetW = canvasWidth || width || 1200;
+                const targetH = canvasHeight || height || 700;
+                const scaleX = (cw - 24) / targetW;
+                const scaleY = (ch - 24) / targetH;
+                const fit = Math.min(scaleX, scaleY);
+                // When container is smaller than 1200x700, fit completely. When larger, cap at 1 to preserve crisp layout
+                setContainerFitScale(fit < 1 ? Math.max(fit, 0.2) : 1);
+            }
+        };
+
+        updateFit();
+        const observer = new ResizeObserver(updateFit);
+        observer.observe(el);
+        window.addEventListener('resize', updateFit);
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('resize', updateFit);
+        };
+    }, [canvasWidth, canvasHeight, width, height]);
+
     // Fullscreen scaling
     const [fullscreenScale, setFullscreenScale] = useState(1);
     useEffect(() => {
@@ -1794,6 +1842,27 @@ export default function Whiteboard({
 
     const setGraphObjects = useCallback((updater) => {
         setPageGraphObjects(prev => ({
+            ...prev,
+            [currentPageRef.current]: typeof updater === 'function' ? updater(prev[currentPageRef.current] || []) : updater
+        }));
+    }, []);
+
+    const setPdfObjects = useCallback((updater) => {
+        setPagePdfObjects(prev => ({
+            ...prev,
+            [currentPageRef.current]: typeof updater === 'function' ? updater(prev[currentPageRef.current] || []) : updater
+        }));
+    }, []);
+
+    const setQuizObjects = useCallback((updater) => {
+        setPageQuizObjects(prev => ({
+            ...prev,
+            [currentPageRef.current]: typeof updater === 'function' ? updater(prev[currentPageRef.current] || []) : updater
+        }));
+    }, []);
+
+    const setAiPanels = useCallback((updater) => {
+        setPageAIPanels(prev => ({
             ...prev,
             [currentPageRef.current]: typeof updater === 'function' ? updater(prev[currentPageRef.current] || []) : updater
         }));
@@ -2173,10 +2242,40 @@ export default function Whiteboard({
     }, []);
 
     // Keep track of latest state in refs to avoid re-triggering sendCanvasState heavily
-    const latestStateRef = useRef({ bgColor, bgPattern, imageObjects, textObjects, shapeObjects, laserPos });
+    const latestStateRef = useRef({
+        bgColor,
+        bgPattern,
+        imageObjects,
+        textObjects,
+        shapeObjects,
+        mediaObjects,
+        threeDObjects,
+        graphObjects,
+        pdfObjects,
+        quizObjects,
+        aiPanels,
+        laserPos,
+        currentPage,
+        totalPages
+    });
     useEffect(() => {
-        latestStateRef.current = { bgColor, bgPattern, imageObjects, textObjects, shapeObjects, laserPos };
-    }, [bgColor, bgPattern, imageObjects, textObjects, shapeObjects, laserPos]);
+        latestStateRef.current = {
+            bgColor,
+            bgPattern,
+            imageObjects,
+            textObjects,
+            shapeObjects,
+            mediaObjects,
+            threeDObjects,
+            graphObjects,
+            pdfObjects,
+            quizObjects,
+            aiPanels,
+            laserPos,
+            currentPage,
+            totalPages
+        };
+    }, [bgColor, bgPattern, imageObjects, textObjects, shapeObjects, mediaObjects, threeDObjects, graphObjects, pdfObjects, quizObjects, aiPanels, laserPos, currentPage, totalPages]);
 
     // Broadcast canvas state when sharing starts and periodically while sharing
     
@@ -2193,12 +2292,10 @@ export default function Whiteboard({
             });
             
             const handlePermissionsUpdate = (data) => {
-                // If it's for us
-                if (data.userId === user?.id || data.userId === socket.id) {
-                    // We need to update local permissions state.
-                    // But wait, permissions is passed as a prop from live-board/page.jsx!
-                    // Let's emit an event up, or handle it via a custom event, or maintain local permissions state!
-                    setLocalPermissions(data.permissions);
+                if (!data) return;
+                // Room-wide update (no userId) or specifically targeted to this user/socket
+                if (!data.userId || data.userId === user?.id || data.userId === socket.id) {
+                    setLocalPermissions(prev => ({ ...prev, ...data.permissions }));
                 }
             };
             
@@ -2229,6 +2326,14 @@ export default function Whiteboard({
                 imageObjects: state.imageObjects,
                 textObjects: state.textObjects,
                 shapeObjects: state.shapeObjects,
+                mediaObjects: state.mediaObjects,
+                threeDObjects: state.threeDObjects,
+                graphObjects: state.graphObjects,
+                pdfObjects: state.pdfObjects,
+                quizObjects: state.quizObjects,
+                aiPanels: state.aiPanels,
+                currentPage: state.currentPage,
+                totalPages: state.totalPages,
                 laserPos: state.laserPos
             });
         };
@@ -2256,6 +2361,14 @@ export default function Whiteboard({
                     imageObjects: state.imageObjects,
                     textObjects: state.textObjects,
                     shapeObjects: state.shapeObjects,
+                    mediaObjects: state.mediaObjects,
+                    threeDObjects: state.threeDObjects,
+                    graphObjects: state.graphObjects,
+                    pdfObjects: state.pdfObjects,
+                    quizObjects: state.quizObjects,
+                    aiPanels: state.aiPanels,
+                    currentPage: state.currentPage,
+                    totalPages: state.totalPages,
                     laserPos: state.laserPos,
                     targetSocketId: data.requesterId
                 });
@@ -2273,6 +2386,20 @@ export default function Whiteboard({
 
         const handleDraw = (data) => {
             if (data.sessionId !== sessionId) return;
+
+            // Track active drawer indicator for live flashing text
+            if (data.socketId && data.socketId !== socket?.id) {
+                setActiveLiveIndicators(prev => ({
+                    ...prev,
+                    [data.socketId]: {
+                        userName: data.userName || 'Admin',
+                        action: 'drawing',
+                        x: data.x,
+                        y: data.y,
+                        timestamp: Date.now()
+                    }
+                }));
+            }
 
             const canvas = canvasRef.current;
             if (!canvas) return;
@@ -2362,6 +2489,21 @@ export default function Whiteboard({
             if (!canvas) return;
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            setImageObjects([]);
+            setTextObjects([]);
+            setShapeObjects([]);
+            setMediaObjects([]);
+            setThreeDObjects([]);
+            setGraphObjects([]);
+            setPdfObjects([]);
+            setQuizObjects([]);
+            setAiPanels([]);
+
+            if (sessionId) {
+                try {
+                    localStorage.removeItem(`wb_student_cache_${sessionId}`);
+                } catch (e) {}
+            }
         };
 
         const handleBackgroundChange = (data) => {
@@ -2393,6 +2535,37 @@ export default function Whiteboard({
             if (data.imageObjects) setImageObjects(data.imageObjects);
             if (data.textObjects) setTextObjects(data.textObjects);
             if (data.shapeObjects) setShapeObjects(data.shapeObjects);
+            if (data.mediaObjects) setMediaObjects(data.mediaObjects);
+            if (data.threeDObjects) setThreeDObjects(data.threeDObjects);
+            if (data.graphObjects) setGraphObjects(data.graphObjects);
+            if (data.pdfObjects) setPdfObjects(data.pdfObjects);
+            if (data.quizObjects) setQuizObjects(data.quizObjects);
+            if (data.aiPanels) setAiPanels(data.aiPanels);
+            if (data.currentPage !== undefined && data.currentPage !== currentPage) {
+                goToPageRef.current?.(data.currentPage);
+            }
+
+            // Cache incoming canvas state for instant zero-latency paint on page refresh
+            if (sessionId && data.imageData) {
+                try {
+                    localStorage.setItem(`wb_student_cache_${sessionId}`, JSON.stringify({
+                        imageData: data.imageData,
+                        bgColor: data.bgColor,
+                        bgPattern: data.bgPattern,
+                        imageObjects: data.imageObjects || [],
+                        textObjects: data.textObjects || [],
+                        shapeObjects: data.shapeObjects || [],
+                        mediaObjects: data.mediaObjects || [],
+                        threeDObjects: data.threeDObjects || [],
+                        graphObjects: data.graphObjects || [],
+                        pdfObjects: data.pdfObjects || [],
+                        quizObjects: data.quizObjects || [],
+                        aiPanels: data.aiPanels || [],
+                        currentPage: data.currentPage,
+                        timestamp: Date.now()
+                    }));
+                } catch (e) {}
+            }
 
             const canvas = canvasRef.current;
             if (!canvas || !data.imageData) return;
@@ -2412,6 +2585,12 @@ export default function Whiteboard({
             if (data.imageObjects) setImageObjects(data.imageObjects);
             if (data.textObjects) setTextObjects(data.textObjects);
             if (data.shapeObjects) setShapeObjects(data.shapeObjects);
+            if (data.mediaObjects) setMediaObjects(data.mediaObjects);
+            if (data.threeDObjects) setThreeDObjects(data.threeDObjects);
+            if (data.graphObjects) setGraphObjects(data.graphObjects);
+            if (data.pdfObjects) setPdfObjects(data.pdfObjects);
+            if (data.quizObjects) setQuizObjects(data.quizObjects);
+            if (data.aiPanels) setAiPanels(data.aiPanels);
         };
 
         
@@ -2433,11 +2612,42 @@ export default function Whiteboard({
 
         const handleWhiteboardAction = (data) => {
             if (data.sessionId !== sessionId || data.socketId === socket.id) return;
-            const actionText = `${data.userName || 'Participant'}${data.userIdentifier ? ` (${data.userIdentifier})` : ''} is ${data.action || 'drawing'}`;
-            setRecentLiveActions(prev => {
-                const filtered = prev.filter(a => a.socketId !== data.socketId);
-                return [{ ...data, text: actionText, timestamp: Date.now() }, ...filtered].slice(0, 3);
-            });
+            const act = (data.action || '').toLowerCase();
+            if (act === 'idle') {
+                setActiveLiveIndicators(prev => {
+                    const next = { ...prev };
+                    delete next[data.socketId];
+                    return next;
+                });
+                return;
+            }
+
+            // Normalize action string so "drawing with pen", "highlighting", "erasing", "pointing with laser" display clearly
+            let displayAction = 'drawing';
+            if (act.includes('writ')) displayAction = 'writing';
+            else if (act.includes('eras')) displayAction = 'erasing';
+            else if (act.includes('highlight')) displayAction = 'highlighting';
+            else if (act.includes('laser')) displayAction = 'laser';
+            else if (act.includes('draw')) displayAction = 'drawing';
+            else displayAction = data.action || 'drawing';
+
+            setActiveLiveIndicators(prev => ({
+                ...prev,
+                [data.socketId]: {
+                    userName: data.userName || 'Admin',
+                    action: displayAction,
+                    rawAction: data.action,
+                    x: data.x,
+                    y: data.y,
+                    textId: data.textId,
+                    timestamp: Date.now()
+                }
+            }));
+        };
+
+        const handleLaserUpdate = (data) => {
+            if (data.sessionId !== sessionId) return;
+            setLaserPos(data.laserPos);
         };
 
         const handleShapeAdd = (data) => {
@@ -2449,19 +2659,8 @@ export default function Whiteboard({
                 if (prev.some(s => s.id === data.shape.id)) return prev;
                 return [...prev, data.shape];
             });
-
-            // If a freehand path or sparkle path was being drawn in real time,
-            // clean up the temporary raster stroke from the 2D canvas context
-            // now that the permanent SVG path shape object has landed
-            if (data.shape.type === 'path' || data.shape.type === 'sparkle_path') {
-                const canvas = canvasRef.current;
-                if (canvas) {
-                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                }
-                if (data.socketId && remotePathsRef.current) {
-                    delete remotePathsRef.current[data.socketId];
-                }
+            if (data.socketId && remotePathsRef.current) {
+                delete remotePathsRef.current[data.socketId];
             }
         };
 
@@ -2488,8 +2687,26 @@ export default function Whiteboard({
             }
         };
 
+        // Auto-clear stale indicators after 3.5 seconds
+        const actionCleanupInterval = setInterval(() => {
+            const now = Date.now();
+            setActiveLiveIndicators(prev => {
+                let changed = false;
+                const next = {};
+                for (const [k, v] of Object.entries(prev)) {
+                    if (now - (v.timestamp || 0) < 3500) {
+                        next[k] = v;
+                    } else {
+                        changed = true;
+                    }
+                }
+                return changed ? next : prev;
+            });
+        }, 1000);
+
         socket.on('whiteboard:cursor-update', handleCursorUpdate);
         socket.on('whiteboard:action', handleWhiteboardAction);
+        socket.on('whiteboard:laser-update', handleLaserUpdate);
 
         socket.on('whiteboard:state-requested', handleStateRequest);
         socket.on('whiteboard:draw', handleDraw);
@@ -2503,8 +2720,10 @@ export default function Whiteboard({
         socket.on('whiteboard:page-change', handlePageChange);
 
         return () => {
+            clearInterval(actionCleanupInterval);
             socket.off('whiteboard:cursor-update', handleCursorUpdate);
             socket.off('whiteboard:action', handleWhiteboardAction);
+            socket.off('whiteboard:laser-update', handleLaserUpdate);
 
             socket.off('whiteboard:state-requested', handleStateRequest);
             socket.off('whiteboard:draw', handleDraw);
@@ -2518,6 +2737,39 @@ export default function Whiteboard({
             socket.off('whiteboard:page-change', handlePageChange);
         };
     }, [isSharing, socket, sessionId]);
+
+    // Restore cached whiteboard state for student on initial mount
+    useEffect(() => {
+        if (!sessionId || !isStudent) return;
+        try {
+            const cached = localStorage.getItem(`wb_student_cache_${sessionId}`);
+            if (cached) {
+                const data = JSON.parse(cached);
+                if (data && (Date.now() - (data.timestamp || 0) < 2 * 60 * 60 * 1000)) {
+                    if (data.imageObjects) setImageObjects(data.imageObjects);
+                    if (data.textObjects) setTextObjects(data.textObjects);
+                    if (data.shapeObjects) setShapeObjects(data.shapeObjects);
+                    if (data.mediaObjects) setMediaObjects(data.mediaObjects);
+                    if (data.threeDObjects) setThreeDObjects(data.threeDObjects);
+                    if (data.graphObjects) setGraphObjects(data.graphObjects);
+                    if (data.pdfObjects) setPdfObjects(data.pdfObjects);
+                    if (data.quizObjects) setQuizObjects(data.quizObjects);
+                    if (data.aiPanels) setAiPanels(data.aiPanels);
+                    if (data.imageData && canvasRef.current) {
+                        const ctx = canvasRef.current.getContext('2d', { willReadFrequently: true });
+                        const img = new Image();
+                        img.onload = () => {
+                            ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+                            ctx.drawImage(img, 0, 0);
+                        };
+                        img.src = data.imageData;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('Error restoring student whiteboard cache:', e);
+        }
+    }, [sessionId, isStudent]);
 
     const isInitialMountRef = useRef(true);
 
@@ -2536,9 +2788,15 @@ export default function Whiteboard({
             sessionId,
             imageObjects,
             textObjects,
-            shapeObjects
+            shapeObjects,
+            mediaObjects,
+            threeDObjects,
+            graphObjects,
+            pdfObjects,
+            quizObjects,
+            aiPanels
         });
-    }, [isSharing, socket, sessionId, imageObjects, textObjects, shapeObjects]);
+    }, [isSharing, socket, sessionId, imageObjects, textObjects, shapeObjects, mediaObjects, threeDObjects, graphObjects, pdfObjects, quizObjects, aiPanels]);
 
 
     // Save current state to history
@@ -2649,6 +2907,10 @@ export default function Whiteboard({
 
     // Clear canvas
     const handleClear = useCallback(() => {
+        if (!isInstructor && !localPermissions?.canClearBoard) {
+            toast.error('Clearing the whiteboard has been disabled by the instructor.', { icon: '🚫' });
+            return;
+        }
         const canvas = canvasRef.current;
         if (!canvas) return;
 
@@ -2656,17 +2918,32 @@ export default function Whiteboard({
         // Clear canvas (transparent) to show CSS background
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Also clear images, text, and shapes on current page
+        // Also clear all objects on current page
         setImageObjects([]);
         setTextObjects([]);
         setShapeObjects([]);
+        setMediaObjects([]);
+        setThreeDObjects([]);
+        setGraphObjects([]);
+        setPdfObjects([]);
+        setQuizObjects([]);
+        setAiPanels([]);
         setSelectedImageId(null);
+        setSelectedImageIds([]);
         setSelectedTextIds([]);
         setSelectedShapeIds([]);
+        setSelectedMediaId(null);
+        setSelected3DIds([]);
+        setSelectedGraphId(null);
+        setSelectedPdfId(null);
         setEditingTextId(null);
 
+        if (socket && sessionId) {
+            socket.emit('whiteboard:clear', { sessionId });
+        }
+
         saveToHistory();
-    }, [saveToHistory]);
+    }, [isInstructor, localPermissions, saveToHistory, socket, sessionId, setImageObjects, setTextObjects, setShapeObjects, setMediaObjects, setThreeDObjects, setGraphObjects, setPdfObjects, setQuizObjects, setAiPanels]);
 
     // Copy selection to clipboard
     const handleCopySelection = useCallback(() => {
@@ -4645,9 +4922,21 @@ export default function Whiteboard({
                 else if (k === 'c') { setTool('shape'); setShapeType('circle'); toast('Circle shape (C)', { id: 'tool-hint' }); }
                 else if (k === 'l') { setTool('line'); setLineType('line'); toast('Line tool (L)', { id: 'tool-hint' }); }
                 else if (k === 'k') { setTool('line'); setLineType('connector'); toast('Connector line (K)', { id: 'tool-hint' }); }
-                else if (k === 'i') { imageInputRef.current?.click(); }
+                else if (k === 'i') {
+                    if (!isInstructor && !localPermissions?.canUploadMedia) {
+                        toast.error('Media upload is disabled by instructor.', { icon: '🚫' });
+                    } else {
+                        imageInputRef.current?.click();
+                    }
+                }
                 else if (k === '3') { setShowDomainLibrary(true); }
-                else if (k === 'm') { setShowMediaModal(true); }
+                else if (k === 'm') {
+                    if (!isInstructor && !localPermissions?.canUploadMedia) {
+                        toast.error('Media insertion is disabled by instructor.', { icon: '🚫' });
+                    } else {
+                        setShowMediaModal(true);
+                    }
+                }
                 else if (k === 'u') { setShowTasksPanel(prev => !prev); }
                 else if (k === 'f') { onToggleFullscreen && onToggleFullscreen(); }
             }
@@ -4656,24 +4945,29 @@ export default function Whiteboard({
                 e.preventDefault();
                 handleCopy();
             } else if (modKey && e.key.toLowerCase() === 'x') {
+                if (!canUserDraw) return;
                 e.preventDefault();
                 handleCut();
             } else if (modKey && e.key.toLowerCase() === 'v') {
-                if (isInput) return;
+                if (!canUserDraw || isInput) return;
                 if (clipboardHistory && clipboardHistory.length > 0) {
                     e.preventDefault();
                     handlePaste();
                 }
             } else if (modKey && e.key.toLowerCase() === 'd') {
+                if (!canUserDraw) return;
                 e.preventDefault();
                 handleDuplicate();
             } else if (modKey && e.key === ']') {
+                if (!canUserDraw) return;
                 e.preventDefault();
                 handleBringToFront();
             } else if (modKey && e.key === '[') {
+                if (!canUserDraw) return;
                 e.preventDefault();
                 handleSendToBack();
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (!canUserDraw) return;
                 if (!isInput && (selectedImageIds.length > 0 || selection || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedMediaId || selected3DId || selectedGraphId || selectedPdfId)) {
                     e.preventDefault();
                     handleDelete();
@@ -4705,7 +4999,7 @@ export default function Whiteboard({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DIds, selectedGraphId, selectedPdfId, selection, showRadialMenu, showTemplateGallery, showShortcutsModal, showTasksPanel, showMediaModal, showDomainLibrary, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack, handleUndo, handleRedo, handleGroup, handleUngroup, handleToggleLock, onToggleFullscreen, saveToHistory, clipboardHistory, canvasWidth, canvasHeight, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, currentPage]);
+    }, [canUserDraw, isInstructor, localPermissions, selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DIds, selectedGraphId, selectedPdfId, selection, showRadialMenu, showTemplateGallery, showShortcutsModal, showTasksPanel, showMediaModal, showDomainLibrary, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack, handleUndo, handleRedo, handleGroup, handleUngroup, handleToggleLock, onToggleFullscreen, saveToHistory, clipboardHistory, canvasWidth, canvasHeight, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, currentPage]);
 
     // Global clipboard paste listener for pasting images from websites (HTML <img>, URLs, bitmaps) and 3D files
     useEffect(() => {
@@ -5789,36 +6083,50 @@ export default function Whiteboard({
     // Emit draw event via socket when sharing
     const emitDrawEvent = useCallback((eventData) => {
         if (socket && sessionId) {
+            const effectiveUserName = (isInstructor || !user?.role || user.role !== 'student') ? 'Admin' : (userName || 'Student');
             socket.emit('whiteboard:draw', {
                 sessionId,
                 socketId: socket.id,
-                userName,
+                userName: effectiveUserName,
                 userIdentifier,
                 ...eventData
             });
         }
-    }, [socket, sessionId, userName, userIdentifier]);
+    }, [socket, sessionId, userName, userIdentifier, isInstructor, user]);
 
     // Broadcast granular live action for any whiteboard interaction
-    const broadcastAction = useCallback((actionDescription, x = 0, y = 0) => {
+    const broadcastAction = useCallback((actionDescription, x = 0, y = 0, extra = {}) => {
         if (socket && sessionId) {
+            const effectiveUserName = (isInstructor || !user?.role || user.role !== 'student') ? 'Admin' : (userName || 'Student');
             socket.emit('whiteboard:action', {
                 sessionId,
                 socketId: socket.id,
-                userName,
+                userName: effectiveUserName,
                 userIdentifier,
                 action: actionDescription,
                 x,
                 y,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                ...extra
             });
         }
-    }, [socket, sessionId, userName, userIdentifier]);
+    }, [socket, sessionId, userName, userIdentifier, isInstructor, user]);
 
     // Clean up stale cursors and live action notices
     useEffect(() => {
         const interval = setInterval(() => {
             const now = Date.now();
+            setActiveLiveIndicators(prev => {
+                let changed = false;
+                const next = { ...prev };
+                for (const id in next) {
+                    if (now - next[id].timestamp > 1800) {
+                        delete next[id];
+                        changed = true;
+                    }
+                }
+                return changed ? next : prev;
+            });
             setRemoteCursors(prev => {
                 let changed = false;
                 const next = { ...prev };
@@ -5831,7 +6139,7 @@ export default function Whiteboard({
                 return changed ? next : prev;
             });
             setRecentLiveActions(prev => prev.filter(act => now - act.timestamp < 4000));
-        }, 1000);
+        }, 500);
         return () => clearInterval(interval);
     }, []);
 
@@ -7325,6 +7633,7 @@ export default function Whiteboard({
                 }
             }
 
+            broadcastAction('drawing', pos.x, pos.y, { isDrawing: true });
             emitDrawEvent({
                 type: 'path',
                 isStart: false,
@@ -7425,7 +7734,7 @@ export default function Whiteboard({
                 });
             }
         }
-    }, [isDrawing, getPosition, tool, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, emitDrawEvent, isSharing, socket, sessionId]);
+    }, [isDrawing, getPosition, tool, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, emitDrawEvent, broadcastAction, isSharing, socket, sessionId]);
 
     // Stop drawing
     const stopDrawing = useCallback((e) => {
@@ -8183,10 +8492,11 @@ export default function Whiteboard({
             saveToHistory();
         }
         setIsDrawing(false);
+        broadcastAction('idle', 0, 0, { isDrawing: false });
         if (tool !== 'select' && tool !== 'laser' && tool !== 'text' && tool !== 'shape') {
             saveToHistory();
         }
-    }, [isDrawing, getPosition, tool, isAutoShape, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, lineType, shapeType, saveToHistory, emitDrawEvent, setShapeObjects, shapeObjects, isSharing, socket, sessionId, startPos, currentPos]);
+    }, [isDrawing, getPosition, tool, isAutoShape, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, lineType, shapeType, saveToHistory, emitDrawEvent, broadcastAction, setShapeObjects, shapeObjects, isSharing, socket, sessionId, startPos, currentPos]);
 
     // Dedicated pointer event handlers with Apple Pencil palm rejection & gesture stabilization
     const handlePointerDown = useCallback((e) => {
@@ -8308,7 +8618,23 @@ export default function Whiteboard({
             currentPressureRef.current = e.pressure || 0.5;
         }
 
-        if (!isDrawing) return;
+        if (!isDrawing) {
+            if (socket && sessionId && Date.now() - cursorLastEmitRef.current > 60) {
+                cursorLastEmitRef.current = Date.now();
+                const pos = getPosition(e);
+                const effectiveUserName = (isInstructor || !user?.role || user.role !== 'student') ? 'Admin' : (userName || 'Student');
+                socket.emit('whiteboard:cursor-update', {
+                    sessionId,
+                    x: pos.x,
+                    y: pos.y,
+                    userName: effectiveUserName,
+                    userIdentifier,
+                    action: null,
+                    tool
+                });
+            }
+            return;
+        }
 
         // Reject non-active pointers (palm or secondary touch points)
         if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
@@ -8319,7 +8645,7 @@ export default function Whiteboard({
         }
 
         draw(e);
-    }, [isDrawing, draw, pressureSensitivity]);
+    }, [isDrawing, draw, pressureSensitivity, socket, sessionId, getPosition, isInstructor, user, userName, userIdentifier, tool]);
 
     const handlePointerUp = useCallback((e) => {
         if (e.cancelable) {
@@ -10161,6 +10487,10 @@ export default function Whiteboard({
     goToPageRef.current = loadPage;
 
     const addNewPage = useCallback(() => {
+        if (!isInstructor && !localPermissions?.canManagePages) {
+            toast.error('Page management has been disabled by the instructor.', { icon: '🚫' });
+            return;
+        }
         saveCurrentPage();
         const newIndex = totalPages;
         setPages(prev => [...prev, null]);
@@ -10205,9 +10535,13 @@ export default function Whiteboard({
         }
         saveToHistory();
         toast.success(`Page ${newIndex + 1} added!`, { icon: '📄' });
-    }, [totalPages, saveCurrentPage, saveToHistory]);
+    }, [isInstructor, localPermissions, totalPages, saveCurrentPage, saveToHistory, socket, sessionId, isSharing]);
 
     const duplicateCurrentPage = useCallback(() => {
+        if (!isInstructor && !localPermissions?.canManagePages) {
+            toast.error('Page management has been disabled by the instructor.', { icon: '🚫' });
+            return;
+        }
         saveCurrentPage();
         const newIndex = totalPages;
         const currentData = pages[currentPage];
@@ -10255,9 +10589,13 @@ export default function Whiteboard({
         loadPage(newIndex);
         toast.success(`Duplicated Page ${currentPage + 1} to Page ${newIndex + 1}!`, { icon: '📋' });
         saveToHistory();
-    }, [totalPages, currentPage, pages, saveCurrentPage, loadPage, saveToHistory]);
+    }, [isInstructor, localPermissions, totalPages, currentPage, pages, saveCurrentPage, loadPage, saveToHistory]);
     
     const deletePage = useCallback((indexToDelete) => {
+        if (!isInstructor && !localPermissions?.canManagePages) {
+            toast.error('Page management has been disabled by the instructor.', { icon: '🚫' });
+            return;
+        }
         if (totalPages <= 1) {
             toast.error("Cannot delete the only page");
             return;
@@ -14960,8 +15298,8 @@ export default function Whiteboard({
         };
     }, []);
 
-    // Scale factors for constant-sized context toolbars across canvas zoom and fullscreen
-    const currentZoom = (isFullscreen ? (fullscreenScale * zoomLevel) : zoomLevel) || 1;
+    // Scale factors for constant-sized context toolbars across canvas zoom, auto-fit container bounds, and fullscreen
+    const currentZoom = ((isFullscreen ? fullscreenScale : containerFitScale) * zoomLevel) || 1;
     const invZoom = 1 / currentZoom;
 
     return (
@@ -15027,6 +15365,28 @@ export default function Whiteboard({
                     <span>AI Slides & Curtain</span>
                     <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-transform ${isCurtainActive ? 'rotate-180' : ''}`} />
                 </button>
+
+                {/* Top-Right Maximize / Fullscreen Button */}
+                {onToggleFullscreen && (
+                    <button
+                        onClick={onToggleFullscreen}
+                        className="absolute top-2.5 right-3 z-40 bg-slate-900/90 hover:bg-slate-800 text-white px-2.5 py-1.5 rounded-xl shadow-xl border border-slate-700/80 transition-all flex items-center gap-1.5 group text-xs font-semibold backdrop-blur-md"
+                        title={isFullscreen ? "Exit Fullscreen (Esc)" : "Maximize Whiteboard"}
+                    >
+                        {isFullscreen ? (
+                            <>
+                                <Minimize2 className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
+                                <span className="hidden sm:inline text-xs">Exit Fullscreen</span>
+                            </>
+                        ) : (
+                            <>
+                                <Maximize2 className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
+                                <span className="hidden sm:inline text-xs">Maximize</span>
+                            </>
+                        )}
+                    </button>
+                )}
+
             {/* Whiteboard Workspace Container */}
 
             {/* Floating Sleek Toolbar / View-Only Status Pill */}
@@ -16616,33 +16976,37 @@ export default function Whiteboard({
                     <div className={`flex ${isVertical ? 'flex-col gap-1' : 'items-center gap-0.5'}`}>
                         {isInstructor && !isMeetingMode && (
                             <button
-                                onClick={isSharing ? onStopSharing : onShare}
+                                onClick={onShare}
                                 className={`p-1 rounded-full transition flex items-center justify-center ${isSharing
-                                    ? 'bg-red-500 hover:bg-red-600 text-white'
+                                    ? 'bg-red-500 hover:bg-red-600 text-white shadow-sm ring-2 ring-red-400/40 animate-pulse'
                                     : 'text-amber-400 hover:bg-amber-500/20'
                                     }`}
-                                title={isSharing ? 'Stop Sharing Whiteboard' : 'Share Whiteboard with Students'}
+                                title={isSharing ? 'Sharing Active - View / Manage Permissions & Targets' : 'Share Whiteboard with Students'}
                             >
                                 <Share2 className="w-3.5 h-3.5" />
                             </button>
                         )}
 
-                        <button
-                            onClick={() => setShowExportModal(true)}
-                            className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
-                            title="Export & Share Whiteboard (WBF, IWB, PDF, Images, QR Code)"
-                        >
-                            <Download className="w-3.5 h-3.5" />
-                        </button>
+                        {(!isStudent || localPermissions?.canExport) && (
+                            <button
+                                onClick={() => setShowExportModal(true)}
+                                className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
+                                title="Export & Share Whiteboard (WBF, IWB, PDF, Images, QR Code)"
+                            >
+                                <Download className="w-3.5 h-3.5" />
+                            </button>
+                        )}
 
-                        <button
-                            onClick={handleScreenshot}
-                            className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
-                            title="Take Screenshot (Selection or Full Page)"
-                        >
-                            <Camera className="w-3.5 h-3.5" />
-                        </button>
-                        {!isStudent && (
+                        {(!isStudent || localPermissions?.canExport) && (
+                            <button
+                                onClick={handleScreenshot}
+                                className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
+                                title="Take Screenshot (Selection or Full Page)"
+                            >
+                                <Camera className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                        {onToggleFullscreen && (
                             <button
                                 onClick={onToggleFullscreen}
                                 className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
@@ -16687,6 +17051,7 @@ export default function Whiteboard({
 
             {/* Canvas Container - Infinite Canvas with edge-to-edge background */}
             <div 
+                ref={canvasContainerRef}
                 className={`flex-1 overflow-hidden p-0 flex items-center justify-center relative touch-none select-none overscroll-none whiteboard-canvas-wrapper ${isFullscreen ? 'h-full' : ''}`}
                 style={{
                     backgroundColor: bgColor,
@@ -16711,7 +17076,7 @@ export default function Whiteboard({
                         }
                     })(),
                     backgroundSize: (() => {
-                        const s = isFullscreen ? (fullscreenScale * zoomLevel) : zoomLevel;
+                        const s = currentZoom;
                         switch (bgPattern) {
                             case 'dotted': return `${20 * s}px ${20 * s}px`;
                             case 'grid': return `${25 * s}px ${25 * s}px`;
@@ -16724,7 +17089,7 @@ export default function Whiteboard({
                         }
                     })(),
                     backgroundPosition: (() => {
-                        const s = isFullscreen ? (fullscreenScale * zoomLevel) : zoomLevel;
+                        const s = currentZoom;
                         const px = panOffset.x * s;
                         const py = panOffset.y * s;
                         switch (bgPattern) {
@@ -16744,9 +17109,7 @@ export default function Whiteboard({
                     style={{
                         width: canvasWidth,
                         height: canvasHeight,
-                        transform: isFullscreen 
-                            ? `scale(${fullscreenScale * zoomLevel}) translate(${panOffset.x}px, ${panOffset.y}px)` 
-                            : `scale(${zoomLevel}) translate(${panOffset.x}px, ${panOffset.y}px)`,
+                        transform: `scale(${currentZoom}) translate(${panOffset.x}px, ${panOffset.y}px)`,
                         transformOrigin: 'center center',
                         backgroundColor: 'transparent',
                         touchAction: 'none',
@@ -17809,6 +18172,19 @@ export default function Whiteboard({
 
                         return (
                             <div key={txtObj.id}>
+                                {Object.values(activeLiveIndicators).some(ind => ind.textId === txtObj.id && ind.action === 'writing') && (
+                                    <div
+                                        className="absolute pointer-events-none z-50 flex items-center gap-1 bg-slate-900/95 text-white text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-400/60 shadow-lg backdrop-blur-sm animate-pulse"
+                                        style={{
+                                            left: txtObj.x,
+                                            top: Math.max(10, txtObj.y - 24)
+                                        }}
+                                    >
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                                        <span>Admin</span>
+                                        <span className="text-amber-300 font-extrabold uppercase">[writing]</span>
+                                    </div>
+                                )}
                                 <div
                                     data-text-id={txtObj.id}
                                     className="whiteboard-text-item absolute"
@@ -17850,6 +18226,7 @@ export default function Whiteboard({
                                         }
                                     }}
                                     onDoubleClick={(e) => {
+                                        if (!canUserDraw) return;
                                         e.stopPropagation();
                                         setEditingTextId(txtObj.id);
                                         setSelectedTextIds([txtObj.id]);
@@ -17858,6 +18235,7 @@ export default function Whiteboard({
                                         setSelectedMediaId(null);
                                     }}
                                     onMouseDown={(e) => {
+                                        if (!canUserDraw) return;
                                         if (e.target.tagName.toLowerCase() === 'textarea' || e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'select' || e.target.tagName.toLowerCase() === 'button') {
                                             return;
                                         }
@@ -17909,6 +18287,9 @@ export default function Whiteboard({
                                                 }}
                                                 data-text-id={txtObj.id}
                                                 value={txtObj.text}
+                                                onFocus={() => {
+                                                    broadcastAction('writing', txtObj.x, txtObj.y, { textId: txtObj.id, isWriting: true });
+                                                }}
                                                 onChange={(e) => {
                                                     const newText = e.target.value;
                                                     setTextObjects(prev => prev.map(t =>
@@ -17919,6 +18300,7 @@ export default function Whiteboard({
                                                         start: e.target.selectionStart,
                                                         end: e.target.selectionEnd
                                                     };
+                                                    broadcastAction('writing', txtObj.x, txtObj.y, { textId: txtObj.id, isWriting: true });
                                                 }}
                                                 onSelect={(e) => {
                                                     lastActiveTextCaretRef.current = {
@@ -17958,6 +18340,7 @@ export default function Whiteboard({
                                                 }}
                                                 placeholder="Type here..."
                                                 onBlur={(e) => {
+                                                    broadcastAction('idle', txtObj.x, txtObj.y, { textId: txtObj.id, isWriting: false });
                                                     if (showMathKeyboard || showMathTablet || showEquationModal) {
                                                         return;
                                                     }
@@ -19869,6 +20252,7 @@ export default function Whiteboard({
                                     e.stopPropagation();
                                 }}
                                 onDoubleClick={(e) => {
+                                    if (!canUserDraw) return;
                                     e.stopPropagation();
                                     if (!shpObj.isLocked && shpObj.type !== 'ruler' && shpObj.type !== 'protractor') {
                                         if (shpObj.text === undefined) {
@@ -19878,6 +20262,7 @@ export default function Whiteboard({
                                     }
                                 }}
                                 onPointerDown={(e) => {
+                                    if (!canUserDraw) return;
                                     let activeSelectionIds = selectedShapeIds;
                                     if (tool === 'select') {
                                         e.stopPropagation();
@@ -21345,20 +21730,30 @@ export default function Whiteboard({
                         );
                     })()}
 
-                    {/* Top-Left Live Whiteboard Activity Banner */}
-                    {recentLiveActions.length > 0 && (
-                        <div className="absolute top-4 left-4 z-40 flex flex-col gap-2 pointer-events-none">
-                            {recentLiveActions.map((act) => (
-                                <div
-                                    key={act.socketId + act.timestamp}
-                                    className="bg-slate-900/90 text-white text-xs font-semibold px-3 py-1.5 rounded-xl border border-indigo-500/50 shadow-2xl backdrop-blur-md flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-200"
-                                >
-                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                                    <span>{act.text}</span>
+                    {/* Inline Flashing Live Action Indicators: e.g. "Admin [drawing]" or "Admin [writing]" */}
+                    {Object.entries(activeLiveIndicators).map(([sId, ind]) => {
+                        if (ind.x == null || ind.y == null) return null;
+                        const isWriting = ind.action === 'writing';
+                        return (
+                            <div
+                                key={`live-action-${sId}`}
+                                className="absolute pointer-events-none z-50 transition-all duration-75 ease-out"
+                                style={{
+                                    left: ind.x,
+                                    top: Math.max(10, ind.y - 18),
+                                    transform: 'translate(-50%, -100%)'
+                                }}
+                            >
+                                <div className="bg-slate-900/95 text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-2xl border border-indigo-400/60 backdrop-blur-md flex items-center gap-1.5 whitespace-nowrap animate-pulse">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                                    <span>{ind.userName || 'Admin'}</span>
+                                    <span className="text-amber-300 font-extrabold uppercase text-[10px]">
+                                        [{isWriting ? 'writing' : 'drawing'}]
+                                    </span>
                                 </div>
-                            ))}
-                        </div>
-                    )}
+                            </div>
+                        );
+                    })}
 
                     {/* Remote Cursors */}
                     {Object.entries(remoteCursors).map(([id, cursor]) => (
@@ -21460,19 +21855,38 @@ export default function Whiteboard({
                         >
                             <textarea
                                 value={textValue}
-                                onChange={(e) => setTextValue(e.target.value)}
+                                onFocus={() => {
+                                    const curX = textBoundary ? textBoundary.x : textPos.x;
+                                    const curY = textBoundary ? textBoundary.y : textPos.y;
+                                    broadcastAction('writing', curX, curY, { isWriting: true });
+                                }}
+                                onChange={(e) => {
+                                    setTextValue(e.target.value);
+                                    const curX = textBoundary ? textBoundary.x : textPos.x;
+                                    const curY = textBoundary ? textBoundary.y : textPos.y;
+                                    broadcastAction('writing', curX, curY, { isWriting: true });
+                                }}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter' && !e.shiftKey) {
                                         e.preventDefault();
+                                        const curX = textBoundary ? textBoundary.x : textPos.x;
+                                        const curY = textBoundary ? textBoundary.y : textPos.y;
+                                        broadcastAction('idle', curX, curY, { isWriting: false });
                                         handleTextSubmit();
                                     }
                                     if (e.key === 'Escape') {
+                                        const curX = textBoundary ? textBoundary.x : textPos.x;
+                                        const curY = textBoundary ? textBoundary.y : textPos.y;
+                                        broadcastAction('idle', curX, curY, { isWriting: false });
                                         setShowTextInput(false);
                                         setTextBoundary(null);
                                         setTextValue('');
                                     }
                                 }}
                                 onBlur={() => {
+                                    const curX = textBoundary ? textBoundary.x : textPos.x;
+                                    const curY = textBoundary ? textBoundary.y : textPos.y;
+                                    broadcastAction('idle', curX, curY, { isWriting: false });
                                     // Commit text on blur (clicking outside)
                                     if (textValue.trim()) {
                                         handleTextSubmit();

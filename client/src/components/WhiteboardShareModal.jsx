@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Users, UsersRound, User, Search, Share2, Square } from 'lucide-react';
+import { X, Users, UsersRound, User, Search, Share2, Square, Pencil, Mic, Video, MessageSquare, Download, Layers, ShieldCheck, Check, Sparkles, Image as ImageIcon } from 'lucide-react';
 import { classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 
@@ -11,8 +11,10 @@ export default function WhiteboardShareModal({
     onClose,
     onStartSharing,
     onStopSharing,
+    onUpdatePermissions,
     isSharing = false,
-    currentTargets = []
+    currentTargets = [],
+    currentPermissions = null
 }) {
     const [classes, setClasses] = useState([]);
     const [selectedClass, setSelectedClass] = useState('');
@@ -30,12 +32,24 @@ export default function WhiteboardShareModal({
     const [scheduledAt, setScheduledAt] = useState('');
     const [durationMinutes, setDurationMinutes] = useState(60);
 
-    // Default permissions
+    // Zoom/Teams-grade collaboration permissions
     const [permissions, setPermissions] = useState({
         canDraw: true,
+        canClearBoard: false,
+        canUploadMedia: false,
         canShareAudio: false,
-        canShareVideo: false
+        canShareVideo: false,
+        canChat: true,
+        canExport: true,
+        canManagePages: false,
+        showAnnotatorNames: true
     });
+
+    useEffect(() => {
+        if (currentPermissions) {
+            setPermissions(prev => ({ ...prev, ...currentPermissions }));
+        }
+    }, [currentPermissions]);
 
     useEffect(() => {
         if (isOpen) {
@@ -129,6 +143,105 @@ export default function WhiteboardShareModal({
         s.studentId?.toLowerCase().includes(studentSearch.toLowerCase())
     );
 
+    const renderPermissionsControls = () => (
+        <div className="space-y-3">
+            {/* Annotation & Drawing */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex items-center gap-2 mb-2 font-semibold text-xs text-slate-700 uppercase tracking-wider">
+                    <Pencil className="w-3.5 h-3.5 text-amber-500" />
+                    Annotation & Content
+                </div>
+                <div className="space-y-2">
+                    <label className="flex items-center justify-between text-sm text-slate-700 cursor-pointer select-none">
+                        <span className="flex items-center gap-1.5">
+                            <span className="font-medium">Allow Drawing & Writing</span>
+                            <span className="text-xs text-slate-400">(Pen, highlighter, shapes, text)</span>
+                        </span>
+                        <input type="checkbox" checked={permissions.canDraw} onChange={e => setPermissions({...permissions, canDraw: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500 w-4 h-4" />
+                    </label>
+                    <label className="flex items-center justify-between text-sm text-slate-700 cursor-pointer select-none">
+                        <span className="flex items-center gap-1.5">
+                            <span className="font-medium">Allow Inserting Media</span>
+                            <span className="text-xs text-slate-400">(Upload images, PDFs, 3D)</span>
+                        </span>
+                        <input type="checkbox" checked={permissions.canUploadMedia} onChange={e => setPermissions({...permissions, canUploadMedia: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500 w-4 h-4" />
+                    </label>
+                    <label className="flex items-center justify-between text-sm text-slate-700 cursor-pointer select-none">
+                        <span className="flex items-center gap-1.5">
+                            <span className="font-medium">Allow Clearing Board</span>
+                            <span className="text-xs text-rose-400">(Host only recommended)</span>
+                        </span>
+                        <input type="checkbox" checked={permissions.canClearBoard} onChange={e => setPermissions({...permissions, canClearBoard: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500 w-4 h-4" />
+                    </label>
+                </div>
+            </div>
+
+            {/* Media & Communication */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex items-center gap-2 mb-2 font-semibold text-xs text-slate-700 uppercase tracking-wider">
+                    <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
+                    Media & Communication
+                </div>
+                <div className="space-y-2">
+                    <label className="flex items-center justify-between text-sm text-slate-700 cursor-pointer select-none">
+                        <span className="flex items-center gap-1.5">
+                            <Mic className="w-3.5 h-3.5 text-emerald-500" />
+                            <span className="font-medium">Allow Microphone</span>
+                        </span>
+                        <input type="checkbox" checked={permissions.canShareAudio} onChange={e => setPermissions({...permissions, canShareAudio: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500 w-4 h-4" />
+                    </label>
+                    <label className="flex items-center justify-between text-sm text-slate-700 cursor-pointer select-none">
+                        <span className="flex items-center gap-1.5">
+                            <Video className="w-3.5 h-3.5 text-blue-500" />
+                            <span className="font-medium">Allow Camera</span>
+                        </span>
+                        <input type="checkbox" checked={permissions.canShareVideo} onChange={e => setPermissions({...permissions, canShareVideo: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500 w-4 h-4" />
+                    </label>
+                    <label className="flex items-center justify-between text-sm text-slate-700 cursor-pointer select-none">
+                        <span className="flex items-center gap-1.5">
+                            <MessageSquare className="w-3.5 h-3.5 text-indigo-500" />
+                            <span className="font-medium">Allow In-Session Chat</span>
+                        </span>
+                        <input type="checkbox" checked={permissions.canChat} onChange={e => setPermissions({...permissions, canChat: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500 w-4 h-4" />
+                    </label>
+                </div>
+            </div>
+
+            {/* Presentation & Controls */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex items-center gap-2 mb-2 font-semibold text-xs text-slate-700 uppercase tracking-wider">
+                    <Sparkles className="w-3.5 h-3.5 text-violet-500" />
+                    Viewer & Export Controls
+                </div>
+                <div className="space-y-2">
+                    <label className="flex items-center justify-between text-sm text-slate-700 cursor-pointer select-none">
+                        <span className="flex items-center gap-1.5">
+                            <Download className="w-3.5 h-3.5 text-slate-500" />
+                            <span className="font-medium">Allow Save & Export</span>
+                            <span className="text-xs text-slate-400">(PDF, PNG, screenshot)</span>
+                        </span>
+                        <input type="checkbox" checked={permissions.canExport} onChange={e => setPermissions({...permissions, canExport: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500 w-4 h-4" />
+                    </label>
+                    <label className="flex items-center justify-between text-sm text-slate-700 cursor-pointer select-none">
+                        <span className="flex items-center gap-1.5">
+                            <Layers className="w-3.5 h-3.5 text-slate-500" />
+                            <span className="font-medium">Allow Page Navigation</span>
+                            <span className="text-xs text-slate-400">(Off: Follow Host)</span>
+                        </span>
+                        <input type="checkbox" checked={permissions.canManagePages} onChange={e => setPermissions({...permissions, canManagePages: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500 w-4 h-4" />
+                    </label>
+                    <label className="flex items-center justify-between text-sm text-slate-700 cursor-pointer select-none">
+                        <span className="flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-500" />
+                            <span className="font-medium">Show Annotator Names on Cursor</span>
+                        </span>
+                        <input type="checkbox" checked={permissions.showAnnotatorNames} onChange={e => setPermissions({...permissions, showAnnotatorNames: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500 w-4 h-4" />
+                    </label>
+                </div>
+            </div>
+        </div>
+    );
+
     if (!isOpen) return null;
 
     return createPortal(
@@ -158,25 +271,49 @@ export default function WhiteboardShareModal({
                 {/* Body */}
                 <div className="flex-1 overflow-auto p-4">
                     {isSharing ? (
-                        /* Currently Sharing View */
-                        <div className="text-center py-8">
-                            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <div className="w-8 h-8 bg-red-500 rounded-full animate-pulse" />
+                        /* Currently Sharing View with Live Permission Management */
+                        <div className="space-y-4">
+                            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="relative flex h-3 w-3">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                    </div>
+                                    <div>
+                                        <h3 className="text-sm font-bold text-slate-900">Whiteboard is Live!</h3>
+                                        <p className="text-xs text-slate-600">
+                                            Sharing with: <span className="font-semibold text-amber-800">{currentTargets.length > 0 ? currentTargets.join(', ') : 'Active viewers'}</span>
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={onStopSharing}
+                                    className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                                >
+                                    <Square className="w-3.5 h-3.5" />
+                                    Stop Sharing
+                                </button>
                             </div>
-                            <h3 className="text-xl font-semibold text-slate-900 mb-2">Whiteboard is Live!</h3>
-                            <p className="text-slate-600 mb-4">
-                                Sharing with: {currentTargets.join(', ')}
-                            </p>
-                            <p className="text-sm text-slate-500 mb-6">
-                                All viewers can see your drawings in real-time
-                            </p>
-                            <button
-                                onClick={onStopSharing}
-                                className="px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium flex items-center gap-2 mx-auto transition"
-                            >
-                                <Square className="w-5 h-5" />
-                                Stop Sharing
-                            </button>
+
+                            <div>
+                                <h4 className="text-sm font-bold text-slate-800 mb-1">Live Participant Permissions</h4>
+                                <p className="text-xs text-slate-500 mb-3">Adjust permissions for all connected viewers in real time:</p>
+                                {renderPermissionsControls()}
+                            </div>
+
+                            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+                                <button
+                                    onClick={() => {
+                                        onUpdatePermissions?.(permissions);
+                                        toast.success('Live permissions updated for all viewers!');
+                                        onClose();
+                                    }}
+                                    className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-sm font-bold flex items-center gap-2 shadow-sm transition"
+                                >
+                                    <Check className="w-4 h-4" />
+                                    Update Live Permissions
+                                </button>
+                            </div>
                         </div>
                     ) : (
                         /* Target Selection View */
@@ -359,23 +496,10 @@ export default function WhiteboardShareModal({
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                                            Default Permissions
+                                        <label className="block text-sm font-bold text-slate-800 mb-2">
+                                            Default Permissions for Viewers
                                         </label>
-                                        <div className="flex flex-col gap-2">
-                                            <label className="flex items-center gap-2 text-sm text-slate-600">
-                                                <input type="checkbox" checked={permissions.canDraw} onChange={e => setPermissions({...permissions, canDraw: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500" />
-                                                Allow Drawing
-                                            </label>
-                                            <label className="flex items-center gap-2 text-sm text-slate-600">
-                                                <input type="checkbox" checked={permissions.canShareAudio} onChange={e => setPermissions({...permissions, canShareAudio: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500" />
-                                                Allow Audio / Mic
-                                            </label>
-                                            <label className="flex items-center gap-2 text-sm text-slate-600">
-                                                <input type="checkbox" checked={permissions.canShareVideo} onChange={e => setPermissions({...permissions, canShareVideo: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500" />
-                                                Allow Video / Camera
-                                            </label>
-                                        </div>
+                                        {renderPermissionsControls()}
                                     </div>
                                 </div>
                             )}

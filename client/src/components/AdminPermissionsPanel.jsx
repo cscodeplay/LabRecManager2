@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, X, Mic, Video, Pencil, MicOff, VideoOff, PencilOff } from 'lucide-react';
+import { Users, X, Mic, Video, Pencil, MicOff, VideoOff, PencilOff, MessageSquare, MessageSquareOff } from 'lucide-react';
 
 const AdminPermissionsPanel = ({ socket, sessionId, isOpen, onClose }) => {
     const [students, setStudents] = useState([]);
@@ -11,7 +11,7 @@ const AdminPermissionsPanel = ({ socket, sessionId, isOpen, onClose }) => {
         socket.emit('whiteboard:get-participants', { sessionId });
 
         const handleParticipants = (data) => {
-            // data.participants is [{ id, name, permissions: { canDraw, canShareAudio, canShareVideo } }]
+            // data.participants is [{ id, name, permissions: { canDraw, canShareAudio, canShareVideo, canChat } }]
             setStudents(data.participants.filter(p => p.role === 'student'));
         };
 
@@ -44,7 +44,7 @@ const AdminPermissionsPanel = ({ socket, sessionId, isOpen, onClose }) => {
     if (!isOpen) return null;
 
     return (
-        <div className="absolute top-20 right-4 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden z-50 flex flex-col">
+        <div className="absolute top-20 right-4 w-88 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden z-50 flex flex-col">
             <div className="bg-slate-800 text-white p-3 flex justify-between items-center">
                 <div className="flex items-center gap-2">
                     <Users className="w-5 h-5" />
@@ -68,41 +68,57 @@ const AdminPermissionsPanel = ({ socket, sessionId, isOpen, onClose }) => {
                                     {student.name}
                                 </span>
                                 
-                                <div className="flex items-center justify-between gap-2">
+                                <div className="grid grid-cols-4 items-center gap-1.5">
                                     <button
                                         onClick={() => togglePermission(student.id, 'canDraw')}
-                                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                                            student.permissions.canDraw 
+                                        title={student.permissions?.canDraw ? "Disable Drawing" : "Enable Drawing"}
+                                        className={`flex items-center justify-center gap-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                                            student.permissions?.canDraw 
                                             ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' 
                                             : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
                                         }`}
                                     >
-                                        {student.permissions.canDraw ? <Pencil className="w-3.5 h-3.5" /> : <PencilOff className="w-3.5 h-3.5" />}
+                                        {student.permissions?.canDraw ? <Pencil className="w-3.5 h-3.5" /> : <PencilOff className="w-3.5 h-3.5" />}
                                         Draw
                                     </button>
                                     
                                     <button
                                         onClick={() => togglePermission(student.id, 'canShareAudio')}
-                                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                                            student.permissions.canShareAudio 
+                                        title={student.permissions?.canShareAudio ? "Mute Microphone" : "Unmute Microphone"}
+                                        className={`flex items-center justify-center gap-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                                            student.permissions?.canShareAudio 
                                             ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' 
                                             : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
                                         }`}
                                     >
-                                        {student.permissions.canShareAudio ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+                                        {student.permissions?.canShareAudio ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
                                         Mic
                                     </button>
                                     
                                     <button
                                         onClick={() => togglePermission(student.id, 'canShareVideo')}
-                                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                                            student.permissions.canShareVideo 
+                                        title={student.permissions?.canShareVideo ? "Disable Camera" : "Enable Camera"}
+                                        className={`flex items-center justify-center gap-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                                            student.permissions?.canShareVideo 
                                             ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
                                             : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
                                         }`}
                                     >
-                                        {student.permissions.canShareVideo ? <Video className="w-3.5 h-3.5" /> : <VideoOff className="w-3.5 h-3.5" />}
+                                        {student.permissions?.canShareVideo ? <Video className="w-3.5 h-3.5" /> : <VideoOff className="w-3.5 h-3.5" />}
                                         Cam
+                                    </button>
+
+                                    <button
+                                        onClick={() => togglePermission(student.id, 'canChat')}
+                                        title={student.permissions?.canChat !== false ? "Disable Chat" : "Enable Chat"}
+                                        className={`flex items-center justify-center gap-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                                            student.permissions?.canChat !== false 
+                                            ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' 
+                                            : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                                        }`}
+                                    >
+                                        {student.permissions?.canChat !== false ? <MessageSquare className="w-3.5 h-3.5" /> : <MessageSquareOff className="w-3.5 h-3.5" />}
+                                        Chat
                                     </button>
                                 </div>
                             </div>
