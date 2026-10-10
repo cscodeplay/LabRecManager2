@@ -44,8 +44,8 @@ class GoogleDriveService {
         this.drive = null;
         this.oauth2Client = null;
         this.authType = 'none'; // 'oauth_user', 'service_account', or 'local_sync'
-        // Per-user instances browse the user's own "My Drive" root by default
-        this.folderId = this.userId ? 'root' : (process.env.GOOGLE_DRIVE_FOLDER_ID || '1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp');
+        // Browse the user's own "My Drive" root by default
+        this.folderId = process.env.GOOGLE_DRIVE_FOLDER_ID || 'root';
         this.localSyncDir = this.userId
             ? path.join(__dirname, '../../uploads/google_drive/users', String(this.userId))
             : path.join(__dirname, '../../uploads/google_drive');
@@ -237,7 +237,7 @@ class GoogleDriveService {
             const claimed = {
                 accounts: legacy.accounts,
                 activeEmail: legacy.activeEmail || null,
-                folderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp',
+                folderId: process.env.GOOGLE_DRIVE_FOLDER_ID || 'root',
                 legacyOwner: true,
                 updatedAt: Date.now()
             };
@@ -924,7 +924,7 @@ class GoogleDriveService {
     /**
      * Switch the active Google Drive account dynamically
      */
-    async switchAccount(accountIdOrEmail, callbackUrl = null) {
+    async switchAccount(accountIdOrEmail, callbackUrl = null, state = null) {
         if (!accountIdOrEmail) {
             return {
                 success: false,
@@ -1000,7 +1000,7 @@ class GoogleDriveService {
         if (!target || !target.tokens) {
             let authUrl = null;
             try {
-                authUrl = this.generateAuthUrl(callbackUrl, { prompt: 'select_account consent', login_hint: norm });
+                authUrl = this.generateAuthUrl(callbackUrl, { prompt: 'select_account consent', login_hint: norm, state });
             } catch (e) {
                 console.warn('[GoogleDrive] Could not generate authUrl for switchAccount:', e.message);
             }
@@ -1017,7 +1017,7 @@ class GoogleDriveService {
         if (!config.clientId || !config.clientSecret) {
             let authUrl = null;
             try {
-                authUrl = this.generateAuthUrl(callbackUrl, { prompt: 'select_account consent', login_hint: norm });
+                authUrl = this.generateAuthUrl(callbackUrl, { prompt: 'select_account consent', login_hint: norm, state });
             } catch (e) {}
             return {
                 success: false,
@@ -1126,29 +1126,52 @@ class GoogleDriveService {
         this.loadAccountsStore();
         await this.loadAccountsStoreFromDb();
 
-        const norm = (accountId || '').toLowerCase().trim();
-        // Check if matching any connected Google account
+        const rawTarget = typeof accountId === 'string'
+            ? accountId
+            : (accountId?.email || accountId?.id || accountId?.accountId || String(accountId || ''));
+        const norm = (rawTarget || '').toLowerCase().trim();
+
+        // 1. Check if matching any connected Google account
         const googleMatch = Object.keys(this.connectedGoogleAccounts).find(e => 
-            e.toLowerCase() === norm || (norm === 'google_primary' && e.toLowerCase() === (this.activeAccountEmail || '').toLowerCase())
+            e.toLowerCase() === norm || 
+            (this.connectedGoogleAccounts[e]?.id && String(this.connectedGoogleAccounts[e].id).toLowerCase() === norm) ||
+            (norm === 'google_primary' && e.toLowerCase() === (this.activeAccountEmail || '').toLowerCase())
         );
 
-        if (googleMatch) {
-            delete this.connectedGoogleAccounts[googleMatch];
+        const currentActiveEmail = (this.activeAccountEmail || this.getConnectedUser()?.emailAddress || '').toLowerCase().trim();
+        const isCurrentGoogle = norm === 'google_primary' || 
+                                norm === 'primary' || 
+                                norm === 'google' || 
+                                (currentActiveEmail && norm === currentActiveEmail) ||
+                                (norm.includes('@') && currentActiveEmail && norm === currentActiveEmail);
+
+        if (googleMatch || isCurrentGoogle) {
+            const targetKey = googleMatch || currentActiveEmail;
+            if (targetKey && this.connectedGoogleAccounts[targetKey]) {
+                delete this.connectedGoogleAccounts[targetKey];
+            } else if (norm && this.connectedGoogleAccounts[norm]) {
+                delete this.connectedGoogleAccounts[norm];
+            }
+
             const remaining = Object.keys(this.connectedGoogleAccounts);
             if (remaining.length > 0) {
                 await this.switchAccount(remaining[0]);
+                await this.saveAccountsStore();
             } else {
                 await this.disconnectOAuth();
             }
-            await this.saveAccountsStore();
-            return { success: true, message: `Google account ${googleMatch} disconnected` };
+
+            // Also clean up any secondary_google_account in DB if matching
+            try {
+                await prisma.$executeRawUnsafe(`
+                    DELETE FROM "system_settings" WHERE "key" = 'secondary_google_account'
+                `);
+            } catch (e) {}
+
+            return { success: true, message: `Google account ${targetKey || norm} disconnected` };
         }
 
-        if (accountId === 'google_primary' || !accountId) {
-            await this.disconnectOAuth();
-            return { success: true, message: 'Google Primary account disconnected' };
-        }
-        if (accountId === 'google_secondary') {
+        if (accountId === 'google_secondary' || norm === 'google_secondary') {
             await prisma.$executeRawUnsafe(`
                 DELETE FROM "system_settings" WHERE "key" = 'secondary_google_account'
             `).catch(() => {});
@@ -1178,6 +1201,13 @@ class GoogleDriveService {
             `).catch(() => {});
             return { success: true, message: 'AWS S3 configuration cleared' };
         }
+
+        // Fallback: If disconnecting by any other identifier or default
+        if (!accountId || norm === 'primary' || norm === 'google_primary' || norm.includes('google')) {
+            await this.disconnectOAuth();
+            return { success: true, message: 'Google account disconnected' };
+        }
+
         return { success: false, message: 'Unknown account ID' };
     }
 
@@ -1314,22 +1344,27 @@ class GoogleDriveService {
                 fs.unlinkSync(this.accountsPath);
             }
         } catch (e) {}
+        for (const legacyFile of ['google_oauth_tokens.json', 'google_oauth_accounts.json']) {
+            try {
+                const lp = path.join(__dirname, '../../uploads', legacyFile);
+                if (fs.existsSync(lp)) fs.unlinkSync(lp);
+            } catch (e) {}
+        }
 
         try {
             await prisma.$executeRawUnsafe(`
-                DELETE FROM "system_settings" WHERE "key" = $1
+                DELETE FROM "system_settings" WHERE "key" IN ($1, 'google_drive_oauth_tokens')
             `, this._scopedKey('google_drive_oauth_tokens'));
         } catch (e) {}
         try {
             await prisma.$executeRawUnsafe(`
-                DELETE FROM "system_settings" WHERE "key" = $1
+                DELETE FROM "system_settings" WHERE "key" IN ($1, 'google_drive_connected_accounts', 'secondary_google_account')
             `, this._scopedKey('google_drive_connected_accounts'));
         } catch (e) {}
 
         this.drive = null;
         this.oauth2Client = null;
         this.authType = 'none';
-        this.initialize();
         return true;
     }
 
@@ -1726,47 +1761,75 @@ class GoogleDriveService {
         // 1. Fetch from Google Drive API if configured
         if (this.drive) {
             try {
-                const conditions = ['trashed = false'];
+                const buildConditions = (folder) => {
+                    const conds = ['trashed = false'];
+                    if (folder && folder !== 'root' && folder !== 'all') {
+                        conds.push(`'${folder}' in parents`);
+                    } else if (folder === 'root') {
+                        conds.push(`'root' in parents`);
+                    }
+                    if (mimeType) {
+                        if (mimeType === 'folder') {
+                            conds.push(`mimeType = 'application/vnd.google-apps.folder'`);
+                        } else if (mimeType === 'document') {
+                            conds.push(`mimeType != 'application/vnd.google-apps.folder'`);
+                        } else if (mimeType === 'image' || mimeType === 'image/*' || mimeType.startsWith('image')) {
+                            conds.push(`mimeType contains 'image/'`);
+                        } else {
+                            conds.push(`mimeType = '${mimeType}'`);
+                        }
+                    }
+                    if (query && query.trim()) {
+                        conds.push(`name contains '${query.trim().replace(/'/g, "\\'")}'`);
+                    }
+                    return conds;
+                };
 
-                // Target folder logic: Default to this.folderId (ULRMS) if not explicitly root/all
-                let activeFolder = folderId !== null && folderId !== undefined ? folderId : this.folderId;
-                if (folderId === 'all' || recursive === true || recursive === 'true' || (scope === 'all' && (folderId === 'all' || !folderId))) {
-                    activeFolder = 'all';
-                }
-
-                if (activeFolder && activeFolder !== 'root' && activeFolder !== 'all') {
-                    conditions.push(`'${activeFolder}' in parents`);
-                } else if (activeFolder === 'root') {
-                    conditions.push(`'root' in parents`);
-                }
-                // If activeFolder === 'all', do not constrain parents (scans across all folders)
-
-                if (mimeType) {
-                    if (mimeType === 'folder') {
-                        conditions.push(`mimeType = 'application/vnd.google-apps.folder'`);
-                    } else if (mimeType === 'document') {
-                        conditions.push(`mimeType != 'application/vnd.google-apps.folder'`);
-                    } else if (mimeType === 'image' || mimeType === 'image/*' || mimeType.startsWith('image')) {
-                        conditions.push(`mimeType contains 'image/'`);
+                let response = null;
+                try {
+                    response = await this.drive.files.list({
+                        q: buildConditions(activeFolder).join(' and '),
+                        fields: 'files(id, name, mimeType, size, modifiedTime, webViewLink, iconLink, thumbnailLink, parents, owners)',
+                        supportsAllDrives: true,
+                        includeItemsFromAllDrives: true,
+                        pageSize: Math.min(pageSize, 100),
+                        orderBy: 'folder,modifiedTime desc'
+                    });
+                } catch (driveErr) {
+                    if (activeFolder !== 'root' && activeFolder !== 'all') {
+                        console.warn(`[GoogleDrive] files.list for folder ${activeFolder} failed (${driveErr.message}), falling back to root`);
+                        activeFolder = 'root';
+                        response = await this.drive.files.list({
+                            q: buildConditions('root').join(' and '),
+                            fields: 'files(id, name, mimeType, size, modifiedTime, webViewLink, iconLink, thumbnailLink, parents, owners)',
+                            supportsAllDrives: true,
+                            includeItemsFromAllDrives: true,
+                            pageSize: Math.min(pageSize, 100),
+                            orderBy: 'folder,modifiedTime desc'
+                        });
                     } else {
-                        conditions.push(`mimeType = '${mimeType}'`);
+                        throw driveErr;
                     }
                 }
 
-                if (query && query.trim()) {
-                    conditions.push(`name contains '${query.trim().replace(/'/g, "\\'")}'`);
+                let gFiles = response?.data?.files || [];
+                // If specific folder query returned 0 items and folderId was omitted / default, verify root
+                if (gFiles.length === 0 && (!folderId || folderId === 'default') && activeFolder !== 'root' && activeFolder !== 'all') {
+                    try {
+                        const fallbackRes = await this.drive.files.list({
+                            q: buildConditions('root').join(' and '),
+                            fields: 'files(id, name, mimeType, size, modifiedTime, webViewLink, iconLink, thumbnailLink, parents, owners)',
+                            supportsAllDrives: true,
+                            includeItemsFromAllDrives: true,
+                            pageSize: Math.min(pageSize, 100),
+                            orderBy: 'folder,modifiedTime desc'
+                        });
+                        if (fallbackRes?.data?.files?.length > 0) {
+                            gFiles = fallbackRes.data.files;
+                        }
+                    } catch (fbErr) {}
                 }
 
-                const response = await this.drive.files.list({
-                    q: conditions.join(' and '),
-                    fields: 'files(id, name, mimeType, size, modifiedTime, webViewLink, iconLink, thumbnailLink, parents, owners)',
-                    supportsAllDrives: true,
-                    includeItemsFromAllDrives: true,
-                    pageSize: Math.min(pageSize, 100),
-                    orderBy: 'folder,modifiedTime desc'
-                });
-
-                const gFiles = response.data.files || [];
                 gFiles.forEach(f => {
                     const owner = f.owners && f.owners[0] ? (f.owners[0].displayName || f.owners[0].emailAddress) : null;
                     results.push({

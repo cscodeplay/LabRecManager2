@@ -593,42 +593,6 @@ export default function WhiteboardPage() {
             </header>
 
             <main className="flex-1 max-w-7xl w-full mx-auto p-6 md:p-8">
-                {/* Active Live Sharing Banner */}
-                {isSharing && sharedFileId && (
-                    <div className="mb-6 p-4 bg-gradient-to-r from-red-500 via-rose-500 to-amber-600 rounded-2xl text-white shadow-xl flex flex-wrap items-center justify-between gap-4 animate-fade-in border border-white/20">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center">
-                                <Share2 className="w-5 h-5 text-white" />
-                            </div>
-                            <div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xs font-black uppercase tracking-wider bg-white/30 px-2 py-0.5 rounded-full">Active Session</span>
-                                    <h3 className="font-bold text-sm">
-                                        Sharing &ldquo;{files.find(f => f.id === sharedFileId)?.title || 'Whiteboard'}&rdquo; live with students
-                                    </h3>
-                                </div>
-                                <p className="text-xs text-white/80 mt-0.5">
-                                    Opening other whiteboards from the gallery will keep them private without interrupting your students.
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setActiveFileId(sharedFileId)}
-                                className="px-4 py-2 bg-white text-rose-700 hover:bg-rose-50 rounded-xl text-xs font-bold transition shadow-md flex items-center gap-1.5"
-                            >
-                                Return to Shared Board
-                            </button>
-                            <button
-                                onClick={handleStopSharing}
-                                className="px-3.5 py-2 bg-rose-800/80 hover:bg-rose-900 text-white rounded-xl text-xs font-semibold transition"
-                            >
-                                Stop Sharing
-                            </button>
-                        </div>
-                    </div>
-                )}
-
                 {loadingFiles ? (
                     <div className="flex items-center justify-center h-64">
                         <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
@@ -778,39 +742,68 @@ export default function WhiteboardPage() {
                                         </div>
                                     </div>
 
-                                    {/* Action Bar */}
-                                    <div className="px-4 py-2.5 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between text-slate-500">
-                                        <div className="flex items-center gap-1">
-                                            <button 
+                                    {/* Action Bar / Live Controls */}
+                                    {isSharing && sharedFileId === file.id ? (
+                                        <div className="px-4 py-2.5 bg-red-50/90 border-t border-red-200/80 flex items-center justify-between">
+                                            <div 
                                                 onClick={() => setActiveFileId(file.id)}
-                                                className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
-                                                title="Open Whiteboard"
+                                                className="flex items-center gap-2 cursor-pointer group/live"
+                                                title="Open Live Whiteboard"
                                             >
-                                                <Pencil className="w-4 h-4" />
-                                            </button>
-                                            <button 
-                                                onClick={(e) => handleRenameFileStart(file.id, file.title, e)}
-                                                className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
-                                                title="Rename"
+                                                <span className="relative flex h-2.5 w-2.5">
+                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-600"></span>
+                                                </span>
+                                                <span className="text-xs font-black tracking-wider text-red-600 uppercase group-hover/live:underline">
+                                                    LIVE
+                                                </span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleStopSharing();
+                                                }}
+                                                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white rounded-lg text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                                title="Stop sharing this whiteboard"
                                             >
-                                                <Edit3 className="w-4 h-4" />
-                                            </button>
-                                            <button 
-                                                onClick={(e) => handleDuplicateFile(file.id, e)}
-                                                className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
-                                                title="Duplicate"
-                                            >
-                                                <Copy className="w-4 h-4" />
+                                                <span>Stop Sharing</span>
                                             </button>
                                         </div>
-                                        <button 
-                                            onClick={(e) => handleDeleteFile(file.id, e)}
-                                            className="p-1.5 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                                            title="Delete"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </div>
+                                    ) : (
+                                        <div className="px-4 py-2.5 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between text-slate-500">
+                                            <div className="flex items-center gap-1">
+                                                <button 
+                                                    onClick={() => setActiveFileId(file.id)}
+                                                    className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                                    title="Open Whiteboard"
+                                                >
+                                                    <Pencil className="w-4 h-4" />
+                                                </button>
+                                                <button 
+                                                    onClick={(e) => handleRenameFileStart(file.id, file.title, e)}
+                                                    className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                                    title="Rename"
+                                                >
+                                                    <Edit3 className="w-4 h-4" />
+                                                </button>
+                                                <button 
+                                                    onClick={(e) => handleDuplicateFile(file.id, e)}
+                                                    className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                                    title="Duplicate"
+                                                >
+                                                    <Copy className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                            <button 
+                                                onClick={(e) => handleDeleteFile(file.id, e)}
+                                                className="p-1.5 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                                title="Delete"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
@@ -938,36 +931,56 @@ export default function WhiteboardPage() {
                                                     {formatDate(file.lastOpenedAt || file.updatedAt)}
                                                 </td>
                                                 <td className="py-3 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                                    <div className="flex items-center justify-end gap-1 text-slate-500">
-                                                        <button 
-                                                            onClick={() => setActiveFileId(file.id)}
-                                                            className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
-                                                            title="Open Whiteboard"
-                                                        >
-                                                            <Pencil className="w-4 h-4" />
-                                                        </button>
-                                                        <button 
-                                                            onClick={(e) => handleRenameFileStart(file.id, file.title, e)}
-                                                            className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
-                                                            title="Rename"
-                                                        >
-                                                            <Edit3 className="w-4 h-4" />
-                                                        </button>
-                                                        <button 
-                                                            onClick={(e) => handleDuplicateFile(file.id, e)}
-                                                            className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
-                                                            title="Duplicate"
-                                                        >
-                                                            <Copy className="w-4 h-4" />
-                                                        </button>
-                                                        <button 
-                                                            onClick={(e) => handleDeleteFile(file.id, e)}
-                                                            className="p-1.5 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                                                            title="Delete"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
-                                                    </div>
+                                                    {isSharing && sharedFileId === file.id ? (
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            <span className="flex items-center gap-1.5 text-xs font-bold text-red-600 animate-pulse px-2.5 py-1 bg-red-50 rounded-lg border border-red-200 shadow-2xs">
+                                                                <span className="w-2 h-2 rounded-full bg-red-600" />
+                                                                LIVE
+                                                            </span>
+                                                            <button 
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleStopSharing();
+                                                                }}
+                                                                className="px-3 py-1 bg-red-600 hover:bg-red-700 active:scale-95 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+                                                                title="Stop Sharing"
+                                                            >
+                                                                Stop Sharing
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center justify-end gap-1 text-slate-500">
+                                                            <button 
+                                                                onClick={() => setActiveFileId(file.id)}
+                                                                className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                                                title="Open Whiteboard"
+                                                            >
+                                                                <Pencil className="w-4 h-4" />
+                                                            </button>
+                                                            <button 
+                                                                onClick={(e) => handleRenameFileStart(file.id, file.title, e)}
+                                                                className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                                                title="Rename"
+                                                            >
+                                                                <Edit3 className="w-4 h-4" />
+                                                            </button>
+                                                            <button 
+                                                                onClick={(e) => handleDuplicateFile(file.id, e)}
+                                                                className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                                                title="Duplicate"
+                                                            >
+                                                                <Copy className="w-4 h-4" />
+                                                            </button>
+                                                            <button 
+                                                                onClick={(e) => handleDeleteFile(file.id, e)}
+                                                                className="p-1.5 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                                                title="Delete"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );

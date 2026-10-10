@@ -15,25 +15,52 @@ const upload = multer({
     limits: { fileSize: 50 * 1024 * 1024 } // 50MB
 });
 
+const EXTERNAL_AUTH_DOMAINS = [
+    'google.com',
+    'accounts.google.com',
+    'googleapis.com',
+    'microsoft.com',
+    'microsoftonline.com',
+    'live.com',
+    'dropbox.com',
+    'apple.com',
+    'icloud.com'
+];
+
+function isExternalAuthDomain(urlStr) {
+    if (!urlStr || typeof urlStr !== 'string') return false;
+    try {
+        const u = new URL(urlStr.startsWith('http') ? urlStr : `https://${urlStr}`);
+        const host = u.hostname.toLowerCase();
+        return EXTERNAL_AUTH_DOMAINS.some(domain => host === domain || host.endsWith(`.${domain}`));
+    } catch (e) {
+        return false;
+    }
+}
+
 function getClientBaseUrl(req) {
     const origin = req.get('origin');
-    if (origin && !origin.includes('undefined') && !origin.includes('null')) return origin;
+    if (origin && !origin.includes('undefined') && !origin.includes('null') && !isExternalAuthDomain(origin)) {
+        return origin.replace(/\/+$/, '');
+    }
 
     const referer = req.get('referer');
-    if (referer) {
+    if (referer && !isExternalAuthDomain(referer)) {
         try {
             const u = new URL(referer);
             return `${u.protocol}//${u.host}`;
         } catch (e) {}
     }
 
+    if (process.env.CLIENT_URL && !isExternalAuthDomain(process.env.CLIENT_URL)) {
+        return process.env.CLIENT_URL.replace(/\/+$/, '');
+    }
+
     const host = req.get('host') || '';
     if (host.includes('localhost') || host.includes('127.0.0.1')) {
-        return process.env.CLIENT_URL || 'http://localhost:3000';
+        return 'http://localhost:3000';
     }
-    if (process.env.CLIENT_URL && !process.env.CLIENT_URL.includes('localhost')) {
-        return process.env.CLIENT_URL;
-    }
+
     const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
     return `${protocol}://${host}`;
 }
@@ -73,8 +100,8 @@ router.get('/auth/callback', asyncHandler(async (req, res) => {
     if (state) {
         try {
             const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
-            if (decoded && decoded.returnTo) {
-                clientBase = decoded.returnTo;
+            if (decoded && decoded.returnTo && !isExternalAuthDomain(decoded.returnTo)) {
+                clientBase = decoded.returnTo.replace(/\/+$/, '');
             }
             if (decoded && decoded.userId) {
                 targetUserId = decoded.userId;
@@ -83,13 +110,29 @@ router.get('/auth/callback', asyncHandler(async (req, res) => {
         } catch (e) {}
     }
 
+    if (isExternalAuthDomain(clientBase)) {
+        clientBase = (process.env.CLIENT_URL && !isExternalAuthDomain(process.env.CLIENT_URL))
+            ? process.env.CLIENT_URL.replace(/\/+$/, '')
+            : 'http://localhost:3000';
+    }
+
+    const redirectSuccess = clientBase.includes('/documents') || clientBase.includes('/settings')
+        ? `${clientBase}${clientBase.includes('?') ? '&' : '?'}oauth=success`
+        : `${clientBase}/documents?tab=drive&oauth=success`;
+
+    const getRedirectError = (msg) => {
+        return clientBase.includes('/documents') || clientBase.includes('/settings')
+            ? `${clientBase}${clientBase.includes('?') ? '&' : '?'}oauth=error&message=${encodeURIComponent(msg)}`
+            : `${clientBase}/documents?tab=drive&oauth=error&message=${encodeURIComponent(msg)}`;
+    };
+
     if (error) {
         console.warn('[GoogleDrive OAuth Callback Error from Google]:', error);
-        return res.redirect(`${clientBase}/documents?tab=drive&oauth=error&message=${encodeURIComponent(error)}`);
+        return res.redirect(getRedirectError(error));
     }
 
     if (!code) {
-        return res.redirect(`${clientBase}/documents?tab=drive&oauth=error&message=No+authorization+code+provided`);
+        return res.redirect(getRedirectError('No authorization code provided'));
     }
 
     try {
@@ -98,10 +141,10 @@ router.get('/auth/callback', asyncHandler(async (req, res) => {
             ? (googleDriveService.forUser({ id: targetUserId, role: targetUserRole }) || googleDriveService)
             : googleDriveService;
         await targetService.handleOAuthCallback(code, callbackUrl);
-        return res.redirect(`${clientBase}/documents?tab=drive&oauth=success`);
+        return res.redirect(redirectSuccess);
     } catch (err) {
         console.error('[GoogleDrive OAuth Callback Exchange Error]:', err.message);
-        return res.redirect(`${clientBase}/documents?tab=drive&oauth=error&message=${encodeURIComponent(err.message)}`);
+        return res.redirect(getRedirectError(err.message));
     }
 }));
 
@@ -324,7 +367,14 @@ router.post('/switch-account', asyncHandler(async (req, res) => {
         }
         const driveService = getDriveService(req);
         const callbackUrl = getCallbackUrl(req);
-        const result = await driveService.switchAccount(target, callbackUrl);
+        const clientBase = getClientBaseUrl(req);
+        const state = Buffer.from(JSON.stringify({
+            returnTo: clientBase,
+            userId: req.user?.id || null,
+            userRole: req.user?.role || null,
+            t: Date.now()
+        })).toString('base64');
+        const result = await driveService.switchAccount(target, callbackUrl, state);
         if (result.requiresAuth) {
             return res.json({
                 success: false,

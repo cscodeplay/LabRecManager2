@@ -52,6 +52,54 @@ function playIslandChime() {
     }
 }
 
+// Play tactile chocolate snap sound when cells break apart
+function playChocolateSnapSound() {
+    try {
+        if (typeof window === 'undefined') return;
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        if (ctx.state === 'suspended') ctx.resume();
+
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(420, now);
+        osc.frequency.exponentialRampToValueAtTime(75, now + 0.08);
+
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.2, now + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.12);
+
+        const bufferSize = Math.floor(ctx.sampleRate * 0.06);
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = buffer;
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = 850;
+        filter.Q.value = 1.2;
+        const noiseGain = ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.08, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+
+        noise.connect(filter);
+        filter.connect(noiseGain);
+        noiseGain.connect(ctx.destination);
+        noise.start(now);
+    } catch (e) {}
+}
+
 // Config per event type matching the app-wide glassmorphic theme
 const TYPE_CONFIG = {
     meeting: {
@@ -153,6 +201,7 @@ export default function DynamicIsland() {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isExpanded, setIsExpanded] = useState(false);
     const [progress, setProgress] = useState(100);
+    const [isChocolateDissolving, setIsChocolateDissolving] = useState(false);
 
     const socketRef = useRef(null);
     const dismissTimerRef = useRef(null);
@@ -172,6 +221,21 @@ export default function DynamicIsland() {
         });
         setCurrentIndex(prev => Math.max(0, Math.min(prev, Math.max(0, queue.length - 2))));
     }, [queue.length]);
+
+    // Trigger tactile chocolate cells disappearance animation before removing notification
+    const triggerChocolateDismiss = useCallback((id, callback) => {
+        if (!id || isChocolateDissolving) return;
+        setIsChocolateDissolving(true);
+        playChocolateSnapSound();
+        clearInterval(progressIntervalRef.current);
+        clearTimeout(dismissTimerRef.current);
+
+        setTimeout(() => {
+            removeNotification(id);
+            setIsChocolateDissolving(false);
+            if (callback) callback();
+        }, 750);
+    }, [isChocolateDissolving, removeNotification]);
 
     // Push new notification to queue with audio chime and auto-open if high priority
     const addNotification = useCallback((notif) => {
@@ -210,7 +274,7 @@ export default function DynamicIsland() {
 
     // Manage auto-dismiss timer and progress bar
     useEffect(() => {
-        if (!activeItem || activeItem.duration === 0) {
+        if (!activeItem || activeItem.duration === 0 || isChocolateDissolving) {
             setProgress(100);
             return;
         }
@@ -233,14 +297,36 @@ export default function DynamicIsland() {
         }, 50);
 
         dismissTimerRef.current = setTimeout(() => {
-            removeNotification(activeItem.id);
+            triggerChocolateDismiss(activeItem.id);
         }, duration);
 
         return () => {
             clearInterval(progressIntervalRef.current);
             clearTimeout(dismissTimerRef.current);
         };
-    }, [activeItem, removeNotification]);
+    }, [activeItem, isChocolateDissolving, triggerChocolateDismiss]);
+
+    // Expose global test trigger for demoing chocolate cells disappear animation
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            window.__testChocolateIsland = (customMsg) => {
+                addNotification({
+                    type: 'info',
+                    title: 'Chocolate Island Notification',
+                    subtitle: 'Snap & Break Animation',
+                    message: customMsg || 'Watch this centered notification break and dissolve into chocolate squares!',
+                    actionLabel: 'Snap Cells',
+                    priority: 'high',
+                    duration: 7000
+                });
+            };
+        }
+        return () => {
+            if (typeof window !== 'undefined') {
+                delete window.__testChocolateIsland;
+            }
+        };
+    }, [addNotification]);
 
     // Socket.io Real-Time Event Listeners
     useEffect(() => {
@@ -354,8 +440,10 @@ export default function DynamicIsland() {
         };
 
         const handleCustomDismiss = (e) => {
-            if (e.detail?.id) {
-                removeNotification(e.detail.id);
+            if (activeItem) {
+                triggerChocolateDismiss(activeItem.id);
+            } else if (e.detail?.id) {
+                triggerChocolateDismiss(e.detail.id);
             } else {
                 setQueue([]);
             }
@@ -368,7 +456,7 @@ export default function DynamicIsland() {
             window.removeEventListener('app:island-notification', handleCustomNotification);
             window.removeEventListener('app:island-dismiss', handleCustomDismiss);
         };
-    }, [addNotification, removeNotification]);
+    }, [addNotification, activeItem, triggerChocolateDismiss]);
 
     if (!activeItem) return null;
 
@@ -376,31 +464,120 @@ export default function DynamicIsland() {
     const Icon = config.icon;
 
     const handleAction = () => {
-        if (activeItem.onAction) {
-            activeItem.onAction(activeItem);
-        } else if (activeItem.route) {
-            router.push(activeItem.route);
-        }
-        removeNotification(activeItem.id);
+        triggerChocolateDismiss(activeItem.id, () => {
+            if (activeItem.onAction) {
+                activeItem.onAction(activeItem);
+            } else if (activeItem.route) {
+                router.push(activeItem.route);
+            }
+        });
     };
 
     return (
         <div
-            className="fixed top-3.5 left-1/2 -translate-x-1/2 z-[9999] pointer-events-auto transition-all duration-300 ease-out select-none"
+            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[9999] pointer-events-auto transition-all duration-300 ease-out select-none"
             style={{ maxWidth: 'calc(100vw - 24px)' }}
         >
+            {/* Scoped CSS for tactile chocolate snap & crumbling break animation */}
+            <style dangerouslySetInnerHTML={{ __html: `
+                @keyframes chocolateSnapBreak {
+                    0% {
+                        transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+                        opacity: 1;
+                        filter: brightness(1);
+                    }
+                    20% {
+                        transform: translate3d(var(--snap-x), var(--snap-y), 20px) scale(1.08) rotate(calc(var(--tumble-rot) * 0.25));
+                        filter: brightness(1.35);
+                        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.7);
+                    }
+                    60% {
+                        transform: translate3d(calc(var(--tumble-x) * 0.6), calc(var(--tumble-y) * 0.5), 0px) scale(0.85) rotate(calc(var(--tumble-rot) * 0.7));
+                        opacity: 0.85;
+                    }
+                    100% {
+                        transform: translate3d(var(--tumble-x), var(--tumble-y), -25px) scale(0.18) rotate(var(--tumble-rot));
+                        opacity: 0;
+                        filter: blur(1.5px);
+                    }
+                }
+                .chocolate-cell-anim {
+                    background: linear-gradient(135deg, #47241e 0%, #2b130f 50%, #150705 100%);
+                    border-radius: 6px;
+                    border: 1px solid rgba(255, 255, 255, 0.18);
+                    box-shadow: 
+                        inset 1.5px 1.5px 3px rgba(255, 255, 255, 0.28),
+                        inset -2px -2px 4px rgba(0, 0, 0, 0.85),
+                        0 4px 10px rgba(0, 0, 0, 0.55);
+                    padding: 3px;
+                    animation: chocolateSnapBreak 0.75s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+                    animation-delay: var(--delay);
+                    transform-origin: center center;
+                    will-change: transform, opacity;
+                }
+                .chocolate-inner-bevel {
+                    width: 100%;
+                    height: 100%;
+                    border-radius: 4px;
+                    background: linear-gradient(145deg, #371813 0%, #1c0906 100%);
+                    box-shadow: 
+                        inset 1px 1px 2px rgba(255, 255, 255, 0.2),
+                        inset -1px -1px 3px rgba(0, 0, 0, 0.9);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .chocolate-groove {
+                    width: 40%;
+                    height: 2px;
+                    background: rgba(0, 0, 0, 0.65);
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+                    border-radius: 1px;
+                }
+            `}} />
+
             {/* Morphing Dynamic Island Container */}
             <div
                 className={'relative bg-gradient-to-b ' + config.gradient + ' text-white shadow-2xl backdrop-blur-2xl border ' + config.borderColor + ' transition-all duration-300 ease-spring ' + (
                     isExpanded
                         ? 'w-[92vw] sm:w-[460px] rounded-3xl p-4 shadow-emerald-950/40'
                         : 'w-auto max-w-[92vw] rounded-full py-1.5 pl-3 pr-2.5 shadow-slate-950/60 hover:scale-[1.02]'
-                )}
-                onClick={() => !isExpanded && setIsExpanded(true)}
+                ) + (isChocolateDissolving ? ' border-transparent bg-transparent shadow-none' : '')}
+                onClick={() => !isExpanded && !isChocolateDissolving && setIsExpanded(true)}
             >
+                {/* ─── CHOCOLATE CELLS DISSOLVE OVERLAY ─── */}
+                {isChocolateDissolving && (
+                    <div className="absolute inset-0 z-50 rounded-3xl overflow-visible pointer-events-none p-1">
+                        <div className="grid grid-cols-4 grid-rows-3 gap-1.5 w-full h-full" style={{ perspective: '900px' }}>
+                            {Array.from({ length: 12 }).map((_, idx) => {
+                                const col = idx % 4;
+                                const row = Math.floor(idx / 4);
+                                return (
+                                    <div
+                                        key={`choc-cell-${idx}`}
+                                        className="chocolate-cell-anim min-h-[16px] sm:min-h-[22px]"
+                                        style={{
+                                            '--delay': `${(row * 4 + col) * 35}ms`,
+                                            '--snap-x': `${(col - 1.5) * 16}px`,
+                                            '--snap-y': `${(row - 1) * -10}px`,
+                                            '--tumble-x': `${(col - 1.5) * 45}px`,
+                                            '--tumble-y': `${55 + row * 30}px`,
+                                            '--tumble-rot': `${((idx % 2 === 0 ? 1 : -1) * (15 + idx * 7))}deg`,
+                                        }}
+                                    >
+                                        <div className="chocolate-inner-bevel">
+                                            <span className="chocolate-groove" />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
                 {/* ─── COMPACT PILL MODE ─── */}
                 {!isExpanded ? (
-                    <div className="flex items-center gap-2.5 cursor-pointer">
+                    <div className={`flex items-center gap-2.5 cursor-pointer transition-opacity duration-150 ${isChocolateDissolving ? 'opacity-0' : 'opacity-100'}`}>
                         {/* Glowing Icon & Pulse Beacon */}
                         <div className="flex items-center gap-1.5 shrink-0">
                             <span className="relative flex h-2.5 w-2.5">
@@ -463,9 +640,10 @@ export default function DynamicIsland() {
                                 type="button"
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    removeNotification(activeItem.id);
+                                    triggerChocolateDismiss(activeItem.id);
                                 }}
                                 className="p-1 rounded-full text-slate-400 hover:text-slate-200 hover:bg-white/10 transition"
+                                title="Dismiss"
                             >
                                 <X className="w-3.5 h-3.5" />
                             </button>
@@ -473,7 +651,7 @@ export default function DynamicIsland() {
                     </div>
                 ) : (
                     /* ─── EXPANDED CARD MODE ─── */
-                    <div className="space-y-3">
+                    <div className={`space-y-3 transition-opacity duration-150 ${isChocolateDissolving ? 'opacity-0' : 'opacity-100'}`}>
                         {/* Header: Icon, Badges, Expand Controls, Dismiss */}
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2.5">
@@ -515,7 +693,7 @@ export default function DynamicIsland() {
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => removeNotification(activeItem.id)}
+                                    onClick={() => triggerChocolateDismiss(activeItem.id)}
                                     className="p-1.5 text-slate-400 hover:text-white bg-slate-800/60 rounded-xl hover:bg-rose-500/30 hover:text-rose-300 transition"
                                     title="Dismiss"
                                 >
@@ -552,7 +730,7 @@ export default function DynamicIsland() {
                             )}
                             <button
                                 type="button"
-                                onClick={() => removeNotification(activeItem.id)}
+                                onClick={() => triggerChocolateDismiss(activeItem.id)}
                                 className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-medium transition"
                             >
                                 Dismiss

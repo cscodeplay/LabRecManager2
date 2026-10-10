@@ -742,7 +742,13 @@ export default function SettingsPage() {
         try {
             await driveAdminAPI.disconnectAccount(accountId);
             toast.success(`Account ${accountId} disconnected`);
-            loadCloudDriveSettings();
+            setConnectedDriveAccounts(prev => (prev || []).filter(a => 
+                a.id !== accountId && 
+                a.email !== accountId && 
+                a.accountId !== accountId &&
+                (!accountId.includes('@') || a.email?.toLowerCase() !== accountId.toLowerCase())
+            ));
+            await loadCloudDriveSettings();
         } catch (error) {
             console.error('Failed to disconnect drive account:', error);
             toast.error(error.response?.data?.message || 'Failed to disconnect account');
@@ -1924,11 +1930,15 @@ export default function SettingsPage() {
                                                             <div className="flex items-center gap-2">
                                                                 <span className="font-bold text-slate-900 text-sm">{acc.email || acc.displayName || acc.id}</span>
                                                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                                                    acc.isActive || acc.isDefault
-                                                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                                                        : 'bg-slate-200 text-slate-700'
+                                                                    acc.status === 'needs_reconnect' || acc.hasTokens === false || acc.status === 'disconnected'
+                                                                        ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                                                        : acc.isActive || acc.isDefault
+                                                                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                                                            : 'bg-slate-200 text-slate-700'
                                                                 }`}>
-                                                                    {acc.isActive || acc.isDefault ? 'Active Drive' : 'Connected'}
+                                                                    {acc.status === 'needs_reconnect' || acc.hasTokens === false || acc.status === 'disconnected'
+                                                                        ? 'Requires Auth'
+                                                                        : (acc.isActive || acc.isDefault ? 'Active Drive' : 'Connected')}
                                                                 </span>
                                                                 <span className="text-[10px] font-semibold text-slate-500 uppercase">
                                                                     {acc.provider}

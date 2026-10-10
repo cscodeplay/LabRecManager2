@@ -18,8 +18,8 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const [status, setStatus] = useState(null);
     const [loading, setLoading] = useState(true);
     const [files, setFiles] = useState([]);
-    const [currentFolderId, setCurrentFolderId] = useState(null);
-    const [breadcrumbs, setBreadcrumbs] = useState([{ id: null, name: 'Google Drive' }]);
+    const [currentFolderId, setCurrentFolderId] = useState('root');
+    const [breadcrumbs, setBreadcrumbs] = useState([{ id: 'root', name: 'Google Drive (My Drive)' }]);
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState('grid');
     const [importingId, setImportingId] = useState(null);
@@ -96,7 +96,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const fileUploadRef = useRef(null);
 
     // Scope & New Folder state
-    const [driveScope, setDriveScope] = useState('ulrms'); // 'ulrms' or 'all'
+    const [driveScope, setDriveScope] = useState('all'); // 'all' or 'ulrms'
     const [showNewFolderModal, setShowNewFolderModal] = useState(false);
     const [newFolderName, setNewFolderName] = useState('');
     const [creatingFolder, setCreatingFolder] = useState(false);
@@ -149,7 +149,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                 params.recursive = true;
                 if (searchQuery) params.query = searchQuery;
             } else {
-                if (currentFolderId) params.folderId = currentFolderId;
+                params.folderId = currentFolderId || 'root';
                 if (searchQuery) params.query = searchQuery;
             }
             const res = await googleDriveAPI.listFiles(params);
@@ -253,8 +253,8 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
             }
             setIsAccountDropdownOpen(false);
             toast.success(`Active Google Drive switched to ${emailOrId}!`, { id: toastId });
-            setCurrentFolderId(null);
-            setBreadcrumbs([{ id: null, name: 'Google Drive' }]);
+            setCurrentFolderId('root');
+            setBreadcrumbs([{ id: 'root', name: 'Google Drive (My Drive)' }]);
             await refreshStatus();
             await fetchFiles();
         } catch (err) {
@@ -849,7 +849,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
 
                         {/* Open in Drive Web */}
                         <a
-                            href={currentFolderId ? `https://drive.google.com/drive/folders/${currentFolderId}` : "https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp"}
+                            href={currentFolderId && currentFolderId !== 'root' ? `https://drive.google.com/drive/folders/${currentFolderId}` : "https://drive.google.com/drive/u/0/my-drive"}
                             target="_blank"
                             rel="noreferrer"
                             className="p-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition shadow-xs flex items-center justify-center cursor-pointer"
