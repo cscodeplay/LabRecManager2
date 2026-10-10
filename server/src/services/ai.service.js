@@ -11,11 +11,17 @@ const ACTIVE_DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-reasoner'];
 const ACTIVE_OPENROUTER_MODELS = ['openai/gpt-4o', 'anthropic/claude-3.5-sonnet', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct'];
 const ACTIVE_GEMINI_MODELS = [
     'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro'
+    'gemini-flash-latest',
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.5-flash'
 ];
-const ACTIVE_GROQ_MODELS = ['llama-3.1-8b-instant', 'llama3-8b-8192', 'gemma2-9b-it'];
+const ACTIVE_GROQ_MODELS = [
+    'qwen/qwen3.8-27b',
+    'openai/gpt-oss-120b',
+    'openai/gpt-oss-20b',
+    'allam-2-7b'
+];
 const ACTIVE_SAMBANOVA_MODELS = ['Meta-Llama-3.1-8B-Instruct'];
 
 class AIService {
@@ -339,7 +345,7 @@ class AIService {
                     req.response_format = { type: 'json_object' };
                 }
                 const completion = await client.chat.completions.create(req);
-                const text = completion.choices[0]?.message?.content || '';
+                const text = completion.choices[0]?.message?.content || completion.choices[0]?.message?.reasoning || '';
                 return { text, model: m, provider: 'groq' };
             } catch (err) {
                 lastErr = err;
@@ -363,9 +369,7 @@ class AIService {
             client = new GoogleGenerativeAI(apiKey.trim());
         }
         if (!client) throw new Error('Google Gemini API key is not entered. Please enter a valid API key.');
-        const modelsToTry = model
-            ? [model, ...ACTIVE_GEMINI_MODELS.filter(m => m !== model)]
-            : ACTIVE_GEMINI_MODELS;
+        const modelsToTry = model ? [model] : ACTIVE_GEMINI_MODELS;
         let lastErr = null;
 
         for (const m of modelsToTry) {
@@ -524,7 +528,7 @@ class AIService {
                     err.noKey = true;
                     throw err;
                 }
-                const testModel = model || 'gemini-3.8-flash';
+                const testModel = model || 'gemini-2.5-flash';
                 const res = await this.callGemini({
                     contents: 'Say "ACTIVE"',
                     systemInstruction: systemPrompt,
@@ -542,7 +546,7 @@ class AIService {
                     err.noKey = true;
                     throw err;
                 }
-                const testModel = model || 'llama-3.1-8b-instant';
+                const testModel = model || 'qwen/qwen3.8-27b';
                 const res = await this.callGroq({
                     messages: testMessages,
                     model: testModel,

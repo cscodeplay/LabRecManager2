@@ -3482,7 +3482,7 @@ export default function SettingsPage() {
                                                     <div>
                                                         <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">Groq LPU</h4>
                                                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                                            <span className="text-indigo-600 dark:text-indigo-400 font-medium">Mapped Test: <code>llama-3.1-8b-instant</code></span>
+                                                            <span className="text-indigo-600 dark:text-indigo-400 font-medium">Mapped Test: <code>qwen/qwen3.8-27b</code></span>
                                                         </p>
                                                     </div>
                                                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${

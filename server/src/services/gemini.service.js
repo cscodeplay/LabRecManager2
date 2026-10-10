@@ -70,7 +70,7 @@ USER REQUEST: ${naturalLanguageQuery}
 
 Generate a PostgreSQL query for the above request. Return ONLY the SQL query, nothing else.`;
 
-        const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-2.5-flash-lite'];
+        const geminiModels = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.5-flash'];
         let lastError = null;
 
         for (const modelName of geminiModels) {
@@ -129,7 +129,7 @@ Return ONLY valid JSON in the format below, without any markdown formatting or c
 ]
 If no inventory items are found, return an empty array [].`;
 
-        const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-2.5-flash-lite'];
+        const geminiModels = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.5-flash'];
         let lastError = null;
 
         for (const modelName of geminiModels) {

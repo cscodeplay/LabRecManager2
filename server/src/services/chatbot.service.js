@@ -60,7 +60,7 @@ class ChatbotService {
         const geminiKey = fileConfig.geminiApiKey || process.env.GEMINI_API_KEY;
         if (geminiKey) {
             const genAI = new GoogleGenerativeAI(geminiKey);
-            const geminiModelNames = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+            const geminiModelNames = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.5-flash'];
             this.geminiModels = geminiModelNames.map(name => ({
                 name, instance: genAI.getGenerativeModel({ model: name })
             }));
@@ -672,7 +672,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     // ═══ GROQ CALL ═══
     async callGroq(messages) {
         if (!this.groqClient) throw new Error('Groq not configured');
-        const groqModels = ['llama-3.1-8b-instant', 'gemma2-9b-it', 'openai/gpt-oss-120b', 'qwen/qwen3.6-27b'];
+        const groqModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'allam-2-7b'];
         let lastError = null;
 
         for (const model of groqModels) {
@@ -685,7 +685,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                     max_tokens: 6000
                 });
                 return {
-                    text: completion.choices[0]?.message?.content || '',
+                    text: completion.choices[0]?.message?.content || completion.choices[0]?.message?.reasoning || '',
                     model, provider: 'groq'
                 };
             } catch (err) {
