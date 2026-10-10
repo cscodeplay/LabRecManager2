@@ -588,6 +588,10 @@ export default function Whiteboard({
     userIdentifier = '',
     isMeetingMode = false
 }) {
+    // Canvas dimensions - keep fixed to prevent content loss (must be initialized before any hooks or effects)
+    const canvasWidth = width;
+    const canvasHeight = height;
+
     const canvasRef = useRef(null);
     const canvasWrapperRef = useRef(null);
     const containerRef = useRef(null);
@@ -1936,10 +1940,6 @@ export default function Whiteboard({
             wrapper.removeEventListener('touchend', handleTouchEnd);
         };
     }, [zoomLevel, panOffset]);
-
-    // Canvas dimensions - keep fixed to prevent content loss
-    const canvasWidth = width;
-    const canvasHeight = height;
 
     // Persistence: track if state has been loaded from localStorage
     const [isStateLoaded, setIsStateLoaded] = useState(false);
