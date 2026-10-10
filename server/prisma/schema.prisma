@@ -2505,3 +2505,25 @@ model QuizAssignment {
   @@index([targetStudentId])
   @@map("quiz_assignments")
 }
+
+model QuestionBank {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  topic         String    @db.VarChar(255)
+  examType      String    @map("exam_type") @db.VarChar(100)
+  examYear      String?   @map("exam_year") @db.VarChar(50)
+  difficulty    String?   @default("medium") @db.VarChar(50)
+  question      String    @db.Text
+  options       Json      @default("[]")
+  correctOption String    @map("correct_option") @db.VarChar(10)
+  explanation   String?   @db.Text
+  points        Int       @default(1)
+  source        String?   @default("question_bank") @db.VarChar(100)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@index([topic], map: "idx_question_bank_topic")
+  @@index([examType], map: "idx_question_bank_exam_type")
+  @@index([examYear], map: "idx_question_bank_exam_year")
+  @@index([examType, examYear, topic], map: "idx_question_bank_lookup")
+  @@map("question_bank")
+}

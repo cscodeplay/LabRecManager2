@@ -1065,41 +1065,30 @@ export default function WhiteboardQuizSideroll({
                                                             const isCorrectOption = optKey === String(ans.correctOption || '').toUpperCase();
 
                                                             let badgeClass = 'bg-slate-800 text-slate-400 border-slate-700';
-                                                            let pillClass = 'bg-slate-900/60 border-slate-800 text-slate-300';
+                                                            let cardClass = 'bg-slate-900/60 border-slate-800 text-slate-300';
+                                                            let textClass = 'text-slate-300';
 
                                                             if (isCorrectOption) {
-                                                                pillClass = 'bg-emerald-950/40 border-emerald-500/70 text-emerald-200 font-semibold ring-1 ring-emerald-500/40';
-                                                                badgeClass = 'bg-emerald-500 text-slate-950 border-emerald-400';
+                                                                cardClass = 'bg-emerald-600 border-emerald-500 text-white shadow-sm ring-1 ring-emerald-400/40';
+                                                                badgeClass = 'bg-white text-emerald-700 font-bold';
+                                                                textClass = 'text-white font-medium';
                                                             } else if (isUserSelected && !isCorrectOption) {
-                                                                pillClass = 'bg-rose-950/40 border-rose-500/70 text-rose-200 font-semibold ring-1 ring-rose-500/40';
-                                                                badgeClass = 'bg-rose-500 text-white border-rose-400';
+                                                                cardClass = 'bg-rose-600 border-rose-500 text-white shadow-sm ring-1 ring-rose-400/40';
+                                                                badgeClass = 'bg-white text-rose-700 font-bold';
+                                                                textClass = 'text-white font-medium';
                                                             }
 
                                                             return (
                                                                 <div
                                                                     key={optKey}
-                                                                    className={`p-2 rounded-xl border flex items-center justify-between gap-2 ${pillClass}`}
+                                                                    className={`p-2 rounded-xl border flex items-center gap-2 ${cardClass}`}
                                                                 >
-                                                                    <div className="flex items-center gap-2 flex-1">
-                                                                        <span className={`w-5 h-5 rounded font-bold font-mono text-[11px] flex items-center justify-center shrink-0 border ${badgeClass}`}>
-                                                                            {optKey}
-                                                                        </span>
-                                                                        <span className="flex-1 text-[11px]">
-                                                                            <MathRenderer content={opt.text || ''} inline />
-                                                                        </span>
-                                                                    </div>
-                                                                    <div className="shrink-0 text-[10px] font-bold">
-                                                                        {isCorrectOption && (
-                                                                            <span className="text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                                                                                ✓ Correct
-                                                                            </span>
-                                                                        )}
-                                                                        {isUserSelected && !isCorrectOption && (
-                                                                            <span className="text-rose-400 bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-500/30">
-                                                                                ✗ Your Choice
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
+                                                                    <span className={`w-5 h-5 rounded font-bold font-mono text-[11px] flex items-center justify-center shrink-0 border ${badgeClass}`}>
+                                                                        {optKey}
+                                                                    </span>
+                                                                    <span className={`flex-1 text-[11px] ${textClass}`}>
+                                                                        <MathRenderer content={opt.text || ''} inline />
+                                                                    </span>
                                                                 </div>
                                                             );
                                                         })}

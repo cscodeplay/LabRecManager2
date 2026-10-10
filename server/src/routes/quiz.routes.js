@@ -1,10 +1,34 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const axios = require('axios');
 const prisma = require('../config/database');
 const { authenticate, optionalAuth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const aiService = require('../services/ai.service');
+
+// Web search context fetcher for exam questions grounding
+async function fetchWebSnippets(topic, examType, examYear) {
+    try {
+        const query = `${examType || ''} ${examYear || ''} ${topic} questions answers syllabus gate numerical`.trim();
+        const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+        const res = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            },
+            timeout: 4000
+        });
+        const matches = res.data.match(/<a class="result__snippet[^>]*>([\s\S]*?)<\/a>/g) || [];
+        const snippets = matches
+            .map(m => m.replace(/<[^>]+>/g, '').trim())
+            .filter(Boolean)
+            .slice(0, 5);
+        return snippets;
+    } catch (err) {
+        console.warn('[QuizRoutes] Web search snippet fetch skipped:', err.message);
+        return [];
+    }
+}
 
 // Helper to generate a unique 6-character alphanumeric code (e.g. "8K2P9X")
 function generateQuizCode() {
@@ -130,6 +154,9 @@ function cleanLatexChemistry(str) {
 router.post('/generate', authenticate, asyncHandler(async (req, res) => {
     const {
         keywords = '',
+        topic = '',
+        examType = '',
+        examYear = '',
         difficulty = 'medium',
         numberOfQuestions = 5,
         timeLimitMinutes = 10,
@@ -137,7 +164,8 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
         language = 'English'
     } = req.body;
 
-    if (!keywords || !keywords.trim()) {
+    const rawInput = (keywords || topic || '').trim();
+    if (!rawInput) {
         return res.status(400).json({
             success: false,
             message: 'Keywords or topic is required to generate quiz'
@@ -149,30 +177,173 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
         ? difficulty.toLowerCase()
         : 'medium';
 
-    const systemPrompt = `You are a world-class academic quiz creator and educator.
+    // 1. Detect and parse Exam Type, Exam Year, and clean Topic
+    let detectedExamType = (examType || '').trim();
+    let detectedExamYear = (examYear || '').trim();
+    let detectedTopic = (topic || keywords || '').trim();
+
+    const fullSearchText = `${keywords} ${topic} ${customInstructions}`.trim();
+
+    if (!detectedExamType) {
+        if (/\bgate\b/i.test(fullSearchText)) detectedExamType = 'GATE';
+        else if (/\bjee\s*(main|adv|advanced)?\b/i.test(fullSearchText)) detectedExamType = 'JEE';
+        else if (/\bneet\b/i.test(fullSearchText)) detectedExamType = 'NEET';
+        else if (/\bugc[\s-]*net\b/i.test(fullSearchText)) detectedExamType = 'UGC-NET';
+        else if (/\bcat\b/i.test(fullSearchText)) detectedExamType = 'CAT';
+        else if (/\bcsir[\s-]*net\b/i.test(fullSearchText)) detectedExamType = 'CSIR-NET';
+    }
+
+    if (!detectedExamYear) {
+        const yMatch = fullSearchText.match(/\b(202[0-9]|201[0-9])\b/);
+        if (yMatch) detectedExamYear = yMatch[1];
+    }
+
+    // Clean topic by stripping exam type and year tokens if user typed "gate 2026 computer science architecture"
+    if (detectedExamType && detectedTopic) {
+        detectedTopic = detectedTopic
+            .replace(new RegExp(`\\b${detectedExamType}\\b`, 'gi'), '')
+            .replace(/\b(202[0-9]|201[0-9])\b/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+    if (!detectedTopic) detectedTopic = rawInput;
+
+    console.log(`[QuizRoutes] Generating quiz: Exam="${detectedExamType || 'None'}", Year="${detectedExamYear || 'Any'}", Topic="${detectedTopic}", Count=${count}`);
+
+    // 2. CHECK QUESTION BANK FIRST
+    let bankQuestions = [];
+    try {
+        let queryParams = [];
+        let whereClauses = [];
+
+        if (detectedExamType) {
+            queryParams.push(`%${detectedExamType}%`);
+            whereClauses.push(`"exam_type" ILIKE $${queryParams.length}`);
+        }
+
+        if (detectedTopic) {
+            // Match significant topic keywords
+            const topicWords = detectedTopic.split(/\s+/).filter(w => w.length >= 3 && !['with', 'from', 'level', 'easy', 'medium', 'hard'].includes(w.toLowerCase()));
+            if (topicWords.length > 0) {
+                const topicConditions = topicWords.map(w => {
+                    queryParams.push(`%${w}%`);
+                    return `"topic" ILIKE $${queryParams.length}`;
+                }).join(' OR ');
+                whereClauses.push(`(${topicConditions})`);
+            }
+        }
+
+        if (whereClauses.length > 0) {
+            const sql = `
+                SELECT id, topic, exam_type as "examType", exam_year as "examYear", 
+                       difficulty, question, options, correct_option as "correctOption", 
+                       explanation, points, source
+                FROM "question_bank"
+                WHERE ${whereClauses.join(' AND ')}
+                ORDER BY 
+                    ${detectedExamYear ? `CASE WHEN "exam_year" = '${detectedExamYear}' THEN 0 ELSE 1 END,` : ''}
+                    RANDOM()
+                LIMIT ${count};
+            `;
+            bankQuestions = await prisma.$queryRawUnsafe(sql, ...queryParams);
+            console.log(`[QuizRoutes] Question bank found ${bankQuestions.length} matching questions`);
+        }
+    } catch (dbErr) {
+        console.warn('[QuizRoutes] Question bank lookup failed:', dbErr.message);
+    }
+
+    // If Question Bank has enough questions to fulfill the entire requested count
+    if (bankQuestions.length >= count) {
+        const selected = bankQuestions.slice(0, count).map((q, idx) => ({
+            id: idx + 1,
+            question: cleanLatexChemistry(q.question),
+            options: (Array.isArray(q.options) ? q.options : []).map(opt => ({
+                key: opt.key,
+                text: cleanLatexChemistry(opt.text || '')
+            })),
+            correctOption: q.correctOption,
+            explanation: cleanLatexChemistry(q.explanation || ''),
+            difficulty: q.difficulty || validDifficulty,
+            points: q.points || 1,
+            source: 'question_bank',
+            examType: q.examType || detectedExamType,
+            examYear: q.examYear || detectedExamYear
+        }));
+
+        return res.json({
+            success: true,
+            data: {
+                keywords: rawInput,
+                topic: detectedTopic,
+                examType: detectedExamType,
+                examYear: detectedExamYear,
+                difficulty: validDifficulty,
+                totalQuestions: selected.length,
+                timeLimitMinutes: parseInt(timeLimitMinutes) || 10,
+                source: 'question_bank',
+                questions: selected
+            }
+        });
+    }
+
+    // 3. IF NOT ENOUGH QUESTIONS IN BANK, SOURCING FROM WEB SOURCES & AI
+    const remainingCount = count - bankQuestions.length;
+    console.log(`[QuizRoutes] Sourcing remaining ${remainingCount} questions via web sources / AI...`);
+
+    // Fetch web search snippets from past papers and syllabus
+    const webSnippets = await fetchWebSnippets(detectedTopic, detectedExamType, detectedExamYear);
+    const webContextBlock = webSnippets.length > 0
+        ? `\nAUTHENTIC WEB EXAMINATION SOURCES & SYLLABUS REFERENCES:\n${webSnippets.map((s, i) => `[Reference ${i + 1}] ${s}`).join('\n')}\n`
+        : '';
+
+    const isGate = (detectedExamType || '').toUpperCase() === 'GATE';
+    const isCompetitive = Boolean(detectedExamType && ['GATE', 'JEE', 'NEET', 'UGC-NET', 'CAT'].includes(detectedExamType.toUpperCase()));
+
+    let examSpecificGuidelines = '';
+    if (isGate) {
+        examSpecificGuidelines = `
+CRITICAL GATE EXAMINATION REQUIREMENTS:
+You are an authority on the GATE (Graduate Aptitude Test in Engineering) Computer Science and Information Technology examination.
+- EXAM: GATE ${detectedExamYear || '2026'}
+- TOPIC: ${detectedTopic}
+- DIFFICULTY LEVEL: ${validDifficulty}
+- AUTHENTIC GATE SYLLABUS RIGOR:
+  * For Computer Organization & Architecture: Questions MUST test numerical problem solving, pipeline timing (CPI, speedup, branch hazards, forwarding paths, stall cycles), cache memory (tag/index/block offset bits, direct-mapped and 2/4/8-way set-associative mappings, miss penalty, effective memory access time EMAT), virtual memory (multi-level page tables, page size, TLB hit rates, memory overhead), IEEE-754 32-bit floating point hexadecimal encodings, Booth's algorithm, micro-operations, and addressing modes.
+  * STRICT PROHIBITION: DO NOT generate simplistic, high-school flashcard definitions (such as "What is CPU?", "Which bus carries data?", "What does ALU stand for?").
+  * Distractors (options B, C, D) must reflect real calculation errors (e.g. omitting pipeline register delay, incorrect bit allocation).`;
+    } else if (isCompetitive) {
+        examSpecificGuidelines = `
+CRITICAL ${detectedExamType.toUpperCase()} EXAMINATION STANDARDS:
+- Generate authentic questions matching the official ${detectedExamType.toUpperCase()} syllabus and competitive testing standards.
+- Problems must test conceptual depth and problem-solving reasoning, not superficial recall.`;
+    }
+
+    const systemPrompt = `You are a world-class academic quiz creator and competitive exam specialist.
 Your task is to generate high-quality, pedagogically sound, multiple-choice questions (MCQs) with EXACTLY 4 choices (A, B, C, D) for each question.
 Target Language: ${language}
 Difficulty Level: ${validDifficulty}
+${detectedExamType ? `Exam Target: ${detectedExamType} ${detectedExamYear || ''}` : ''}
+${examSpecificGuidelines}
 
 CRITICAL RULES:
-1. Return EXACTLY a JSON array of ${count} question objects.
+1. Return EXACTLY a JSON array of ${remainingCount} question objects.
 2. Each question MUST have exactly 4 choices labeled 'A', 'B', 'C', and 'D'.
 3. One and ONLY ONE option must be designated as 'correctOption' ('A', 'B', 'C', or 'D').
 4. The distractors (wrong options) must be plausible and conceptually meaningful, not trivial.
-5. Provide a clear, educational 'explanation' for why the correct option is right.
-6. The questions must strictly follow 1-based sequential numbering (id: 1, 2, 3, ...).
+5. Provide a clear, educational 'explanation' for why the correct option is right (including mathematical derivation where applicable).
+6. The questions must strictly follow sequential numbering.
 7. PCMB & SCIENTIFIC EQUATION FORMATTING:
-   - For Physics, Mathematics, Biology, and Chemistry questions, format equations, formulas, and scientific units using LaTeX:
-     * Inline math / variables / units: wrap in single dollar signs, e.g. $F = ma$, $\\lambda = \\frac{h}{p}$, $\\int_{0}^{1} x^2 dx$, $25^\\circ\\text{C}$, $\\mu\\text{m}$, $\\alpha, \\beta$.
-     * Block equations: wrap in double dollar signs, e.g. $$\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$$.
-     * Chemistry formulas & reactions: ALWAYS wrap with $\\ce{...}$ including curly braces for ALL formulas, ions, and elements (e.g. $\\ce{Na+}$, $\\ce{Mg^{2+}}$, $\\ce{Al^{3+}}$, $\\ce{F^-}$, $\\ce{Ne}$, $\\ce{2H2 + O2 -> 2H2O}$, $\\ce{CaCO3 -> CaO + CO2}$, $\\ce{SO4^{2-}}$, $\\ce{H2SO4}$). NEVER write bare \\ce without curly braces.
-   - CRITICAL JSON ESCAPING: Backslashes in JSON strings MUST be escaped as \\\\ (e.g. "\\\\ce{...}", "\\\\alpha", "\\\\frac{...}"). Never output invalid unescaped backslashes.
+   - For Equations, Mathematics, and Computer Science notations, format formulas using LaTeX:
+     * Inline math / variables: wrap in single dollar signs, e.g. $F = ma$, $\\tau = \\max(t_i) + d$, $T_{\\text{avg}} = H_1 \\times T_1 + (1 - H_1) \\times T_2$.
+     * Block equations: wrap in double dollar signs, e.g. $$\\text{CPI} = 1 + \\text{Stalls}$$.
+     * Chemistry formulas & reactions: ALWAYS wrap with $\\ce{...}$ (e.g. $\\ce{Na+}$, $\\ce{Al^{3+}}$).
+   - CRITICAL JSON ESCAPING: Backslashes in JSON strings MUST be escaped as \\\\ (e.g. "\\\\tau", "\\\\frac{...}"). Never output invalid unescaped backslashes.
 
 JSON SCHEMA TO RETURN (RETURN ONLY VALID JSON, NO MARKDOWN, NO CODEBLOCKS):
 [
   {
     "id": 1,
-    "question": "Clear and concise question text (use LaTeX like $E = mc^2$ or $\\\\ce{H2O}$ where applicable)",
+    "question": "Question problem statement (with LaTeX equations where applicable)",
     "options": [
       { "key": "A", "text": "First choice" },
       { "key": "B", "text": "Second choice" },
@@ -180,20 +351,24 @@ JSON SCHEMA TO RETURN (RETURN ONLY VALID JSON, NO MARKDOWN, NO CODEBLOCKS):
       { "key": "D", "text": "Fourth choice" }
     ],
     "correctOption": "A",
-    "explanation": "Explanation of why A is correct...",
+    "explanation": "Detailed step-by-step solution and derivation...",
     "difficulty": "${validDifficulty}",
     "points": 1
   }
 ]`;
 
-    const userPrompt = `Generate a ${count}-question quiz on the following keywords/topics:
-TOPIC / KEYWORDS: "${keywords.trim()}"
+    const userPrompt = `Generate ${remainingCount} authentic examination questions for:
+TOPIC: "${detectedTopic}"
+${detectedExamType ? `EXAM TYPE: ${detectedExamType}` : ''}
+${detectedExamYear ? `YEAR: ${detectedExamYear}` : ''}
 DIFFICULTY: ${validDifficulty}
 ESTIMATED TIME: ${timeLimitMinutes} minutes
 ${customInstructions ? `ADDITIONAL INSTRUCTIONS: ${customInstructions}` : ''}
+${webContextBlock}
 
-Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and an explanation. If the topic involves Physics, Chemistry, Math, or Biology, properly format equations and formulas using LaTeX ($...$) and chemical formulas with $\\ce{...}$ (e.g. $\\ce{Na+}$, $\\ce{Al^{3+}}$, $\\ce{Ne}$). Remember to escape backslashes properly in JSON (\\\\). Return ONLY valid JSON array.`;
+Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a step-by-step mathematical explanation. Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
 
+    let newlyGenerated = [];
     try {
         const response = await aiService.executeChatCompletion({
             messages: [{ role: 'user', content: userPrompt }],
@@ -205,26 +380,21 @@ Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a
         });
 
         const rawText = response.text || '';
-        let questions = [];
-
         try {
-            questions = repairAndParseJson(rawText);
+            newlyGenerated = repairAndParseJson(rawText);
         } catch (jsonErr) {
             console.error('[QuizRoutes] Failed to parse AI questions JSON:', jsonErr.message, 'Raw was:', rawText.slice(0, 300));
             throw new Error(`Failed to parse AI output into valid questions JSON: ${jsonErr.message}`);
         }
 
-        if (!Array.isArray(questions) || questions.length === 0) {
+        if (!Array.isArray(newlyGenerated) || newlyGenerated.length === 0) {
             throw new Error('AI returned an empty question list');
         }
 
-        // Normalize and validate sequential order and 4 options
-        const normalizedQuestions = questions.map((q, idx) => {
-            const seqNumber = idx + 1;
+        // Normalize newly generated questions
+        const standardKeys = ['A', 'B', 'C', 'D'];
+        newlyGenerated = newlyGenerated.map((q, idx) => {
             let options = Array.isArray(q.options) ? q.options : [];
-            
-            // Normalize options to [{key: 'A', text: '...'}, ...]
-            const standardKeys = ['A', 'B', 'C', 'D'];
             const normalizedOptions = standardKeys.map((key, optIdx) => {
                 const existing = options.find(o => (o.key || '').toUpperCase() === key) || options[optIdx];
                 const rawOptText = existing ? (typeof existing === 'string' ? existing : existing.text || '') : `Option ${key}`;
@@ -238,33 +408,127 @@ Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a
             if (!standardKeys.includes(correctOpt)) correctOpt = 'A';
 
             return {
-                id: seqNumber,
-                question: cleanLatexChemistry(q.question || `Question ${seqNumber}`),
+                id: idx + 1,
+                question: cleanLatexChemistry(q.question || `Question ${idx + 1}`),
                 options: normalizedOptions,
                 correctOption: correctOpt,
                 explanation: cleanLatexChemistry(q.explanation || 'No explanation provided.'),
                 difficulty: q.difficulty || validDifficulty,
-                points: q.points || 1
+                points: q.points || 1,
+                source: 'web_source',
+                examType: detectedExamType,
+                examYear: detectedExamYear
             };
         });
 
-        res.json({
-            success: true,
-            data: {
-                keywords,
-                difficulty: validDifficulty,
-                totalQuestions: normalizedQuestions.length,
-                timeLimitMinutes: parseInt(timeLimitMinutes) || 10,
-                questions: normalizedQuestions
+        // 4. MAINTAIN AND PERSIST NEWLY GENERATED QUESTIONS INTO QUESTION BANK
+        for (const q of newlyGenerated) {
+            try {
+                await prisma.$executeRawUnsafe(`
+                    INSERT INTO "question_bank" ("topic", "exam_type", "exam_year", "difficulty", "question", "options", "correct_option", "explanation", "points", "source")
+                    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+                `, detectedTopic, detectedExamType || 'General', detectedExamYear || null, q.difficulty || validDifficulty, q.question, JSON.stringify(q.options), q.correctOption, q.explanation, q.points || 1, 'web_source');
+            } catch (saveErr) {
+                console.warn('[QuizRoutes] Error saving question to bank:', saveErr.message);
             }
-        });
+        }
+        console.log(`[QuizRoutes] Persisted ${newlyGenerated.length} new questions to question_bank.`);
     } catch (error) {
         console.error('[QuizRoutes] AI Generation Error:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to generate quiz using AI'
-        });
+        if (bankQuestions.length === 0) {
+            return res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to generate quiz questions'
+            });
+        }
+        // If we have some questions from the bank, fallback to returning what we have
     }
+
+    // 5. Combine Question Bank items with newly generated items
+    const combined = [
+        ...bankQuestions.map(q => ({
+            question: cleanLatexChemistry(q.question),
+            options: (Array.isArray(q.options) ? q.options : []).map(opt => ({
+                key: opt.key,
+                text: cleanLatexChemistry(opt.text || '')
+            })),
+            correctOption: q.correctOption,
+            explanation: cleanLatexChemistry(q.explanation || ''),
+            difficulty: q.difficulty || validDifficulty,
+            points: q.points || 1,
+            source: 'question_bank',
+            examType: q.examType || detectedExamType,
+            examYear: q.examYear || detectedExamYear
+        })),
+        ...newlyGenerated
+    ].slice(0, count);
+
+    // Re-index sequential IDs (1..count)
+    const finalQuestions = combined.map((q, idx) => ({
+        ...q,
+        id: idx + 1
+    }));
+
+    res.json({
+        success: true,
+        data: {
+            keywords: rawInput,
+            topic: detectedTopic,
+            examType: detectedExamType,
+            examYear: detectedExamYear,
+            difficulty: validDifficulty,
+            totalQuestions: finalQuestions.length,
+            timeLimitMinutes: parseInt(timeLimitMinutes) || 10,
+            source: bankQuestions.length > 0 ? (newlyGenerated.length > 0 ? 'hybrid_bank_web' : 'question_bank') : 'web_source',
+            questions: finalQuestions
+        }
+    });
+}));
+
+/**
+ * @route   GET /api/quiz/question-bank
+ * @desc    Search and list questions from the question bank
+ * @access  Private
+ */
+router.get('/question-bank', authenticate, asyncHandler(async (req, res) => {
+    const { topic, examType, examYear, difficulty, limit = 50 } = req.query;
+    let queryParams = [];
+    let whereClauses = [];
+
+    if (examType) {
+        queryParams.push(`%${examType.trim()}%`);
+        whereClauses.push(`"exam_type" ILIKE $${queryParams.length}`);
+    }
+    if (examYear) {
+        queryParams.push(examYear.trim());
+        whereClauses.push(`"exam_year" = $${queryParams.length}`);
+    }
+    if (topic) {
+        queryParams.push(`%${topic.trim()}%`);
+        whereClauses.push(`"topic" ILIKE $${queryParams.length}`);
+    }
+    if (difficulty) {
+        queryParams.push(difficulty.toLowerCase().trim());
+        whereClauses.push(`"difficulty" = $${queryParams.length}`);
+    }
+
+    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const safeLimit = Math.min(parseInt(limit) || 50, 100);
+
+    const questions = await prisma.$queryRawUnsafe(`
+        SELECT id, topic, exam_type as "examType", exam_year as "examYear",
+               difficulty, question, options, correct_option as "correctOption",
+               explanation, points, source, created_at as "createdAt"
+        FROM "question_bank"
+        ${whereSql}
+        ORDER BY "created_at" DESC
+        LIMIT ${safeLimit};
+    `, ...queryParams);
+
+    res.json({
+        success: true,
+        data: questions
+    });
 }));
 
 /**

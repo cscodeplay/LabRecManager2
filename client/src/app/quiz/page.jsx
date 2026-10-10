@@ -77,11 +77,14 @@ export default function QuizDashboardPage() {
     // AI Generator Modal in Dashboard
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [keywords, setKeywords] = useState('');
+    const [examType, setExamType] = useState('GATE');
+    const [examYear, setExamYear] = useState('2026');
     const [difficulty, setDifficulty] = useState('medium');
     const [questionCount, setQuestionCount] = useState(5);
     const [timeLimitMinutes, setTimeLimitMinutes] = useState(10);
     const [maxAttemptsInput, setMaxAttemptsInput] = useState(1);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [generationSource, setGenerationSource] = useState(null);
     const [generatedQuestions, setGeneratedQuestions] = useState([]);
     const [quizTitle, setQuizTitle] = useState('');
     const [quizStatus, setQuizStatus] = useState('published');
@@ -584,21 +587,35 @@ export default function QuizDashboardPage() {
     // AI Generation inside Modal
     const handleGenerateAI = async () => {
         if (!keywords.trim()) {
-            toast.error('Please enter keywords or topics');
+            toast.error('Please enter a topic or keywords');
             return;
         }
         try {
             setIsGenerating(true);
+            setGenerationSource(null);
             const res = await quizAPI.generate({
                 keywords: keywords.trim(),
+                topic: keywords.trim(),
+                examType: examType.trim(),
+                examYear: examYear.trim(),
                 difficulty,
                 numberOfQuestions: questionCount,
                 timeLimitMinutes
             });
             if (res.data.success) {
                 setGeneratedQuestions(res.data.data.questions || []);
-                setQuizTitle(`Quiz: ${keywords.trim()}`);
-                toast.success(`Generated ${res.data.data.questions.length} questions!`);
+                const src = res.data.data.source || 'ai';
+                setGenerationSource(src);
+
+                const examHeader = res.data.data.examType ? `${res.data.data.examType} ${res.data.data.examYear || ''}`.trim() : '';
+                setQuizTitle(examHeader ? `${examHeader}: ${res.data.data.topic || keywords.trim()}` : `Quiz: ${res.data.data.topic || keywords.trim()}`);
+                
+                const sourceLabel = src === 'question_bank'
+                    ? 'Retrieved from Question Bank!'
+                    : src === 'hybrid_bank_web'
+                    ? 'Combined Question Bank & Web Grounded!'
+                    : 'Grounded via Web Sources & Saved to Question Bank!';
+                toast.success(`Generated ${res.data.data.questions.length} questions! (${sourceLabel})`);
             }
         } catch (err) {
             console.error('Generation failed', err);
@@ -1642,42 +1659,31 @@ export default function QuizDashboardPage() {
                                                                                 const isUserSelected = optKey === String(ans.selectedOption || '').toUpperCase();
                                                                                 const isCorrectOption = optKey === String(ans.correctOption || '').toUpperCase();
 
-                                                                                let badgeClass = 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700';
-                                                                                let pillClass = 'bg-white/80 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300';
+                                                                                let cardClass = 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200';
+                                                                                let badgeClass = 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
+                                                                                let textClass = 'text-slate-800 dark:text-slate-200';
 
                                                                                 if (isCorrectOption) {
-                                                                                    pillClass = 'bg-emerald-500/15 border-emerald-500 text-emerald-900 dark:text-emerald-200 font-semibold ring-1 ring-emerald-500/40';
-                                                                                    badgeClass = 'bg-emerald-600 text-white border-emerald-600';
+                                                                                    cardClass = 'bg-emerald-600 border-emerald-500 text-white shadow-sm ring-1 ring-emerald-400/40';
+                                                                                    badgeClass = 'bg-white text-emerald-700 font-bold';
+                                                                                    textClass = 'text-white font-medium';
                                                                                 } else if (isUserSelected && !isCorrectOption) {
-                                                                                    pillClass = 'bg-rose-500/15 border-rose-500 text-rose-900 dark:text-rose-200 font-semibold ring-1 ring-rose-500/40';
-                                                                                    badgeClass = 'bg-rose-600 text-white border-rose-600';
+                                                                                    cardClass = 'bg-rose-600 border-rose-500 text-white shadow-sm ring-1 ring-rose-400/40';
+                                                                                    badgeClass = 'bg-white text-rose-700 font-bold';
+                                                                                    textClass = 'text-white font-medium';
                                                                                 }
 
                                                                                 return (
                                                                                     <div
                                                                                         key={optKey}
-                                                                                        className={`p-2 rounded-xl border flex items-center justify-between gap-2 text-xs transition-colors ${pillClass}`}
+                                                                                        className={`p-2.5 rounded-xl border flex items-center gap-2.5 text-xs transition-colors ${cardClass}`}
                                                                                     >
-                                                                                        <div className="flex items-center gap-2 flex-1">
-                                                                                            <span className={`w-5 h-5 rounded font-bold font-mono text-[11px] flex items-center justify-center shrink-0 border ${badgeClass}`}>
-                                                                                                {optKey}
-                                                                                            </span>
-                                                                                            <span className="flex-1">
-                                                                                                <MathRenderer content={opt.text || ''} inline />
-                                                                                            </span>
-                                                                                        </div>
-                                                                                        <div className="shrink-0 text-[10px] font-bold">
-                                                                                            {isCorrectOption && (
-                                                                                                <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                                                                                                    ✓ Correct
-                                                                                                </span>
-                                                                                            )}
-                                                                                            {isUserSelected && !isCorrectOption && (
-                                                                                                <span className="text-rose-600 dark:text-rose-400 bg-rose-500/20 px-1.5 py-0.5 rounded border border-rose-500/30">
-                                                                                                    ✗ Your Choice
-                                                                                                </span>
-                                                                                            )}
-                                                                                        </div>
+                                                                                        <span className={`w-5 h-5 rounded-md font-bold font-mono text-[11px] flex items-center justify-center shrink-0 ${badgeClass}`}>
+                                                                                            {optKey}
+                                                                                        </span>
+                                                                                        <span className={`flex-1 ${textClass}`}>
+                                                                                            <MathRenderer content={opt.text || ''} inline />
+                                                                                        </span>
                                                                                     </div>
                                                                                 );
                                                                             })}
@@ -2219,15 +2225,56 @@ export default function QuizDashboardPage() {
                             <div className="space-y-3">
                                 <div>
                                     <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        Keywords / Topics <span className="text-rose-500">*</span>
+                                        Topic / Subject <span className="text-rose-500">*</span>
                                     </label>
                                     <input
                                         type="text"
                                         value={keywords}
                                         onChange={(e) => setKeywords(e.target.value)}
-                                        placeholder="e.g. Data Structures, Linked Lists, Binary Trees"
+                                        placeholder="e.g. Computer Science Architecture, Pipelining, Cache Memory"
                                         className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-primary-500"
                                     />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2.5">
+                                    <div>
+                                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                            Exam Type / Standard
+                                        </label>
+                                        <select
+                                            value={examType}
+                                            onChange={(e) => setExamType(e.target.value)}
+                                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                        >
+                                            <option value="GATE">GATE (Computer Science / Engineering)</option>
+                                            <option value="JEE">JEE (Main & Advanced)</option>
+                                            <option value="NEET">NEET</option>
+                                            <option value="UGC-NET">UGC-NET</option>
+                                            <option value="University">University / Semester Exam</option>
+                                            <option value="General">General / Academic</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                            Exam Year / Target
+                                        </label>
+                                        <select
+                                            value={examYear}
+                                            onChange={(e) => setExamYear(e.target.value)}
+                                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                        >
+                                            <option value="2026">2026 (Upcoming / Practice)</option>
+                                            <option value="2025">2025</option>
+                                            <option value="2024">2024</option>
+                                            <option value="2023">2023</option>
+                                            <option value="Any">Any Recent Year</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-950 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center gap-2">
+                                    <span className="text-sm">🏛️</span>
+                                    <span>Checks verified <strong>Question Bank</strong> first. If not enough questions exist, fetches authentic problems from <strong>Web Sources</strong> and adds them to the bank.</span>
                                 </div>
 
                                 <div className="grid grid-cols-4 gap-2.5">
@@ -2300,6 +2347,20 @@ export default function QuizDashboardPage() {
                             {/* Preview and Save */}
                             {generatedQuestions.length > 0 && (
                                 <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                    {generationSource && (
+                                        <div className={`p-2.5 rounded-xl border text-xs flex items-center justify-between ${
+                                            generationSource === 'question_bank'
+                                                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                                                : 'bg-primary-50 dark:bg-primary-950/40 border-primary-200 dark:border-primary-800 text-primary-800 dark:text-primary-300'
+                                        }`}>
+                                            <span className="font-bold flex items-center gap-1.5">
+                                                {generationSource === 'question_bank' ? '🏛️ Loaded directly from Question Bank' : '🌐 Sourced & Cached in Question Bank'}
+                                            </span>
+                                            <span className="text-[11px] opacity-80 font-mono">
+                                                {examType || 'General'} {examYear ? `• ${examYear}` : ''}
+                                            </span>
+                                        </div>
+                                    )}
                                     <input
                                         type="text"
                                         value={quizTitle}

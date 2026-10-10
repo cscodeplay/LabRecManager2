@@ -34,6 +34,8 @@ export default function QuizJoinPage() {
     const [isTimerRunning, setIsTimerRunning] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [quizResult, setQuizResult] = useState(null);
+    const [reviewQuestionIdx, setReviewQuestionIdx] = useState(0);
+    const [reviewViewMode, setReviewViewMode] = useState('single'); // 'single' | 'all'
 
     // Proctoring & Fullscreen warning state
     const [warningActive, setWarningActive] = useState(false);
@@ -604,156 +606,281 @@ export default function QuizJoinPage() {
                     </div>
                 )}
 
-                {/* 3. POST-SUBMISSION RESULTS SCREEN */}
+                {/* 3. POST-SUBMISSION RESULTS SCREEN (Matching Quiz UI) */}
                 {quizResult && (
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl animate-in zoom-in-95 duration-300">
-                        <div className="text-center space-y-3">
-                            <div className="w-16 h-16 bg-gradient-to-tr from-amber-500 to-orange-500 text-white rounded-3xl flex items-center justify-center mx-auto shadow-md">
-                                <Award className="w-8 h-8" />
-                            </div>
-                            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">
-                                Quiz Results
-                            </h2>
-                        </div>
-
-                        {/* Score Overview */}
-                        <div className="bg-slate-50 dark:bg-slate-950 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 text-center space-y-1">
-                            <div className="text-4xl font-extrabold text-primary-600">
-                                {quizResult.score} / {quizResult.totalQuestions}
-                            </div>
-                            <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                                Accuracy: {quizResult.percentage}%
-                            </div>
-                            <div className="text-[11px] text-slate-500">
-                                Time Taken: {Math.floor(quizResult.timeTakenSeconds / 60)}m {quizResult.timeTakenSeconds % 60}s
-                            </div>
-                        </div>
-
-                        {/* Question Breakdown with Explanations */}
-                        <div className="space-y-3">
-                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                                Detailed Question Review
-                            </h3>
-                            {(quizResult.answers || []).map((ans, idx) => (
-                                <div
-                                    key={idx}
-                                    className={`p-4 rounded-2xl border text-xs space-y-2 ${
-                                        ans.isCorrect
-                                            ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40 text-emerald-900 dark:text-emerald-200'
-                                            : 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/40 text-rose-900 dark:text-rose-200'
-                                    }`}
-                                >
-                                    {/* Question Title */}
-                                    <div className="flex items-start justify-between gap-3 font-bold">
-                                        <div className="flex-1">
-                                            <span className="font-semibold text-slate-500 dark:text-slate-400 mr-1.5">Q{idx + 1}:</span>
-                                            <MathRenderer content={ans.questionText} inline />
+                    <div className="space-y-4 animate-in zoom-in-95 duration-300">
+                        {/* Score & Accuracy Top Card */}
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 bg-gradient-to-tr from-amber-500 to-orange-500 text-white rounded-2xl flex items-center justify-center shadow-md shrink-0">
+                                        <Award className="w-6 h-6" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white">
+                                            Quiz Results
+                                        </h2>
+                                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                                            <span>Score: <strong className="text-primary-600 dark:text-primary-400 font-extrabold">{quizResult.score} / {quizResult.totalQuestions}</strong></span>
+                                            <span>•</span>
+                                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">Accuracy: {quizResult.percentage}%</span>
+                                            <span>•</span>
+                                            <span>Time: {Math.floor(quizResult.timeTakenSeconds / 60)}m {quizResult.timeTakenSeconds % 60}s</span>
                                         </div>
-                                        {ans.isCorrect ? (
-                                            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 shrink-0 font-bold">
-                                                <CheckCircle2 className="w-4 h-4" /> Correct
-                                            </span>
-                                        ) : (
-                                            <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 shrink-0 font-bold">
-                                                <XCircle className="w-4 h-4" /> Incorrect
-                                            </span>
-                                        )}
+                                    </div>
+                                </div>
+
+                                {/* View Mode Toggle */}
+                                <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+                                    <button
+                                        type="button"
+                                        onClick={() => setReviewViewMode('single')}
+                                        className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                                            reviewViewMode === 'single'
+                                                ? 'bg-white dark:bg-slate-900 text-primary-600 shadow-sm'
+                                                : 'text-slate-600 dark:text-slate-400'
+                                        }`}
+                                    >
+                                        Question View
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setReviewViewMode('all')}
+                                        className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                                            reviewViewMode === 'all'
+                                                ? 'bg-white dark:bg-slate-900 text-primary-600 shadow-sm'
+                                                : 'text-slate-600 dark:text-slate-400'
+                                        }`}
+                                    >
+                                        All Questions
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Question Navigator Pills (matching active quiz navigator) */}
+                        {quizResult.answers && quizResult.answers.length > 0 && reviewViewMode === 'single' && (
+                            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+                                {quizResult.answers.map((ans, idx) => {
+                                    const isCurrent = idx === reviewQuestionIdx;
+                                    const isCorrect = ans.isCorrect;
+                                    const isSkipped = !ans.selectedOption;
+
+                                    let pillClass = 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400';
+                                    if (isCorrect) {
+                                        pillClass = 'bg-emerald-600 text-white';
+                                    } else if (!isSkipped) {
+                                        pillClass = 'bg-rose-600 text-white';
+                                    }
+
+                                    return (
+                                        <button
+                                            key={idx}
+                                            onClick={() => setReviewQuestionIdx(idx)}
+                                            className={`w-8 h-8 rounded-xl font-mono text-xs font-bold transition flex items-center justify-center flex-shrink-0 ${pillClass} ${
+                                                isCurrent ? 'ring-2 ring-primary-500 scale-105' : 'hover:opacity-90'
+                                            }`}
+                                            title={`Question ${idx + 1}: ${isCorrect ? 'Correct' : isSkipped ? 'Skipped' : 'Incorrect'}`}
+                                        >
+                                            {idx + 1}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* SINGLE QUESTION VIEW (Matching Active Quiz UI) */}
+                        {reviewViewMode === 'single' && quizResult.answers && quizResult.answers[reviewQuestionIdx] && (() => {
+                            const ans = quizResult.answers[reviewQuestionIdx];
+                            const originalQ = (quiz?.questions || []).find(q => String(q.id) === String(ans.questionId));
+                            const optList = (ans.options && ans.options.length > 0) ? ans.options : (originalQ?.options || []);
+
+                            return (
+                                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-7 space-y-5 shadow-xl">
+                                    <div className="flex items-center justify-between text-xs text-slate-500">
+                                        <span className="font-bold text-primary-600">
+                                            Question {reviewQuestionIdx + 1} of {quizResult.answers.length}
+                                        </span>
+                                        <span className="text-[11px] font-mono bg-slate-100 dark:bg-slate-950 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-800">
+                                            {ans.isCorrect ? '1 / 1 Point' : '0 / 1 Point'}
+                                        </span>
                                     </div>
 
-                                    {/* All 4 Choices with Green / Red Response Highlighting */}
-                                    {(() => {
-                                        // Retrieve options list from answer payload, or fallback to the quiz question
-                                        const originalQ = (quiz?.questions || []).find(q => String(q.id) === String(ans.questionId));
-                                        const optList = (ans.options && ans.options.length > 0) ? ans.options : (originalQ?.options || []);
+                                    <div className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-snug">
+                                        <MathRenderer content={ans.questionText || originalQ?.question || ''} />
+                                    </div>
 
-                                        if (!optList || optList.length === 0) {
+                                    {/* Choices styled with Green & Red selection (NO labels) */}
+                                    <div className="space-y-2.5 pt-2">
+                                        {optList.map((opt) => {
+                                            const optKey = String(opt.key || '').toUpperCase();
+                                            const userChoice = String(ans.selectedOption || '').toUpperCase();
+                                            const correctChoice = String(ans.correctOption || '').toUpperCase();
+                                            const isUserSelected = optKey === userChoice;
+                                            const isCorrectOption = optKey === correctChoice;
+
+                                            let cardClass = 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200';
+                                            let badgeClass = 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
+                                            let textClass = 'text-slate-800 dark:text-slate-200';
+
+                                            if (isCorrectOption) {
+                                                // Green selection for the correct answer
+                                                cardClass = 'bg-emerald-600 border-emerald-500 text-white shadow-md ring-2 ring-emerald-400/50';
+                                                badgeClass = 'bg-white text-emerald-700 font-bold';
+                                                textClass = 'text-white font-medium';
+                                            } else if (isUserSelected && !isCorrectOption) {
+                                                // Red selection for student's wrong pick
+                                                cardClass = 'bg-rose-600 border-rose-500 text-white shadow-md ring-2 ring-rose-400/50';
+                                                badgeClass = 'bg-white text-rose-700 font-bold';
+                                                textClass = 'text-white font-medium';
+                                            }
+
                                             return (
-                                                <div className="text-slate-700 dark:text-slate-300 text-xs">
-                                                    Your Answer: <strong className="font-mono">{ans.selectedOption || 'Not Answered'}</strong> • Correct Answer: <strong className="font-mono text-emerald-600 dark:text-emerald-400">{ans.correctOption}</strong>
+                                                <div
+                                                    key={optKey}
+                                                    className={`w-full p-3.5 rounded-2xl border text-left text-xs sm:text-sm transition flex items-center gap-3 ${cardClass}`}
+                                                >
+                                                    <span className={`w-7 h-7 rounded-xl font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 ${badgeClass}`}>
+                                                        {optKey}
+                                                    </span>
+                                                    <span className={`flex-1 ${textClass}`}>
+                                                        <MathRenderer content={opt.text || ''} inline />
+                                                    </span>
                                                 </div>
                                             );
-                                        }
+                                        })}
+                                    </div>
 
-                                        return (
-                                            <div className="space-y-1.5 pt-1">
+                                    {/* Solution / Explanation */}
+                                    {ans.explanation && (
+                                        <div className="text-xs text-slate-800 dark:text-slate-200 bg-amber-500/10 dark:bg-amber-950/20 p-4 rounded-2xl border border-amber-300 dark:border-amber-800/40 space-y-1.5">
+                                            <div className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                                                <span>💡</span>
+                                                <span>Explanation</span>
+                                            </div>
+                                            <div className="leading-relaxed">
+                                                <MathRenderer content={ans.explanation} />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Navigation Buttons */}
+                                    <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800">
+                                        <button
+                                            onClick={() => setReviewQuestionIdx(prev => Math.max(0, prev - 1))}
+                                            disabled={reviewQuestionIdx === 0}
+                                            className="py-2 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                                        >
+                                            <ChevronLeft className="w-4 h-4" /> Previous
+                                        </button>
+
+                                        <button
+                                            onClick={() => router.push('/quiz')}
+                                            className="py-2 px-4 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition"
+                                        >
+                                            Return to Quizzes
+                                        </button>
+
+                                        <button
+                                            onClick={() => setReviewQuestionIdx(prev => Math.min(quizResult.answers.length - 1, prev + 1))}
+                                            disabled={reviewQuestionIdx === quizResult.answers.length - 1}
+                                            className="py-2 px-4 bg-primary-600 hover:bg-primary-700 disabled:opacity-30 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow"
+                                        >
+                                            Next <ChevronRight className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {/* ALL QUESTIONS CONTINUOUS LIST VIEW */}
+                        {reviewViewMode === 'all' && (
+                            <div className="space-y-4">
+                                {(quizResult.answers || []).map((ans, idx) => {
+                                    const originalQ = (quiz?.questions || []).find(q => String(q.id) === String(ans.questionId));
+                                    const optList = (ans.options && ans.options.length > 0) ? ans.options : (originalQ?.options || []);
+
+                                    return (
+                                        <div
+                                            key={idx}
+                                            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-7 space-y-4 shadow-xl"
+                                        >
+                                            <div className="flex items-center justify-between text-xs text-slate-500">
+                                                <span className="font-bold text-primary-600">
+                                                    Question {idx + 1} of {quizResult.answers.length}
+                                                </span>
+                                                <span className="text-[11px] font-mono bg-slate-100 dark:bg-slate-950 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-800">
+                                                    {ans.isCorrect ? '1 / 1 Point' : '0 / 1 Point'}
+                                                </span>
+                                            </div>
+
+                                            <div className="text-base font-bold text-slate-900 dark:text-white leading-snug">
+                                                <MathRenderer content={ans.questionText || originalQ?.question || ''} />
+                                            </div>
+
+                                            {/* 4 Choices with Green / Red selections */}
+                                            <div className="space-y-2.5 pt-1">
                                                 {optList.map((opt) => {
                                                     const optKey = String(opt.key || '').toUpperCase();
-                                                    const isUserSelected = optKey === String(ans.selectedOption || '').toUpperCase();
-                                                    const isCorrectOption = optKey === String(ans.correctOption || '').toUpperCase();
+                                                    const userChoice = String(ans.selectedOption || '').toUpperCase();
+                                                    const correctChoice = String(ans.correctOption || '').toUpperCase();
+                                                    const isUserSelected = optKey === userChoice;
+                                                    const isCorrectOption = optKey === correctChoice;
 
-                                                    let badgeClass = 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700';
-                                                    let pillClass = 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300';
+                                                    let cardClass = 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200';
+                                                    let badgeClass = 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
+                                                    let textClass = 'text-slate-800 dark:text-slate-200';
 
                                                     if (isCorrectOption) {
-                                                        // Highlight CORRECT option in GREEN
-                                                        pillClass = 'bg-emerald-500/15 border-emerald-500 text-emerald-900 dark:text-emerald-200 font-semibold ring-1 ring-emerald-500/40';
-                                                        badgeClass = 'bg-emerald-600 text-white border-emerald-600';
+                                                        cardClass = 'bg-emerald-600 border-emerald-500 text-white shadow-md ring-2 ring-emerald-400/50';
+                                                        badgeClass = 'bg-white text-emerald-700 font-bold';
+                                                        textClass = 'text-white font-medium';
                                                     } else if (isUserSelected && !isCorrectOption) {
-                                                        // Highlight WRONG student choice in RED
-                                                        pillClass = 'bg-rose-500/15 border-rose-500 text-rose-900 dark:text-rose-200 font-semibold ring-1 ring-rose-500/40';
-                                                        badgeClass = 'bg-rose-600 text-white border-rose-600';
+                                                        cardClass = 'bg-rose-600 border-rose-500 text-white shadow-md ring-2 ring-rose-400/50';
+                                                        badgeClass = 'bg-white text-rose-700 font-bold';
+                                                        textClass = 'text-white font-medium';
                                                     }
 
                                                     return (
                                                         <div
                                                             key={optKey}
-                                                            className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-colors ${pillClass}`}
+                                                            className={`w-full p-3.5 rounded-2xl border text-left text-xs sm:text-sm transition flex items-center gap-3 ${cardClass}`}
                                                         >
-                                                            <div className="flex items-center gap-2.5 flex-1">
-                                                                <span className={`w-6 h-6 rounded-lg font-bold font-mono text-xs flex items-center justify-center shrink-0 border ${badgeClass}`}>
-                                                                    {optKey}
-                                                                </span>
-                                                                <span className="flex-1 text-xs">
-                                                                    <MathRenderer content={opt.text || ''} inline />
-                                                                </span>
-                                                            </div>
-
-                                                            <div className="shrink-0 flex items-center gap-1.5 text-[11px] font-bold">
-                                                                {isCorrectOption && (
-                                                                    <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-500/30">
-                                                                        <CheckCircle2 className="w-3.5 h-3.5" /> Correct Answer
-                                                                    </span>
-                                                                )}
-                                                                {isUserSelected && !isCorrectOption && (
-                                                                    <span className="text-rose-600 dark:text-rose-400 bg-rose-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 border border-rose-500/30">
-                                                                        <XCircle className="w-3.5 h-3.5" /> Your Choice
-                                                                    </span>
-                                                                )}
-                                                                {isUserSelected && isCorrectOption && (
-                                                                    <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-500/30">
-                                                                        (Your Choice)
-                                                                    </span>
-                                                                )}
-                                                            </div>
+                                                            <span className={`w-7 h-7 rounded-xl font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 ${badgeClass}`}>
+                                                                {optKey}
+                                                            </span>
+                                                            <span className={`flex-1 ${textClass}`}>
+                                                                <MathRenderer content={opt.text || ''} inline />
+                                                            </span>
                                                         </div>
                                                     );
                                                 })}
                                             </div>
-                                        );
-                                    })()}
 
-                                    {/* Correct Answer Explanation Box */}
-                                    {ans.explanation && (
-                                        <div className="text-[11px] text-slate-700 dark:text-slate-300 bg-amber-500/10 dark:bg-amber-950/20 p-3 rounded-xl border border-amber-300 dark:border-amber-800/50 leading-relaxed space-y-1">
-                                            <div className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-                                                <span>💡</span>
-                                                <span>Explanation</span>
-                                            </div>
-                                            <div>
-                                                <MathRenderer content={ans.explanation} inline />
-                                            </div>
+                                            {/* Explanation */}
+                                            {ans.explanation && (
+                                                <div className="text-xs text-slate-800 dark:text-slate-200 bg-amber-500/10 dark:bg-amber-950/20 p-3.5 rounded-2xl border border-amber-300 dark:border-amber-800/40 space-y-1">
+                                                    <div className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                                                        <span>💡</span>
+                                                        <span>Explanation</span>
+                                                    </div>
+                                                    <div className="leading-relaxed">
+                                                        <MathRenderer content={ans.explanation} />
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
+                                    );
+                                })}
 
-                        <button
-                            onClick={() => router.push('/quiz')}
-                            className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition shadow"
-                        >
-                            Return to Quizzes
-                        </button>
+                                <button
+                                    onClick={() => router.push('/quiz')}
+                                    className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition shadow"
+                                >
+                                    Return to Quizzes
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
