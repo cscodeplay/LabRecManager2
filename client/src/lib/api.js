@@ -794,6 +794,11 @@ export const quizAPI = {
     bulkAssign: (data) => api.post('/quiz/bulk-assign', data),
     getAssignments: (id) => api.get(`/quiz/${id}/assignments`),
     deleteAssignment: (quizId, assignmentId) => api.delete(`/quiz/${quizId}/assignments/${assignmentId}`),
+    // Question Bank endpoints
+    getQuestionBank: (params) => api.get('/quiz/question-bank', { params }),
+    addQuestionBank: (data) => api.post('/quiz/question-bank', data),
+    updateQuestionBank: (id, data) => api.put(`/quiz/question-bank/${id}`, data),
+    deleteQuestionBank: (id) => api.delete(`/quiz/question-bank/${id}`),
 };
 
 // Research Browser API

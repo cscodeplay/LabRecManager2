@@ -2517,6 +2517,8 @@ model QuestionBank {
   correctOption String    @map("correct_option") @db.VarChar(10)
   explanation   String?   @db.Text
   points        Int       @default(1)
+  diagramUrl    String?   @map("diagram_url") @db.Text
+  diagramSvg    String?   @map("diagram_svg") @db.Text
   source        String?   @default("question_bank") @db.VarChar(100)
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)

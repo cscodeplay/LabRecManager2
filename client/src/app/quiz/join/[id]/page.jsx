@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '@/lib/store';
 import { quizAPI, authAPI } from '@/lib/api';
 import MathRenderer from '@/components/MathRenderer';
+import QuestionDiagram from '@/components/QuestionDiagram';
 
 export default function QuizJoinPage() {
     const params = useParams();
@@ -546,6 +547,14 @@ export default function QuizJoinPage() {
                                         <MathRenderer content={q.question} />
                                     </div>
 
+                                    {(q.diagramSvg || q.diagramUrl) && (
+                                        <QuestionDiagram
+                                            diagramSvg={q.diagramSvg}
+                                            diagramUrl={q.diagramUrl}
+                                            title={`Question ${currentQuestionIdx + 1} Diagram`}
+                                        />
+                                    )}
+
                                     {/* 4 Choices */}
                                     <div className="space-y-2.5 pt-2">
                                         {(q.options || []).map((opt) => {
@@ -709,6 +718,14 @@ export default function QuizJoinPage() {
                                     <div className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-snug">
                                         <MathRenderer content={ans.questionText || originalQ?.question || ''} />
                                     </div>
+
+                                    {(originalQ?.diagramSvg || originalQ?.diagramUrl || ans.diagramSvg || ans.diagramUrl) && (
+                                        <QuestionDiagram
+                                            diagramSvg={originalQ?.diagramSvg || ans.diagramSvg}
+                                            diagramUrl={originalQ?.diagramUrl || ans.diagramUrl}
+                                            title={`Question ${currentQuestionIdx + 1} Diagram`}
+                                        />
+                                    )}
 
                                     {/* Choices styled with Green & Red selection (NO labels) */}
                                     <div className="space-y-2.5 pt-2">

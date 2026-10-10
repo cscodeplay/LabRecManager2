@@ -8,7 +8,8 @@ import {
     Award, CheckCircle2, XCircle, RefreshCw, ChevronDown, ChevronUp,
     Users, Send, BarChart3, FileText, X, CheckSquare, Square,
     Edit3, Plus, LayoutGrid, List, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-    Wand2, ArrowUp, ArrowDown, Settings2, Filter, Layers, UserCheck
+    Wand2, ArrowUp, ArrowDown, Settings2, Filter, Layers, UserCheck, Database, Eye, Image as ImageIcon,
+    AlertTriangle, CheckCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import QRCode from 'qrcode';
@@ -17,6 +18,7 @@ import { useAuthStore } from '@/lib/store';
 import { quizAPI, classesAPI } from '@/lib/api';
 import MathRenderer from '@/components/MathRenderer';
 import QuizReviewModal from '@/components/QuizReviewModal';
+import QuestionDiagram, { DIAGRAM_PRESETS } from '@/components/QuestionDiagram';
 
 export default function QuizDashboardPage() {
     const router = useRouter();
@@ -89,6 +91,51 @@ export default function QuizDashboardPage() {
     const [quizTitle, setQuizTitle] = useState('');
     const [quizStatus, setQuizStatus] = useState('published');
     const [isSaving, setIsSaving] = useState(false);
+
+    // Question Bank State
+    const [bankQuestions, setBankQuestions] = useState([]);
+    const [bankLoading, setBankLoading] = useState(false);
+    const [bankSearch, setBankSearch] = useState('');
+    const [bankExamType, setBankExamType] = useState('');
+    const [bankExamYear, setBankExamYear] = useState('');
+    const [bankDifficulty, setBankDifficulty] = useState('');
+    const [bankPage, setBankPage] = useState(1);
+    const [bankPageSize, setBankPageSize] = useState(10);
+    const [bankTotal, setBankTotal] = useState(0);
+    const [bankTotalPages, setBankTotalPages] = useState(1);
+    const [bankStats, setBankStats] = useState([]);
+    const [selectedBankIds, setSelectedBankIds] = useState(new Set());
+    const [expandedBankExplIds, setExpandedBankExplIds] = useState(new Set());
+
+    // Add / Edit Question Bank Modal State
+    const [showAddBankModal, setShowAddBankModal] = useState(false);
+    const [editingBankQuestion, setEditingBankQuestion] = useState(null);
+    const [bankFormData, setBankFormData] = useState({
+        topic: '',
+        examType: 'GATE',
+        examYear: '2026',
+        difficulty: 'medium',
+        points: 1,
+        question: '',
+        diagramSvg: '',
+        diagramUrl: '',
+        options: [
+            { key: 'A', text: '' },
+            { key: 'B', text: '' },
+            { key: 'C', text: '' },
+            { key: 'D', text: '' }
+        ],
+        correctOption: 'A',
+        explanation: ''
+    });
+    const [isSavingBankQuestion, setIsSavingBankQuestion] = useState(false);
+    const [bankDiagramType, setBankDiagramType] = useState('none'); // 'none' | 'svg' | 'url'
+    const [previewBankQuestion, setPreviewBankQuestion] = useState(false);
+
+    // Publish Confirmation Modal State
+    const [showPublishConfirmModal, setShowPublishConfirmModal] = useState(false);
+    const [publishConfirmData, setPublishConfirmData] = useState(null); // { type: 'new' | 'existing', ... }
+    const [isConfirmingPublish, setIsConfirmingPublish] = useState(false);
 
     // Assign Quiz Modal State (Multi-Quiz, Multi-Class, Multi-Group, Filtered/Persisted Students)
     const [assignQuizTargets, setAssignQuizTargets] = useState([]); // Array of quizzes to assign
@@ -625,7 +672,8 @@ export default function QuizDashboardPage() {
         }
     };
 
-    const handleSaveGeneratedQuiz = async () => {
+    const handleSaveGeneratedQuiz = async (forcedStatus = null) => {
+        const statusToSave = forcedStatus || quizStatus || 'draft';
         if (!quizTitle.trim()) {
             toast.error('Please enter a quiz title');
             return;
@@ -645,22 +693,302 @@ export default function QuizDashboardPage() {
                 timeLimitMinutes,
                 maxAttempts: Math.max(parseInt(maxAttemptsInput) || 1, 1),
                 questions: generatedQuestions,
-                status: quizStatus
+                status: statusToSave
             });
             if (res.data.success) {
-                toast.success(`Quiz "${res.data.data.title}" saved! Join Code: ${res.data.data.code}`);
                 setShowCreateModal(false);
+                setShowPublishConfirmModal(false);
+                setPublishConfirmData(null);
                 setGeneratedQuestions([]);
                 setKeywords('');
                 setMaxAttemptsInput(1);
                 fetchQuizzes();
-                handleOpenShare(res.data.data);
+
+                if (statusToSave === 'published') {
+                    toast.success(`Quiz "${res.data.data.title}" published! Join Code: ${res.data.data.code}`);
+                    handleOpenShare(res.data.data);
+                } else {
+                    toast.success(`Quiz "${res.data.data.title}" saved as Draft. You can publish it whenever you are ready.`);
+                }
             }
         } catch (err) {
             console.error('Failed to save quiz', err);
             toast.error(err.response?.data?.message || 'Failed to save quiz');
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    // Confirm Publishing Handler
+    const handleConfirmPublish = async () => {
+        if (!publishConfirmData) return;
+        try {
+            setIsConfirmingPublish(true);
+            if (publishConfirmData.type === 'new') {
+                await handleSaveGeneratedQuiz('published');
+            } else if (publishConfirmData.type === 'existing' && publishConfirmData.quiz) {
+                const res = await quizAPI.update(publishConfirmData.quiz.id, {
+                    status: 'published'
+                });
+                if (res.data.success) {
+                    toast.success(`Quiz "${publishConfirmData.quiz.title}" published! Join Code: ${res.data.data.code}`);
+                    setShowPublishConfirmModal(false);
+                    setPublishConfirmData(null);
+                    fetchQuizzes();
+                    handleOpenShare(res.data.data);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to publish quiz', err);
+            toast.error(err.response?.data?.message || 'Failed to publish quiz');
+        } finally {
+            setIsConfirmingPublish(false);
+        }
+    };
+
+    // Toggle publish status for existing quiz
+    const handleTogglePublishStatus = async (quiz, targetStatus) => {
+        if (targetStatus === 'published') {
+            setPublishConfirmData({ type: 'existing', quiz });
+            setShowPublishConfirmModal(true);
+            return;
+        }
+
+        if (!confirm(`Are you sure you want to unpublish "${quiz.title}" back to draft? Students will no longer be able to take it.`)) {
+            return;
+        }
+
+        try {
+            const res = await quizAPI.update(quiz.id, { status: 'draft' });
+            if (res.data.success) {
+                toast.success(`Quiz "${quiz.title}" set to Draft.`);
+                fetchQuizzes();
+            }
+        } catch (err) {
+            console.error('Failed to unpublish quiz', err);
+            toast.error(err.response?.data?.message || 'Failed to update quiz status');
+        }
+    };
+
+    // Question Bank: Fetch data with pagination & filters
+    const fetchQuestionBank = async (page = bankPage) => {
+        try {
+            setBankLoading(true);
+            const res = await quizAPI.getQuestionBank({
+                search: bankSearch.trim(),
+                examType: bankExamType.trim(),
+                examYear: bankExamYear.trim(),
+                difficulty: bankDifficulty.trim(),
+                page: page,
+                pageSize: bankPageSize
+            });
+            if (res.data?.success) {
+                const d = res.data.data;
+                setBankQuestions(d.questions || []);
+                setBankTotal(d.total || 0);
+                setBankPage(d.page || 1);
+                setBankTotalPages(d.totalPages || 1);
+                if (d.stats) setBankStats(d.stats);
+            }
+        } catch (err) {
+            console.error('Failed to load question bank', err);
+            toast.error('Failed to load Question Bank');
+        } finally {
+            setBankLoading(false);
+        }
+    };
+
+    // Load Question Bank when bank tab is selected or filters change
+    useEffect(() => {
+        if (activeTab === 'bank' && isInstructorOrAdmin) {
+            fetchQuestionBank(1);
+        }
+    }, [activeTab, bankExamType, bankExamYear, bankDifficulty, bankPageSize]);
+
+    // Debounced search for Question Bank
+    useEffect(() => {
+        if (activeTab === 'bank' && isInstructorOrAdmin) {
+            const timer = setTimeout(() => {
+                fetchQuestionBank(1);
+            }, 350);
+            return () => clearTimeout(timer);
+        }
+    }, [bankSearch]);
+
+    // Question Bank: Open Add Modal
+    const handleOpenAddBankModal = () => {
+        setEditingBankQuestion(null);
+        setBankFormData({
+            topic: '',
+            examType: 'GATE',
+            examYear: '2026',
+            difficulty: 'medium',
+            points: 1,
+            question: '',
+            diagramSvg: '',
+            diagramUrl: '',
+            options: [
+                { key: 'A', text: '' },
+                { key: 'B', text: '' },
+                { key: 'C', text: '' },
+                { key: 'D', text: '' }
+            ],
+            correctOption: 'A',
+            explanation: ''
+        });
+        setBankDiagramType('none');
+        setPreviewBankQuestion(false);
+        setShowAddBankModal(true);
+    };
+
+    // Question Bank: Open Edit Modal
+    const handleOpenEditBankModal = (q) => {
+        setEditingBankQuestion(q);
+        const opts = Array.isArray(q.options) ? q.options : [];
+        const stdKeys = ['A', 'B', 'C', 'D'];
+        const normalizedOpts = stdKeys.map((key, idx) => {
+            const existing = opts.find(o => (o.key || '').toUpperCase() === key) || opts[idx];
+            return {
+                key,
+                text: existing ? (typeof existing === 'string' ? existing : existing.text || '') : ''
+            };
+        });
+
+        const hasSvg = Boolean(q.diagramSvg && q.diagramSvg.trim().startsWith('<svg'));
+        const hasUrl = Boolean(q.diagramUrl && q.diagramUrl.trim().length > 0);
+
+        setBankFormData({
+            topic: q.topic || '',
+            examType: q.examType || 'General',
+            examYear: q.examYear || '',
+            difficulty: q.difficulty || 'medium',
+            points: q.points || 1,
+            question: q.question || '',
+            diagramSvg: q.diagramSvg || '',
+            diagramUrl: q.diagramUrl || '',
+            options: normalizedOpts,
+            correctOption: q.correctOption || 'A',
+            explanation: q.explanation || ''
+        });
+        setBankDiagramType(hasSvg ? 'svg' : (hasUrl ? 'url' : 'none'));
+        setPreviewBankQuestion(false);
+        setShowAddBankModal(true);
+    };
+
+    // Question Bank: Save or Update
+    const handleSaveBankQuestion = async () => {
+        if (!bankFormData.topic.trim()) {
+            toast.error('Topic / Subject is required');
+            return;
+        }
+        if (!bankFormData.question.trim()) {
+            toast.error('Question prompt statement is required');
+            return;
+        }
+        for (const opt of bankFormData.options) {
+            if (!opt.text.trim()) {
+                toast.error(`Option ${opt.key} text cannot be empty`);
+                return;
+            }
+        }
+
+        try {
+            setIsSavingBankQuestion(true);
+            const payload = {
+                topic: bankFormData.topic.trim(),
+                examType: bankFormData.examType.trim(),
+                examYear: bankFormData.examYear.trim(),
+                difficulty: bankFormData.difficulty,
+                points: Math.max(parseInt(bankFormData.points) || 1, 1),
+                question: bankFormData.question.trim(),
+                options: bankFormData.options,
+                correctOption: bankFormData.correctOption,
+                explanation: bankFormData.explanation.trim(),
+                diagramSvg: bankDiagramType === 'svg' ? bankFormData.diagramSvg.trim() : null,
+                diagramUrl: bankDiagramType === 'url' ? bankFormData.diagramUrl.trim() : null
+            };
+
+            if (editingBankQuestion) {
+                const res = await quizAPI.updateQuestionBank(editingBankQuestion.id, payload);
+                if (res.data?.success) {
+                    toast.success('Question updated in Question Bank!');
+                    setShowAddBankModal(false);
+                    fetchQuestionBank(bankPage);
+                }
+            } else {
+                const res = await quizAPI.addQuestionBank(payload);
+                if (res.data?.success) {
+                    toast.success('New question added to Question Bank!');
+                    setShowAddBankModal(false);
+                    fetchQuestionBank(1);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to save bank question', err);
+            toast.error(err.response?.data?.message || 'Failed to save question');
+        } finally {
+            setIsSavingBankQuestion(false);
+        }
+    };
+
+    // Question Bank: Delete question
+    const handleDeleteBankQuestion = async (qId) => {
+        if (!confirm('Are you sure you want to delete this question from the Question Bank?')) return;
+        try {
+            const res = await quizAPI.deleteQuestionBank(qId);
+            if (res.data?.success) {
+                toast.success('Question deleted from Question Bank');
+                fetchQuestionBank(bankPage);
+            }
+        } catch (err) {
+            console.error('Failed to delete bank question', err);
+            toast.error('Failed to delete question');
+        }
+    };
+
+    // Question Bank: Create Quiz directly from bank questions
+    const handleCreateQuizFromBank = (questionsToUse) => {
+        if (!questionsToUse || questionsToUse.length === 0) return;
+        const normalized = questionsToUse.map((q, idx) => ({
+            id: idx + 1,
+            question: q.question,
+            options: q.options,
+            correctOption: q.correctOption,
+            explanation: q.explanation,
+            difficulty: q.difficulty || 'medium',
+            points: q.points || 1,
+            diagramSvg: q.diagramSvg || null,
+            diagramUrl: q.diagramUrl || null,
+            source: 'question_bank',
+            examType: q.examType,
+            examYear: q.examYear
+        }));
+
+        setGeneratedQuestions(normalized);
+        const firstQ = questionsToUse[0];
+        const examPrefix = firstQ.examType ? `${firstQ.examType} ${firstQ.examYear || ''}`.trim() : '';
+        setQuizTitle(examPrefix ? `${examPrefix}: ${firstQ.topic || 'Practice Quiz'}` : `Quiz: ${firstQ.topic || 'Practice Quiz'}`);
+        setKeywords(firstQ.topic || '');
+        setQuizStatus('draft'); // Default to draft for safety!
+        setShowCreateModal(true);
+        toast.success(`Loaded ${normalized.length} question(s) from Question Bank into Quiz Creator!`);
+    };
+
+    // Question Bank: Selection helpers
+    const handleToggleBankSelect = (id) => {
+        setSelectedBankIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const handleToggleSelectAllBank = () => {
+        if (selectedBankIds.size === bankQuestions.length && bankQuestions.length > 0) {
+            setSelectedBankIds(new Set());
+        } else {
+            setSelectedBankIds(new Set(bankQuestions.map(q => q.id)));
         }
     };
 
@@ -1003,6 +1331,26 @@ export default function QuizDashboardPage() {
                     >
                         {isInstructorOrAdmin ? `All Quizzes (${quizzes.length})` : `Assigned Quizzes (${quizzes.length})`}
                     </button>
+                    {isInstructorOrAdmin && (
+                        <button
+                            onClick={() => setActiveTab('bank')}
+                            className={`py-2 px-4 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                                activeTab === 'bank'
+                                    ? 'bg-primary-600 text-white shadow-sm'
+                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800'
+                            }`}
+                        >
+                            <Database className="w-3.5 h-3.5" />
+                            <span>Question Bank</span>
+                            {bankTotal > 0 && (
+                                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                                    activeTab === 'bank' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                                }`}>
+                                    {bankTotal}
+                                </span>
+                            )}
+                        </button>
+                    )}
                     <button
                         onClick={() => setActiveTab('completed')}
                         className={`py-2 px-4 rounded-xl text-xs font-bold transition ${
@@ -1720,6 +2068,432 @@ export default function QuizDashboardPage() {
                     </div>
                 )}
 
+                {/* TAB 3: QUESTION BANK (PERSISTENT COMPETITIVE EXAM REPOSITORY) */}
+                {activeTab === 'bank' && isInstructorOrAdmin && (
+                    <div className="space-y-4">
+                        {/* Question Bank Top Banner & Quick Actions */}
+                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 sm:p-5 shadow-sm space-y-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div>
+                                    <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                                        <Database className="w-5 h-5 text-primary-600" />
+                                        Competitive Exam Question Bank
+                                        <span className="font-mono text-xs font-bold text-primary-600 bg-primary-50 dark:bg-primary-950/40 px-2 py-0.5 rounded border border-primary-200 dark:border-primary-800">
+                                            {bankTotal} Questions
+                                        </span>
+                                    </h3>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        Persistent repository of GATE, JEE, NEET, and authentic syllabus problems with formulas and diagrams.
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {selectedBankIds.size > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const selectedQuestions = bankQuestions.filter(q => selectedBankIds.has(q.id));
+                                                handleCreateQuizFromBank(selectedQuestions);
+                                            }}
+                                            className="py-2 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-sm transition flex items-center gap-1.5"
+                                        >
+                                            <Layers className="w-4 h-4" />
+                                            Create Quiz ({selectedBankIds.size})
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={handleOpenAddBankModal}
+                                        className="py-2 px-3.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-bold text-xs shadow-sm transition flex items-center gap-1.5"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        Add Question
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Exam Category Breakdown Tags */}
+                            {bankStats && bankStats.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60 text-xs">
+                                    <span className="text-[11px] font-semibold text-slate-400 mr-1">Exams:</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setBankExamType(''); setBankPage(1); }}
+                                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition ${
+                                            !bankExamType
+                                                ? 'bg-primary-600 text-white border-primary-600'
+                                                : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-200'
+                                        }`}
+                                    >
+                                        All ({bankTotal})
+                                    </button>
+                                    {bankStats.map((st) => (
+                                        <button
+                                            key={st.examType}
+                                            type="button"
+                                            onClick={() => { setBankExamType(st.examType); setBankPage(1); }}
+                                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition ${
+                                                bankExamType === st.examType
+                                                    ? 'bg-primary-600 text-white border-primary-600'
+                                                    : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-200'
+                                            }`}
+                                        >
+                                            {st.examType} ({st.count})
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Search & Filters Toolbar */}
+                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
+                            <div className="relative flex-1 min-w-[220px] max-w-md">
+                                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                <input
+                                    type="text"
+                                    value={bankSearch}
+                                    onChange={(e) => setBankSearch(e.target.value)}
+                                    placeholder="Search by topic, problem, or explanation..."
+                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-primary-500 shadow-sm"
+                                />
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                                {/* Exam Type Filter */}
+                                <select
+                                    value={bankExamType}
+                                    onChange={(e) => { setBankExamType(e.target.value); setBankPage(1); }}
+                                    className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-2 font-medium text-slate-700 dark:text-slate-300 focus:outline-none focus:border-primary-500"
+                                >
+                                    <option value="">All Exams</option>
+                                    <option value="GATE">GATE</option>
+                                    <option value="JEE">JEE / JEE Advanced</option>
+                                    <option value="NEET">NEET</option>
+                                    <option value="UGC-NET">UGC-NET</option>
+                                    <option value="General">General / Other</option>
+                                </select>
+
+                                {/* Exam Year Filter */}
+                                <select
+                                    value={bankExamYear}
+                                    onChange={(e) => { setBankExamYear(e.target.value); setBankPage(1); }}
+                                    className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-2 font-medium text-slate-700 dark:text-slate-300 focus:outline-none focus:border-primary-500"
+                                >
+                                    <option value="">All Years</option>
+                                    <option value="2026">2026</option>
+                                    <option value="2025">2025</option>
+                                    <option value="2024">2024</option>
+                                    <option value="2023">2023</option>
+                                    <option value="2022">2022</option>
+                                </select>
+
+                                {/* Difficulty Filter */}
+                                <select
+                                    value={bankDifficulty}
+                                    onChange={(e) => { setBankDifficulty(e.target.value); setBankPage(1); }}
+                                    className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-2 font-medium text-slate-700 dark:text-slate-300 focus:outline-none focus:border-primary-500"
+                                >
+                                    <option value="">All Difficulties</option>
+                                    <option value="easy">Easy</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="hard">Hard</option>
+                                </select>
+
+                                {/* Page Size Selector */}
+                                <select
+                                    value={bankPageSize}
+                                    onChange={(e) => { setBankPageSize(parseInt(e.target.value) || 10); setBankPage(1); }}
+                                    className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2 py-2 font-medium text-slate-700 dark:text-slate-300 focus:outline-none focus:border-primary-500"
+                                >
+                                    <option value={10}>10 per page</option>
+                                    <option value={20}>20 per page</option>
+                                    <option value={50}>50 per page</option>
+                                </select>
+
+                                <button
+                                    type="button"
+                                    onClick={() => fetchQuestionBank(bankPage)}
+                                    className="p-2 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-white transition"
+                                    title="Refresh Question Bank"
+                                >
+                                    <RefreshCw className={`w-3.5 h-3.5 ${bankLoading ? 'animate-spin' : ''}`} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Bulk selection bar when items exist */}
+                        {bankQuestions.length > 0 && (
+                            <div className="flex items-center justify-between text-xs px-2 text-slate-500">
+                                <label className="flex items-center gap-2 cursor-pointer font-medium hover:text-slate-900 dark:hover:text-white">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedBankIds.size === bankQuestions.length && bankQuestions.length > 0}
+                                        onChange={handleToggleSelectAllBank}
+                                        className="w-4 h-4 text-primary-600 rounded border-slate-300 dark:border-slate-700 cursor-pointer"
+                                    />
+                                    <span>Select all on this page ({bankQuestions.length})</span>
+                                </label>
+                                <span>Showing Page {bankPage} of {bankTotalPages} ({bankTotal} total)</span>
+                            </div>
+                        )}
+
+                        {/* Question Bank Items List */}
+                        {bankLoading ? (
+                            <div className="py-20 text-center space-y-3 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-8 shadow-sm">
+                                <RefreshCw className="w-8 h-8 text-primary-500 animate-spin mx-auto" />
+                                <p className="text-xs text-slate-500">Loading Question Bank questions...</p>
+                            </div>
+                        ) : bankQuestions.length === 0 ? (
+                            <div className="py-16 text-center space-y-3 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-8 shadow-sm">
+                                <Database className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
+                                <h4 className="font-bold text-sm text-slate-800 dark:text-slate-200">No Questions Found</h4>
+                                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                                    Try adjusting your search filters or click &quot;Add Question&quot; to insert authentic exam problems into the bank.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={handleOpenAddBankModal}
+                                    className="py-2 px-4 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-bold text-xs transition inline-flex items-center gap-1.5 shadow-sm"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    Add First Question
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {bankQuestions.map((q, idx) => {
+                                    const isSelected = selectedBankIds.has(q.id);
+                                    const isExplExpanded = expandedBankExplIds.has(q.id);
+                                    const optionsList = Array.isArray(q.options) ? q.options : [];
+
+                                    return (
+                                        <div
+                                            key={q.id}
+                                            className={`bg-white dark:bg-slate-800 border rounded-2xl p-5 shadow-sm space-y-3.5 transition ${
+                                                isSelected
+                                                    ? 'border-primary-500 ring-2 ring-primary-500/20'
+                                                    : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                                            }`}
+                                        >
+                                            {/* Card Top Header */}
+                                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700/60 pb-2.5">
+                                                <div className="flex items-center gap-2.5">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => handleToggleBankSelect(q.id)}
+                                                        className="w-4 h-4 text-primary-600 rounded border-slate-300 dark:border-slate-700 cursor-pointer"
+                                                    />
+                                                    <span className="font-mono text-xs font-bold text-slate-400">
+                                                        #{(bankPage - 1) * bankPageSize + idx + 1}
+                                                    </span>
+                                                    <span className="font-bold text-xs px-2.5 py-0.5 rounded-full bg-primary-50 dark:bg-primary-950/40 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-800">
+                                                        {q.examType || 'General'} {q.examYear ? `• ${q.examYear}` : ''}
+                                                    </span>
+                                                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                                        {q.topic}
+                                                    </span>
+                                                </div>
+
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+                                                        q.difficulty === 'hard'
+                                                            ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                                            : q.difficulty === 'easy'
+                                                            ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                                                            : 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                                                    }`}>
+                                                        {q.difficulty || 'medium'}
+                                                    </span>
+                                                    <span className="text-[11px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                                                        {q.points || 1} Pt
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Question Prompt with LaTeX */}
+                                            <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-relaxed">
+                                                <MathRenderer content={q.question} />
+                                            </div>
+
+                                            {/* Vector Diagram or Image (if available) */}
+                                            {(q.diagramSvg || q.diagramUrl) && (
+                                                <QuestionDiagram
+                                                    diagramSvg={q.diagramSvg}
+                                                    diagramUrl={q.diagramUrl}
+                                                    title={q.topic}
+                                                />
+                                            )}
+
+                                            {/* 4 Choices (pure Green highlight on correct option, no text labels) */}
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                                                {optionsList.map((opt) => {
+                                                    const isCorrect = String(opt.key || '').toUpperCase() === String(q.correctOption || '').toUpperCase();
+                                                    return (
+                                                        <div
+                                                            key={opt.key}
+                                                            className={`p-3 rounded-xl border text-xs font-medium flex items-center gap-2.5 transition ${
+                                                                isCorrect
+                                                                    ? 'bg-emerald-600 border-emerald-500 text-white shadow-sm ring-2 ring-emerald-400/40'
+                                                                    : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+                                                            }`}
+                                                        >
+                                                            <span className={`w-6 h-6 rounded-lg font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 ${
+                                                                isCorrect ? 'bg-white text-emerald-700' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                                            }`}>
+                                                                {opt.key}
+                                                            </span>
+                                                            <div className="flex-1">
+                                                                <MathRenderer content={opt.text || ''} inline />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Collapsible Step-by-Step Solution */}
+                                            {q.explanation && (
+                                                <div className="pt-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setExpandedBankExplIds(prev => {
+                                                                const next = new Set(prev);
+                                                                if (next.has(q.id)) next.delete(q.id);
+                                                                else next.add(q.id);
+                                                                return next;
+                                                            });
+                                                        }}
+                                                        className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                                                    >
+                                                        {isExplExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                                        {isExplExpanded ? 'Hide Step-by-Step Derivation' : 'View Step-by-Step Derivation'}
+                                                    </button>
+                                                    {isExplExpanded && (
+                                                        <div className="mt-2.5 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 space-y-1.5 animate-fadeIn">
+                                                            <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1 text-[11px] uppercase tracking-wider">
+                                                                <span>💡</span> Solution & Derivation
+                                                            </div>
+                                                            <MathRenderer content={q.explanation} />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Card Action Buttons */}
+                                            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-700/60 text-xs">
+                                                <span className="text-[11px] text-slate-400">
+                                                    Source: {q.source === 'manual_instructor' ? 'Instructor Manual' : 'Web Grounded & Syllabus Cached'}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleCreateQuizFromBank([q])}
+                                                        className="py-1 px-2.5 bg-primary-50 dark:bg-primary-950/40 text-primary-700 dark:text-primary-300 hover:bg-primary-100 border border-primary-200 dark:border-primary-800 rounded-lg font-bold transition flex items-center gap-1 text-[11px]"
+                                                    >
+                                                        <Play className="w-3 h-3" />
+                                                        Use in Quiz
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleOpenEditBankModal(q)}
+                                                        className="py-1 px-2.5 bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg font-bold transition flex items-center gap-1 text-[11px]"
+                                                    >
+                                                        <Edit3 className="w-3 h-3" />
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteBankQuestion(q.id)}
+                                                        className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition"
+                                                        title="Delete from Question Bank"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Page Controls (Pagination) */}
+                        {bankTotalPages > 1 && (
+                            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-3.5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                                <div className="text-slate-500">
+                                    Showing questions <span className="font-bold text-slate-800 dark:text-white">{(bankPage - 1) * bankPageSize + 1}</span> to <span className="font-bold text-slate-800 dark:text-white">{Math.min(bankPage * bankPageSize, bankTotal)}</span> of <span className="font-bold text-slate-800 dark:text-white">{bankTotal}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => fetchQuestionBank(1)}
+                                        disabled={bankPage === 1}
+                                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-900 transition"
+                                        title="First Page"
+                                    >
+                                        <ChevronsLeft className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => fetchQuestionBank(Math.max(1, bankPage - 1))}
+                                        disabled={bankPage === 1}
+                                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-900 transition flex items-center gap-1 font-bold"
+                                    >
+                                        <ChevronLeft className="w-4 h-4" />
+                                        <span>Prev</span>
+                                    </button>
+
+                                    {/* Page Number Buttons */}
+                                    <div className="flex items-center gap-1 px-1">
+                                        {Array.from({ length: Math.min(5, bankTotalPages) }, (_, i) => {
+                                            let p = i + 1;
+                                            if (bankTotalPages > 5) {
+                                                if (bankPage > 3) {
+                                                    p = bankPage - 2 + i;
+                                                    if (p > bankTotalPages) p = bankTotalPages - (4 - i);
+                                                }
+                                            }
+                                            return (
+                                                <button
+                                                    key={p}
+                                                    type="button"
+                                                    onClick={() => fetchQuestionBank(p)}
+                                                    className={`w-7 h-7 rounded-lg font-bold text-xs transition ${
+                                                        bankPage === p
+                                                            ? 'bg-primary-600 text-white shadow-sm'
+                                                            : 'border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-700 dark:text-slate-300'
+                                                    }`}
+                                                >
+                                                    {p}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => fetchQuestionBank(Math.min(bankTotalPages, bankPage + 1))}
+                                        disabled={bankPage === bankTotalPages}
+                                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-900 transition flex items-center gap-1 font-bold"
+                                    >
+                                        <span>Next</span>
+                                        <ChevronRight className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => fetchQuestionBank(bankTotalPages)}
+                                        disabled={bankPage === bankTotalPages}
+                                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-900 transition"
+                                        title="Last Page"
+                                    >
+                                        <ChevronsRight className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* MODAL 0: EDIT QUIZ & QUESTIONS */}
                 {editingQuiz && (
                     <div
@@ -2378,13 +3152,39 @@ export default function QuizDashboardPage() {
                                         </button>
                                     </div>
 
-                                    <button
-                                        onClick={handleSaveGeneratedQuiz}
-                                        disabled={isSaving}
-                                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-sm"
-                                    >
-                                        {isSaving ? 'Saving...' : 'Save & Publish Quiz'}
-                                    </button>
+                                    <div className="grid grid-cols-2 gap-2 pt-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSaveGeneratedQuiz('draft')}
+                                            disabled={isSaving}
+                                            className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-300 dark:border-slate-700 disabled:opacity-50"
+                                        >
+                                            <FileText className="w-3.5 h-3.5 text-slate-500" />
+                                            {isSaving ? 'Saving...' : 'Save as Draft'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (!quizTitle.trim()) {
+                                                    toast.error('Please enter a quiz title first');
+                                                    return;
+                                                }
+                                                setPublishConfirmData({
+                                                    type: 'new',
+                                                    title: quizTitle.trim(),
+                                                    questionCount: generatedQuestions.length,
+                                                    timeLimitMinutes,
+                                                    maxAttempts: maxAttemptsInput
+                                                });
+                                                setShowPublishConfirmModal(true);
+                                            }}
+                                            disabled={isSaving}
+                                            className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm"
+                                        >
+                                            <Send className="w-3.5 h-3.5" />
+                                            Publish Quiz...
+                                        </button>
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -3202,6 +4002,519 @@ export default function QuizDashboardPage() {
                             >
                                 Done
                             </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* MODAL 5: PUBLISH CONFIRMATION */}
+                {showPublishConfirmModal && publishConfirmData && (
+                    <div
+                        className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+                        onClick={() => {
+                            if (!isConfirmingPublish) {
+                                setShowPublishConfirmModal(false);
+                                setPublishConfirmData(null);
+                            }
+                        }}
+                    >
+                        <div
+                            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl relative"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-200 dark:border-emerald-800/40">
+                                    <Send className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                                        Confirm Quiz Publishing
+                                    </h3>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        {publishConfirmData.type === 'new' 
+                                            ? 'Ready to make this quiz live for students?'
+                                            : 'Publish this draft quiz and make it accessible?'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="bg-slate-50 dark:bg-slate-950/60 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 space-y-2.5">
+                                <div className="font-semibold text-slate-900 dark:text-white text-sm">
+                                    {publishConfirmData.type === 'new' 
+                                        ? publishConfirmData.title 
+                                        : publishConfirmData.quiz?.title}
+                                </div>
+                                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-center">
+                                    <div className="bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
+                                        <div className="text-[10px] text-slate-400 font-bold uppercase">Questions</div>
+                                        <div className="text-sm font-extrabold text-primary-600">
+                                            {publishConfirmData.type === 'new' 
+                                                ? publishConfirmData.questionCount 
+                                                : (publishConfirmData.quiz?.questions?.length || publishConfirmData.quiz?.totalQuestions || 0)}
+                                        </div>
+                                    </div>
+                                    <div className="bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
+                                        <div className="text-[10px] text-slate-400 font-bold uppercase">Time Limit</div>
+                                        <div className="text-sm font-extrabold text-slate-700 dark:text-slate-200">
+                                            {(publishConfirmData.type === 'new' ? publishConfirmData.timeLimitMinutes : publishConfirmData.quiz?.timeLimitMinutes) || 10}m
+                                        </div>
+                                    </div>
+                                    <div className="bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
+                                        <div className="text-[10px] text-slate-400 font-bold uppercase">Max Attempts</div>
+                                        <div className="text-sm font-extrabold text-slate-700 dark:text-slate-200">
+                                            {(publishConfirmData.type === 'new' ? publishConfirmData.maxAttempts : publishConfirmData.quiz?.maxAttempts) || 1}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-3 bg-amber-500/10 border border-amber-300 dark:border-amber-800/40 rounded-xl flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+                                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                                <span>
+                                    Once published, students can use the Join Code or assigned class links to take this quiz immediately. You can unpublish it back to draft at any time.
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    disabled={isConfirmingPublish}
+                                    onClick={() => {
+                                        setShowPublishConfirmModal(false);
+                                        setPublishConfirmData(null);
+                                    }}
+                                    className="flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={isConfirmingPublish}
+                                    onClick={handleConfirmPublish}
+                                    className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20"
+                                >
+                                    {isConfirmingPublish ? (
+                                        <>
+                                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                            Publishing...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <CheckCircle className="w-3.5 h-3.5" />
+                                            Confirm & Publish
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* MODAL 6: ADD / EDIT QUESTION IN QUESTION BANK */}
+                {showAddBankModal && (
+                    <div
+                        className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+                        onClick={() => {
+                            if (!isSavingBankQuestion) setShowAddBankModal(false);
+                        }}
+                    >
+                        <div
+                            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-5 sm:p-6 space-y-5 shadow-2xl relative my-8 max-h-[90vh] flex flex-col"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Modal Header */}
+                            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-950/50 text-primary-600 flex items-center justify-center font-bold">
+                                        <Database className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 dark:text-white text-base flex items-center gap-2">
+                                            {editingBankQuestion ? 'Edit Question in Bank' : 'Add Question to Bank'}
+                                            {editingBankQuestion && (
+                                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                                                    #{editingBankQuestion.id}
+                                                </span>
+                                            )}
+                                        </h3>
+                                        <p className="text-xs text-slate-500">
+                                            Academic repository question with LaTeX math formulas & crisp vector diagrams.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPreviewBankQuestion(p => !p)}
+                                        className={`py-1.5 px-3 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border ${
+                                            previewBankQuestion 
+                                                ? 'bg-primary-600 text-white border-primary-600' 
+                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
+                                        }`}
+                                    >
+                                        <Eye className="w-3.5 h-3.5" />
+                                        {previewBankQuestion ? 'Edit Mode' : 'Live Preview'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAddBankModal(false)}
+                                        className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Modal Content - Scrollable */}
+                            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+                                {previewBankQuestion ? (
+                                    /* PREVIEW MODE */
+                                    <div className="p-4 bg-slate-50 dark:bg-slate-950/60 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+                                        <div className="flex items-center justify-between text-xs text-slate-500 pb-2 border-b border-slate-200 dark:border-slate-800">
+                                            <span className="font-semibold text-primary-600">
+                                                {bankFormData.examType || 'Exam'} {bankFormData.examYear || ''} • {bankFormData.topic || 'Topic'}
+                                            </span>
+                                            <span className="capitalize px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 font-bold text-[10px]">
+                                                {bankFormData.difficulty} ({bankFormData.points} {bankFormData.points === 1 ? 'pt' : 'pts'})
+                                            </span>
+                                        </div>
+
+                                        {/* Question Statement */}
+                                        <div className="text-sm text-slate-900 dark:text-slate-100 font-medium leading-relaxed">
+                                            <MathRenderer content={bankFormData.question || '*(Question statement is empty)*'} />
+                                        </div>
+
+                                        {/* Diagram Preview */}
+                                        {(bankDiagramType === 'svg' && bankFormData.diagramSvg) && (
+                                            <div className="py-2">
+                                                <QuestionDiagram diagramSvg={bankFormData.diagramSvg} />
+                                            </div>
+                                        )}
+                                        {(bankDiagramType === 'url' && bankFormData.diagramUrl) && (
+                                            <div className="py-2">
+                                                <QuestionDiagram diagramUrl={bankFormData.diagramUrl} />
+                                            </div>
+                                        )}
+
+                                        {/* Options Preview */}
+                                        <div className="space-y-2 pt-2">
+                                            {bankFormData.options.map(opt => {
+                                                const isCorrect = bankFormData.correctOption === opt.key;
+                                                return (
+                                                    <div
+                                                        key={opt.key}
+                                                        className={`p-3 rounded-xl border text-xs flex items-center gap-3 transition ${
+                                                            isCorrect
+                                                                ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-950 dark:text-emerald-100 ring-1 ring-emerald-500/30'
+                                                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200'
+                                                        }`}
+                                                    >
+                                                        <span className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold font-mono shrink-0 text-xs ${
+                                                            isCorrect
+                                                                ? 'bg-emerald-600 text-white'
+                                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                                                        }`}>
+                                                            {opt.key}
+                                                        </span>
+                                                        <span className="flex-1">
+                                                            <MathRenderer content={opt.text || ''} inline />
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Explanation Preview */}
+                                        {bankFormData.explanation && (
+                                            <div className="p-3 bg-amber-500/10 border border-amber-300 dark:border-amber-800/40 rounded-xl space-y-1 text-xs">
+                                                <div className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                                                    <span>💡</span>
+                                                    <span>Step-by-Step Solution & Rationale</span>
+                                                </div>
+                                                <div className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                                                    <MathRenderer content={bankFormData.explanation} />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    /* EDIT MODE */
+                                    <div className="space-y-4">
+                                        {/* Meta: Topic, Exam Type, Year, Difficulty, Points */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                                            <div className="sm:col-span-2">
+                                                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                                                    Topic / Subject *
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={bankFormData.topic}
+                                                    onChange={e => setBankFormData(f => ({ ...f, topic: e.target.value }))}
+                                                    placeholder="e.g. Computer Organization, Thermodynamics..."
+                                                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                                                    Exam Category
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={bankFormData.examType}
+                                                    onChange={e => setBankFormData(f => ({ ...f, examType: e.target.value }))}
+                                                    placeholder="e.g. GATE, JEE, NEET, University..."
+                                                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                                                    Exam Year / Tag
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={bankFormData.examYear}
+                                                    onChange={e => setBankFormData(f => ({ ...f, examYear: e.target.value }))}
+                                                    placeholder="e.g. 2026, 2024, PYQ..."
+                                                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                                                    Difficulty
+                                                </label>
+                                                <select
+                                                    value={bankFormData.difficulty}
+                                                    onChange={e => setBankFormData(f => ({ ...f, difficulty: e.target.value }))}
+                                                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                                >
+                                                    <option value="easy">Easy</option>
+                                                    <option value="medium">Medium</option>
+                                                    <option value="hard">Hard</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                                                    Points / Marks
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="10"
+                                                    value={bankFormData.points}
+                                                    onChange={e => setBankFormData(f => ({ ...f, points: Math.max(1, parseInt(e.target.value) || 1) }))}
+                                                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Question Statement */}
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                                                    Question Statement *
+                                                </label>
+                                                <span className="text-[10px] text-slate-400">
+                                                    LaTeX supported: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$formula$</code> or <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">$$...$$</code>
+                                                </span>
+                                            </div>
+                                            <textarea
+                                                rows={3}
+                                                value={bankFormData.question}
+                                                onChange={e => setBankFormData(f => ({ ...f, question: e.target.value }))}
+                                                placeholder="Enter full question prompt. Unclosed LaTeX $ delimiters are automatically balanced."
+                                                className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 font-sans"
+                                            />
+                                        </div>
+
+                                        {/* Diagram Controls */}
+                                        <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2.5">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                                    <ImageIcon className="w-3.5 h-3.5 text-primary-500" />
+                                                    Clean & Crisp Question Diagram
+                                                </label>
+                                                <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-bold">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setBankDiagramType('none')}
+                                                        className={`px-2 py-0.5 rounded ${bankDiagramType === 'none' ? 'bg-primary-600 text-white' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                                                    >
+                                                        None
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setBankDiagramType('svg')}
+                                                        className={`px-2 py-0.5 rounded ${bankDiagramType === 'svg' ? 'bg-primary-600 text-white' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                                                    >
+                                                        Vector SVG (Crisp)
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setBankDiagramType('url')}
+                                                        className={`px-2 py-0.5 rounded ${bankDiagramType === 'url' ? 'bg-primary-600 text-white' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                                                    >
+                                                        Image URL
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {bankDiagramType === 'svg' && (
+                                                <div className="space-y-2 pt-1">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="text-[10px] text-slate-500">
+                                                            Insert inline scalable vector <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">&lt;svg&gt;</code> string for pin-sharp display.
+                                                        </span>
+                                                        <select
+                                                            onChange={(e) => {
+                                                                const presetKey = e.target.value;
+                                                                if (presetKey && DIAGRAM_PRESETS && DIAGRAM_PRESETS[presetKey]) {
+                                                                    setBankFormData(f => ({ ...f, diagramSvg: DIAGRAM_PRESETS[presetKey] }));
+                                                                }
+                                                            }}
+                                                            className="text-[10px] py-1 px-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300"
+                                                            defaultValue=""
+                                                        >
+                                                            <option value="" disabled>Load Academic SVG Preset...</option>
+                                                            <option value="pipeline">5-Stage CPU Pipeline</option>
+                                                            <option value="cacheHierarchy">2-Level Cache Hierarchy</option>
+                                                            <option value="mechanicsInclined">Rough Inclined Plane</option>
+                                                            <option value="logicGateCircuit">Digital Logic (XOR)</option>
+                                                        </select>
+                                                    </div>
+                                                    <textarea
+                                                        rows={3}
+                                                        value={bankFormData.diagramSvg}
+                                                        onChange={e => setBankFormData(f => ({ ...f, diagramSvg: e.target.value }))}
+                                                        placeholder='<svg viewBox="0 0 600 180" xmlns="http://www.w3.org/2000/svg">...</svg>'
+                                                        className="w-full px-3 py-2 text-[11px] font-mono bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                                    />
+                                                    {bankFormData.diagramSvg && bankFormData.diagramSvg.trim().startsWith('<svg') && (
+                                                        <div className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
+                                                            <div className="text-[10px] font-bold text-slate-400 mb-1">Live Vector Render:</div>
+                                                            <QuestionDiagram diagramSvg={bankFormData.diagramSvg} />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {bankDiagramType === 'url' && (
+                                                <div className="space-y-2 pt-1">
+                                                    <input
+                                                        type="url"
+                                                        value={bankFormData.diagramUrl}
+                                                        onChange={e => setBankFormData(f => ({ ...f, diagramUrl: e.target.value }))}
+                                                        placeholder="https://example.com/diagram.png (High-resolution clean diagram image)"
+                                                        className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                                    />
+                                                    {bankFormData.diagramUrl && (
+                                                        <div className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
+                                                            <div className="text-[10px] font-bold text-slate-400 mb-1">Preview:</div>
+                                                            <QuestionDiagram diagramUrl={bankFormData.diagramUrl} />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Options A, B, C, D */}
+                                        <div className="space-y-2">
+                                            <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                                                Options (Select radio for correct answer) *
+                                            </label>
+                                            <div className="grid grid-cols-1 gap-2">
+                                                {bankFormData.options.map((opt, optIdx) => {
+                                                    const isCorrect = bankFormData.correctOption === opt.key;
+                                                    return (
+                                                        <div
+                                                            key={opt.key}
+                                                            className={`flex items-center gap-2 p-2 rounded-xl border transition ${
+                                                                isCorrect
+                                                                    ? 'bg-emerald-500/10 border-emerald-500/40 ring-1 ring-emerald-500/30'
+                                                                    : 'bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-700'
+                                                            }`}
+                                                        >
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setBankFormData(f => ({ ...f, correctOption: opt.key }))}
+                                                                className={`w-7 h-7 rounded-lg font-bold font-mono text-xs flex items-center justify-center transition shrink-0 ${
+                                                                    isCorrect
+                                                                        ? 'bg-emerald-600 text-white shadow-sm'
+                                                                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-emerald-500'
+                                                                }`}
+                                                                title="Click to set as correct answer"
+                                                            >
+                                                                {opt.key}
+                                                            </button>
+                                                            <input
+                                                                type="text"
+                                                                value={opt.text}
+                                                                onChange={e => {
+                                                                    const val = e.target.value;
+                                                                    setBankFormData(f => {
+                                                                        const nextOpts = [...f.options];
+                                                                        nextOpts[optIdx] = { ...nextOpts[optIdx], text: val };
+                                                                        return { ...f, options: nextOpts };
+                                                                    });
+                                                                }}
+                                                                placeholder={`Option ${opt.key} text (LaTeX supported: $x^2$)`}
+                                                                className="flex-1 px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                                            />
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* Explanation */}
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                                                    Explanation / Step-by-Step Solution
+                                                </label>
+                                                <span className="text-[10px] text-slate-400">
+                                                    Shown upon review with full LaTeX rendering
+                                                </span>
+                                            </div>
+                                            <textarea
+                                                rows={2}
+                                                value={bankFormData.explanation}
+                                                onChange={e => setBankFormData(f => ({ ...f, explanation: e.target.value }))}
+                                                placeholder="Provide detailed rationale, formulas, and working steps..."
+                                                className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddBankModal(false)}
+                                    disabled={isSavingBankQuestion}
+                                    className="py-2 px-4 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveBankQuestion}
+                                    disabled={isSavingBankQuestion}
+                                    className="py-2 px-5 rounded-xl text-xs font-bold bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white transition flex items-center gap-1.5 shadow-md shadow-primary-600/20"
+                                >
+                                    {isSavingBankQuestion ? (
+                                        <>
+                                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                            Saving...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Check className="w-3.5 h-3.5" />
+                                            {editingBankQuestion ? 'Update Question' : 'Save Question'}
+                                        </>
+                                    )}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}

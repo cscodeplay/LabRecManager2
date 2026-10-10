@@ -119,11 +119,63 @@ function repairAndParseJson(rawText) {
     return JSON.parse(repaired);
 }
 
+// Robust LaTeX closure fixer and delimiter balancer
+function repairLatexClosures(str) {
+    if (!str || typeof str !== 'string') return '';
+    let out = str;
+
+    // 1. Fix mismatched double dollar opened but closed with single dollar: $$...$ -> $$...$$
+    out = out.replace(/\$\$([^\$]+?)\$(?!\$)/g, '$$$$$1$$$$');
+
+    // 2. Fix single dollar opened but closed with double dollar: $...$$ -> $$...$$
+    out = out.replace(/(?<!\$)\$([^\$]+?)\$\$/g, '$$$$$1$$$$');
+
+    // 3. Auto-wrap bare LaTeX commands (e.g. \frac{...}{...}, \sqrt{...}, \vec{...}, \mathbf{...}, \sum, \int, \ce)
+    const barePatterns = [
+        /(?<!\$)\\(frac\{[^{}]*\}\{[^{}]*\})(?!\$)/g,
+        /(?<!\$)\\(sqrt\{[^{}]*\})(?!\$)/g,
+        /(?<!\$)\\(vec\{[^{}]*\})(?!\$)/g,
+        /(?<!\$)\\(mathbf\{[^{}]*\})(?!\$)/g,
+        /(?<!\$)\\(sum_\{[^{}]*\}\^\{[^{}]*\})(?!\$)/g,
+        /(?<!\$)\\(int_\{[^{}]*\}\^\{[^{}]*\})(?!\$)/g,
+    ];
+    for (const pat of barePatterns) {
+        out = out.replace(pat, '$\\$1$');
+    }
+
+    // 4. Balance unclosed inline '$' per line
+    const lines = out.split('\n');
+    const balancedLines = lines.map(line => {
+        // Strip block math ($$...$$) first to count single inline '$'
+        const strippedBlocks = line.replace(/\$\$[^\$]*?\$\$/g, '');
+        const singleDollars = strippedBlocks.match(/(?<!\\)\$/g) || [];
+        if (singleDollars.length % 2 !== 0) {
+            // Odd number of single '$'! Look for the last '$'
+            const lastDollarIdx = line.lastIndexOf('$');
+            if (lastDollarIdx !== -1) {
+                // If the end of the line has punctuation, close before punctuation
+                const afterLast = line.slice(lastDollarIdx + 1);
+                const punctMatch = afterLast.match(/([\.\,\;\?\!])(\s*)$/);
+                if (punctMatch) {
+                    const punctIdx = line.length - punctMatch[0].length;
+                    line = line.slice(0, punctIdx) + '$' + line.slice(punctIdx);
+                } else {
+                    line = line + '$';
+                }
+            }
+        }
+        return line;
+    });
+    out = balancedLines.join('\n');
+
+    return out;
+}
+
 // Helper to normalize bare \ce without braces or un-delimited chemical formulas into proper $\ce{...}$
 function cleanLatexChemistry(str) {
     if (!str || typeof str !== 'string') return '';
 
-    let out = str;
+    let out = repairLatexClosures(str);
 
     // 0. Dollar-wrapped bare \ce: $\ce Na^+$ -> $\ce{Na^+}$ or $\ce Al^{3+}$ -> $\ce{Al^{3+}}$
     out = out.replace(/\$\s*\\ce\s+([A-Za-z0-9\[\]\(\)\{\}\^\_\+\-\=\.\s]+?)\s*\$/g, (match, formula) => {
@@ -335,15 +387,19 @@ CRITICAL RULES:
 7. PCMB & SCIENTIFIC EQUATION FORMATTING:
    - For Equations, Mathematics, and Computer Science notations, format formulas using LaTeX:
      * Inline math / variables: wrap in single dollar signs, e.g. $F = ma$, $\\tau = \\max(t_i) + d$, $T_{\\text{avg}} = H_1 \\times T_1 + (1 - H_1) \\times T_2$.
-     * Block equations: wrap in double dollar signs, e.g. $$\\text{CPI} = 1 + \\text{Stalls}$$.
-     * Chemistry formulas & reactions: ALWAYS wrap with $\\ce{...}$ (e.g. $\\ce{Na+}$, $\\ce{Al^{3+}}$).
-   - CRITICAL JSON ESCAPING: Backslashes in JSON strings MUST be escaped as \\\\ (e.g. "\\\\tau", "\\\\frac{...}"). Never output invalid unescaped backslashes.
+      * Block equations: wrap in double dollar signs, e.g. $$\\text{CPI} = 1 + \\text{Stalls}$$.
+      * Chemistry formulas & reactions: ALWAYS wrap with $\\ce{...}$ (e.g. $\\ce{Na+}$, $\\ce{Al^{3+}}$).
+      * Closure rule: ALWAYS balance closing $ or $$ delimiters.
+    - DIAGRAM SUPPORT: If the question problem statement refers to a diagram (e.g., logic circuits, 5-stage CPU pipeline, memory cache hierarchy, free-body force diagram, or optics ray diagram), supply a crisp, self-contained SVG element in "diagramSvg" with stroke, fill, viewBox, and clear labels (e.g. '<svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">...</svg>'). Otherwise set to null.
+    - CRITICAL JSON ESCAPING: Backslashes in JSON strings MUST be escaped as \\\\ (e.g. "\\\\tau", "\\\\frac{...}"). Never output invalid unescaped backslashes.
 
 JSON SCHEMA TO RETURN (RETURN ONLY VALID JSON, NO MARKDOWN, NO CODEBLOCKS):
 [
   {
     "id": 1,
     "question": "Question problem statement (with LaTeX equations where applicable)",
+    "diagramSvg": null,
+    "diagramUrl": null,
     "options": [
       { "key": "A", "text": "First choice" },
       { "key": "B", "text": "Second choice" },
@@ -410,6 +466,8 @@ Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a
             return {
                 id: idx + 1,
                 question: cleanLatexChemistry(q.question || `Question ${idx + 1}`),
+                diagramSvg: q.diagramSvg && typeof q.diagramSvg === 'string' && q.diagramSvg.includes('<svg') ? q.diagramSvg.trim() : null,
+                diagramUrl: q.diagramUrl && typeof q.diagramUrl === 'string' ? q.diagramUrl.trim() : null,
                 options: normalizedOptions,
                 correctOption: correctOpt,
                 explanation: cleanLatexChemistry(q.explanation || 'No explanation provided.'),
@@ -425,9 +483,13 @@ Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a
         for (const q of newlyGenerated) {
             try {
                 await prisma.$executeRawUnsafe(`
-                    INSERT INTO "question_bank" ("topic", "exam_type", "exam_year", "difficulty", "question", "options", "correct_option", "explanation", "points", "source")
-                    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
-                `, detectedTopic, detectedExamType || 'General', detectedExamYear || null, q.difficulty || validDifficulty, q.question, JSON.stringify(q.options), q.correctOption, q.explanation, q.points || 1, 'web_source');
+                    INSERT INTO "question_bank" (
+                        "topic", "exam_type", "exam_year", "difficulty",
+                        "question", "options", "correct_option", "explanation",
+                        "points", "diagram_url", "diagram_svg", "source"
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12)
+                `, detectedTopic, detectedExamType || 'General', detectedExamYear || null, q.difficulty || validDifficulty, q.question, JSON.stringify(q.options), q.correctOption, q.explanation, q.points || 1, q.diagramUrl, q.diagramSvg, 'web_source');
             } catch (saveErr) {
                 console.warn('[QuizRoutes] Error saving question to bank:', saveErr.message);
             }
@@ -448,6 +510,8 @@ Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a
     const combined = [
         ...bankQuestions.map(q => ({
             question: cleanLatexChemistry(q.question),
+            diagramSvg: q.diagramSvg || null,
+            diagramUrl: q.diagramUrl || null,
             options: (Array.isArray(q.options) ? q.options : []).map(opt => ({
                 key: opt.key,
                 text: cleanLatexChemistry(opt.text || '')
@@ -487,47 +551,270 @@ Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a
 
 /**
  * @route   GET /api/quiz/question-bank
- * @desc    Search and list questions from the question bank
+ * @desc    Search and list questions from the question bank with pagination and filters
  * @access  Private
  */
 router.get('/question-bank', authenticate, asyncHandler(async (req, res) => {
-    const { topic, examType, examYear, difficulty, limit = 50 } = req.query;
+    const {
+        search = '',
+        topic = '',
+        examType = '',
+        examYear = '',
+        difficulty = '',
+        page = 1,
+        pageSize = 20
+    } = req.query;
+
+    const pageNum = Math.max(parseInt(page) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(pageSize) || 20, 1), 100);
+    const offset = (pageNum - 1) * limitNum;
+
     let queryParams = [];
     let whereClauses = [];
 
-    if (examType) {
+    if (search && search.trim()) {
+        const s = `%${search.trim()}%`;
+        queryParams.push(s);
+        whereClauses.push(`("question" ILIKE $${queryParams.length} OR "topic" ILIKE $${queryParams.length} OR "explanation" ILIKE $${queryParams.length})`);
+    }
+
+    if (examType && examType.trim()) {
         queryParams.push(`%${examType.trim()}%`);
         whereClauses.push(`"exam_type" ILIKE $${queryParams.length}`);
     }
-    if (examYear) {
+
+    if (examYear && examYear.trim()) {
         queryParams.push(examYear.trim());
         whereClauses.push(`"exam_year" = $${queryParams.length}`);
     }
-    if (topic) {
+
+    if (topic && topic.trim()) {
         queryParams.push(`%${topic.trim()}%`);
         whereClauses.push(`"topic" ILIKE $${queryParams.length}`);
     }
-    if (difficulty) {
+
+    if (difficulty && difficulty.trim()) {
         queryParams.push(difficulty.toLowerCase().trim());
         whereClauses.push(`"difficulty" = $${queryParams.length}`);
     }
 
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-    const safeLimit = Math.min(parseInt(limit) || 50, 100);
 
-    const questions = await prisma.$queryRawUnsafe(`
+    // Total count query
+    const countSql = `SELECT COUNT(*)::int as count FROM "question_bank" ${whereSql};`;
+    const countResult = await prisma.$queryRawUnsafe(countSql, ...queryParams);
+    const totalCount = countResult[0]?.count || 0;
+
+    // Items query with diagram_url and diagram_svg
+    const listSql = `
         SELECT id, topic, exam_type as "examType", exam_year as "examYear",
                difficulty, question, options, correct_option as "correctOption",
-               explanation, points, source, created_at as "createdAt"
+               explanation, points, diagram_url as "diagramUrl", diagram_svg as "diagramSvg",
+               source, created_at as "createdAt", updated_at as "updatedAt"
         FROM "question_bank"
         ${whereSql}
         ORDER BY "created_at" DESC
-        LIMIT ${safeLimit};
-    `, ...queryParams);
+        LIMIT ${limitNum} OFFSET ${offset};
+    `;
+    const questions = await prisma.$queryRawUnsafe(listSql, ...queryParams);
+
+    // Also get exam breakdown stats
+    const statsResult = await prisma.$queryRawUnsafe(`
+        SELECT "exam_type" as "examType", COUNT(*)::int as count
+        FROM "question_bank"
+        GROUP BY "exam_type"
+        ORDER BY count DESC
+        LIMIT 10;
+    `);
 
     res.json({
         success: true,
-        data: questions
+        data: {
+            questions,
+            total: totalCount,
+            page: pageNum,
+            pageSize: limitNum,
+            totalPages: Math.max(1, Math.ceil(totalCount / limitNum)),
+            stats: statsResult
+        }
+    });
+}));
+
+/**
+ * @route   POST /api/quiz/question-bank
+ * @desc    Add a new question directly to the question bank
+ * @access  Private (Instructor, Admin, Principal, Lab Assistant)
+ */
+router.post('/question-bank', authenticate, asyncHandler(async (req, res) => {
+    const {
+        topic,
+        examType = 'General',
+        examYear,
+        difficulty = 'medium',
+        question,
+        options = [],
+        correctOption = 'A',
+        explanation = '',
+        points = 1,
+        diagramUrl = null,
+        diagramSvg = null
+    } = req.body;
+
+    if (!topic || !topic.trim()) {
+        return res.status(400).json({ success: false, message: 'Topic is required' });
+    }
+    if (!question || !question.trim()) {
+        return res.status(400).json({ success: false, message: 'Question prompt is required' });
+    }
+    if (!Array.isArray(options) || options.length < 2) {
+        return res.status(400).json({ success: false, message: 'At least 2 options are required' });
+    }
+
+    const standardKeys = ['A', 'B', 'C', 'D'];
+    const normalizedOptions = standardKeys.slice(0, Math.max(options.length, 4)).map((key, idx) => {
+        const existing = options.find(o => (o.key || '').toUpperCase() === key) || options[idx];
+        const rawText = existing ? (typeof existing === 'string' ? existing : existing.text || '') : `Option ${key}`;
+        return {
+            key,
+            text: cleanLatexChemistry(rawText)
+        };
+    });
+
+    let safeCorrect = (correctOption || 'A').toUpperCase();
+    if (!standardKeys.includes(safeCorrect)) safeCorrect = 'A';
+
+    const cleanQ = cleanLatexChemistry(question.trim());
+    const cleanExpl = cleanLatexChemistry(explanation.trim());
+
+    const result = await prisma.$queryRawUnsafe(`
+        INSERT INTO "question_bank" (
+            "topic", "exam_type", "exam_year", "difficulty",
+            "question", "options", "correct_option", "explanation",
+            "points", "diagram_url", "diagram_svg", "source"
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, 'manual_instructor')
+        RETURNING id, topic, exam_type as "examType", exam_year as "examYear",
+                  difficulty, question, options, correct_option as "correctOption",
+                  explanation, points, diagram_url as "diagramUrl", diagram_svg as "diagramSvg",
+                  source, created_at as "createdAt";
+    `,
+        topic.trim(),
+        examType.trim(),
+        examYear ? examYear.trim() : null,
+        difficulty.toLowerCase().trim(),
+        cleanQ,
+        JSON.stringify(normalizedOptions),
+        safeCorrect,
+        cleanExpl,
+        Math.max(parseInt(points) || 1, 1),
+        diagramUrl && diagramUrl.trim() ? diagramUrl.trim() : null,
+        diagramSvg && diagramSvg.trim() ? diagramSvg.trim() : null
+    );
+
+    res.status(201).json({
+        success: true,
+        message: 'Question added to question bank successfully',
+        data: result[0]
+    });
+}));
+
+/**
+ * @route   PUT /api/quiz/question-bank/:id
+ * @desc    Update a question in the question bank
+ * @access  Private (Instructor, Admin, Principal, Lab Assistant)
+ */
+router.put('/question-bank/:id', authenticate, asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const {
+        topic,
+        examType,
+        examYear,
+        difficulty,
+        question,
+        options,
+        correctOption,
+        explanation,
+        points,
+        diagramUrl,
+        diagramSvg
+    } = req.body;
+
+    const existing = await prisma.$queryRawUnsafe(`
+        SELECT id FROM "question_bank" WHERE "id"::text = $1 LIMIT 1;
+    `, id);
+
+    if (!existing || existing.length === 0) {
+        return res.status(404).json({ success: false, message: 'Question not found in bank' });
+    }
+
+    const standardKeys = ['A', 'B', 'C', 'D'];
+    let normalizedOptions = undefined;
+    if (Array.isArray(options) && options.length > 0) {
+        normalizedOptions = standardKeys.slice(0, Math.max(options.length, 4)).map((key, idx) => {
+            const opt = options.find(o => (o.key || '').toUpperCase() === key) || options[idx];
+            const rawText = opt ? (typeof opt === 'string' ? opt : opt.text || '') : `Option ${key}`;
+            return {
+                key,
+                text: cleanLatexChemistry(rawText)
+            };
+        });
+    }
+
+    const updated = await prisma.$queryRawUnsafe(`
+        UPDATE "question_bank"
+        SET "topic" = COALESCE($1, "topic"),
+            "exam_type" = COALESCE($2, "exam_type"),
+            "exam_year" = $3,
+            "difficulty" = COALESCE($4, "difficulty"),
+            "question" = COALESCE($5, "question"),
+            "options" = COALESCE($6::jsonb, "options"),
+            "correct_option" = COALESCE($7, "correct_option"),
+            "explanation" = COALESCE($8, "explanation"),
+            "points" = COALESCE($9, "points"),
+            "diagram_url" = $10,
+            "diagram_svg" = $11,
+            "updated_at" = CURRENT_TIMESTAMP
+        WHERE "id"::text = $12
+        RETURNING id, topic, exam_type as "examType", exam_year as "examYear",
+                  difficulty, question, options, correct_option as "correctOption",
+                  explanation, points, diagram_url as "diagramUrl", diagram_svg as "diagramSvg",
+                  source, updated_at as "updatedAt";
+    `,
+        topic ? topic.trim() : null,
+        examType ? examType.trim() : null,
+        examYear ? examYear.trim() : null,
+        difficulty ? difficulty.toLowerCase().trim() : null,
+        question ? cleanLatexChemistry(question.trim()) : null,
+        normalizedOptions ? JSON.stringify(normalizedOptions) : null,
+        correctOption ? correctOption.toUpperCase() : null,
+        explanation !== undefined ? cleanLatexChemistry(explanation.trim()) : null,
+        points ? Math.max(parseInt(points) || 1, 1) : null,
+        diagramUrl !== undefined ? (diagramUrl ? diagramUrl.trim() : null) : null,
+        diagramSvg !== undefined ? (diagramSvg ? diagramSvg.trim() : null) : null,
+        id
+    );
+
+    res.json({
+        success: true,
+        message: 'Question updated successfully',
+        data: updated[0]
+    });
+}));
+
+/**
+ * @route   DELETE /api/quiz/question-bank/:id
+ * @desc    Delete a question from the question bank
+ * @access  Private (Instructor, Admin, Principal, Lab Assistant)
+ */
+router.delete('/question-bank/:id', authenticate, asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    await prisma.$queryRawUnsafe(`
+        DELETE FROM "question_bank" WHERE "id"::text = $1;
+    `, id);
+
+    res.json({
+        success: true,
+        message: 'Question removed from question bank'
     });
 }));
 

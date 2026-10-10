@@ -8,6 +8,7 @@ import {
     User, Filter, Check, Eye
 } from 'lucide-react';
 import MathRenderer from './MathRenderer';
+import QuestionDiagram from './QuestionDiagram';
 
 export default function QuizReviewModal({
     isOpen,
@@ -389,6 +390,14 @@ export default function QuizReviewModal({
                                         <MathRenderer content={currentQuestion?.questionText || currentQuestion?.question || ''} />
                                     </div>
 
+                                    {(currentQuestion?.diagramSvg || currentQuestion?.diagramUrl) && (
+                                        <QuestionDiagram
+                                            diagramSvg={currentQuestion.diagramSvg}
+                                            diagramUrl={currentQuestion.diagramUrl}
+                                            title={`Question ${currentQuestionIdx + 1} Diagram`}
+                                        />
+                                    )}
+
                                     {/* Options Choices (Quiz UI with pure Green and Red selections) */}
                                     <div className="space-y-2.5">
                                         <h5 className="text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -517,6 +526,14 @@ export default function QuizReviewModal({
                                             <div className="text-sm font-medium text-slate-900 dark:text-white">
                                                 <MathRenderer content={ans.questionText || ans.question || ''} />
                                             </div>
+
+                                            {(ans.diagramSvg || ans.diagramUrl) && (
+                                                <QuestionDiagram
+                                                    diagramSvg={ans.diagramSvg}
+                                                    diagramUrl={ans.diagramUrl}
+                                                    title={`Question Diagram`}
+                                                />
+                                            )}
 
                                             {/* Choices (Pure Green and Red selections, no labels) */}
                                             {ans.options && ans.options.length > 0 && (

@@ -116,11 +116,20 @@ async function initQuizTables() {
                 "correct_option" VARCHAR(10) NOT NULL,
                 "explanation" TEXT,
                 "points" INTEGER NOT NULL DEFAULT 1,
+                "diagram_url" TEXT,
+                "diagram_svg" TEXT,
                 "source" VARCHAR(100) DEFAULT 'question_bank',
                 "created_at" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
                 "updated_at" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT "question_bank_pkey" PRIMARY KEY ("id")
             );
+        `);
+
+        await prisma.$executeRawUnsafe(`
+            ALTER TABLE "question_bank" ADD COLUMN IF NOT EXISTS "diagram_url" TEXT;
+        `);
+        await prisma.$executeRawUnsafe(`
+            ALTER TABLE "question_bank" ADD COLUMN IF NOT EXISTS "diagram_svg" TEXT;
         `);
 
         await prisma.$executeRawUnsafe(`

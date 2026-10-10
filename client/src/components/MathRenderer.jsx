@@ -53,6 +53,58 @@ export default function MathRenderer({
     );
 }
 
+// Robust LaTeX closure fixer and delimiter balancer
+function repairLatexClosures(str) {
+    if (!str || typeof str !== 'string') return '';
+    let out = str;
+
+    // 1. Fix mismatched double dollar opened but closed with single dollar: $$...$ -> $$...$$
+    out = out.replace(/\$\$([^\$]+?)\$(?!\$)/g, '$$$$$1$$$$');
+
+    // 2. Fix single dollar opened but closed with double dollar: $...$$ -> $$...$$
+    out = out.replace(/(?<!\$)\$([^\$]+?)\$\$/g, '$$$$$1$$$$');
+
+    // 3. Auto-wrap bare LaTeX commands (e.g. \frac{...}{...}, \sqrt{...}, \vec{...}, \mathbf{...}, \sum, \int, \ce)
+    const barePatterns = [
+        /(?<!\$)\\(frac\{[^{}]*\}\{[^{}]*\})(?!\$)/g,
+        /(?<!\$)\\(sqrt\{[^{}]*\})(?!\$)/g,
+        /(?<!\$)\\(vec\{[^{}]*\})(?!\$)/g,
+        /(?<!\$)\\(mathbf\{[^{}]*\})(?!\$)/g,
+        /(?<!\$)\\(sum_\{[^{}]*\}\^\{[^{}]*\})(?!\$)/g,
+        /(?<!\$)\\(int_\{[^{}]*\}\^\{[^{}]*\})(?!\$)/g,
+    ];
+    for (const pat of barePatterns) {
+        out = out.replace(pat, '$\\$1$');
+    }
+
+    // 4. Balance unclosed inline '$' per line
+    const lines = out.split('\n');
+    const balancedLines = lines.map(line => {
+        // Strip block math ($$...$$) first to count single inline '$'
+        const strippedBlocks = line.replace(/\$\$[^\$]*?\$\$/g, '');
+        const singleDollars = strippedBlocks.match(/(?<!\\)\$/g) || [];
+        if (singleDollars.length % 2 !== 0) {
+            // Odd number of single '$'! Look for the last '$'
+            const lastDollarIdx = line.lastIndexOf('$');
+            if (lastDollarIdx !== -1) {
+                // If the end of the line has punctuation, close before punctuation
+                const afterLast = line.slice(lastDollarIdx + 1);
+                const punctMatch = afterLast.match(/([\.\,\;\?\!])(\s*)$/);
+                if (punctMatch) {
+                    const punctIdx = line.length - punctMatch[0].length;
+                    line = line.slice(0, punctIdx) + '$' + line.slice(punctIdx);
+                } else {
+                    line = line + '$';
+                }
+            }
+        }
+        return line;
+    });
+    out = balancedLines.join('\n');
+
+    return out;
+}
+
 /**
  * Normalizes bare LaTeX and chemistry formulas.
  * Handles cases where LLMs write:
@@ -63,7 +115,7 @@ export default function MathRenderer({
 function normalizeChemicalAndLatex(str) {
     if (!str || typeof str !== 'string') return '';
 
-    let out = str;
+    let out = repairLatexClosures(str);
 
     // 0. Dollar-wrapped bare \ce: $\ce Na^+$ -> $\ce{Na^+}$ or $\ce Al^{3+}$ -> $\ce{Al^{3+}}$
     out = out.replace(/\$\s*\\ce\s+([A-Za-z0-9\[\]\(\)\{\}\^\_\+\-\=\.\s]+?)\s*\$/g, (match, formula) => {
@@ -500,7 +552,7 @@ function renderInlineFormattedText(rawText, size = 'base', textClassName = '') {
     if (!rawText) return null;
 
     // Tokenize inline code (`...`), inline math ($...$ or \(...\)), and standalone LaTeX commands (\rightleftharpoons, \Delta, etc.)
-    const tokenRegex = /(?:`([^`\n]+)`)|(?:\$([^\$\n]+?)\$)|(?:\\\(([\s\S]*?)\\\))|(?:(\\(?:rightleftharpoons|leftarrow|rightarrow|Leftarrow|Rightarrow|Leftrightarrow|Delta|nabla|infty|alpha|beta|gamma|theta|lambda|mu|pi|sigma|omega|times|pm|approx|neq|le|ge|frac\{[^{}]*\}\{[^{}]*\}|ce\{(?:[^{}]*(?:\{[^{}]*\}[^{}]*)*)\})))/g;
+    const tokenRegex = /(?:`([^`\n]+)`)|(?:\$([^\$]+?)\$)|(?:\\\(([\s\S]*?)\\\))|(?:(\\(?:rightleftharpoons|leftarrow|rightarrow|Leftarrow|Rightarrow|Leftrightarrow|Delta|nabla|infty|alpha|beta|gamma|theta|lambda|mu|pi|sigma|omega|times|pm|approx|neq|le|ge|frac\{[^{}]*\}\{[^{}]*\}|ce\{(?:[^{}]*(?:\{[^{}]*\}[^{}]*)*)\})))/g;
     const tokens = [];
     let lastIdx = 0;
     let match;
