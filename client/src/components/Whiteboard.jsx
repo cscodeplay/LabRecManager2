@@ -6432,24 +6432,49 @@ export default function Whiteboard({
                 setSelectedTextIds([targetText.id]);
                 if (socket && sessionId) socket.emit('whiteboard:text-update', { sessionId, textObj: { ...targetText, text: nextVal } });
             } else {
-                // Otherwise spawn a new text object at the exact ink bounding box
-                const newTextObj = {
-                    id: Date.now(),
-                    text: cleanText,
-                    x: Math.round(minX),
-                    y: Math.round(minY),
-                    width: Math.max(120, Math.round(maxX - minX)),
-                    height: Math.max(48, Math.round(maxY - minY)),
-                    rotation: 0,
-                    color: inkShapes[0]?.color && inkShapes[0].color !== '#ffffff' ? inkShapes[0].color : '#000000',
-                    fontSize: Math.max(18, Math.min(48, Math.round((maxY - minY) * 0.75))),
-                    fontWeight: 'normal',
-                    fontStyle: 'normal',
-                    textAlign: 'left'
-                };
-                setTextObjects(prev => [...prev, newTextObj]);
-                setSelectedTextIds([newTextObj.id]);
-                if (socket && sessionId) socket.emit('whiteboard:text-add', { sessionId, textObj: newTextObj });
+                // Determine if recognized text is a mathematical equation / formula
+                const isMathEquation = /[\\^_{}=+\-*/<>]/.test(cleanText) ||
+                    /\\(?:frac|sqrt|int|sum|prod|alpha|beta|gamma|theta|pi|lambda|mu|sigma|omega|Delta|nabla|partial|infty|pm|times|div|neq|leq|geq|sin|cos|tan|log|ln|lim)/i.test(cleanText) ||
+                    /\b\d+\s*[xXyYzZ]\b/.test(cleanText);
+
+                if (isMathEquation) {
+                    // Spawn a native KaTeX-rendered Equation Shape Object directly at the ink bounding box
+                    const newEqShape = {
+                        id: Date.now().toString(),
+                        type: 'equation',
+                        latex: cleanText,
+                        x: Math.round(minX),
+                        y: Math.round(minY),
+                        width: Math.max(140, Math.round(maxX - minX + 24)),
+                        height: Math.max(54, Math.round(maxY - minY + 20)),
+                        rotation: 0,
+                        color: inkShapes[0]?.color && inkShapes[0].color !== '#ffffff' ? inkShapes[0].color : '#1e293b',
+                        fontSize: Math.max(20, Math.min(48, Math.round((maxY - minY) * 0.75))),
+                        bgColor: 'transparent'
+                    };
+                    setShapeObjects(prev => [...prev, newEqShape]);
+                    setSelectedShapeIds([newEqShape.id]);
+                    if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newEqShape });
+                } else {
+                    // Otherwise spawn a clean typography text object
+                    const newTextObj = {
+                        id: Date.now(),
+                        text: cleanText,
+                        x: Math.round(minX),
+                        y: Math.round(minY),
+                        width: Math.max(120, Math.round(maxX - minX)),
+                        height: Math.max(48, Math.round(maxY - minY)),
+                        rotation: 0,
+                        color: inkShapes[0]?.color && inkShapes[0].color !== '#ffffff' ? inkShapes[0].color : '#000000',
+                        fontSize: Math.max(18, Math.min(48, Math.round((maxY - minY) * 0.75))),
+                        fontWeight: 'normal',
+                        fontStyle: 'normal',
+                        textAlign: 'left'
+                    };
+                    setTextObjects(prev => [...prev, newTextObj]);
+                    setSelectedTextIds([newTextObj.id]);
+                    if (socket && sessionId) socket.emit('whiteboard:text-add', { sessionId, textObj: newTextObj });
+                }
             }
 
             saveToHistory();
@@ -13083,8 +13108,242 @@ export default function Whiteboard({
             return null;
         };
 
-        // 0.0 Instant Geometric Shapes Fast Path (0ms Local Execution)
-        // Strictly handles direct shape commands like "draw circle", "draw concentric circles", "concentric circle"
+        // ─── TIER 0: COMPREHENSIVE PROCEDURAL TOOLBAR & UI ACTIONS (0ms Instant Execution) ───
+        // Guaranteed instant execution for all whiteboard toolbar buttons, canvas operations, OCR, and connectors.
+        
+        // 0.1 Canvas Clear / Reset
+        if (
+            /\b(clear\s+(?:the\s+)?(?:whiteboard|board|canvas|all|everything)|clean\s+(?:the\s+)?(?:whiteboard|board|canvas)|wipe\s+(?:the\s+)?(?:whiteboard|board|canvas|all)|erase\s+(?:all|everything|the\s+board|board)|empty\s+board|blank\s+board)\b/i.test(txt) ||
+            txt === 'clear' || txt === 'clear board' || txt === 'clear whiteboard' || txt === 'clear canvas'
+        ) {
+            handleClear();
+            const msg = 'Canvas cleared';
+            setVoiceFeedback(`🗑️ ${msg}`);
+            toast.success(msg, { icon: '🗑️' });
+            if (aiSpeechEnabled) speakAiResponse(msg);
+            return;
+        }
+
+        // 0.2 Undo & Redo History
+        if (/\b(undo|revert|step\s+back)\b/i.test(txt) || txt === 'undo') {
+            handleUndo();
+            setVoiceFeedback('↩️ Undo');
+            toast('Undo', { icon: '↩️' });
+            return;
+        }
+        if (/\b(redo|reapply|step\s+forward)\b/i.test(txt) || txt === 'redo') {
+            handleRedo();
+            setVoiceFeedback('↪️ Redo');
+            toast('Redo', { icon: '↪️' });
+            return;
+        }
+
+        // 0.3 Viewport, Zoom & Fullscreen
+        if (/\b(zoom\s+in|magnify|closer)\b/i.test(txt)) {
+            setZoomLevel(prev => Math.min(5, Number((prev + 0.2).toFixed(1))));
+            setVoiceFeedback('🔍 Zoomed in');
+            toast.success('Zoomed in', { icon: '🔍' });
+            return;
+        }
+        if (/\b(zoom\s+out|shrink\s+view|farther)\b/i.test(txt)) {
+            setZoomLevel(prev => Math.max(0.2, Number((prev - 0.2).toFixed(1))));
+            setVoiceFeedback('🔍 Zoomed out');
+            toast.success('Zoomed out', { icon: '🔍' });
+            return;
+        }
+        if (/\b(reset\s+zoom|zoom\s+100|zoom\s+reset|fit\s+(?:to\s+)?screen|fit\s+canvas|normal\s+view|default\s+zoom)\b/i.test(txt)) {
+            setZoomLevel(1);
+            setPanOffset({ x: 0, y: 0 });
+            setVoiceFeedback('🎯 Zoom reset to 100%');
+            toast.success('Zoom reset to 100%', { icon: '🎯' });
+            return;
+        }
+        if (/\b(fullscreen|toggle\s+fullscreen|exit\s+fullscreen)\b/i.test(txt)) {
+            onToggleFullscreen?.();
+            setVoiceFeedback('⛶ Toggled Fullscreen');
+            return;
+        }
+
+        // 0.4 Drawing & Selection Tools
+        if (/\b(switch\s+to\s+pen|use\s+pen|pen\s+tool|pencil|drawing\s+mode|draw\s+mode)\b/i.test(txt) || txt === 'pen') {
+            setTool('pen');
+            setPenMode('normal');
+            setBrushType('normal');
+            setVoiceFeedback('✏️ Switched to Pen');
+            toast.success('Switched to Pen', { icon: '✏️' });
+            return;
+        }
+        if (/\b(highlighter|use\s+highlighter|marker)\b/i.test(txt)) {
+            setTool('highlighter');
+            setVoiceFeedback('🖊️ Switched to Highlighter');
+            toast.success('Switched to Highlighter', { icon: '🖊️' });
+            return;
+        }
+        if (/\b(eraser|use\s+eraser|rub\s+mode|rubber)\b/i.test(txt) || txt === 'eraser') {
+            setTool('eraser');
+            setVoiceFeedback('🧹 Switched to Eraser');
+            toast.success('Switched to Eraser', { icon: '🧹' });
+            return;
+        }
+        if (/\b(object\s+eraser|stroke\s+eraser)\b/i.test(txt)) {
+            setTool('eraser');
+            setEraserMode('object');
+            setVoiceFeedback('🧹 Switched to Object Eraser');
+            toast.success('Object Eraser active', { icon: '🧹' });
+            return;
+        }
+        if (/\b(pixel\s+eraser|rub\s+eraser)\b/i.test(txt)) {
+            setTool('eraser');
+            setEraserMode('rub');
+            setVoiceFeedback('🧹 Switched to Pixel Eraser');
+            toast.success('Pixel Eraser active', { icon: '🧹' });
+            return;
+        }
+        if (/\b(lasso|lasso\s+select|lasso\s+tool)\b/i.test(txt)) {
+            setTool('select');
+            setSelectMode('lasso');
+            setVoiceFeedback('➰ Lasso selection tool active');
+            toast.success('Lasso select active', { icon: '➰' });
+            return;
+        }
+        if (/\b(select\s+tool|selection\s+tool|pointer|pointer\s+tool)\b/i.test(txt) || txt === 'select' || txt === 'pointer') {
+            setTool('select');
+            setSelectMode('box');
+            setVoiceFeedback('👆 Switched to Selection tool');
+            toast.success('Switched to Selection tool', { icon: '👆' });
+            return;
+        }
+        if (/\b(laser|laser\s+pointer)\b/i.test(txt)) {
+            setTool('laser');
+            setVoiceFeedback('🔦 Laser Pointer active');
+            toast.success('Laser Pointer active', { icon: '🔦' });
+            return;
+        }
+        if (/\b(ruler|ruler\s+tool)\b/i.test(txt)) {
+            setShapeType('ruler');
+            setTool('shape');
+            setVoiceFeedback('📏 Ruler tool active');
+            toast.success('Ruler tool active', { icon: '📏' });
+            return;
+        }
+        if (/\b(protractor|compass)\b/i.test(txt)) {
+            setShapeType('protractor');
+            setTool('shape');
+            setVoiceFeedback('📐 Protractor tool active');
+            toast.success('Protractor tool active', { icon: '📐' });
+            return;
+        }
+
+        // 0.5 Connectors (Tools)
+        if (/\b(straight\s+connector|straight\s+arrow)\b/i.test(txt)) {
+            setTool('line');
+            setLineType('connector_straight');
+            setVoiceFeedback('🔗 Straight Connector active');
+            toast.success('Straight Connector active', { icon: '🔗' });
+            return;
+        }
+        if (/\b(elbow\s+connector|orthogonal\s+connector)\b/i.test(txt)) {
+            setTool('line');
+            setLineType('connector_elbow');
+            setVoiceFeedback('↳ Elbow Connector active');
+            toast.success('Elbow Connector active', { icon: '↳' });
+            return;
+        }
+        if (/\b(curved\s+connector|bezier\s+connector)\b/i.test(txt)) {
+            setTool('line');
+            setLineType('connector_curved');
+            setVoiceFeedback('⤴ Curved Connector active');
+            toast.success('Curved Connector active', { icon: '⤴' });
+            return;
+        }
+
+        // 0.6 Connect Selected Shapes / Circles (Topological Linking)
+        if (
+            (/\b(connect|link|join)\b/i.test(txt) && (/\b(selected|them|these|two|circles?|shapes?|nodes?)\b/i.test(txt) || (selectedShapeIds && selectedShapeIds.length >= 2))) ||
+            txt === 'connect' || txt === 'connect shapes' || txt === 'connect them' || txt === 'link shapes' || txt === 'link them' || txt === 'connect selected' || txt === 'connect the selected circles'
+        ) {
+            const currentShapes = (pageShapeObjects[currentPage] || []);
+            let srcId = null, tgtId = null;
+
+            if (selectedShapeIds && selectedShapeIds.length >= 2) {
+                srcId = selectedShapeIds[0];
+                tgtId = selectedShapeIds[1];
+            } else {
+                // If not explicitly multi-selected, dynamically match circles or general shapes
+                const circles = currentShapes.filter(s => s.type === 'circle' || s.type === 'ellipse');
+                const pool = (circles.length >= 2 ? circles : currentShapes.filter(s => s.type !== 'connector' && s.type !== 'path'));
+                if (pool.length >= 2) {
+                    srcId = pool[0].id;
+                    tgtId = pool[1].id;
+                }
+            }
+
+            if (srcId && tgtId && srcId !== tgtId) {
+                const connStyle = txt.includes('curved') ? 'curved' : (txt.includes('straight') ? 'straight' : 'orthogonal');
+                await executeAiCanvasAction({
+                    type: 'connect_shapes',
+                    sourceId: srcId,
+                    targetId: tgtId,
+                    connectorType: connStyle,
+                    label: ''
+                });
+                const speech = 'Connected shapes with a smart connector.';
+                narrateAction(speech, '🔗 Connected Shapes');
+                conversationHistoryRef.current.push({ role: 'assistant', content: speech });
+                return;
+            } else {
+                toast('Please select two shapes or circles to connect', { icon: '🔗' });
+                return;
+            }
+        }
+
+        // 0.7 Handwriting Math & Text OCR to KaTeX Font
+        if (
+            /\b(ocr|convert\s+to\s+font|convert\s+equation|equation\s+to\s+font|recognize\s+math|convert\s+ink|convert\s+handwriting|ink\s+to\s+font|ink\s+to\s+math|ink\s+to\s+text)\b/i.test(txt) ||
+            txt === 'ocr' || txt === 'math ocr' || txt === 'ocr selection'
+        ) {
+            await handleConvertSelectedInkToText();
+            return;
+        }
+
+        // 0.8 Multi-Page Navigation
+        if (/\b(new\s+page|add\s+page|create\s+page)\b/i.test(txt)) {
+            addNewPage();
+            setVoiceFeedback('📄 Added new page');
+            toast.success('Added new page', { icon: '📄' });
+            return;
+        }
+        if (/\b(duplicate\s+page|clone\s+page)\b/i.test(txt)) {
+            duplicateCurrentPage();
+            setVoiceFeedback(`📋 Duplicated page ${currentPage + 1}`);
+            return;
+        }
+        if (/\b(delete\s+page|remove\s+page)\b/i.test(txt)) {
+            deletePage(currentPage);
+            setVoiceFeedback('🗑️ Deleted current page');
+            return;
+        }
+        if (/\b(next\s+page)\b/i.test(txt)) {
+            if (currentPage < totalPages - 1) {
+                loadPage(currentPage + 1);
+                setVoiceFeedback(`📄 Page ${currentPage + 2}`);
+            } else {
+                toast('Already on last page');
+            }
+            return;
+        }
+        if (/\b(previous\s+page|prev\s+page)\b/i.test(txt)) {
+            if (currentPage > 0) {
+                loadPage(currentPage - 1);
+                setVoiceFeedback(`📄 Page ${currentPage}`);
+            } else {
+                toast('Already on first page');
+            }
+            return;
+        }
+
+        // 0.9 Instant Geometric Shapes Fast Path (0ms Local Execution)
+        // Strictly handles direct shape commands like "draw circle", "draw concentric circles"
         const isDeleteCommand = /\b(delete|remove|erase|clear\s+the|destroy|drop)\b/i.test(txt);
         const isCognitiveExplain =
             txt.startsWith('explain') ||
@@ -13100,19 +13359,28 @@ export default function Whiteboard({
             (txt.includes('formula') && (txt.includes('circle') || txt.includes('area') || txt.includes('what')));
 
         if (!isDeleteCommand && !isCognitiveExplain) {
-            // 1. Concentric Circles: drawn one circle at a time sharing center O with provided dimensions
+            // 1. Concentric Circles: dynamically extracts any number of rings N and custom dimensions
             if (/\b(concentric\s*circles?|nested\s*circles?|concentric\s*rings?|bullseye)\b/i.test(txt)) {
                 const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(txt);
                 const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(txt);
                 const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
 
-                let count = 3;
-                if (/\b(?:two|2)\b/i.test(txt)) count = 2;
-                else if (/\b(?:three|3)\b/i.test(txt)) count = 3;
-                else if (/\b(?:four|4)\b/i.test(txt)) count = 4;
+                // Dynamically parse any count specified in natural language (1 to 10)
+                const countDigitMatch = txt.match(/\b(\d+)\s*(?:concentric|nested|rings?|circles?)\b/i) ||
+                                        txt.match(/\b(?:concentric|nested|rings?|circles?)\s*(?:of|with)?\s*(\d+)\b/i);
+                let count = countDigitMatch ? parseInt(countDigitMatch[1], 10) : null;
+                if (!count) {
+                    if (/\btwo\b/i.test(txt)) count = 2;
+                    else if (/\bthree\b/i.test(txt)) count = 3;
+                    else if (/\bfour\b/i.test(txt)) count = 4;
+                    else if (/\bfive\b/i.test(txt)) count = 5;
+                    else if (/\bsix\b/i.test(txt)) count = 6;
+                    else if (/\bseven\b/i.test(txt)) count = 7;
+                    else if (/\beight\b/i.test(txt)) count = 8;
+                }
 
                 const cleanedTxt = txt
-                    .replace(/\b(?:two|three|four|2|3|4)\s+(?:concentric|nested|rings?|circles?)/gi, '')
+                    .replace(/\b(?:two|three|four|five|six|seven|eight|\d+)\s+(?:concentric|nested|rings?|circles?)/gi, '')
                     .replace(/\b(?:concentric|nested|rings?|circles?)\s+of\s+/gi, 'of ');
                 
                 const numMatches = [];
@@ -13129,7 +13397,7 @@ export default function Whiteboard({
                 let labelsList = [];
 
                 if (numMatches.length >= 2) {
-                    const sorted = [...numMatches].sort((a, b) => a.val - b.val).slice(0, 4);
+                    const sorted = [...numMatches].sort((a, b) => a.val - b.val);
                     count = sorted.length;
                     const maxVal = sorted[sorted.length - 1].val;
                     let pxScale = 1;
@@ -13152,24 +13420,28 @@ export default function Whiteboard({
                 } else if (numMatches.length === 1 && numMatches[0].val > 0) {
                     const baseR = numMatches[0].val;
                     const basePx = unit === 'cm' ? Math.round(baseR * 25) : (baseR <= 15 ? Math.round(baseR * 25) : baseR);
-                    if (count === 2) {
-                        radiiList = [Math.max(25, Math.round(basePx * 0.55)), Math.max(50, Math.round(basePx))];
-                        labelsList = [`r = ${Math.round(baseR * 0.55)}${unit}`, `R = ${baseR}${unit}`];
-                    } else {
-                        radiiList = [Math.max(25, Math.round(basePx * 0.4)), Math.max(50, Math.round(basePx * 0.7)), Math.max(80, Math.round(basePx))];
-                        labelsList = [`r₁ = ${Math.round(baseR * 0.4)}${unit}`, `r₂ = ${Math.round(baseR * 0.7)}${unit}`, `r₃ = ${baseR}${unit}`];
+                    const actualCount = count || 2;
+                    radiiList = [];
+                    labelsList = [];
+                    for (let i = 1; i <= actualCount; i++) {
+                        const frac = i / actualCount;
+                        const rPx = Math.max(25 * i, Math.round(basePx * frac));
+                        radiiList.push(rPx);
+                        const valStr = (baseR * frac).toFixed(1).replace(/\.0$/, '');
+                        labelsList.push(actualCount === 2 ? (i === 1 ? `r = ${valStr}${unit}` : `R = ${valStr}${unit}`) : `r${i} = ${valStr}${unit}`);
                     }
+                    count = actualCount;
                 } else {
-                    if (count === 2) {
-                        radiiList = [55, 110];
-                        labelsList = ['r', 'R'];
-                    } else if (count === 4) {
-                        radiiList = [35, 65, 95, 125];
-                        labelsList = ['r₁', 'r₂', 'r₃', 'r₄'];
-                    } else {
-                        radiiList = [45, 85, 125];
-                        labelsList = ['r₁', 'r₂', 'r₃'];
+                    // Dynamic procedural geometric progression if no numbers given
+                    const actualCount = count || 2;
+                    radiiList = [];
+                    labelsList = [];
+                    const step = actualCount <= 3 ? 45 : Math.max(25, Math.round(180 / actualCount));
+                    for (let i = 1; i <= actualCount; i++) {
+                        radiiList.push(25 + i * step);
+                        labelsList.push(actualCount === 2 ? (i === 1 ? 'r' : 'R') : `r${i}`);
                     }
+                    count = actualCount;
                 }
 
                 const maxR = radiiList[radiiList.length - 1];
@@ -13178,7 +13450,7 @@ export default function Whiteboard({
                 const centerCx = slot.hasSpace ? slot.x + maxR : Math.max(20 + maxR, Math.round(cx));
                 const centerCy = slot.hasSpace ? slot.y + maxR : Math.max(20 + maxR, Math.round(cy));
 
-                const angles = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
+                const angles = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4, Math.PI / 6, (5 * Math.PI) / 6];
 
                 for (let i = 0; i < radiiList.length; i++) {
                     const r = radiiList[i];
@@ -23016,21 +23288,21 @@ export default function Whiteboard({
                                             </>
                                         )}
 
-                                        {/* Convert handwritten ink stroke(s) to text/math */}
+                                        {/* Convert handwritten ink stroke(s) to text/math via OCR */}
                                         {(shpObj.type === 'path' || shpObj.type === 'sparkle_path') && (
                                             <button
                                                 type="button"
                                                 onClick={() => handleConvertSelectedInkToText([shpObj.id])}
                                                 disabled={isConvertingInk}
-                                                className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center gap-1.5 transition shadow-sm h-6"
-                                                title="Convert handwritten ink stroke(s) to typed text or rendered math equation"
+                                                className="px-2.5 py-0.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center gap-1.5 transition shadow-sm h-6"
+                                                title="OCR: Convert handwritten math or text into KaTeX font"
                                             >
                                                 {isConvertingInk ? (
                                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                                 ) : (
                                                     <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                                                 )}
-                                                <span>{isConvertingInk ? 'Converting...' : 'Convert to Text / Math'}</span>
+                                                <span>{isConvertingInk ? 'Recognizing...' : 'OCR to Font'}</span>
                                             </button>
                                         )}
 
@@ -23326,7 +23598,7 @@ export default function Whiteboard({
                                         </button>
                                     </div>
 
-                                    {/* Convert Multi-Stroke Ink to Text / Math */}
+                                    {/* Convert Multi-Stroke Ink to Text / Math via OCR */}
                                     {selectedShapes.some(s => s.type === 'path' || s.type === 'sparkle_path') && (
                                         <>
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
@@ -23334,15 +23606,15 @@ export default function Whiteboard({
                                                 type="button"
                                                 onClick={() => handleConvertSelectedInkToText()}
                                                 disabled={isConvertingInk}
-                                                className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center gap-1.5 transition shadow-sm h-6"
-                                                title="Convert all selected handwritten ink strokes to typed text or rendered math equation"
+                                                className="px-2.5 py-0.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center gap-1.5 transition shadow-sm h-6"
+                                                title="OCR: Convert all selected handwritten ink strokes into KaTeX font"
                                             >
                                                 {isConvertingInk ? (
                                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                                 ) : (
                                                     <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                                                 )}
-                                                <span>{isConvertingInk ? 'Converting...' : 'Convert Ink'}</span>
+                                                <span>{isConvertingInk ? 'Recognizing...' : 'OCR to Font'}</span>
                                             </button>
                                         </>
                                     )}

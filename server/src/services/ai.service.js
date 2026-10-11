@@ -2168,13 +2168,22 @@ Output MUST be ONLY valid JSON matching this schema:
                 const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(lowTxt);
                 const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
 
-                let count = 3;
-                if (/\b(?:two|2)\b/i.test(lowTxt)) count = 2;
-                else if (/\b(?:three|3)\b/i.test(lowTxt)) count = 3;
-                else if (/\b(?:four|4)\b/i.test(lowTxt)) count = 4;
+                // Dynamically parse any count specified in natural language (1 to 10)
+                const countDigitMatch = lowTxt.match(/\b(\d+)\s*(?:concentric|nested|rings?|circles?)\b/i) ||
+                                        lowTxt.match(/\b(?:concentric|nested|rings?|circles?)\s*(?:of|with)?\s*(\d+)\b/i);
+                let count = countDigitMatch ? parseInt(countDigitMatch[1], 10) : null;
+                if (!count) {
+                    if (/\btwo\b/i.test(lowTxt)) count = 2;
+                    else if (/\bthree\b/i.test(lowTxt)) count = 3;
+                    else if (/\bfour\b/i.test(lowTxt)) count = 4;
+                    else if (/\bfive\b/i.test(lowTxt)) count = 5;
+                    else if (/\bsix\b/i.test(lowTxt)) count = 6;
+                    else if (/\bseven\b/i.test(lowTxt)) count = 7;
+                    else if (/\beight\b/i.test(lowTxt)) count = 8;
+                }
 
                 const cleaned = lowTxt
-                    .replace(/\b(?:two|three|four|2|3|4)\s+(?:concentric|nested|rings?|circles?)/gi, '')
+                    .replace(/\b(?:two|three|four|five|six|seven|eight|\d+)\s+(?:concentric|nested|rings?|circles?)/gi, '')
                     .replace(/\b(?:concentric|nested|rings?|circles?)\s+of\s+/gi, 'of ');
 
                 const numMatches = [];
@@ -2191,7 +2200,7 @@ Output MUST be ONLY valid JSON matching this schema:
                 let labelsList = [];
 
                 if (numMatches.length >= 2) {
-                    const sorted = [...numMatches].sort((a, b) => a.val - b.val).slice(0, 4);
+                    const sorted = [...numMatches].sort((a, b) => a.val - b.val);
                     count = sorted.length;
                     const maxVal = sorted[sorted.length - 1].val;
                     let pxScale = 1;
@@ -2214,24 +2223,27 @@ Output MUST be ONLY valid JSON matching this schema:
                 } else if (numMatches.length === 1 && numMatches[0].val > 0) {
                     const baseR = numMatches[0].val;
                     const basePx = unit === 'cm' ? Math.round(baseR * 25) : (baseR <= 15 ? Math.round(baseR * 25) : baseR);
-                    if (count === 2) {
-                        radiiList = [Math.max(25, Math.round(basePx * 0.55)), Math.max(50, Math.round(basePx))];
-                        labelsList = [`r = ${Math.round(baseR * 0.55)}${unit}`, `R = ${baseR}${unit}`];
-                    } else {
-                        radiiList = [Math.max(25, Math.round(basePx * 0.4)), Math.max(50, Math.round(basePx * 0.7)), Math.max(80, Math.round(basePx))];
-                        labelsList = [`r₁ = ${Math.round(baseR * 0.4)}${unit}`, `r₂ = ${Math.round(baseR * 0.7)}${unit}`, `r₃ = ${baseR}${unit}`];
+                    const actualCount = count || 2;
+                    radiiList = [];
+                    labelsList = [];
+                    for (let i = 1; i <= actualCount; i++) {
+                        const frac = i / actualCount;
+                        const rPx = Math.max(25 * i, Math.round(basePx * frac));
+                        radiiList.push(rPx);
+                        const valStr = (baseR * frac).toFixed(1).replace(/\.0$/, '');
+                        labelsList.push(actualCount === 2 ? (i === 1 ? `r = ${valStr}${unit}` : `R = ${valStr}${unit}`) : `r${i} = ${valStr}${unit}`);
                     }
+                    count = actualCount;
                 } else {
-                    if (count === 2) {
-                        radiiList = [55, 110];
-                        labelsList = ['r', 'R'];
-                    } else if (count === 4) {
-                        radiiList = [35, 65, 95, 125];
-                        labelsList = ['r₁', 'r₂', 'r₃', 'r₄'];
-                    } else {
-                        radiiList = [45, 85, 125];
-                        labelsList = ['r₁', 'r₂', 'r₃'];
+                    const actualCount = count || 2;
+                    radiiList = [];
+                    labelsList = [];
+                    const step = actualCount <= 3 ? 45 : Math.max(25, Math.round(180 / actualCount));
+                    for (let i = 1; i <= actualCount; i++) {
+                        radiiList.push(25 + i * step);
+                        labelsList.push(actualCount === 2 ? (i === 1 ? 'r' : 'R') : `r${i}`);
                     }
+                    count = actualCount;
                 }
 
                 const angles = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
@@ -2910,18 +2922,18 @@ Spoken input: "${text}"
                 spokenFeedback = 'Setting background to hexagons';
             }
             // Object Deletion & Clear Operations (Must evaluate before shape drawing!)
-            const isDeleteCommand = /\b(delete|remove|erase|rub|trash|discard)\b/i.test(low);
+            const isDeleteCommand = /\b(delete|remove|erase|rub|trash|discard|clear|clean|wipe)\b/i.test(low);
             if (isDeleteCommand) {
                 const activeShapes = Array.isArray(context.shapes) ? context.shapes : [];
 
                 // Page deletion
-                if (low.includes('page')) {
+                if (low.includes('page') && !low.includes('board') && !low.includes('whiteboard') && !low.includes('canvas')) {
                     translatedCommand = 'delete page';
                     intent = 'delete_page';
                     spokenFeedback = 'Deleted current page';
                 }
-                // Complete canvas wipe
-                else if (low.includes('all') || low.includes('everything') || low.includes('wipe') || low.includes('clear')) {
+                // Complete canvas wipe / Clear Whiteboard
+                else if (low.includes('all') || low.includes('everything') || low.includes('wipe') || low.includes('clear') || low.includes('clean') || low.includes('board') || low.includes('canvas') || low === 'clear') {
                     translatedCommand = 'clear the board';
                     intent = 'clear_canvas';
                     spokenFeedback = 'Clearing the canvas';
