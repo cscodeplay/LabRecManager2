@@ -31,6 +31,28 @@ const ParallelogramIcon = (props) => (
     </svg>
 );
 
+const ConeIcon = (props) => (
+    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="M 12 2 L 20 18 A 8 3 0 0 1 4 18 Z" />
+        <ellipse cx="12" cy="18" rx="8" ry="3" />
+        <line x1="12" y1="2" x2="12" y2="18" strokeDasharray="2 2" strokeWidth="1.5" />
+    </svg>
+);
+
+const InclinePlaneIcon = (props) => (
+    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <polygon points="3 20 21 20 21 6" />
+        <rect x="11" y="10" width="5" height="4" transform="rotate(-38 13.5 12)" />
+    </svg>
+);
+
+const RightTriangleIcon = (props) => (
+    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <polygon points="4 4 4 20 20 20" />
+        <path d="M 4 15 L 9 15 L 9 20" />
+    </svg>
+);
+
 const YoutubeIcon = (props) => (
     <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
         <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z" />
@@ -9325,6 +9347,33 @@ export default function Whiteboard({
                 ctx.ellipse(sx + rx, sy + ry, rx, ry, 0, 0, Math.PI * 2);
                 if (fill && fill !== 'transparent') ctx.fill();
                 ctx.stroke();
+            } else if (shpObj.type === 'cone') {
+                const w = shpObj.width, h = shpObj.height, sx = shpObj.x, sy = shpObj.y;
+                const rx = w / 2;
+                const ry = Math.min(28, Math.max(10, h * 0.18));
+                const baseY = sy + h - ry;
+                const apexX = sx + rx, apexY = sy;
+                ctx.moveTo(sx, baseY);
+                ctx.lineTo(apexX, apexY);
+                ctx.lineTo(sx + w, baseY);
+                ctx.ellipse(apexX, baseY, rx, ry, 0, 0, Math.PI, false);
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
+                // Back dashed ellipse
+                ctx.beginPath();
+                ctx.setLineDash([4, 4]);
+                ctx.ellipse(apexX, baseY, rx, ry, 0, Math.PI, 0, false);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            } else if (shpObj.type === 'incline_plane' || shpObj.type === 'ramp') {
+                const w = shpObj.width, h = shpObj.height, sx = shpObj.x, sy = shpObj.y;
+                ctx.moveTo(sx, sy + h);
+                ctx.lineTo(sx + w, sy + h);
+                ctx.lineTo(sx + w, sy);
+                ctx.closePath();
+                if (fill && fill !== 'transparent') ctx.fill();
+                ctx.stroke();
             } else if (shpObj.type === 'document') {
                 const w = shpObj.width, h = shpObj.height, sx = shpObj.x, sy = shpObj.y;
                 const wave = Math.min(24, Math.max(8, h * 0.14));
@@ -11479,11 +11528,297 @@ export default function Whiteboard({
         requestAnimationFrame(frame);
     }, [currentPage, saveToHistory]);
 
+    // ─── Instant Geometry Shapes Engine (0ms Latency Vector Stamping) ────────
+    const stampQuickShape = useCallback((type, customOptions = {}) => {
+        const wrapper = canvasWrapperRef.current;
+        const cw = wrapper ? wrapper.clientWidth : 1200;
+        const ch = wrapper ? wrapper.clientHeight : 800;
+        const baseCx = Math.round((-panOffset.x + cw / 2) / zoomLevel);
+        const baseCy = Math.round((-panOffset.y + ch / 2) / zoomLevel);
+
+        let w = 220, h = 220;
+        let shapeProps = {};
+
+        if (type === 'cone') {
+            w = 220;
+            h = 240;
+            shapeProps = {
+                type: 'cone',
+                dashedAltitude: true,
+                altitudeLabel: 'h',
+                showRadius: true,
+                radiusLabel: 'r',
+                showMarkings: true,
+                slantLabel: 'l',
+                vertexLabel: 'V'
+            };
+        } else if (type === 'right_triangle') {
+            w = 240;
+            h = 190;
+            shapeProps = {
+                type: 'right_triangle',
+                showRightAngle: true,
+                vertexLabels: ['A', 'B', 'C'],
+                edgeLabels: ['b', 'a', 'c']
+            };
+        } else if (type === 'triangle') {
+            w = 230;
+            h = 200;
+            shapeProps = {
+                type: 'triangle',
+                dashedAltitude: true,
+                altitudeLabel: 'h',
+                vertexLabels: ['A', 'B', 'C'],
+                edgeLabels: ['c', 'a', 'b']
+            };
+        } else if (type === 'cylinder') {
+            w = 180;
+            h = 240;
+            shapeProps = {
+                type: 'cylinder',
+                radiusLabel: 'r',
+                heightLabel: 'h'
+            };
+        } else if (type === 'incline_plane' || type === 'ramp') {
+            w = 280;
+            h = 180;
+            shapeProps = {
+                type: 'incline_plane',
+                showBlock: true,
+                blockLabel: 'm',
+                angleLabel: 'θ',
+                baseLabel: 'd'
+            };
+        } else if (type === 'axes' || type === 'graph' || type === 'coordinate_system') {
+            w = 280;
+            h = 240;
+            shapeProps = {
+                type: 'graph',
+                showGrid: true
+            };
+        }
+
+        const slot = findAvailableCanvasSpace(w, h);
+        const targetX = slot.hasSpace ? slot.x : Math.max(30, Math.round(baseCx - w / 2));
+        const targetY = slot.hasSpace ? slot.y : Math.max(30, Math.round(baseCy - h / 2));
+
+        const newShape = {
+            id: `geo_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+            x: targetX,
+            y: targetY,
+            width: w,
+            height: h,
+            color: color || '#3b82f6',
+            strokeWidth: strokeWidth || 3,
+            fillColor: fillColor && fillColor !== 'transparent' ? fillColor : 'transparent',
+            strokeStyle: strokeStyle || 'solid',
+            rotation: 0,
+            ...shapeProps,
+            ...customOptions
+        };
+
+        const targetPage = currentPageRef.current !== undefined ? currentPageRef.current : currentPage;
+        setPageShapeObjects(prev => ({
+            ...prev,
+            [targetPage]: [...(prev[targetPage] || []), newShape]
+        }));
+        setSelectedShapeIds([newShape.id]);
+        setTool('select');
+        saveToHistory();
+        toast.success(`Stamped ${type.replace('_', ' ')} instantly!`, { icon: '📐' });
+        return newShape;
+    }, [panOffset, zoomLevel, currentPage, color, strokeWidth, fillColor, strokeStyle, saveToHistory, findAvailableCanvasSpace]);
+
+    // ─── Math / Physics / Chemistry Problem + Diagram Side-by-Side Layout ─────
+    // Diagram on Left • Problem Statement on Top Right • Open Handwriting Space Below
+    const executeProblemWithDiagramLayout = useCallback((data = {}) => {
+        const rawQuestion = (data.question || data.text || data.problem || '').trim();
+        const solution = (data.solutionMarkdown || data.speechResponse || '').trim();
+        if (!rawQuestion && !solution) return false;
+
+        const wrapper = canvasWrapperRef.current;
+        const boardWidth = wrapper ? wrapper.clientWidth : 1400;
+
+        // Auto-detect subject and theme
+        const combined = `${rawQuestion} ${solution}`.toLowerCase();
+        let subjectPill = '📐 Mathematics Problem';
+        let themeColor = '#6366f1';
+        let themeBg = 'rgba(99, 102, 241, 0.08)';
+
+        if (combined.includes('physics') || combined.includes('friction') || combined.includes('incline') || combined.includes('velocity') || combined.includes('force') || combined.includes('mass') || combined.includes('acceleration') || combined.includes('gravity') || combined.includes('newton') || combined.includes('ramp')) {
+            subjectPill = '⚛️ Physics Problem';
+            themeColor = '#0ea5e9';
+            themeBg = 'rgba(14, 165, 233, 0.08)';
+        } else if (combined.includes('chemistry') || combined.includes('reaction') || combined.includes('mole') || combined.includes('solution') || combined.includes('acid') || combined.includes('gas') || combined.includes('pressure') || combined.includes('beaker') || combined.includes('vessel')) {
+            subjectPill = '🧪 Chemistry Problem';
+            themeColor = '#10b981';
+            themeBg = 'rgba(16, 185, 129, 0.08)';
+        }
+
+        // Determine diagram shape needed
+        let dType = data.diagramType;
+        if (!dType) {
+            if (combined.includes('cone') || combined.includes('conical')) dType = 'cone';
+            else if (combined.includes('cylinder') || combined.includes('cylindrical')) dType = 'cylinder';
+            else if (combined.includes('incline') || combined.includes('ramp') || combined.includes('wedge') || combined.includes('friction')) dType = 'incline_plane';
+            else if (combined.includes('right triangle') || combined.includes('hypotenuse') || combined.includes('pythagor') || combined.includes('right-angled')) dType = 'right_triangle';
+            else if (combined.includes('triangle')) dType = 'triangle';
+            else if (combined.includes('circle') || combined.includes('radius') || combined.includes('diameter')) dType = 'circle';
+            else if (combined.includes('graph') || combined.includes('coordinate') || combined.includes('cartesian')) dType = 'graph';
+            else dType = 'cone';
+        }
+
+        // 1. Diagram on the LEFT side:
+        const startX = 60;
+        const startY = 80;
+        const diagW = 340;
+        const diagH = 290;
+
+        let diagShapeProps = {};
+        if (dType === 'cone') {
+            diagShapeProps = {
+                type: 'cone',
+                dashedAltitude: true,
+                altitudeLabel: 'h',
+                showRadius: true,
+                radiusLabel: 'r',
+                showMarkings: true,
+                slantLabel: 'l',
+                vertexLabel: 'V'
+            };
+        } else if (dType === 'right_triangle') {
+            diagShapeProps = {
+                type: 'right_triangle',
+                showRightAngle: true,
+                vertexLabels: ['A', 'B', 'C'],
+                edgeLabels: ['b', 'a', 'c']
+            };
+        } else if (dType === 'triangle') {
+            diagShapeProps = {
+                type: 'triangle',
+                dashedAltitude: true,
+                altitudeLabel: 'h',
+                vertexLabels: ['A', 'B', 'C'],
+                edgeLabels: ['c', 'a', 'b']
+            };
+        } else if (dType === 'cylinder') {
+            diagShapeProps = {
+                type: 'cylinder',
+                radiusLabel: 'r',
+                heightLabel: 'h'
+            };
+        } else if (dType === 'incline_plane') {
+            diagShapeProps = {
+                type: 'incline_plane',
+                showBlock: true,
+                blockLabel: 'm',
+                angleLabel: 'θ',
+                baseLabel: 'd'
+            };
+        } else if (dType === 'circle') {
+            diagShapeProps = {
+                type: 'circle',
+                showCenter: true,
+                centerLabel: 'O',
+                showRadius: true,
+                radiusLabel: 'r'
+            };
+        } else if (dType === 'graph') {
+            diagShapeProps = {
+                type: 'graph',
+                showGrid: true
+            };
+        }
+
+        const diagramObj = {
+            id: `diag_${Date.now()}`,
+            x: startX,
+            y: startY,
+            width: diagW,
+            height: diagH,
+            color: themeColor,
+            strokeWidth: 3,
+            fillColor: 'transparent',
+            strokeStyle: 'solid',
+            rotation: 0,
+            ...diagShapeProps,
+            ...(data.diagramProps || {})
+        };
+
+        // 2. Problem Statement Card on RIGHT side near top:
+        const gap = 36;
+        const problemX = startX + diagW + gap; // 60 + 340 + 36 = 436px
+        const problemY = startY;
+
+        // CONSTRAINED SO IT NEVER CROSSES THE RIGHT EDGE OF BOARD
+        const rightMargin = 60;
+        const maxAvailableWidth = Math.max(380, boardWidth - problemX - rightMargin);
+        const problemWidth = Math.min(620, maxAvailableWidth);
+
+        const cleanProblemText = rawQuestion || cleanTextForSpeech(solution).slice(0, 320) || 'Problem Statement';
+        const cardFullText = `${subjectPill}\n\n${cleanProblemText}`;
+        const approxLines = Math.ceil(cardFullText.length / 42);
+        const problemHeight = Math.max(160, Math.min(260, approxLines * 22 + 50));
+
+        const problemCardObj = {
+            id: `prob_card_${Date.now()}`,
+            type: 'rounded_rect',
+            x: problemX,
+            y: problemY,
+            width: problemWidth,
+            height: problemHeight,
+            rotation: 0,
+            color: themeColor,
+            strokeWidth: 2,
+            fillColor: themeBg,
+            strokeStyle: 'solid',
+            text: cardFullText,
+            textColor: '#0f172a',
+            fontSize: 14,
+            fontFamily: 'Inter, sans-serif'
+        };
+
+        // 3. Optional Solving Zone Boundary Divider / Watermark
+        const dividerY = Math.max(startY + diagH, problemY + problemHeight) + 30;
+        const guideMarker = {
+            id: `guide_zone_${Date.now()}`,
+            type: 'dashed_line',
+            x: 40,
+            y: dividerY,
+            width: Math.max(600, boardWidth - 80),
+            height: 0,
+            startX: 0,
+            startY: 0,
+            endX: Math.max(600, boardWidth - 80),
+            endY: 0,
+            color: 'rgba(148, 163, 184, 0.4)',
+            strokeWidth: 1.5,
+            text: '✍️ Teacher Derivation & Solving Workspace (Write with Pen below)'
+        };
+
+        const targetPage = currentPageRef.current !== undefined ? currentPageRef.current : currentPage;
+        setPageShapeObjects(prev => ({
+            ...prev,
+            [targetPage]: [...(prev[targetPage] || []), diagramObj, problemCardObj, guideMarker]
+        }));
+
+        setSelectedShapeIds([diagramObj.id, problemCardObj.id]);
+        setTool('pen'); // Auto-activate pen so teacher can start writing solution derivations immediately!
+        saveToHistory();
+        toast.success('Generated Problem + Diagram layout! Writing space ready below.', { icon: '📐', duration: 4500 });
+        return true;
+    }, [currentPage, saveToHistory]);
+
     // Execute AI-generated native canvas actions (3D models, flowcharts, diagrams, educational lesson boards)
     const executeAiCanvasAction = useCallback((canvasAction, options = {}) => {
         if (!canvasAction || !canvasAction.type) return false;
 
-        // 0. Draw Native Math Diagram with Geometry Markings (Right Triangle, Triangle, Circle, Coordinate System, Rectangle)
+        // Problem with diagram side-by-side layout
+        if (canvasAction.type === 'draw_problem_with_diagram') {
+            return executeProblemWithDiagramLayout(canvasAction);
+        }
+
+        // 0. Draw Native Math Diagram with Geometry Markings (Right Triangle, Triangle, Circle, Coordinate System, Rectangle, Cone, Incline Plane)
         if (canvasAction.type === 'draw_math_diagram') {
             const dType = canvasAction.diagramType || canvasAction.shapeType || 'right_triangle';
             const reqW = canvasAction.width ? Number(canvasAction.width) : (dType === 'circle' ? 180 : 240);
@@ -12243,9 +12578,15 @@ export default function Whiteboard({
         };
     }, []);
 
-    // Handle inserting generated AI solution as a flowchart diagram or clean card onto whiteboard canvas
+    // Handle inserting generated AI solution as a flowchart diagram, problem+diagram layout, or clean card onto whiteboard canvas
     const handleInsertAiSolutionToBoard = useCallback((solution, mode = 'auto') => {
         if (!solution) return;
+
+        // 0. Problem + Diagram Side-by-Side Layout (Diagram Left • Problem Right • Free Space Below)
+        if (mode === 'problem_diagram_layout' || (mode === 'auto' && solution.question && /\b(cone|conical|cylinder|cylindrical|triangle|right triangle|pyramid|incline|ramp|wedge|pythagor|radius|slant|hypotenuse|friction|surface area|volume|free body)\b/i.test(solution.question))) {
+            const executed = executeProblemWithDiagramLayout(solution);
+            if (executed) return;
+        }
 
         // 1. If explicit visual canvas action exists (e.g. 3D model, pre-built flowchart, diagram), execute it directly!
         if (solution.canvasAction && solution.canvasAction.type && solution.canvasAction.type !== 'insert_solution_card') {
@@ -12299,7 +12640,7 @@ export default function Whiteboard({
         setSelectedShapeIds([cardShape.id]);
         saveToHistory();
         toast.success('Inserted AI Solution Card to board', { icon: '📋' });
-    }, [panOffset, zoomLevel, currentPage, saveToHistory, executeAiCanvasAction, convertSolutionToFlowchart]);
+    }, [panOffset, zoomLevel, currentPage, saveToHistory, executeAiCanvasAction, convertSolutionToFlowchart, executeProblemWithDiagramLayout]);
 
     // ─── Voice Control & Speech Recognition Engine ──────────────────────
     const executeVoiceCommand = useCallback(async (rawText, isAiRetry = false) => {
@@ -13648,10 +13989,14 @@ export default function Whiteboard({
         }
 
         // Intent 2: Direct 3D Model Generative Action
-        // (e.g. "draw 3D sphere", "insert 3D cube", "draw pyramid", "create 3D cylinder", "3D cone", "3D earth", "3D rocket")
+        // (Only astronomy/biology models or explicit "3D" requests for geometric solids)
+        const hasExplicit3D = txt.includes('3d') || txt.includes('three d') || txt.includes('three-d');
+        const isAstronomyOrBiology3D = txt.includes('earth') || txt.includes('globe') || txt.includes('sun') || txt.includes('atom') || txt.includes('dna') || txt.includes('router') || txt.includes('rocket') || txt.includes('saturn') || txt.includes('mars') || txt.includes('jupiter') || txt.includes('moon') || txt.includes('molecule');
+        const isGeometricSolid3D = hasExplicit3D && (txt.includes('sphere') || txt.includes('cube') || txt.includes('box') || txt.includes('pyramid') || txt.includes('cylinder') || txt.includes('cone'));
+
         const is3DModelCommand =
             (txt.includes('draw') || txt.includes('create') || txt.includes('insert') || txt.includes('show') || txt.includes('place') || txt.includes('make') || txt.includes('render') || txt.includes('spawn') || txt.includes('add')) &&
-            (txt.includes('earth') || txt.includes('globe') || txt.includes('sun') || txt.includes('atom') || txt.includes('dna') || txt.includes('router') || txt.includes('rocket') || txt.includes('saturn') || txt.includes('mars') || txt.includes('jupiter') || txt.includes('moon') || txt.includes('molecule') || txt.includes('sphere') || txt.includes('cube') || txt.includes('box') || txt.includes('pyramid') || txt.includes('cylinder') || txt.includes('cone') || (txt.includes('3d') && !txt.includes('library') && !txt.includes('modal')));
+            (isAstronomyOrBiology3D || isGeometricSolid3D);
 
         if (is3DModelCommand) {
             let modelType = 'sphere';
@@ -13810,18 +14155,132 @@ export default function Whiteboard({
             return;
         }
 
+        // 0.7 Math / Physics / Chemistry Problem with Diagram Statement
+        // e.g. "A cone has radius 5 cm and height 12 cm. Find slant height", "In right triangle ABC angle B is 90...", "A block on an inclined plane of 30 degrees..."
+        const isProblemWithShape =
+            (/\b(find|calculate|determine|solve|prove|what is the|compute|a solid|a block|given that)\b/i.test(txt) || /\b\d+\s*(?:cm|m|kg|deg|degrees|°)\b/i.test(txt)) &&
+            /\b(cone|conical|cylinder|cylindrical|triangle|right triangle|pyramid|incline|ramp|wedge|pythagor|hypotenuse|radius|slant|friction)\b/i.test(txt);
+
+        if (isProblemWithShape) {
+            const handled = executeProblemWithDiagramLayout({
+                question: rawText,
+                text: rawText
+            });
+            if (handled) {
+                setVoiceFeedback('📐 Problem placed with diagram on left & solving space below');
+                return;
+            }
+        }
+
+        // Cone: "draw cone", "cone", "draw cone radius 60", "cone of height 100"
+        if (txt.includes('cone') && !txt.includes('3d')) {
+            const rMatch = txt.match(/(?:radius|r|rad)\s*(\d+)/i);
+            const hMatch = txt.match(/(?:height|h)\s*(\d+)/i);
+            const sizeMatch = txt.match(/(?:size|of)?\s*(\d+)/i);
+            const r = rMatch ? parseInt(rMatch[1], 10) : (sizeMatch ? Math.round(parseInt(sizeMatch[1], 10) / 2) : 55);
+            const h = hMatch ? parseInt(hMatch[1], 10) : (sizeMatch ? parseInt(sizeMatch[1], 10) : 130);
+            const w = r * 2;
+            spawnVoiceShape({
+                type: 'cone',
+                x: Math.round(cx - w / 2),
+                y: Math.round(cy - h / 2),
+                width: w,
+                height: h,
+                dashedAltitude: true,
+                altitudeLabel: hMatch ? `${hMatch[1]}` : 'h',
+                showRadius: true,
+                radiusLabel: rMatch ? `${rMatch[1]}` : 'r',
+                showMarkings: true,
+                slantLabel: 'l',
+                vertexLabel: 'V'
+            });
+            const msg = `🍦 Drew geometric cone (${w} × ${h}px)`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '🍦' });
+            return;
+        }
+
+        // Cylinder: "draw cylinder", "cylinder", "cylinder of radius 40"
+        if (txt.includes('cylinder') && !txt.includes('3d')) {
+            const rMatch = txt.match(/(?:radius|r|rad)\s*(\d+)/i);
+            const hMatch = txt.match(/(?:height|h)\s*(\d+)/i);
+            const sizeMatch = txt.match(/(?:size|of)?\s*(\d+)/i);
+            const r = rMatch ? parseInt(rMatch[1], 10) : (sizeMatch ? Math.round(parseInt(sizeMatch[1], 10) / 2) : 50);
+            const h = hMatch ? parseInt(hMatch[1], 10) : (sizeMatch ? parseInt(sizeMatch[1], 10) : 130);
+            const w = r * 2;
+            spawnVoiceShape({
+                type: 'cylinder',
+                x: Math.round(cx - w / 2),
+                y: Math.round(cy - h / 2),
+                width: w,
+                height: h,
+                radiusLabel: rMatch ? `${rMatch[1]}` : 'r',
+                heightLabel: hMatch ? `${hMatch[1]}` : 'h'
+            });
+            const msg = `🛢️ Drew geometric cylinder (${w} × ${h}px)`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '🛢️' });
+            return;
+        }
+
+        // Incline Plane / Physics Ramp: "draw incline", "inclined plane", "ramp", "wedge"
+        if ((txt.includes('incline') || txt.includes('ramp') || txt.includes('wedge')) && !txt.includes('3d')) {
+            const w = 260, h = 160;
+            spawnVoiceShape({
+                type: 'incline_plane',
+                x: Math.round(cx - w / 2),
+                y: Math.round(cy - h / 2),
+                width: w,
+                height: h,
+                showBlock: true,
+                blockLabel: 'm',
+                angleLabel: 'θ',
+                baseLabel: 'd'
+            });
+            const msg = `📐 Drew inclined plane with mass block (${w} × ${h}px)`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '📐' });
+            return;
+        }
+
+        // Right-Angled Triangle: "draw right triangle", "right triangle", "right-angled triangle"
+        if ((txt.includes('right triangle') || txt.includes('right-angled triangle') || (txt.includes('right') && txt.includes('triangle'))) && !txt.includes('3d')) {
+            const match = txt.match(/(?:size|of)?\s*(\d+)/i);
+            const s = match ? parseInt(match[1], 10) : 160;
+            const w = s;
+            const h = Math.round(s * 0.75);
+            spawnVoiceShape({
+                type: 'right_triangle',
+                x: Math.round(cx - w / 2),
+                y: Math.round(cy - h / 2),
+                width: w,
+                height: h,
+                showRightAngle: true,
+                vertexLabels: ['A', 'B', 'C'],
+                edgeLabels: ['b', 'a', 'c']
+            });
+            const msg = `📐 Drew right-angled triangle (${w} × ${h}px)`;
+            setVoiceFeedback(msg);
+            toast.success(msg, { icon: '📐' });
+            return;
+        }
+
         // Triangle
         if (txt.includes('triangle')) {
             const match = txt.match(/(?:size|of)?\s*(\d+)/i);
-            const s = match ? parseInt(match[1], 10) : 120;
+            const s = match ? parseInt(match[1], 10) : 130;
             spawnVoiceShape({
                 type: 'triangle',
                 x: Math.round(cx - s / 2),
                 y: Math.round(cy - s / 2),
                 width: s,
-                height: Math.round(s * 0.9)
+                height: Math.round(s * 0.9),
+                dashedAltitude: true,
+                altitudeLabel: 'h',
+                vertexLabels: ['A', 'B', 'C'],
+                edgeLabels: ['c', 'a', 'b']
             });
-            const msg = `🔺 Drew triangle (${s}px)`;
+            const msg = `🔺 Drew triangle with altitude (${s}px)`;
             setVoiceFeedback(msg);
             toast.success(msg, { icon: '🔺' });
             return;
@@ -16076,12 +16535,15 @@ export default function Whiteboard({
 
 
                                 {tool === t.id && t.id === 'shape' && showShapePicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 z-50 grid grid-cols-3 gap-1 w-[180px]`}>
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 z-50 grid grid-cols-3 gap-1 w-[210px]`}>
                                         {[
                                             { id: 'rectangle', icon: RectangleHorizontal, label: 'Rectangle' },
                                             { id: 'rounded_rect', icon: RectangleHorizontal, label: 'Rounded' },
                                             { id: 'circle', icon: Circle, label: 'Circle' },
                                             { id: 'triangle', icon: Triangle, label: 'Triangle' },
+                                            { id: 'right_triangle', icon: RightTriangleIcon, label: 'Right △' },
+                                            { id: 'cone', icon: ConeIcon, label: 'Cone' },
+                                            { id: 'incline_plane', icon: InclinePlaneIcon, label: 'Incline' },
                                             { id: 'diamond', icon: Diamond, label: 'Diamond' },
                                             { id: 'star', icon: Star, label: 'Star' },
                                             { id: 'hexagon', icon: Hexagon, label: 'Hexagon' },
@@ -16127,6 +16589,70 @@ export default function Whiteboard({
                                                 <span className="text-[8.5px] truncate w-full text-center leading-tight">{s.label}</span>
                                             </button>
                                         ))}
+
+                                        {/* Quick Math/Science Geometry 1-Click Stamping Palette */}
+                                        <div className="col-span-3 pt-1.5 mt-1 border-t border-slate-700/80">
+                                            <div className="text-[9.5px] font-bold text-amber-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                                <span>⚡ Quick Geometry</span>
+                                                <span className="text-[8px] text-slate-400 font-normal">0ms Stamp</span>
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { stampQuickShape('cone'); setShowShapePicker(false); }}
+                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-amber-600/30 hover:border-amber-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    title="Instant Cone with altitude & radius markings"
+                                                >
+                                                    <ConeIcon className="w-3 h-3 text-amber-400" />
+                                                    <span>Cone</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { stampQuickShape('right_triangle'); setShowShapePicker(false); }}
+                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-sky-600/30 hover:border-sky-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    title="Instant Right-Angled Triangle with 90° marker"
+                                                >
+                                                    <RightTriangleIcon className="w-3 h-3 text-sky-400" />
+                                                    <span>Right △</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { stampQuickShape('incline_plane'); setShowShapePicker(false); }}
+                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-emerald-600/30 hover:border-emerald-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    title="Instant Inclined Plane with mass block & angle θ"
+                                                >
+                                                    <InclinePlaneIcon className="w-3 h-3 text-emerald-400" />
+                                                    <span>Ramp</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { stampQuickShape('cylinder'); setShowShapePicker(false); }}
+                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-indigo-600/30 hover:border-indigo-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    title="Instant Cylinder with radius & height"
+                                                >
+                                                    <Database className="w-3 h-3 text-indigo-400" />
+                                                    <span>Cylinder</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { stampQuickShape('triangle'); setShowShapePicker(false); }}
+                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-purple-600/30 hover:border-purple-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    title="Instant Triangle with altitude line"
+                                                >
+                                                    <Triangle className="w-3 h-3 text-purple-400" />
+                                                    <span>Triangle</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { stampQuickShape('axes'); setShowShapePicker(false); }}
+                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-cyan-600/30 hover:border-cyan-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    title="Instant 2D Cartesian Coordinate Axes"
+                                                >
+                                                    <LineChart className="w-3 h-3 text-cyan-400" />
+                                                    <span>2D Axes</span>
+                                                </button>
+                                            </div>
+                                        </div>
 
                                         {/* Domain Symbols Library Button */}
                                         <button
@@ -19191,6 +19717,19 @@ export default function Whiteboard({
                                 {shapePreview.type === 'circle' && <ellipse cx={shapePreview.width/2} cy={shapePreview.height/2} rx={shapePreview.width/2} ry={shapePreview.height/2} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
                                 {shapePreview.type === 'triangle' && <polygon points={`${shapePreview.width/2},0 0,${shapePreview.height} ${shapePreview.width},${shapePreview.height}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
                                 {shapePreview.type === 'right_triangle' && <polygon points={`0,0 0,${shapePreview.height} ${shapePreview.width},${shapePreview.height}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
+                                {shapePreview.type === 'cone' && (() => {
+                                    const w = shapePreview.width, h = shapePreview.height;
+                                    const rx = w / 2, ry = Math.min(28, Math.max(10, h * 0.18));
+                                    const baseY = h - ry;
+                                    return (
+                                        <g stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} fill="transparent">
+                                            <path d={`M 0 ${baseY} L ${rx} 0 L ${w} ${baseY}`} />
+                                            <path d={`M 0 ${baseY} A ${rx} ${ry} 0 0 0 ${w} ${baseY}`} />
+                                            <path d={`M 0 ${baseY} A ${rx} ${ry} 0 0 1 ${w} ${baseY}`} strokeDasharray="3 3" />
+                                        </g>
+                                    );
+                                })()}
+                                {shapePreview.type === 'incline_plane' && <polygon points={`0,${shapePreview.height} ${shapePreview.width},${shapePreview.height} ${shapePreview.width},0`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
                                 {shapePreview.type === 'diamond' && <polygon points={`${shapePreview.width/2},0 ${shapePreview.width},${shapePreview.height/2} ${shapePreview.width/2},${shapePreview.height} 0,${shapePreview.height/2}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
                                 {shapePreview.type === 'hexagon' && <polygon points={`${shapePreview.width*0.25},0 ${shapePreview.width*0.75},0 ${shapePreview.width},${shapePreview.height*0.5} ${shapePreview.width*0.75},${shapePreview.height} ${shapePreview.width*0.25},${shapePreview.height} 0,${shapePreview.height*0.5}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
                                 {shapePreview.type === 'arc' && <path d={`M 0 ${shapePreview.height} Q ${shapePreview.width/2} 0 ${shapePreview.width} ${shapePreview.height}`} fill="none" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinecap="round" />}
@@ -19908,6 +20447,145 @@ export default function Whiteboard({
                                             strokeWidth={shpObj.strokeWidth}
                                             strokeDasharray={dashArray}
                                         />
+                                    </g>
+                                );
+                            } else if (shpObj.type === 'cone') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const rx = w / 2;
+                                const ry = Math.min(28, Math.max(10, h * 0.18));
+                                const baseY = h - ry;
+                                const apexX = rx, apexY = 0;
+                                const showAltitude = shpObj.dashedAltitude !== false;
+                                const showRadius = shpObj.showRadius !== false;
+                                const showMarkings = shpObj.showMarkings !== false;
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        {/* Cone body filled */}
+                                        <path
+                                            d={`M 0 ${baseY} L ${apexX} ${apexY} L ${w} ${baseY} A ${rx} ${ry} 0 0 1 0 ${baseY} Z`}
+                                            fill={fill}
+                                            stroke={shpObj.color}
+                                            strokeWidth={shpObj.strokeWidth}
+                                            strokeLinejoin="round"
+                                            strokeDasharray={dashArray}
+                                        />
+                                        {/* Back dashed ellipse half showing depth */}
+                                        <path
+                                            d={`M 0 ${baseY} A ${rx} ${ry} 0 0 1 ${w} ${baseY}`}
+                                            fill="none"
+                                            stroke={shpObj.color}
+                                            strokeWidth={Math.max(1.5, (shpObj.strokeWidth || 2) * 0.75)}
+                                            strokeDasharray="4,4"
+                                        />
+                                        {/* Front ellipse half (solid contour) */}
+                                        <path
+                                            d={`M 0 ${baseY} A ${rx} ${ry} 0 0 0 ${w} ${baseY}`}
+                                            fill="none"
+                                            stroke={shpObj.color}
+                                            strokeWidth={shpObj.strokeWidth}
+                                        />
+                                        {/* Dashed Altitude line from apex to base center */}
+                                        {showAltitude && (
+                                            <g>
+                                                <line
+                                                    x1={apexX} y1={apexY} x2={apexX} y2={baseY}
+                                                    stroke={shpObj.color}
+                                                    strokeWidth={Math.max(1.5, (shpObj.strokeWidth || 2) * 0.75)}
+                                                    strokeDasharray="4,4"
+                                                />
+                                                <path
+                                                    d={`M ${apexX} ${baseY - 12} L ${apexX + 12} ${baseY - 12} L ${apexX + 12} ${baseY}`}
+                                                    fill="none"
+                                                    stroke={shpObj.color}
+                                                    strokeWidth={1.5}
+                                                />
+                                                {renderSvgLabel(apexX - 14, baseY / 2, shpObj.altitudeLabel || 'h', 'end', 13)}
+                                            </g>
+                                        )}
+                                        {/* Base Radius line from center to right edge */}
+                                        {showRadius && (
+                                            <g>
+                                                <line
+                                                    x1={apexX} y1={baseY} x2={w} y2={baseY}
+                                                    stroke={shpObj.color}
+                                                    strokeWidth={Math.max(1.5, (shpObj.strokeWidth || 2) * 0.8)}
+                                                    strokeDasharray="3,3"
+                                                />
+                                                <circle cx={apexX} cy={baseY} r={3} fill={shpObj.color} />
+                                                {renderSvgLabel(apexX + rx / 2, baseY - 6, shpObj.radiusLabel || 'r', 'middle', 12)}
+                                            </g>
+                                        )}
+                                        {/* Slant height & vertex markings */}
+                                        {showMarkings && (
+                                            <g>
+                                                {renderSvgLabel(apexX + rx / 2 + 16, baseY / 2, shpObj.slantLabel || 'l', 'start', 13)}
+                                                {renderSvgLabel(apexX, -10, shpObj.vertexLabel || 'V', 'middle', 14)}
+                                            </g>
+                                        )}
+                                    </g>
+                                );
+                            } else if (shpObj.type === 'incline_plane' || shpObj.type === 'ramp') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const blockW = Math.min(60, w * 0.22);
+                                const blockH = Math.min(40, h * 0.2);
+                                const angleRad = Math.atan2(h, w);
+                                const angleDeg = Math.round((angleRad * 180) / Math.PI);
+                                const midX = w * 0.45;
+                                const midY = h * (1 - 0.45);
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        {/* Wedge ramp */}
+                                        <polygon
+                                            points={`0,${h} ${w},${h} ${w},0`}
+                                            fill={fill}
+                                            stroke={shpObj.color}
+                                            strokeWidth={shpObj.strokeWidth}
+                                            strokeLinejoin="round"
+                                            strokeDasharray={dashArray}
+                                        />
+                                        {/* Right-angle square marker at bottom-right (w, h) */}
+                                        <path
+                                            d={`M ${w - 14} ${h} L ${w - 14} ${h - 14} L ${w} ${h - 14}`}
+                                            fill="none"
+                                            stroke={shpObj.color}
+                                            strokeWidth={1.5}
+                                        />
+                                        {/* Angle theta arc at bottom-left corner */}
+                                        <path
+                                            d={`M ${Math.min(35, w * 0.25)} ${h} A ${Math.min(35, w * 0.25)} ${Math.min(35, w * 0.25)} 0 0 0 ${Math.cos(angleRad) * 35} ${h - Math.sin(angleRad) * 35}`}
+                                            fill="none"
+                                            stroke={shpObj.color}
+                                            strokeWidth={1.5}
+                                        />
+                                        {renderSvgLabel(Math.min(45, w * 0.3), h - 10, shpObj.angleLabel || 'θ', 'start', 13)}
+                                        {/* Mass block on incline */}
+                                        {shpObj.showBlock !== false && (
+                                            <g transform={`translate(${midX}, ${midY}) rotate(${-angleDeg})`}>
+                                                <rect
+                                                    x={-blockW / 2}
+                                                    y={-blockH}
+                                                    width={blockW}
+                                                    height={blockH}
+                                                    rx={2}
+                                                    fill={shpObj.fillColor && shpObj.fillColor !== 'transparent' ? shpObj.fillColor : 'rgba(99, 102, 241, 0.2)'}
+                                                    stroke={shpObj.color}
+                                                    strokeWidth={Math.max(1.5, (shpObj.strokeWidth || 2) * 0.85)}
+                                                />
+                                                <text
+                                                    x={0}
+                                                    y={-blockH / 2 + 4}
+                                                    textAnchor="middle"
+                                                    fontSize={12}
+                                                    fontWeight="bold"
+                                                    fill={shpObj.color}
+                                                    fontFamily="sans-serif"
+                                                >
+                                                    {shpObj.blockLabel || 'm'}
+                                                </text>
+                                            </g>
+                                        )}
+                                        {shpObj.baseLabel && renderSvgLabel(w / 2, h + 18, shpObj.baseLabel, 'middle', 13)}
+                                        {shpObj.heightLabel && renderSvgLabel(w + 14, h / 2, shpObj.heightLabel, 'start', 13)}
                                     </g>
                                 );
                             } else if (shpObj.type === 'document') {

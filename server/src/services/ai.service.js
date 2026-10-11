@@ -23,6 +23,14 @@ const ACTIVE_GROQ_MODELS = [
     'allam-2-7b'
 ];
 const ACTIVE_SAMBANOVA_MODELS = ['Meta-Llama-3.1-8B-Instruct'];
+const ACTIVE_NVIDIA_MODELS = [
+    'meta/llama-3.3-70b-instruct',
+    'nvidia/llama-3.1-nemotron-70b-instruct',
+    'meta/llama-3.2-90b-vision-instruct',
+    'meta/llama-3.2-11b-vision-instruct',
+    'deepseek-ai/deepseek-r1',
+    'qwen/qwen2.5-72b-instruct'
+];
 
 class AIService {
     constructor() {
@@ -35,6 +43,7 @@ class AIService {
         this.geminiKey = null;
         this.groqKey = null;
         this.sambaNovaKey = null;
+        this.nvidiaKey = null;
         this.preferredProvider = 'auto';
         this.configPath = path.join(__dirname, '../../storage/ai_config.json');
         this.initialize();
@@ -60,6 +69,7 @@ class AIService {
         this.groqKey = fileConfig.groqApiKey || process.env.GROQ_API_KEY || null;
         this.geminiKey = fileConfig.geminiApiKey || process.env.GEMINI_API_KEY || null;
         this.sambaNovaKey = fileConfig.sambanovaApiKey || process.env.SAMBANOVA_API_KEY || null;
+        this.nvidiaKey = fileConfig.nvidiaApiKey || process.env.NVIDIA_API_KEY || null;
         this.preferredProvider = fileConfig.preferredProvider || process.env.AI_PREFERRED_PROVIDER || 'auto';
 
         if (this.groqKey) {
@@ -87,6 +97,7 @@ class AIService {
         if (this.deepSeekKey) console.log('[AIService] DeepSeek (Paid) initialized.');
         if (this.openRouterKey) console.log('[AIService] OpenRouter (Paid Hub) initialized.');
         if (this.sambaNovaKey) console.log('[AIService] SambaNova initialized.');
+        if (this.nvidiaKey) console.log('[AIService] NVIDIA NIM (Free 1,000 Credits) initialized.');
     }
 
     reload() {
@@ -153,6 +164,13 @@ class AIService {
                     maskedKey: mask(this.sambaNovaKey),
                     models: ACTIVE_SAMBANOVA_MODELS,
                     tier: 'fast'
+                },
+                nvidia: {
+                    name: 'NVIDIA NIM (Free 1,000 Credits)',
+                    configured: Boolean(this.nvidiaKey),
+                    maskedKey: mask(this.nvidiaKey),
+                    models: ACTIVE_NVIDIA_MODELS,
+                    tier: 'free_credits'
                 }
             }
         };
@@ -430,6 +448,41 @@ class AIService {
         }
     }
 
+    async callNvidia({ messages, model = 'meta/llama-3.3-70b-instruct', temperature = 0.1, max_tokens = 4000, jsonMode = false, apiKey }) {
+        const key = (apiKey && typeof apiKey === 'string' && apiKey.trim()) ? apiKey.trim() : (this.nvidiaKey ? this.nvidiaKey.trim() : '');
+        if (!key) throw new Error('NVIDIA NIM API key is not entered. Get a free API key with 1,000 credits at https://build.nvidia.com');
+        const payload = {
+            model,
+            messages,
+            temperature,
+            max_tokens
+        };
+        if (jsonMode) {
+            payload.response_format = { type: 'json_object' };
+        }
+        try {
+            console.log(`[AIService] Calling NVIDIA NIM (${model})...`);
+            const res = await axios.post('https://integrate.api.nvidia.com/v1/chat/completions', payload, {
+                headers: {
+                    'Authorization': `Bearer ${key}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 45000
+            });
+            const text = res.data?.choices?.[0]?.message?.content || '';
+            return { text, model, provider: 'nvidia' };
+        } catch (err) {
+            const status = err.response?.status;
+            const errData = err.response?.data?.error || {};
+            const isQuota = status === 429 || (errData.message && /quota|credit|rate limit/i.test(errData.message));
+            const error = new Error(`NVIDIA NIM (${model}) failed: ${errData.message || err.message}`);
+            error.status = status;
+            error.isQuotaError = isQuota;
+            error.provider = 'nvidia';
+            throw error;
+        }
+    }
+
     /**
      * Isolated Single-Provider Connectivity & Diagnostic Test
      * STRICT RULE: Tests ONLY the specified provider with its exact key and mapped model.
@@ -575,6 +628,24 @@ class AIService {
                 return { provider: 'sambanova', model: res.model || testModel, text: res.text };
             }
 
+            case 'nvidia': {
+                const key = cleanKey || this.nvidiaKey;
+                if (!key) {
+                    const err = new Error('NVIDIA NIM API key is not entered. Please enter a valid API key (nvapi-...) first.');
+                    err.noKey = true;
+                    throw err;
+                }
+                const testModel = model || 'meta/llama-3.3-70b-instruct';
+                const res = await this.callNvidia({
+                    messages: testMessages,
+                    model: testModel,
+                    temperature: 0.1,
+                    max_tokens: 15,
+                    apiKey: key
+                });
+                return { provider: 'nvidia', model: res.model || testModel, text: res.text };
+            }
+
             default:
                 throw new Error(`Unsupported or unknown AI provider: ${provider}`);
         }
@@ -607,6 +678,7 @@ class AIService {
             else if (pref === 'groq' && this.groqKey) candidateOrder.push('groq');
             else if (pref === 'gemini' && this.geminiKey) candidateOrder.push('gemini');
             else if (pref === 'sambanova' && this.sambaNovaKey) candidateOrder.push('sambanova');
+            else if (pref === 'nvidia' && this.nvidiaKey) candidateOrder.push('nvidia');
         }
 
         // 2. Add remaining configured providers
@@ -616,10 +688,11 @@ class AIService {
         if (this.deepSeekKey && !candidateOrder.includes('deepseek')) candidateOrder.push('deepseek');
         if (this.openRouterKey && !candidateOrder.includes('openrouter')) candidateOrder.push('openrouter');
 
-        // High-Speed Inference
+        // High-Speed Inference & Free Credit Models
         if (this.groqKey && !candidateOrder.includes('groq')) candidateOrder.push('groq');
         if (this.geminiKey && !candidateOrder.includes('gemini')) candidateOrder.push('gemini');
         if (this.sambaNovaKey && !candidateOrder.includes('sambanova')) candidateOrder.push('sambanova');
+        if (this.nvidiaKey && !candidateOrder.includes('nvidia')) candidateOrder.push('nvidia');
 
         if (candidateOrder.length === 0) {
             const err = new Error('No AI provider configured. Please add an API key (OpenAI, Anthropic, DeepSeek, Gemini, or Groq) in Settings.');
@@ -698,6 +771,15 @@ class AIService {
                         return await this.callSambaNova({ messages: fullMessages, model: ACTIVE_SAMBANOVA_MODELS[0], temperature, max_tokens: maxTokens });
                     } catch (mErr) {
                         attemptErrors.push({ provider: 'sambanova', model: ACTIVE_SAMBANOVA_MODELS[0], error: mErr.message, isQuota: mErr.isQuotaError });
+                    }
+                } else if (prov === 'nvidia') {
+                    for (const m of ACTIVE_NVIDIA_MODELS.slice(0, 2)) {
+                        try {
+                            return await this.callNvidia({ messages: fullMessages, model: m, temperature, max_tokens: maxTokens, jsonMode });
+                        } catch (mErr) {
+                            attemptErrors.push({ provider: 'nvidia', model: m, error: mErr.message, isQuota: mErr.isQuotaError });
+                            if (mErr.isQuotaError) break;
+                        }
                     }
                 }
             } catch (err) {
@@ -8190,8 +8272,50 @@ CORE RULES:
             return cleaned;
         };
 
-        // 1. Try Gemini Vision first
-        if (preferredProvider === 'gemini' && this.genAI) {
+        // 1. Try NVIDIA NIM Vision if preferred
+        if (preferredProvider === 'nvidia' && this.nvidiaKey) {
+            try {
+                const res = await this.callNvidia({
+                    model: 'meta/llama-3.2-90b-vision-instruct',
+                    messages: [
+                        {
+                            role: 'user',
+                            content: [
+                                { type: 'text', text: systemPrompt },
+                                { type: 'image_url', image_url: { url: dataUrl } }
+                            ]
+                        }
+                    ],
+                    temperature: 0.1,
+                    max_tokens: 3000
+                });
+                if (res.text) return cleanResult(res.text);
+            } catch (err) {
+                console.warn('[AIService] NVIDIA NIM 90B vision recognition failed:', err.message);
+                try {
+                    const fallbackRes = await this.callNvidia({
+                        model: 'meta/llama-3.2-11b-vision-instruct',
+                        messages: [
+                            {
+                                role: 'user',
+                                content: [
+                                    { type: 'text', text: systemPrompt },
+                                    { type: 'image_url', image_url: { url: dataUrl } }
+                                ]
+                            }
+                        ],
+                        temperature: 0.1,
+                        max_tokens: 3000
+                    });
+                    if (fallbackRes.text) return cleanResult(fallbackRes.text);
+                } catch (fbErr) {
+                    console.warn('[AIService] NVIDIA NIM 11B vision recognition failed:', fbErr.message);
+                }
+            }
+        }
+
+        // 2. Try Gemini Vision
+        if ((preferredProvider === 'gemini' || !this.nvidiaKey) && this.genAI) {
             for (const modelName of ACTIVE_GEMINI_MODELS) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -8212,7 +8336,7 @@ CORE RULES:
             }
         }
 
-        // 2. Try Groq Vision
+        // 3. Try Groq Vision
         if (this.groq) {
             try {
                 const completion = await this.groq.chat.completions.create({
@@ -8235,7 +8359,30 @@ CORE RULES:
             }
         }
 
-        // 3. Fallback to Gemini if groq was tried first
+        // 4. Fallback to NVIDIA NIM Vision if not tried yet
+        if (preferredProvider !== 'nvidia' && this.nvidiaKey) {
+            try {
+                const res = await this.callNvidia({
+                    model: 'meta/llama-3.2-90b-vision-instruct',
+                    messages: [
+                        {
+                            role: 'user',
+                            content: [
+                                { type: 'text', text: systemPrompt },
+                                { type: 'image_url', image_url: { url: dataUrl } }
+                            ]
+                        }
+                    ],
+                    temperature: 0.1,
+                    max_tokens: 3000
+                });
+                if (res.text) return cleanResult(res.text);
+            } catch (err) {
+                console.warn('[AIService] NVIDIA NIM fallback vision recognition failed:', err.message);
+            }
+        }
+
+        // 5. Fallback to Gemini if groq was tried first
         if (preferredProvider !== 'gemini' && this.genAI) {
             for (const modelName of ACTIVE_GEMINI_MODELS) {
                 try {
@@ -8258,6 +8405,77 @@ CORE RULES:
         }
 
         return '';
+    }
+
+    /**
+     * Convert any math, physics, or chemistry problem statement into a clean SVG diagram and whiteboard canvas action.
+     * Compatible with NVIDIA NIM (meta/llama-3.3-70b-instruct, nvidia/llama-3.1-nemotron-70b-instruct) or any configured provider.
+     */
+    async generateDiagramFromProblem({ problemText, provider = 'auto', model = null }) {
+        if (!problemText || !problemText.trim()) {
+            throw new Error('Problem text is required to generate a diagram');
+        }
+
+        const prompt = `You are a precision educational diagram generator for STEM whiteboards (Math, Physics, Chemistry).
+Problem Statement:
+"${problemText.trim()}"
+
+TASK:
+Create a clear, pedagogical 2D vector diagram representing the setup described in the problem.
+Examples:
+- If it's a cone/cylinder/sphere, draw the geometric shape with labeled dimensions (radius r, height h, slant height l).
+- If it's an inclined plane or mechanics problem, draw the wedge, the mass block m, gravity vector mg, normal force N, friction f, and angle θ.
+- If it's a triangle/Pythagoras problem, draw the right triangle with vertex labels (A, B, C) and side labels (a, b, c).
+- If it's chemistry/optics, draw the apparatus, rays, or molecular structure.
+
+REQUIREMENTS:
+1. Provide a clean, standalone, valid SVG string inside <svg viewBox="0 0 400 300" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"> ... </svg>.
+2. Use modern, high-contrast chalkboard colors:
+   - Stroke: #38bdf8 (cyan), #818cf8 (indigo), or #f43f5e (rose) with stroke-width 2.5 to 3.
+   - Fill: rgba(56, 189, 248, 0.12) or transparent.
+   - Text/Labels: #f8fafc (white/light slate) with font-family="system-ui, sans-serif" and font-size="14" to "16".
+   - Dimension marks and angles: clear dashed lines with arrows and readable labels.
+3. OUTPUT JSON FORMAT ONLY with this exact structure:
+{
+  "diagramType": "geometry | mechanics | optics | circuit | chemistry | custom",
+  "title": "<Short diagram title, e.g. 'Conical Frustum Dimensions' or 'Inclined Plane Free-Body Diagram'>",
+  "svg": "<COMPLETE VALID SVG STRING>",
+  "labels": ["<label 1>", "<label 2>"],
+  "dimensions": { "r": "<value>", "h": "<value>" }
+}`;
+
+        const res = await this.executeChatCompletion({
+            messages: [{ role: 'user', content: prompt }],
+            systemPrompt: 'You are an expert technical diagram illustrator. Return ONLY a single valid JSON object containing the SVG diagram.',
+            preferredProvider: provider === 'auto' && this.nvidiaKey ? 'nvidia' : provider,
+            temperature: 0.1,
+            jsonMode: true
+        });
+
+        let parsed = null;
+        try {
+            const raw = (res.text || '').trim().replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+            parsed = JSON.parse(raw);
+        } catch (e) {
+            const svgMatch = (res.text || '').match(/<svg[\s\S]*?<\/svg>/i);
+            if (svgMatch) {
+                parsed = {
+                    diagramType: 'custom',
+                    title: 'Problem Diagram',
+                    svg: svgMatch[0]
+                };
+            }
+        }
+
+        if (!parsed || !parsed.svg) {
+            throw new Error('Failed to generate valid diagram SVG from the problem statement.');
+        }
+
+        return {
+            provider: res.provider,
+            model: res.model,
+            diagram: parsed
+        };
     }
 }
 

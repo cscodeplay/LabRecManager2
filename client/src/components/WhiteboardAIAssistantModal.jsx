@@ -335,7 +335,24 @@ export default function WhiteboardAIAssistantModal({
                             <span>Draw & Place on Whiteboard</span>
                         </button>
                     ) : (
-                        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 flex-wrap sm:flex-nowrap">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onInsertToBoard({
+                                        question,
+                                        speechResponse,
+                                        solutionMarkdown,
+                                        canvasAction
+                                    }, 'problem_diagram_layout');
+                                    onClose();
+                                }}
+                                className="flex-1 sm:flex-initial px-3 py-2 rounded-xl text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg transition bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 shadow-emerald-500/20 ring-1 ring-emerald-400/40"
+                                title="Layout: Diagram on left, problem text top right, with wide handwriting area below for teacher"
+                            >
+                                <Shapes className="w-3.5 h-3.5 text-emerald-300" />
+                                <span>Board Layout</span>
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => {
@@ -347,11 +364,11 @@ export default function WhiteboardAIAssistantModal({
                                     }, 'flowchart');
                                     onClose();
                                 }}
-                                className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg transition bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 shadow-indigo-500/20"
+                                className="flex-1 sm:flex-initial px-3 py-2 rounded-xl text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg transition bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 shadow-indigo-500/20"
                                 title="Convert solution steps into a connected whiteboard flowchart diagram"
                             >
-                                <Layers className="w-4 h-4 text-cyan-300" />
-                                <span>Build Flowchart</span>
+                                <Layers className="w-3.5 h-3.5 text-cyan-300" />
+                                <span>Flowchart</span>
                             </button>
                             <button
                                 type="button"
@@ -364,11 +381,11 @@ export default function WhiteboardAIAssistantModal({
                                     }, 'card');
                                     onClose();
                                 }}
-                                className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl text-slate-200 hover:text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition bg-slate-800 hover:bg-slate-700 border border-slate-700"
+                                className="flex-1 sm:flex-initial px-3 py-2 rounded-xl text-slate-200 hover:text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition bg-slate-800 hover:bg-slate-700 border border-slate-700"
                                 title="Insert clean solution card onto whiteboard"
                             >
-                                <PlusCircle className="w-4 h-4 text-purple-400" />
-                                <span>Insert Card</span>
+                                <PlusCircle className="w-3.5 h-3.5 text-purple-400" />
+                                <span>Card</span>
                             </button>
                         </div>
                     )}
