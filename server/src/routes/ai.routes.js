@@ -591,7 +591,7 @@ router.post('/config', authenticate, authorize('admin', 'principal'), asyncHandl
         geminiApiKey: (!isMasked(geminiApiKey) && typeof geminiApiKey === 'string' && geminiApiKey.trim()) ? geminiApiKey.trim() : existing.geminiApiKey,
         groqApiKey: (!isMasked(groqApiKey) && typeof groqApiKey === 'string' && groqApiKey.trim()) ? groqApiKey.trim() : existing.groqApiKey,
         sambanovaApiKey: (!isMasked(sambanovaApiKey) && typeof sambanovaApiKey === 'string' && sambanovaApiKey.trim()) ? sambanovaApiKey.trim() : existing.sambanovaApiKey,
-        nvidiaApiKey: (!isMasked(nvidiaApiKey) && typeof nvidiaApiKey === 'string' && nvidiaApiKey.trim()) ? nvidiaApiKey.trim() : existing.nvidiaApiKey,
+        nvidiaApiKey: (!isMasked(nvidiaApiKey) && typeof nvidiaApiKey === 'string' && nvidiaApiKey.trim()) ? nvidiaApiKey.trim().replace(/^Bearer\s+/i, '') : existing.nvidiaApiKey,
         preferredProvider: preferredProvider || existing.preferredProvider || 'auto'
     };
 

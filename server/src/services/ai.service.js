@@ -24,12 +24,11 @@ const ACTIVE_GROQ_MODELS = [
 ];
 const ACTIVE_SAMBANOVA_MODELS = ['Meta-Llama-3.1-8B-Instruct'];
 const ACTIVE_NVIDIA_MODELS = [
-    'meta/llama-3.3-70b-instruct',
-    'nvidia/llama-3.1-nemotron-70b-instruct',
     'meta/llama-3.2-90b-vision-instruct',
     'meta/llama-3.2-11b-vision-instruct',
-    'deepseek-ai/deepseek-r1',
-    'qwen/qwen2.5-72b-instruct'
+    'nvidia/llama-3.1-nemotron-70b-instruct',
+    'deepseek-ai/deepseek-v4.1-flash',
+    'google/gemma-3-12b-it'
 ];
 
 class AIService {
@@ -448,8 +447,9 @@ class AIService {
         }
     }
 
-    async callNvidia({ messages, model = 'meta/llama-3.3-70b-instruct', temperature = 0.1, max_tokens = 4000, jsonMode = false, apiKey }) {
-        const key = (apiKey && typeof apiKey === 'string' && apiKey.trim()) ? apiKey.trim() : (this.nvidiaKey ? this.nvidiaKey.trim() : '');
+    async callNvidia({ messages, model = 'meta/llama-3.2-11b-vision-instruct', temperature = 0.1, max_tokens = 4000, jsonMode = false, apiKey }) {
+        const raw = (apiKey && typeof apiKey === 'string' && apiKey.trim()) ? apiKey.trim() : (this.nvidiaKey ? this.nvidiaKey.trim() : '');
+        const key = raw.replace(/^Bearer\s+/i, '');
         if (!key) throw new Error('NVIDIA NIM API key is not entered. Get a free API key with 1,000 credits at https://build.nvidia.com');
         const payload = {
             model,
@@ -629,13 +629,14 @@ class AIService {
             }
 
             case 'nvidia': {
-                const key = cleanKey || this.nvidiaKey;
+                const rawKey = cleanKey || this.nvidiaKey;
+                const key = rawKey ? rawKey.replace(/^Bearer\s+/i, '') : null;
                 if (!key) {
                     const err = new Error('NVIDIA NIM API key is not entered. Please enter a valid API key (nvapi-...) first.');
                     err.noKey = true;
                     throw err;
                 }
-                const testModel = model || 'meta/llama-3.3-70b-instruct';
+                const testModel = model || 'meta/llama-3.2-11b-vision-instruct';
                 const res = await this.callNvidia({
                     messages: testMessages,
                     model: testModel,
