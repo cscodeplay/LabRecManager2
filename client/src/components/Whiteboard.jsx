@@ -11569,16 +11569,43 @@ export default function Whiteboard({
                 radiusLabel: 'r'
             };
         } else if (type === 'concentric_circles') {
-            w = 240;
-            h = 240;
-            shapeProps = {
-                type: 'concentric_circles',
-                rings: 3,
-                showCenter: true,
-                centerLabel: 'O',
-                showRadii: true,
-                radiiLabels: ['r₁', 'r₂', 'r₃']
-            };
+            const grpW = 260;
+            const grpH = 260;
+            const slot = findAvailableCanvasSpace(grpW, grpH);
+            const centerCx = slot.hasSpace ? slot.x + 130 : Math.max(160, Math.round(baseCx));
+            const centerCy = slot.hasSpace ? slot.y + 130 : Math.max(160, Math.round(baseCy));
+            const radii = [45, 85, 125];
+            const labels = ['r₁', 'r₂', 'r₃'];
+            const angles = [0, Math.PI / 4, Math.PI / 2];
+            const stampedShapes = radii.map((r, idx) => ({
+                id: `geo_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 4)}`,
+                type: 'circle',
+                x: centerCx - r,
+                y: centerCy - r,
+                width: r * 2,
+                height: r * 2,
+                color: color || '#3b82f6',
+                strokeWidth: strokeWidth || 3,
+                fillColor: idx === 0 && fillColor && fillColor !== 'transparent' ? fillColor : 'transparent',
+                strokeStyle: strokeStyle || 'solid',
+                rotation: 0,
+                showCenter: idx === 0,
+                centerLabel: idx === 0 ? 'O' : null,
+                showRadius: true,
+                radiusLabel: labels[idx],
+                radiusAngle: angles[idx],
+                ...customOptions
+            }));
+            const targetPage = currentPageRef.current !== undefined ? currentPageRef.current : currentPage;
+            setPageShapeObjects(prev => ({
+                ...prev,
+                [targetPage]: [...(prev[targetPage] || []), ...stampedShapes]
+            }));
+            setSelectedShapeIds(stampedShapes.map(s => s.id));
+            setTool('select');
+            saveToHistory();
+            toast.success(`Stamped 3 concentric circles sharing center O!`, { icon: '🎯' });
+            return stampedShapes[0];
         } else if (type === 'cone') {
             w = 220;
             h = 240;
@@ -13073,40 +13100,125 @@ export default function Whiteboard({
             (txt.includes('formula') && (txt.includes('circle') || txt.includes('area') || txt.includes('what')));
 
         if (!isDeleteCommand && !isCognitiveExplain) {
-            // Check Concentric Circles command first
+            // 1. Concentric Circles: drawn one circle at a time sharing center O with provided dimensions
             if (/\b(concentric\s*circles?|nested\s*circles?|concentric\s*rings?|bullseye)\b/i.test(txt)) {
-                const ringsMatch = txt.match(/(\d+)\s*(?:concentric|nested|rings?|circles?)/i);
-                const rings = ringsMatch ? Math.max(2, Math.min(5, parseInt(ringsMatch[1], 10))) : 3;
-                const sizeMatch = txt.match(/(?:radius|size|diameter|width)\s*(\d+)/i);
-                const size = sizeMatch ? Math.max(80, parseInt(sizeMatch[1], 10) * 2) : 240;
-                const slot = findAvailableCanvasSpace(size, size);
-                const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - size / 2));
-                const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - size / 2));
+                const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(txt);
+                const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(txt);
+                const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
 
-                await dispatchTeacherAction({
-                    x: targetX + Math.round(size / 2),
-                    y: targetY + Math.round(size / 2),
-                    actionText: `Drawing ${rings} concentric circles...`,
-                    duration: 320,
-                    onExecute: () => {
-                        spawnVoiceShape({
-                            type: 'concentric_circles',
-                            rings,
-                            x: targetX,
-                            y: targetY,
-                            width: size,
-                            height: size,
-                            showCenter: true,
-                            centerLabel: 'O',
-                            showRadii: true,
-                            radiiLabels: rings === 2 ? ['r', 'R'] : ['r₁', 'r₂', 'r₃'],
-                            color: color || '#3b82f6',
-                            strokeWidth: strokeWidth || 3,
-                            fillColor: fillColor && fillColor !== 'transparent' ? fillColor : 'transparent'
-                        });
+                let count = 3;
+                if (/\b(?:two|2)\b/i.test(txt)) count = 2;
+                else if (/\b(?:three|3)\b/i.test(txt)) count = 3;
+                else if (/\b(?:four|4)\b/i.test(txt)) count = 4;
+
+                const cleanedTxt = txt
+                    .replace(/\b(?:two|three|four|2|3|4)\s+(?:concentric|nested|rings?|circles?)/gi, '')
+                    .replace(/\b(?:concentric|nested|rings?|circles?)\s+of\s+/gi, 'of ');
+                
+                const numMatches = [];
+                const numRegex = /(\d+(?:\.\d+)?)\s*(cm|mm|px)?/gi;
+                let m;
+                while ((m = numRegex.exec(cleanedTxt)) !== null) {
+                    const val = parseFloat(m[1]);
+                    if (!isNaN(val) && val > 0) {
+                        numMatches.push({ val, unit: m[2] || unit });
                     }
-                });
-                const speech = `Here are ${rings} concentric circles with a shared center point O.`;
+                }
+
+                let radiiList = [];
+                let labelsList = [];
+
+                if (numMatches.length >= 2) {
+                    const sorted = [...numMatches].sort((a, b) => a.val - b.val).slice(0, 4);
+                    count = sorted.length;
+                    const maxVal = sorted[sorted.length - 1].val;
+                    let pxScale = 1;
+                    if (unit === 'cm') {
+                        pxScale = maxVal <= 10 ? 25 : (maxVal <= 20 ? 15 : 10);
+                    } else if (unit === 'mm') {
+                        pxScale = maxVal <= 50 ? 3 : 1.5;
+                    } else {
+                        if (maxVal <= 15) pxScale = 25;
+                        else if (maxVal > 250) pxScale = 240 / maxVal;
+                        else pxScale = 1;
+                    }
+
+                    radiiList = sorted.map(item => Math.max(25, Math.round(item.val * pxScale)));
+                    labelsList = sorted.map((item, idx) => {
+                        const prefix = count === 2 ? (idx === 0 ? 'r' : 'R') : `r${idx + 1}`;
+                        const unitStr = (unit === 'cm' || unit === 'mm') ? unit : (maxVal <= 15 ? 'cm' : 'px');
+                        return `${prefix} = ${item.val}${unitStr}`;
+                    });
+                } else if (numMatches.length === 1 && numMatches[0].val > 0) {
+                    const baseR = numMatches[0].val;
+                    const basePx = unit === 'cm' ? Math.round(baseR * 25) : (baseR <= 15 ? Math.round(baseR * 25) : baseR);
+                    if (count === 2) {
+                        radiiList = [Math.max(25, Math.round(basePx * 0.55)), Math.max(50, Math.round(basePx))];
+                        labelsList = [`r = ${Math.round(baseR * 0.55)}${unit}`, `R = ${baseR}${unit}`];
+                    } else {
+                        radiiList = [Math.max(25, Math.round(basePx * 0.4)), Math.max(50, Math.round(basePx * 0.7)), Math.max(80, Math.round(basePx))];
+                        labelsList = [`r₁ = ${Math.round(baseR * 0.4)}${unit}`, `r₂ = ${Math.round(baseR * 0.7)}${unit}`, `r₃ = ${baseR}${unit}`];
+                    }
+                } else {
+                    if (count === 2) {
+                        radiiList = [55, 110];
+                        labelsList = ['r', 'R'];
+                    } else if (count === 4) {
+                        radiiList = [35, 65, 95, 125];
+                        labelsList = ['r₁', 'r₂', 'r₃', 'r₄'];
+                    } else {
+                        radiiList = [45, 85, 125];
+                        labelsList = ['r₁', 'r₂', 'r₃'];
+                    }
+                }
+
+                const maxR = radiiList[radiiList.length - 1];
+                const groupSize = maxR * 2;
+                const slot = findAvailableCanvasSpace(groupSize, groupSize);
+                const centerCx = slot.hasSpace ? slot.x + maxR : Math.max(20 + maxR, Math.round(cx));
+                const centerCy = slot.hasSpace ? slot.y + maxR : Math.max(20 + maxR, Math.round(cy));
+
+                const angles = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
+
+                for (let i = 0; i < radiiList.length; i++) {
+                    const r = radiiList[i];
+                    const lbl = labelsList[i];
+                    const cX = centerCx - r;
+                    const cY = centerCy - r;
+                    const isFirst = (i === 0);
+                    const circleNum = i + 1;
+                    const totalCircles = radiiList.length;
+
+                    await dispatchTeacherAction({
+                        x: centerCx,
+                        y: centerCy,
+                        actionText: `Drawing Circle ${circleNum} of ${totalCircles} (${lbl})...`,
+                        duration: 320,
+                        onExecute: () => {
+                            spawnVoiceShape({
+                                type: 'circle',
+                                x: cX,
+                                y: cY,
+                                width: r * 2,
+                                height: r * 2,
+                                showCenter: isFirst,
+                                centerLabel: isFirst ? 'O' : null,
+                                showRadius: true,
+                                radiusLabel: lbl,
+                                radiusAngle: angles[i % angles.length],
+                                color: color || '#3b82f6',
+                                strokeWidth: strokeWidth || 3,
+                                fillColor: isFirst && fillColor && fillColor !== 'transparent' ? fillColor : 'transparent'
+                            });
+                        }
+                    });
+
+                    if (i < radiiList.length - 1) {
+                        await new Promise(res => setTimeout(res, 120));
+                    }
+                }
+
+                const speech = `Drawn ${count} concentric circles sequentially with shared center point O.`;
                 if (aiSpeechEnabled) speakAiResponse(speech);
                 toast.success(speech, { icon: '🎯' });
                 setVoiceFeedback(speech);
@@ -13114,7 +13226,7 @@ export default function Whiteboard({
                 return;
             }
 
-            // Check Circle command
+            // 2. Single Circle command
             const isCircleVoice =
                 (/\b(draw\s+a?\s*circle|create\s+a?\s*circle|add\s+a?\s*circle|^circle$|\bcircle\s+(?:with\s+)?(?:radius|size|of)\b|\bdraw\s+circle\b|\bcircle\b)/i.test(txt) ||
                 (/\b(round\s+shape|round\s+circle)\b/i.test(txt)) ||
@@ -13123,8 +13235,32 @@ export default function Whiteboard({
                 !txt.includes('color');
 
             if (isCircleVoice) {
-                const radMatch = txt.match(/(?:radius|rad|r|size|of)?\s*(\d+)/i);
-                const radius = radMatch ? Math.max(20, parseInt(radMatch[1], 10)) : 75;
+                const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(txt);
+                const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(txt);
+                const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
+                const radMatch = txt.match(/(?:radius|rad|r|size|of)?\s*(\d+(?:\.\d+)?)/i);
+                let rawVal = radMatch ? parseFloat(radMatch[1]) : 75;
+                let radius = 75;
+                let radiusLabel = 'r';
+
+                if (radMatch && rawVal > 0) {
+                    if (unit === 'cm') {
+                        radius = Math.max(25, Math.round(rawVal * 25));
+                        radiusLabel = `r = ${rawVal}cm`;
+                    } else if (unit === 'mm') {
+                        radius = Math.max(20, Math.round(rawVal * 2.5));
+                        radiusLabel = `r = ${rawVal}mm`;
+                    } else {
+                        if (rawVal <= 15) {
+                            radius = Math.max(25, Math.round(rawVal * 25));
+                            radiusLabel = `r = ${rawVal}cm`;
+                        } else {
+                            radius = Math.max(25, Math.min(250, Math.round(rawVal)));
+                            radiusLabel = `r = ${rawVal}px`;
+                        }
+                    }
+                }
+
                 const size = radius * 2;
                 const slot = findAvailableCanvasSpace(size, size);
                 const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - radius));
@@ -13133,7 +13269,7 @@ export default function Whiteboard({
                 await dispatchTeacherAction({
                     x: targetX + radius,
                     y: targetY + radius,
-                    actionText: `Drawing circle with radius ${radius}px...`,
+                    actionText: `Drawing circle with ${radiusLabel}...`,
                     duration: 300,
                     onExecute: () => {
                         spawnVoiceShape({
@@ -13145,16 +13281,387 @@ export default function Whiteboard({
                             showCenter: true,
                             centerLabel: 'O',
                             showRadius: true,
-                            radiusLabel: `r = ${radius}px`,
+                            radiusLabel: radiusLabel,
+                            radiusAngle: 0,
                             color: color || '#3b82f6',
                             strokeWidth: strokeWidth || 3,
                             fillColor: fillColor && fillColor !== 'transparent' ? fillColor : 'transparent'
                         });
                     }
                 });
-                const speech = `Here is a circle with radius ${radius}px and center point O.`;
+                const speech = `Here is a circle with ${radiusLabel} and center point O.`;
                 if (aiSpeechEnabled) speakAiResponse(speech);
                 toast.success(speech, { icon: '⭕' });
+                setVoiceFeedback(speech);
+                conversationHistoryRef.current.push({ role: 'assistant', content: speech });
+                return;
+            }
+
+            // 3. Rectangle / Box command (e.g. "rectangle of side 50px by 30px", "draw rectangle 200 by 100")
+            const isRectVoice =
+                (/\b(draw\s+a?\s*rectangle|create\s+a?\s*rectangle|draw\s+a?\s*box|draw\s+rectangle|rectangle|quadrilateral|oblong)\b/i.test(txt) ||
+                (/\b(rect|box)\b/i.test(txt) && /\b(side|size|width|height|by|x|\d+)\b/i.test(txt))) &&
+                !txt.includes('concentric') && !txt.includes('color');
+
+            if (isRectVoice) {
+                const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(txt);
+                const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(txt);
+                const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
+                const byMatch = txt.match(/(\d+(?:\.\d+)?)\s*(?:cm|mm|px)?\s*(?:by|x|\*|\s+and\s+)\s*(\d+(?:\.\d+)?)\s*(?:cm|mm|px)?/i);
+
+                let w = 180, h = 110;
+                let labelW = 'w', labelH = 'h';
+                if (byMatch) {
+                    let rawW = parseFloat(byMatch[1]);
+                    let rawH = parseFloat(byMatch[2]);
+                    if (unit === 'cm') {
+                        w = Math.max(30, Math.round(rawW * 25));
+                        h = Math.max(25, Math.round(rawH * 25));
+                        labelW = `${rawW}cm`;
+                        labelH = `${rawH}cm`;
+                    } else if (unit === 'mm') {
+                        w = Math.max(30, Math.round(rawW * 2.5));
+                        h = Math.max(25, Math.round(rawH * 2.5));
+                        labelW = `${rawW}mm`;
+                        labelH = `${rawH}mm`;
+                    } else {
+                        if (rawW <= 15 && rawH <= 15) {
+                            w = Math.max(30, Math.round(rawW * 25));
+                            h = Math.max(25, Math.round(rawH * 25));
+                            labelW = `${rawW}cm`;
+                            labelH = `${rawH}cm`;
+                        } else {
+                            w = Math.max(30, Math.min(600, Math.round(rawW)));
+                            h = Math.max(20, Math.min(500, Math.round(rawH)));
+                            labelW = `${rawW}px`;
+                            labelH = `${rawH}px`;
+                        }
+                    }
+                } else {
+                    const singleMatch = txt.match(/(?:side|size|length|width)?\s*(\d+(?:\.\d+)?)/i);
+                    if (singleMatch) {
+                        const rawVal = parseFloat(singleMatch[1]);
+                        if (unit === 'cm') {
+                            w = Math.max(40, Math.round(rawVal * 25));
+                            h = Math.max(25, Math.round(rawVal * 16));
+                            labelW = `${rawVal}cm`;
+                            labelH = `${(rawVal * 0.65).toFixed(1)}cm`;
+                        } else {
+                            w = Math.max(40, Math.round(rawVal));
+                            h = Math.max(25, Math.round(rawVal * 0.65));
+                            labelW = `${rawVal}px`;
+                            labelH = `${Math.round(rawVal * 0.65)}px`;
+                        }
+                    }
+                }
+
+                const slot = findAvailableCanvasSpace(w, h);
+                const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - w / 2));
+                const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - h / 2));
+
+                await dispatchTeacherAction({
+                    x: targetX + Math.round(w / 2),
+                    y: targetY + Math.round(h / 2),
+                    actionText: `Drawing rectangle (${labelW} × ${labelH})...`,
+                    duration: 300,
+                    onExecute: () => {
+                        spawnVoiceShape({
+                            type: 'rectangle',
+                            x: targetX,
+                            y: targetY,
+                            width: w,
+                            height: h,
+                            showRightAngle: true,
+                            vertexLabels: ['A', 'B', 'C', 'D'],
+                            edgeLabels: [labelW, labelW, labelH, labelH],
+                            color: color || '#3b82f6',
+                            strokeWidth: strokeWidth || 3,
+                            fillColor: fillColor && fillColor !== 'transparent' ? fillColor : 'transparent'
+                        });
+                    }
+                });
+                const speech = `Here is a rectangle with dimensions ${labelW} by ${labelH}.`;
+                if (aiSpeechEnabled) speakAiResponse(speech);
+                toast.success(speech, { icon: '▭' });
+                setVoiceFeedback(speech);
+                conversationHistoryRef.current.push({ role: 'assistant', content: speech });
+                return;
+            }
+
+            // 4. Square command (e.g. "square of side 60px", "draw square side 100")
+            const isSquareVoice =
+                (/\b(draw\s+a?\s*square|create\s+a?\s*square|draw\s+square|^square$|\bsquare\s+(?:with\s+)?(?:side|size|of)\b|\bsquare\b)/i.test(txt)) &&
+                !txt.includes('concentric') && !txt.includes('color');
+
+            if (isSquareVoice) {
+                const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(txt);
+                const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(txt);
+                const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
+                const sideMatch = txt.match(/(?:side|size|of)?\s*(\d+(?:\.\d+)?)/i);
+                let rawVal = sideMatch ? parseFloat(sideMatch[1]) : 120;
+                let side = 120;
+                let sideLabel = 's';
+
+                if (sideMatch && rawVal > 0) {
+                    if (unit === 'cm') {
+                        side = Math.max(30, Math.round(rawVal * 25));
+                        sideLabel = `${rawVal}cm`;
+                    } else if (unit === 'mm') {
+                        side = Math.max(25, Math.round(rawVal * 2.5));
+                        sideLabel = `${rawVal}mm`;
+                    } else {
+                        if (rawVal <= 15) {
+                            side = Math.max(30, Math.round(rawVal * 25));
+                            sideLabel = `${rawVal}cm`;
+                        } else {
+                            side = Math.max(30, Math.min(450, Math.round(rawVal)));
+                            sideLabel = `${rawVal}px`;
+                        }
+                    }
+                }
+
+                const slot = findAvailableCanvasSpace(side, side);
+                const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - side / 2));
+                const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - side / 2));
+
+                await dispatchTeacherAction({
+                    x: targetX + Math.round(side / 2),
+                    y: targetY + Math.round(side / 2),
+                    actionText: `Drawing square (side ${sideLabel})...`,
+                    duration: 300,
+                    onExecute: () => {
+                        spawnVoiceShape({
+                            type: 'rectangle',
+                            x: targetX,
+                            y: targetY,
+                            width: side,
+                            height: side,
+                            showRightAngle: true,
+                            vertexLabels: ['A', 'B', 'C', 'D'],
+                            edgeLabels: [sideLabel, sideLabel, sideLabel, sideLabel],
+                            color: color || '#3b82f6',
+                            strokeWidth: strokeWidth || 3,
+                            fillColor: fillColor && fillColor !== 'transparent' ? fillColor : 'transparent'
+                        });
+                    }
+                });
+                const speech = `Here is a square with side ${sideLabel}.`;
+                if (aiSpeechEnabled) speakAiResponse(speech);
+                toast.success(speech, { icon: '⏹️' });
+                setVoiceFeedback(speech);
+                conversationHistoryRef.current.push({ role: 'assistant', content: speech });
+                return;
+            }
+
+            // 5. Right Triangle or Triangle command
+            const isRightTriangle = /\b(right\s*(?:angled?)?\s*triangle)\b/i.test(txt);
+            const isTriangleVoice = (/\b(draw\s+a?\s*triangle|create\s+a?\s*triangle|triangle)\b/i.test(txt)) && !txt.includes('color');
+
+            if (isRightTriangle || isTriangleVoice) {
+                const w = 220, h = 160;
+                const slot = findAvailableCanvasSpace(w, h);
+                const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - w / 2));
+                const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - h / 2));
+
+                if (isRightTriangle) {
+                    await dispatchTeacherAction({
+                        x: targetX + Math.round(w / 2),
+                        y: targetY + Math.round(h / 2),
+                        actionText: 'Drawing right-angled triangle...',
+                        duration: 320,
+                        onExecute: () => {
+                            spawnVoiceShape({
+                                type: 'right_triangle',
+                                x: targetX,
+                                y: targetY,
+                                width: w,
+                                height: h,
+                                showRightAngle: true,
+                                vertexLabels: ['A', 'B', 'C'],
+                                edgeLabels: ['b', 'a', 'c'],
+                                color: color || '#3b82f6',
+                                strokeWidth: strokeWidth || 3,
+                                fillColor: fillColor && fillColor !== 'transparent' ? fillColor : 'transparent'
+                            });
+                        }
+                    });
+                    const speech = 'Here is a right-angled triangle with vertex labels and hypotenuse.';
+                    if (aiSpeechEnabled) speakAiResponse(speech);
+                    toast.success(speech, { icon: '📐' });
+                    setVoiceFeedback(speech);
+                    conversationHistoryRef.current.push({ role: 'assistant', content: speech });
+                    return;
+                } else {
+                    await dispatchTeacherAction({
+                        x: targetX + Math.round(w / 2),
+                        y: targetY + Math.round(h / 2),
+                        actionText: 'Drawing triangle with altitude...',
+                        duration: 320,
+                        onExecute: () => {
+                            spawnVoiceShape({
+                                type: 'triangle',
+                                x: targetX,
+                                y: targetY,
+                                width: w,
+                                height: h,
+                                dashedAltitude: true,
+                                altitudeLabel: 'h',
+                                vertexLabels: ['A', 'B', 'C'],
+                                edgeLabels: ['c', 'a', 'b'],
+                                color: color || '#3b82f6',
+                                strokeWidth: strokeWidth || 3,
+                                fillColor: fillColor && fillColor !== 'transparent' ? fillColor : 'transparent'
+                            });
+                        }
+                    });
+                    const speech = 'Here is a triangle with altitude and vertex labels.';
+                    if (aiSpeechEnabled) speakAiResponse(speech);
+                    toast.success(speech, { icon: '🔺' });
+                    setVoiceFeedback(speech);
+                    conversationHistoryRef.current.push({ role: 'assistant', content: speech });
+                    return;
+                }
+            }
+
+            // 6. Cone command
+            if (/\b(draw\s+a?\s*cone|cone)\b/i.test(txt) && !txt.includes('3d') && !txt.includes('color')) {
+                const w = 180, h = 210;
+                const slot = findAvailableCanvasSpace(w, h);
+                const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - w / 2));
+                const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - h / 2));
+
+                await dispatchTeacherAction({
+                    x: targetX + Math.round(w / 2),
+                    y: targetY + Math.round(h / 2),
+                    actionText: 'Drawing geometric cone...',
+                    duration: 320,
+                    onExecute: () => {
+                        spawnVoiceShape({
+                            type: 'cone',
+                            x: targetX,
+                            y: targetY,
+                            width: w,
+                            height: h,
+                            dashedAltitude: true,
+                            altitudeLabel: 'h',
+                            showRadius: true,
+                            radiusLabel: 'r',
+                            showMarkings: true,
+                            slantLabel: 'l',
+                            vertexLabel: 'V',
+                            color: color || '#3b82f6',
+                            strokeWidth: strokeWidth || 3,
+                            fillColor: fillColor && fillColor !== 'transparent' ? fillColor : 'transparent'
+                        });
+                    }
+                });
+                const speech = 'Here is a geometric cone with altitude and radius markings.';
+                if (aiSpeechEnabled) speakAiResponse(speech);
+                toast.success(speech, { icon: '🍦' });
+                setVoiceFeedback(speech);
+                conversationHistoryRef.current.push({ role: 'assistant', content: speech });
+                return;
+            }
+
+            // 7. Cylinder command
+            if (/\b(draw\s+a?\s*cylinder|cylinder)\b/i.test(txt) && !txt.includes('3d') && !txt.includes('color')) {
+                const w = 170, h = 220;
+                const slot = findAvailableCanvasSpace(w, h);
+                const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - w / 2));
+                const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - h / 2));
+
+                await dispatchTeacherAction({
+                    x: targetX + Math.round(w / 2),
+                    y: targetY + Math.round(h / 2),
+                    actionText: 'Drawing geometric cylinder...',
+                    duration: 320,
+                    onExecute: () => {
+                        spawnVoiceShape({
+                            type: 'cylinder',
+                            x: targetX,
+                            y: targetY,
+                            width: w,
+                            height: h,
+                            radiusLabel: 'r',
+                            heightLabel: 'h',
+                            color: color || '#3b82f6',
+                            strokeWidth: strokeWidth || 3,
+                            fillColor: fillColor && fillColor !== 'transparent' ? fillColor : 'transparent'
+                        });
+                    }
+                });
+                const speech = 'Here is a geometric cylinder with radius and height markings.';
+                if (aiSpeechEnabled) speakAiResponse(speech);
+                toast.success(speech, { icon: '🛢️' });
+                setVoiceFeedback(speech);
+                conversationHistoryRef.current.push({ role: 'assistant', content: speech });
+                return;
+            }
+
+            // 8. Incline Plane / Ramp command
+            if (/\b(draw\s+a?\s*(?:incline|ramp|wedge)|incline|inclined\s*plane|ramp|wedge)\b/i.test(txt) && !txt.includes('3d') && !txt.includes('color')) {
+                const w = 260, h = 160;
+                const slot = findAvailableCanvasSpace(w, h);
+                const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - w / 2));
+                const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - h / 2));
+
+                await dispatchTeacherAction({
+                    x: targetX + Math.round(w / 2),
+                    y: targetY + Math.round(h / 2),
+                    actionText: 'Drawing inclined plane with mass block...',
+                    duration: 320,
+                    onExecute: () => {
+                        spawnVoiceShape({
+                            type: 'incline_plane',
+                            x: targetX,
+                            y: targetY,
+                            width: w,
+                            height: h,
+                            showBlock: true,
+                            blockLabel: 'm',
+                            angleLabel: 'θ',
+                            baseLabel: 'd',
+                            color: color || '#3b82f6',
+                            strokeWidth: strokeWidth || 3,
+                            fillColor: fillColor && fillColor !== 'transparent' ? fillColor : 'transparent'
+                        });
+                    }
+                });
+                const speech = 'Here is an inclined plane with mass block m and angle θ.';
+                if (aiSpeechEnabled) speakAiResponse(speech);
+                toast.success(speech, { icon: '📐' });
+                setVoiceFeedback(speech);
+                conversationHistoryRef.current.push({ role: 'assistant', content: speech });
+                return;
+            }
+
+            // 9. Coordinate System / Axes command
+            if (/\b(draw\s+a?\s*(?:coordinate\s*system|cartesian\s*plane|axes|graph)|coordinate\s*system|cartesian\s*plane|cartesian\s*grid|2d\s*axes)\b/i.test(txt) && !txt.includes('color')) {
+                const w = 280, h = 240;
+                const slot = findAvailableCanvasSpace(w, h);
+                const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - w / 2));
+                const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - h / 2));
+
+                await dispatchTeacherAction({
+                    x: targetX + Math.round(w / 2),
+                    y: targetY + Math.round(h / 2),
+                    actionText: 'Drawing 2D Cartesian coordinate axes...',
+                    duration: 320,
+                    onExecute: () => {
+                        spawnVoiceShape({
+                            type: 'coordinate_system',
+                            x: targetX,
+                            y: targetY,
+                            width: w,
+                            height: h,
+                            color: color || '#3b82f6',
+                            strokeWidth: strokeWidth || 2
+                        });
+                    }
+                });
+                const speech = 'Here is a 2D Cartesian coordinate plane.';
+                if (aiSpeechEnabled) speakAiResponse(speech);
+                toast.success(speech, { icon: '📊' });
                 setVoiceFeedback(speech);
                 conversationHistoryRef.current.push({ role: 'assistant', content: speech });
                 return;
@@ -13201,7 +13708,66 @@ export default function Whiteboard({
                     let hasAutoPagedForTurn = false;
                     let deletedCount = 0;
 
-                    for (const action of data.actions) {
+                    // Normalize actions:
+                    // 1. Expand composite concentric_circles into individual circle shapes
+                    // 2. Anchor concentric circles to shared center (centerCx, centerCy) so findAvailableCanvasSpace does not scatter them
+                    const isConcentricVoice = /\b(concentric|nested|rings?)\b/i.test(rawText);
+                    const normalizedActions = [];
+                    for (const act of data.actions) {
+                        if (act.type === 'CREATE_OBJECT' && act.objectType === 'concentric_circles') {
+                            const rings = Math.max(2, Math.min(5, Number(act.rings) || 3));
+                            const baseW = Number(act.width) || Number(act.size) || 240;
+                            const maxR = Math.round(baseW / 2);
+                            const factors = rings === 2 ? [0.55, 1.0] : rings === 4 ? [0.28, 0.52, 0.76, 1.0] : [0.38, 0.70, 1.0];
+                            const labels = Array.isArray(act.radiiLabels) ? act.radiiLabels : (rings === 2 ? ['r', 'R'] : ['r₁', 'r₂', 'r₃']);
+                            const angles = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
+
+                            for (let ri = 0; ri < rings; ri++) {
+                                const r = Math.round(maxR * factors[ri]);
+                                normalizedActions.push({
+                                    type: 'CREATE_OBJECT',
+                                    objectType: 'circle',
+                                    radius: r,
+                                    width: r * 2,
+                                    height: r * 2,
+                                    showCenter: ri === 0,
+                                    centerLabel: ri === 0 ? (act.centerLabel || 'O') : null,
+                                    showRadius: true,
+                                    radiusLabel: labels[ri] || `r${ri + 1}`,
+                                    radiusAngle: angles[ri % angles.length],
+                                    color: act.color,
+                                    strokeWidth: act.strokeWidth,
+                                    fillColor: ri === 0 && act.fillColor && act.fillColor !== 'transparent' ? act.fillColor : 'transparent',
+                                    isConcentricMember: true
+                                });
+                            }
+                        } else {
+                            normalizedActions.push(act);
+                        }
+                    }
+
+                    // Anchor all concentric circles to shared center point (centerCx, centerCy)
+                    const circleMembers = normalizedActions.filter(a => a.type === 'CREATE_OBJECT' && a.objectType === 'circle');
+                    if ((isConcentricVoice || circleMembers.some(c => c.isConcentricMember)) && circleMembers.length >= 2) {
+                        const maxR = Math.max(...circleMembers.map(c => Number(c.radius) || (c.width ? Number(c.width) / 2 : 75)));
+                        const groupSize = maxR * 2;
+                        const slot = findAvailableCanvasSpace(groupSize, groupSize);
+                        const groupCx = slot.hasSpace ? slot.x + maxR : Math.max(20 + maxR, Math.round(cx));
+                        const groupCy = slot.hasSpace ? slot.y + maxR : Math.max(20 + maxR, Math.round(cy));
+
+                        const angles = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
+                        circleMembers.forEach((cAct, idx) => {
+                            const r = Number(cAct.radius) || (cAct.width ? Number(cAct.width) / 2 : 75);
+                            cAct.x = groupCx - r;
+                            cAct.y = groupCy - r;
+                            cAct.isConcentricMember = true;
+                            if (cAct.radiusAngle === undefined) {
+                                cAct.radiusAngle = angles[idx % angles.length];
+                            }
+                        });
+                    }
+
+                    for (const action of normalizedActions) {
                         if (action.type === 'UI_COMMAND' && action.command) {
                             if (action.command.includes('new page') || action.command.includes('add page')) {
                                 hasAutoPagedForTurn = true;
@@ -13431,7 +13997,8 @@ export default function Whiteboard({
                                         centerLabel: action.centerLabel || (action.showCenter ? 'O' : null),
                                         showRadius: action.showRadius !== undefined ? action.showRadius : !!action.radiusLabel,
                                         radiusLabel: action.radiusLabel || (action.showRadius ? 'r' : null),
-                                        diameterLabel: action.diameterLabel || null
+                                        diameterLabel: action.diameterLabel || null,
+                                        radiusAngle: action.radiusAngle !== undefined ? action.radiusAngle : 0
                                     });
                                 } else if (action.objectType === 'coordinate_system' || action.objectType === 'cartesian_plane') {
                                     spawnVoiceShape({
@@ -13507,24 +14074,33 @@ export default function Whiteboard({
                                     });
                                 } else if (action.objectType === 'drawing' || action.objectType === 'svg' || action.objectType === 'sketch' || action.svg || (action.objectType === 'text' && /\b(draw|sketch|illustrate)\b/i.test(rawText))) {
                                     const promptSubject = action.title || action.prompt || action.name || (rawText.match(/\b(?:draw|sketch|illustrate)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-]+)/i) || [])[1] || action.text || 'drawing';
-                                    if (/\bconcentric\b/i.test(promptSubject) || /\bconcentric\b/i.test(rawText)) {
-                                        spawnVoiceShape({
-                                            type: 'concentric_circles',
-                                            rings: 3,
-                                            x: targetPx,
-                                            y: targetPy,
-                                            width: objW || 240,
-                                            height: objH || 240,
-                                            color: actColor,
-                                            strokeWidth: actStroke,
-                                            fillColor: actFill,
-                                            showCenter: true,
-                                            centerLabel: 'O',
-                                            showRadii: true,
-                                            radiiLabels: ['r₁', 'r₂', 'r₃']
+                                    const combinedSubject = `${promptSubject} ${rawText}`.toLowerCase();
+
+                                    if (/\bconcentric\b/i.test(combinedSubject)) {
+                                        const cX = targetPx + Math.round((objW || 240) / 2);
+                                        const cY = targetPy + Math.round((objH || 240) / 2);
+                                        const radii = [45, 85, 125];
+                                        const labels = ['r₁', 'r₂', 'r₃'];
+                                        const angles = [0, Math.PI / 4, Math.PI / 2];
+                                        radii.forEach((r, idx) => {
+                                            spawnVoiceShape({
+                                                type: 'circle',
+                                                x: cX - r,
+                                                y: cY - r,
+                                                width: r * 2,
+                                                height: r * 2,
+                                                color: actColor,
+                                                strokeWidth: actStroke,
+                                                fillColor: idx === 0 && actFill && actFill !== 'transparent' ? actFill : 'transparent',
+                                                showCenter: idx === 0,
+                                                centerLabel: idx === 0 ? 'O' : null,
+                                                showRadius: true,
+                                                radiusLabel: labels[idx],
+                                                radiusAngle: angles[idx]
+                                            });
                                         });
-                                    } else if (/\bcircle\b/i.test(promptSubject) || /\bcircle\b/i.test(rawText)) {
-                                        const r = Math.round((objW || 150) / 2);
+                                    } else if (/\bcircle\b/i.test(combinedSubject)) {
+                                        const r = Math.round((Number(action.radius) * 1) || ((objW || 150) / 2));
                                         spawnVoiceShape({
                                             type: 'circle',
                                             x: targetPx,
@@ -13537,7 +14113,122 @@ export default function Whiteboard({
                                             showCenter: true,
                                             centerLabel: 'O',
                                             showRadius: true,
-                                            radiusLabel: 'r'
+                                            radiusLabel: action.radiusLabel || 'r'
+                                        });
+                                    } else if (/\b(rectangle|box|quadrilateral|rect)\b/i.test(combinedSubject)) {
+                                        const byMatch = rawText.match(/(\d+(?:\.\d+)?)\s*(?:cm|mm|px)?\s*(?:by|x|\*|\s+and\s+)\s*(\d+(?:\.\d+)?)\s*(?:cm|mm|px)?/i);
+                                        let w = Number(action.width) || (byMatch ? parseFloat(byMatch[1]) : 180);
+                                        let h = Number(action.height) || (byMatch ? parseFloat(byMatch[2]) : 110);
+                                        if (rawText.includes('cm') && byMatch) {
+                                            w = Math.max(30, Math.round(parseFloat(byMatch[1]) * 25));
+                                            h = Math.max(25, Math.round(parseFloat(byMatch[2]) * 25));
+                                        }
+                                        const labelW = byMatch ? `${byMatch[1]}px` : `${w}px`;
+                                        const labelH = byMatch ? `${byMatch[2]}px` : `${h}px`;
+                                        spawnVoiceShape({
+                                            type: 'rectangle',
+                                            x: targetPx,
+                                            y: targetPy,
+                                            width: w,
+                                            height: h,
+                                            color: actColor,
+                                            strokeWidth: actStroke,
+                                            fillColor: actFill,
+                                            showRightAngle: true,
+                                            vertexLabels: ['A', 'B', 'C', 'D'],
+                                            edgeLabels: [labelW, labelW, labelH, labelH]
+                                        });
+                                    } else if (/\bsquare\b/i.test(combinedSubject)) {
+                                        const sideMatch = rawText.match(/(?:side|size|of)?\s*(\d+(?:\.\d+)?)/i);
+                                        const side = Number(action.size) || Number(action.width) || (sideMatch ? parseFloat(sideMatch[1]) : 130);
+                                        const sideLabel = `${side}px`;
+                                        spawnVoiceShape({
+                                            type: 'rectangle',
+                                            x: targetPx,
+                                            y: targetPy,
+                                            width: side,
+                                            height: side,
+                                            color: actColor,
+                                            strokeWidth: actStroke,
+                                            fillColor: actFill,
+                                            showRightAngle: true,
+                                            vertexLabels: ['A', 'B', 'C', 'D'],
+                                            edgeLabels: [sideLabel, sideLabel, sideLabel, sideLabel]
+                                        });
+                                    } else if (/\bright\s*(?:angled?)?\s*triangle\b/i.test(combinedSubject)) {
+                                        spawnVoiceShape({
+                                            type: 'right_triangle',
+                                            x: targetPx,
+                                            y: targetPy,
+                                            width: Number(action.width) || 220,
+                                            height: Number(action.height) || 160,
+                                            color: actColor,
+                                            strokeWidth: actStroke,
+                                            fillColor: actFill,
+                                            showRightAngle: true,
+                                            vertexLabels: ['A', 'B', 'C'],
+                                            edgeLabels: ['b', 'a', 'c']
+                                        });
+                                    } else if (/\btriangle\b/i.test(combinedSubject)) {
+                                        spawnVoiceShape({
+                                            type: 'triangle',
+                                            x: targetPx,
+                                            y: targetPy,
+                                            width: Number(action.width) || 220,
+                                            height: Number(action.height) || 170,
+                                            color: actColor,
+                                            strokeWidth: actStroke,
+                                            fillColor: actFill,
+                                            dashedAltitude: true,
+                                            altitudeLabel: 'h',
+                                            vertexLabels: ['A', 'B', 'C'],
+                                            edgeLabels: ['c', 'a', 'b']
+                                        });
+                                    } else if (/\bcone\b/i.test(combinedSubject)) {
+                                        spawnVoiceShape({
+                                            type: 'cone',
+                                            x: targetPx,
+                                            y: targetPy,
+                                            width: Number(action.width) || 180,
+                                            height: Number(action.height) || 210,
+                                            color: actColor,
+                                            strokeWidth: actStroke,
+                                            fillColor: actFill,
+                                            dashedAltitude: true,
+                                            altitudeLabel: 'h',
+                                            showRadius: true,
+                                            radiusLabel: 'r',
+                                            showMarkings: true,
+                                            slantLabel: 'l',
+                                            vertexLabel: 'V'
+                                        });
+                                    } else if (/\bcylinder\b/i.test(combinedSubject)) {
+                                        spawnVoiceShape({
+                                            type: 'cylinder',
+                                            x: targetPx,
+                                            y: targetPy,
+                                            width: Number(action.width) || 170,
+                                            height: Number(action.height) || 220,
+                                            color: actColor,
+                                            strokeWidth: actStroke,
+                                            fillColor: actFill,
+                                            radiusLabel: 'r',
+                                            heightLabel: 'h'
+                                        });
+                                    } else if (/\b(incline|ramp|wedge)\b/i.test(combinedSubject)) {
+                                        spawnVoiceShape({
+                                            type: 'incline_plane',
+                                            x: targetPx,
+                                            y: targetPy,
+                                            width: Number(action.width) || 260,
+                                            height: Number(action.height) || 160,
+                                            color: actColor,
+                                            strokeWidth: actStroke,
+                                            fillColor: actFill,
+                                            showBlock: true,
+                                            blockLabel: 'm',
+                                            angleLabel: 'θ',
+                                            baseLabel: 'd'
                                         });
                                     } else {
                                         const item = getBuiltinIllustration(promptSubject) || getBuiltinIllustration(rawText);
@@ -13602,7 +14293,8 @@ export default function Whiteboard({
                             else if (action.objectType === 'text') teacherComment = 'Typing explanation...';
                             else if (action.objectType === 'right_triangle' || action.objectType === 'triangle') teacherComment = 'Constructing geometry diagram...';
                             else if (action.objectType === 'concentric_circles') teacherComment = 'Drawing concentric circles...';
-                            else if (action.objectType === 'circle') teacherComment = 'Drawing circle...';
+                            else if (action.objectType === 'circle') teacherComment = action.isConcentricMember ? `Drawing concentric circle (${action.radiusLabel || ''})...` : 'Drawing circle...';
+                            else if (action.objectType === 'rectangle') teacherComment = 'Drawing rectangle...';
                             else if (action.objectType === 'coordinate_system' || action.objectType === 'cartesian_plane') teacherComment = 'Plotting Cartesian grid...';
 
                             await dispatchTeacherAction({
@@ -20143,6 +20835,13 @@ export default function Whiteboard({
                                 const ry = shpObj.height / 2;
                                 const showC = shpObj.showCenter || !!shpObj.centerLabel;
                                 const showR = shpObj.showRadius || !!shpObj.radiusLabel;
+                                const rAngle = typeof shpObj.radiusAngle === 'number'
+                                    ? (shpObj.radiusAngle > 6.28 ? (shpObj.radiusAngle * Math.PI) / 180 : shpObj.radiusAngle)
+                                    : 0;
+                                const endX = rx + rx * Math.cos(rAngle);
+                                const endY = ry - ry * Math.sin(rAngle);
+                                const midX = rx + (rx * 0.55) * Math.cos(rAngle);
+                                const midY = ry - (ry * 0.55) * Math.sin(rAngle);
 
                                 if (bStyle === 'double') {
                                     const sw = Math.max(1, Math.round((shpObj.strokeWidth || 2) * 0.45));
@@ -20168,8 +20867,8 @@ export default function Whiteboard({
                                         )}
                                         {showR && (
                                             <>
-                                                <line x1={rx} y1={ry} x2={shpObj.width} y2={ry} stroke={shpObj.color} strokeWidth={Math.max(1.5, (shpObj.strokeWidth || 2) * 0.7)} strokeDasharray="4,3" />
-                                                {renderSvgLabel((rx + shpObj.width) / 2, ry - 8, shpObj.radiusLabel || 'r', 'middle', 12)}
+                                                <line x1={rx} y1={ry} x2={endX} y2={endY} stroke={shpObj.color} strokeWidth={Math.max(1.5, (shpObj.strokeWidth || 2) * 0.7)} strokeDasharray="4,3" />
+                                                {renderSvgLabel(midX + 4, midY - 6, shpObj.radiusLabel || 'r', 'middle', 12)}
                                             </>
                                         )}
                                         {shpObj.diameterLabel && (

@@ -2162,6 +2162,207 @@ Output MUST be ONLY valid JSON matching this schema:
             context.currentRoute?.includes('live-board');
 
         if (isWhiteboard) {
+            const parseConcentricCircles = (inputText, baseWidth = 240) => {
+                const lowTxt = (inputText || '').toLowerCase();
+                const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(lowTxt);
+                const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(lowTxt);
+                const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
+
+                let count = 3;
+                if (/\b(?:two|2)\b/i.test(lowTxt)) count = 2;
+                else if (/\b(?:three|3)\b/i.test(lowTxt)) count = 3;
+                else if (/\b(?:four|4)\b/i.test(lowTxt)) count = 4;
+
+                const cleaned = lowTxt
+                    .replace(/\b(?:two|three|four|2|3|4)\s+(?:concentric|nested|rings?|circles?)/gi, '')
+                    .replace(/\b(?:concentric|nested|rings?|circles?)\s+of\s+/gi, 'of ');
+
+                const numMatches = [];
+                const numRegex = /(\d+(?:\.\d+)?)\s*(cm|mm|px)?/gi;
+                let m;
+                while ((m = numRegex.exec(cleaned)) !== null) {
+                    const val = parseFloat(m[1]);
+                    if (!isNaN(val) && val > 0) {
+                        numMatches.push({ val, unit: m[2] || unit });
+                    }
+                }
+
+                let radiiList = [];
+                let labelsList = [];
+
+                if (numMatches.length >= 2) {
+                    const sorted = [...numMatches].sort((a, b) => a.val - b.val).slice(0, 4);
+                    count = sorted.length;
+                    const maxVal = sorted[sorted.length - 1].val;
+                    let pxScale = 1;
+                    if (unit === 'cm') {
+                        pxScale = maxVal <= 10 ? 25 : (maxVal <= 20 ? 15 : 10);
+                    } else if (unit === 'mm') {
+                        pxScale = maxVal <= 50 ? 3 : 1.5;
+                    } else {
+                        if (maxVal <= 15) pxScale = 25;
+                        else if (maxVal > 250) pxScale = 240 / maxVal;
+                        else pxScale = 1;
+                    }
+
+                    radiiList = sorted.map(item => Math.max(25, Math.round(item.val * pxScale)));
+                    labelsList = sorted.map((item, idx) => {
+                        const prefix = count === 2 ? (idx === 0 ? 'r' : 'R') : `r${idx + 1}`;
+                        const unitStr = (unit === 'cm' || unit === 'mm') ? unit : (maxVal <= 15 ? 'cm' : 'px');
+                        return `${prefix} = ${item.val}${unitStr}`;
+                    });
+                } else if (numMatches.length === 1 && numMatches[0].val > 0) {
+                    const baseR = numMatches[0].val;
+                    const basePx = unit === 'cm' ? Math.round(baseR * 25) : (baseR <= 15 ? Math.round(baseR * 25) : baseR);
+                    if (count === 2) {
+                        radiiList = [Math.max(25, Math.round(basePx * 0.55)), Math.max(50, Math.round(basePx))];
+                        labelsList = [`r = ${Math.round(baseR * 0.55)}${unit}`, `R = ${baseR}${unit}`];
+                    } else {
+                        radiiList = [Math.max(25, Math.round(basePx * 0.4)), Math.max(50, Math.round(basePx * 0.7)), Math.max(80, Math.round(basePx))];
+                        labelsList = [`r₁ = ${Math.round(baseR * 0.4)}${unit}`, `r₂ = ${Math.round(baseR * 0.7)}${unit}`, `r₃ = ${baseR}${unit}`];
+                    }
+                } else {
+                    if (count === 2) {
+                        radiiList = [55, 110];
+                        labelsList = ['r', 'R'];
+                    } else if (count === 4) {
+                        radiiList = [35, 65, 95, 125];
+                        labelsList = ['r₁', 'r₂', 'r₃', 'r₄'];
+                    } else {
+                        radiiList = [45, 85, 125];
+                        labelsList = ['r₁', 'r₂', 'r₃'];
+                    }
+                }
+
+                const angles = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
+                return radiiList.map((r, idx) => ({
+                    type: 'CREATE_OBJECT',
+                    objectType: 'circle',
+                    radius: r,
+                    width: r * 2,
+                    height: r * 2,
+                    showCenter: idx === 0,
+                    centerLabel: idx === 0 ? 'O' : null,
+                    showRadius: true,
+                    radiusLabel: labelsList[idx],
+                    radiusAngle: angles[idx % angles.length],
+                    isConcentricMember: true
+                }));
+            };
+
+            const parseRectangleParams = (inputText) => {
+                const lowTxt = (inputText || '').toLowerCase();
+                const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(lowTxt);
+                const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(lowTxt);
+                const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
+                const byMatch = lowTxt.match(/(\d+(?:\.\d+)?)\s*(?:cm|mm|px)?\s*(?:by|x|\*|\s+and\s+)\s*(\d+(?:\.\d+)?)\s*(?:cm|mm|px)?/i);
+
+                let w = 180, h = 110;
+                let labelW = 'w', labelH = 'h';
+                if (byMatch) {
+                    let rawW = parseFloat(byMatch[1]);
+                    let rawH = parseFloat(byMatch[2]);
+                    if (unit === 'cm') {
+                        w = Math.max(30, Math.round(rawW * 25));
+                        h = Math.max(25, Math.round(rawH * 25));
+                        labelW = `${rawW}cm`;
+                        labelH = `${rawH}cm`;
+                    } else if (unit === 'mm') {
+                        w = Math.max(30, Math.round(rawW * 2.5));
+                        h = Math.max(25, Math.round(rawH * 2.5));
+                        labelW = `${rawW}mm`;
+                        labelH = `${rawH}mm`;
+                    } else {
+                        if (rawW <= 15 && rawH <= 15) {
+                            w = Math.max(30, Math.round(rawW * 25));
+                            h = Math.max(25, Math.round(rawH * 25));
+                            labelW = `${rawW}cm`;
+                            labelH = `${rawH}cm`;
+                        } else {
+                            w = Math.max(30, Math.min(600, Math.round(rawW)));
+                            h = Math.max(20, Math.min(500, Math.round(rawH)));
+                            labelW = `${rawW}px`;
+                            labelH = `${rawH}px`;
+                        }
+                    }
+                } else {
+                    const singleMatch = lowTxt.match(/(?:side|size|length|width)?\s*(\d+(?:\.\d+)?)/i);
+                    if (singleMatch) {
+                        const rawVal = parseFloat(singleMatch[1]);
+                        if (unit === 'cm') {
+                            w = Math.max(40, Math.round(rawVal * 25));
+                            h = Math.max(25, Math.round(rawVal * 16));
+                            labelW = `${rawVal}cm`;
+                            labelH = `${(rawVal * 0.65).toFixed(1)}cm`;
+                        } else {
+                            w = Math.max(40, Math.round(rawVal));
+                            h = Math.max(25, Math.round(rawVal * 0.65));
+                            labelW = `${rawVal}px`;
+                            labelH = `${Math.round(rawVal * 0.65)}px`;
+                        }
+                    }
+                }
+                return { w, h, labelW, labelH };
+            };
+
+            const parseSquareParams = (inputText) => {
+                const lowTxt = (inputText || '').toLowerCase();
+                const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(lowTxt);
+                const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(lowTxt);
+                const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
+                const sideMatch = lowTxt.match(/(?:side|size|of)?\s*(\d+(?:\.\d+)?)/i);
+                let side = 120;
+                let sideLabel = 'side';
+                if (sideMatch) {
+                    const raw = parseFloat(sideMatch[1]);
+                    if (unit === 'cm') {
+                        side = Math.max(30, Math.round(raw * 25));
+                        sideLabel = `${raw}cm`;
+                    } else if (unit === 'mm') {
+                        side = Math.max(25, Math.round(raw * 2.5));
+                        sideLabel = `${raw}mm`;
+                    } else {
+                        if (raw <= 15) {
+                            side = Math.max(30, Math.round(raw * 25));
+                            sideLabel = `${raw}cm`;
+                        } else {
+                            side = Math.max(30, Math.min(500, Math.round(raw)));
+                            sideLabel = `${raw}px`;
+                        }
+                    }
+                }
+                return { side, sideLabel };
+            };
+
+            const parseCircleParams = (inputText) => {
+                const lowTxt = (inputText || '').toLowerCase();
+                const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(lowTxt);
+                const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(lowTxt);
+                const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
+                const radMatch = lowTxt.match(/(?:radius|rad|r|size|of)?\s*(\d+(?:\.\d+)?)/i);
+                let r = 75;
+                let radiusLabel = 'r';
+                if (radMatch) {
+                    const rawVal = parseFloat(radMatch[1]);
+                    if (unit === 'cm') {
+                        r = Math.max(25, Math.round(rawVal * 25));
+                        radiusLabel = `r = ${rawVal}cm`;
+                    } else if (unit === 'mm') {
+                        r = Math.max(20, Math.round(rawVal * 2.5));
+                        radiusLabel = `r = ${rawVal}mm`;
+                    } else {
+                        if (rawVal <= 15) {
+                            r = Math.max(25, Math.round(rawVal * 25));
+                            radiusLabel = `r = ${rawVal}cm`;
+                        } else {
+                            r = Math.max(25, Math.min(250, Math.round(rawVal)));
+                            radiusLabel = `r = ${rawVal}px`;
+                        }
+                    }
+                }
+                return { r, radiusLabel };
+            };
+
             const whiteboardSystemPrompt = `You are an advanced Spatial & Generative AI reasoning engine for an interactive Whiteboard.
 You receive the user's spoken command along with a JSON representation of the current whiteboard state (objects, sizes, spatial coordinates, pages).
 Your goal is to parse the user's intent, perform any required knowledge-base reasoning (like deriving formulas, writing code, or generating scientific explanations), and return a sequence of autonomous actions to modify the canvas.
@@ -2306,12 +2507,15 @@ CRITICAL RULES:
   5. CIRCLE THEOREMS & DIMENSIONS:
      - Use objectType: "circle", showCenter: true, centerLabel: "O", showRadius: true, radiusLabel: "r" (or specific radius value e.g. "r = 7 cm").
   5b. CONCENTRIC CIRCLES (Nested circles sharing center O):
-     - Use objectType: "concentric_circles", rings: 3, width: 240, height: 240, showCenter: true, centerLabel: "O", showRadii: true, radiiLabels: ["r₁", "r₂", "r₃"].
+     - Output individual circle objects sharing the exact same center (center O) with sequential radii (e.g. radii: [45, 85, 125] or user-provided radii e.g. [40, 80]), OR use objectType: "concentric_circles", rings: 3, width: 240, height: 240, showCenter: true, centerLabel: "O", showRadii: true, radiiLabels: ["r₁", "r₂", "r₃"].
   6. RECTANGLE / SQUARE / AREA / PERIMETER:
-     - Use objectType: "rectangle", vertexLabels: ["A", "B", "C", "D"], edgeLabels: ["length (l)", "width (w)"], showRightAngle: true.
+     - Use objectType: "rectangle", width: <specified width e.g. 50 or 200>, height: <specified height e.g. 30 or 100>, vertexLabels: ["A", "B", "C", "D"], edgeLabels: ["length", "length", "width", "width"], showRightAngle: true.
   7. EXPLANATION:
      - Provide the step-by-step mathematical reasoning, formulas in LaTeX ($$...$$), and calculations inside speechResponse and solutionMarkdown.
      - The interactive diagram on canvas visually anchors the vertices, edges, and angles!
+- **STRICT PROHIBITION ON 'drawing' FOR GEOMETRIC SHAPES**:
+  NEVER output objectType: 'drawing' or 'sketch' for geometric shapes (circle, concentric_circles, rectangle, square, triangle, right_triangle, cone, cylinder, incline_plane, coordinate_system, box).
+  Geometric shapes MUST ALWAYS use their dedicated geometric objectType ('circle', 'rectangle', 'triangle', 'right_triangle', 'cone', 'cylinder', 'incline_plane', 'coordinate_system') with exact dimensions, vertices, and measurement labels! 'drawing' is reserved solely for non-geometric artwork illustrations (cat, dog, car, tree, house, etc.).
 - **ADAPTIVE RESPONSE FORMATTING (BULLET STEPS FOR DERIVATIONS VS CONCISE PROSE FOR DEFINITIONS)**:
   Adapt your response format to the specific pedagogical nature of the user's prompt:
   1. FOR MULTI-STEP PROBLEMS, THEOREMS, DERIVATIONS, & PROOFS (e.g. "step by step solution for pythagoras theorem", "solve triangle with sides 3 and 4", "derive kinetic energy", "how does photosynthesis work"):
@@ -2455,75 +2659,113 @@ Spoken input: "${text}"
                 const parsed = this.parseJSONResponse(completionRes.text || '{}');
                 if (parsed && (parsed.translatedCommand || parsed.recognized || parsed.actions || parsed.type === 'solution' || parsed.type === 'canvas_generation')) {
                     if (Array.isArray(parsed.actions)) {
-                        const isDrawingCommand = /\b(draw|sketch|illustrate)\b/i.test(text);
-                        parsed.actions = parsed.actions.map(act => {
-                            if (act.type === 'CREATE_OBJECT' && act.objectType === 'text' && isDrawingCommand) {
-                                const subject = (text.match(/\b(?:draw|sketch|illustrate)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-]+)/i) || [])[1] || act.text || 'drawing';
-                                if (/concentric/i.test(subject) || /concentric/i.test(text)) {
-                                    return {
-                                        ...act,
-                                        objectType: 'concentric_circles',
-                                        rings: 3,
-                                        width: 240,
-                                        height: 240,
-                                        showCenter: true,
-                                        centerLabel: 'O',
-                                        showRadii: true,
-                                        radiiLabels: ['r₁', 'r₂', 'r₃']
-                                    };
+                        parsed.actions = parsed.actions.flatMap(act => {
+                            if (act.type === 'CREATE_OBJECT' && act.objectType === 'concentric_circles') {
+                                return parseConcentricCircles(text, act.width || 240);
+                            }
+                            if (act.type === 'CREATE_OBJECT' && (act.objectType === 'drawing' || act.objectType === 'sketch' || act.objectType === 'text')) {
+                                const combined = `${act.title || ''} ${act.text || ''} ${text}`.toLowerCase();
+                                if (/\bconcentric\b/i.test(combined)) {
+                                    return parseConcentricCircles(text, act.width || 240);
                                 }
-                                if (/circle/i.test(subject) || /circle/i.test(text)) {
-                                    return {
+                                if (/\bcircle\b/i.test(combined)) {
+                                    const { r, radiusLabel } = parseCircleParams(combined);
+                                    return [{
                                         ...act,
                                         objectType: 'circle',
-                                        radius: 75,
-                                        width: 150,
-                                        height: 150,
+                                        radius: r,
+                                        width: r * 2,
+                                        height: r * 2,
                                         showCenter: true,
                                         centerLabel: 'O',
                                         showRadius: true,
-                                        radiusLabel: 'r'
-                                    };
+                                        radiusLabel: radiusLabel,
+                                        radiusAngle: 0
+                                    }];
                                 }
-                                return {
-                                    ...act,
-                                    objectType: 'drawing',
-                                    title: subject,
-                                    text: undefined,
-                                    width: act.width || 280,
-                                    height: act.height || 280
-                                };
-                            }
-                            if (act.type === 'CREATE_OBJECT' && (act.objectType === 'drawing' || act.objectType === 'sketch')) {
-                                const sub = act.title || text;
-                                if (/concentric/i.test(sub)) {
-                                    return {
+                                if (/\b(rectangle|box|quadrilateral|rect)\b/i.test(combined)) {
+                                    const { w, h, labelW, labelH } = parseRectangleParams(combined);
+                                    return [{
                                         ...act,
-                                        objectType: 'concentric_circles',
-                                        rings: 3,
-                                        width: 240,
-                                        height: 240,
-                                        showCenter: true,
-                                        centerLabel: 'O',
-                                        showRadii: true,
-                                        radiiLabels: ['r₁', 'r₂', 'r₃']
-                                    };
+                                        objectType: 'rectangle',
+                                        width: w,
+                                        height: h,
+                                        showRightAngle: true,
+                                        vertexLabels: ['A', 'B', 'C', 'D'],
+                                        edgeLabels: [labelW, labelW, labelH, labelH]
+                                    }];
                                 }
-                                if (/circle/i.test(sub)) {
-                                    return {
+                                if (/\bsquare\b/i.test(combined)) {
+                                    const { side, sideLabel } = parseSquareParams(combined);
+                                    return [{
                                         ...act,
-                                        objectType: 'circle',
-                                        radius: 75,
-                                        width: 150,
-                                        height: 150,
-                                        showCenter: true,
-                                        centerLabel: 'O',
+                                        objectType: 'rectangle',
+                                        width: side,
+                                        height: side,
+                                        showRightAngle: true,
+                                        vertexLabels: ['A', 'B', 'C', 'D'],
+                                        edgeLabels: [sideLabel, sideLabel, sideLabel, sideLabel]
+                                    }];
+                                }
+                                if (/\bright\s*(?:angled?)?\s*triangle\b/i.test(combined)) {
+                                    return [{
+                                        ...act,
+                                        objectType: 'right_triangle',
+                                        width: act.width || 220,
+                                        height: act.height || 160,
+                                        showRightAngle: true,
+                                        vertexLabels: ['A', 'B', 'C'],
+                                        edgeLabels: ['b', 'a', 'c']
+                                    }];
+                                }
+                                if (/\btriangle\b/i.test(combined)) {
+                                    return [{
+                                        ...act,
+                                        objectType: 'triangle',
+                                        width: act.width || 220,
+                                        height: act.height || 170,
+                                        vertexLabels: ['A', 'B', 'C'],
+                                        edgeLabels: ['c', 'a', 'b'],
+                                        dashedAltitude: true,
+                                        altitudeLabel: 'h'
+                                    }];
+                                }
+                                if (/\bcone\b/i.test(combined)) {
+                                    return [{
+                                        ...act,
+                                        objectType: 'cone',
+                                        width: act.width || 180,
+                                        height: act.height || 210,
+                                        dashedAltitude: true,
+                                        altitudeLabel: 'h',
                                         showRadius: true,
                                         radiusLabel: 'r'
-                                    };
+                                    }];
+                                }
+                                if (/\bcylinder\b/i.test(combined)) {
+                                    return [{
+                                        ...act,
+                                        objectType: 'cylinder',
+                                        width: act.width || 170,
+                                        height: act.height || 220,
+                                        radiusLabel: 'r',
+                                        heightLabel: 'h'
+                                    }];
+                                }
+                                if (/\b(incline|ramp|wedge)\b/i.test(combined)) {
+                                    return [{
+                                        ...act,
+                                        objectType: 'incline_plane',
+                                        width: act.width || 260,
+                                        height: act.height || 160,
+                                        showBlock: true,
+                                        blockLabel: 'm',
+                                        angleLabel: 'θ',
+                                        baseLabel: 'd'
+                                    }];
                                 }
                             }
-                            return act;
+                            return [act];
                         });
                     }
                     return {
@@ -2776,26 +3018,13 @@ Spoken input: "${text}"
 
             // Shapes Drawing (strictly non-deletion)
             else if (!isDeleteCommand && (low.includes('concentric') || (low.includes('nested') && low.includes('circle')))) {
-                const ringsMatch = low.match(/(\d+)\s*(?:concentric|nested|ring)/);
-                const rings = ringsMatch ? parseInt(ringsMatch[1], 10) : 3;
+                const circleActions = parseConcentricCircles(text);
                 return {
                     recognized: true,
                     type: 'action',
-                    speechResponse: `I've drawn ${rings} concentric circles sharing common center point O.`,
-                    spokenFeedback: `Drawing concentric circles`,
-                    actions: [
-                        {
-                            type: 'CREATE_OBJECT',
-                            objectType: 'concentric_circles',
-                            rings: rings,
-                            width: 240,
-                            height: 240,
-                            showCenter: true,
-                            centerLabel: 'O',
-                            showRadii: true,
-                            radiiLabels: rings === 2 ? ['r', 'R'] : ['r₁', 'r₂', 'r₃']
-                        }
-                    ],
+                    speechResponse: `I've drawn ${circleActions.length} concentric circles sharing common center point O.`,
+                    spokenFeedback: `Drawing ${circleActions.length} concentric circles`,
+                    actions: circleActions,
                     suggestedFollowUps: [
                         '📐 Show formulas for annular ring area',
                         '🎨 Change ring colors',
@@ -2805,13 +3034,12 @@ Spoken input: "${text}"
                 };
             }
             else if (!isDeleteCommand && (low.includes('circle') || (/\b(round\s+shape|round\s+circle|disc|ring)\b/i.test(low)) || (/\bround\b/i.test(low) && !low.includes('background') && !low.includes('ground') && !low.includes('around') && !low.includes('surround')))) {
-                const num = (low.match(/\d+/) || [70])[0];
-                const r = parseInt(num, 10);
+                const { r, radiusLabel } = parseCircleParams(low);
                 return {
                     recognized: true,
                     type: 'action',
-                    speechResponse: `Drawing circle with radius ${r}px.`,
-                    spokenFeedback: `Drawing circle with radius ${r}px`,
+                    speechResponse: `Drawing circle with ${radiusLabel}.`,
+                    spokenFeedback: `Drawing circle with ${radiusLabel}`,
                     actions: [
                         {
                             type: 'CREATE_OBJECT',
@@ -2822,7 +3050,8 @@ Spoken input: "${text}"
                             showCenter: true,
                             centerLabel: 'O',
                             showRadius: true,
-                            radiusLabel: `r = ${r}px`
+                            radiusLabel: radiusLabel,
+                            radiusAngle: 0
                         }
                     ],
                     suggestedFollowUps: [
@@ -2834,27 +3063,181 @@ Spoken input: "${text}"
                 };
             }
             else if (!isDeleteCommand && low.includes('square')) {
-                const num = (low.match(/\d+/) || [100])[0];
-                translatedCommand = `draw square side ${num}`;
-                intent = 'draw_square';
-                spokenFeedback = `Drawing square with side ${num}px`;
+                const { side, sideLabel } = parseSquareParams(low);
+                return {
+                    recognized: true,
+                    type: 'action',
+                    speechResponse: `Drawing square with side ${sideLabel}.`,
+                    spokenFeedback: `Drawing square with side ${sideLabel}`,
+                    actions: [
+                        {
+                            type: 'CREATE_OBJECT',
+                            objectType: 'rectangle',
+                            width: side,
+                            height: side,
+                            showRightAngle: true,
+                            vertexLabels: ['A', 'B', 'C', 'D'],
+                            edgeLabels: [sideLabel, sideLabel, sideLabel, sideLabel]
+                        }
+                    ],
+                    suggestedFollowUps: [
+                        '📐 Calculate square area (side²)',
+                        '📏 Calculate perimeter (4 × side)',
+                        '🎨 Change color',
+                        '📄 Clear board'
+                    ]
+                };
             }
             else if (low.includes('rectangle') || low.includes('box') || low.includes('quadrilateral') || low.includes('rect')) {
-                const byMatch = low.match(/(\d+)\s*(?:by|x|\*)\s*(\d+)/);
-                if (byMatch) {
-                    translatedCommand = `draw rectangle ${byMatch[1]} by ${byMatch[2]}`;
-                } else {
-                    const num = (low.match(/\d+/) || [160])[0];
-                    translatedCommand = `draw rectangle ${num} by 100`;
-                }
-                intent = 'draw_rectangle';
-                spokenFeedback = 'Drawing rectangle';
+                const { w, h, labelW, labelH } = parseRectangleParams(low);
+                return {
+                    recognized: true,
+                    type: 'action',
+                    speechResponse: `Drawing rectangle with dimensions ${labelW} by ${labelH}.`,
+                    spokenFeedback: `Drawing rectangle (${labelW} × ${labelH})`,
+                    actions: [
+                        {
+                            type: 'CREATE_OBJECT',
+                            objectType: 'rectangle',
+                            width: w,
+                            height: h,
+                            showRightAngle: true,
+                            vertexLabels: ['A', 'B', 'C', 'D'],
+                            edgeLabels: [labelW, labelW, labelH, labelH]
+                        }
+                    ],
+                    suggestedFollowUps: [
+                        '📐 Calculate area (length × width)',
+                        '📏 Calculate perimeter (2l + 2w)',
+                        '🎨 Change color',
+                        '📄 Clear board'
+                    ]
+                };
+            }
+            else if (low.includes('right triangle') || low.includes('right-angled triangle') || low.includes('right angled triangle')) {
+                return {
+                    recognized: true,
+                    type: 'action',
+                    speechResponse: 'Drawing right-angled triangle with vertex labels and right angle marker.',
+                    spokenFeedback: 'Drawing right-angled triangle',
+                    actions: [
+                        {
+                            type: 'CREATE_OBJECT',
+                            objectType: 'right_triangle',
+                            width: 220,
+                            height: 160,
+                            showRightAngle: true,
+                            vertexLabels: ['A', 'B', 'C'],
+                            edgeLabels: ['b', 'a', 'c']
+                        }
+                    ],
+                    suggestedFollowUps: [
+                        '📐 Apply Pythagoras theorem',
+                        '📏 Calculate hypotenuse',
+                        '🎨 Change color',
+                        '📄 Clear board'
+                    ]
+                };
             }
             else if (low.includes('triangle')) {
-                const num = (low.match(/\d+/) || [120])[0];
-                translatedCommand = `draw triangle size ${num}`;
-                intent = 'draw_triangle';
-                spokenFeedback = 'Drawing triangle';
+                return {
+                    recognized: true,
+                    type: 'action',
+                    speechResponse: 'Drawing triangle with altitude h.',
+                    spokenFeedback: 'Drawing triangle',
+                    actions: [
+                        {
+                            type: 'CREATE_OBJECT',
+                            objectType: 'triangle',
+                            width: 220,
+                            height: 170,
+                            vertexLabels: ['A', 'B', 'C'],
+                            edgeLabels: ['c', 'a', 'b'],
+                            dashedAltitude: true,
+                            altitudeLabel: 'h'
+                        }
+                    ],
+                    suggestedFollowUps: [
+                        '📐 Calculate area (½ base × height)',
+                        '📏 Calculate perimeter',
+                        '🎨 Change color',
+                        '📄 Clear board'
+                    ]
+                };
+            }
+            else if (low.includes('cone')) {
+                return {
+                    recognized: true,
+                    type: 'action',
+                    speechResponse: 'Drawing 3D cone with radius r and altitude h.',
+                    spokenFeedback: 'Drawing cone',
+                    actions: [
+                        {
+                            type: 'CREATE_OBJECT',
+                            objectType: 'cone',
+                            width: 180,
+                            height: 210,
+                            dashedAltitude: true,
+                            altitudeLabel: 'h',
+                            showRadius: true,
+                            radiusLabel: 'r'
+                        }
+                    ]
+                };
+            }
+            else if (low.includes('cylinder')) {
+                return {
+                    recognized: true,
+                    type: 'action',
+                    speechResponse: 'Drawing 3D cylinder with radius r and height h.',
+                    spokenFeedback: 'Drawing cylinder',
+                    actions: [
+                        {
+                            type: 'CREATE_OBJECT',
+                            objectType: 'cylinder',
+                            width: 170,
+                            height: 220,
+                            radiusLabel: 'r',
+                            heightLabel: 'h'
+                        }
+                    ]
+                };
+            }
+            else if (low.includes('incline') || low.includes('ramp') || low.includes('wedge')) {
+                return {
+                    recognized: true,
+                    type: 'action',
+                    speechResponse: 'Drawing inclined plane with mass block m and angle θ.',
+                    spokenFeedback: 'Drawing inclined plane',
+                    actions: [
+                        {
+                            type: 'CREATE_OBJECT',
+                            objectType: 'incline_plane',
+                            width: 260,
+                            height: 160,
+                            showBlock: true,
+                            blockLabel: 'm',
+                            angleLabel: 'θ',
+                            baseLabel: 'd'
+                        }
+                    ]
+                };
+            }
+            else if (low.includes('coordinate system') || low.includes('cartesian plane') || low.includes('axes') || low.includes('cartesian grid')) {
+                return {
+                    recognized: true,
+                    type: 'action',
+                    speechResponse: 'Drawing 2D Cartesian coordinate plane.',
+                    spokenFeedback: 'Drawing coordinate axes',
+                    actions: [
+                        {
+                            type: 'CREATE_OBJECT',
+                            objectType: 'coordinate_system',
+                            width: 280,
+                            height: 240
+                        }
+                    ]
+                };
             }
             else if (low.includes('star')) {
                 translatedCommand = 'draw star';
@@ -2911,7 +3294,8 @@ Spoken input: "${text}"
             else if (!isDeleteCommand && (/\b(draw|sketch|illustrate|paint|spawn|render)\b/i.test(low))) {
                 const artMatch = low.match(/\b(?:draw|sketch|illustrate|paint|spawn|render)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-]+)/i);
                 let subject = artMatch ? artMatch[1].trim() : 'drawing';
-                const isGeometric = ['circle', 'concentric', 'concentric_circles', 'concentric_circle', 'square', 'rectangle', 'triangle', 'star', 'diamond', 'pentagon', 'hexagon', 'arrow', 'line'].includes(subject) || low.includes('concentric') || low.includes('circle');
+                const isGeometric = ['circle', 'concentric', 'concentric_circles', 'concentric_circle', 'square', 'rectangle', 'box', 'rect', 'triangle', 'right_triangle', 'cone', 'cylinder', 'incline', 'incline_plane', 'coordinate_system', 'axes', 'cartesian', 'star', 'diamond', 'pentagon', 'hexagon', 'arrow', 'line'].includes(subject) ||
+                    low.includes('concentric') || low.includes('circle') || low.includes('rectangle') || low.includes('square') || low.includes('triangle') || low.includes('cone') || low.includes('cylinder') || low.includes('incline') || low.includes('box') || low.includes('rect');
                 const is3DModel = ['sphere', 'cube', 'box', 'pyramid', 'cylinder', 'cone', 'earth', 'sun', 'moon', 'mars', 'jupiter', 'saturn', 'rocket', 'atom', 'dna', 'molecule'].includes(subject) || low.includes('3d');
 
                 if (is3DModel) {
