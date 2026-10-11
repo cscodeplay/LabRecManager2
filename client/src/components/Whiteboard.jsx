@@ -1059,6 +1059,7 @@ export default function Whiteboard({
     const [isAiThinking, setIsAiThinking] = useState(false);
     const [aiSolutionData, setAiSolutionData] = useState(null);
     const [showAiAssistantModal, setShowAiAssistantModal] = useState(false);
+    const [whiteboardAiProvider, setWhiteboardAiProvider] = useState('auto');
 
     const voiceRecognitionRef = useRef(null);
     const isVoiceListeningRef = useRef(false);
@@ -13047,7 +13048,9 @@ export default function Whiteboard({
                             question: rawText,
                             speechResponse: data.speechResponse,
                             solutionMarkdown: data.solutionMarkdown || data.speechResponse,
-                            suggestedFollowUps: data.suggestedFollowUps || []
+                            suggestedFollowUps: data.suggestedFollowUps || [],
+                            modelUsed: data.modelUsed,
+                            providerUsed: data.providerUsed
                         });
                     }
                     
@@ -13827,6 +13830,7 @@ export default function Whiteboard({
                     context: {
                         module: 'whiteboard',
                         currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard',
+                        preferredProvider: whiteboardAiProvider !== 'auto' ? whiteboardAiProvider : undefined,
                         ...getWhiteboardSpatialContext()
                     }
                 });
@@ -13848,7 +13852,9 @@ export default function Whiteboard({
                     question: rawText,
                     speechResponse: data.speechResponse || data.spokenFeedback,
                     solutionMarkdown: data.solutionMarkdown,
-                    canvasAction: data.canvasAction
+                    canvasAction: data.canvasAction,
+                    modelUsed: data.modelUsed,
+                    providerUsed: data.providerUsed
                 });
                 narrateAction(
                     data.speechResponse || data.spokenFeedback || 'Here is the explanation and formulas.',
@@ -23881,6 +23887,10 @@ export default function Whiteboard({
                 speechResponse={aiSolutionData?.speechResponse}
                 solutionMarkdown={aiSolutionData?.solutionMarkdown}
                 canvasAction={aiSolutionData?.canvasAction}
+                modelUsed={aiSolutionData?.modelUsed}
+                providerUsed={aiSolutionData?.providerUsed}
+                activeProvider={whiteboardAiProvider}
+                onChangeActiveProvider={setWhiteboardAiProvider}
                 isSpeaking={isAiSpeaking}
                 isThinking={isAiThinking}
                 isVoiceListening={isVoiceListening}

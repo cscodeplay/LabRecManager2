@@ -48,6 +48,10 @@ export default function WhiteboardAIAssistantModal({
     speechResponse = '',
     solutionMarkdown = '',
     canvasAction = null,
+    modelUsed = '',
+    providerUsed = '',
+    activeProvider = 'auto',
+    onChangeActiveProvider = () => {},
     isSpeaking = false,
     isThinking = false,
     isVoiceListening = false,
@@ -101,15 +105,37 @@ export default function WhiteboardAIAssistantModal({
                             <Bot className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                                 <h3 className="font-bold text-base text-white">AI Whiteboard Co-Pilot</h3>
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                                    Interactive 3D • Voice • Drawing
-                                </span>
+                                {providerUsed || modelUsed ? (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shadow-xs">
+                                        <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
+                                        <span>Answered by: {providerUsed?.toUpperCase()} ({modelUsed?.split('/').pop() || modelUsed})</span>
+                                    </span>
+                                ) : (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                        Interactive 3D • Voice • Drawing
+                                    </span>
+                                )}
                             </div>
-                            <p className="text-xs text-slate-400 mt-0.5">
-                                Generates interactive 3D models, flowcharts, solutions, and speaks explanations
-                            </p>
+                            <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[11px] text-slate-400 font-medium">Model Engine:</span>
+                                <select
+                                    value={activeProvider}
+                                    onChange={(e) => onChangeActiveProvider(e.target.value)}
+                                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-md text-[11px] px-2 py-0.5 focus:outline-none focus:border-purple-500 font-medium"
+                                >
+                                    <option value="auto">Auto-Cascade</option>
+                                    <option value="nvidia">NVIDIA NIM (Free 1,000 Credits)</option>
+                                    <option value="openrouter">OpenRouter ($100 Credits)</option>
+                                    <option value="openai">OpenAI (GPT-4o)</option>
+                                    <option value="anthropic">Claude 3.7</option>
+                                    <option value="deepseek">DeepSeek</option>
+                                    <option value="groq">Groq</option>
+                                    <option value="gemini">Gemini</option>
+                                    <option value="sambanova">SambaNova</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
 
