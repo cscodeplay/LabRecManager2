@@ -137,6 +137,12 @@ async function initQuizTables() {
         await prisma.$executeRawUnsafe(`
             ALTER TABLE "question_bank" ADD COLUMN IF NOT EXISTS "exam_occurrences" JSONB DEFAULT '[]';
         `);
+        await prisma.$executeRawUnsafe(`
+            ALTER TABLE "question_bank" ADD COLUMN IF NOT EXISTS "is_mock" BOOLEAN DEFAULT false;
+        `);
+        await prisma.$executeRawUnsafe(`
+            ALTER TABLE "question_bank" ADD COLUMN IF NOT EXISTS "web_source" TEXT DEFAULT 'Official Paper';
+        `);
 
         await prisma.$executeRawUnsafe(`
             CREATE INDEX IF NOT EXISTS "idx_question_bank_topic" ON "question_bank"("topic");

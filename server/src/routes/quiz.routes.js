@@ -7,7 +7,7 @@ const { authenticate, optionalAuth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const aiService = require('../services/ai.service');
 
-// Web search context fetcher for exam questions grounding
+// Web search context fetcher for exam questions grounding with domain/source provenance
 async function fetchWebSnippets(topic, examType, examYear) {
     try {
         const query = `${examType || ''} ${examYear || ''} ${topic} questions answers syllabus gate numerical`.trim();
@@ -18,12 +18,43 @@ async function fetchWebSnippets(topic, examType, examYear) {
             },
             timeout: 4000
         });
-        const matches = res.data.match(/<a class="result__snippet[^>]*>([\s\S]*?)<\/a>/g) || [];
-        const snippets = matches
-            .map(m => m.replace(/<[^>]+>/g, '').trim())
-            .filter(Boolean)
-            .slice(0, 5);
-        return snippets;
+
+        const results = [];
+        // Extract result blocks from DDG HTML
+        const blockRegex = /<div class="result\s+results_links[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g;
+        let match;
+        while ((match = blockRegex.exec(res.data)) !== null && results.length < 5) {
+            const block = match[1];
+            const snippetMatch = block.match(/<a class="result__snippet[^>]*>([\s\S]*?)<\/a>/);
+            const urlMatch = block.match(/<a class="result__url"[^>]*>([\s\S]*?)<\/a>/) || block.match(/href="[^"]*uddg=([^"&]+)[^"]*"/);
+            if (snippetMatch) {
+                const snippet = snippetMatch[1].replace(/<[^>]+>/g, '').trim();
+                let source = 'web_search';
+                if (urlMatch) {
+                    const rawUrl = urlMatch[1] ? decodeURIComponent(urlMatch[1]).replace(/<[^>]+>/g, '').trim() : '';
+                    try {
+                        const parsed = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`);
+                        source = parsed.hostname.replace(/^www\./, '');
+                    } catch (_) {
+                        source = rawUrl.split('/')[0] || 'web_search';
+                    }
+                }
+                if (snippet) {
+                    results.push({ source, snippet });
+                }
+            }
+        }
+
+        // Fallback: simple snippet regex if block parsing matched 0 items
+        if (results.length === 0) {
+            const matches = res.data.match(/<a class="result__snippet[^>]*>([\s\S]*?)<\/a>/g) || [];
+            matches.slice(0, 5).forEach(m => {
+                const s = m.replace(/<[^>]+>/g, '').trim();
+                if (s) results.push({ source: 'web_search', snippet: s });
+            });
+        }
+
+        return results;
     } catch (err) {
         console.warn('[QuizRoutes] Web search snippet fetch skipped:', err.message);
         return [];
@@ -527,7 +558,7 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
                        question_type as "questionType", exam_occurrences as "examOccurrences",
                        difficulty, question, options, correct_option as "correctOption", 
                        explanation, points, diagram_url as "diagramUrl", diagram_svg as "diagramSvg",
-                       source
+                       source, is_mock as "isMock", web_source as "webSource"
                 FROM "question_bank"
                 WHERE ${whereClauses.join(' AND ')}
                 ORDER BY RANDOM()
@@ -559,6 +590,8 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
                 difficulty: q.difficulty || validDifficulty,
                 points: q.points || 1,
                 source: 'question_bank',
+                isMock: Boolean(q.isMock),
+                webSource: q.webSource || (q.isMock ? 'Mock / Practice Exam' : 'Official Archive'),
                 examType: q.examType || primaryExam,
                 examYear: q.examYear || primaryYear,
                 examOccurrences: (Array.isArray(q.examOccurrences) && q.examOccurrences.length > 0)
@@ -629,7 +662,7 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
 
     const webSnippets = await fetchWebSnippets(detectedTopic, searchTargetExam, searchTargetYear);
     const webContextBlock = webSnippets.length > 0
-        ? `\nAUTHENTIC WEB EXAMINATION SOURCES & SYLLABUS REFERENCES:\n${webSnippets.map((s, i) => `[Reference ${i + 1}] ${s}`).join('\n')}\n`
+        ? `\nAUTHENTIC WEB EXAMINATION SOURCES & SYLLABUS REFERENCES:\n${webSnippets.map((s, i) => `[Source: ${s.source}] ${s.snippet}`).join('\n')}\n`
         : '';
 
     // If web snippets are empty, past year was requested, but paper doesn't exist, strictly verify
@@ -660,6 +693,9 @@ EXAM TARGET: ${selectedExams.join(', ') || 'Competitive Engineering / Science'}
 YEAR(S): ${selectedYears.join(', ') || 'Recent Past Years'}
 - STRICT AUTHENTICITY ENFORCEMENT: Questions must be authentic examination problems that test core analytical rigor.
 - STRICT PROHIBITION: DO NOT hallucinate fake questions. If authentic questions for ${selectedExams.join(', ')} ${selectedYears.join(', ')} cannot be confirmed, return {"noAuthenticQuestions": true, "reason": "No authentic questions found"}.
+- AUTHENTICITY & SOURCE CLASSIFICATION:
+  * "isMock": Set to false if this is an authentic, officially conducted past exam paper question (PYQ). Set to true if this is an unofficial practice/mock test question.
+  * "webSource": Set to the specific web domain or portal where this problem originated (e.g. "gateoverflow.in", "iitk.ac.in", "nta.ac.in", "geeksforgeeks.org", or "Official Paper").
 - QUESTION FORMATS:
 ${forceFillInBlank
     ? '  * ALL questions must be Numerical Answer Type (NAT) / Fill-in-the-blank. Set "type": "fill_in_the_blank", "options": [], and "correctOption" to the exact numerical or text answer.'
@@ -709,6 +745,8 @@ JSON SCHEMA TO RETURN (VALID JSON ONLY, NO MARKDOWN, NO CODEBLOCKS):
     ],
     "correctOption": "A",
     "explanation": "Step-by-step mathematical derivation...",
+    "isMock": false,
+    "webSource": "gateoverflow.in",
     "examOccurrences": [
       { "exam": "${primaryExam || 'GATE'}", "year": "${primaryYear || '2024'}" }
     ],
@@ -801,6 +839,9 @@ Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
                 occs = [{ exam: primaryExam, year: primaryYear || null }];
             }
 
+            const isMockVal = typeof q.isMock === 'boolean' ? q.isMock : false;
+            const webSourceVal = q.webSource ? String(q.webSource).trim() : (webSnippets[0]?.source || 'web_search');
+
             return {
                 id: idx + 1,
                 type: isFillInBlank ? 'fill_in_the_blank' : 'mcq',
@@ -813,6 +854,8 @@ Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
                 difficulty: q.difficulty || validDifficulty,
                 points: q.points || 1,
                 source: 'web_source',
+                isMock: isMockVal,
+                webSource: webSourceVal,
                 examType: primaryExam || 'General',
                 examYear: primaryYear || null,
                 examOccurrences: occs,
@@ -827,9 +870,9 @@ Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
                     INSERT INTO "question_bank" (
                         "topic", "exam_type", "exam_year", "question_type", "exam_occurrences",
                         "difficulty", "question", "options", "correct_option", "explanation",
-                        "points", "diagram_url", "diagram_svg", "source"
+                        "points", "diagram_url", "diagram_svg", "source", "is_mock", "web_source"
                     )
-                    VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14)
+                    VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16)
                 `, 
                     q.topic || detectedTopic,
                     q.examType || 'General',
@@ -844,7 +887,9 @@ Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
                     q.points || 1,
                     q.diagramUrl,
                     q.diagramSvg,
-                    'web_source'
+                    'web_source',
+                    Boolean(q.isMock),
+                    q.webSource || 'web_source'
                 );
             } catch (saveErr) {
                 console.warn('[QuizRoutes] Error persisting question to bank:', saveErr.message);
@@ -879,6 +924,8 @@ Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
                 difficulty: q.difficulty || validDifficulty,
                 points: q.points || 1,
                 source: 'question_bank',
+                isMock: Boolean(q.isMock),
+                webSource: q.webSource || (q.isMock ? 'Mock / Practice Exam' : 'Official Archive'),
                 examType: q.examType || primaryExam,
                 examYear: q.examYear || primaryYear,
                 examOccurrences: (Array.isArray(q.examOccurrences) && q.examOccurrences.length > 0)
@@ -994,13 +1041,14 @@ router.get('/question-bank', authenticate, asyncHandler(async (req, res) => {
     const countResult = await prisma.$queryRawUnsafe(countSql, ...queryParams);
     const totalCount = countResult[0]?.count || 0;
 
-    // Items query with diagram_url, diagram_svg, question_type, exam_occurrences
+    // Items query with diagram_url, diagram_svg, question_type, exam_occurrences, is_mock, web_source
     const listSql = `
         SELECT id, topic, exam_type as "examType", exam_year as "examYear",
                question_type as "questionType", exam_occurrences as "examOccurrences",
                difficulty, question, options, correct_option as "correctOption",
                explanation, points, diagram_url as "diagramUrl", diagram_svg as "diagramSvg",
-               source, created_at as "createdAt", updated_at as "updatedAt"
+               source, is_mock as "isMock", web_source as "webSource",
+               created_at as "createdAt", updated_at as "updatedAt"
         FROM "question_bank"
         ${whereSql}
         ORDER BY "created_at" DESC
@@ -1049,7 +1097,9 @@ router.post('/question-bank', authenticate, asyncHandler(async (req, res) => {
         explanation = '',
         points = 1,
         diagramUrl = null,
-        diagramSvg = null
+        diagramSvg = null,
+        isMock = false,
+        webSource = 'Question Bank'
     } = req.body;
 
     if (!topic || !topic.trim()) {
@@ -1093,14 +1143,14 @@ router.post('/question-bank', authenticate, asyncHandler(async (req, res) => {
         INSERT INTO "question_bank" (
             "topic", "exam_type", "exam_year", "question_type", "exam_occurrences", "difficulty",
             "question", "options", "correct_option", "explanation",
-            "points", "diagram_url", "diagram_svg", "source"
+            "points", "diagram_url", "diagram_svg", "source", "is_mock", "web_source"
         )
-        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, 'manual_instructor')
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, 'manual_instructor', $14, $15)
         RETURNING id, topic, exam_type as "examType", exam_year as "examYear",
                   question_type as "questionType", exam_occurrences as "examOccurrences",
                   difficulty, question, options, correct_option as "correctOption",
                   explanation, points, diagram_url as "diagramUrl", diagram_svg as "diagramSvg",
-                  source, created_at as "createdAt";
+                  source, is_mock as "isMock", web_source as "webSource", created_at as "createdAt";
     `,
         topic.trim(),
         examType.trim(),
@@ -1114,7 +1164,9 @@ router.post('/question-bank', authenticate, asyncHandler(async (req, res) => {
         cleanExpl,
         Math.max(parseInt(points) || 1, 1),
         diagramUrl && diagramUrl.trim() ? diagramUrl.trim() : null,
-        diagramSvg && diagramSvg.trim() ? diagramSvg.trim() : null
+        diagramSvg && diagramSvg.trim() ? diagramSvg.trim() : null,
+        Boolean(isMock),
+        webSource ? webSource.trim() : 'Question Bank'
     );
 
     res.status(201).json({
@@ -1144,7 +1196,9 @@ router.put('/question-bank/:id', authenticate, asyncHandler(async (req, res) => 
         explanation,
         points,
         diagramUrl,
-        diagramSvg
+        diagramSvg,
+        isMock,
+        webSource
     } = req.body;
 
     const existing = await prisma.$queryRawUnsafe(`
@@ -1187,13 +1241,15 @@ router.put('/question-bank/:id', authenticate, asyncHandler(async (req, res) => 
             "points" = COALESCE($11, "points"),
             "diagram_url" = $12,
             "diagram_svg" = $13,
+            "is_mock" = COALESCE($14, "is_mock"),
+            "web_source" = COALESCE($15, "web_source"),
             "updated_at" = CURRENT_TIMESTAMP
-        WHERE "id"::text = $14
+        WHERE "id"::text = $16
         RETURNING id, topic, exam_type as "examType", exam_year as "examYear",
                   question_type as "questionType", exam_occurrences as "examOccurrences",
                   difficulty, question, options, correct_option as "correctOption",
                   explanation, points, diagram_url as "diagramUrl", diagram_svg as "diagramSvg",
-                  source, updated_at as "updatedAt";
+                  source, is_mock as "isMock", web_source as "webSource", updated_at as "updatedAt";
     `,
         topic ? topic.trim() : null,
         examType ? examType.trim() : null,
@@ -1208,6 +1264,8 @@ router.put('/question-bank/:id', authenticate, asyncHandler(async (req, res) => 
         points ? Math.max(parseInt(points) || 1, 1) : null,
         diagramUrl !== undefined ? (diagramUrl ? diagramUrl.trim() : null) : null,
         diagramSvg !== undefined ? (diagramSvg ? diagramSvg.trim() : null) : null,
+        typeof isMock === 'boolean' ? isMock : null,
+        webSource !== undefined ? (webSource ? webSource.trim() : null) : null,
         id
     );
 

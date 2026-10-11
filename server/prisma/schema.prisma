@@ -2521,6 +2521,8 @@ model QuestionBank {
   diagramSvg      String?   @map("diagram_svg") @db.Text
   questionType    String?   @default("mcq") @map("question_type") @db.VarChar(50)
   examOccurrences Json?     @default("[]") @map("exam_occurrences")
+  isMock          Boolean?  @default(false) @map("is_mock")
+  webSource       String?   @map("web_source") @db.Text
   source          String?   @default("question_bank") @db.VarChar(100)
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)

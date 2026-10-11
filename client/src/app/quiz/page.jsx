@@ -9,7 +9,7 @@ import {
     Users, Send, BarChart3, FileText, X, CheckSquare, Square,
     Edit3, Plus, LayoutGrid, List, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
     Wand2, ArrowUp, ArrowDown, Settings2, Filter, Layers, UserCheck, Database, Eye, Image as ImageIcon,
-    AlertTriangle, CheckCircle
+    AlertTriangle, CheckCircle, Globe
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import QRCode from 'qrcode';
@@ -132,7 +132,9 @@ export default function QuizDashboardPage() {
             { key: 'D', text: '' }
         ],
         correctOption: 'A',
-        explanation: ''
+        explanation: '',
+        isMock: false,
+        webSource: 'Official Paper'
     });
     const [isSavingBankQuestion, setIsSavingBankQuestion] = useState(false);
     const [bankDiagramType, setBankDiagramType] = useState('none'); // 'none' | 'svg' | 'url'
@@ -387,7 +389,12 @@ export default function QuizDashboardPage() {
                 correctOption: (q.correctOption || 'A').toUpperCase(),
                 explanation: q.explanation || '',
                 difficulty: q.difficulty || quiz.difficulty || 'medium',
-                points: q.points || 1
+                points: q.points || 1,
+                isMock: Boolean(q.isMock),
+                webSource: q.webSource || '',
+                examOccurrences: q.examOccurrences || [],
+                examType: q.examType || '',
+                examYear: q.examYear || ''
             };
         });
 
@@ -464,7 +471,9 @@ export default function QuizDashboardPage() {
             correctOption: 'A',
             explanation: '',
             difficulty: editFormData.difficulty || 'medium',
-            points: 1
+            points: 1,
+            isMock: false,
+            webSource: 'Manual Instructor'
         };
         const updated = [...editFormData.questions, newQ];
         setEditFormData(prev => ({ ...prev, questions: updated }));
@@ -860,7 +869,9 @@ export default function QuizDashboardPage() {
                 { key: 'D', text: '' }
             ],
             correctOption: 'A',
-            explanation: ''
+            explanation: '',
+            isMock: false,
+            webSource: 'Official Paper'
         });
         setBankDiagramType('none');
         setPreviewBankQuestion(false);
@@ -894,7 +905,9 @@ export default function QuizDashboardPage() {
             diagramUrl: q.diagramUrl || '',
             options: normalizedOpts,
             correctOption: q.correctOption || 'A',
-            explanation: q.explanation || ''
+            explanation: q.explanation || '',
+            isMock: Boolean(q.isMock),
+            webSource: q.webSource || ''
         });
         setBankDiagramType(hasSvg ? 'svg' : (hasUrl ? 'url' : 'none'));
         setPreviewBankQuestion(false);
@@ -930,6 +943,8 @@ export default function QuizDashboardPage() {
                 options: bankFormData.options,
                 correctOption: bankFormData.correctOption,
                 explanation: bankFormData.explanation.trim(),
+                isMock: Boolean(bankFormData.isMock),
+                webSource: bankFormData.webSource ? bankFormData.webSource.trim() : 'Official Paper',
                 diagramSvg: bankDiagramType === 'svg' ? bankFormData.diagramSvg.trim() : null,
                 diagramUrl: bankDiagramType === 'url' ? bankFormData.diagramUrl.trim() : null
             };
@@ -2371,6 +2386,25 @@ export default function QuizDashboardPage() {
                                                 );
                                             })()}
 
+                                            {/* Official vs Mock Exam Badge & Web Source */}
+                                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border shadow-xs ${
+                                                    q.isMock
+                                                        ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
+                                                        : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
+                                                }`}>
+                                                    <span>{q.isMock ? '📝' : '🏛️'}</span>
+                                                    <span>{q.isMock ? 'Mock / Practice Exam' : 'Official Exam PYQ'}</span>
+                                                </span>
+
+                                                {q.webSource && (
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                                        <span>🌐</span>
+                                                        <span>Source: {q.webSource}</span>
+                                                    </span>
+                                                )}
+                                            </div>
+
                                             {/* Vector Diagram or Image (if available) */}
                                             {(q.diagramSvg || q.diagramUrl) && (
                                                 <QuestionDiagram
@@ -2840,6 +2874,13 @@ export default function QuizDashboardPage() {
                                                                     <span className="text-amber-500 italic">Empty Question Prompt</span>
                                                                 )}
                                                             </div>
+                                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
+                                                                q.isMock
+                                                                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
+                                                                    : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
+                                                            }`}>
+                                                                {q.isMock ? '📝 Mock' : '🏛️ Official'}
+                                                            </span>
                                                             <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shrink-0">
                                                                 Ans: {q.correctOption}
                                                             </span>
@@ -2987,6 +3028,54 @@ export default function QuizDashboardPage() {
                                                                         <MathRenderer content={q.explanation} inline />
                                                                     </div>
                                                                 )}
+                                                            </div>
+
+                                                            {/* Authenticity & Web Source Settings */}
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800">
+                                                                <div>
+                                                                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                                                                        Question Classification
+                                                                    </label>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleUpdateQuestionField(qIdx, 'isMock', false)}
+                                                                            className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                                                                                !q.isMock
+                                                                                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 shadow-xs'
+                                                                                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                                                                            }`}
+                                                                        >
+                                                                            <span>🏛️ Official PYQ</span>
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleUpdateQuestionField(qIdx, 'isMock', true)}
+                                                                            className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                                                                                q.isMock
+                                                                                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700 shadow-xs'
+                                                                                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                                                                            }`}
+                                                                        >
+                                                                            <span>📝 Mock / Practice</span>
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                                                                        Web Source / Citation Origin
+                                                                    </label>
+                                                                    <div className="relative">
+                                                                        <Globe className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                                                        <input
+                                                                            type="text"
+                                                                            value={q.webSource || ''}
+                                                                            onChange={(e) => handleUpdateQuestionField(qIdx, 'webSource', e.target.value)}
+                                                                            placeholder="e.g. Official Paper, gateoverflow.in, nta.ac.in"
+                                                                            className="w-full pl-8 pr-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-primary-500"
+                                                                        />
+                                                                    </div>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     )}
@@ -4280,6 +4369,25 @@ export default function QuizDashboardPage() {
                                             <MathRenderer content={bankFormData.question || '*(Question statement is empty)*'} />
                                         </div>
 
+                                        {/* Official vs Mock Exam Badge & Web Source */}
+                                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border shadow-xs ${
+                                                bankFormData.isMock
+                                                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
+                                                    : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
+                                            }`}>
+                                                <span>{bankFormData.isMock ? '📝' : '🏛️'}</span>
+                                                <span>{bankFormData.isMock ? 'Mock / Practice Exam' : 'Official Exam PYQ'}</span>
+                                            </span>
+
+                                            {bankFormData.webSource && (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                                    <span>🌐</span>
+                                                    <span>Source: {bankFormData.webSource}</span>
+                                                </span>
+                                            )}
+                                        </div>
+
                                         {/* Diagram Preview */}
                                         {(bankDiagramType === 'svg' && bankFormData.diagramSvg) && (
                                             <div className="py-2">
@@ -4400,6 +4508,34 @@ export default function QuizDashboardPage() {
                                                     onChange={e => setBankFormData(f => ({ ...f, points: Math.max(1, parseInt(e.target.value) || 1) }))}
                                                     className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                                                 />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                                                    Authenticity Type
+                                                </label>
+                                                <select
+                                                    value={bankFormData.isMock ? 'mock' : 'official'}
+                                                    onChange={e => setBankFormData(f => ({ ...f, isMock: e.target.value === 'mock' }))}
+                                                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 font-semibold"
+                                                >
+                                                    <option value="official">🏛️ Official Exam PYQ</option>
+                                                    <option value="mock">📝 Mock / Practice Exam</option>
+                                                </select>
+                                            </div>
+                                            <div className="sm:col-span-2">
+                                                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                                                    Web Source / Citation Origin
+                                                </label>
+                                                <div className="relative">
+                                                    <Globe className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                                    <input
+                                                        type="text"
+                                                        value={bankFormData.webSource}
+                                                        onChange={e => setBankFormData(f => ({ ...f, webSource: e.target.value }))}
+                                                        placeholder="e.g. Official Paper, gateoverflow.in, nta.ac.in..."
+                                                        className="w-full pl-8.5 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
 
