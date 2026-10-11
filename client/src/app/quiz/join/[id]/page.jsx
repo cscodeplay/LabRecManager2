@@ -376,7 +376,7 @@ export default function QuizJoinPage() {
                 </div>
             )}
 
-            <div className="max-w-xl w-full">
+            <div className={`w-full transition-all duration-300 ${hasStarted || quizResult ? 'max-w-4xl' : 'max-w-xl'}`}>
 
                 {/* 1. QUIZ LOBBY SCREEN (BEFORE START) */}
                 {!hasStarted && !quizResult && (
@@ -533,18 +533,49 @@ export default function QuizJoinPage() {
                             const currentSelected = userAnswers[q.id];
 
                             return (
-                                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-7 space-y-5 shadow-xl">
-                                    <div className="flex items-center justify-between text-xs text-slate-500">
-                                        <span className="font-bold text-primary-600">
-                                            Question {currentQuestionIdx + 1} of {quiz.questions.length}
+                                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-lg">
+                                    <div className="flex items-center justify-between text-xs text-slate-500 pb-1 border-b border-slate-100 dark:border-slate-800">
+                                        <span className="font-bold text-primary-600 flex items-center gap-1.5">
+                                            <span>Question {currentQuestionIdx + 1} of {quiz.questions.length}</span>
+                                            {(q.type === 'fill_in_the_blank' || q.type === 'nat' || (!q.options || q.options.length === 0)) && (
+                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                                    Fill-in-the-blank / NAT
+                                                </span>
+                                            )}
                                         </span>
-                                        <span className="text-[11px] font-mono bg-slate-100 dark:bg-slate-950 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-800">
-                                            1 Point
+                                        <span className="text-[11px] font-mono bg-slate-100 dark:bg-slate-950 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-800 font-semibold">
+                                            {q.points || 1} {q.points === 1 ? 'Point' : 'Points'}
                                         </span>
                                     </div>
 
                                     <div className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-snug">
                                         <MathRenderer content={q.question} />
+                                    </div>
+
+                                    {/* Multi-Exam Occurrences, Topic, and Difficulty Pills directly UNDER the question */}
+                                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                        {(Array.isArray(q.examOccurrences) && q.examOccurrences.length > 0 ? q.examOccurrences : (q.examType ? [{ exam: q.examType, year: q.examYear }] : [])).map((occ, oIdx) => {
+                                            if (!occ.exam && !occ.year) return null;
+                                            return (
+                                                <span
+                                                    key={oIdx}
+                                                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/50 shadow-xs"
+                                                >
+                                                    <span>🏛️</span>
+                                                    <span>{occ.exam || 'Exam'} {occ.year ? `(${occ.year})` : ''}</span>
+                                                </span>
+                                            );
+                                        })}
+                                        {q.topic && (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                                <span>🏷️</span>
+                                                <span>{q.topic}</span>
+                                            </span>
+                                        )}
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/60 text-slate-500 capitalize">
+                                            <span>⚡</span>
+                                            <span>{q.difficulty || 'medium'}</span>
+                                        </span>
                                     </div>
 
                                     {(q.diagramSvg || q.diagramUrl) && (
@@ -555,32 +586,47 @@ export default function QuizJoinPage() {
                                         />
                                     )}
 
-                                    {/* 4 Choices */}
-                                    <div className="space-y-2.5 pt-2">
-                                        {(q.options || []).map((opt) => {
-                                            const isSelected = currentSelected === opt.key;
-                                            return (
-                                                <button
-                                                    key={opt.key}
-                                                    onClick={() => handleSelectOption(q.id, opt.key)}
-                                                    className={`w-full p-3.5 rounded-2xl border text-left text-xs sm:text-sm font-medium transition flex items-center gap-3 ${
-                                                        isSelected
-                                                            ? 'bg-primary-600 border-primary-500 text-white shadow-md'
-                                                            : 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                                    }`}
-                                                >
-                                                    <span className={`w-7 h-7 rounded-xl font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 ${
-                                                        isSelected ? 'bg-white text-primary-700' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                                                    }`}>
-                                                        {opt.key}
-                                                    </span>
-                                                    <span className="flex-1">
-                                                        <MathRenderer content={opt.text} inline />
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                                    {/* Choices or Fill-in-the-blank input */}
+                                    {q.type === 'fill_in_the_blank' || q.type === 'nat' || (!q.options || q.options.length === 0) ? (
+                                        <div className="pt-2 space-y-2">
+                                            <label className="block text-xs font-bold text-slate-600 dark:text-slate-400">
+                                                Your Answer (Numerical Value / Exact Text):
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={currentSelected || ''}
+                                                onChange={(e) => handleSelectOption(q.id, e.target.value)}
+                                                placeholder="Type your answer here..."
+                                                className="w-full max-w-md px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-800 focus:border-primary-500 font-mono text-sm sm:text-base font-semibold text-slate-900 dark:text-white focus:outline-none"
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2 pt-1">
+                                            {(q.options || []).map((opt) => {
+                                                const isSelected = currentSelected === opt.key;
+                                                return (
+                                                    <button
+                                                        key={opt.key}
+                                                        onClick={() => handleSelectOption(q.id, opt.key)}
+                                                        className={`w-full p-2.5 sm:p-3 rounded-xl border text-left text-xs sm:text-sm font-medium transition flex items-center gap-2.5 ${
+                                                            isSelected
+                                                                ? 'bg-primary-600 border-primary-500 text-white shadow-md'
+                                                                : 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                                        }`}
+                                                    >
+                                                        <span className={`w-6 h-6 rounded-lg font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 ${
+                                                            isSelected ? 'bg-white text-primary-700' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                                        }`}>
+                                                            {opt.key}
+                                                        </span>
+                                                        <span className="flex-1">
+                                                            <MathRenderer content={opt.text} inline />
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
 
                                     {/* Navigation & Submit Buttons */}
                                     <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800">
@@ -703,9 +749,20 @@ export default function QuizJoinPage() {
                             const ans = quizResult.answers[reviewQuestionIdx];
                             const originalQ = (quiz?.questions || []).find(q => String(q.id) === String(ans.questionId));
                             const optList = (ans.options && ans.options.length > 0) ? ans.options : (originalQ?.options || []);
+                            const isFillInTheBlank = ans.questionType === 'fill_in_the_blank' || ans.questionType === 'nat' || originalQ?.type === 'fill_in_the_blank' || originalQ?.type === 'nat' || (!optList || optList.length === 0);
+
+                            const rawOcc = ans.examOccurrences || originalQ?.examOccurrences || [];
+                            let occList = [];
+                            try {
+                                occList = typeof rawOcc === 'string' ? JSON.parse(rawOcc) : (Array.isArray(rawOcc) ? rawOcc : []);
+                            } catch {
+                                occList = [];
+                            }
+                            const topic = ans.topic || originalQ?.topic;
+                            const diff = ans.difficulty || originalQ?.difficulty;
 
                             return (
-                                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-7 space-y-5 shadow-xl">
+                                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-5 space-y-3.5 shadow-lg">
                                     <div className="flex items-center justify-between text-xs text-slate-500">
                                         <span className="font-bold text-primary-600">
                                             Question {reviewQuestionIdx + 1} of {quizResult.answers.length}
@@ -715,62 +772,106 @@ export default function QuizJoinPage() {
                                         </span>
                                     </div>
 
-                                    <div className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-snug">
+                                    <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-snug">
                                         <MathRenderer content={ans.questionText || originalQ?.question || ''} />
                                     </div>
+
+                                    {/* Exam Occurrences & Topic Pills */}
+                                    {(occList.length > 0 || topic || diff) && (
+                                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                            {occList.map((occ, oIdx) => (
+                                                <span
+                                                    key={oIdx}
+                                                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/50 shadow-xs"
+                                                >
+                                                    <span>🏛️</span>
+                                                    <span>{occ.exam || 'Exam'} {occ.year ? `(${occ.year})` : ''}</span>
+                                                </span>
+                                            ))}
+                                            {topic && (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                                    <span>🏷️</span>
+                                                    <span>{topic}</span>
+                                                </span>
+                                            )}
+                                            {diff && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/60 text-slate-500 capitalize">
+                                                    <span>⚡</span>
+                                                    <span>{diff}</span>
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
 
                                     {(originalQ?.diagramSvg || originalQ?.diagramUrl || ans.diagramSvg || ans.diagramUrl) && (
                                         <QuestionDiagram
                                             diagramSvg={originalQ?.diagramSvg || ans.diagramSvg}
                                             diagramUrl={originalQ?.diagramUrl || ans.diagramUrl}
-                                            title={`Question ${currentQuestionIdx + 1} Diagram`}
+                                            title={`Question ${reviewQuestionIdx + 1} Diagram`}
                                         />
                                     )}
 
-                                    {/* Choices styled with Green & Red selection (NO labels) */}
-                                    <div className="space-y-2.5 pt-2">
-                                        {optList.map((opt) => {
-                                            const optKey = String(opt.key || '').toUpperCase();
-                                            const userChoice = String(ans.selectedOption || '').toUpperCase();
-                                            const correctChoice = String(ans.correctOption || '').toUpperCase();
-                                            const isUserSelected = optKey === userChoice;
-                                            const isCorrectOption = optKey === correctChoice;
-
-                                            let cardClass = 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200';
-                                            let badgeClass = 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
-                                            let textClass = 'text-slate-800 dark:text-slate-200';
-
-                                            if (isCorrectOption) {
-                                                // Green selection for the correct answer
-                                                cardClass = 'bg-emerald-600 border-emerald-500 text-white shadow-md ring-2 ring-emerald-400/50';
-                                                badgeClass = 'bg-white text-emerald-700 font-bold';
-                                                textClass = 'text-white font-medium';
-                                            } else if (isUserSelected && !isCorrectOption) {
-                                                // Red selection for student's wrong pick
-                                                cardClass = 'bg-rose-600 border-rose-500 text-white shadow-md ring-2 ring-rose-400/50';
-                                                badgeClass = 'bg-white text-rose-700 font-bold';
-                                                textClass = 'text-white font-medium';
-                                            }
-
-                                            return (
-                                                <div
-                                                    key={optKey}
-                                                    className={`w-full p-3.5 rounded-2xl border text-left text-xs sm:text-sm transition flex items-center gap-3 ${cardClass}`}
-                                                >
-                                                    <span className={`w-7 h-7 rounded-xl font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 ${badgeClass}`}>
-                                                        {optKey}
-                                                    </span>
-                                                    <span className={`flex-1 ${textClass}`}>
-                                                        <MathRenderer content={opt.text || ''} inline />
-                                                    </span>
+                                    {/* Fill in the blank or MCQ options */}
+                                    {isFillInTheBlank ? (
+                                        <div className="space-y-2 pt-1">
+                                            <div className={`w-full p-2.5 sm:p-3 rounded-xl border text-xs sm:text-sm font-mono flex items-center justify-between ${
+                                                ans.isCorrect
+                                                    ? 'bg-emerald-600 border-emerald-500 text-white shadow-md ring-2 ring-emerald-400/50'
+                                                    : 'bg-rose-600 border-rose-500 text-white shadow-md ring-2 ring-rose-400/50'
+                                            }`}>
+                                                <span className="font-sans font-medium text-xs opacity-90">Your Answer:</span>
+                                                <span className="font-bold">{ans.selectedOption ? String(ans.selectedOption) : '(No response)'}</span>
+                                            </div>
+                                            {!ans.isCorrect && (
+                                                <div className="w-full p-2.5 sm:p-3 rounded-xl border bg-emerald-600 border-emerald-500 text-white shadow-md ring-2 ring-emerald-400/50 text-xs sm:text-sm font-mono flex items-center justify-between">
+                                                    <span className="font-sans font-medium text-xs opacity-90">Correct Answer:</span>
+                                                    <span className="font-bold">{ans.correctOption}</span>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2 pt-1">
+                                            {optList.map((opt) => {
+                                                const optKey = String(opt.key || '').toUpperCase();
+                                                const userChoice = String(ans.selectedOption || '').toUpperCase();
+                                                const correctChoice = String(ans.correctOption || '').toUpperCase();
+                                                const isUserSelected = optKey === userChoice;
+                                                const isCorrectOption = optKey === correctChoice;
+
+                                                let cardClass = 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200';
+                                                let badgeClass = 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
+                                                let textClass = 'text-slate-800 dark:text-slate-200';
+
+                                                if (isCorrectOption) {
+                                                    cardClass = 'bg-emerald-600 border-emerald-500 text-white shadow-md ring-2 ring-emerald-400/50';
+                                                    badgeClass = 'bg-white text-emerald-700 font-bold';
+                                                    textClass = 'text-white font-medium';
+                                                } else if (isUserSelected && !isCorrectOption) {
+                                                    cardClass = 'bg-rose-600 border-rose-500 text-white shadow-md ring-2 ring-rose-400/50';
+                                                    badgeClass = 'bg-white text-rose-700 font-bold';
+                                                    textClass = 'text-white font-medium';
+                                                }
+
+                                                return (
+                                                    <div
+                                                        key={optKey}
+                                                        className={`w-full p-2.5 sm:p-3 rounded-xl border text-left text-xs sm:text-sm transition flex items-center gap-2.5 ${cardClass}`}
+                                                    >
+                                                        <span className={`w-6 h-6 sm:w-7 sm:h-7 rounded-lg font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 ${badgeClass}`}>
+                                                            {optKey}
+                                                        </span>
+                                                        <span className={`flex-1 ${textClass}`}>
+                                                            <MathRenderer content={opt.text || ''} inline />
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
 
                                     {/* Solution / Explanation */}
                                     {ans.explanation && (
-                                        <div className="text-xs text-slate-800 dark:text-slate-200 bg-amber-500/10 dark:bg-amber-950/20 p-4 rounded-2xl border border-amber-300 dark:border-amber-800/40 space-y-1.5">
+                                        <div className="text-xs text-slate-800 dark:text-slate-200 bg-amber-500/10 dark:bg-amber-950/20 p-3.5 rounded-xl border border-amber-300 dark:border-amber-800/40 space-y-1">
                                             <div className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
                                                 <span>💡</span>
                                                 <span>Explanation</span>
@@ -782,18 +883,18 @@ export default function QuizJoinPage() {
                                     )}
 
                                     {/* Navigation Buttons */}
-                                    <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800">
+                                    <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
                                         <button
                                             onClick={() => setReviewQuestionIdx(prev => Math.max(0, prev - 1))}
                                             disabled={reviewQuestionIdx === 0}
-                                            className="py-2 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                                            className="py-2 px-3.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1"
                                         >
                                             <ChevronLeft className="w-4 h-4" /> Previous
                                         </button>
 
                                         <button
                                             onClick={() => router.push('/quiz')}
-                                            className="py-2 px-4 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition"
+                                            className="py-2 px-3.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition"
                                         >
                                             Return to Quizzes
                                         </button>
@@ -801,7 +902,7 @@ export default function QuizJoinPage() {
                                         <button
                                             onClick={() => setReviewQuestionIdx(prev => Math.min(quizResult.answers.length - 1, prev + 1))}
                                             disabled={reviewQuestionIdx === quizResult.answers.length - 1}
-                                            className="py-2 px-4 bg-primary-600 hover:bg-primary-700 disabled:opacity-30 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow"
+                                            className="py-2 px-3.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-30 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow"
                                         >
                                             Next <ChevronRight className="w-4 h-4" />
                                         </button>
@@ -812,15 +913,26 @@ export default function QuizJoinPage() {
 
                         {/* ALL QUESTIONS CONTINUOUS LIST VIEW */}
                         {reviewViewMode === 'all' && (
-                            <div className="space-y-4">
+                            <div className="space-y-3.5">
                                 {(quizResult.answers || []).map((ans, idx) => {
                                     const originalQ = (quiz?.questions || []).find(q => String(q.id) === String(ans.questionId));
                                     const optList = (ans.options && ans.options.length > 0) ? ans.options : (originalQ?.options || []);
+                                    const isFillInTheBlank = ans.questionType === 'fill_in_the_blank' || ans.questionType === 'nat' || originalQ?.type === 'fill_in_the_blank' || originalQ?.type === 'nat' || (!optList || optList.length === 0);
+
+                                    const rawOcc = ans.examOccurrences || originalQ?.examOccurrences || [];
+                                    let occList = [];
+                                    try {
+                                        occList = typeof rawOcc === 'string' ? JSON.parse(rawOcc) : (Array.isArray(rawOcc) ? rawOcc : []);
+                                    } catch {
+                                        occList = [];
+                                    }
+                                    const topic = ans.topic || originalQ?.topic;
+                                    const diff = ans.difficulty || originalQ?.difficulty;
 
                                     return (
                                         <div
                                             key={idx}
-                                            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-7 space-y-4 shadow-xl"
+                                            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-5 space-y-3.5 shadow-lg"
                                         >
                                             <div className="flex items-center justify-between text-xs text-slate-500">
                                                 <span className="font-bold text-primary-600">
@@ -831,52 +943,106 @@ export default function QuizJoinPage() {
                                                 </span>
                                             </div>
 
-                                            <div className="text-base font-bold text-slate-900 dark:text-white leading-snug">
+                                            <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-snug">
                                                 <MathRenderer content={ans.questionText || originalQ?.question || ''} />
                                             </div>
 
-                                            {/* 4 Choices with Green / Red selections */}
-                                            <div className="space-y-2.5 pt-1">
-                                                {optList.map((opt) => {
-                                                    const optKey = String(opt.key || '').toUpperCase();
-                                                    const userChoice = String(ans.selectedOption || '').toUpperCase();
-                                                    const correctChoice = String(ans.correctOption || '').toUpperCase();
-                                                    const isUserSelected = optKey === userChoice;
-                                                    const isCorrectOption = optKey === correctChoice;
-
-                                                    let cardClass = 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200';
-                                                    let badgeClass = 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
-                                                    let textClass = 'text-slate-800 dark:text-slate-200';
-
-                                                    if (isCorrectOption) {
-                                                        cardClass = 'bg-emerald-600 border-emerald-500 text-white shadow-md ring-2 ring-emerald-400/50';
-                                                        badgeClass = 'bg-white text-emerald-700 font-bold';
-                                                        textClass = 'text-white font-medium';
-                                                    } else if (isUserSelected && !isCorrectOption) {
-                                                        cardClass = 'bg-rose-600 border-rose-500 text-white shadow-md ring-2 ring-rose-400/50';
-                                                        badgeClass = 'bg-white text-rose-700 font-bold';
-                                                        textClass = 'text-white font-medium';
-                                                    }
-
-                                                    return (
-                                                        <div
-                                                            key={optKey}
-                                                            className={`w-full p-3.5 rounded-2xl border text-left text-xs sm:text-sm transition flex items-center gap-3 ${cardClass}`}
+                                            {/* Exam Occurrences & Topic Pills */}
+                                            {(occList.length > 0 || topic || diff) && (
+                                                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                                    {occList.map((occ, oIdx) => (
+                                                        <span
+                                                            key={oIdx}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/50 shadow-xs"
                                                         >
-                                                            <span className={`w-7 h-7 rounded-xl font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 ${badgeClass}`}>
-                                                                {optKey}
-                                                            </span>
-                                                            <span className={`flex-1 ${textClass}`}>
-                                                                <MathRenderer content={opt.text || ''} inline />
-                                                            </span>
+                                                            <span>🏛️</span>
+                                                            <span>{occ.exam || 'Exam'} {occ.year ? `(${occ.year})` : ''}</span>
+                                                        </span>
+                                                    ))}
+                                                    {topic && (
+                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                                            <span>🏷️</span>
+                                                            <span>{topic}</span>
+                                                        </span>
+                                                    )}
+                                                    {diff && (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/60 text-slate-500 capitalize">
+                                                            <span>⚡</span>
+                                                            <span>{diff}</span>
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {(originalQ?.diagramSvg || originalQ?.diagramUrl || ans.diagramSvg || ans.diagramUrl) && (
+                                                <QuestionDiagram
+                                                    diagramSvg={originalQ?.diagramSvg || ans.diagramSvg}
+                                                    diagramUrl={originalQ?.diagramUrl || ans.diagramUrl}
+                                                    title={`Question ${idx + 1} Diagram`}
+                                                />
+                                            )}
+
+                                            {/* Fill in the blank or MCQ options */}
+                                            {isFillInTheBlank ? (
+                                                <div className="space-y-2 pt-1">
+                                                    <div className={`w-full p-2.5 sm:p-3 rounded-xl border text-xs sm:text-sm font-mono flex items-center justify-between ${
+                                                        ans.isCorrect
+                                                            ? 'bg-emerald-600 border-emerald-500 text-white shadow-md ring-2 ring-emerald-400/50'
+                                                            : 'bg-rose-600 border-rose-500 text-white shadow-md ring-2 ring-rose-400/50'
+                                                    }`}>
+                                                        <span className="font-sans font-medium text-xs opacity-90">Your Answer:</span>
+                                                        <span className="font-bold">{ans.selectedOption ? String(ans.selectedOption) : '(No response)'}</span>
+                                                    </div>
+                                                    {!ans.isCorrect && (
+                                                        <div className="w-full p-2.5 sm:p-3 rounded-xl border bg-emerald-600 border-emerald-500 text-white shadow-md ring-2 ring-emerald-400/50 text-xs sm:text-sm font-mono flex items-center justify-between">
+                                                            <span className="font-sans font-medium text-xs opacity-90">Correct Answer:</span>
+                                                            <span className="font-bold">{ans.correctOption}</span>
                                                         </div>
-                                                    );
-                                                })}
-                                            </div>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2 pt-1">
+                                                    {optList.map((opt) => {
+                                                        const optKey = String(opt.key || '').toUpperCase();
+                                                        const userChoice = String(ans.selectedOption || '').toUpperCase();
+                                                        const correctChoice = String(ans.correctOption || '').toUpperCase();
+                                                        const isUserSelected = optKey === userChoice;
+                                                        const isCorrectOption = optKey === correctChoice;
+
+                                                        let cardClass = 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200';
+                                                        let badgeClass = 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
+                                                        let textClass = 'text-slate-800 dark:text-slate-200';
+
+                                                        if (isCorrectOption) {
+                                                            cardClass = 'bg-emerald-600 border-emerald-500 text-white shadow-md ring-2 ring-emerald-400/50';
+                                                            badgeClass = 'bg-white text-emerald-700 font-bold';
+                                                            textClass = 'text-white font-medium';
+                                                        } else if (isUserSelected && !isCorrectOption) {
+                                                            cardClass = 'bg-rose-600 border-rose-500 text-white shadow-md ring-2 ring-rose-400/50';
+                                                            badgeClass = 'bg-white text-rose-700 font-bold';
+                                                            textClass = 'text-white font-medium';
+                                                        }
+
+                                                        return (
+                                                            <div
+                                                                key={optKey}
+                                                                className={`w-full p-2.5 sm:p-3 rounded-xl border text-left text-xs sm:text-sm transition flex items-center gap-2.5 ${cardClass}`}
+                                                            >
+                                                                <span className={`w-6 h-6 sm:w-7 sm:h-7 rounded-lg font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 ${badgeClass}`}>
+                                                                    {optKey}
+                                                                </span>
+                                                                <span className={`flex-1 ${textClass}`}>
+                                                                    <MathRenderer content={opt.text || ''} inline />
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
 
                                             {/* Explanation */}
                                             {ans.explanation && (
-                                                <div className="text-xs text-slate-800 dark:text-slate-200 bg-amber-500/10 dark:bg-amber-950/20 p-3.5 rounded-2xl border border-amber-300 dark:border-amber-800/40 space-y-1">
+                                                <div className="text-xs text-slate-800 dark:text-slate-200 bg-amber-500/10 dark:bg-amber-950/20 p-3 rounded-xl border border-amber-300 dark:border-amber-800/40 space-y-1">
                                                     <div className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
                                                         <span>💡</span>
                                                         <span>Explanation</span>
@@ -892,7 +1058,7 @@ export default function QuizJoinPage() {
 
                                 <button
                                     onClick={() => router.push('/quiz')}
-                                    className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition shadow"
+                                    className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition shadow"
                                 >
                                     Return to Quizzes
                                 </button>

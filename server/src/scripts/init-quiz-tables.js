@@ -131,6 +131,12 @@ async function initQuizTables() {
         await prisma.$executeRawUnsafe(`
             ALTER TABLE "question_bank" ADD COLUMN IF NOT EXISTS "diagram_svg" TEXT;
         `);
+        await prisma.$executeRawUnsafe(`
+            ALTER TABLE "question_bank" ADD COLUMN IF NOT EXISTS "question_type" VARCHAR(50) DEFAULT 'mcq';
+        `);
+        await prisma.$executeRawUnsafe(`
+            ALTER TABLE "question_bank" ADD COLUMN IF NOT EXISTS "exam_occurrences" JSONB DEFAULT '[]';
+        `);
 
         await prisma.$executeRawUnsafe(`
             CREATE INDEX IF NOT EXISTS "idx_question_bank_topic" ON "question_bank"("topic");
@@ -140,6 +146,9 @@ async function initQuizTables() {
         `);
         await prisma.$executeRawUnsafe(`
             CREATE INDEX IF NOT EXISTS "idx_question_bank_exam_year" ON "question_bank"("exam_year");
+        `);
+        await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "idx_question_bank_type" ON "question_bank"("question_type");
         `);
         await prisma.$executeRawUnsafe(`
             CREATE INDEX IF NOT EXISTS "idx_question_bank_lookup" ON "question_bank"("exam_type", "exam_year", "topic");

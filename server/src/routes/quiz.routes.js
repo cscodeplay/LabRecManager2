@@ -198,22 +198,210 @@ function cleanLatexChemistry(str) {
     return out;
 }
 
+// Comprehensive Competitive & Academic Exams Graph
+const RELATED_EXAMS_GRAPH = {
+    'GATE': {
+        name: 'GATE (Graduate Aptitude Test in Engineering)',
+        domain: 'Engineering & Technology',
+        related: [
+            { id: 'ISRO', name: 'ISRO Scientist/Engineer Exam (ICRB)', overlap: '95% syllabus overlap with core engineering branches' },
+            { id: 'BARC', name: 'BARC OCES / DGFS Scientific Officer', overlap: 'Direct GATE core syllabus with advanced numericals' },
+            { id: 'UGC-NET', name: 'UGC-NET (Paper 2 Computer Science & Applications)', overlap: 'Covers Algorithms, OS, DBMS, Networks, TOC, Compiler, Architecture' },
+            { id: 'NIELIT', name: 'NIELIT Scientist B / Scientific Assistant', overlap: 'Direct overlap with GATE CS/IT and Electronics' },
+            { id: 'TIFR', name: 'TIFR GS (Computer & Systems Sciences)', overlap: 'High rigor in Discrete Math, Algorithms, Architecture' },
+            { id: 'DRDO', name: 'DRDO RAC Scientist B Exam', overlap: 'Screening directly based on GATE engineering topics' }
+        ]
+    },
+    'ISRO': {
+        name: 'ISRO Scientist/Engineer Exam (ICRB)',
+        domain: 'Engineering & Technology',
+        related: [
+            { id: 'GATE', name: 'GATE', overlap: 'Primary benchmark syllabus' },
+            { id: 'BARC', name: 'BARC OCES/DGFS', overlap: 'Engineering scientific officer aptitude' },
+            { id: 'DRDO', name: 'DRDO RAC', overlap: 'Aerospace & electronics defense research' },
+            { id: 'NIELIT', name: 'NIELIT Scientist B', overlap: 'Technical computing & digital systems' }
+        ]
+    },
+    'BARC': {
+        name: 'BARC OCES / DGFS Scientific Officer',
+        domain: 'Engineering & Pure Sciences',
+        related: [
+            { id: 'GATE', name: 'GATE', overlap: 'Direct syllabus equivalence' },
+            { id: 'ISRO', name: 'ISRO ICRB', overlap: 'Public R&D engineering aptitude' },
+            { id: 'TIFR', name: 'TIFR GS', overlap: 'Advanced fundamental sciences' }
+        ]
+    },
+    'UGC-NET': {
+        name: 'UGC-NET (National Eligibility Test)',
+        domain: 'Higher Education & Research Fellowship',
+        related: [
+            { id: 'GATE', name: 'GATE', overlap: 'Major overlap in Computer Science, Electronics, and Math' },
+            { id: 'CSIR-NET', name: 'CSIR-NET', overlap: 'Physical, Chemical, Mathematical & Life Sciences' },
+            { id: 'SET/SLET', name: 'State Eligibility Tests (MH-SET, WB-SET, KSET)', overlap: 'Exact state-level counterpart of UGC-NET' }
+        ]
+    },
+    'JEE': {
+        name: 'JEE (Main & Advanced)',
+        domain: 'Engineering Entrance (Physics, Chemistry, Mathematics)',
+        related: [
+            { id: 'JEE Advanced', name: 'JEE Advanced (IITs)', overlap: 'Multi-concept problem solving on same syllabus' },
+            { id: 'BITSAT', name: 'BITSAT (Birla Institute)', overlap: 'Speed & accuracy on NCERT + JEE Main syllabus' },
+            { id: 'WBJEE', name: 'WBJEE (West Bengal Engineering)', overlap: 'Rigorous state engineering physics/math' },
+            { id: 'MHT-CET', name: 'MHT-CET (Maharashtra Engineering)', overlap: 'State PCM engineering syllabus' },
+            { id: 'VITEEE', name: 'VITEEE (VIT Engineering Entrance)', overlap: 'Core PCM engineering entrance questions' },
+            { id: 'COMEDK', name: 'COMEDK UGET', overlap: 'Karnataka professional colleges PCM' }
+        ]
+    },
+    'JEE Advanced': {
+        name: 'JEE Advanced (IITs)',
+        domain: 'Engineering Entrance',
+        related: [
+            { id: 'JEE', name: 'JEE Main', overlap: 'Foundation qualifying examination' },
+            { id: 'BITSAT', name: 'BITSAT', overlap: 'Premier engineering entrance' },
+            { id: 'KVPY', name: 'KVPY / IAT (IISER Aptitude Test)', overlap: 'Conceptual research physics & math' }
+        ]
+    },
+    'NEET': {
+        name: 'NEET (National Eligibility cum Entrance Test)',
+        domain: 'Medical Entrance (Biology, Physics, Chemistry)',
+        related: [
+            { id: 'AIIMS', name: 'AIIMS (Past Examination Archives)', overlap: 'Conceptual biology & assertion-reason questions' },
+            { id: 'JIPMER', name: 'JIPMER (Past Papers)', overlap: 'NCERT medical entrance standard' },
+            { id: 'CUET-UG', name: 'CUET-UG (Biology / Chemistry / Physics)', overlap: 'Central universities science entrance' }
+        ]
+    },
+    'UPSC': {
+        name: 'UPSC Civil Services (CSE)',
+        domain: 'Civil Services & Public Administration',
+        related: [
+            { id: 'UPSC CDS', name: 'Combined Defence Services (CDS)', overlap: 'General Knowledge & Elementary Math' },
+            { id: 'UPSC CAPF', name: 'Central Armed Police Forces (AC)', overlap: 'General Studies and General Science' },
+            { id: 'State PSC', name: 'State Public Service Commissions (UPPSC, BPSC, MPSC)', overlap: 'State civil services general studies' }
+        ]
+    },
+    'Banking': {
+        name: 'Banking & Financial Services (IBPS / SBI / RBI)',
+        domain: 'Banking & Finance',
+        related: [
+            { id: 'IBPS PO', name: 'IBPS Probationary Officer', overlap: 'Quantitative Aptitude, Reasoning, Banking Awareness' },
+            { id: 'SBI PO', name: 'State Bank of India PO', overlap: 'High-rigor DI, Reasoning, and English' },
+            { id: 'RBI Grade B', name: 'RBI Grade B Officer (Phase 1)', overlap: 'Economics, Quantitative aptitude, GA' },
+            { id: 'IBPS Clerk', name: 'IBPS Clerical Cadre', overlap: 'Speed arithmetic and reasoning' }
+        ]
+    }
+};
+
+/**
+ * @route   GET /api/quiz/related-exams
+ * @desc    Discover related exams with overlapping syllabi and inspect available question bank statistics
+ * @access  Private
+ */
+router.get('/related-exams', authenticate, asyncHandler(async (req, res) => {
+    const { examType, examTypes, topic } = req.query;
+    const requestedExams = [];
+    if (examType && typeof examType === 'string' && examType.trim()) {
+        requestedExams.push(examType.trim());
+    }
+    if (examTypes) {
+        const arr = Array.isArray(examTypes) ? examTypes : String(examTypes).split(',');
+        arr.forEach(e => {
+            const trimmed = String(e).trim();
+            if (trimmed && !requestedExams.includes(trimmed)) requestedExams.push(trimmed);
+        });
+    }
+
+    const discoveredMap = new Map();
+
+    // 1. Look up by each selected exam in graph
+    requestedExams.forEach(e => {
+        const upper = e.toUpperCase();
+        for (const [key, val] of Object.entries(RELATED_EXAMS_GRAPH)) {
+            if (key.toUpperCase() === upper || val.name.toUpperCase().includes(upper)) {
+                val.related.forEach(rel => {
+                    if (!requestedExams.some(re => re.toUpperCase() === rel.id.toUpperCase())) {
+                        discoveredMap.set(rel.id, {
+                            id: rel.id,
+                            name: rel.name,
+                            overlap: rel.overlap,
+                            domain: val.domain
+                        });
+                    }
+                });
+            }
+        }
+    });
+
+    // 2. Keyword matching on topic if few exams found
+    if (discoveredMap.size === 0 && topic) {
+        const top = String(topic).toLowerCase();
+        if (top.includes('computer') || top.includes('pipeline') || top.includes('cache') || top.includes('architecture') || top.includes('algorithm') || top.includes('dbms') || top.includes('operating system')) {
+            ['ISRO', 'BARC', 'UGC-NET', 'NIELIT', 'TIFR'].forEach(id => {
+                const item = RELATED_EXAMS_GRAPH['GATE']?.related.find(r => r.id === id);
+                if (item) discoveredMap.set(id, { id, name: item.name, overlap: item.overlap, domain: 'Engineering & Technology' });
+            });
+        } else if (top.includes('physics') || top.includes('chemistry') || top.includes('mechanics') || top.includes('thermodynamics') || top.includes('calculus')) {
+            ['JEE Advanced', 'BITSAT', 'WBJEE'].forEach(id => {
+                const item = RELATED_EXAMS_GRAPH['JEE']?.related.find(r => r.id === id);
+                if (item) discoveredMap.set(id, { id, name: item.name, overlap: item.overlap, domain: 'Engineering Entrance' });
+            });
+        }
+    }
+
+    // 3. Check available years and counts in Question Bank
+    const availableStats = {};
+    try {
+        const statsRows = await prisma.$queryRawUnsafe(`
+            SELECT "exam_type" as "examType", "exam_year" as "examYear", COUNT(*)::int as count
+            FROM "question_bank"
+            GROUP BY "exam_type", "exam_year";
+        `);
+        statsRows.forEach(row => {
+            const et = row.examType;
+            if (!availableStats[et]) availableStats[et] = [];
+            if (row.examYear) {
+                availableStats[et].push({ year: row.examYear, count: row.count });
+            }
+        });
+    } catch (_) {}
+
+    const enrichedList = Array.from(discoveredMap.values()).map(rel => {
+        const matchingKey = Object.keys(availableStats).find(k => k.toLowerCase() === rel.id.toLowerCase());
+        return {
+            ...rel,
+            availableYears: matchingKey ? availableStats[matchingKey] : [],
+            inDatabase: Boolean(matchingKey && availableStats[matchingKey].length > 0)
+        };
+    });
+
+    res.json({
+        success: true,
+        data: {
+            relatedExams: enrichedList,
+            availableStats
+        }
+    });
+}));
+
 /**
  * @route   POST /api/quiz/generate
- * @desc    Generate AI 4-choice questions using Gemini/Groq
- * @access  Private (Instructor, Admin, Principal, Lab Assistant, Student)
+ * @desc    Generate authentic academic questions (MCQ & Fill-in-the-blank) using Question Bank & Web Grounding
+ * @access  Private
  */
 router.post('/generate', authenticate, asyncHandler(async (req, res) => {
     const {
         keywords = '',
         topic = '',
         examType = '',
+        examTypes = [],
         examYear = '',
+        examYears = [],
+        questionFormat = 'all', // 'all' | 'mcq' | 'fill_in_the_blank'
         difficulty = 'medium',
         numberOfQuestions = 5,
         timeLimitMinutes = 10,
         customInstructions = '',
-        language = 'English'
+        language = 'English',
+        allowPracticeFallback = false
     } = req.body;
 
     const rawInput = (keywords || topic || '').trim();
@@ -229,53 +417,101 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
         ? difficulty.toLowerCase()
         : 'medium';
 
-    // 1. Detect and parse Exam Type, Exam Year, and clean Topic
-    let detectedExamType = (examType || '').trim();
-    let detectedExamYear = (examYear || '').trim();
-    let detectedTopic = (topic || keywords || '').trim();
+    // 1. Normalize Multi-Exams and Multi-Years
+    let selectedExams = [];
+    if (Array.isArray(examTypes) && examTypes.length > 0) {
+        selectedExams = examTypes.map(e => String(e).trim()).filter(Boolean);
+    } else if (examTypes && typeof examTypes === 'string') {
+        selectedExams = examTypes.split(',').map(e => e.trim()).filter(Boolean);
+    } else if (examType && typeof examType === 'string' && examType.trim()) {
+        selectedExams = [examType.trim()];
+    }
+
+    let selectedYears = [];
+    if (Array.isArray(examYears) && examYears.length > 0) {
+        selectedYears = examYears.map(y => String(y).trim()).filter(Boolean);
+    } else if (examYears && typeof examYears === 'string') {
+        selectedYears = examYears.split(',').map(y => y.trim()).filter(Boolean);
+    } else if (examYear && typeof examYear === 'string' && examYear.trim()) {
+        selectedYears = [examYear.trim()];
+    }
 
     const fullSearchText = `${keywords} ${topic} ${customInstructions}`.trim();
 
-    if (!detectedExamType) {
-        if (/\bgate\b/i.test(fullSearchText)) detectedExamType = 'GATE';
-        else if (/\bjee\s*(main|adv|advanced)?\b/i.test(fullSearchText)) detectedExamType = 'JEE';
-        else if (/\bneet\b/i.test(fullSearchText)) detectedExamType = 'NEET';
-        else if (/\bugc[\s-]*net\b/i.test(fullSearchText)) detectedExamType = 'UGC-NET';
-        else if (/\bcat\b/i.test(fullSearchText)) detectedExamType = 'CAT';
-        else if (/\bcsir[\s-]*net\b/i.test(fullSearchText)) detectedExamType = 'CSIR-NET';
+    // Auto-detect exam type if none selected
+    if (selectedExams.length === 0) {
+        if (/\bgate\b/i.test(fullSearchText)) selectedExams.push('GATE');
+        else if (/\bisro\b/i.test(fullSearchText)) selectedExams.push('ISRO');
+        else if (/\bbarc\b/i.test(fullSearchText)) selectedExams.push('BARC');
+        else if (/\bjee\s*(main|adv|advanced)?\b/i.test(fullSearchText)) selectedExams.push('JEE');
+        else if (/\bneet\b/i.test(fullSearchText)) selectedExams.push('NEET');
+        else if (/\bugc[\s-]*net\b/i.test(fullSearchText)) selectedExams.push('UGC-NET');
+        else if (/\bcat\b/i.test(fullSearchText)) selectedExams.push('CAT');
     }
 
-    if (!detectedExamYear) {
-        const yMatch = fullSearchText.match(/\b(202[0-9]|201[0-9])\b/);
-        if (yMatch) detectedExamYear = yMatch[1];
+    // Auto-detect exam year if none selected
+    if (selectedYears.length === 0) {
+        const yMatches = fullSearchText.match(/\b(202[0-9]|201[0-9])\b/g);
+        if (yMatches) {
+            selectedYears = Array.from(new Set(yMatches));
+        }
     }
 
-    // Clean topic by stripping exam type and year tokens if user typed "gate 2026 computer science architecture"
-    if (detectedExamType && detectedTopic) {
+    // Clean topic
+    let detectedTopic = (topic || keywords || '').trim();
+    if (selectedExams.length > 0 && detectedTopic) {
+        selectedExams.forEach(ex => {
+            detectedTopic = detectedTopic.replace(new RegExp(`\\b${ex}\\b`, 'gi'), '');
+        });
         detectedTopic = detectedTopic
-            .replace(new RegExp(`\\b${detectedExamType}\\b`, 'gi'), '')
             .replace(/\b(202[0-9]|201[0-9])\b/g, '')
             .replace(/\s+/g, ' ')
             .trim();
     }
     if (!detectedTopic) detectedTopic = rawInput;
 
-    console.log(`[QuizRoutes] Generating quiz: Exam="${detectedExamType || 'None'}", Year="${detectedExamYear || 'Any'}", Topic="${detectedTopic}", Count=${count}`);
+    const primaryExam = selectedExams[0] || '';
+    const primaryYear = selectedYears[0] || '';
 
-    // 2. CHECK QUESTION BANK FIRST
+    console.log(`[QuizRoutes] Multi-Exam Generation: Exams=[${selectedExams.join(', ')}], Years=[${selectedYears.join(', ')}], Format=${questionFormat}, Topic="${detectedTopic}", Count=${count}`);
+
+    // 2. Query Question Bank First
     let bankQuestions = [];
     try {
         let queryParams = [];
         let whereClauses = [];
 
-        if (detectedExamType) {
-            queryParams.push(`%${detectedExamType}%`);
-            whereClauses.push(`"exam_type" ILIKE $${queryParams.length}`);
+        // Exam multi-match
+        if (selectedExams.length > 0) {
+            const examConditions = selectedExams.map(ex => {
+                queryParams.push(`%${ex}%`);
+                return `"exam_type" ILIKE $${queryParams.length}`;
+            }).join(' OR ');
+            whereClauses.push(`(${examConditions})`);
         }
 
+        // Year multi-match (ignoring 'Any')
+        const filteredYears = selectedYears.filter(y => y.toLowerCase() !== 'any');
+        if (filteredYears.length > 0) {
+            const yearConditions = filteredYears.map(yr => {
+                queryParams.push(yr);
+                return `"exam_year" = $${queryParams.length}`;
+            }).join(' OR ');
+            whereClauses.push(`(${yearConditions})`);
+        }
+
+        // Format filter
+        if (questionFormat === 'mcq') {
+            queryParams.push('mcq');
+            whereClauses.push(`("question_type" = $${queryParams.length} OR "question_type" IS NULL)`);
+        } else if (questionFormat === 'fill_in_the_blank') {
+            queryParams.push('fill_in_the_blank');
+            whereClauses.push(`"question_type" = $${queryParams.length}`);
+        }
+
+        // Topic keywords match
         if (detectedTopic) {
-            // Match significant topic keywords
-            const topicWords = detectedTopic.split(/\s+/).filter(w => w.length >= 3 && !['with', 'from', 'level', 'easy', 'medium', 'hard'].includes(w.toLowerCase()));
+            const topicWords = detectedTopic.split(/\s+/).filter(w => w.length >= 3 && !['with', 'from', 'level', 'easy', 'medium', 'hard', 'exam', 'paper'].includes(w.toLowerCase()));
             if (topicWords.length > 0) {
                 const topicConditions = topicWords.map(w => {
                     queryParams.push(`%${w}%`);
@@ -288,47 +524,60 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
         if (whereClauses.length > 0) {
             const sql = `
                 SELECT id, topic, exam_type as "examType", exam_year as "examYear", 
+                       question_type as "questionType", exam_occurrences as "examOccurrences",
                        difficulty, question, options, correct_option as "correctOption", 
-                       explanation, points, source
+                       explanation, points, diagram_url as "diagramUrl", diagram_svg as "diagramSvg",
+                       source
                 FROM "question_bank"
                 WHERE ${whereClauses.join(' AND ')}
-                ORDER BY 
-                    ${detectedExamYear ? `CASE WHEN "exam_year" = '${detectedExamYear}' THEN 0 ELSE 1 END,` : ''}
-                    RANDOM()
+                ORDER BY RANDOM()
                 LIMIT ${count};
             `;
             bankQuestions = await prisma.$queryRawUnsafe(sql, ...queryParams);
             console.log(`[QuizRoutes] Question bank found ${bankQuestions.length} matching questions`);
         }
     } catch (dbErr) {
-        console.warn('[QuizRoutes] Question bank lookup failed:', dbErr.message);
+        console.warn('[QuizRoutes] Question bank lookup error:', dbErr.message);
     }
 
-    // If Question Bank has enough questions to fulfill the entire requested count
+    // If Bank fulfills the entire requested count
     if (bankQuestions.length >= count) {
-        const selected = bankQuestions.slice(0, count).map((q, idx) => ({
-            id: idx + 1,
-            question: cleanLatexChemistry(q.question),
-            options: (Array.isArray(q.options) ? q.options : []).map(opt => ({
-                key: opt.key,
-                text: cleanLatexChemistry(opt.text || '')
-            })),
-            correctOption: q.correctOption,
-            explanation: cleanLatexChemistry(q.explanation || ''),
-            difficulty: q.difficulty || validDifficulty,
-            points: q.points || 1,
-            source: 'question_bank',
-            examType: q.examType || detectedExamType,
-            examYear: q.examYear || detectedExamYear
-        }));
+        const selected = bankQuestions.slice(0, count).map((q, idx) => {
+            const isFillInBlank = q.questionType === 'fill_in_the_blank' || (!q.options || q.options.length === 0);
+            return {
+                id: idx + 1,
+                type: isFillInBlank ? 'fill_in_the_blank' : 'mcq',
+                question: cleanLatexChemistry(q.question),
+                diagramSvg: q.diagramSvg || null,
+                diagramUrl: q.diagramUrl || null,
+                options: isFillInBlank ? [] : (Array.isArray(q.options) ? q.options : []).map(opt => ({
+                    key: opt.key,
+                    text: cleanLatexChemistry(opt.text || '')
+                })),
+                correctOption: q.correctOption,
+                explanation: cleanLatexChemistry(q.explanation || ''),
+                difficulty: q.difficulty || validDifficulty,
+                points: q.points || 1,
+                source: 'question_bank',
+                examType: q.examType || primaryExam,
+                examYear: q.examYear || primaryYear,
+                examOccurrences: (Array.isArray(q.examOccurrences) && q.examOccurrences.length > 0)
+                    ? q.examOccurrences
+                    : [{ exam: q.examType || primaryExam, year: q.examYear || primaryYear }],
+                topic: q.topic || detectedTopic
+            };
+        });
 
         return res.json({
             success: true,
             data: {
                 keywords: rawInput,
                 topic: detectedTopic,
-                examType: detectedExamType,
-                examYear: detectedExamYear,
+                examType: primaryExam,
+                examTypes: selectedExams,
+                examYear: primaryYear,
+                examYears: selectedYears,
+                questionFormat,
                 difficulty: validDifficulty,
                 totalQuestions: selected.length,
                 timeLimitMinutes: parseInt(timeLimitMinutes) || 10,
@@ -338,66 +587,118 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
         });
     }
 
-    // 3. IF NOT ENOUGH QUESTIONS IN BANK, SOURCING FROM WEB SOURCES & AI
-    const remainingCount = count - bankQuestions.length;
-    console.log(`[QuizRoutes] Sourcing remaining ${remainingCount} questions via web sources / AI...`);
+    // 3. STRICT AUTHENTICITY GUARD (NO FICTIONAL QUESTIONS)
+    // Check if requested year is a future/unheld year (> 2026) or non-existent past paper
+    const currentYear = new Date().getFullYear();
+    const hasFutureYear = selectedYears.some(yr => {
+        const parsed = parseInt(yr);
+        return !isNaN(parsed) && parsed > currentYear;
+    });
 
-    // Fetch web search snippets from past papers and syllabus
-    const webSnippets = await fetchWebSnippets(detectedTopic, detectedExamType, detectedExamYear);
+    // Fetch available years from DB for helpful suggestions
+    let availableYearsMap = {};
+    try {
+        const availRows = await prisma.$queryRawUnsafe(`
+            SELECT "exam_type" as "examType", array_agg(DISTINCT "exam_year") as years
+            FROM "question_bank"
+            WHERE "exam_year" IS NOT NULL
+            GROUP BY "exam_type";
+        `);
+        availRows.forEach(r => {
+            availableYearsMap[r.examType] = (r.years || []).filter(Boolean);
+        });
+    } catch (_) {}
+
+    if (hasFutureYear && bankQuestions.length === 0 && !allowPracticeFallback) {
+        return res.json({
+            success: false,
+            noQuestionsFound: true,
+            message: `No authentic past questions found for ${selectedExams.join(', ') || 'examination'} in future year(s) ${selectedYears.join(', ')}.`,
+            reason: 'Academic papers for future years have not yet been conducted. To preserve academic integrity, fictional questions claiming to be from future papers are not generated.',
+            requestedExams: selectedExams,
+            requestedYears: selectedYears,
+            availableYearsInBank: availableYearsMap,
+            allowPracticeOption: true
+        });
+    }
+
+    // 4. FETCH AUTHENTIC WEB SOURCES & GROUNDING
+    const remainingCount = count - bankQuestions.length;
+    const searchTargetExam = selectedExams.join(' ') || 'GATE';
+    const searchTargetYear = selectedYears.filter(y => y.toLowerCase() !== 'any').join(' ') || '';
+
+    const webSnippets = await fetchWebSnippets(detectedTopic, searchTargetExam, searchTargetYear);
     const webContextBlock = webSnippets.length > 0
         ? `\nAUTHENTIC WEB EXAMINATION SOURCES & SYLLABUS REFERENCES:\n${webSnippets.map((s, i) => `[Reference ${i + 1}] ${s}`).join('\n')}\n`
         : '';
 
-    const isGate = (detectedExamType || '').toUpperCase() === 'GATE';
-    const isCompetitive = Boolean(detectedExamType && ['GATE', 'JEE', 'NEET', 'UGC-NET', 'CAT'].includes(detectedExamType.toUpperCase()));
-
-    let examSpecificGuidelines = '';
-    if (isGate) {
-        examSpecificGuidelines = `
-CRITICAL GATE EXAMINATION REQUIREMENTS:
-You are an authority on the GATE (Graduate Aptitude Test in Engineering) Computer Science and Information Technology examination.
-- EXAM: GATE ${detectedExamYear || '2026'}
-- TOPIC: ${detectedTopic}
-- DIFFICULTY LEVEL: ${validDifficulty}
-- AUTHENTIC GATE SYLLABUS RIGOR:
-  * For Computer Organization & Architecture: Questions MUST test numerical problem solving, pipeline timing (CPI, speedup, branch hazards, forwarding paths, stall cycles), cache memory (tag/index/block offset bits, direct-mapped and 2/4/8-way set-associative mappings, miss penalty, effective memory access time EMAT), virtual memory (multi-level page tables, page size, TLB hit rates, memory overhead), IEEE-754 32-bit floating point hexadecimal encodings, Booth's algorithm, micro-operations, and addressing modes.
-  * STRICT PROHIBITION: DO NOT generate simplistic, high-school flashcard definitions (such as "What is CPU?", "Which bus carries data?", "What does ALU stand for?").
-  * Distractors (options B, C, D) must reflect real calculation errors (e.g. omitting pipeline register delay, incorrect bit allocation).`;
-    } else if (isCompetitive) {
-        examSpecificGuidelines = `
-CRITICAL ${detectedExamType.toUpperCase()} EXAMINATION STANDARDS:
-- Generate authentic questions matching the official ${detectedExamType.toUpperCase()} syllabus and competitive testing standards.
-- Problems must test conceptual depth and problem-solving reasoning, not superficial recall.`;
+    // If web snippets are empty, past year was requested, but paper doesn't exist, strictly verify
+    if (webSnippets.length === 0 && selectedYears.length > 0 && !selectedYears.includes('Any') && bankQuestions.length === 0 && !allowPracticeFallback) {
+        const yrInt = parseInt(selectedYears[0]);
+        if (!isNaN(yrInt) && yrInt > 2025) {
+            return res.json({
+                success: false,
+                noQuestionsFound: true,
+                message: `No authentic examination questions found for ${selectedExams.join(', ')} (${selectedYears.join(', ')}).`,
+                reason: 'We found zero verified past examination questions in our repository or public archives for this specific year. Fictional questions have been withheld.',
+                requestedExams: selectedExams,
+                requestedYears: selectedYears,
+                availableYearsInBank: availableYearsMap,
+                allowPracticeOption: true
+            });
+        }
     }
 
-    const systemPrompt = `You are a world-class academic quiz creator and competitive exam specialist.
-Your task is to generate high-quality, pedagogically sound, multiple-choice questions (MCQs) with EXACTLY 4 choices (A, B, C, D) for each question.
-Target Language: ${language}
-Difficulty Level: ${validDifficulty}
-${detectedExamType ? `Exam Target: ${detectedExamType} ${detectedExamYear || ''}` : ''}
+    // 5. CONSTRUCT AI GENERATION PROMPT
+    const isGate = selectedExams.some(e => e.toUpperCase() === 'GATE');
+    const isCompetitive = selectedExams.length > 0;
+    const allowFillInBlank = questionFormat === 'all' || questionFormat === 'fill_in_the_blank';
+    const forceFillInBlank = questionFormat === 'fill_in_the_blank';
+
+    let examSpecificGuidelines = `
+EXAM TARGET: ${selectedExams.join(', ') || 'Competitive Engineering / Science'}
+YEAR(S): ${selectedYears.join(', ') || 'Recent Past Years'}
+- STRICT AUTHENTICITY ENFORCEMENT: Questions must be authentic examination problems that test core analytical rigor.
+- STRICT PROHIBITION: DO NOT hallucinate fake questions. If authentic questions for ${selectedExams.join(', ')} ${selectedYears.join(', ')} cannot be confirmed, return {"noAuthenticQuestions": true, "reason": "No authentic questions found"}.
+- QUESTION FORMATS:
+${forceFillInBlank
+    ? '  * ALL questions must be Numerical Answer Type (NAT) / Fill-in-the-blank. Set "type": "fill_in_the_blank", "options": [], and "correctOption" to the exact numerical or text answer.'
+    : allowFillInBlank
+    ? '  * Generate a realistic mix of Multiple Choice Questions (type: "mcq" with 4 options A-D) and Numerical Answer Type (type: "fill_in_the_blank" with options: [] and exact numerical answer in correctOption).'
+    : '  * ALL questions must be Multiple Choice Questions with EXACTLY 4 choices (type: "mcq").'}
+- DIAGRAM GENERATION:
+  * If the question involves digital logic gates, 5-stage CPU pipeline, memory cache hierarchy, mechanics free-body force diagram, or circuit networks, generate a crisp, self-contained SVG element in "diagramSvg" (with viewBox, strokes, clear labels, and viewBox="0 0 500 180").
+- MULTI-EXAM OCCURRENCES:
+  * In "examOccurrences", specify all exams in which this question or very close equivalent has appeared, e.g. [{"exam": "GATE CS", "year": "2024"}, {"exam": "ISRO ICRB", "year": "2020"}].
+`;
+
+    const systemPrompt = `You are a premier academic quiz creator and competitive exam specialist.
+Your task is to generate high-quality examination questions.
+Language: ${language}
+Difficulty: ${validDifficulty}
 ${examSpecificGuidelines}
 
 CRITICAL RULES:
 1. Return EXACTLY a JSON array of ${remainingCount} question objects.
-2. Each question MUST have exactly 4 choices labeled 'A', 'B', 'C', and 'D'.
-3. One and ONLY ONE option must be designated as 'correctOption' ('A', 'B', 'C', or 'D').
-4. The distractors (wrong options) must be plausible and conceptually meaningful, not trivial.
-5. Provide a clear, educational 'explanation' for why the correct option is right (including mathematical derivation where applicable).
-6. The questions must strictly follow sequential numbering.
-7. PCMB & SCIENTIFIC EQUATION FORMATTING:
-   - For Equations, Mathematics, and Computer Science notations, format formulas using LaTeX:
-     * Inline math / variables: wrap in single dollar signs, e.g. $F = ma$, $\\tau = \\max(t_i) + d$, $T_{\\text{avg}} = H_1 \\times T_1 + (1 - H_1) \\times T_2$.
-      * Block equations: wrap in double dollar signs, e.g. $$\\text{CPI} = 1 + \\text{Stalls}$$.
-      * Chemistry formulas & reactions: ALWAYS wrap with $\\ce{...}$ (e.g. $\\ce{Na+}$, $\\ce{Al^{3+}}$).
-      * Closure rule: ALWAYS balance closing $ or $$ delimiters.
-    - DIAGRAM SUPPORT: If the question problem statement refers to a diagram (e.g., logic circuits, 5-stage CPU pipeline, memory cache hierarchy, free-body force diagram, or optics ray diagram), supply a crisp, self-contained SVG element in "diagramSvg" with stroke, fill, viewBox, and clear labels (e.g. '<svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">...</svg>'). Otherwise set to null.
-    - CRITICAL JSON ESCAPING: Backslashes in JSON strings MUST be escaped as \\\\ (e.g. "\\\\tau", "\\\\frac{...}"). Never output invalid unescaped backslashes.
+2. For MCQ questions ("type": "mcq"):
+   - Exactly 4 choices labeled 'A', 'B', 'C', 'D'.
+   - One option designated as 'correctOption'.
+3. For Fill-in-the-blank questions ("type": "fill_in_the_blank"):
+   - "options": []
+   - "correctOption": exact numerical value or specific short phrase.
+4. Provide a step-by-step LaTeX derivation in "explanation".
+5. LaTeX Math Formatting:
+   - Inline math: $F = ma$, $\\tau = \\max(t_i) + d$.
+   - Chemistry: Always wrap $\\ce{...}$.
+   - Delimiters MUST be balanced.
+   - Escape backslashes in JSON strings as \\\\ (e.g. "\\\\tau", "\\\\frac{...}").
 
-JSON SCHEMA TO RETURN (RETURN ONLY VALID JSON, NO MARKDOWN, NO CODEBLOCKS):
+JSON SCHEMA TO RETURN (VALID JSON ONLY, NO MARKDOWN, NO CODEBLOCKS):
 [
   {
     "id": 1,
-    "question": "Question problem statement (with LaTeX equations where applicable)",
+    "type": "mcq",
+    "question": "Question problem statement (with LaTeX)",
     "diagramSvg": null,
     "diagramUrl": null,
     "options": [
@@ -407,7 +708,11 @@ JSON SCHEMA TO RETURN (RETURN ONLY VALID JSON, NO MARKDOWN, NO CODEBLOCKS):
       { "key": "D", "text": "Fourth choice" }
     ],
     "correctOption": "A",
-    "explanation": "Detailed step-by-step solution and derivation...",
+    "explanation": "Step-by-step mathematical derivation...",
+    "examOccurrences": [
+      { "exam": "${primaryExam || 'GATE'}", "year": "${primaryYear || '2024'}" }
+    ],
+    "topic": "${detectedTopic}",
     "difficulty": "${validDifficulty}",
     "points": 1
   }
@@ -415,14 +720,14 @@ JSON SCHEMA TO RETURN (RETURN ONLY VALID JSON, NO MARKDOWN, NO CODEBLOCKS):
 
     const userPrompt = `Generate ${remainingCount} authentic examination questions for:
 TOPIC: "${detectedTopic}"
-${detectedExamType ? `EXAM TYPE: ${detectedExamType}` : ''}
-${detectedExamYear ? `YEAR: ${detectedExamYear}` : ''}
+EXAMS: ${selectedExams.join(', ') || 'General'}
+YEARS: ${selectedYears.join(', ') || 'Any'}
+FORMAT: ${questionFormat}
 DIFFICULTY: ${validDifficulty}
-ESTIMATED TIME: ${timeLimitMinutes} minutes
 ${customInstructions ? `ADDITIONAL INSTRUCTIONS: ${customInstructions}` : ''}
 ${webContextBlock}
 
-Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a step-by-step mathematical explanation. Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
+Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
 
     let newlyGenerated = [];
     try {
@@ -436,62 +741,113 @@ Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a
         });
 
         const rawText = response.text || '';
+        let parsed = null;
         try {
-            newlyGenerated = repairAndParseJson(rawText);
+            parsed = repairAndParseJson(rawText);
         } catch (jsonErr) {
-            console.error('[QuizRoutes] Failed to parse AI questions JSON:', jsonErr.message, 'Raw was:', rawText.slice(0, 300));
+            console.error('[QuizRoutes] JSON parse error:', jsonErr.message, 'Raw was:', rawText.slice(0, 300));
             throw new Error(`Failed to parse AI output into valid questions JSON: ${jsonErr.message}`);
         }
 
-        if (!Array.isArray(newlyGenerated) || newlyGenerated.length === 0) {
+        // Check for negative refusal from AI
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.noAuthenticQuestions) {
+            return res.json({
+                success: false,
+                noQuestionsFound: true,
+                message: `No authentic examination questions found for ${selectedExams.join(', ')} (${selectedYears.join(', ')}).`,
+                reason: parsed.reason || 'Verified questions for this specific combination were not found in official archives. Fictional questions have been withheld.',
+                requestedExams: selectedExams,
+                requestedYears: selectedYears,
+                availableYearsInBank: availableYearsMap,
+                allowPracticeOption: true
+            });
+        }
+
+        if (Array.isArray(parsed)) {
+            newlyGenerated = parsed;
+        } else if (parsed && Array.isArray(parsed.questions)) {
+            newlyGenerated = parsed.questions;
+        }
+
+        if (newlyGenerated.length === 0) {
             throw new Error('AI returned an empty question list');
         }
 
         // Normalize newly generated questions
         const standardKeys = ['A', 'B', 'C', 'D'];
         newlyGenerated = newlyGenerated.map((q, idx) => {
-            let options = Array.isArray(q.options) ? q.options : [];
-            const normalizedOptions = standardKeys.map((key, optIdx) => {
-                const existing = options.find(o => (o.key || '').toUpperCase() === key) || options[optIdx];
-                const rawOptText = existing ? (typeof existing === 'string' ? existing : existing.text || '') : `Option ${key}`;
-                return {
-                    key,
-                    text: cleanLatexChemistry(rawOptText)
-                };
-            });
+            const isFillInBlank = q.type === 'fill_in_the_blank' || q.type === 'nat' || (!q.options || q.options.length === 0);
+            
+            let normalizedOptions = [];
+            let safeCorrect = String(q.correctOption || '').trim();
 
-            let correctOpt = (q.correctOption || 'A').toUpperCase();
-            if (!standardKeys.includes(correctOpt)) correctOpt = 'A';
+            if (!isFillInBlank) {
+                let options = Array.isArray(q.options) ? q.options : [];
+                normalizedOptions = standardKeys.map((key, optIdx) => {
+                    const existing = options.find(o => (o.key || '').toUpperCase() === key) || options[optIdx];
+                    const rawOptText = existing ? (typeof existing === 'string' ? existing : existing.text || '') : `Option ${key}`;
+                    return {
+                        key,
+                        text: cleanLatexChemistry(rawOptText)
+                    };
+                });
+                safeCorrect = (q.correctOption || 'A').toUpperCase();
+                if (!standardKeys.includes(safeCorrect)) safeCorrect = 'A';
+            }
+
+            // Normalizing exam occurrences
+            let occs = Array.isArray(q.examOccurrences) ? q.examOccurrences : [];
+            if (occs.length === 0 && primaryExam) {
+                occs = [{ exam: primaryExam, year: primaryYear || null }];
+            }
 
             return {
                 id: idx + 1,
+                type: isFillInBlank ? 'fill_in_the_blank' : 'mcq',
                 question: cleanLatexChemistry(q.question || `Question ${idx + 1}`),
                 diagramSvg: q.diagramSvg && typeof q.diagramSvg === 'string' && q.diagramSvg.includes('<svg') ? q.diagramSvg.trim() : null,
                 diagramUrl: q.diagramUrl && typeof q.diagramUrl === 'string' ? q.diagramUrl.trim() : null,
                 options: normalizedOptions,
-                correctOption: correctOpt,
+                correctOption: safeCorrect,
                 explanation: cleanLatexChemistry(q.explanation || 'No explanation provided.'),
                 difficulty: q.difficulty || validDifficulty,
                 points: q.points || 1,
                 source: 'web_source',
-                examType: detectedExamType,
-                examYear: detectedExamYear
+                examType: primaryExam || 'General',
+                examYear: primaryYear || null,
+                examOccurrences: occs,
+                topic: q.topic || detectedTopic
             };
         });
 
-        // 4. MAINTAIN AND PERSIST NEWLY GENERATED QUESTIONS INTO QUESTION BANK
+        // 6. PERSIST TO QUESTION BANK
         for (const q of newlyGenerated) {
             try {
                 await prisma.$executeRawUnsafe(`
                     INSERT INTO "question_bank" (
-                        "topic", "exam_type", "exam_year", "difficulty",
-                        "question", "options", "correct_option", "explanation",
+                        "topic", "exam_type", "exam_year", "question_type", "exam_occurrences",
+                        "difficulty", "question", "options", "correct_option", "explanation",
                         "points", "diagram_url", "diagram_svg", "source"
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12)
-                `, detectedTopic, detectedExamType || 'General', detectedExamYear || null, q.difficulty || validDifficulty, q.question, JSON.stringify(q.options), q.correctOption, q.explanation, q.points || 1, q.diagramUrl, q.diagramSvg, 'web_source');
+                    VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14)
+                `, 
+                    q.topic || detectedTopic,
+                    q.examType || 'General',
+                    q.examYear || null,
+                    q.type,
+                    JSON.stringify(q.examOccurrences || []),
+                    q.difficulty || validDifficulty,
+                    q.question,
+                    JSON.stringify(q.options || []),
+                    q.correctOption,
+                    q.explanation,
+                    q.points || 1,
+                    q.diagramUrl,
+                    q.diagramSvg,
+                    'web_source'
+                );
             } catch (saveErr) {
-                console.warn('[QuizRoutes] Error saving question to bank:', saveErr.message);
+                console.warn('[QuizRoutes] Error persisting question to bank:', saveErr.message);
             }
         }
         console.log(`[QuizRoutes] Persisted ${newlyGenerated.length} new questions to question_bank.`);
@@ -503,31 +859,37 @@ Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a
                 message: error.message || 'Failed to generate quiz questions'
             });
         }
-        // If we have some questions from the bank, fallback to returning what we have
     }
 
-    // 5. Combine Question Bank items with newly generated items
+    // 7. Combine Question Bank items with newly generated items
     const combined = [
-        ...bankQuestions.map(q => ({
-            question: cleanLatexChemistry(q.question),
-            diagramSvg: q.diagramSvg || null,
-            diagramUrl: q.diagramUrl || null,
-            options: (Array.isArray(q.options) ? q.options : []).map(opt => ({
-                key: opt.key,
-                text: cleanLatexChemistry(opt.text || '')
-            })),
-            correctOption: q.correctOption,
-            explanation: cleanLatexChemistry(q.explanation || ''),
-            difficulty: q.difficulty || validDifficulty,
-            points: q.points || 1,
-            source: 'question_bank',
-            examType: q.examType || detectedExamType,
-            examYear: q.examYear || detectedExamYear
-        })),
+        ...bankQuestions.map(q => {
+            const isFillInBlank = q.questionType === 'fill_in_the_blank' || (!q.options || q.options.length === 0);
+            return {
+                type: isFillInBlank ? 'fill_in_the_blank' : 'mcq',
+                question: cleanLatexChemistry(q.question),
+                diagramSvg: q.diagramSvg || null,
+                diagramUrl: q.diagramUrl || null,
+                options: isFillInBlank ? [] : (Array.isArray(q.options) ? q.options : []).map(opt => ({
+                    key: opt.key,
+                    text: cleanLatexChemistry(opt.text || '')
+                })),
+                correctOption: q.correctOption,
+                explanation: cleanLatexChemistry(q.explanation || ''),
+                difficulty: q.difficulty || validDifficulty,
+                points: q.points || 1,
+                source: 'question_bank',
+                examType: q.examType || primaryExam,
+                examYear: q.examYear || primaryYear,
+                examOccurrences: (Array.isArray(q.examOccurrences) && q.examOccurrences.length > 0)
+                    ? q.examOccurrences
+                    : [{ exam: q.examType || primaryExam, year: q.examYear || primaryYear }],
+                topic: q.topic || detectedTopic
+            };
+        }),
         ...newlyGenerated
     ].slice(0, count);
 
-    // Re-index sequential IDs (1..count)
     const finalQuestions = combined.map((q, idx) => ({
         ...q,
         id: idx + 1
@@ -538,8 +900,11 @@ Ensure each question has 4 distinct options (A, B, C, D), a correctOption, and a
         data: {
             keywords: rawInput,
             topic: detectedTopic,
-            examType: detectedExamType,
-            examYear: detectedExamYear,
+            examType: primaryExam,
+            examTypes: selectedExams,
+            examYear: primaryYear,
+            examYears: selectedYears,
+            questionFormat,
             difficulty: validDifficulty,
             totalQuestions: finalQuestions.length,
             timeLimitMinutes: parseInt(timeLimitMinutes) || 10,
@@ -559,7 +924,10 @@ router.get('/question-bank', authenticate, asyncHandler(async (req, res) => {
         search = '',
         topic = '',
         examType = '',
+        examTypes = '',
         examYear = '',
+        examYears = '',
+        questionType = '',
         difficulty = '',
         page = 1,
         pageSize = 20
@@ -578,14 +946,35 @@ router.get('/question-bank', authenticate, asyncHandler(async (req, res) => {
         whereClauses.push(`("question" ILIKE $${queryParams.length} OR "topic" ILIKE $${queryParams.length} OR "explanation" ILIKE $${queryParams.length})`);
     }
 
-    if (examType && examType.trim()) {
-        queryParams.push(`%${examType.trim()}%`);
-        whereClauses.push(`"exam_type" ILIKE $${queryParams.length}`);
+    // Support single or multiple exam types
+    const rawExamTypes = examTypes || examType;
+    if (rawExamTypes) {
+        const examsArr = Array.isArray(rawExamTypes) ? rawExamTypes : String(rawExamTypes).split(',').map(e => e.trim()).filter(Boolean);
+        if (examsArr.length > 0) {
+            const conds = examsArr.map(ex => {
+                queryParams.push(`%${ex}%`);
+                return `"exam_type" ILIKE $${queryParams.length}`;
+            }).join(' OR ');
+            whereClauses.push(`(${conds})`);
+        }
     }
 
-    if (examYear && examYear.trim()) {
-        queryParams.push(examYear.trim());
-        whereClauses.push(`"exam_year" = $${queryParams.length}`);
+    // Support single or multiple exam years
+    const rawExamYears = examYears || examYear;
+    if (rawExamYears) {
+        const yearsArr = Array.isArray(rawExamYears) ? rawExamYears : String(rawExamYears).split(',').map(y => y.trim()).filter(Boolean);
+        if (yearsArr.length > 0) {
+            const conds = yearsArr.map(yr => {
+                queryParams.push(yr);
+                return `"exam_year" = $${queryParams.length}`;
+            }).join(' OR ');
+            whereClauses.push(`(${conds})`);
+        }
+    }
+
+    if (questionType && questionType.trim()) {
+        queryParams.push(questionType.trim().toLowerCase());
+        whereClauses.push(`"question_type" = $${queryParams.length}`);
     }
 
     if (topic && topic.trim()) {
@@ -605,9 +994,10 @@ router.get('/question-bank', authenticate, asyncHandler(async (req, res) => {
     const countResult = await prisma.$queryRawUnsafe(countSql, ...queryParams);
     const totalCount = countResult[0]?.count || 0;
 
-    // Items query with diagram_url and diagram_svg
+    // Items query with diagram_url, diagram_svg, question_type, exam_occurrences
     const listSql = `
         SELECT id, topic, exam_type as "examType", exam_year as "examYear",
+               question_type as "questionType", exam_occurrences as "examOccurrences",
                difficulty, question, options, correct_option as "correctOption",
                explanation, points, diagram_url as "diagramUrl", diagram_svg as "diagramSvg",
                source, created_at as "createdAt", updated_at as "updatedAt"
@@ -650,6 +1040,8 @@ router.post('/question-bank', authenticate, asyncHandler(async (req, res) => {
         topic,
         examType = 'General',
         examYear,
+        questionType = 'mcq',
+        examOccurrences = [],
         difficulty = 'medium',
         question,
         options = [],
@@ -666,34 +1058,46 @@ router.post('/question-bank', authenticate, asyncHandler(async (req, res) => {
     if (!question || !question.trim()) {
         return res.status(400).json({ success: false, message: 'Question prompt is required' });
     }
-    if (!Array.isArray(options) || options.length < 2) {
-        return res.status(400).json({ success: false, message: 'At least 2 options are required' });
+
+    const isFillInBlank = questionType === 'fill_in_the_blank' || questionType === 'nat';
+    let normalizedOptions = [];
+    let safeCorrect = String(correctOption || '').trim();
+
+    if (!isFillInBlank) {
+        if (!Array.isArray(options) || options.length < 2) {
+            return res.status(400).json({ success: false, message: 'At least 2 options are required for MCQ questions' });
+        }
+        const standardKeys = ['A', 'B', 'C', 'D'];
+        normalizedOptions = standardKeys.slice(0, Math.max(options.length, 4)).map((key, idx) => {
+            const existing = options.find(o => (o.key || '').toUpperCase() === key) || options[idx];
+            const rawText = existing ? (typeof existing === 'string' ? existing : existing.text || '') : `Option ${key}`;
+            return {
+                key,
+                text: cleanLatexChemistry(rawText)
+            };
+        });
+        safeCorrect = (correctOption || 'A').toUpperCase();
+        if (!standardKeys.includes(safeCorrect)) safeCorrect = 'A';
     }
-
-    const standardKeys = ['A', 'B', 'C', 'D'];
-    const normalizedOptions = standardKeys.slice(0, Math.max(options.length, 4)).map((key, idx) => {
-        const existing = options.find(o => (o.key || '').toUpperCase() === key) || options[idx];
-        const rawText = existing ? (typeof existing === 'string' ? existing : existing.text || '') : `Option ${key}`;
-        return {
-            key,
-            text: cleanLatexChemistry(rawText)
-        };
-    });
-
-    let safeCorrect = (correctOption || 'A').toUpperCase();
-    if (!standardKeys.includes(safeCorrect)) safeCorrect = 'A';
 
     const cleanQ = cleanLatexChemistry(question.trim());
     const cleanExpl = cleanLatexChemistry(explanation.trim());
 
+    // Occurrences
+    let occs = Array.isArray(examOccurrences) ? examOccurrences : [];
+    if (occs.length === 0 && examType) {
+        occs = [{ exam: examType.trim(), year: examYear ? examYear.trim() : null }];
+    }
+
     const result = await prisma.$queryRawUnsafe(`
         INSERT INTO "question_bank" (
-            "topic", "exam_type", "exam_year", "difficulty",
+            "topic", "exam_type", "exam_year", "question_type", "exam_occurrences", "difficulty",
             "question", "options", "correct_option", "explanation",
             "points", "diagram_url", "diagram_svg", "source"
         )
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, 'manual_instructor')
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, 'manual_instructor')
         RETURNING id, topic, exam_type as "examType", exam_year as "examYear",
+                  question_type as "questionType", exam_occurrences as "examOccurrences",
                   difficulty, question, options, correct_option as "correctOption",
                   explanation, points, diagram_url as "diagramUrl", diagram_svg as "diagramSvg",
                   source, created_at as "createdAt";
@@ -701,6 +1105,8 @@ router.post('/question-bank', authenticate, asyncHandler(async (req, res) => {
         topic.trim(),
         examType.trim(),
         examYear ? examYear.trim() : null,
+        isFillInBlank ? 'fill_in_the_blank' : 'mcq',
+        JSON.stringify(occs),
         difficulty.toLowerCase().trim(),
         cleanQ,
         JSON.stringify(normalizedOptions),
@@ -729,6 +1135,8 @@ router.put('/question-bank/:id', authenticate, asyncHandler(async (req, res) => 
         topic,
         examType,
         examYear,
+        questionType,
+        examOccurrences,
         difficulty,
         question,
         options,
@@ -747,9 +1155,11 @@ router.put('/question-bank/:id', authenticate, asyncHandler(async (req, res) => 
         return res.status(404).json({ success: false, message: 'Question not found in bank' });
     }
 
+    const isFillInBlank = questionType === 'fill_in_the_blank' || questionType === 'nat';
     const standardKeys = ['A', 'B', 'C', 'D'];
     let normalizedOptions = undefined;
-    if (Array.isArray(options) && options.length > 0) {
+
+    if (!isFillInBlank && Array.isArray(options) && options.length > 0) {
         normalizedOptions = standardKeys.slice(0, Math.max(options.length, 4)).map((key, idx) => {
             const opt = options.find(o => (o.key || '').toUpperCase() === key) || options[idx];
             const rawText = opt ? (typeof opt === 'string' ? opt : opt.text || '') : `Option ${key}`;
@@ -758,6 +1168,8 @@ router.put('/question-bank/:id', authenticate, asyncHandler(async (req, res) => 
                 text: cleanLatexChemistry(rawText)
             };
         });
+    } else if (isFillInBlank) {
+        normalizedOptions = [];
     }
 
     const updated = await prisma.$queryRawUnsafe(`
@@ -765,28 +1177,33 @@ router.put('/question-bank/:id', authenticate, asyncHandler(async (req, res) => 
         SET "topic" = COALESCE($1, "topic"),
             "exam_type" = COALESCE($2, "exam_type"),
             "exam_year" = $3,
-            "difficulty" = COALESCE($4, "difficulty"),
-            "question" = COALESCE($5, "question"),
-            "options" = COALESCE($6::jsonb, "options"),
-            "correct_option" = COALESCE($7, "correct_option"),
-            "explanation" = COALESCE($8, "explanation"),
-            "points" = COALESCE($9, "points"),
-            "diagram_url" = $10,
-            "diagram_svg" = $11,
+            "question_type" = COALESCE($4, "question_type"),
+            "exam_occurrences" = COALESCE($5::jsonb, "exam_occurrences"),
+            "difficulty" = COALESCE($6, "difficulty"),
+            "question" = COALESCE($7, "question"),
+            "options" = COALESCE($8::jsonb, "options"),
+            "correct_option" = COALESCE($9, "correct_option"),
+            "explanation" = COALESCE($10, "explanation"),
+            "points" = COALESCE($11, "points"),
+            "diagram_url" = $12,
+            "diagram_svg" = $13,
             "updated_at" = CURRENT_TIMESTAMP
-        WHERE "id"::text = $12
+        WHERE "id"::text = $14
         RETURNING id, topic, exam_type as "examType", exam_year as "examYear",
+                  question_type as "questionType", exam_occurrences as "examOccurrences",
                   difficulty, question, options, correct_option as "correctOption",
                   explanation, points, diagram_url as "diagramUrl", diagram_svg as "diagramSvg",
                   source, updated_at as "updatedAt";
     `,
         topic ? topic.trim() : null,
         examType ? examType.trim() : null,
-        examYear ? examYear.trim() : null,
+        examYear !== undefined ? (examYear ? examYear.trim() : null) : null,
+        questionType ? questionType.trim() : null,
+        examOccurrences ? JSON.stringify(examOccurrences) : null,
         difficulty ? difficulty.toLowerCase().trim() : null,
         question ? cleanLatexChemistry(question.trim()) : null,
-        normalizedOptions ? JSON.stringify(normalizedOptions) : null,
-        correctOption ? correctOption.toUpperCase() : null,
+        normalizedOptions !== undefined ? JSON.stringify(normalizedOptions) : null,
+        correctOption ? String(correctOption).trim() : null,
         explanation !== undefined ? cleanLatexChemistry(explanation.trim()) : null,
         points ? Math.max(parseInt(points) || 1, 1) : null,
         diagramUrl !== undefined ? (diagramUrl ? diagramUrl.trim() : null) : null,
@@ -1351,11 +1768,31 @@ router.post('/:id/submit', authenticate, asyncHandler(async (req, res) => {
     // Grade each submitted response against ground truth
     const detailedAnswers = groundTruth.map((q) => {
         const studentAns = (answers || []).find(a => String(a.questionId) === String(q.id));
-        const selectedOption = studentAns?.selectedOption ? String(studentAns.selectedOption).toUpperCase() : null;
-        const correctOption = String(q.correctOption || 'A').toUpperCase();
-        const isCorrect = selectedOption === correctOption;
-        const points = q.points || 1;
+        const rawStudent = studentAns?.selectedOption !== null && studentAns?.selectedOption !== undefined
+            ? String(studentAns.selectedOption).trim()
+            : null;
 
+        const isFillInBlank = q.type === 'fill_in_the_blank' || q.type === 'nat' || (!q.options || q.options.length === 0);
+        let isCorrect = false;
+
+        if (isFillInBlank) {
+            if (rawStudent !== null && rawStudent !== '') {
+                const sNum = parseFloat(rawStudent);
+                const cNum = parseFloat(q.correctOption);
+                if (!isNaN(sNum) && !isNaN(cNum)) {
+                    // Numerical tolerance: within 0.05
+                    isCorrect = Math.abs(sNum - cNum) <= 0.05;
+                } else {
+                    isCorrect = rawStudent.toLowerCase() === String(q.correctOption || '').trim().toLowerCase();
+                }
+            }
+        } else {
+            const selectedOption = rawStudent ? rawStudent.toUpperCase() : null;
+            const correctOption = String(q.correctOption || 'A').toUpperCase();
+            isCorrect = selectedOption === correctOption;
+        }
+
+        const points = q.points || 1;
         maxScore += points;
         if (isCorrect) {
             correctCount++;
@@ -1364,13 +1801,20 @@ router.post('/:id/submit', authenticate, asyncHandler(async (req, res) => {
 
         return {
             questionId: q.id,
+            type: isFillInBlank ? 'fill_in_the_blank' : 'mcq',
             questionText: q.question,
+            diagramSvg: q.diagramSvg || null,
+            diagramUrl: q.diagramUrl || null,
+            examType: q.examType || null,
+            examYear: q.examYear || null,
+            examOccurrences: q.examOccurrences || [],
+            topic: q.topic || null,
             options: (q.options || []).map(opt => ({
                 key: String(opt.key || '').toUpperCase(),
                 text: opt.text || ''
             })),
-            selectedOption,
-            correctOption,
+            selectedOption: rawStudent,
+            correctOption: q.correctOption,
             isCorrect,
             explanation: q.explanation || '',
             pointsEarned: isCorrect ? points : 0,

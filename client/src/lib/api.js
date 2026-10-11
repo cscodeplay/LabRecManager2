@@ -799,6 +799,7 @@ export const quizAPI = {
     addQuestionBank: (data) => api.post('/quiz/question-bank', data),
     updateQuestionBank: (id, data) => api.put(`/quiz/question-bank/${id}`, data),
     deleteQuestionBank: (id) => api.delete(`/quiz/question-bank/${id}`),
+    getRelatedExams: (params) => api.get('/quiz/related-exams', { params }),
 };
 
 // Research Browser API

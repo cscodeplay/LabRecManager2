@@ -372,9 +372,9 @@ export default function QuizReviewModal({
                         ) : viewMode === 'focus' ? (
                             /* FOCUS MODE: SINGLE QUESTION WITH PREV/NEXT */
                             <div className="flex-1 flex flex-col min-h-0">
-                                <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 custom-scrollbar">
+                                <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 custom-scrollbar">
                                     {/* Question Card Header */}
-                                    <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-start justify-between gap-3 pb-2.5 border-b border-slate-100 dark:border-slate-800">
                                         <div className="flex items-center gap-2">
                                             <span className="px-2.5 py-1 rounded-lg bg-primary-100 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300 font-bold font-mono text-xs">
                                                 Question {currentQuestionIdx + 1} of {answers.length}
@@ -386,9 +386,50 @@ export default function QuizReviewModal({
                                     </div>
 
                                     {/* Question Statement */}
-                                    <div className="text-slate-900 dark:text-white font-medium text-sm sm:text-base leading-relaxed bg-slate-50/70 dark:bg-slate-950/40 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+                                    <div className="text-slate-900 dark:text-white font-medium text-sm sm:text-base leading-relaxed bg-slate-50/70 dark:bg-slate-950/40 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800">
                                         <MathRenderer content={currentQuestion?.questionText || currentQuestion?.question || ''} />
                                     </div>
+
+                                    {/* Exam Occurrences & Topic Pills */}
+                                    {(() => {
+                                        const rawOcc = currentQuestion?.examOccurrences || [];
+                                        let occList = [];
+                                        try {
+                                            occList = typeof rawOcc === 'string' ? JSON.parse(rawOcc) : (Array.isArray(rawOcc) ? rawOcc : []);
+                                        } catch {
+                                            occList = [];
+                                        }
+                                        const topic = currentQuestion?.topic;
+                                        const diff = currentQuestion?.difficulty;
+
+                                        if (occList.length === 0 && !topic && !diff) return null;
+
+                                        return (
+                                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                                {occList.map((occ, oIdx) => (
+                                                    <span
+                                                        key={oIdx}
+                                                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/50 shadow-xs"
+                                                    >
+                                                        <span>🏛️</span>
+                                                        <span>{occ.exam || 'Exam'} {occ.year ? `(${occ.year})` : ''}</span>
+                                                    </span>
+                                                ))}
+                                                {topic && (
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                                        <span>🏷️</span>
+                                                        <span>{topic}</span>
+                                                    </span>
+                                                )}
+                                                {diff && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/60 text-slate-500 capitalize">
+                                                        <span>⚡</span>
+                                                        <span>{diff}</span>
+                                                    </span>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
 
                                     {(currentQuestion?.diagramSvg || currentQuestion?.diagramUrl) && (
                                         <QuestionDiagram
@@ -398,61 +439,78 @@ export default function QuizReviewModal({
                                         />
                                     )}
 
-                                    {/* Options Choices (Quiz UI with pure Green and Red selections) */}
-                                    <div className="space-y-2.5">
-                                        <h5 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                                            Answer Choices
-                                        </h5>
+                                    {/* Options Choices or Fill-in-the-blank input */}
+                                    {(() => {
+                                        const isFillInTheBlank = currentQuestion?.questionType === 'fill_in_the_blank' || currentQuestion?.questionType === 'nat' || (!currentQuestion?.options || currentQuestion.options.length === 0);
 
-                                        {currentQuestion?.options && currentQuestion.options.length > 0 ? (
-                                            currentQuestion.options.map((opt) => {
-                                                const optKey = String(opt.key || '').toUpperCase();
-                                                const userChoice = String(currentQuestion.selectedOption || '').toUpperCase();
-                                                const correctChoice = String(currentQuestion.correctOption || '').toUpperCase();
-                                                const isUserSelected = optKey === userChoice;
-                                                const isCorrectOption = optKey === correctChoice;
-
-                                                let cardClass = 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200';
-                                                let badgeClass = 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
-                                                let textClass = 'text-slate-800 dark:text-slate-200';
-
-                                                if (isCorrectOption) {
-                                                    cardClass = 'bg-emerald-600 border-emerald-500 text-white shadow-md ring-2 ring-emerald-400/50';
-                                                    badgeClass = 'bg-white text-emerald-700 font-bold';
-                                                    textClass = 'text-white font-medium';
-                                                } else if (isUserSelected && !isCorrectOption) {
-                                                    cardClass = 'bg-rose-600 border-rose-500 text-white shadow-md ring-2 ring-rose-400/50';
-                                                    badgeClass = 'bg-white text-rose-700 font-bold';
-                                                    textClass = 'text-white font-medium';
-                                                }
-
-                                                return (
-                                                    <div
-                                                        key={optKey}
-                                                        className={`w-full p-3.5 rounded-2xl border text-left text-xs sm:text-sm transition flex items-center gap-3 ${cardClass}`}
-                                                    >
-                                                        <span className={`w-7 h-7 rounded-xl font-mono font-bold text-xs flex items-center justify-center shrink-0 ${badgeClass}`}>
-                                                            {optKey}
-                                                        </span>
-                                                        <span className={`flex-1 ${textClass}`}>
-                                                            <MathRenderer content={opt.text || ''} inline />
-                                                        </span>
+                                        if (isFillInTheBlank) {
+                                            return (
+                                                <div className="space-y-2 pt-1">
+                                                    <div className={`w-full p-2.5 sm:p-3 rounded-xl border text-xs sm:text-sm font-mono flex items-center justify-between ${
+                                                        currentQuestion?.isCorrect
+                                                            ? 'bg-emerald-600 border-emerald-500 text-white shadow-md ring-2 ring-emerald-400/50'
+                                                            : 'bg-rose-600 border-rose-500 text-white shadow-md ring-2 ring-rose-400/50'
+                                                    }`}>
+                                                        <span className="font-sans font-medium text-xs opacity-90">Your Answer:</span>
+                                                        <span className="font-bold">{currentQuestion?.selectedOption ? String(currentQuestion.selectedOption) : '(No response)'}</span>
                                                     </div>
-                                                );
-                                            })
-                                        ) : (
-                                            <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border text-xs text-slate-600 dark:text-slate-300">
-                                                Selected Choice: <strong className="font-mono">{currentQuestion?.selectedOption || 'None'}</strong> • Correct Answer: <strong className="font-mono text-emerald-600">{currentQuestion?.correctOption}</strong>
+                                                    {!currentQuestion?.isCorrect && (
+                                                        <div className="w-full p-2.5 sm:p-3 rounded-xl border bg-emerald-600 border-emerald-500 text-white shadow-md ring-2 ring-emerald-400/50 text-xs sm:text-sm font-mono flex items-center justify-between">
+                                                            <span className="font-sans font-medium text-xs opacity-90">Correct Answer:</span>
+                                                            <span className="font-bold">{currentQuestion?.correctOption}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        }
+
+                                        return (
+                                            <div className="space-y-2 pt-1">
+                                                {currentQuestion?.options?.map((opt) => {
+                                                    const optKey = String(opt.key || '').toUpperCase();
+                                                    const userChoice = String(currentQuestion.selectedOption || '').toUpperCase();
+                                                    const correctChoice = String(currentQuestion.correctOption || '').toUpperCase();
+                                                    const isUserSelected = optKey === userChoice;
+                                                    const isCorrectOption = optKey === correctChoice;
+
+                                                    let cardClass = 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200';
+                                                    let badgeClass = 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
+                                                    let textClass = 'text-slate-800 dark:text-slate-200';
+
+                                                    if (isCorrectOption) {
+                                                        cardClass = 'bg-emerald-600 border-emerald-500 text-white shadow-md ring-2 ring-emerald-400/50';
+                                                        badgeClass = 'bg-white text-emerald-700 font-bold';
+                                                        textClass = 'text-white font-medium';
+                                                    } else if (isUserSelected && !isCorrectOption) {
+                                                        cardClass = 'bg-rose-600 border-rose-500 text-white shadow-md ring-2 ring-rose-400/50';
+                                                        badgeClass = 'bg-white text-rose-700 font-bold';
+                                                        textClass = 'text-white font-medium';
+                                                    }
+
+                                                    return (
+                                                        <div
+                                                            key={optKey}
+                                                            className={`w-full p-2.5 sm:p-3 rounded-xl border text-left text-xs sm:text-sm transition flex items-center gap-2.5 ${cardClass}`}
+                                                        >
+                                                            <span className={`w-6 h-6 sm:w-7 sm:h-7 rounded-lg font-mono font-bold text-xs flex items-center justify-center shrink-0 ${badgeClass}`}>
+                                                                {optKey}
+                                                            </span>
+                                                            <span className={`flex-1 ${textClass}`}>
+                                                                <MathRenderer content={opt.text || ''} inline />
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
-                                        )}
-                                    </div>
+                                        );
+                                    })()}
 
                                     {/* Detailed Solution / Explanation */}
                                     {currentQuestion?.explanation && (
-                                        <div className="bg-amber-500/10 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-800/40 rounded-2xl p-4 space-y-1.5 text-xs text-slate-800 dark:text-slate-200">
+                                        <div className="bg-amber-500/10 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-800/40 rounded-xl p-3.5 space-y-1 text-xs text-slate-800 dark:text-slate-200">
                                             <div className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
                                                 <Sparkles className="w-4 h-4 text-amber-500" />
-                                                <span>Detailed Explanation & Derivation</span>
+                                                <span>Detailed Explanation</span>
                                             </div>
                                             <div className="leading-relaxed">
                                                 <MathRenderer content={currentQuestion.explanation} />
@@ -462,7 +520,7 @@ export default function QuizReviewModal({
                                 </div>
 
                                 {/* Prev / Next Footer Bar */}
-                                <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-950/20">
+                                <div className="p-3.5 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-950/20">
                                     <button
                                         type="button"
                                         onClick={handlePrev}
@@ -492,17 +550,26 @@ export default function QuizReviewModal({
                             </div>
                         ) : (
                             /* LIST MODE: CONTINUOUS SCROLL WITH DIRECT QUESTION JUMPING */
-                            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 custom-scrollbar" ref={questionListRef}>
+                            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 custom-scrollbar" ref={questionListRef}>
                                 {answers.map((ans, idx) => {
                                     const isCurrent = idx === currentQuestionIdx;
                                     const isCorrect = ans.isCorrect;
                                     const hasSelected = ans.selectedOption !== null && ans.selectedOption !== undefined && String(ans.selectedOption).trim() !== '';
+                                    const isFillInTheBlank = ans.questionType === 'fill_in_the_blank' || ans.questionType === 'nat' || (!ans.options || ans.options.length === 0);
+
+                                    const rawOcc = ans.examOccurrences || [];
+                                    let occList = [];
+                                    try {
+                                        occList = typeof rawOcc === 'string' ? JSON.parse(rawOcc) : (Array.isArray(rawOcc) ? rawOcc : []);
+                                    } catch {
+                                        occList = [];
+                                    }
 
                                     return (
                                         <div
                                             key={idx}
                                             id={`review-question-${idx}`}
-                                            className={`p-4 rounded-2xl border space-y-3 transition ${
+                                            className={`p-3.5 sm:p-4 rounded-2xl border space-y-2.5 transition ${
                                                 isCurrent ? 'ring-2 ring-primary-500/80 shadow-md' : ''
                                             } ${
                                                 isCorrect
@@ -527,50 +594,96 @@ export default function QuizReviewModal({
                                                 <MathRenderer content={ans.questionText || ans.question || ''} />
                                             </div>
 
+                                            {/* Exam Occurrences & Topic Pills */}
+                                            {(occList.length > 0 || ans.topic || ans.difficulty) && (
+                                                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                                    {occList.map((occ, oIdx) => (
+                                                        <span
+                                                            key={oIdx}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/50 shadow-xs"
+                                                        >
+                                                            <span>🏛️</span>
+                                                            <span>{occ.exam || 'Exam'} {occ.year ? `(${occ.year})` : ''}</span>
+                                                        </span>
+                                                    ))}
+                                                    {ans.topic && (
+                                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                                            <span>🏷️</span>
+                                                            <span>{ans.topic}</span>
+                                                        </span>
+                                                    )}
+                                                    {ans.difficulty && (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/60 text-slate-500 capitalize">
+                                                            <span>⚡</span>
+                                                            <span>{ans.difficulty}</span>
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+
                                             {(ans.diagramSvg || ans.diagramUrl) && (
                                                 <QuestionDiagram
                                                     diagramSvg={ans.diagramSvg}
                                                     diagramUrl={ans.diagramUrl}
-                                                    title={`Question Diagram`}
+                                                    title={`Question ${idx + 1} Diagram`}
                                                 />
                                             )}
 
-                                            {/* Choices (Pure Green and Red selections, no labels) */}
-                                            {ans.options && ans.options.length > 0 && (
-                                                <div className="space-y-2 pt-1">
-                                                    {ans.options.map((opt) => {
-                                                        const optKey = String(opt.key || '').toUpperCase();
-                                                        const userChoice = String(ans.selectedOption || '').toUpperCase();
-                                                        const correctChoice = String(ans.correctOption || '').toUpperCase();
-                                                        const isUserSelected = optKey === userChoice;
-                                                        const isCorrectOption = optKey === correctChoice;
-
-                                                        let cardClass = 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200';
-                                                        let badgeClass = 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
-                                                        let textClass = 'text-slate-800 dark:text-slate-200';
-
-                                                        if (isCorrectOption) {
-                                                            cardClass = 'bg-emerald-600 border-emerald-500 text-white shadow-sm ring-1 ring-emerald-400/40';
-                                                            badgeClass = 'bg-white text-emerald-700 font-bold';
-                                                            textClass = 'text-white font-medium';
-                                                        } else if (isUserSelected && !isCorrectOption) {
-                                                            cardClass = 'bg-rose-600 border-rose-500 text-white shadow-sm ring-1 ring-rose-400/40';
-                                                            badgeClass = 'bg-white text-rose-700 font-bold';
-                                                            textClass = 'text-white font-medium';
-                                                        }
-
-                                                        return (
-                                                            <div key={optKey} className={`p-3 rounded-xl border flex items-center gap-3 text-xs sm:text-sm ${cardClass}`}>
-                                                                <span className={`w-6 h-6 rounded-lg font-bold font-mono text-xs flex items-center justify-center shrink-0 ${badgeClass}`}>
-                                                                    {optKey}
-                                                                </span>
-                                                                <span className={`flex-1 ${textClass}`}>
-                                                                    <MathRenderer content={opt.text || ''} inline />
-                                                                </span>
-                                                            </div>
-                                                        );
-                                                    })}
+                                            {/* Choices or Fill-in-the-blank input */}
+                                            {isFillInTheBlank ? (
+                                                <div className="space-y-1.5 pt-1">
+                                                    <div className={`p-2.5 rounded-xl border text-xs font-mono flex items-center justify-between ${
+                                                        isCorrect
+                                                            ? 'bg-emerald-600 border-emerald-500 text-white shadow-xs'
+                                                            : 'bg-rose-600 border-rose-500 text-white shadow-xs'
+                                                    }`}>
+                                                        <span className="font-sans font-medium text-[11px] opacity-90">Your Answer:</span>
+                                                        <span className="font-bold">{ans.selectedOption ? String(ans.selectedOption) : '(No response)'}</span>
+                                                    </div>
+                                                    {!isCorrect && (
+                                                        <div className="p-2.5 rounded-xl border bg-emerald-600 border-emerald-500 text-white shadow-xs text-xs font-mono flex items-center justify-between">
+                                                            <span className="font-sans font-medium text-[11px] opacity-90">Correct Answer:</span>
+                                                            <span className="font-bold">{ans.correctOption}</span>
+                                                        </div>
+                                                    )}
                                                 </div>
+                                            ) : (
+                                                ans.options && ans.options.length > 0 && (
+                                                    <div className="space-y-2 pt-1">
+                                                        {ans.options.map((opt) => {
+                                                            const optKey = String(opt.key || '').toUpperCase();
+                                                            const userChoice = String(ans.selectedOption || '').toUpperCase();
+                                                            const correctChoice = String(ans.correctOption || '').toUpperCase();
+                                                            const isUserSelected = optKey === userChoice;
+                                                            const isCorrectOption = optKey === correctChoice;
+
+                                                            let cardClass = 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200';
+                                                            let badgeClass = 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
+                                                            let textClass = 'text-slate-800 dark:text-slate-200';
+
+                                                            if (isCorrectOption) {
+                                                                cardClass = 'bg-emerald-600 border-emerald-500 text-white shadow-sm ring-1 ring-emerald-400/40';
+                                                                badgeClass = 'bg-white text-emerald-700 font-bold';
+                                                                textClass = 'text-white font-medium';
+                                                            } else if (isUserSelected && !isCorrectOption) {
+                                                                cardClass = 'bg-rose-600 border-rose-500 text-white shadow-sm ring-1 ring-rose-400/40';
+                                                                badgeClass = 'bg-white text-rose-700 font-bold';
+                                                                textClass = 'text-white font-medium';
+                                                            }
+
+                                                            return (
+                                                                <div key={optKey} className={`p-2.5 sm:p-3 rounded-xl border flex items-center gap-2.5 text-xs sm:text-sm ${cardClass}`}>
+                                                                    <span className={`w-6 h-6 rounded-lg font-bold font-mono text-xs flex items-center justify-center shrink-0 ${badgeClass}`}>
+                                                                        {optKey}
+                                                                    </span>
+                                                                    <span className={`flex-1 ${textClass}`}>
+                                                                        <MathRenderer content={opt.text || ''} inline />
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )
                                             )}
 
                                             {/* Explanation */}

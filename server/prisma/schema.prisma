@@ -2517,15 +2517,18 @@ model QuestionBank {
   correctOption String    @map("correct_option") @db.VarChar(10)
   explanation   String?   @db.Text
   points        Int       @default(1)
-  diagramUrl    String?   @map("diagram_url") @db.Text
-  diagramSvg    String?   @map("diagram_svg") @db.Text
-  source        String?   @default("question_bank") @db.VarChar(100)
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  diagramUrl      String?   @map("diagram_url") @db.Text
+  diagramSvg      String?   @map("diagram_svg") @db.Text
+  questionType    String?   @default("mcq") @map("question_type") @db.VarChar(50)
+  examOccurrences Json?     @default("[]") @map("exam_occurrences")
+  source          String?   @default("question_bank") @db.VarChar(100)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@index([topic], map: "idx_question_bank_topic")
   @@index([examType], map: "idx_question_bank_exam_type")
   @@index([examYear], map: "idx_question_bank_exam_year")
+  @@index([questionType], map: "idx_question_bank_type")
   @@index([examType, examYear, topic], map: "idx_question_bank_lookup")
   @@map("question_bank")
 }

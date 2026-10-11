@@ -19,6 +19,8 @@ import { quizAPI, classesAPI } from '@/lib/api';
 import MathRenderer from '@/components/MathRenderer';
 import QuizReviewModal from '@/components/QuizReviewModal';
 import QuestionDiagram, { DIAGRAM_PRESETS } from '@/components/QuestionDiagram';
+import ExamYearSelector from '@/components/ExamYearSelector';
+import QuizPreviewPalette from '@/components/QuizPreviewPalette';
 
 export default function QuizDashboardPage() {
     const router = useRouter();
@@ -80,7 +82,11 @@ export default function QuizDashboardPage() {
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [keywords, setKeywords] = useState('');
     const [examType, setExamType] = useState('GATE');
-    const [examYear, setExamYear] = useState('2026');
+    const [examYear, setExamYear] = useState('2024');
+    const [selectedExams, setSelectedExams] = useState(['GATE']);
+    const [selectedYears, setSelectedYears] = useState(['2024']);
+    const [questionFormat, setQuestionFormat] = useState('all');
+    const [noQuestionsNotice, setNoQuestionsNotice] = useState(null);
     const [difficulty, setDifficulty] = useState('medium');
     const [questionCount, setQuestionCount] = useState(5);
     const [timeLimitMinutes, setTimeLimitMinutes] = useState(10);
@@ -89,7 +95,7 @@ export default function QuizDashboardPage() {
     const [generationSource, setGenerationSource] = useState(null);
     const [generatedQuestions, setGeneratedQuestions] = useState([]);
     const [quizTitle, setQuizTitle] = useState('');
-    const [quizStatus, setQuizStatus] = useState('published');
+    const [quizStatus, setQuizStatus] = useState('draft');
     const [isSaving, setIsSaving] = useState(false);
 
     // Question Bank State
@@ -640,21 +646,41 @@ export default function QuizDashboardPage() {
         try {
             setIsGenerating(true);
             setGenerationSource(null);
+            setNoQuestionsNotice(null);
             const res = await quizAPI.generate({
                 keywords: keywords.trim(),
                 topic: keywords.trim(),
-                examType: examType.trim(),
-                examYear: examYear.trim(),
+                examTypes: selectedExams.length > 0 ? selectedExams : [examType],
+                examYears: selectedYears.length > 0 ? selectedYears : [examYear],
+                examType: selectedExams[0] || examType || 'GATE',
+                examYear: selectedYears[0] || examYear || '2024',
+                questionFormat,
                 difficulty,
                 numberOfQuestions: questionCount,
                 timeLimitMinutes
             });
             if (res.data.success) {
+                if (res.data.noQuestionsFound) {
+                    setNoQuestionsNotice({
+                        message: res.data.message,
+                        availableYears: res.data.availableYears || [],
+                        relatedExams: res.data.relatedExams || [],
+                        requestedExams: res.data.requestedExams || selectedExams,
+                        requestedYears: res.data.requestedYears || selectedYears
+                    });
+                    setGeneratedQuestions([]);
+                    toast.error(res.data.message || 'No authentic questions found for selected criteria.');
+                    return;
+                }
+
+                setNoQuestionsNotice(null);
                 setGeneratedQuestions(res.data.data.questions || []);
                 const src = res.data.data.source || 'ai';
                 setGenerationSource(src);
 
-                const examHeader = res.data.data.examType ? `${res.data.data.examType} ${res.data.data.examYear || ''}`.trim() : '';
+                const primaryExam = selectedExams[0] || res.data.data.examType || 'Exam';
+                const primaryYears = selectedYears.join(', ') || res.data.data.examYear || '';
+                const examHeader = `${primaryExam} ${primaryYears}`.trim();
                 setQuizTitle(examHeader ? `${examHeader}: ${res.data.data.topic || keywords.trim()}` : `Quiz: ${res.data.data.topic || keywords.trim()}`);
                 
                 const sourceLabel = src === 'question_bank'
@@ -662,7 +688,7 @@ export default function QuizDashboardPage() {
                     : src === 'hybrid_bank_web'
                     ? 'Combined Question Bank & Web Grounded!'
                     : 'Grounded via Web Sources & Saved to Question Bank!';
-                toast.success(`Generated ${res.data.data.questions.length} questions! (${sourceLabel})`);
+                toast.success(`Generated ${res.data.data.questions?.length || 0} questions! (${sourceLabel})`);
             }
         } catch (err) {
             console.error('Generation failed', err);
@@ -2292,6 +2318,9 @@ export default function QuizDashboardPage() {
                                                     <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                                                         {q.topic}
                                                     </span>
+                                                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 uppercase">
+                                                        {q.questionType === 'fill_in_the_blank' || q.questionType === 'nat' ? 'NAT / Fill-in' : 'MCQ'}
+                                                    </span>
                                                 </div>
 
                                                 <div className="flex items-center gap-2">
@@ -2315,6 +2344,33 @@ export default function QuizDashboardPage() {
                                                 <MathRenderer content={q.question} />
                                             </div>
 
+                                            {/* Exam Occurrences Pills */}
+                                            {(() => {
+                                                const rawOcc = q.examOccurrences || [];
+                                                let occList = [];
+                                                try {
+                                                    occList = typeof rawOcc === 'string' ? JSON.parse(rawOcc) : (Array.isArray(rawOcc) ? rawOcc : []);
+                                                } catch {
+                                                    occList = [];
+                                                }
+                                                if (occList.length === 0) return null;
+
+                                                return (
+                                                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-0.5">Occurred In:</span>
+                                                        {occList.map((occ, oIdx) => (
+                                                            <span
+                                                                key={oIdx}
+                                                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/50 shadow-xs"
+                                                            >
+                                                                <span>🏛️</span>
+                                                                <span>{occ.exam || 'Exam'} {occ.year ? `(${occ.year})` : ''}</span>
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            })()}
+
                                             {/* Vector Diagram or Image (if available) */}
                                             {(q.diagramSvg || q.diagramUrl) && (
                                                 <QuestionDiagram
@@ -2324,31 +2380,38 @@ export default function QuizDashboardPage() {
                                                 />
                                             )}
 
-                                            {/* 4 Choices (pure Green highlight on correct option, no text labels) */}
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                                                {optionsList.map((opt) => {
-                                                    const isCorrect = String(opt.key || '').toUpperCase() === String(q.correctOption || '').toUpperCase();
-                                                    return (
-                                                        <div
-                                                            key={opt.key}
-                                                            className={`p-3 rounded-xl border text-xs font-medium flex items-center gap-2.5 transition ${
-                                                                isCorrect
-                                                                    ? 'bg-emerald-600 border-emerald-500 text-white shadow-sm ring-2 ring-emerald-400/40'
-                                                                    : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
-                                                            }`}
-                                                        >
-                                                            <span className={`w-6 h-6 rounded-lg font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 ${
-                                                                isCorrect ? 'bg-white text-emerald-700' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                                                            }`}>
-                                                                {opt.key}
-                                                            </span>
-                                                            <div className="flex-1">
-                                                                <MathRenderer content={opt.text || ''} inline />
+                                            {/* Choices or NAT Answer Box */}
+                                            {q.questionType === 'fill_in_the_blank' || q.questionType === 'nat' || optionsList.length === 0 ? (
+                                                <div className="p-3 rounded-xl border bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-xs font-mono flex items-center justify-between">
+                                                    <span className="font-sans font-bold text-emerald-800 dark:text-emerald-300">Expected Value / Range:</span>
+                                                    <span className="font-extrabold text-sm text-emerald-700 dark:text-emerald-200">{q.correctOption}</span>
+                                                </div>
+                                            ) : (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                                                    {optionsList.map((opt) => {
+                                                        const isCorrect = String(opt.key || '').toUpperCase() === String(q.correctOption || '').toUpperCase();
+                                                        return (
+                                                            <div
+                                                                key={opt.key}
+                                                                className={`p-3 rounded-xl border text-xs font-medium flex items-center gap-2.5 transition ${
+                                                                    isCorrect
+                                                                        ? 'bg-emerald-600 border-emerald-500 text-white shadow-sm ring-2 ring-emerald-400/40'
+                                                                        : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+                                                                }`}
+                                                            >
+                                                                <span className={`w-6 h-6 rounded-lg font-mono font-bold text-xs flex items-center justify-center flex-shrink-0 ${
+                                                                    isCorrect ? 'bg-white text-emerald-700' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                                                }`}>
+                                                                    {opt.key}
+                                                                </span>
+                                                                <div className="flex-1">
+                                                                    <MathRenderer content={opt.text || ''} inline />
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
 
                                             {/* Collapsible Step-by-Step Solution */}
                                             {q.explanation && (
@@ -2976,215 +3039,249 @@ export default function QuizDashboardPage() {
                 {/* MODAL 1: CREATE AI QUIZ (FOR STAFF) */}
                 {showCreateModal && (
                     <div
-                        className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+                        className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
                         onClick={() => setShowCreateModal(false)}
                     >
                         <div
-                            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl text-left"
+                            className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full p-5 sm:p-6 space-y-4 shadow-2xl text-left my-auto transition-all ${
+                                generatedQuestions.length > 0 ? 'max-w-4xl max-h-[92vh] flex flex-col overflow-y-auto' : 'max-w-2xl max-h-[90vh] overflow-y-auto'
+                            }`}
                             onClick={(e) => e.stopPropagation()}
                         >
-                            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                                <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
-                                    <Sparkles className="w-5 h-5 text-primary-600" />
-                                    Generate AI Quiz
-                                </h3>
+                            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 flex-shrink-0">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 rounded-xl bg-primary-100 dark:bg-primary-950/60 text-primary-600 dark:text-primary-400 flex items-center justify-center font-bold">
+                                        <Sparkles className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                                            {generatedQuestions.length > 0 ? 'Interactive Quiz Preview & Palette' : 'Generate AI Quiz with Authentic PYQs'}
+                                        </h3>
+                                        <p className="text-xs text-slate-500">
+                                            {generatedQuestions.length > 0 
+                                                ? 'Review questions in draft mode before publishing to students.' 
+                                                : 'Select multiple exams & years with strict authenticity guarantee.'}
+                                        </p>
+                                    </div>
+                                </div>
                                 <button
                                     onClick={() => setShowCreateModal(false)}
-                                    className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 rounded-lg"
+                                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 rounded-xl transition"
                                 >
                                     ✕
                                 </button>
                             </div>
 
-                            <div className="space-y-3">
-                                <div>
-                                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        Topic / Subject <span className="text-rose-500">*</span>
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={keywords}
-                                        onChange={(e) => setKeywords(e.target.value)}
-                                        placeholder="e.g. Computer Science Architecture, Pipelining, Cache Memory"
-                                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-primary-500"
+                            {/* 1. SELECTION FORM (when no questions generated yet) */}
+                            {generatedQuestions.length === 0 ? (
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                                            Topic / Subject / Chapter <span className="text-rose-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={keywords}
+                                            onChange={(e) => setKeywords(e.target.value)}
+                                            placeholder="e.g. Computer Science Architecture, Pipelining, Cache Memory"
+                                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-primary-500"
+                                        />
+                                    </div>
+
+                                    {/* Multi-Exam and Multi-Year Selector */}
+                                    <ExamYearSelector
+                                        selectedExams={selectedExams}
+                                        onChangeExams={setSelectedExams}
+                                        selectedYears={selectedYears}
+                                        onChangeYears={setSelectedYears}
+                                        questionFormat={questionFormat}
+                                        onChangeFormat={setQuestionFormat}
                                     />
-                                </div>
 
-                                <div className="grid grid-cols-2 gap-2.5">
-                                    <div>
-                                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                                            Exam Type / Standard
-                                        </label>
-                                        <select
-                                            value={examType}
-                                            onChange={(e) => setExamType(e.target.value)}
-                                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
-                                        >
-                                            <option value="GATE">GATE (Computer Science / Engineering)</option>
-                                            <option value="JEE">JEE (Main & Advanced)</option>
-                                            <option value="NEET">NEET</option>
-                                            <option value="UGC-NET">UGC-NET</option>
-                                            <option value="University">University / Semester Exam</option>
-                                            <option value="General">General / Academic</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                                            Exam Year / Target
-                                        </label>
-                                        <select
-                                            value={examYear}
-                                            onChange={(e) => setExamYear(e.target.value)}
-                                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
-                                        >
-                                            <option value="2026">2026 (Upcoming / Practice)</option>
-                                            <option value="2025">2025</option>
-                                            <option value="2024">2024</option>
-                                            <option value="2023">2023</option>
-                                            <option value="Any">Any Recent Year</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-950 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center gap-2">
-                                    <span className="text-sm">🏛️</span>
-                                    <span>Checks verified <strong>Question Bank</strong> first. If not enough questions exist, fetches authentic problems from <strong>Web Sources</strong> and adds them to the bank.</span>
-                                </div>
-
-                                <div className="grid grid-cols-4 gap-2.5">
-                                    <div>
-                                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                                            Difficulty
-                                        </label>
-                                        <select
-                                            value={difficulty}
-                                            onChange={(e) => setDifficulty(e.target.value)}
-                                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
-                                        >
-                                            <option value="easy">Easy</option>
-                                            <option value="medium">Medium</option>
-                                            <option value="hard">Hard</option>
-                                            <option value="mixed">Mixed</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                                            Questions
-                                        </label>
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max="30"
-                                            value={questionCount}
-                                            onChange={(e) => setQuestionCount(e.target.value)}
-                                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                                            Time (Mins)
-                                        </label>
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max="120"
-                                            value={timeLimitMinutes}
-                                            onChange={(e) => setTimeLimitMinutes(e.target.value)}
-                                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                                            Max Attempts
-                                        </label>
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max="20"
-                                            value={maxAttemptsInput}
-                                            onChange={(e) => setMaxAttemptsInput(e.target.value)}
-                                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
-                                        />
-                                    </div>
-                                </div>
-
-                                <button
-                                    onClick={handleGenerateAI}
-                                    disabled={isGenerating || !keywords.trim()}
-                                    className="w-full py-2.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm"
-                                >
-                                    <Sparkles className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
-                                    {isGenerating ? 'Generating Questions...' : 'Generate with AI'}
-                                </button>
-                            </div>
-
-                            {/* Preview and Save */}
-                            {generatedQuestions.length > 0 && (
-                                <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                                    {generationSource && (
-                                        <div className={`p-2.5 rounded-xl border text-xs flex items-center justify-between ${
-                                            generationSource === 'question_bank'
-                                                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
-                                                : 'bg-primary-50 dark:bg-primary-950/40 border-primary-200 dark:border-primary-800 text-primary-800 dark:text-primary-300'
-                                        }`}>
-                                            <span className="font-bold flex items-center gap-1.5">
-                                                {generationSource === 'question_bank' ? '🏛️ Loaded directly from Question Bank' : '🌐 Sourced & Cached in Question Bank'}
-                                            </span>
-                                            <span className="text-[11px] opacity-80 font-mono">
-                                                {examType || 'General'} {examYear ? `• ${examYear}` : ''}
-                                            </span>
+                                    {/* Strict Authenticity Notice Banner */}
+                                    {noQuestionsNotice && (
+                                        <div className="p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-800/60 text-xs space-y-2.5 animate-in fade-in duration-200">
+                                            <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-300 text-sm">
+                                                <span>🛡️ Strict Authenticity Guard</span>
+                                            </div>
+                                            <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                                                {noQuestionsNotice.message}
+                                            </p>
+                                            {noQuestionsNotice.availableYears?.length > 0 && (
+                                                <div className="space-y-1 pt-1">
+                                                    <span className="font-semibold text-slate-600 dark:text-slate-400 block text-[11px]">
+                                                        Available authentic years in Question Bank:
+                                                    </span>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {noQuestionsNotice.availableYears.map(yr => (
+                                                            <button
+                                                                key={yr}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setSelectedYears([yr]);
+                                                                    setNoQuestionsNotice(null);
+                                                                }}
+                                                                className="px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 hover:bg-amber-200 font-mono font-bold text-xs transition"
+                                                            >
+                                                                {yr} ↵
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {noQuestionsNotice.relatedExams?.length > 0 && (
+                                                <div className="space-y-1 pt-1">
+                                                    <span className="font-semibold text-slate-600 dark:text-slate-400 block text-[11px]">
+                                                        Related exams with overlapping syllabus:
+                                                    </span>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {noQuestionsNotice.relatedExams.map(ex => (
+                                                            <button
+                                                                key={ex.name}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (!selectedExams.includes(ex.name)) {
+                                                                        setSelectedExams(prev => [...prev, ex.name]);
+                                                                    }
+                                                                    setNoQuestionsNotice(null);
+                                                                }}
+                                                                className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 font-bold text-xs border border-indigo-200 dark:border-indigo-800 transition"
+                                                            >
+                                                                + {ex.name}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
-                                    <input
-                                        type="text"
-                                        value={quizTitle}
-                                        onChange={(e) => setQuizTitle(e.target.value)}
-                                        placeholder="Quiz Title"
-                                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
-                                    />
-                                    <div className="flex items-center justify-between text-xs text-slate-500">
-                                        <span>{generatedQuestions.length} Questions Ready • Max Attempts: {maxAttemptsInput}</span>
-                                        <button
-                                            onClick={() => setQuizStatus(quizStatus === 'published' ? 'draft' : 'published')}
-                                            className="text-xs font-bold text-primary-600 hover:underline"
-                                        >
-                                            Status: {quizStatus}
-                                        </button>
+
+                                    <div className="grid grid-cols-4 gap-2.5">
+                                        <div>
+                                            <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                                Difficulty
+                                            </label>
+                                            <select
+                                                value={difficulty}
+                                                onChange={(e) => setDifficulty(e.target.value)}
+                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                            >
+                                                <option value="easy">Easy</option>
+                                                <option value="medium">Medium</option>
+                                                <option value="hard">Hard</option>
+                                                <option value="mixed">Mixed</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                                Questions
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="30"
+                                                value={questionCount}
+                                                onChange={(e) => setQuestionCount(e.target.value)}
+                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                                Time (Mins)
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="120"
+                                                value={timeLimitMinutes}
+                                                onChange={(e) => setTimeLimitMinutes(e.target.value)}
+                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                                Max Attempts
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="20"
+                                                value={maxAttemptsInput}
+                                                onChange={(e) => setMaxAttemptsInput(e.target.value)}
+                                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                            />
+                                        </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-2 pt-1">
-                                        <button
-                                            type="button"
-                                            onClick={() => handleSaveGeneratedQuiz('draft')}
-                                            disabled={isSaving}
-                                            className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-300 dark:border-slate-700 disabled:opacity-50"
-                                        >
-                                            <FileText className="w-3.5 h-3.5 text-slate-500" />
-                                            {isSaving ? 'Saving...' : 'Save as Draft'}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                if (!quizTitle.trim()) {
-                                                    toast.error('Please enter a quiz title first');
-                                                    return;
-                                                }
-                                                setPublishConfirmData({
-                                                    type: 'new',
-                                                    title: quizTitle.trim(),
-                                                    questionCount: generatedQuestions.length,
-                                                    timeLimitMinutes,
-                                                    maxAttempts: maxAttemptsInput
-                                                });
-                                                setShowPublishConfirmModal(true);
-                                            }}
-                                            disabled={isSaving}
-                                            className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm"
-                                        >
-                                            <Send className="w-3.5 h-3.5" />
-                                            Publish Quiz...
-                                        </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleGenerateAI}
+                                        disabled={isGenerating || !keywords.trim()}
+                                        className="w-full py-2.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm"
+                                    >
+                                        <Sparkles className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
+                                        {isGenerating ? 'Generating Authentic Questions...' : 'Generate Questions with AI'}
+                                    </button>
+                                </div>
+                            ) : (
+                                /* 2. INTERACTIVE QUIZ PREVIEW PALETTE (Draft mode by default) */
+                                <div className="space-y-4">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-950/70 rounded-2xl border border-slate-200 dark:border-slate-800">
+                                        <div className="flex-1">
+                                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                                                Quiz Title
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={quizTitle}
+                                                onChange={(e) => setQuizTitle(e.target.value)}
+                                                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setGeneratedQuestions([]);
+                                                    setNoQuestionsNotice(null);
+                                                }}
+                                                className="px-3 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition"
+                                            >
+                                                ← Re-generate
+                                            </button>
+                                        </div>
                                     </div>
+
+                                    <QuizPreviewPalette
+                                        questions={generatedQuestions}
+                                        onUpdateQuestion={(updatedQ, idx) => {
+                                            setGeneratedQuestions(prev => {
+                                                const next = [...prev];
+                                                next[idx] = updatedQ;
+                                                return next;
+                                            });
+                                        }}
+                                        onDeleteQuestion={(idx) => {
+                                            setGeneratedQuestions(prev => prev.filter((_, i) => i !== idx));
+                                        }}
+                                        onSaveDraft={() => handleSaveGeneratedQuiz('draft')}
+                                        onPublish={() => {
+                                            if (!quizTitle.trim()) {
+                                                toast.error('Please enter a quiz title first');
+                                                return;
+                                            }
+                                            setPublishConfirmData({
+                                                type: 'new',
+                                                title: quizTitle.trim(),
+                                                questionCount: generatedQuestions.length,
+                                                timeLimitMinutes,
+                                                maxAttempts: maxAttemptsInput
+                                            });
+                                            setShowPublishConfirmModal(true);
+                                        }}
+                                        isSaving={isSaving}
+                                        source={generationSource}
+                                    />
                                 </div>
                             )}
                         </div>
