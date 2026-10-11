@@ -13,7 +13,9 @@ const POPULAR_EXAMS = [
     { id: 'JEE', label: 'JEE Main', desc: 'Engineering Entrance PCM' },
     { id: 'JEE Advanced', label: 'JEE Adv.', desc: 'IIT Engineering Entrance' },
     { id: 'NEET', label: 'NEET', desc: 'Medical Entrance' },
-    { id: 'UPSC', label: 'UPSC', desc: 'Civil Services & CDS' }
+    { id: 'UPSC', label: 'UPSC', desc: 'Civil Services & CDS' },
+    { id: 'PSEB', label: 'PSEB', desc: 'Punjab School Education Board' },
+    { id: 'CBSE', label: 'CBSE', desc: 'Central Board of Secondary Education' }
 ];
 
 const PRESET_YEARS = ['2026', '2025', '2024', '2023', '2022', '2021', '2020', 'Any'];

@@ -86,6 +86,7 @@ export default function QuizDashboardPage() {
     const [selectedExams, setSelectedExams] = useState(['GATE']);
     const [selectedYears, setSelectedYears] = useState(['2024']);
     const [questionFormat, setQuestionFormat] = useState('all');
+    const [customSource, setCustomSource] = useState('');
     const [noQuestionsNotice, setNoQuestionsNotice] = useState(null);
     const [difficulty, setDifficulty] = useState('medium');
     const [questionCount, setQuestionCount] = useState(5);
@@ -659,29 +660,32 @@ export default function QuizDashboardPage() {
             const res = await quizAPI.generate({
                 keywords: keywords.trim(),
                 topic: keywords.trim(),
-                examTypes: selectedExams.length > 0 ? selectedExams : [examType],
-                examYears: selectedYears.length > 0 ? selectedYears : [examYear],
-                examType: selectedExams[0] || examType || 'GATE',
-                examYear: selectedYears[0] || examYear || '2024',
+                examTypes: selectedExams.length > 0 ? selectedExams : (examType ? [examType] : []),
+                examYears: selectedYears.length > 0 ? selectedYears : (examYear ? [examYear] : []),
+                examType: selectedExams[0] || examType || '',
+                examYear: selectedYears[0] || examYear || '',
+                customSource: customSource.trim(),
                 questionFormat,
                 difficulty,
                 numberOfQuestions: questionCount,
                 timeLimitMinutes
             });
-            if (res.data.success) {
-                if (res.data.noQuestionsFound) {
-                    setNoQuestionsNotice({
-                        message: res.data.message,
-                        availableYears: res.data.availableYears || [],
-                        relatedExams: res.data.relatedExams || [],
-                        requestedExams: res.data.requestedExams || selectedExams,
-                        requestedYears: res.data.requestedYears || selectedYears
-                    });
-                    setGeneratedQuestions([]);
-                    toast.error(res.data.message || 'No authentic questions found for selected criteria.');
-                    return;
-                }
 
+            if (res.data?.noQuestionsFound) {
+                setNoQuestionsNotice({
+                    message: res.data.message,
+                    reason: res.data.reason,
+                    availableYears: res.data.availableYearsInBank?.[selectedExams[0]] || res.data.availableYears || [],
+                    relatedExams: res.data.relatedExams || [],
+                    requestedExams: res.data.requestedExams || selectedExams,
+                    requestedYears: res.data.requestedYears || selectedYears
+                });
+                setGeneratedQuestions([]);
+                toast.error(res.data.message || 'No authentic questions found for selected criteria.');
+                return;
+            }
+
+            if (res.data?.success && res.data.data) {
                 setNoQuestionsNotice(null);
                 setGeneratedQuestions(res.data.data.questions || []);
                 const src = res.data.data.source || 'ai';
@@ -698,6 +702,8 @@ export default function QuizDashboardPage() {
                     ? 'Combined Question Bank & Web Grounded!'
                     : 'Grounded via Web Sources & Saved to Question Bank!';
                 toast.success(`Generated ${res.data.data.questions?.length || 0} questions! (${sourceLabel})`);
+            } else {
+                toast.error(res.data?.message || 'Failed to generate quiz');
             }
         } catch (err) {
             console.error('Generation failed', err);
@@ -3187,15 +3193,40 @@ export default function QuizDashboardPage() {
                                         onChangeFormat={setQuestionFormat}
                                     />
 
+                                    {/* Manual Grounding Source / Domain */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                                Specific Web Source or Domain <span className="text-[11px] font-normal text-slate-400">(Optional)</span>
+                                            </label>
+                                            <span className="text-[10px] text-slate-400">e.g. pseb.ac.in, cbse.gov.in, or URL</span>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            value={customSource}
+                                            onChange={(e) => setCustomSource(e.target.value)}
+                                            placeholder="e.g. https://pseb.ac.in/sample-paper or pseb.ac.in"
+                                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-primary-500"
+                                        />
+                                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                                            If specified, questions will be extracted or grounded strictly from this source. Foreign exams will never be substituted.
+                                        </p>
+                                    </div>
+
                                     {/* Strict Authenticity Notice Banner */}
                                     {noQuestionsNotice && (
                                         <div className="p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-800/60 text-xs space-y-2.5 animate-in fade-in duration-200">
                                             <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-300 text-sm">
                                                 <span>🛡️ Strict Authenticity Guard</span>
                                             </div>
-                                            <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                                            <p className="text-slate-800 dark:text-slate-200 font-medium leading-relaxed">
                                                 {noQuestionsNotice.message}
                                             </p>
+                                            {noQuestionsNotice.reason && (
+                                                <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+                                                    {noQuestionsNotice.reason}
+                                                </p>
+                                            )}
                                             {noQuestionsNotice.availableYears?.length > 0 && (
                                                 <div className="space-y-1 pt-1">
                                                     <span className="font-semibold text-slate-600 dark:text-slate-400 block text-[11px]">

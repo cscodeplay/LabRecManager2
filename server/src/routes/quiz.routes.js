@@ -8,18 +8,72 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const aiService = require('../services/ai.service');
 
 // Web search context fetcher for exam questions grounding with domain/source provenance
-async function fetchWebSnippets(topic, examType, examYear) {
+// Web search context fetcher for exam questions grounding with domain/source provenance and optional custom source
+async function fetchWebSnippets(topic, examType, examYear, customSource = '') {
+    const results = [];
+    const sourceTrimmed = (customSource || '').trim();
+
+    // 1. Direct URL fetch if user provided a specific HTTP(S) URL
+    if (/^https?:\/\//i.test(sourceTrimmed)) {
+        try {
+            const pageRes = await axios.get(sourceTrimmed, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                },
+                timeout: 5000,
+                maxContentLength: 2 * 1024 * 1024 // 2MB limit
+            });
+            let domain = 'custom_source';
+            try {
+                domain = new URL(sourceTrimmed).hostname.replace(/^www\./, '');
+            } catch (_) {}
+
+            if (typeof pageRes.data === 'string') {
+                const cleanContent = pageRes.data
+                    .replace(/<script[\s\S]*?<\/script>/gi, '')
+                    .replace(/<style[\s\S]*?<\/style>/gi, '')
+                    .replace(/<[^>]+>/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+                if (cleanContent.length > 50) {
+                    results.push({
+                        source: domain,
+                        snippet: cleanContent.slice(0, 3500)
+                    });
+                    return results;
+                }
+            }
+        } catch (err) {
+            console.warn('[QuizRoutes] Direct fetch from custom URL failed:', err.message);
+        }
+    }
+
+    // 2. DuckDuckGo Search (Grounding)
     try {
-        const query = `${examType || ''} ${examYear || ''} ${topic} questions answers syllabus gate numerical`.trim();
+        let queryParts = [];
+        // If user specified a domain (e.g. pseb.ac.in)
+        if (sourceTrimmed && !/^https?:\/\//i.test(sourceTrimmed)) {
+            const domainOnly = sourceTrimmed.replace(/^https?:\/\//, '').split('/')[0].trim();
+            if (domainOnly.includes('.')) {
+                queryParts.push(`site:${domainOnly}`);
+            }
+        }
+
+        if (examType && examType.trim()) queryParts.push(examType.trim());
+        if (examYear && examYear.trim() && examYear.trim().toLowerCase() !== 'any') queryParts.push(examYear.trim());
+        if (topic && topic.trim()) queryParts.push(topic.trim());
+        queryParts.push('question paper previous year questions');
+
+        const query = queryParts.join(' ').trim();
         const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
         const res = await axios.get(url, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             },
-            timeout: 4000
+            timeout: 4500
         });
 
-        const results = [];
         // Extract result blocks from DDG HTML
         const blockRegex = /<div class="result\s+results_links[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g;
         let match;
@@ -29,14 +83,14 @@ async function fetchWebSnippets(topic, examType, examYear) {
             const urlMatch = block.match(/<a class="result__url"[^>]*>([\s\S]*?)<\/a>/) || block.match(/href="[^"]*uddg=([^"&]+)[^"]*"/);
             if (snippetMatch) {
                 const snippet = snippetMatch[1].replace(/<[^>]+>/g, '').trim();
-                let source = 'web_search';
+                let source = sourceTrimmed || 'web_search';
                 if (urlMatch) {
                     const rawUrl = urlMatch[1] ? decodeURIComponent(urlMatch[1]).replace(/<[^>]+>/g, '').trim() : '';
                     try {
                         const parsed = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`);
                         source = parsed.hostname.replace(/^www\./, '');
                     } catch (_) {
-                        source = rawUrl.split('/')[0] || 'web_search';
+                        source = rawUrl.split('/')[0] || (sourceTrimmed || 'web_search');
                     }
                 }
                 if (snippet) {
@@ -50,14 +104,14 @@ async function fetchWebSnippets(topic, examType, examYear) {
             const matches = res.data.match(/<a class="result__snippet[^>]*>([\s\S]*?)<\/a>/g) || [];
             matches.slice(0, 5).forEach(m => {
                 const s = m.replace(/<[^>]+>/g, '').trim();
-                if (s) results.push({ source: 'web_search', snippet: s });
+                if (s) results.push({ source: sourceTrimmed || 'web_search', snippet: s });
             });
         }
 
         return results;
     } catch (err) {
         console.warn('[QuizRoutes] Web search snippet fetch skipped:', err.message);
-        return [];
+        return results;
     }
 }
 
@@ -319,6 +373,32 @@ const RELATED_EXAMS_GRAPH = {
             { id: 'RBI Grade B', name: 'RBI Grade B Officer (Phase 1)', overlap: 'Economics, Quantitative aptitude, GA' },
             { id: 'IBPS Clerk', name: 'IBPS Clerical Cadre', overlap: 'Speed arithmetic and reasoning' }
         ]
+    },
+    'PSEB': {
+        name: 'Punjab School Education Board (PSEB)',
+        domain: 'State Board Secondary & Higher Secondary Education (Classes 10 & 12)',
+        related: [
+            { id: 'CBSE', name: 'CBSE (Central Board of Secondary Education)', overlap: 'State & Central NCERT curriculum alignment in Science & Math' },
+            { id: 'ICSE', name: 'ICSE / ISC Board', overlap: 'Secondary and Senior Secondary examination equivalence' },
+            { id: 'HBSE', name: 'HBSE (Haryana Board of School Education)', overlap: 'Regional state board curriculum alignment' }
+        ]
+    },
+    'CBSE': {
+        name: 'Central Board of Secondary Education (CBSE)',
+        domain: 'National Board Secondary & Senior Secondary Education',
+        related: [
+            { id: 'PSEB', name: 'PSEB (Punjab School Education Board)', overlap: 'Aligned with NCERT syllabus across Class 10 and 12' },
+            { id: 'ICSE', name: 'ICSE / ISC Board', overlap: 'National school board curriculum parity' },
+            { id: 'CUET-UG', name: 'CUET-UG', overlap: 'Undergraduate admissions testing based on Class 12 syllabus' }
+        ]
+    },
+    'ICSE': {
+        name: 'Council for the Indian School Certificate (ICSE / ISC)',
+        domain: 'National Board Secondary & Senior Secondary Education',
+        related: [
+            { id: 'CBSE', name: 'CBSE', overlap: 'Curriculum parity across science, commerce, humanities' },
+            { id: 'PSEB', name: 'PSEB', overlap: 'State board equivalence in science and math' }
+        ]
     }
 };
 
@@ -426,6 +506,7 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
         examTypes = [],
         examYear = '',
         examYears = [],
+        customSource = '',
         questionFormat = 'all', // 'all' | 'mcq' | 'fill_in_the_blank'
         difficulty = 'medium',
         numberOfQuestions = 5,
@@ -478,6 +559,9 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
         else if (/\bneet\b/i.test(fullSearchText)) selectedExams.push('NEET');
         else if (/\bugc[\s-]*net\b/i.test(fullSearchText)) selectedExams.push('UGC-NET');
         else if (/\bcat\b/i.test(fullSearchText)) selectedExams.push('CAT');
+        else if (/\bpseb\b/i.test(fullSearchText)) selectedExams.push('PSEB');
+        else if (/\bcbse\b/i.test(fullSearchText)) selectedExams.push('CBSE');
+        else if (/\bicse\b/i.test(fullSearchText)) selectedExams.push('ICSE');
     }
 
     // Auto-detect exam year if none selected
@@ -657,15 +741,43 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
 
     // 4. FETCH AUTHENTIC WEB SOURCES & GROUNDING
     const remainingCount = count - bankQuestions.length;
-    const searchTargetExam = selectedExams.join(' ') || 'GATE';
+    const searchTargetExam = selectedExams.join(' ') || '';
     const searchTargetYear = selectedYears.filter(y => y.toLowerCase() !== 'any').join(' ') || '';
 
-    const webSnippets = await fetchWebSnippets(detectedTopic, searchTargetExam, searchTargetYear);
+    const webSnippets = await fetchWebSnippets(detectedTopic, searchTargetExam, searchTargetYear, customSource);
     const webContextBlock = webSnippets.length > 0
         ? `\nAUTHENTIC WEB EXAMINATION SOURCES & SYLLABUS REFERENCES:\n${webSnippets.map((s, i) => `[Source: ${s.source}] ${s.snippet}`).join('\n')}\n`
         : '';
 
-    // If web snippets are empty, past year was requested, but paper doesn't exist, strictly verify
+    // If customSource was explicitly specified by the user and no snippets or bank questions found:
+    if (customSource.trim() && webSnippets.length === 0 && bankQuestions.length === 0) {
+        return res.json({
+            success: false,
+            noQuestionsFound: true,
+            message: `No authentic examination questions found from specified source (${customSource.trim()}) for ${selectedExams.join(', ') || detectedTopic}.`,
+            reason: `Could not retrieve verified questions from "${customSource.trim()}". Because examinations are specific, cross-exam substitution is strictly prevented.`,
+            requestedExams: selectedExams,
+            requestedYears: selectedYears,
+            customSource: customSource.trim(),
+            availableYearsInBank: availableYearsMap
+        });
+    }
+
+    // If web snippets are empty, and no bank questions exist, and specific exams were requested without practice fallback
+    if (webSnippets.length === 0 && bankQuestions.length === 0 && selectedExams.length > 0 && !allowPracticeFallback) {
+        return res.json({
+            success: false,
+            noQuestionsFound: true,
+            message: `No authentic examination questions found for ${selectedExams.join(', ')} (${selectedYears.join(', ') || 'requested year'}).`,
+            reason: `Zero verified questions were found for ${selectedExams.join(', ')} in our question repository or public archives. Cross-exam substitution is disabled to preserve exam specificity.`,
+            requestedExams: selectedExams,
+            requestedYears: selectedYears,
+            availableYearsInBank: availableYearsMap,
+            allowPracticeOption: true
+        });
+    }
+
+    // If past year was requested, but paper doesn't exist, strictly verify
     if (webSnippets.length === 0 && selectedYears.length > 0 && !selectedYears.includes('Any') && bankQuestions.length === 0 && !allowPracticeFallback) {
         const yrInt = parseInt(selectedYears[0]);
         if (!isNaN(yrInt) && yrInt > 2025) {
@@ -683,19 +795,21 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
     }
 
     // 5. CONSTRUCT AI GENERATION PROMPT
-    const isGate = selectedExams.some(e => e.toUpperCase() === 'GATE');
-    const isCompetitive = selectedExams.length > 0;
     const allowFillInBlank = questionFormat === 'all' || questionFormat === 'fill_in_the_blank';
     const forceFillInBlank = questionFormat === 'fill_in_the_blank';
 
     let examSpecificGuidelines = `
-EXAM TARGET: ${selectedExams.join(', ') || 'Competitive Engineering / Science'}
+EXAM TARGET: ${selectedExams.join(', ') || 'General Examination'}
 YEAR(S): ${selectedYears.join(', ') || 'Recent Past Years'}
-- STRICT AUTHENTICITY ENFORCEMENT: Questions must be authentic examination problems that test core analytical rigor.
-- STRICT PROHIBITION: DO NOT hallucinate fake questions. If authentic questions for ${selectedExams.join(', ')} ${selectedYears.join(', ')} cannot be confirmed, return {"noAuthenticQuestions": true, "reason": "No authentic questions found"}.
+${customSource ? `CUSTOM SOURCE REQUIREMENT: Questions MUST be strictly derived or grounded in the specified source: ${customSource.trim()}` : ''}
+- STRICT EXAM SPECIFICITY & ZERO-SUBSTITUTION RULE:
+  * Questions MUST strictly be authentic problems belonging to ${selectedExams.join(', ') || 'the requested subject'}.
+  * UNDER NO CIRCUMSTANCES should questions from other unrelated exams (e.g. GATE, ISRO, JEE, UPSC) be substituted when ${selectedExams.join(', ')} is requested. For instance, if PSEB (Punjab School Education Board) is requested, DO NOT provide GATE university engineering questions.
+  * If authentic questions for ${selectedExams.join(', ')} cannot be found or confirmed, DO NOT generate fake questions or substitute from another exam. Instead, return:
+    {"noAuthenticQuestions": true, "reason": "No authentic questions found for ${selectedExams.join(', ')}"}
 - AUTHENTICITY & SOURCE CLASSIFICATION:
   * "isMock": Set to false if this is an authentic, officially conducted past exam paper question (PYQ). Set to true if this is an unofficial practice/mock test question.
-  * "webSource": Set to the specific web domain or portal where this problem originated (e.g. "gateoverflow.in", "iitk.ac.in", "nta.ac.in", "geeksforgeeks.org", or "Official Paper").
+  * "webSource": Set to the specific web domain or portal where this problem originated (e.g. "${customSource ? customSource.trim() : (webSnippets[0]?.source || (primaryExam ? primaryExam.toLowerCase() + '.ac.in' : 'official_paper'))}").
 - QUESTION FORMATS:
 ${forceFillInBlank
     ? '  * ALL questions must be Numerical Answer Type (NAT) / Fill-in-the-blank. Set "type": "fill_in_the_blank", "options": [], and "correctOption" to the exact numerical or text answer.'
@@ -703,9 +817,9 @@ ${forceFillInBlank
     ? '  * Generate a realistic mix of Multiple Choice Questions (type: "mcq" with 4 options A-D) and Numerical Answer Type (type: "fill_in_the_blank" with options: [] and exact numerical answer in correctOption).'
     : '  * ALL questions must be Multiple Choice Questions with EXACTLY 4 choices (type: "mcq").'}
 - DIAGRAM GENERATION:
-  * If the question involves digital logic gates, 5-stage CPU pipeline, memory cache hierarchy, mechanics free-body force diagram, or circuit networks, generate a crisp, self-contained SVG element in "diagramSvg" (with viewBox, strokes, clear labels, and viewBox="0 0 500 180").
+  * If the question involves digital logic gates, circuits, geometry, force diagrams, or biology diagrams, generate a crisp, self-contained SVG element in "diagramSvg" (with viewBox, strokes, clear labels, and viewBox="0 0 500 180").
 - MULTI-EXAM OCCURRENCES:
-  * In "examOccurrences", specify all exams in which this question or very close equivalent has appeared, e.g. [{"exam": "GATE CS", "year": "2024"}, {"exam": "ISRO ICRB", "year": "2020"}].
+  * In "examOccurrences", specify all exams in which this question or very close equivalent has appeared, e.g. [{"exam": "${primaryExam || 'Official'}", "year": "${primaryYear || '2024'}"}].
 `;
 
     const systemPrompt = `You are a premier academic quiz creator and competitive exam specialist.
@@ -746,9 +860,9 @@ JSON SCHEMA TO RETURN (VALID JSON ONLY, NO MARKDOWN, NO CODEBLOCKS):
     "correctOption": "A",
     "explanation": "Step-by-step mathematical derivation...",
     "isMock": false,
-    "webSource": "gateoverflow.in",
+    "webSource": "${customSource ? customSource.trim() : (webSnippets[0]?.source || (primaryExam ? primaryExam.toLowerCase() + '.ac.in' : 'official_paper'))}",
     "examOccurrences": [
-      { "exam": "${primaryExam || 'GATE'}", "year": "${primaryYear || '2024'}" }
+      { "exam": "${primaryExam || 'General'}", "year": "${primaryYear || '2024'}" }
     ],
     "topic": "${detectedTopic}",
     "difficulty": "${validDifficulty}",
@@ -862,6 +976,45 @@ Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
                 topic: q.topic || detectedTopic
             };
         });
+
+        // STRICT EXAM INTEGRITY & PURITY GUARD:
+        // Discard foreign exam cross-substitutions
+        if (selectedExams.length > 0) {
+            const isSchoolBoard = selectedExams.some(e => ['PSEB', 'CBSE', 'ICSE', 'HBSE'].includes(e.toUpperCase()));
+            const isGradTech = selectedExams.some(e => ['GATE', 'ISRO', 'BARC', 'UGC-NET', 'NIELIT', 'DRDO', 'TIFR'].includes(e.toUpperCase()));
+
+            newlyGenerated = newlyGenerated.filter(q => {
+                const combinedQText = `${q.question} ${q.explanation} ${q.examType || ''} ${JSON.stringify(q.examOccurrences || [])}`.toLowerCase();
+                if (isSchoolBoard) {
+                    // School boards (PSEB, CBSE, ICSE) must NEVER contain graduate engineering questions (GATE, ISRO, BARC, UGC-NET)
+                    if (/\b(gate|isro|barc|ugc-net|nielit|drdo|tifr)\b/i.test(combinedQText)) {
+                        console.warn(`[QuizRoutes] Discarded foreign exam question (GATE/ISRO detected in school board ${selectedExams.join('/')} request)`);
+                        return false;
+                    }
+                }
+                if (isGradTech) {
+                    if (/\b(pseb|hbse|icse)\b/i.test(combinedQText)) {
+                        console.warn(`[QuizRoutes] Discarded school board question in graduate tech ${selectedExams.join('/')} request`);
+                        return false;
+                    }
+                }
+                return true;
+            });
+        }
+
+        // If all generated questions were discarded as foreign cross-exam substitutes and no bank questions exist:
+        if (newlyGenerated.length === 0 && bankQuestions.length === 0) {
+            return res.json({
+                success: false,
+                noQuestionsFound: true,
+                message: `No authentic examination questions found for ${selectedExams.join(', ')} (${selectedYears.join(', ') || 'requested year'}).`,
+                reason: `Questions from other unrelated exams (such as GATE) were rejected to preserve exam specificity and academic integrity.`,
+                requestedExams: selectedExams,
+                requestedYears: selectedYears,
+                availableYearsInBank: availableYearsMap,
+                allowPracticeOption: true
+            });
+        }
 
         // 6. PERSIST TO QUESTION BANK
         for (const q of newlyGenerated) {
