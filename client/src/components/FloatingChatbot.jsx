@@ -8626,6 +8626,7 @@ export function BotSettingsModal({ settings, onSave, onClose, isDialog = false }
                         <option value="deepseek">DeepSeek (V3 / R1 - Paid / Fast)</option>
                         <option value="openrouter">OpenRouter (Universal Paid Hub)</option>
                         <option value="groq">Groq (Llama-3.3-70b - Ultra Fast)</option>
+                        <option value="nvidia">NVIDIA NIM (Llama-3.3-70b - Free Credits)</option>
                         <option value="gemini">Gemini (Gemini-2.5-flash - Deep Context)</option>
                         <option value="sambanova">SambaNova (Meta-Llama-3.1-70B)</option>
                         <option value="github">GPT-4o (GitHub Models)</option>
@@ -10009,6 +10010,7 @@ export default function FloatingChatbot() {
                                     <option value="deepseek" className="text-black">DeepSeek V3</option>
                                     <option value="openrouter" className="text-black">OpenRouter</option>
                                     <option value="groq" className="text-black">Groq (Llama)</option>
+                                    <option value="nvidia" className="text-black">NVIDIA NIM</option>
                                     <option value="gemini" className="text-black">Gemini</option>
                                     <option value="sambanova" className="text-black">SambaNova</option>
                                     <option value="github" className="text-black">GPT-4o (GitHub)</option>

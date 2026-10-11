@@ -216,6 +216,7 @@ export default function SettingsPage() {
         geminiApiKey: '',
         groqApiKey: '',
         sambanovaApiKey: '',
+        nvidiaApiKey: '',
         preferredProvider: 'auto'
     });
     const [loadingAiSettings, setLoadingAiSettings] = useState(false);
@@ -240,6 +241,7 @@ export default function SettingsPage() {
                     geminiApiKey: provs.gemini?.maskedKey || '',
                     groqApiKey: provs.groq?.maskedKey || '',
                     sambanovaApiKey: provs.sambanova?.maskedKey || '',
+                    nvidiaApiKey: provs.nvidia?.maskedKey || '',
                     preferredProvider: data.preferredProvider || 'auto'
                 });
             }
@@ -274,7 +276,8 @@ export default function SettingsPage() {
             openrouter: 'openrouterApiKey',
             gemini: 'geminiApiKey',
             groq: 'groqApiKey',
-            sambanova: 'sambanovaApiKey'
+            sambanova: 'sambanovaApiKey',
+            nvidia: 'nvidiaApiKey'
         };
 
         const fieldName = keyFieldMap[providerKey];
@@ -3077,11 +3080,12 @@ export default function SettingsPage() {
                                                 onChange={(e) => setAiKeysInput(prev => ({ ...prev, preferredProvider: e.target.value }))}
                                                 className="input text-xs sm:text-sm py-1.5 px-3 rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-medium max-w-xs"
                                             >
-                                                <option value="auto">Auto-Cascade (Paid First: OpenAI → Claude → DeepSeek → OpenRouter → Groq → Gemini → SambaNova)</option>
+                                                <option value="auto">Auto-Cascade (Paid First: OpenAI → Claude → DeepSeek → OpenRouter → NVIDIA → Groq → Gemini → SambaNova)</option>
                                                 <option value="openai">OpenAI (Direct Paid: GPT-4o / GPT-4o-mini)</option>
                                                 <option value="anthropic">Anthropic (Direct Paid: Claude 3.7 Sonnet / Claude 3.5 Sonnet)</option>
                                                 <option value="deepseek">DeepSeek (Direct Paid: DeepSeek-Chat / DeepSeek-Reasoner)</option>
                                                 <option value="openrouter">OpenRouter (Unified Paid Multi-Model Gateway)</option>
+                                                <option value="nvidia">NVIDIA NIM (Free 1,000 Credits: Llama 3.3 70B / 3.2 Vision 90B)</option>
                                                 <option value="gemini">Google Gemini (Gemini 3.8 Flash / 3.5 Flash-Lite)</option>
                                                 <option value="groq">Groq (LPU Llama 3.3 70B Versatile)</option>
                                                 <option value="sambanova">SambaNova (Llama 3.2 Vision)</option>
@@ -3610,6 +3614,75 @@ export default function SettingsPage() {
                                                     }`}>
                                                         {testResults.sambanova.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />}
                                                         <span className="leading-tight">{testResults.sambanova.message} {testResults.sambanova.latency ? `(${testResults.sambanova.latency}ms)` : ''}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* NVIDIA NIM */}
+                                            <div className="p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900/60 shadow-sm space-y-3">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">NVIDIA NIM (Free 1,000 Credits)</h4>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                                            <span className="text-emerald-600 dark:text-emerald-400 font-medium">Mapped Models: <code>Llama 3.3 70B</code> & <code>Vision 90B</code></span>
+                                                        </p>
+                                                    </div>
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                                                        aiConfigs?.providers?.nvidia?.configured 
+                                                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200' 
+                                                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                                    }`}>
+                                                        {aiConfigs?.providers?.nvidia?.configured ? 'Active' : 'Not Set'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="relative">
+                                                    <input
+                                                        type={showAiSecrets.nvidia ? 'text' : 'password'}
+                                                        placeholder="nvapi-..."
+                                                        value={aiKeysInput.nvidiaApiKey}
+                                                        onChange={(e) => setAiKeysInput(prev => ({ ...prev, nvidiaApiKey: e.target.value }))}
+                                                        className="input text-xs font-mono pr-9 w-full"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowAiSecrets(prev => ({ ...prev, nvidia: !prev.nvidia }))}
+                                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                                    >
+                                                        {showAiSecrets.nvidia ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                    </button>
+                                                </div>
+
+                                                <div className="flex items-center justify-between pt-1">
+                                                    <a
+                                                        href="https://build.nvidia.com/"
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 font-medium"
+                                                    >
+                                                        Get Free Key <ExternalLink className="w-3 h-3" />
+                                                    </a>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleTestProvider('nvidia')}
+                                                        disabled={testingProvider === 'nvidia'}
+                                                        className="btn btn-secondary text-xs py-1 px-2.5 flex items-center gap-1"
+                                                    >
+                                                        {testingProvider === 'nvidia' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+                                                        Test Key
+                                                    </button>
+                                                </div>
+
+                                                {testResults.nvidia && (
+                                                    <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+                                                        testResults.nvidia.status === 'success'
+                                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
+                                                            : testResults.nvidia.status === 'quota_exhausted'
+                                                            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200'
+                                                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200'
+                                                    }`}>
+                                                        {testResults.nvidia.status === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />}
+                                                        <span className="leading-tight">{testResults.nvidia.message} {testResults.nvidia.latency ? `(${testResults.nvidia.latency}ms)` : ''}</span>
                                                     </div>
                                                 )}
                                             </div>

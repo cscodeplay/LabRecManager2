@@ -88,6 +88,14 @@ export default function ThinkingStepsCollapsible({ thinkContent, defaultOpen = f
                 dot: 'bg-purple-500'
             };
         }
+        if (prov === 'nvidia' || mdl.includes('nvidia') || mdl.includes('nemotron')) {
+            return {
+                label: `NVIDIA NIM (${model ? (model.includes('/') ? model.split('/').pop() : model) : 'Llama 3.3 70B'})`,
+                shortLabel: 'NVIDIA NIM',
+                color: 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/70 dark:text-emerald-300 dark:border-emerald-800',
+                dot: 'bg-emerald-500'
+            };
+        }
         if (prov === 'github' || mdl.includes('gpt-4o')) {
             return {
                 label: `GitHub (${model || 'GPT-4o'})`,
