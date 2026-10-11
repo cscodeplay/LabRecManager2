@@ -348,6 +348,45 @@ export const ILLUSTRATIONS = {
   <ellipse cx="107" cy="285" rx="18" ry="8" fill="#1e293b"/>
   <ellipse cx="152" cy="285" rx="18" ry="8" fill="#1e293b"/>
 </svg>`
+    },
+    circle: {
+        title: 'Circle',
+        keywords: ['circle', 'round', 'disc', 'ring', 'circular', 'draw circle', 'a circle'],
+        width: 260,
+        height: 260,
+        svg: `<svg viewBox="0 0 260 260" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="130" cy="130" r="96" fill="#e0e7ff" fill-opacity="0.2" stroke="#3b82f6" stroke-width="3.5"/>
+  <circle cx="130" cy="130" r="4.5" fill="#1e40af"/>
+  <line x1="130" y1="130" x2="226" y2="130" stroke="#3b82f6" stroke-width="2" stroke-dasharray="4,3"/>
+  <text x="120" y="124" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#1e293b">O</text>
+  <text x="178" y="122" font-family="system-ui, sans-serif" font-size="13" font-style="italic" font-weight="bold" fill="#2563eb">r</text>
+</svg>`
+    },
+    concentric_circles: {
+        title: 'Concentric Circles',
+        keywords: ['concentric', 'concentric circle', 'concentric circles', 'nested circles', 'concentric rings', 'bullseye', 'draw concentric circles'],
+        width: 280,
+        height: 280,
+        svg: `<svg viewBox="0 0 280 280" xmlns="http://www.w3.org/2000/svg">
+  <!-- Concentric Outer Ring -->
+  <circle cx="140" cy="140" r="110" fill="#f8fafc" stroke="#3b82f6" stroke-width="3"/>
+  <!-- Concentric Middle Ring -->
+  <circle cx="140" cy="140" r="75" fill="#e0e7ff" fill-opacity="0.25" stroke="#3b82f6" stroke-width="3"/>
+  <!-- Concentric Inner Ring -->
+  <circle cx="140" cy="140" r="40" fill="#e0e7ff" fill-opacity="0.5" stroke="#3b82f6" stroke-width="3"/>
+  <!-- Common Center O -->
+  <circle cx="140" cy="140" r="4.5" fill="#1d4ed8"/>
+  <text x="128" y="134" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#1e293b">O</text>
+  <!-- Radius 1 (inner) -->
+  <line x1="140" y1="140" x2="180" y2="140" stroke="#2563eb" stroke-width="1.8" stroke-dasharray="3,2"/>
+  <text x="156" y="134" font-family="system-ui, sans-serif" font-size="11" font-weight="bold" fill="#2563eb">r₁</text>
+  <!-- Radius 2 (middle at 35 degrees) -->
+  <line x1="140" y1="140" x2="201.4" y2="97" stroke="#2563eb" stroke-width="1.8" stroke-dasharray="3,2"/>
+  <text x="176" y="112" font-family="system-ui, sans-serif" font-size="11" font-weight="bold" fill="#2563eb">r₂</text>
+  <!-- Radius 3 (outer at 65 degrees) -->
+  <line x1="140" y1="140" x2="186.5" y2="40.3" stroke="#2563eb" stroke-width="1.8" stroke-dasharray="3,2"/>
+  <text x="167" y="74" font-family="system-ui, sans-serif" font-size="11" font-weight="bold" fill="#2563eb">r₃</text>
+</svg>`
     }
 };
 
@@ -361,6 +400,10 @@ export function getBuiltinIllustration(query) {
     // Check exact keys first
     if (ILLUSTRATIONS[q]) return ILLUSTRATIONS[q];
 
+    // Direct check for concentric circles
+    if (q.includes('concentric')) return ILLUSTRATIONS.concentric_circles;
+    if (q.includes('circle') || q.includes('round') || q.includes('disc') || q.includes('ring')) return ILLUSTRATIONS.circle;
+
     // Check keywords
     for (const item of Object.values(ILLUSTRATIONS)) {
         if (item.keywords.some(kw => q.includes(kw) || kw.includes(q))) {
@@ -373,14 +416,24 @@ export function getBuiltinIllustration(query) {
 
 export function getBuiltinIllustrationSvg(query, strokeColor = '#3b82f6') {
     const item = getBuiltinIllustration(query);
-    if (item) return item.svg;
+    if (item) {
+        return item.svg.replace(/#3b82f6/g, strokeColor);
+    }
 
-    // Fallback: generic creative vector drawing with title badge
+    const q = (query || '').toLowerCase().trim();
+    if (q.includes('concentric')) {
+        return ILLUSTRATIONS.concentric_circles.svg.replace(/#3b82f6/g, strokeColor);
+    }
+    if (q.includes('circle') || q.includes('ring') || q.includes('disc') || q.includes('round')) {
+        return ILLUSTRATIONS.circle.svg.replace(/#3b82f6/g, strokeColor);
+    }
+
+    // Creative vector illustration fallback
     const title = (query || 'Drawing').replace(/^(draw\s+a\s+|draw\s+an\s+|draw\s+the\s+|draw\s+)/i, '').trim();
     return `<svg viewBox="0 0 280 280" xmlns="http://www.w3.org/2000/svg">
-  <rect x="20" y="20" width="240" height="240" rx="16" fill="#f8fafc" stroke="${strokeColor}" stroke-width="3" stroke-dasharray="6,4"/>
-  <circle cx="140" cy="120" r="50" fill="#e0e7ff" stroke="${strokeColor}" stroke-width="3"/>
-  <path d="M 120,120 L 135,135 L 165,105" fill="none" stroke="${strokeColor}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="140" y="205" text-anchor="middle" font-family="system-ui, sans-serif" font-size="16" font-weight="bold" fill="#334155">${title}</text>
+  <rect x="24" y="24" width="232" height="232" rx="20" fill="#f8fafc" stroke="${strokeColor}" stroke-width="2.5"/>
+  <circle cx="140" cy="115" r="48" fill="#e0e7ff" fill-opacity="0.5" stroke="${strokeColor}" stroke-width="2.5"/>
+  <path d="M 118,115 L 132,130 L 164,98" fill="none" stroke="${strokeColor}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="140" y="200" text-anchor="middle" font-family="system-ui, sans-serif" font-size="15" font-weight="bold" fill="#334155">${title}</text>
 </svg>`;
 }

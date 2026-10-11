@@ -9140,6 +9140,24 @@ export default function Whiteboard({
                         ctx.stroke();
                     }
                 }
+            } else if (shpObj.type === 'concentric_circles') {
+                const rx = Math.abs(shpObj.width / 2);
+                const ry = Math.abs(shpObj.height / 2);
+                const centerX = shpObj.x + rx;
+                const centerY = shpObj.y + ry;
+                const rings = Math.max(2, Math.min(6, Number(shpObj.rings) || 3));
+                const ringFactors = rings === 2 ? [0.55, 1.0] : rings === 4 ? [0.28, 0.52, 0.76, 1.0] : [0.38, 0.70, 1.0];
+                ringFactors.forEach((factor, idx) => {
+                    ctx.beginPath();
+                    ctx.ellipse(centerX, centerY, rx * factor, ry * factor, 0, 0, Math.PI * 2);
+                    if (idx === 0 && fill && fill !== 'transparent') ctx.fill();
+                    ctx.stroke();
+                });
+                // Draw center point O
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, 3.5, 0, Math.PI * 2);
+                ctx.fillStyle = shpObj.color;
+                ctx.fill();
             } else if (shpObj.type === 'circle') {
                 ctx.ellipse(shpObj.x + shpObj.width / 2, shpObj.y + shpObj.height / 2, Math.abs(shpObj.width / 2), Math.abs(shpObj.height / 2), 0, 0, Math.PI * 2);
                 if (fill && fill !== 'transparent') ctx.fill();
@@ -11540,7 +11558,28 @@ export default function Whiteboard({
         let w = 220, h = 220;
         let shapeProps = {};
 
-        if (type === 'cone') {
+        if (type === 'circle') {
+            w = 200;
+            h = 200;
+            shapeProps = {
+                type: 'circle',
+                showCenter: true,
+                centerLabel: 'O',
+                showRadius: true,
+                radiusLabel: 'r'
+            };
+        } else if (type === 'concentric_circles') {
+            w = 240;
+            h = 240;
+            shapeProps = {
+                type: 'concentric_circles',
+                rings: 3,
+                showCenter: true,
+                centerLabel: 'O',
+                showRadii: true,
+                radiiLabels: ['r₁', 'r₂', 'r₃']
+            };
+        } else if (type === 'cone') {
             w = 220;
             h = 240;
             shapeProps = {
@@ -12914,7 +12953,7 @@ export default function Whiteboard({
                     const cur = obj.width || 100;
                     return isRelative ? Math.max(10, cur + val) : Math.max(10, val);
                 };
-                setShapeObjects(prev => prev.map(s => targetShapeIds.includes(s.id) ? { ...s, width: updater(s), ...(s.type === 'circle' || s.type === 'square' ? { height: updater(s) } : {}) } : s));
+                setShapeObjects(prev => prev.map(s => targetShapeIds.includes(s.id) ? { ...s, width: updater(s), ...(s.type === 'circle' || s.type === 'square' || s.type === 'concentric_circles' ? { height: updater(s) } : {}) } : s));
                 setThreeDObjects(prev => prev.map(s => target3DIds.includes(s.id) ? { ...s, width: updater(s), height: updater(s) } : s));
                 saveToHistory();
                 return { speech: `Resized width to ${val}px.`, feedback: `Width: ${val}px` };
@@ -13016,6 +13055,111 @@ export default function Whiteboard({
 
             return null;
         };
+
+        // 0.0 Instant Geometric Shapes Fast Path (0ms Local Execution)
+        // Strictly handles direct shape commands like "draw circle", "draw concentric circles", "concentric circle"
+        const isDeleteCommand = /\b(delete|remove|erase|clear\s+the|destroy|drop)\b/i.test(txt);
+        const isCognitiveExplain =
+            txt.startsWith('explain') ||
+            txt.startsWith('teach') ||
+            txt.startsWith('solve') ||
+            txt.startsWith('how does') ||
+            txt.startsWith('how do') ||
+            txt.startsWith('what is') ||
+            txt.startsWith('what are') ||
+            txt.startsWith('derive') ||
+            txt.startsWith('prove') ||
+            txt.startsWith('calculate') ||
+            (txt.includes('formula') && (txt.includes('circle') || txt.includes('area') || txt.includes('what')));
+
+        if (!isDeleteCommand && !isCognitiveExplain) {
+            // Check Concentric Circles command first
+            if (/\b(concentric\s*circles?|nested\s*circles?|concentric\s*rings?|bullseye)\b/i.test(txt)) {
+                const ringsMatch = txt.match(/(\d+)\s*(?:concentric|nested|rings?|circles?)/i);
+                const rings = ringsMatch ? Math.max(2, Math.min(5, parseInt(ringsMatch[1], 10))) : 3;
+                const sizeMatch = txt.match(/(?:radius|size|diameter|width)\s*(\d+)/i);
+                const size = sizeMatch ? Math.max(80, parseInt(sizeMatch[1], 10) * 2) : 240;
+                const slot = findAvailableCanvasSpace(size, size);
+                const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - size / 2));
+                const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - size / 2));
+
+                await dispatchTeacherAction({
+                    x: targetX + Math.round(size / 2),
+                    y: targetY + Math.round(size / 2),
+                    actionText: `Drawing ${rings} concentric circles...`,
+                    duration: 320,
+                    onExecute: () => {
+                        spawnVoiceShape({
+                            type: 'concentric_circles',
+                            rings,
+                            x: targetX,
+                            y: targetY,
+                            width: size,
+                            height: size,
+                            showCenter: true,
+                            centerLabel: 'O',
+                            showRadii: true,
+                            radiiLabels: rings === 2 ? ['r', 'R'] : ['r₁', 'r₂', 'r₃'],
+                            color: color || '#3b82f6',
+                            strokeWidth: strokeWidth || 3,
+                            fillColor: fillColor && fillColor !== 'transparent' ? fillColor : 'transparent'
+                        });
+                    }
+                });
+                const speech = `Here are ${rings} concentric circles with a shared center point O.`;
+                if (aiSpeechEnabled) speakAiResponse(speech);
+                toast.success(speech, { icon: '🎯' });
+                setVoiceFeedback(speech);
+                conversationHistoryRef.current.push({ role: 'assistant', content: speech });
+                return;
+            }
+
+            // Check Circle command
+            const isCircleVoice =
+                (/\b(draw\s+a?\s*circle|create\s+a?\s*circle|add\s+a?\s*circle|^circle$|\bcircle\s+(?:with\s+)?(?:radius|size|of)\b|\bdraw\s+circle\b|\bcircle\b)/i.test(txt) ||
+                (/\b(round\s+shape|round\s+circle)\b/i.test(txt)) ||
+                (/\bround\b/i.test(txt) && !txt.includes('background') && !txt.includes('ground') && !txt.includes('around') && !txt.includes('surround'))) &&
+                !txt.includes('concentric') &&
+                !txt.includes('color');
+
+            if (isCircleVoice) {
+                const radMatch = txt.match(/(?:radius|rad|r|size|of)?\s*(\d+)/i);
+                const radius = radMatch ? Math.max(20, parseInt(radMatch[1], 10)) : 75;
+                const size = radius * 2;
+                const slot = findAvailableCanvasSpace(size, size);
+                const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - radius));
+                const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - radius));
+
+                await dispatchTeacherAction({
+                    x: targetX + radius,
+                    y: targetY + radius,
+                    actionText: `Drawing circle with radius ${radius}px...`,
+                    duration: 300,
+                    onExecute: () => {
+                        spawnVoiceShape({
+                            type: 'circle',
+                            x: targetX,
+                            y: targetY,
+                            width: size,
+                            height: size,
+                            showCenter: true,
+                            centerLabel: 'O',
+                            showRadius: true,
+                            radiusLabel: `r = ${radius}px`,
+                            color: color || '#3b82f6',
+                            strokeWidth: strokeWidth || 3,
+                            fillColor: fillColor && fillColor !== 'transparent' ? fillColor : 'transparent'
+                        });
+                    }
+                });
+                const speech = `Here is a circle with radius ${radius}px and center point O.`;
+                if (aiSpeechEnabled) speakAiResponse(speech);
+                toast.success(speech, { icon: '⭕' });
+                setVoiceFeedback(speech);
+                conversationHistoryRef.current.push({ role: 'assistant', content: speech });
+                return;
+            }
+        }
 
         const isExactLocalCommand = /^(pen|pencil|eraser|select|laser|clear|undo|redo|zoom in|zoom out|reset zoom|new page|next page|previous page)$/i.test(txt);
         
@@ -13143,6 +13287,9 @@ export default function Whiteboard({
                                 objW = Number(action.size) || Number(action.width) || 140; objH = objW;
                             } else if (action.objectType === 'rectangle') {
                                 objW = Number(action.width) || 220; objH = Number(action.height) || 140;
+                            } else if (action.objectType === 'concentric_circles') {
+                                objW = Number(action.width) || Number(action.size) || 240;
+                                objH = objW;
                             } else if (action.objectType === 'circle') {
                                 const r = Number(action.radius) || (action.width ? Number(action.width) / 2 : 75);
                                 objW = r * 2; objH = r * 2;
@@ -13252,6 +13399,23 @@ export default function Whiteboard({
                                         vertexLabels: action.vertexLabels || null,
                                         edgeLabels: action.edgeLabels || null
                                     });
+                                } else if (action.objectType === 'concentric_circles') {
+                                    const rings = Number(action.rings) || 3;
+                                    spawnVoiceShape({
+                                        type: 'concentric_circles',
+                                        rings: rings,
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: objH,
+                                        color: actColor,
+                                        strokeWidth: actStroke,
+                                        fillColor: actFill,
+                                        showCenter: action.showCenter !== false,
+                                        centerLabel: action.centerLabel || 'O',
+                                        showRadii: action.showRadii !== false,
+                                        radiiLabels: Array.isArray(action.radiiLabels) ? action.radiiLabels : (rings === 2 ? ['r', 'R'] : ['r₁', 'r₂', 'r₃'])
+                                    });
                                 } else if (action.objectType === 'circle') {
                                     const r = Math.round(objW / 2);
                                     spawnVoiceShape({
@@ -13343,21 +13507,55 @@ export default function Whiteboard({
                                     });
                                 } else if (action.objectType === 'drawing' || action.objectType === 'svg' || action.objectType === 'sketch' || action.svg || (action.objectType === 'text' && /\b(draw|sketch|illustrate)\b/i.test(rawText))) {
                                     const promptSubject = action.title || action.prompt || action.name || (rawText.match(/\b(?:draw|sketch|illustrate)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-]+)/i) || [])[1] || action.text || 'drawing';
-                                    const item = getBuiltinIllustration(promptSubject) || getBuiltinIllustration(rawText);
-                                    const rawSvg = action.svg || (item ? item.svg : getBuiltinIllustrationSvg(promptSubject, actColor));
-                                    const title = action.title || (item ? item.title : (promptSubject ? promptSubject.replace(/^(draw\s+a\s+|draw\s+an\s+|draw\s+)/i, '') : 'Drawing'));
-                                    spawnVoiceShape({
-                                        type: 'drawing',
-                                        title: title,
-                                        svg: rawSvg,
-                                        x: targetPx,
-                                        y: targetPy,
-                                        width: objW,
-                                        height: objH,
-                                        color: actColor,
-                                        strokeWidth: actStroke,
-                                        fillColor: actFill
-                                    });
+                                    if (/\bconcentric\b/i.test(promptSubject) || /\bconcentric\b/i.test(rawText)) {
+                                        spawnVoiceShape({
+                                            type: 'concentric_circles',
+                                            rings: 3,
+                                            x: targetPx,
+                                            y: targetPy,
+                                            width: objW || 240,
+                                            height: objH || 240,
+                                            color: actColor,
+                                            strokeWidth: actStroke,
+                                            fillColor: actFill,
+                                            showCenter: true,
+                                            centerLabel: 'O',
+                                            showRadii: true,
+                                            radiiLabels: ['r₁', 'r₂', 'r₃']
+                                        });
+                                    } else if (/\bcircle\b/i.test(promptSubject) || /\bcircle\b/i.test(rawText)) {
+                                        const r = Math.round((objW || 150) / 2);
+                                        spawnVoiceShape({
+                                            type: 'circle',
+                                            x: targetPx,
+                                            y: targetPy,
+                                            width: r * 2,
+                                            height: r * 2,
+                                            color: actColor,
+                                            strokeWidth: actStroke,
+                                            fillColor: actFill,
+                                            showCenter: true,
+                                            centerLabel: 'O',
+                                            showRadius: true,
+                                            radiusLabel: 'r'
+                                        });
+                                    } else {
+                                        const item = getBuiltinIllustration(promptSubject) || getBuiltinIllustration(rawText);
+                                        const rawSvg = action.svg || (item ? item.svg : getBuiltinIllustrationSvg(promptSubject, actColor));
+                                        const title = action.title || (item ? item.title : (promptSubject ? promptSubject.replace(/^(draw\s+a\s+|draw\s+an\s+|draw\s+)/i, '') : 'Drawing'));
+                                        spawnVoiceShape({
+                                            type: 'drawing',
+                                            title: title,
+                                            svg: rawSvg,
+                                            x: targetPx,
+                                            y: targetPy,
+                                            width: objW,
+                                            height: objH,
+                                            color: actColor,
+                                            strokeWidth: actStroke,
+                                            fillColor: actFill
+                                        });
+                                    }
                                 } else if (action.objectType === 'text') {
                                     const trimmed = (action.text || '').trim();
                                     const isEmoji = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F)$/u.test(trimmed);
@@ -13403,6 +13601,7 @@ export default function Whiteboard({
                             else if (action.objectType === 'sticky_note') teacherComment = 'Writing note...';
                             else if (action.objectType === 'text') teacherComment = 'Typing explanation...';
                             else if (action.objectType === 'right_triangle' || action.objectType === 'triangle') teacherComment = 'Constructing geometry diagram...';
+                            else if (action.objectType === 'concentric_circles') teacherComment = 'Drawing concentric circles...';
                             else if (action.objectType === 'circle') teacherComment = 'Drawing circle...';
                             else if (action.objectType === 'coordinate_system' || action.objectType === 'cartesian_plane') teacherComment = 'Plotting Cartesian grid...';
 
@@ -13565,9 +13764,10 @@ export default function Whiteboard({
                 }
             }
             
-            // If AI didn't recognize it or failed, check for local drawing command (strictly excluding 3D model requests)
+            // If AI didn't recognize it or failed, check for local drawing command (strictly excluding 3D models and geometry shapes)
             const is3DModelRequest = txt.includes('3d') || ['sphere', 'cube', 'box', 'pyramid', 'cylinder', 'cone', 'earth', 'sun', 'moon', 'mars', 'jupiter', 'saturn', 'rocket', 'atom', 'dna', 'molecule'].some(m => new RegExp(`\\b${m}\\b`, 'i').test(txt));
-            const localDrawMatch = !isAiRetry && !is3DModelRequest && /\b(draw|sketch|illustrate)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-\s]+)/i.exec(txt);
+            const isGeometricRequest = /\b(circle|concentric|square|rectangle|triangle|cone|cylinder|incline|plane|diamond|star|pentagon|hexagon)\b/i.test(txt);
+            const localDrawMatch = !isAiRetry && !is3DModelRequest && !isGeometricRequest && /\b(draw|sketch|illustrate)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-\s]+)/i.exec(txt);
             if (localDrawMatch) {
                 const query = localDrawMatch[2].trim();
                 const item = getBuiltinIllustration(query);
@@ -16603,6 +16803,24 @@ export default function Whiteboard({
                                                 <span className="text-[8px] text-slate-400 font-normal">0ms Stamp</span>
                                             </div>
                                             <div className="grid grid-cols-3 gap-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { stampQuickShape('circle'); setShowShapePicker(false); }}
+                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-rose-600/30 hover:border-rose-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    title="Instant Circle with Center O and Radius r"
+                                                >
+                                                    <Circle className="w-3 h-3 text-rose-400" />
+                                                    <span>Circle</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { stampQuickShape('concentric_circles'); setShowShapePicker(false); }}
+                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-blue-600/30 hover:border-blue-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    title="Instant Concentric Circles with common Center O"
+                                                >
+                                                    <span className="text-blue-400 font-bold text-xs leading-none">◎</span>
+                                                    <span>Concentric</span>
+                                                </button>
                                                 <button
                                                     type="button"
                                                     onClick={() => { stampQuickShape('cone'); setShowShapePicker(false); }}
@@ -19721,6 +19939,13 @@ export default function Whiteboard({
                                 {shapePreview.type === 'rectangle' && <rect x="0" y="0" width={shapePreview.width} height={shapePreview.height} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
                                 {shapePreview.type === 'rounded_rect' && <rect x="0" y="0" width={shapePreview.width} height={shapePreview.height} rx={Math.min(20, shapePreview.width/4, shapePreview.height/4)} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
                                 {shapePreview.type === 'circle' && <ellipse cx={shapePreview.width/2} cy={shapePreview.height/2} rx={shapePreview.width/2} ry={shapePreview.height/2} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
+                                {shapePreview.type === 'concentric_circles' && (
+                                    <g stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} fill="transparent">
+                                        <ellipse cx={shapePreview.width/2} cy={shapePreview.height/2} rx={shapePreview.width/2} ry={shapePreview.height/2} />
+                                        <ellipse cx={shapePreview.width/2} cy={shapePreview.height/2} rx={shapePreview.width * 0.35} ry={shapePreview.height * 0.35} />
+                                        <ellipse cx={shapePreview.width/2} cy={shapePreview.height/2} rx={shapePreview.width * 0.18} ry={shapePreview.height * 0.18} />
+                                    </g>
+                                )}
                                 {shapePreview.type === 'triangle' && <polygon points={`${shapePreview.width/2},0 0,${shapePreview.height} ${shapePreview.width},${shapePreview.height}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
                                 {shapePreview.type === 'right_triangle' && <polygon points={`0,0 0,${shapePreview.height} ${shapePreview.width},${shapePreview.height}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
                                 {shapePreview.type === 'cone' && (() => {
@@ -19852,6 +20077,65 @@ export default function Whiteboard({
                                         {eLabels[1] && renderSvgLabel(w / 2, h + 20, eLabels[1] || eLabels[0], 'middle', 13)}
                                         {eLabels[2] && renderSvgLabel(-14, h / 2 + 5, eLabels[2] || eLabels[1], 'end', 13)}
                                         {eLabels[3] && renderSvgLabel(w + 14, h / 2 + 5, eLabels[3] || eLabels[2] || eLabels[1], 'start', 13)}
+                                    </g>
+                                );
+                            } else if (shpObj.type === 'concentric_circles') {
+                                const rx = shpObj.width / 2;
+                                const ry = shpObj.height / 2;
+                                const rings = Math.max(2, Math.min(6, Number(shpObj.rings) || 3));
+                                const ringFactors = rings === 2 ? [0.55, 1.0] : rings === 4 ? [0.28, 0.52, 0.76, 1.0] : [0.38, 0.70, 1.0];
+                                const showC = shpObj.showCenter !== false;
+                                const showR = shpObj.showRadii !== false;
+                                const rLabels = Array.isArray(shpObj.radiiLabels) ? shpObj.radiiLabels : (rings === 2 ? ['r', 'R'] : ['r₁', 'r₂', 'r₃']);
+                                const angles = [0, Math.PI / 5, (2 * Math.PI) / 5, (3 * Math.PI) / 5];
+
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        {ringFactors.map((factor, idx) => {
+                                            const curRx = rx * factor;
+                                            const curRy = ry * factor;
+                                            return (
+                                                <ellipse
+                                                    key={idx}
+                                                    cx={rx}
+                                                    cy={ry}
+                                                    rx={curRx}
+                                                    ry={curRy}
+                                                    fill={idx === 0 ? fill : 'transparent'}
+                                                    stroke={shpObj.color}
+                                                    strokeWidth={shpObj.strokeWidth}
+                                                    strokeDasharray={dashArray}
+                                                />
+                                            );
+                                        })}
+                                        {showC && (
+                                            <>
+                                                <circle cx={rx} cy={ry} r={3.5} fill={shpObj.color} />
+                                                {renderSvgLabel(rx - 10, ry - 6, shpObj.centerLabel || 'O', 'end', 13)}
+                                            </>
+                                        )}
+                                        {showR && ringFactors.map((factor, idx) => {
+                                            const angle = angles[idx % angles.length];
+                                            const x2 = rx + rx * factor * Math.cos(angle);
+                                            const y2 = ry - ry * factor * Math.sin(angle);
+                                            const midX = rx + (rx * factor * Math.cos(angle)) * 0.56;
+                                            const midY = ry - (ry * factor * Math.sin(angle)) * 0.56;
+                                            const label = rLabels[idx] || `r${idx + 1}`;
+                                            return (
+                                                <g key={`rad-${idx}`}>
+                                                    <line
+                                                        x1={rx}
+                                                        y1={ry}
+                                                        x2={x2}
+                                                        y2={y2}
+                                                        stroke={shpObj.color}
+                                                        strokeWidth={Math.max(1.5, (shpObj.strokeWidth || 2) * 0.65)}
+                                                        strokeDasharray="4,3"
+                                                    />
+                                                    {renderSvgLabel(midX + 4, midY - 6, label, 'start', 11)}
+                                                </g>
+                                            );
+                                        })}
                                     </g>
                                 );
                             } else if (shpObj.type === 'circle') {
@@ -21359,7 +21643,7 @@ export default function Whiteboard({
                                     >
                                         {isLineLike ? (
                                             <span>L: {Math.round(Math.hypot((localEndX || 0) - (localStartX || 0), (localEndY || 0) - (localStartY || 0)) || shapeW)}px ({((Math.hypot((localEndX || 0) - (localStartX || 0), (localEndY || 0) - (localStartY || 0)) || shapeW) / 37.795).toFixed(1)}cm)</span>
-                                        ) : shpObj.type === 'circle' ? (
+                                        ) : (shpObj.type === 'circle' || shpObj.type === 'concentric_circles') ? (
                                             <span>⌀ {Math.round(shapeW)}px ({(shapeW / 37.795).toFixed(1)}cm) • R: {Math.round(shapeW / 2)}px</span>
                                         ) : (
                                             <>

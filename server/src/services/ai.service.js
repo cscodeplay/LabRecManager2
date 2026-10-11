@@ -2200,12 +2200,14 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
     },
     {
       "type": "CREATE_OBJECT",
-      "objectType": "right_triangle | triangle | circle | square | rectangle | coordinate_system | line | arrow | star | diamond | pentagon | hexagon | sticky_note | text | 3d_model | lesson_board | drawing",
+      "objectType": "right_triangle | triangle | circle | concentric_circles | square | rectangle | coordinate_system | line | arrow | star | diamond | pentagon | hexagon | sticky_note | text | 3d_model | lesson_board | drawing",
       "title": "<name or subject of drawing, e.g. 'cat', 'dog', 'car', 'tree', 'house', 'apple', 'flower', 'fish', 'rocket', 'robot'>",
       "svg": "<optional custom SVG string or omit to use builtin illustration library>",
       "width": "<number or omit>",
       "height": "<number or omit>",
       "radius": "<number for circle or omit>",
+      "rings": "<number of concentric rings e.g. 2 or 3>",
+      "radiiLabels": ["<string for inner radius e.g. 'r1'>", "<string for outer radius e.g. 'r2'>"],
       "size": "<number for square/star/triangle or omit>",
       "strokeWidth": "<number in pixels, e.g. 4 for 4px border>",
       "strokeStyle": "solid | dashed | dotted",
@@ -2217,10 +2219,11 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
       "angleLabels": { "<vertex_key, e.g. 'C'>": "<angle symbol e.g. 'θ' or '30°'>" },
       "dashedAltitude": "<true to draw dashed perpendicular altitude line on triangle with altitudeLabel 'h'>",
       "altitudeLabel": "<string for altitude e.g. 'h'>",
-      "showCenter": "<true to draw center dot on circle>",
+      "showCenter": "<true to draw center dot on circle or concentric_circles>",
       "centerLabel": "<string e.g. 'O'>",
       "showRadius": "<true to draw radius line on circle with radiusLabel>",
       "radiusLabel": "<string e.g. 'r = 5 cm'>",
+      "showRadii": "<true to show radius lines on concentric_circles>",
       "text": "<For text/sticky_notes: Generated content. Supports markdown and $$LaTeX$$ formulas. YOU MUST GENERATE THIS KNOWLEDGE YOURSELF.>",
       "fontSize": "<number for text>",
       "modelType": "cube | sphere | pyramid | cylinder | cone | earth | sun | moon | mars | jupiter | saturn | atom | dna | rocket",
@@ -2302,6 +2305,8 @@ CRITICAL RULES:
      - Use objectType: "triangle", vertexLabels: ["A", "B", "C"], edgeLabels: ["a", "b", "c"]. If area/height is involved, set dashedAltitude: true, altitudeLabel: "h".
   5. CIRCLE THEOREMS & DIMENSIONS:
      - Use objectType: "circle", showCenter: true, centerLabel: "O", showRadius: true, radiusLabel: "r" (or specific radius value e.g. "r = 7 cm").
+  5b. CONCENTRIC CIRCLES (Nested circles sharing center O):
+     - Use objectType: "concentric_circles", rings: 3, width: 240, height: 240, showCenter: true, centerLabel: "O", showRadii: true, radiiLabels: ["r₁", "r₂", "r₃"].
   6. RECTANGLE / SQUARE / AREA / PERIMETER:
      - Use objectType: "rectangle", vertexLabels: ["A", "B", "C", "D"], edgeLabels: ["length (l)", "width (w)"], showRightAngle: true.
   7. EXPLANATION:
@@ -2454,6 +2459,32 @@ Spoken input: "${text}"
                         parsed.actions = parsed.actions.map(act => {
                             if (act.type === 'CREATE_OBJECT' && act.objectType === 'text' && isDrawingCommand) {
                                 const subject = (text.match(/\b(?:draw|sketch|illustrate)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-]+)/i) || [])[1] || act.text || 'drawing';
+                                if (/concentric/i.test(subject) || /concentric/i.test(text)) {
+                                    return {
+                                        ...act,
+                                        objectType: 'concentric_circles',
+                                        rings: 3,
+                                        width: 240,
+                                        height: 240,
+                                        showCenter: true,
+                                        centerLabel: 'O',
+                                        showRadii: true,
+                                        radiiLabels: ['r₁', 'r₂', 'r₃']
+                                    };
+                                }
+                                if (/circle/i.test(subject) || /circle/i.test(text)) {
+                                    return {
+                                        ...act,
+                                        objectType: 'circle',
+                                        radius: 75,
+                                        width: 150,
+                                        height: 150,
+                                        showCenter: true,
+                                        centerLabel: 'O',
+                                        showRadius: true,
+                                        radiusLabel: 'r'
+                                    };
+                                }
                                 return {
                                     ...act,
                                     objectType: 'drawing',
@@ -2462,6 +2493,35 @@ Spoken input: "${text}"
                                     width: act.width || 280,
                                     height: act.height || 280
                                 };
+                            }
+                            if (act.type === 'CREATE_OBJECT' && (act.objectType === 'drawing' || act.objectType === 'sketch')) {
+                                const sub = act.title || text;
+                                if (/concentric/i.test(sub)) {
+                                    return {
+                                        ...act,
+                                        objectType: 'concentric_circles',
+                                        rings: 3,
+                                        width: 240,
+                                        height: 240,
+                                        showCenter: true,
+                                        centerLabel: 'O',
+                                        showRadii: true,
+                                        radiiLabels: ['r₁', 'r₂', 'r₃']
+                                    };
+                                }
+                                if (/circle/i.test(sub)) {
+                                    return {
+                                        ...act,
+                                        objectType: 'circle',
+                                        radius: 75,
+                                        width: 150,
+                                        height: 150,
+                                        showCenter: true,
+                                        centerLabel: 'O',
+                                        showRadius: true,
+                                        radiusLabel: 'r'
+                                    };
+                                }
                             }
                             return act;
                         });
@@ -2715,11 +2775,63 @@ Spoken input: "${text}"
             }
 
             // Shapes Drawing (strictly non-deletion)
+            else if (!isDeleteCommand && (low.includes('concentric') || (low.includes('nested') && low.includes('circle')))) {
+                const ringsMatch = low.match(/(\d+)\s*(?:concentric|nested|ring)/);
+                const rings = ringsMatch ? parseInt(ringsMatch[1], 10) : 3;
+                return {
+                    recognized: true,
+                    type: 'action',
+                    speechResponse: `I've drawn ${rings} concentric circles sharing common center point O.`,
+                    spokenFeedback: `Drawing concentric circles`,
+                    actions: [
+                        {
+                            type: 'CREATE_OBJECT',
+                            objectType: 'concentric_circles',
+                            rings: rings,
+                            width: 240,
+                            height: 240,
+                            showCenter: true,
+                            centerLabel: 'O',
+                            showRadii: true,
+                            radiiLabels: rings === 2 ? ['r', 'R'] : ['r₁', 'r₂', 'r₃']
+                        }
+                    ],
+                    suggestedFollowUps: [
+                        '📐 Show formulas for annular ring area',
+                        '🎨 Change ring colors',
+                        '📏 Add measurements',
+                        '📄 Clear board'
+                    ]
+                };
+            }
             else if (!isDeleteCommand && (low.includes('circle') || (/\b(round\s+shape|round\s+circle|disc|ring)\b/i.test(low)) || (/\bround\b/i.test(low) && !low.includes('background') && !low.includes('ground') && !low.includes('around') && !low.includes('surround')))) {
-                const num = (low.match(/\d+/) || [60])[0];
-                translatedCommand = `draw circle radius ${num}`;
-                intent = 'draw_circle';
-                spokenFeedback = `Drawing circle with radius ${num}px`;
+                const num = (low.match(/\d+/) || [70])[0];
+                const r = parseInt(num, 10);
+                return {
+                    recognized: true,
+                    type: 'action',
+                    speechResponse: `Drawing circle with radius ${r}px.`,
+                    spokenFeedback: `Drawing circle with radius ${r}px`,
+                    actions: [
+                        {
+                            type: 'CREATE_OBJECT',
+                            objectType: 'circle',
+                            radius: r,
+                            width: r * 2,
+                            height: r * 2,
+                            showCenter: true,
+                            centerLabel: 'O',
+                            showRadius: true,
+                            radiusLabel: `r = ${r}px`
+                        }
+                    ],
+                    suggestedFollowUps: [
+                        '📐 Calculate circle area (πr²)',
+                        '⭕ Calculate circumference (2πr)',
+                        '🎨 Change circle color',
+                        '📄 Clear board'
+                    ]
+                };
             }
             else if (!isDeleteCommand && low.includes('square')) {
                 const num = (low.match(/\d+/) || [100])[0];
@@ -2799,7 +2911,7 @@ Spoken input: "${text}"
             else if (!isDeleteCommand && (/\b(draw|sketch|illustrate|paint|spawn|render)\b/i.test(low))) {
                 const artMatch = low.match(/\b(?:draw|sketch|illustrate|paint|spawn|render)\s+(?:a\s+|an\s+|the\s+)?([a-z0-9_\-]+)/i);
                 let subject = artMatch ? artMatch[1].trim() : 'drawing';
-                const isGeometric = ['circle', 'square', 'rectangle', 'triangle', 'star', 'diamond', 'pentagon', 'hexagon', 'arrow', 'line'].includes(subject);
+                const isGeometric = ['circle', 'concentric', 'concentric_circles', 'concentric_circle', 'square', 'rectangle', 'triangle', 'star', 'diamond', 'pentagon', 'hexagon', 'arrow', 'line'].includes(subject) || low.includes('concentric') || low.includes('circle');
                 const is3DModel = ['sphere', 'cube', 'box', 'pyramid', 'cylinder', 'cone', 'earth', 'sun', 'moon', 'mars', 'jupiter', 'saturn', 'rocket', 'atom', 'dna', 'molecule'].includes(subject) || low.includes('3d');
 
                 if (is3DModel) {
