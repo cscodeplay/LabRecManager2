@@ -39,6 +39,7 @@ async function fetchWebSnippets(topic, examType, examYear, customSource = '') {
                 if (cleanContent.length > 50) {
                     results.push({
                         source: domain,
+                        url: sourceTrimmed,
                         snippet: cleanContent.slice(0, 3500)
                     });
                     return results;
@@ -80,21 +81,47 @@ async function fetchWebSnippets(topic, examType, examYear, customSource = '') {
         while ((match = blockRegex.exec(res.data)) !== null && results.length < 5) {
             const block = match[1];
             const snippetMatch = block.match(/<a class="result__snippet[^>]*>([\s\S]*?)<\/a>/);
-            const urlMatch = block.match(/<a class="result__url"[^>]*>([\s\S]*?)<\/a>/) || block.match(/href="[^"]*uddg=([^"&]+)[^"]*"/);
-            if (snippetMatch) {
-                const snippet = snippetMatch[1].replace(/<[^>]+>/g, '').trim();
-                let source = sourceTrimmed || 'web_search';
-                if (urlMatch) {
-                    const rawUrl = urlMatch[1] ? decodeURIComponent(urlMatch[1]).replace(/<[^>]+>/g, '').trim() : '';
-                    try {
-                        const parsed = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`);
-                        source = parsed.hostname.replace(/^www\./, '');
-                    } catch (_) {
-                        source = rawUrl.split('/')[0] || (sourceTrimmed || 'web_search');
+            
+            // Extract the authentic landing URL for manual verification
+            let landingUrl = '';
+            const uddgMatch = block.match(/uddg=([^"&]+)/);
+            if (uddgMatch) {
+                try {
+                    landingUrl = decodeURIComponent(uddgMatch[1]);
+                } catch (_) {
+                    landingUrl = uddgMatch[1];
+                }
+            } else {
+                const linkHrefMatch = block.match(/<a class="result__a"[^>]*href="([^"]+)"/i) || block.match(/<a class="result__url"[^>]*href="([^"]+)"/i);
+                if (linkHrefMatch && !linkHrefMatch[1].startsWith('/')) {
+                    landingUrl = linkHrefMatch[1];
+                } else {
+                    const textUrlMatch = block.match(/<a class="result__url"[^>]*>([\s\S]*?)<\/a>/i);
+                    if (textUrlMatch) {
+                        const raw = textUrlMatch[1].replace(/<[^>]+>/g, '').trim();
+                        landingUrl = raw.startsWith('http') ? raw : `https://${raw}`;
                     }
                 }
+            }
+
+            let source = sourceTrimmed || 'web_search';
+            if (landingUrl) {
+                try {
+                    const parsed = new URL(landingUrl);
+                    source = parsed.hostname.replace(/^www\./, '');
+                } catch (_) {
+                    source = landingUrl.split('/')[0] || (sourceTrimmed || 'web_search');
+                }
+            }
+
+            if (snippetMatch) {
+                const snippet = snippetMatch[1].replace(/<[^>]+>/g, '').trim();
                 if (snippet) {
-                    results.push({ source, snippet });
+                    results.push({
+                        source,
+                        url: landingUrl || (source.startsWith('http') ? source : `https://${source}`),
+                        snippet
+                    });
                 }
             }
         }
@@ -104,7 +131,8 @@ async function fetchWebSnippets(topic, examType, examYear, customSource = '') {
             const matches = res.data.match(/<a class="result__snippet[^>]*>([\s\S]*?)<\/a>/g) || [];
             matches.slice(0, 5).forEach(m => {
                 const s = m.replace(/<[^>]+>/g, '').trim();
-                if (s) results.push({ source: sourceTrimmed || 'web_search', snippet: s });
+                const fallbackUrl = sourceTrimmed ? (sourceTrimmed.startsWith('http') ? sourceTrimmed : `https://${sourceTrimmed}`) : 'https://duckduckgo.com';
+                if (s) results.push({ source: sourceTrimmed || 'web_search', url: fallbackUrl, snippet: s });
             });
         }
 
@@ -746,7 +774,7 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
 
     const webSnippets = await fetchWebSnippets(detectedTopic, searchTargetExam, searchTargetYear, customSource);
     const webContextBlock = webSnippets.length > 0
-        ? `\nAUTHENTIC WEB EXAMINATION SOURCES & SYLLABUS REFERENCES:\n${webSnippets.map((s, i) => `[Source: ${s.source}] ${s.snippet}`).join('\n')}\n`
+        ? `\nAUTHENTIC WEB EXAMINATION SOURCES & SYLLABUS REFERENCES:\n${webSnippets.map((s, i) => `[Source: ${s.source} | Direct Verification Link: ${s.url}] ${s.snippet}`).join('\n')}\n`
         : '';
 
     // If customSource was explicitly specified by the user and no snippets or bank questions found:
@@ -809,7 +837,7 @@ ${customSource ? `CUSTOM SOURCE REQUIREMENT: Questions MUST be strictly derived 
     {"noAuthenticQuestions": true, "reason": "No authentic questions found for ${selectedExams.join(', ')}"}
 - AUTHENTICITY & SOURCE CLASSIFICATION:
   * "isMock": Set to false if this is an authentic, officially conducted past exam paper question (PYQ). Set to true if this is an unofficial practice/mock test question.
-  * "webSource": Set to the specific web domain or portal where this problem originated (e.g. "${customSource ? customSource.trim() : (webSnippets[0]?.source || (primaryExam ? primaryExam.toLowerCase() + '.ac.in' : 'official_paper'))}").
+  * "webSource": Set to the EXACT direct web link / URL where this problem was accessed (e.g. from the [Direct Verification Link: ...] entries provided in the web context) so examiners can manually click and verify the question.
 - QUESTION FORMATS:
 ${forceFillInBlank
     ? '  * ALL questions must be Numerical Answer Type (NAT) / Fill-in-the-blank. Set "type": "fill_in_the_blank", "options": [], and "correctOption" to the exact numerical or text answer.'
@@ -860,7 +888,7 @@ JSON SCHEMA TO RETURN (VALID JSON ONLY, NO MARKDOWN, NO CODEBLOCKS):
     "correctOption": "A",
     "explanation": "Step-by-step mathematical derivation...",
     "isMock": false,
-    "webSource": "${customSource ? customSource.trim() : (webSnippets[0]?.source || (primaryExam ? primaryExam.toLowerCase() + '.ac.in' : 'official_paper'))}",
+    "webSource": "${customSource ? (customSource.startsWith('http') ? customSource : `https://${customSource}`) : (webSnippets[0]?.url || (primaryExam ? `https://${primaryExam.toLowerCase()}.ac.in` : 'Official Archive'))}",
     "examOccurrences": [
       { "exam": "${primaryExam || 'General'}", "year": "${primaryYear || '2024'}" }
     ],
@@ -954,7 +982,27 @@ Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
             }
 
             const isMockVal = typeof q.isMock === 'boolean' ? q.isMock : false;
-            const webSourceVal = q.webSource ? String(q.webSource).trim() : (webSnippets[0]?.source || 'web_search');
+            let webSourceVal = q.webSource ? String(q.webSource).trim() : '';
+
+            // Ensure webSource is a verifiable URL
+            if (webSourceVal) {
+                // Check if webSource matches a snippet's URL or domain
+                const matchedSnippet = webSnippets.find(s => 
+                    (s.url && s.url.toLowerCase().includes(webSourceVal.toLowerCase())) ||
+                    (s.source && (s.source.toLowerCase().includes(webSourceVal.toLowerCase()) || webSourceVal.toLowerCase().includes(s.source.toLowerCase())))
+                );
+                if (matchedSnippet && matchedSnippet.url) {
+                    webSourceVal = matchedSnippet.url;
+                } else if (!/^https?:\/\//i.test(webSourceVal) && webSourceVal.includes('.')) {
+                    webSourceVal = `https://${webSourceVal}`;
+                }
+            } else if (webSnippets[0]?.url) {
+                webSourceVal = webSnippets[0].url;
+            } else if (customSource.trim()) {
+                webSourceVal = customSource.trim().startsWith('http') ? customSource.trim() : `https://${customSource.trim()}`;
+            } else {
+                webSourceVal = isMockVal ? 'Mock / Practice Exam' : (primaryExam ? `${primaryExam} Official Archive` : 'Official Archive');
+            }
 
             return {
                 id: idx + 1,

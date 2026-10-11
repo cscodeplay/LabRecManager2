@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import {
     ChevronLeft, ChevronRight, Check, Send, FileText,
-    Sparkles, Eye, LayoutGrid, List, RefreshCw
+    Sparkles, Eye, LayoutGrid, List, RefreshCw, ExternalLink
 } from 'lucide-react';
 import MathRenderer from './MathRenderer';
 import QuestionDiagram from './QuestionDiagram';
@@ -85,7 +85,7 @@ export default function QuizPreviewPalette({
                     </span>
                 </div>
 
-                {/* Official vs Mock Exam Badge & Web Source (Preview only) */}
+                {/* Official vs Mock Exam Badge & Web Source with Direct Verification Link */}
                 <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border shadow-xs ${
                         q.isMock
@@ -96,12 +96,37 @@ export default function QuizPreviewPalette({
                         <span>{q.isMock ? 'Mock / Practice Exam' : 'Official Exam PYQ'}</span>
                     </span>
 
-                    {q.webSource && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                            <span>🌐</span>
-                            <span>Source: {q.webSource}</span>
-                        </span>
-                    )}
+                    {q.webSource && (() => {
+                        const isLink = /^https?:\/\//i.test(q.webSource) || q.webSource.includes('.');
+                        const href = /^https?:\/\//i.test(q.webSource) ? q.webSource : `https://${q.webSource}`;
+                        let displayText = q.webSource;
+                        try {
+                            if (isLink) {
+                                const u = new URL(href);
+                                displayText = u.hostname.replace(/^www\./, '') + (u.pathname.length > 1 ? (u.pathname.length > 25 ? u.pathname.slice(0, 25) + '...' : u.pathname) : '');
+                            }
+                        } catch (_) {}
+
+                        return isLink ? (
+                            <a
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={`Verify authentic source link: ${href}`}
+                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 hover:bg-sky-100 dark:hover:bg-sky-900/60 hover:border-sky-300 transition shadow-xs group cursor-pointer"
+                            >
+                                <ExternalLink className="w-3 h-3 text-sky-500 group-hover:scale-110 transition-transform shrink-0" />
+                                <span className="text-slate-400 font-normal">Source:</span>
+                                <span className="underline decoration-sky-300 underline-offset-2 truncate max-w-[200px]">{displayText}</span>
+                                <span className="text-[9px] font-mono opacity-70">↗</span>
+                            </a>
+                        ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                <span>🌐</span>
+                                <span>Source: {q.webSource}</span>
+                            </span>
+                        );
+                    })()}
                 </div>
 
                 {/* Technical / Crisp Diagram (if present) */}
