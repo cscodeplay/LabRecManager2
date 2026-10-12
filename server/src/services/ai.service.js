@@ -3159,20 +3159,23 @@ Spoken input: "${text}"
                 low.startsWith('derive') ||
                 low.startsWith('prove') ||
                 low.startsWith('calculate') ||
+                low.startsWith('display') ||
+                low.startsWith('show') ||
+                low.startsWith('find') ||
+                low.startsWith('list') ||
+                low.startsWith('give') ||
+                low.startsWith('write') ||
+                low.startsWith('evaluate') ||
+                low.startsWith('simplify') ||
+                low.startsWith('expand') ||
+                low.startsWith('compute') ||
+                low.startsWith('determine') ||
                 low.startsWith('why') ||
-                low.includes('newton') ||
-                low.includes('law of motion') ||
-                low.includes('magnetic') ||
-                low.includes('photosynthesis') ||
-                low.includes('pythagor') ||
-                low.includes('ohm') ||
-                low.includes('formula') ||
-                low.includes('equation') ||
-                low.includes('diagram') ||
-                low.includes('flowchart') ||
-                low.includes('3d model') ||
-                low.includes('structure of') ||
-                low.includes('cycle');
+                low.includes('?') ||
+                /\b(ap|gp|hp|arithmetic progression|geometric progression|progression|sequence|series|common difference|first term|nth term)\b/i.test(low) ||
+                /\b(newton|law of motion|laws of motion|three law|magnetic|lorentz|photosynthesis|pythagor|ohm|formula|equation|diagram|flowchart|3d model|structure of|cycle)\b/i.test(low) ||
+                /\b(integral|derivative|calculus|differential|matrix|matrices|determinant|eigen|polynomial|quadratic|linear algebra|trigonometr|sin|cos|tan)\b/i.test(low) ||
+                /\b(ideal gas|mole|pressure|temperature|volume|gas constant|thermodynamic|stoichiometry|molarity|reaction|velocity|acceleration|momentum|gravity|kinetic|potential)\b/i.test(low);
 
             const hasCanvasDirectives = /\b(draw|sketch|illustrate|3d|model|circle|square|triangle|rectangle|line|arrow|move|delete|clear|zoom|page|color|border|stroke)\b/i.test(low);
             const systemPromptToUse = (isCognitiveQuery && !hasCanvasDirectives)
@@ -3425,27 +3428,25 @@ PEDAGOGICAL RULES:
                 }
             } catch (err) {
                 console.warn('[AIService] executeChatCompletion failed for whiteboard voice:', err.message);
-                if (err.isQuotaExhausted || isCognitiveQuery) {
-                    // USER DIRECTIVE: Strictly NO local fallbacks or hidden errors. Return actual detailed error!
-                    const providerDetails = err.attemptErrors && err.attemptErrors.length > 0
-                        ? `\n\n**Provider Attempts:**\n${err.attemptErrors.map(a => `- **${a.provider}** (${a.model || 'default'}): \`${a.error}\``).join('\n')}`
-                        : '';
+                // USER DIRECTIVE: Strictly NO local fallbacks or hidden errors. Return actual detailed error!
+                const providerDetails = err.attemptErrors && err.attemptErrors.length > 0
+                    ? `\n\n**Provider Attempts:**\n${err.attemptErrors.map(a => `- **${a.provider}** (${a.model || 'default'}): \`${a.error}\``).join('\n')}`
+                    : '';
 
-                    return {
-                        recognized: false,
-                        success: false,
-                        quotaExhausted: Boolean(err.isQuotaExhausted),
-                        error: err.message,
-                        attemptErrors: err.attemptErrors || [],
-                        spokenFeedback: `AI Error: ${err.message.slice(0, 120)}`,
-                        speechResponse: `AI request failed: ${err.message.slice(0, 150)}`,
-                        solutionMarkdown: `### ⚠️ AI Model Error\n\n**Question / Command:** "${text}"\n\n**Actual Error Details:**\n\`\`\`\n${err.message}\n\`\`\`${providerDetails}\n\n**Next Steps:**\n- Check your API keys and quotas in **Settings**.\n- If using free tier (e.g. Groq/Gemini), rate limits or context limits may be reached.\n- Configure a paid plan (OpenAI, Anthropic, DeepSeek) in Settings for high RPM and uninterrupted requests.\n- Click **Retry** or run the command again.`,
-                        suggestedFollowUps: [
-                            `🔄 Retry: "${text.slice(0, 30)}"`,
-                            '⚙️ Check API Settings'
-                        ]
-                    };
-                }
+                return {
+                    recognized: false,
+                    success: false,
+                    quotaExhausted: Boolean(err.isQuotaExhausted),
+                    error: err.message,
+                    attemptErrors: err.attemptErrors || [],
+                    spokenFeedback: `AI Error: ${err.message.slice(0, 120)}`,
+                    speechResponse: `AI request failed: ${err.message.slice(0, 150)}`,
+                    solutionMarkdown: `### ⚠️ AI Model Error\n\n**Question / Command:** "${text}"\n\n**Actual Error Details:**\n\`\`\`\n${err.message}\n\`\`\`${providerDetails}\n\n**Next Steps:**\n- Check your API keys and quotas in **Settings**.\n- If using free tier (e.g. Groq/Gemini), rate limits or context limits may be reached.\n- Configure a paid plan (OpenAI, Anthropic, DeepSeek) in Settings for high RPM and uninterrupted requests.\n- Click **Retry** or run the command again.`,
+                    suggestedFollowUps: [
+                        `🔄 Retry: "${text.slice(0, 30)}"`,
+                        '⚙️ Check API Settings'
+                    ]
+                };
             }
 
             // Direct standard UI button shortcuts (only if non-cognitive and recognized verbatim)

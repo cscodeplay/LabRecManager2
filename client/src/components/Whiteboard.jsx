@@ -14817,6 +14817,7 @@ export default function Whiteboard({
                     context: {
                         module: 'whiteboard',
                         currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard',
+                        preferredProvider: whiteboardAiProvider !== 'auto' ? whiteboardAiProvider : undefined,
                         ...getWhiteboardSpatialContext()
                     }
                 });
@@ -14824,19 +14825,43 @@ export default function Whiteboard({
                 const data = response?.data?.data;
                 setIsAiThinking(false);
 
-                if (data?.recognized && Array.isArray(data.actions)) {
-                    const hasDeleteActions = data.actions.some(a => a.type === 'DELETE_OBJECT');
+                // Handle AI Model Error or Quota Exhaustion immediately - NEVER drop to local canvas matcher!
+                if (data?.error || data?.solutionMarkdown?.includes('⚠️ AI Model Error') || data?.success === false || data?.quotaExhausted) {
+                    const rawError = data?.error || 'AI Model execution failed.';
+                    const speech = data?.speechResponse || `AI model failed: ${rawError.slice(0, 140)}`;
+                    setAiSolutionData({
+                        question: rawText,
+                        isError: true,
+                        error: rawError,
+                        attemptErrors: data?.attemptErrors || [],
+                        speechResponse: speech,
+                        solutionMarkdown: data?.solutionMarkdown || `### ⚠️ AI Model Error\n\n**Question:** "${rawText}"\n\n**Actual Error Details:**\n\`\`\`\n${rawError}\n\`\`\`\n\n**Next Steps:**\n- Check your API keys and quotas in **Settings**.\n- Configure a paid plan (OpenAI, Anthropic, DeepSeek) in Settings for higher RPM and uninterrupted requests.\n- Click **Retry** below to try again.`,
+                        suggestedFollowUps: data?.suggestedFollowUps || [
+                            `🔄 Retry: "${rawText.slice(0, 30)}"`,
+                            '⚙️ Check API Settings'
+                        ]
+                    });
+                    setVoiceFeedback(`❌ ${rawError.slice(0, 80)}`);
+                    toast.error(rawError, { id: 'ai-voice-error', duration: 9000 });
+                    if (aiSpeechEnabled) speakAiResponse(speech);
+                    return;
+                }
+
+                if (data?.recognized && (Array.isArray(data.actions) || data.solutionMarkdown || data.speechResponse || data.type === 'solution')) {
+                    const actionsToRun = Array.isArray(data.actions) ? data.actions : [];
+                    const hasDeleteActions = actionsToRun.some(a => a.type === 'DELETE_OBJECT');
 
                     // If NOT a deletion action, provide standard narration & solution card immediately
-                    if (!hasDeleteActions && data.speechResponse) {
-                        conversationHistoryRef.current.push({ role: 'assistant', content: data.speechResponse });
-                        if (aiSpeechEnabled) speakAiResponse(data.speechResponse);
-                        toast.success(data.speechResponse, { icon: '🤖' });
-                        setVoiceFeedback(data.speechResponse);
+                    if (!hasDeleteActions && (data.speechResponse || data.solutionMarkdown)) {
+                        const speech = data.speechResponse || 'Here is the step-by-step solution.';
+                        conversationHistoryRef.current.push({ role: 'assistant', content: speech });
+                        if (aiSpeechEnabled) speakAiResponse(speech);
+                        toast.success(speech, { icon: '🤖' });
+                        setVoiceFeedback(speech);
                         setAiSolutionData({
                             question: rawText,
-                            speechResponse: data.speechResponse,
-                            solutionMarkdown: data.solutionMarkdown || data.speechResponse,
+                            speechResponse: speech,
+                            solutionMarkdown: data.solutionMarkdown || speech,
                             suggestedFollowUps: data.suggestedFollowUps || [],
                             canvasAction: data.canvasAction,
                             curves: data.canvasAction?.curves || data.curves,
@@ -14860,7 +14885,7 @@ export default function Whiteboard({
                     // 2. Anchor concentric circles to shared center (centerCx, centerCy) so findAvailableCanvasSpace does not scatter them
                     const isConcentricVoice = /\b(concentric|nested|rings?)\b/i.test(rawText);
                     const normalizedActions = [];
-                    for (const act of data.actions) {
+                    for (const act of actionsToRun) {
                         if (act.type === 'CREATE_OBJECT' && act.objectType === 'concentric_circles') {
                             const validRadii = Array.isArray(act.radii) && act.radii.length >= 2
                                 ? act.radii.map(Number).filter(r => !isNaN(r) && r > 0)
@@ -15691,13 +15716,25 @@ export default function Whiteboard({
             } catch (err) {
                 console.warn('[Whiteboard Voice AI] Translation error:', err.message);
                 setIsAiThinking(false);
-                const isQuota = Boolean(err.response?.status === 429 || (err.message && /quota|rate limit|429/i.test(err.message)));
-                if (isQuota) {
-                    const quotaMsg = err.response?.data?.message || 'AI Quota Exhausted across all configured providers.';
-                    setVoiceFeedback('⚠️ AI Quota Exhausted');
-                    toast.error(quotaMsg, { id: 'ai-voice-quota', duration: 7000 });
-                    return;
-                }
+                const serverError = err.response?.data?.message || err.response?.data?.data?.error || err.message;
+                const errData = err.response?.data?.data;
+                const displayError = serverError || 'AI Service communication error';
+                setAiSolutionData({
+                    question: rawText,
+                    isError: true,
+                    error: displayError,
+                    attemptErrors: errData?.attemptErrors || [],
+                    speechResponse: `AI model failed: ${displayError.slice(0, 140)}`,
+                    solutionMarkdown: errData?.solutionMarkdown || `### ⚠️ AI Model Error\n\n**Request:** "${rawText}"\n\n**Actual Error Details:**\n\`\`\`\n${displayError}\n\`\`\`\n\n**Next Steps:**\n- Check your API keys and quotas in **Settings**.\n- Configure a paid plan (OpenAI, Anthropic, DeepSeek) in Settings for higher RPM and uninterrupted requests.\n- Click **Retry** below to try again.`,
+                    suggestedFollowUps: [
+                        `🔄 Retry: "${rawText.slice(0, 30)}"`,
+                        '⚙️ Open API Settings'
+                    ]
+                });
+                setVoiceFeedback(`❌ ${displayError.slice(0, 80)}`);
+                toast.error(displayError, { id: 'ai-voice-network-error', duration: 9000 });
+                if (aiSpeechEnabled) speakAiResponse(`AI request failed: ${displayError.slice(0, 120)}`);
+                return;
             }
             
             // If AI didn't recognize it or failed, check for local drawing command (strictly excluding 3D models and geometry shapes)
@@ -15941,15 +15978,23 @@ export default function Whiteboard({
             txt.startsWith('derive') ||
             txt.startsWith('prove') ||
             txt.startsWith('calculate') ||
-            txt.includes('newton') ||
-            txt.includes('laws of motion') ||
-            txt.includes('law of motion') ||
-            txt.includes('three law') ||
-            txt.includes('magnetic field') ||
-            txt.includes('lorentz force') ||
-            txt.includes('photosynthesis') ||
-            txt.includes('pythagor') ||
-            (txt.includes('formula') && (txt.includes('explain') || txt.includes('what') || txt.includes('show') || txt.includes('tell') || txt.includes('magnetic')));
+            txt.startsWith('display') ||
+            txt.startsWith('show') ||
+            txt.startsWith('find') ||
+            txt.startsWith('list') ||
+            txt.startsWith('give') ||
+            txt.startsWith('write') ||
+            txt.startsWith('evaluate') ||
+            txt.startsWith('simplify') ||
+            txt.startsWith('expand') ||
+            txt.startsWith('compute') ||
+            txt.startsWith('determine') ||
+            txt.startsWith('why') ||
+            txt.includes('?') ||
+            /\b(ap|gp|hp|arithmetic progression|geometric progression|progression|sequence|series|common difference|first term|nth term)\b/i.test(txt) ||
+            /\b(newton|law of motion|laws of motion|three law|magnetic|lorentz|photosynthesis|pythagor|ohm|formula|equation|diagram|flowchart|3d model|structure of|cycle)\b/i.test(txt) ||
+            /\b(integral|derivative|calculus|differential|matrix|matrices|determinant|eigen|polynomial|quadratic|linear algebra|trigonometr|sin|cos|tan)\b/i.test(txt) ||
+            /\b(ideal gas|mole|pressure|temperature|volume|gas constant|thermodynamic|stoichiometry|molarity|reaction|velocity|acceleration|momentum|gravity|kinetic|potential)\b/i.test(txt);
 
         if (isCognitiveQuery && !isAiRetry) {
             setVoiceFeedback(`🧠 AI Tutor: "${rawText}"...`);
