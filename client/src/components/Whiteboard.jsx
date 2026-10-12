@@ -5518,17 +5518,36 @@ export default function Whiteboard({
         const spawnY = Math.round(-panOffset.y + cy / zoomLevel);
 
         if (shapeData.is3D || shapeData.modelType) {
-            executeAiCanvasAction({
-                type: 'insert_3d_model',
-                modelType: shapeData.modelType || 'vector_space_3d',
-                dimensions: shapeData.dimensions || null,
-                color: shapeData.color || '#6366f1',
-                width: shapeData.width || 260,
-                height: shapeData.height || 260,
+            const rawType = (shapeData.modelType || 'vector_space_3d').toLowerCase();
+            const dims = shapeData.dimensions || getDefaultDimensions(rawType);
+            const new3D = {
+                id: `3d_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                modelType: rawType,
+                meshData: null,
+                name: `3D ${rawType.charAt(0).toUpperCase() + rawType.slice(1)}`,
                 x: spawnX,
                 y: spawnY,
-                showDimensions: true
-            });
+                width: shapeData.width || 260,
+                height: shapeData.height || 260,
+                color: shapeData.color || '#6366f1',
+                rotX: -25,
+                rotY: 45,
+                rotZ: 0,
+                rotation: 0,
+                dimensions: dims,
+                unit: 'cm',
+                showDimensions: true,
+                projectionMode: 'isometric',
+                materialStyle: 'shaded'
+            };
+            setThreeDObjects(prev => [...prev, new3D]);
+            setSelected3DIds([new3D.id]);
+            setSelectedShapeIds([]);
+            setSelectedTextIds([]);
+            setSelectedImageId(null);
+            setSelectedImageIds([]);
+            saveToHistory();
+            toast.success(`Inserted 3D ${rawType.replace('_', ' ')}!`, { icon: '📦' });
             return;
         }
 
@@ -5594,7 +5613,7 @@ export default function Whiteboard({
         setSelectedShapeIds([newShape.id]);
         if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
         saveToHistory();
-    }, [canvasWrapperRef, panOffset, zoomLevel, socket, sessionId, saveToHistory, setShapeObjects, setSelectedShapeIds, executeAiCanvasAction]);
+    }, [canvasWrapperRef, panOffset, zoomLevel, socket, sessionId, saveToHistory, setShapeObjects, setSelectedShapeIds, setThreeDObjects, setSelected3DIds, setSelectedTextIds, setSelectedImageId, setSelectedImageIds]);
     useEffect(() => {
         if (!imageDragState) return;
 
@@ -11993,16 +12012,33 @@ export default function Whiteboard({
         let diagShapeProps = {};
 
         if (is3DModel) {
-            executeAiCanvasAction({
-                type: 'insert_3d_model',
+            const dims = data.dimensions || getDefaultDimensions(dType);
+            const new3D = {
+                id: `3d_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
                 modelType: dType,
+                meshData: null,
+                name: `3D ${dType.charAt(0).toUpperCase() + dType.slice(1)}`,
                 x: startX,
                 y: startY,
                 width: diagW,
                 height: diagH,
+                color: '#6366f1',
+                rotX: -25,
+                rotY: 45,
+                rotZ: 0,
+                rotation: 0,
+                dimensions: dims,
+                unit: 'cm',
                 showDimensions: true,
-                dimensions: data.dimensions || null
-            });
+                projectionMode: 'isometric',
+                materialStyle: 'shaded'
+            };
+            setThreeDObjects(prev => [...prev, new3D]);
+            setSelected3DIds([new3D.id]);
+            setSelectedShapeIds([]);
+            setSelectedTextIds([]);
+            setSelectedImageId(null);
+            setSelectedImageIds([]);
         } else if (dType === 'cartesian_plane') {
             diagShapeProps = {
                 type: 'coordinate_system',
