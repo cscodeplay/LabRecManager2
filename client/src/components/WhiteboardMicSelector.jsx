@@ -122,12 +122,12 @@ export default function WhiteboardMicSelector({
     return (
         <div
             ref={popoverRef}
-            className="absolute bottom-16 right-0 sm:right-auto sm:left-1/2 sm:-translate-x-1/2 z-50 w-84 bg-slate-900/98 backdrop-blur-xl border border-slate-700/80 shadow-2xl rounded-2xl text-slate-100 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150"
-            style={{ width: '340px' }}
+            className="absolute bottom-16 right-0 sm:right-auto sm:left-1/2 sm:-translate-x-1/2 z-50 w-84 bg-black border border-neutral-700 shadow-2xl rounded-2xl text-slate-100 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150"
+            style={{ width: '340px', backgroundColor: '#000000', opacity: 1 }}
             onClick={(e) => e.stopPropagation()}
         >
             {/* Header */}
-            <div className="px-4 py-3 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between">
+            <div className="px-4 py-3 border-b border-neutral-800 bg-black flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-400">
                         <Settings className="w-4 h-4" />
@@ -143,7 +143,7 @@ export default function WhiteboardMicSelector({
                         type="button"
                         onClick={refreshDevices}
                         disabled={isLoading}
-                        className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition disabled:opacity-50"
+                        className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-neutral-800 transition disabled:opacity-50"
                         title="Refresh devices"
                     >
                         <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -151,7 +151,7 @@ export default function WhiteboardMicSelector({
                     <button
                         type="button"
                         onClick={onClose}
-                        className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                        className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-neutral-800 transition"
                         title="Close"
                     >
                         <X className="w-3.5 h-3.5" />
@@ -160,14 +160,14 @@ export default function WhiteboardMicSelector({
             </div>
 
             {/* Navigation Tabs */}
-            <div className="grid grid-cols-2 p-1.5 bg-slate-950/40 border-b border-slate-800 text-xs font-semibold">
+            <div className="grid grid-cols-2 p-1.5 bg-black border-b border-neutral-800 text-xs font-semibold">
                 <button
                     type="button"
                     onClick={() => setActiveTab('mic')}
                     className={`py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition ${
                         activeTab === 'mic'
                             ? 'bg-indigo-600 text-white shadow-sm'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-neutral-900'
                     }`}
                 >
                     <Mic className="w-3.5 h-3.5" />
@@ -179,7 +179,7 @@ export default function WhiteboardMicSelector({
                     className={`py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition ${
                         activeTab === 'ai_voice'
                             ? 'bg-purple-600 text-white shadow-sm'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-neutral-900'
                     }`}
                 >
                     <Bot className="w-3.5 h-3.5" />
@@ -188,28 +188,28 @@ export default function WhiteboardMicSelector({
             </div>
 
             {/* AI Bot Co-Pilot & Whiteboard Tutor Hub Launcher Card */}
-            <div className="p-2 bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-purple-950/40 border-b border-purple-500/20">
+            <div className="p-2 bg-black border-b border-neutral-800">
                 <button
                     type="button"
                     onClick={() => {
                         onClose?.();
                         onOpenAiAssistantModal?.();
                     }}
-                    className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs flex items-center justify-between shadow-md shadow-purple-500/20 transition group"
+                    className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white font-semibold text-xs flex items-center justify-between shadow-md transition group"
                 >
                     <div className="flex items-center gap-2">
                         <Bot className="w-4 h-4 text-purple-200 group-hover:rotate-12 transition-transform" />
                         <span>AI Bot Co-Pilot & Tutor</span>
                     </div>
-                    <span className="text-[10px] font-mono opacity-80 bg-black/30 px-1.5 py-0.5 rounded border border-white/20">Ctrl+Shift+A</span>
+                    <span className="text-[10px] font-mono opacity-80 bg-black/50 px-1.5 py-0.5 rounded border border-white/20">Ctrl+Shift+A</span>
                 </button>
             </div>
 
             {/* Tab 1: Microphone Devices & Live Meter */}
             {activeTab === 'mic' && (
-                <div className="p-4 space-y-3.5">
+                <div className="p-4 space-y-3.5 bg-black">
                     {/* Live Audio Level Meter */}
-                    <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+                    <div className="bg-[#0c0c0c] border border-neutral-800 rounded-xl p-3">
                         <div className="flex items-center justify-between text-[11px] font-medium mb-1.5">
                             <span className="text-slate-400 flex items-center gap-1.5">
                                 <span className={`w-2 h-2 rounded-full ${isListening ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
@@ -219,7 +219,7 @@ export default function WhiteboardMicSelector({
                         </div>
 
                         {/* Visual LED Level Bar */}
-                        <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden p-0.5 flex items-center">
+                        <div className="w-full bg-[#1c1c1c] h-2.5 rounded-full overflow-hidden p-0.5 flex items-center">
                             <div
                                 className="h-full rounded-full transition-all duration-75"
                                 style={{
@@ -271,8 +271,8 @@ export default function WhiteboardMicSelector({
                                             onClick={() => onSelectDevice?.(device.deviceId)}
                                             className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition border ${
                                                 isSelected
-                                                    ? 'bg-indigo-600/20 border-indigo-500/50 text-white font-medium shadow-sm'
-                                                    : 'bg-slate-800/40 border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                    ? 'bg-[#1e1b4b] border-indigo-500 text-white font-medium shadow-sm'
+                                                    : 'bg-[#0f0f0f] border-neutral-800 text-slate-300 hover:bg-[#1a1a1a] hover:text-white'
                                             }`}
                                         >
                                             <div className="flex items-center gap-2 truncate pr-2">
@@ -290,7 +290,7 @@ export default function WhiteboardMicSelector({
                     </div>
 
                     {/* Quick Toggle: Live Closed Captions (CC) */}
-                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+                    <div className="pt-2 border-t border-neutral-800 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <Subtitles className="w-4 h-4 text-amber-400" />
                             <div>
@@ -302,7 +302,7 @@ export default function WhiteboardMicSelector({
                             type="button"
                             onClick={onToggleClosedCaptions}
                             className={`w-9 h-5 rounded-full transition-colors relative p-0.5 flex items-center ${
-                                showClosedCaptions ? 'bg-indigo-600' : 'bg-slate-700'
+                                showClosedCaptions ? 'bg-indigo-600' : 'bg-neutral-800'
                             }`}
                         >
                             <span
@@ -317,9 +317,9 @@ export default function WhiteboardMicSelector({
 
             {/* Tab 2: Speech AI Synthesizer (TTS) & Responses */}
             {activeTab === 'ai_voice' && (
-                <div className="p-4 space-y-3.5">
+                <div className="p-4 space-y-3.5 bg-black">
                     {/* Master AI Speech Toggle */}
-                    <div className="bg-purple-950/30 border border-purple-800/40 rounded-xl p-3 flex items-center justify-between">
+                    <div className="bg-[#0e0720] border border-purple-900/60 rounded-xl p-3 flex items-center justify-between">
                         <div className="flex items-center gap-2.5">
                             <div className="p-2 rounded-lg bg-purple-500/20 text-purple-400">
                                 <Sparkles className="w-4 h-4" />
@@ -333,7 +333,7 @@ export default function WhiteboardMicSelector({
                             type="button"
                             onClick={onToggleAiSpeech}
                             className={`w-9 h-5 rounded-full transition-colors relative p-0.5 flex items-center ${
-                                aiSpeechEnabled ? 'bg-purple-600' : 'bg-slate-700'
+                                aiSpeechEnabled ? 'bg-purple-600' : 'bg-neutral-800'
                             }`}
                         >
                             <span
@@ -374,8 +374,8 @@ export default function WhiteboardMicSelector({
                                 }}
                                 className={`px-2 py-1.5 rounded-lg text-[11px] font-bold text-center border transition flex flex-col items-center gap-0.5 ${
                                     voiceProfile === 'samantha'
-                                        ? 'bg-purple-600/30 border-purple-500 text-purple-200 shadow-xs'
-                                        : 'bg-slate-900 border-slate-700/60 text-slate-300 hover:border-slate-600'
+                                        ? 'bg-purple-950 border-purple-500 text-purple-200 shadow-xs'
+                                        : 'bg-[#0f0f0f] border-neutral-800 text-slate-300 hover:border-neutral-700'
                                 }`}
                             >
                                 <span>👩‍🏫 Samantha</span>
@@ -391,8 +391,8 @@ export default function WhiteboardMicSelector({
                                 }}
                                 className={`px-2 py-1.5 rounded-lg text-[11px] font-bold text-center border transition flex flex-col items-center gap-0.5 ${
                                     voiceProfile === 'daniel'
-                                        ? 'bg-purple-600/30 border-purple-500 text-purple-200 shadow-xs'
-                                        : 'bg-slate-900 border-slate-700/60 text-slate-300 hover:border-slate-600'
+                                        ? 'bg-purple-950 border-purple-500 text-purple-200 shadow-xs'
+                                        : 'bg-[#0f0f0f] border-neutral-800 text-slate-300 hover:border-neutral-700'
                                 }`}
                             >
                                 <span>👨‍🏫 Daniel</span>
@@ -408,8 +408,8 @@ export default function WhiteboardMicSelector({
                                 }}
                                 className={`px-2 py-1.5 rounded-lg text-[11px] font-bold text-center border transition flex flex-col items-center gap-0.5 ${
                                     voiceProfile === 'rishi'
-                                        ? 'bg-purple-600/30 border-purple-500 text-purple-200 shadow-xs'
-                                        : 'bg-slate-900 border-slate-700/60 text-slate-300 hover:border-slate-600'
+                                        ? 'bg-purple-950 border-purple-500 text-purple-200 shadow-xs'
+                                        : 'bg-[#0f0f0f] border-neutral-800 text-slate-300 hover:border-neutral-700'
                                 }`}
                             >
                                 <span>👨‍🏫 Rishi</span>
@@ -423,7 +423,7 @@ export default function WhiteboardMicSelector({
                                 const found = voices.find(v => v.name === e.target.value);
                                 if (found) onSelectVoice?.(found);
                             }}
-                            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-purple-500 truncate"
+                            className="w-full bg-[#0c0c0c] border border-neutral-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-purple-500 truncate"
                         >
                             {voices.length === 0 ? (
                                 <option value="">Default System Voice</option>
@@ -456,7 +456,7 @@ export default function WhiteboardMicSelector({
                             step="0.1"
                             value={speechRate}
                             onChange={(e) => onChangeSpeechRate?.(parseFloat(e.target.value))}
-                            className="w-full accent-purple-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+                            className="w-full accent-purple-500 h-1.5 bg-neutral-800 rounded-lg cursor-pointer"
                         />
                         <div className="flex justify-between text-[9px] text-slate-500 mt-1">
                             <span>Slower (0.7x)</span>
@@ -466,7 +466,7 @@ export default function WhiteboardMicSelector({
                     </div>
 
                     {/* Interactive Help Hint */}
-                    <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-2.5 text-[10px] text-slate-400 leading-relaxed">
+                    <div className="bg-[#0c0c0c] border border-neutral-800 rounded-xl p-2.5 text-[10px] text-slate-400 leading-relaxed">
                         <span className="font-bold text-purple-400 block mb-0.5">💡 Interactive Voice Assistant:</span>
                         Say <span className="text-white font-mono">&quot;Solve 2x + 6 = 18&quot;</span> or <span className="text-white font-mono">&quot;Explain Pythagoras theorem&quot;</span> to hear the AI speak solutions aloud!
                     </div>
