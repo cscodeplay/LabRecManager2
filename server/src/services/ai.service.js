@@ -2400,8 +2400,35 @@ Output MUST be ONLY valid JSON matching this schema:
                 return defaultColor;
             };
 
+            const normalizeSpokenNumbers = (str) => {
+                if (!str || typeof str !== 'string') return '';
+                let res = str;
+                const wordMap = [
+                    ['thirty-five', '35'], ['thirty five', '35'],
+                    ['forty-five', '45'], ['forty five', '45'],
+                    ['fifty-five', '55'], ['fifty five', '55'],
+                    ['sixty-five', '65'], ['sixty five', '65'],
+                    ['twenty-five', '25'], ['twenty five', '25'],
+                    ['one hundred', '100'],
+                    ['twenty', '20'], ['thirty', '30'], ['forty', '40'],
+                    ['fifty', '50'], ['sixty', '60'], ['seventy', '70'],
+                    ['eighty', '80'], ['ninety', '90'],
+                    ['zero', '0'], ['one', '1'], ['two', '2'], ['three', '3'],
+                    ['four', '4'], ['five', '5'], ['six', '6'], ['seven', '7'],
+                    ['eight', '8'], ['nine', '9'], ['ten', '10'],
+                    ['eleven', '11'], ['twelve', '12'], ['thirteen', '13'],
+                    ['fourteen', '14'], ['fifteen', '15'], ['sixteen', '16'],
+                    ['seventeen', '17'], ['eighteen', '18'], ['nineteen', '19']
+                ];
+                for (const [w, n] of wordMap) {
+                    res = res.replace(new RegExp(`\\b${w}\\b`, 'gi'), n);
+                }
+                return res;
+            };
+
             const parseRightTriangleParams = (inputText) => {
-                const lowTxt = (inputText || '').toLowerCase();
+                const normalized = normalizeSpokenNumbers(inputText || '');
+                const lowTxt = normalized.toLowerCase();
 
                 // 1. Detect Angle (e.g. "base angle of 30 degree", "angle 30 degrees", "30 degree angle", "theta = 30°", "30 deg", "30-60-90")
                 let parsedAngle = null;
@@ -2623,7 +2650,8 @@ Output MUST be ONLY valid JSON matching this schema:
             };
 
             const parseTriangleParams = (inputText) => {
-                const lowTxt = (inputText || '').toLowerCase();
+                const normalized = normalizeSpokenNumbers(inputText || '');
+                const lowTxt = normalized.toLowerCase();
                 const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(lowTxt);
                 const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(lowTxt);
                 const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
