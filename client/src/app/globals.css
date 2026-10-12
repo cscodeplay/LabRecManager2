@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Caveat:wght@400..700&family=Patrick+Hand&family=Kalam:wght@400;700&family=Architects+Daughter&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -21,6 +21,22 @@
 
   html.dark body {
     @apply bg-slate-950 text-slate-100;
+  }
+
+  .font-caveat {
+    font-family: 'Caveat', cursive, sans-serif;
+  }
+  .font-patrick {
+    font-family: 'Patrick Hand', cursive, sans-serif;
+  }
+  .font-kalam {
+    font-family: 'Kalam', cursive, sans-serif;
+  }
+  .font-architect {
+    font-family: 'Architects Daughter', cursive, sans-serif;
+  }
+  .font-handwriting {
+    font-family: 'Caveat', 'Patrick Hand', 'Kalam', cursive, sans-serif;
   }
 }
 

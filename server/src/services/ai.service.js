@@ -2375,6 +2375,297 @@ Output MUST be ONLY valid JSON matching this schema:
                 return { r, radiusLabel };
             };
 
+            const parseColorFromText = (inputText, defaultColor = '#3b82f6') => {
+                const lowTxt = (inputText || '').toLowerCase();
+                const palette = {
+                    cyan: '#06b6d4',
+                    blue: '#3b82f6',
+                    red: '#ef4444',
+                    green: '#10b981',
+                    yellow: '#f59e0b',
+                    orange: '#f97316',
+                    purple: '#8b5cf6',
+                    violet: '#7c3aed',
+                    pink: '#ec4899',
+                    black: '#000000',
+                    white: '#ffffff',
+                    emerald: '#10b981',
+                    slate: '#64748b'
+                };
+                for (const [name, hex] of Object.entries(palette)) {
+                    if (new RegExp(`\\b${name}\\b`, 'i').test(lowTxt)) {
+                        return hex;
+                    }
+                }
+                return defaultColor;
+            };
+
+            const parseRightTriangleParams = (inputText) => {
+                const lowTxt = (inputText || '').toLowerCase();
+
+                // 1. Detect Angle (e.g. "base angle of 30 degree", "angle 30 degrees", "30 degree angle", "theta = 30°", "30 deg", "30-60-90")
+                let parsedAngle = null;
+                const angleMatch = lowTxt.match(/(?:base\s+angle|angle\s+of|angle|theta|θ)\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(?:deg|degrees?|°)?/i) ||
+                                   lowTxt.match(/(\d+(?:\.\d+)?)\s*(?:deg|degrees?|°)\s*(?:base\s+angle|angle)?/i);
+
+                if (angleMatch) {
+                    const val = parseFloat(angleMatch[1]);
+                    if (!isNaN(val) && val > 0 && val < 90) {
+                        parsedAngle = val;
+                    }
+                } else if (/\b30[\s-]60[\s-]90\b/i.test(lowTxt)) {
+                    parsedAngle = 30;
+                } else if (/\b45[\s-]45[\s-]90\b/i.test(lowTxt)) {
+                    parsedAngle = 45;
+                }
+
+                const hasAngle = parsedAngle !== null;
+                const theta = hasAngle ? parsedAngle : null;
+                const thetaRad = hasAngle ? (theta * Math.PI) / 180 : null;
+                const topAngle = hasAngle ? Math.round((90 - theta) * 10) / 10 : null;
+
+                // 2. Units (cm, mm, px)
+                const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(lowTxt);
+                const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(lowTxt);
+                const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
+
+                // Remove angle phrase before searching for side lengths so "30 degree" is not parsed as side length 30
+                let txtWithoutAngle = lowTxt;
+                if (angleMatch && angleMatch[0]) {
+                    txtWithoutAngle = txtWithoutAngle.replace(angleMatch[0], ' ');
+                }
+                txtWithoutAngle = txtWithoutAngle.replace(/\b(?:deg|degrees?|°)\b/gi, ' ');
+
+                // 3. Named Side Extractions (base, height/altitude/leg, hypotenuse)
+                const baseNamedMatch = txtWithoutAngle.match(/(?:base|bottom|width)\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i);
+                const altNamedMatch = txtWithoutAngle.match(/(?:height|altitude|leg|perpendicular|vertical)\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i);
+                const hypNamedMatch = txtWithoutAngle.match(/(?:hypotenuse|hyp)\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i);
+
+                // 4. Two Sides Pattern (e.g. "sides 4cm and 3cm", "4 by 3")
+                const twoSidesMatch = txtWithoutAngle.match(/(?:sides?|legs?|with)?\s*(\d+(?:\.\d+)?)\s*(?:cm|mm|px)?\s*(?:and|by|x|\*|\s*,\s*)\s*(?:sides?|legs?|with)?\s*(\d+(?:\.\d+)?)\s*(?:cm|mm|px)?/i);
+
+                let baseVal = null;
+                let altVal = null;
+                let hypVal = null;
+                let hasExplicitSides = false;
+
+                if (baseNamedMatch) {
+                    baseVal = parseFloat(baseNamedMatch[1]);
+                    hasExplicitSides = true;
+                }
+                if (altNamedMatch) {
+                    altVal = parseFloat(altNamedMatch[1]);
+                    hasExplicitSides = true;
+                }
+                if (hypNamedMatch) {
+                    hypVal = parseFloat(hypNamedMatch[1]);
+                    hasExplicitSides = true;
+                }
+
+                if (!baseVal && !altVal && !hypVal && twoSidesMatch) {
+                    const num1 = parseFloat(twoSidesMatch[1]);
+                    const num2 = parseFloat(twoSidesMatch[2]);
+                    if (!isNaN(num1) && !isNaN(num2)) {
+                        baseVal = Math.max(num1, num2);
+                        altVal = Math.min(num1, num2);
+                        hasExplicitSides = true;
+                    }
+                }
+
+                // Check for remaining raw numbers if still no side found
+                if (!baseVal && !altVal && !hypVal) {
+                    const numRegex = /(\d+(?:\.\d+)?)\s*(cm|mm|px)?/gi;
+                    const nums = [];
+                    let m;
+                    while ((m = numRegex.exec(txtWithoutAngle)) !== null) {
+                        const val = parseFloat(m[1]);
+                        if (!isNaN(val) && val > 0) nums.push(val);
+                    }
+                    if (nums.length >= 2) {
+                        baseVal = Math.max(nums[0], nums[1]);
+                        altVal = Math.min(nums[0], nums[1]);
+                        hasExplicitSides = true;
+                    } else if (nums.length === 1 && !hasAngle) {
+                        baseVal = nums[0];
+                        altVal = Math.round(nums[0] * 0.75);
+                        hasExplicitSides = true;
+                    } else if (nums.length === 1 && hasAngle) {
+                        baseVal = nums[0];
+                        hasExplicitSides = true;
+                    }
+                }
+
+                // 5. Complete Trigonometric Triangle Solutions
+                if (hasAngle) {
+                    if (baseVal && !altVal && !hypVal) {
+                        altVal = baseVal * Math.tan(thetaRad);
+                        hypVal = baseVal / Math.cos(thetaRad);
+                    } else if (altVal && !baseVal && !hypVal) {
+                        baseVal = altVal / Math.tan(thetaRad);
+                        hypVal = altVal / Math.sin(thetaRad);
+                    } else if (hypVal && !baseVal && !altVal) {
+                        baseVal = hypVal * Math.cos(thetaRad);
+                        altVal = hypVal * Math.sin(thetaRad);
+                    } else if (!hasExplicitSides) {
+                        // Visually balanced canonical right triangle for given theta
+                        if (theta <= 35) {
+                            baseVal = 8;
+                            altVal = baseVal * Math.tan(thetaRad);
+                            hypVal = baseVal / Math.cos(thetaRad);
+                        } else if (theta >= 55) {
+                            altVal = 8;
+                            baseVal = altVal / Math.tan(thetaRad);
+                            hypVal = altVal / Math.sin(thetaRad);
+                        } else {
+                            baseVal = 6;
+                            altVal = baseVal * Math.tan(thetaRad);
+                            hypVal = baseVal / Math.cos(thetaRad);
+                        }
+                    }
+                } else {
+                    if (!baseVal) baseVal = 4;
+                    if (!altVal) altVal = 3;
+                    hypVal = Math.sqrt(baseVal * baseVal + altVal * altVal);
+                }
+
+                if (!hypVal && baseVal && altVal) {
+                    hypVal = Math.sqrt(baseVal * baseVal + altVal * altVal);
+                }
+                if (!altVal && baseVal && hypVal) {
+                    altVal = Math.sqrt(Math.max(1, hypVal * hypVal - baseVal * baseVal));
+                }
+
+                const formatDim = (v) => {
+                    if (v === null || v === undefined) return '';
+                    const rounded = Math.round(v * 10) / 10;
+                    return rounded.toString();
+                };
+
+                const fBase = formatDim(baseVal);
+                const fAlt = formatDim(altVal);
+                const fHyp = formatDim(hypVal);
+
+                // 6. Canvas Pixel Dimensions (w, h)
+                let w = 240, h = 160;
+                if (hasAngle && !hasExplicitSides) {
+                    if (theta <= 35) {
+                        w = 260;
+                        h = Math.max(70, Math.min(220, Math.round(w * Math.tan(thetaRad))));
+                    } else if (theta >= 55) {
+                        h = 240;
+                        w = Math.max(70, Math.min(260, Math.round(h / Math.tan(thetaRad))));
+                    } else {
+                        w = 210;
+                        h = Math.max(80, Math.min(240, Math.round(w * Math.tan(thetaRad))));
+                    }
+                } else if (hasExplicitSides) {
+                    if (unit === 'cm') {
+                        const scale = Math.min(45, Math.max(22, Math.round(240 / baseVal)));
+                        w = Math.max(90, Math.min(450, Math.round(baseVal * scale)));
+                        h = Math.max(65, Math.min(320, Math.round(altVal * scale)));
+                    } else if (unit === 'mm') {
+                        const scale = Math.min(4.5, Math.max(2.2, Math.round(240 / baseVal)));
+                        w = Math.max(90, Math.min(450, Math.round(baseVal * scale)));
+                        h = Math.max(65, Math.min(320, Math.round(altVal * scale)));
+                    } else {
+                        if (baseVal <= 15) {
+                            const scale = Math.min(45, Math.max(22, Math.round(240 / baseVal)));
+                            w = Math.max(90, Math.min(450, Math.round(baseVal * scale)));
+                            h = Math.max(65, Math.min(320, Math.round(altVal * scale)));
+                        } else {
+                            w = Math.max(90, Math.min(500, Math.round(baseVal)));
+                            h = Math.max(65, Math.min(350, Math.round(altVal)));
+                        }
+                    }
+                }
+
+                // 7. Labels
+                let labelAlt = 'b';
+                let labelBase = 'a';
+                let labelHyp = 'c';
+
+                if (hasExplicitSides) {
+                    labelAlt = `${fAlt}${unit}`;
+                    labelBase = `${fBase}${unit}`;
+                    labelHyp = `${fHyp}${unit}`;
+                }
+
+                const thetaLabel = hasAngle ? `${theta}°` : null;
+                const showTopAngle = hasAngle && (/\b(30[\s-]60[\s-]90|top\s+angle|both\s+angles)\b/i.test(lowTxt));
+                const angleLabels = hasAngle ? {
+                    C: `${theta}°`,
+                    theta: `${theta}°`,
+                    A: `${topAngle}°`,
+                    B: '90°'
+                } : null;
+
+                // 8. Natural Speech Response
+                let speech = 'Here is a right-angled triangle.';
+                if (hasAngle && hasExplicitSides) {
+                    speech = `Here is a right-angled triangle with base ${labelBase}, base angle ${theta}°, altitude ${labelAlt}, and hypotenuse ${labelHyp}.`;
+                } else if (hasAngle) {
+                    speech = `Here is a right-angled triangle with a base angle of ${theta}° and top angle of ${topAngle}°.`;
+                } else if (hasExplicitSides) {
+                    speech = `Here is a right-angled triangle with sides ${labelAlt} and ${labelBase}, and hypotenuse ${labelHyp}.`;
+                }
+
+                return {
+                    w,
+                    h,
+                    edgeLabels: [labelAlt, labelBase, labelHyp],
+                    vertexLabels: ['A', 'B', 'C'],
+                    thetaLabel,
+                    angleLabels,
+                    showTopAngle,
+                    showRightAngle: true,
+                    speechResponse: speech
+                };
+            };
+
+            const parseTriangleParams = (inputText) => {
+                const lowTxt = (inputText || '').toLowerCase();
+                const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(lowTxt);
+                const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(lowTxt);
+                const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
+
+                const isEquilateral = /\b(equilateral)\b/i.test(lowTxt);
+                const baseMatch = lowTxt.match(/(?:base|bottom|width)\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i);
+                const heightMatch = lowTxt.match(/(?:height|altitude|h)\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i);
+                const sideMatch = lowTxt.match(/(?:side|size|of)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i);
+
+                let w = 220, h = 160;
+                let edgeLabels = ['c', 'a', 'b'];
+                let altitudeLabel = 'h';
+                let speech = 'Here is a triangle with altitude and vertex labels.';
+
+                if (isEquilateral) {
+                    const s = sideMatch ? parseFloat(sideMatch[1]) : 5;
+                    const sLabel = `${s}${unit}`;
+                    const hVal = s * 0.866;
+                    const scale = unit === 'cm' ? Math.min(45, Math.max(25, Math.round(220 / s))) : (s <= 15 ? 30 : 1);
+                    w = Math.round(s * scale);
+                    h = Math.round(hVal * scale);
+                    edgeLabels = [sLabel, sLabel, sLabel];
+                    altitudeLabel = `${hVal.toFixed(1)}${unit}`;
+                    speech = `Here is an equilateral triangle with side ${sLabel} and 60° angles.`;
+                } else if (baseMatch || heightMatch) {
+                    const b = baseMatch ? parseFloat(baseMatch[1]) : 6;
+                    const hVal = heightMatch ? parseFloat(heightMatch[1]) : 4;
+                    const slant = Math.sqrt((b / 2) * (b / 2) + hVal * hVal);
+                    const bLabel = `${b}${unit}`;
+                    const hLabel = `${hVal}${unit}`;
+                    const sLabel = `${slant.toFixed(1)}${unit}`;
+                    const scale = unit === 'cm' ? Math.min(45, Math.max(25, Math.round(220 / b))) : (b <= 15 ? 30 : 1);
+                    w = Math.round(b * scale);
+                    h = Math.round(hVal * scale);
+                    edgeLabels = [sLabel, bLabel, sLabel];
+                    altitudeLabel = hLabel;
+                    speech = `Here is a triangle with base ${bLabel} and height ${hLabel}.`;
+                }
+
+                return { w, h, edgeLabels, altitudeLabel, speechResponse: speech };
+            };
+
             const whiteboardSystemPrompt = `You are an advanced Spatial & Generative AI reasoning engine for an interactive Whiteboard.
 You receive the user's spoken command along with a JSON representation of the current whiteboard state (objects, sizes, spatial coordinates, pages).
 Your goal is to parse the user's intent, perform any required knowledge-base reasoning (like deriving formulas, writing code, or generating scientific explanations), and return a sequence of autonomous actions to modify the canvas.
@@ -2672,15 +2963,64 @@ Spoken input: "${text}"
                 if (parsed && (parsed.translatedCommand || parsed.recognized || parsed.actions || parsed.type === 'solution' || parsed.type === 'canvas_generation')) {
                     if (Array.isArray(parsed.actions)) {
                         parsed.actions = parsed.actions.flatMap(act => {
-                            if (act.type === 'CREATE_OBJECT' && act.objectType === 'concentric_circles') {
-                                return parseConcentricCircles(text, act.width || 240);
-                            }
-                            if (act.type === 'CREATE_OBJECT' && (act.objectType === 'drawing' || act.objectType === 'sketch' || act.objectType === 'text')) {
-                                const combined = `${act.title || ''} ${act.text || ''} ${text}`.toLowerCase();
-                                if (/\bconcentric\b/i.test(combined)) {
+                            const combined = `${act.title || ''} ${act.text || ''} ${text}`.toLowerCase();
+                            const actColor = act.color || parseColorFromText(combined, '#3b82f6');
+
+                            if (act.type === 'CREATE_OBJECT') {
+                                if (act.objectType === 'concentric_circles' || /\bconcentric\b/i.test(combined)) {
                                     return parseConcentricCircles(text, act.width || 240);
                                 }
-                                if (/\bcircle\b/i.test(combined)) {
+
+                                const isRightTri = act.objectType === 'right_triangle' ||
+                                    (/\bright\b/i.test(combined) && (act.objectType === 'triangle' || act.objectType === 'drawing' || act.objectType === 'sketch'));
+                                if (isRightTri) {
+                                    const rt = parseRightTriangleParams(combined);
+                                    return [{
+                                        ...act,
+                                        objectType: 'right_triangle',
+                                        width: rt.w,
+                                        height: rt.h,
+                                        color: actColor,
+                                        showRightAngle: true,
+                                        vertexLabels: rt.vertexLabels,
+                                        edgeLabels: rt.edgeLabels,
+                                        thetaLabel: rt.thetaLabel,
+                                        angleLabels: rt.angleLabels,
+                                        showTopAngle: rt.showTopAngle
+                                    }];
+                                }
+
+                                if (act.objectType === 'line' || act.objectType === 'straight_line' || (/\b(?:straight\s+)?line\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch'))) {
+                                    const rawW = Number(act.width) || 200;
+                                    return [{
+                                        ...act,
+                                        objectType: 'line',
+                                        width: rawW,
+                                        height: 0,
+                                        startX: 0,
+                                        startY: 0,
+                                        endX: rawW,
+                                        endY: 0,
+                                        color: actColor
+                                    }];
+                                }
+
+                                if (act.objectType === 'arrow' || (/\barrow\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch'))) {
+                                    const rawW = Number(act.width) || 180;
+                                    return [{
+                                        ...act,
+                                        objectType: 'arrow',
+                                        width: rawW,
+                                        height: 0,
+                                        startX: 0,
+                                        startY: 0,
+                                        endX: rawW,
+                                        endY: 0,
+                                        color: actColor
+                                    }];
+                                }
+
+                                if (act.objectType === 'circle' || (/\bcircle\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch' || act.objectType === 'text'))) {
                                     const { r, radiusLabel } = parseCircleParams(combined);
                                     return [{
                                         ...act,
@@ -2688,6 +3028,7 @@ Spoken input: "${text}"
                                         radius: r,
                                         width: r * 2,
                                         height: r * 2,
+                                        color: actColor,
                                         showCenter: true,
                                         centerLabel: 'O',
                                         showRadius: true,
@@ -2695,59 +3036,57 @@ Spoken input: "${text}"
                                         radiusAngle: 0
                                     }];
                                 }
-                                if (/\b(rectangle|box|quadrilateral|rect)\b/i.test(combined)) {
+
+                                if (act.objectType === 'rectangle' || (/\b(rectangle|box|quadrilateral|rect)\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch' || act.objectType === 'text'))) {
                                     const { w, h, labelW, labelH } = parseRectangleParams(combined);
                                     return [{
                                         ...act,
                                         objectType: 'rectangle',
                                         width: w,
                                         height: h,
+                                        color: actColor,
                                         showRightAngle: true,
                                         vertexLabels: ['A', 'B', 'C', 'D'],
                                         edgeLabels: [labelW, labelW, labelH, labelH]
                                     }];
                                 }
-                                if (/\bsquare\b/i.test(combined)) {
+
+                                if (act.objectType === 'square' || (/\bsquare\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch' || act.objectType === 'text'))) {
                                     const { side, sideLabel } = parseSquareParams(combined);
                                     return [{
                                         ...act,
                                         objectType: 'rectangle',
                                         width: side,
                                         height: side,
+                                        color: actColor,
                                         showRightAngle: true,
                                         vertexLabels: ['A', 'B', 'C', 'D'],
                                         edgeLabels: [sideLabel, sideLabel, sideLabel, sideLabel]
                                     }];
                                 }
-                                if (/\bright\s*(?:angled?)?\s*triangle\b/i.test(combined)) {
-                                    return [{
-                                        ...act,
-                                        objectType: 'right_triangle',
-                                        width: act.width || 220,
-                                        height: act.height || 160,
-                                        showRightAngle: true,
-                                        vertexLabels: ['A', 'B', 'C'],
-                                        edgeLabels: ['b', 'a', 'c']
-                                    }];
-                                }
-                                if (/\btriangle\b/i.test(combined)) {
+
+                                if (act.objectType === 'triangle' || (/\btriangle\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch' || act.objectType === 'text'))) {
+                                    const tri = parseTriangleParams(combined);
                                     return [{
                                         ...act,
                                         objectType: 'triangle',
-                                        width: act.width || 220,
-                                        height: act.height || 170,
+                                        width: tri.w || act.width || 220,
+                                        height: tri.h || act.height || 170,
+                                        color: actColor,
                                         vertexLabels: ['A', 'B', 'C'],
-                                        edgeLabels: ['c', 'a', 'b'],
+                                        edgeLabels: tri.edgeLabels || ['c', 'a', 'b'],
                                         dashedAltitude: true,
-                                        altitudeLabel: 'h'
+                                        altitudeLabel: tri.altitudeLabel || 'h'
                                     }];
                                 }
-                                if (/\bcone\b/i.test(combined)) {
+
+                                if (act.objectType === 'cone' || (/\bcone\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch'))) {
                                     return [{
                                         ...act,
                                         objectType: 'cone',
                                         width: act.width || 180,
                                         height: act.height || 210,
+                                        color: actColor,
                                         dashedAltitude: true,
                                         altitudeLabel: 'h',
                                         showRadius: true,
@@ -3126,21 +3465,25 @@ Spoken input: "${text}"
                     ]
                 };
             }
-            else if (low.includes('right triangle') || low.includes('right-angled triangle') || low.includes('right angled triangle')) {
+            else if (/\b(right[\s-]*(?:angled?|angle)?[\s-]*triangle|30[\s-]60[\s-]90[\s-]*triangle|45[\s-]45[\s-]90[\s-]*triangle|triangle\s+with\s+(?:a\s+)?right\s+angle|triangle\s+with\s+90\s*deg)\b/i.test(low)) {
+                const rt = parseRightTriangleParams(text);
                 return {
                     recognized: true,
                     type: 'action',
-                    speechResponse: 'Drawing right-angled triangle with vertex labels and right angle marker.',
-                    spokenFeedback: 'Drawing right-angled triangle',
+                    speechResponse: rt.speechResponse || 'Drawing right-angled triangle with vertex labels and right angle marker.',
+                    spokenFeedback: rt.thetaLabel ? `Drawing right-angled triangle (${rt.thetaLabel} angle)` : 'Drawing right-angled triangle',
                     actions: [
                         {
                             type: 'CREATE_OBJECT',
                             objectType: 'right_triangle',
-                            width: 220,
-                            height: 160,
+                            width: rt.w,
+                            height: rt.h,
                             showRightAngle: true,
-                            vertexLabels: ['A', 'B', 'C'],
-                            edgeLabels: ['b', 'a', 'c']
+                            vertexLabels: rt.vertexLabels || ['A', 'B', 'C'],
+                            edgeLabels: rt.edgeLabels || ['b', 'a', 'c'],
+                            thetaLabel: rt.thetaLabel,
+                            angleLabels: rt.angleLabels,
+                            showTopAngle: rt.showTopAngle
                         }
                     ],
                     suggestedFollowUps: [
@@ -3152,21 +3495,22 @@ Spoken input: "${text}"
                 };
             }
             else if (low.includes('triangle')) {
+                const tri = parseTriangleParams(text);
                 return {
                     recognized: true,
                     type: 'action',
-                    speechResponse: 'Drawing triangle with altitude h.',
+                    speechResponse: tri.speechResponse || 'Drawing triangle with altitude h.',
                     spokenFeedback: 'Drawing triangle',
                     actions: [
                         {
                             type: 'CREATE_OBJECT',
                             objectType: 'triangle',
-                            width: 220,
-                            height: 170,
+                            width: tri.w || 220,
+                            height: tri.h || 170,
                             vertexLabels: ['A', 'B', 'C'],
-                            edgeLabels: ['c', 'a', 'b'],
+                            edgeLabels: tri.edgeLabels || ['c', 'a', 'b'],
                             dashedAltitude: true,
-                            altitudeLabel: 'h'
+                            altitudeLabel: tri.altitudeLabel || 'h'
                         }
                     ],
                     suggestedFollowUps: [

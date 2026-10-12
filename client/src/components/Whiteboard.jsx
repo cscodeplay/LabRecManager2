@@ -24,6 +24,8 @@ import katex from 'katex';
 import html2canvas from 'html2canvas';
 import WhiteboardEquationEditor, { MathVirtualKeyboard, SYMBOL_CATEGORIES } from './WhiteboardEquationEditor';
 import WhiteboardMathTablet from './WhiteboardMathTablet';
+import MathSolverModal from './mathSolver/MathSolverModal';
+import ParametricShapeModal from './mathSolver/ParametricShapeModal';
 
 const ParallelogramIcon = (props) => (
     <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -665,6 +667,8 @@ export default function Whiteboard({
     const [showMathKeyboard, setShowMathKeyboard] = useState(false);
     const [mathKeyboardAnchor, setMathKeyboardAnchor] = useState({ x: 300, y: 300 });
     const [showMathTablet, setShowMathTablet] = useState(false);
+    const [showMathSolver, setShowMathSolver] = useState(false);
+    const [showParametricModal, setShowParametricModal] = useState(false);
     const [showTextMathMenu, setShowTextMathMenu] = useState(null);
     const [extractingImageTextId, setExtractingImageTextId] = useState(null);
 
@@ -5414,6 +5418,128 @@ export default function Whiteboard({
         saveToHistory();
         toast.success('Equation inserted!', { icon: '📐' });
     }, [selectedShapeIds, shapeObjects, editingTextId, selectedTextIds, canvasWrapperRef, panOffset, zoomLevel, color, socket, sessionId, saveToHistory, setShapeObjects, setTextObjects, setSelectedShapeIds]);
+
+    // Auto Math Solver Step Insertion Handler
+    const handleInsertStepToCanvas = useCallback((step, selectedFont = 'font-caveat') => {
+        if (!step) return;
+
+        const wrapper = canvasWrapperRef.current;
+        const cx = wrapper ? (wrapper.clientWidth / 2 - 160) : 250;
+        const cy = wrapper ? (wrapper.clientHeight / 2 - 60) : 250;
+        const spawnX = Math.round(-panOffset.x + cx / zoomLevel);
+        const spawnY = Math.round(-panOffset.y + cy / zoomLevel);
+
+        const newItems = [];
+
+        // 1. If step has a LaTeX equation, insert an equation shape
+        if (step.latex) {
+            const newEq = {
+                id: `eq_${Date.now()}`,
+                type: 'equation',
+                latex: step.latex,
+                x: spawnX,
+                y: spawnY,
+                width: 300,
+                height: 80,
+                fontSize: 24,
+                color: color || '#1e293b',
+                bgColor: 'transparent',
+                rotation: 0
+            };
+            newItems.push(newEq);
+        }
+
+        // 2. Insert handwritten explanation as a text object
+        if (step.explanation) {
+            const fontClass = selectedFont === 'font-patrick' ? 'Patrick Hand' : selectedFont === 'font-kalam' ? 'Kalam' : selectedFont === 'font-architect' ? 'Architects Daughter' : 'Caveat';
+            const newTxt = {
+                id: `txt_${Date.now() + 1}`,
+                type: 'text',
+                text: `${step.title ? `Step ${step.stepNumber}: ${step.title}\n` : ''}${step.explanation}`,
+                x: spawnX,
+                y: step.latex ? spawnY + 95 : spawnY,
+                fontSize: 22,
+                fontFamily: fontClass,
+                color: color || '#1e293b',
+                width: 360,
+                height: 'auto',
+                rotation: 0
+            };
+            setTextObjects(prev => [...prev, newTxt]);
+            if (socket && sessionId) socket.emit('whiteboard:text-add', { sessionId, text: newTxt });
+        }
+
+        if (newItems.length > 0) {
+            setShapeObjects(prev => [...prev, ...newItems]);
+            if (socket && sessionId) {
+                newItems.forEach(item => socket.emit('whiteboard:shape-add', { sessionId, shape: item }));
+            }
+        }
+
+        saveToHistory();
+    }, [canvasWrapperRef, panOffset, zoomLevel, color, socket, sessionId, saveToHistory, setShapeObjects, setTextObjects]);
+
+    // Insert Problem Diagram to Canvas
+    const handleInsertDiagramToCanvas = useCallback((svgString, title = 'Problem Diagram') => {
+        if (!svgString) return;
+
+        const wrapper = canvasWrapperRef.current;
+        const cx = wrapper ? (wrapper.clientWidth / 2 - 160) : 250;
+        const cy = wrapper ? (wrapper.clientHeight / 2 - 120) : 250;
+        const spawnX = Math.round(-panOffset.x + cx / zoomLevel);
+        const spawnY = Math.round(-panOffset.y + cy / zoomLevel);
+
+        const newDiagram = {
+            id: `diag_${Date.now()}`,
+            type: 'svg',
+            svg: svgString,
+            title,
+            x: spawnX,
+            y: spawnY,
+            width: 320,
+            height: 240,
+            rotation: 0
+        };
+
+        setShapeObjects(prev => [...prev, newDiagram]);
+        setSelectedShapeIds([newDiagram.id]);
+        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newDiagram });
+        saveToHistory();
+    }, [canvasWrapperRef, panOffset, zoomLevel, socket, sessionId, saveToHistory, setShapeObjects, setSelectedShapeIds]);
+
+    // Insert Parametric Geometry Shape
+    const handleInsertParametricShape = useCallback((shapeData) => {
+        if (!shapeData) return;
+
+        const wrapper = canvasWrapperRef.current;
+        const cx = wrapper ? (wrapper.clientWidth / 2 - 150) : 250;
+        const cy = wrapper ? (wrapper.clientHeight / 2 - 150) : 250;
+        const spawnX = Math.round(-panOffset.x + cx / zoomLevel);
+        const spawnY = Math.round(-panOffset.y + cy / zoomLevel);
+
+        const pathStr = shapeData.svgPath ? `<path d="${shapeData.svgPath}" stroke="${shapeData.strokeColor || '#38bdf8'}" stroke-width="${shapeData.strokeWidth || 3}" fill="${shapeData.fillColor || 'transparent'}" stroke-linecap="round" stroke-linejoin="round" />` : '';
+        const labelsStr = (shapeData.labels || []).map(l => `<text x="${l.x}" y="${l.y}" fill="#1e293b" font-size="12" font-weight="bold" text-anchor="middle">${l.text}</text>`).join('');
+        const textCharsStr = (shapeData.textChars || []).map(tc => `<text x="${tc.x}" y="${tc.y}" transform="rotate(${tc.rotation}, ${tc.x}, ${tc.y})" fill="${shapeData.strokeColor || '#38bdf8'}" font-size="15" font-weight="bold" text-anchor="middle" font-family="Caveat, cursive">${tc.char}</text>`).join('');
+
+        const completeSvg = `<svg viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">${pathStr}${labelsStr}${textCharsStr}</svg>`;
+
+        const newShape = {
+            id: `param_${Date.now()}`,
+            type: 'svg',
+            svg: completeSvg,
+            title: `Parametric ${shapeData.category || 'Shape'}`,
+            x: spawnX,
+            y: spawnY,
+            width: 300,
+            height: 300,
+            rotation: 0
+        };
+
+        setShapeObjects(prev => [...prev, newShape]);
+        setSelectedShapeIds([newShape.id]);
+        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
+        saveToHistory();
+    }, [canvasWrapperRef, panOffset, zoomLevel, socket, sessionId, saveToHistory, setShapeObjects, setSelectedShapeIds]);
     useEffect(() => {
         if (!imageDragState) return;
 
@@ -9214,6 +9340,14 @@ export default function Whiteboard({
                     ctx.lineTo(shpObj.x + sq, shpObj.y + shpObj.height);
                     ctx.stroke();
                 }
+                const thetaLbl = (shpObj.angleLabels && (shpObj.angleLabels.C || shpObj.angleLabels.theta)) || shpObj.thetaLabel;
+                if (thetaLbl) {
+                    const arcR = Math.min(30, Math.min(shpObj.width, shpObj.height) * 0.25);
+                    const thetaAngle = Math.atan2(shpObj.height, shpObj.width);
+                    ctx.beginPath();
+                    ctx.arc(shpObj.x + shpObj.width, shpObj.y + shpObj.height, arcR, Math.PI, Math.PI + thetaAngle, false);
+                    ctx.stroke();
+                }
             } else if (shpObj.type === 'triangle') {
                 ctx.moveTo(shpObj.x + shpObj.width / 2, shpObj.y);
                 ctx.lineTo(shpObj.x, shpObj.y + shpObj.height);
@@ -10595,10 +10729,10 @@ export default function Whiteboard({
             socket.emit('whiteboard:page-change', { sessionId, pageIndex: newIndex });
         }
 
-        // Initialize background for new page
+        // Initialize background for new page (inherit current board background pattern & color)
         setPageBackgrounds(prev => ({
             ...prev,
-            [newIndex]: { pattern: 'plain', color: '#ffffff' }
+            [newIndex]: { pattern: bgPattern || 'plain', color: bgColor || '#ffffff' }
         }));
 
         // Initialize object stores for new page
@@ -11207,10 +11341,28 @@ export default function Whiteboard({
 
         // Sort candidate positions: X ascending (prioritizing left-most first), then Y ascending (top-most second)
         const sortedXs = Array.from(candXs).map(x => Math.round(x)).filter(x => x >= xMin && x <= xMax - desiredW).sort((a, b) => a - b);
-        const sortedYs = Array.from(candYs).map(y => Math.round(y)).filter(y => y >= yMin && y <= yMax - desiredH).sort((a, b) => a - b);
+        // Prioritize viewport center slot for clean, prominent presentation
+        const centerSlotX = Math.max(xMin, Math.min(xMax - desiredW, Math.round(baseCx - desiredW / 2)));
+        const centerSlotY = Math.max(yMin, Math.min(yMax - desiredH, Math.round(baseCy - desiredH / 2)));
 
-        let bestSlot = null;
+        const centerCollides = obstacles.some(obs => {
+            const noOverlap = (centerSlotX + desiredW < obs.x1 - 10) || (centerSlotX > obs.x2 + 10) || (centerSlotY + desiredH < obs.y1 - 10) || (centerSlotY > obs.y2 + 10);
+            return !noOverlap;
+        });
 
+        if (!centerCollides) {
+            return {
+                x: centerSlotX,
+                y: centerSlotY,
+                width: desiredW,
+                height: desiredH,
+                hasSpace: true,
+                overlapCount: 0
+            };
+        }
+
+        // If center is occupied, find collision-free slot closest to center
+        const validSlots = [];
         for (const cx of sortedXs) {
             for (const cy of sortedYs) {
                 const boxX1 = cx;
@@ -11224,17 +11376,20 @@ export default function Whiteboard({
                 });
 
                 if (!collides) {
-                    bestSlot = { x: cx, y: cy };
-                    break;
+                    validSlots.push({ x: cx, y: cy });
                 }
             }
-            if (bestSlot) break;
         }
 
-        if (bestSlot) {
+        if (validSlots.length > 0) {
+            validSlots.sort((a, b) => {
+                const distA = Math.hypot((a.x + desiredW / 2) - baseCx, (a.y + desiredH / 2) - baseCy);
+                const distB = Math.hypot((b.x + desiredW / 2) - baseCx, (b.y + desiredH / 2) - baseCy);
+                return distA - distB;
+            });
             return {
-                x: bestSlot.x,
-                y: bestSlot.y,
+                x: validSlots[0].x,
+                y: validSlots[0].y,
                 width: desiredW,
                 height: desiredH,
                 hasSpace: true,
@@ -11244,8 +11399,8 @@ export default function Whiteboard({
 
         // If no contiguous slot fits without collision, mark page as having no space
         return {
-            x: Math.round(xMin),
-            y: Math.round(yMin),
+            x: Math.round(centerSlotX),
+            y: Math.round(centerSlotY),
             width: desiredW,
             height: desiredH,
             hasSpace: false,
@@ -12734,11 +12889,347 @@ export default function Whiteboard({
         toast.success('Inserted AI Solution Card to board', { icon: '📋' });
     }, [panOffset, zoomLevel, currentPage, saveToHistory, executeAiCanvasAction, convertSolutionToFlowchart, executeProblemWithDiagramLayout]);
 
+    // ─── Voice Control Helpers (Color, Geometry & Compound Parser) ───────
+    const parseColorFromText = (inputText, defaultColor = '#3b82f6') => {
+        const lowTxt = (inputText || '').toLowerCase();
+        const palette = {
+            cyan: '#06b6d4',
+            blue: '#3b82f6',
+            red: '#ef4444',
+            green: '#10b981',
+            yellow: '#f59e0b',
+            orange: '#f97316',
+            purple: '#8b5cf6',
+            violet: '#7c3aed',
+            pink: '#ec4899',
+            black: '#000000',
+            white: '#ffffff',
+            emerald: '#10b981',
+            slate: '#64748b'
+        };
+        for (const [name, hex] of Object.entries(palette)) {
+            if (new RegExp(`\\b${name}\\b`, 'i').test(lowTxt)) {
+                return hex;
+            }
+        }
+        return defaultColor;
+    };
+
+    const parseRightTriangleParams = (inputText) => {
+        const lowTxt = (inputText || '').toLowerCase();
+
+        // 1. Detect Angle (e.g. "base angle of 30 degree", "angle 30 degrees", "30 degree angle", "theta = 30°", "30 deg", "30-60-90")
+        let parsedAngle = null;
+        const angleMatch = lowTxt.match(/(?:base\s+angle|angle\s+of|angle|theta|θ)\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(?:deg|degrees?|°)?/i) ||
+                           lowTxt.match(/(\d+(?:\.\d+)?)\s*(?:deg|degrees?|°)\s*(?:base\s+angle|angle)?/i);
+
+        if (angleMatch) {
+            const val = parseFloat(angleMatch[1]);
+            if (!isNaN(val) && val > 0 && val < 90) {
+                parsedAngle = val;
+            }
+        } else if (/\b30[\s-]60[\s-]90\b/i.test(lowTxt)) {
+            parsedAngle = 30;
+        } else if (/\b45[\s-]45[\s-]90\b/i.test(lowTxt)) {
+            parsedAngle = 45;
+        }
+
+        const hasAngle = parsedAngle !== null;
+        const theta = hasAngle ? parsedAngle : null;
+        const thetaRad = hasAngle ? (theta * Math.PI) / 180 : null;
+        const topAngle = hasAngle ? Math.round((90 - theta) * 10) / 10 : null;
+
+        // 2. Units (cm, mm, px)
+        const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(lowTxt);
+        const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(lowTxt);
+        const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
+
+        // Remove angle phrase before searching for side lengths so "30 degree" is not parsed as side length 30
+        let txtWithoutAngle = lowTxt;
+        if (angleMatch && angleMatch[0]) {
+            txtWithoutAngle = txtWithoutAngle.replace(angleMatch[0], ' ');
+        }
+        txtWithoutAngle = txtWithoutAngle.replace(/\b(?:deg|degrees?|°)\b/gi, ' ');
+
+        // 3. Named Side Extractions (base, height/altitude/leg, hypotenuse)
+        const baseNamedMatch = txtWithoutAngle.match(/(?:base|bottom|width)\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i);
+        const altNamedMatch = txtWithoutAngle.match(/(?:height|altitude|leg|perpendicular|vertical)\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i);
+        const hypNamedMatch = txtWithoutAngle.match(/(?:hypotenuse|hyp)\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i);
+
+        // 4. Two Sides Pattern (e.g. "sides 4cm and 3cm", "4 by 3")
+        const twoSidesMatch = txtWithoutAngle.match(/(?:sides?|legs?|with)?\s*(\d+(?:\.\d+)?)\s*(?:cm|mm|px)?\s*(?:and|by|x|\*|\s*,\s*)\s*(?:sides?|legs?|with)?\s*(\d+(?:\.\d+)?)\s*(?:cm|mm|px)?/i);
+
+        let baseVal = null;
+        let altVal = null;
+        let hypVal = null;
+        let hasExplicitSides = false;
+
+        if (baseNamedMatch) {
+            baseVal = parseFloat(baseNamedMatch[1]);
+            hasExplicitSides = true;
+        }
+        if (altNamedMatch) {
+            altVal = parseFloat(altNamedMatch[1]);
+            hasExplicitSides = true;
+        }
+        if (hypNamedMatch) {
+            hypVal = parseFloat(hypNamedMatch[1]);
+            hasExplicitSides = true;
+        }
+
+        if (!baseVal && !altVal && !hypVal && twoSidesMatch) {
+            const num1 = parseFloat(twoSidesMatch[1]);
+            const num2 = parseFloat(twoSidesMatch[2]);
+            if (!isNaN(num1) && !isNaN(num2)) {
+                baseVal = Math.max(num1, num2);
+                altVal = Math.min(num1, num2);
+                hasExplicitSides = true;
+            }
+        }
+
+        // Check for remaining raw numbers if still no side found
+        if (!baseVal && !altVal && !hypVal) {
+            const numRegex = /(\d+(?:\.\d+)?)\s*(cm|mm|px)?/gi;
+            const nums = [];
+            let m;
+            while ((m = numRegex.exec(txtWithoutAngle)) !== null) {
+                const val = parseFloat(m[1]);
+                if (!isNaN(val) && val > 0) nums.push(val);
+            }
+            if (nums.length >= 2) {
+                baseVal = Math.max(nums[0], nums[1]);
+                altVal = Math.min(nums[0], nums[1]);
+                hasExplicitSides = true;
+            } else if (nums.length === 1 && !hasAngle) {
+                baseVal = nums[0];
+                altVal = Math.round(nums[0] * 0.75);
+                hasExplicitSides = true;
+            } else if (nums.length === 1 && hasAngle) {
+                baseVal = nums[0];
+                hasExplicitSides = true;
+            }
+        }
+
+        // 5. Complete Trigonometric Triangle Solutions
+        if (hasAngle) {
+            if (baseVal && !altVal && !hypVal) {
+                altVal = baseVal * Math.tan(thetaRad);
+                hypVal = baseVal / Math.cos(thetaRad);
+            } else if (altVal && !baseVal && !hypVal) {
+                baseVal = altVal / Math.tan(thetaRad);
+                hypVal = altVal / Math.sin(thetaRad);
+            } else if (hypVal && !baseVal && !altVal) {
+                baseVal = hypVal * Math.cos(thetaRad);
+                altVal = hypVal * Math.sin(thetaRad);
+            } else if (!hasExplicitSides) {
+                // Visually balanced canonical right triangle for given theta
+                if (theta <= 35) {
+                    baseVal = 8;
+                    altVal = baseVal * Math.tan(thetaRad);
+                    hypVal = baseVal / Math.cos(thetaRad);
+                } else if (theta >= 55) {
+                    altVal = 8;
+                    baseVal = altVal / Math.tan(thetaRad);
+                    hypVal = altVal / Math.sin(thetaRad);
+                } else {
+                    baseVal = 6;
+                    altVal = baseVal * Math.tan(thetaRad);
+                    hypVal = baseVal / Math.cos(thetaRad);
+                }
+            }
+        } else {
+            if (!baseVal) baseVal = 4;
+            if (!altVal) altVal = 3;
+            hypVal = Math.sqrt(baseVal * baseVal + altVal * altVal);
+        }
+
+        if (!hypVal && baseVal && altVal) {
+            hypVal = Math.sqrt(baseVal * baseVal + altVal * altVal);
+        }
+        if (!altVal && baseVal && hypVal) {
+            altVal = Math.sqrt(Math.max(1, hypVal * hypVal - baseVal * baseVal));
+        }
+
+        const formatDim = (v) => {
+            if (v === null || v === undefined) return '';
+            const rounded = Math.round(v * 10) / 10;
+            return rounded.toString();
+        };
+
+        const fBase = formatDim(baseVal);
+        const fAlt = formatDim(altVal);
+        const fHyp = formatDim(hypVal);
+
+        // 6. Canvas Pixel Dimensions (w, h)
+        let w = 240, h = 160;
+        if (hasAngle && !hasExplicitSides) {
+            if (theta <= 35) {
+                w = 260;
+                h = Math.max(70, Math.min(220, Math.round(w * Math.tan(thetaRad))));
+            } else if (theta >= 55) {
+                h = 240;
+                w = Math.max(70, Math.min(260, Math.round(h / Math.tan(thetaRad))));
+            } else {
+                w = 210;
+                h = Math.max(80, Math.min(240, Math.round(w * Math.tan(thetaRad))));
+            }
+        } else if (hasExplicitSides) {
+            if (unit === 'cm') {
+                const scale = Math.min(45, Math.max(22, Math.round(240 / baseVal)));
+                w = Math.max(90, Math.min(450, Math.round(baseVal * scale)));
+                h = Math.max(65, Math.min(320, Math.round(altVal * scale)));
+            } else if (unit === 'mm') {
+                const scale = Math.min(4.5, Math.max(2.2, Math.round(240 / baseVal)));
+                w = Math.max(90, Math.min(450, Math.round(baseVal * scale)));
+                h = Math.max(65, Math.min(320, Math.round(altVal * scale)));
+            } else {
+                if (baseVal <= 15) {
+                    const scale = Math.min(45, Math.max(22, Math.round(240 / baseVal)));
+                    w = Math.max(90, Math.min(450, Math.round(baseVal * scale)));
+                    h = Math.max(65, Math.min(320, Math.round(altVal * scale)));
+                } else {
+                    w = Math.max(90, Math.min(500, Math.round(baseVal)));
+                    h = Math.max(65, Math.min(350, Math.round(altVal)));
+                }
+            }
+        }
+
+        // 7. Labels
+        let labelAlt = 'b';
+        let labelBase = 'a';
+        let labelHyp = 'c';
+
+        if (hasExplicitSides) {
+            labelAlt = `${fAlt}${unit}`;
+            labelBase = `${fBase}${unit}`;
+            labelHyp = `${fHyp}${unit}`;
+        }
+
+        const thetaLabel = hasAngle ? `${theta}°` : null;
+        const showTopAngle = hasAngle && (/\b(30[\s-]60[\s-]90|top\s+angle|both\s+angles)\b/i.test(lowTxt));
+        const angleLabels = hasAngle ? {
+            C: `${theta}°`,
+            theta: `${theta}°`,
+            A: `${topAngle}°`,
+            B: '90°'
+        } : null;
+
+        // 8. Natural Speech Response
+        let speech = 'Here is a right-angled triangle.';
+        if (hasAngle && hasExplicitSides) {
+            speech = `Here is a right-angled triangle with base ${labelBase}, base angle ${theta}°, altitude ${labelAlt}, and hypotenuse ${labelHyp}.`;
+        } else if (hasAngle) {
+            speech = `Here is a right-angled triangle with a base angle of ${theta}° and top angle of ${topAngle}°.`;
+        } else if (hasExplicitSides) {
+            speech = `Here is a right-angled triangle with sides ${labelAlt} and ${labelBase}, and hypotenuse ${labelHyp}.`;
+        }
+
+        return {
+            w,
+            h,
+            edgeLabels: [labelAlt, labelBase, labelHyp],
+            vertexLabels: ['A', 'B', 'C'],
+            thetaLabel,
+            angleLabels,
+            showTopAngle,
+            showRightAngle: true,
+            speechResponse: speech
+        };
+    };
+
+    const parseTriangleParams = (inputText) => {
+        const lowTxt = (inputText || '').toLowerCase();
+        const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(lowTxt);
+        const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(lowTxt);
+        const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
+
+        const isEquilateral = /\b(equilateral)\b/i.test(lowTxt);
+        const baseMatch = lowTxt.match(/(?:base|bottom|width)\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i);
+        const heightMatch = lowTxt.match(/(?:height|altitude|h)\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i);
+        const sideMatch = lowTxt.match(/(?:side|size|of)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i);
+
+        let w = 220, h = 160;
+        let edgeLabels = ['c', 'a', 'b'];
+        let altitudeLabel = 'h';
+        let speech = 'Here is a triangle with altitude and vertex labels.';
+
+        if (isEquilateral) {
+            const s = sideMatch ? parseFloat(sideMatch[1]) : 5;
+            const sLabel = `${s}${unit}`;
+            const hVal = s * 0.866;
+            const scale = unit === 'cm' ? Math.min(45, Math.max(25, Math.round(220 / s))) : (s <= 15 ? 30 : 1);
+            w = Math.round(s * scale);
+            h = Math.round(hVal * scale);
+            edgeLabels = [sLabel, sLabel, sLabel];
+            altitudeLabel = `${hVal.toFixed(1)}${unit}`;
+            speech = `Here is an equilateral triangle with side ${sLabel} and 60° angles.`;
+        } else if (baseMatch || heightMatch) {
+            const b = baseMatch ? parseFloat(baseMatch[1]) : 6;
+            const hVal = heightMatch ? parseFloat(heightMatch[1]) : 4;
+            const slant = Math.sqrt((b / 2) * (b / 2) + hVal * hVal);
+            const bLabel = `${b}${unit}`;
+            const hLabel = `${hVal}${unit}`;
+            const sLabel = `${slant.toFixed(1)}${unit}`;
+            const scale = unit === 'cm' ? Math.min(45, Math.max(25, Math.round(220 / b))) : (b <= 15 ? 30 : 1);
+            w = Math.round(b * scale);
+            h = Math.round(hVal * scale);
+            edgeLabels = [sLabel, bLabel, sLabel];
+            altitudeLabel = hLabel;
+            speech = `Here is a triangle with base ${bLabel} and height ${hLabel}.`;
+        }
+
+        return { w, h, edgeLabels, altitudeLabel, speechResponse: speech };
+    };
+
+    const splitCompoundCommands = (text) => {
+        if (!text || typeof text !== 'string') return [];
+        const trimmed = text.trim();
+        if (!trimmed) return [];
+
+        const actionKeywords = [
+            'set', 'change', 'switch', 'create', 'add', 'draw', 'sketch', 'illustrate', 
+            'paint', 'make', 'select', 'pick', 'choose', 'clear', 'delete', 'remove', 
+            'zoom', 'turn', 'undo', 'redo', 'new page', 'next page', 'previous page',
+            'duplicate page', 'delete page', 'straight line', 'line', 'arrow', 'type', 'write'
+        ];
+        const actionPattern = actionKeywords.map(k => k.replace(/\s+/g, '\\s+')).join('|');
+
+        let parts = trimmed.split(/\s*;\s*|\n+/);
+        const regex1 = new RegExp(`[,;]?\\s+(?:and\\s+then|then)\\s+(?=(?:${actionPattern})\\b)`, 'gi');
+        const regex2 = new RegExp(`[,]\\s*(?:and\\s+)?(?=(?:${actionPattern})\\b)`, 'gi');
+        const regex3 = new RegExp(`\\s+and\\s+(?=(?:${actionPattern})\\b)`, 'gi');
+
+        let refined = [];
+        for (const p of parts) {
+            const sub = p
+                .split(regex1)
+                .flatMap(s => s.split(regex2))
+                .flatMap(s => s.split(regex3))
+                .map(s => s.trim())
+                .filter(Boolean);
+            refined.push(...sub);
+        }
+
+        return refined.length > 0 ? refined : [trimmed];
+    };
+
     // ─── Voice Control & Speech Recognition Engine ──────────────────────
     const executeVoiceCommand = useCallback(async (rawText, isAiRetry = false) => {
         if (!rawText || typeof rawText !== 'string') return;
         const txt = rawText.trim().toLowerCase();
         setVoiceTranscript(rawText);
+
+        // Sequential Compound Command Execution (e.g., "Set background to dark grid, create a new page, and draw...")
+        if (!isAiRetry) {
+            const subCommands = splitCompoundCommands(rawText);
+            if (subCommands.length > 1) {
+                for (const sub of subCommands) {
+                    await executeVoiceCommand(sub, false);
+                    await new Promise(res => setTimeout(res, 80));
+                }
+                return;
+            }
+        }
 
         // 0. Voice Mode On / Off Controls
         if (
@@ -12859,7 +13350,12 @@ export default function Whiteboard({
                 else if (p.includes('plain') || p.includes('none') || p.includes('blank')) patternNormalized = 'plain';
             }
 
-            const pNum = targetPageNum !== undefined ? parseInt(targetPageNum, 10) : undefined;
+            const activeP = (pNum !== undefined && pNum >= 1 && pNum <= totalPages) 
+                ? pNum - 1 
+                : (currentPageRef.current !== undefined ? currentPageRef.current : currentPage);
+
+            if (formattedColor) setBgColor(formattedColor);
+            if (patternNormalized) setBgPattern(patternNormalized);
 
             setPageBackgrounds(prev => {
                 const next = { ...prev };
@@ -12871,16 +13367,9 @@ export default function Whiteboard({
                             ...(patternNormalized ? { pattern: patternNormalized } : {})
                         };
                     }
-                } else if (pNum !== undefined && pNum >= 1 && pNum <= totalPages) {
-                    const pIdx = pNum - 1;
-                    next[pIdx] = {
-                        ...(next[pIdx] || { pattern: 'plain', color: '#ffffff' }),
-                        ...(formattedColor ? { color: formattedColor } : {}),
-                        ...(patternNormalized ? { pattern: patternNormalized } : {})
-                    };
                 } else {
-                    next[currentPage] = {
-                        ...(next[currentPage] || { pattern: 'plain', color: '#ffffff' }),
+                    next[activeP] = {
+                        ...(next[activeP] || { pattern: 'plain', color: '#ffffff' }),
                         ...(formattedColor ? { color: formattedColor } : {}),
                         ...(patternNormalized ? { pattern: patternNormalized } : {})
                     };
@@ -12895,7 +13384,7 @@ export default function Whiteboard({
             if (socket && sessionId) {
                 socket.emit('whiteboard:background-change', {
                     sessionId,
-                    pageIndex: scope === 'all' ? 'all' : (pNum ? pNum - 1 : currentPage),
+                    pageIndex: scope === 'all' ? 'all' : activeP,
                     bgColor: formattedColor,
                     bgPattern: patternNormalized
                 });
@@ -13342,6 +13831,115 @@ export default function Whiteboard({
             return;
         }
 
+        // 0.85 Background & Pattern Voice Controls (Instant Fast Path)
+        const isBgVoice = /\b(background|canvas\s+color|board\s+color|canvas\s+background|whiteboard\s+color|canvas\s+pattern|grid\s+background|dark\s+grid|dark\s+canvas|chalkboard)\b/i.test(txt) ||
+            (/^grid$/i.test(txt) && !txt.includes('coordinate'));
+        if (isBgVoice) {
+            let targetPattern = undefined;
+            let targetColor = undefined;
+
+            if (/\b(grid|graph\s*paper)\b/i.test(txt)) targetPattern = 'grid';
+            else if (/\b(dot|dotted)\b/i.test(txt)) targetPattern = 'dotted';
+            else if (/\b(lines?|ruled)\b/i.test(txt)) targetPattern = 'lined';
+            else if (/\b(iso|isometric)\b/i.test(txt)) targetPattern = 'iso';
+            else if (/\b(hex|hexagonal)\b/i.test(txt)) targetPattern = 'hex';
+            else if (/\b(music)\b/i.test(txt)) targetPattern = 'music';
+            else if (/\b(plain|blank|white\s+board|clear\s+pattern)\b/i.test(txt)) targetPattern = 'plain';
+
+            if (/\b(dark|black|blackboard|night)\b/i.test(txt)) targetColor = '#0b0f19';
+            else if (/\b(navy|dark\s*blue)\b/i.test(txt)) targetColor = '#0f172a';
+            else if (/\b(blue)\b/i.test(txt)) targetColor = '#1e3a8a';
+            else if (/\b(chalkboard|green)\b/i.test(txt)) targetColor = '#1b4332';
+            else if (/\b(slate|charcoal)\b/i.test(txt)) targetColor = '#1e293b';
+            else if (/\b(gray|grey)\b/i.test(txt)) targetColor = '#334155';
+            else if (/\b(white|light|blank)\b/i.test(txt)) targetColor = '#ffffff';
+            else if (/\b(cream)\b/i.test(txt)) targetColor = '#fdfbf7';
+            else if (/\b(purple|violet)\b/i.test(txt)) targetColor = '#4c1d95';
+            else if (/\b(cyan)\b/i.test(txt)) targetColor = '#0891b2';
+
+            if (targetPattern !== undefined || targetColor !== undefined) {
+                applyBackgroundChange(targetColor, targetPattern);
+                const colorStr = targetColor === '#0b0f19' || targetColor === '#000000' ? 'dark' : (targetColor || '');
+                const patternStr = targetPattern || '';
+                const speech = `Set whiteboard background to ${colorStr} ${patternStr}`.trim() + '.';
+                if (aiSpeechEnabled) speakAiResponse(speech);
+                return;
+            }
+        }
+
+        // 0.86 Lines, Arrows & Connectors Instant Fast Path
+        const isLineToolRequest = /\b(line\s+tool|straight\s+line\s+tool)\b/i.test(txt);
+        const isArrowToolRequest = /\b(arrow\s+tool)\b/i.test(txt);
+        if (isLineToolRequest) {
+            setTool('line');
+            setLineType('line');
+            setVoiceFeedback('━ Line tool active');
+            toast.success('Line tool active', { icon: '━' });
+            return;
+        }
+        if (isArrowToolRequest) {
+            setTool('line');
+            setLineType('arrow');
+            setVoiceFeedback('➡️ Arrow tool active');
+            toast.success('Arrow tool active', { icon: '➡️' });
+            return;
+        }
+
+        const isLineRequest = (/\b(straight\s+line|draw\s+(?:a\s+)?line|draw\s+(?:a\s+)?straight\s+line|^line$|^straight\s+line$)\b/i.test(txt) || txt === 'draw a line' || txt === 'straight line') && !txt.includes('connector') && !txt.includes('background') && !txt.includes('ruled');
+        const isArrowRequest = (/\b(arrow|draw\s+(?:an?\s+)?arrow|double\s+arrow)\b/i.test(txt)) && !txt.includes('connector');
+
+        if (isLineRequest || isArrowRequest) {
+            const isDouble = txt.includes('double arrow');
+            const isArrow = isArrowRequest || isDouble;
+            const reqColor = parseColorFromText(txt, color || '#3b82f6');
+            const lenMatch = txt.match(/(\d+(?:\.\d+)?)\s*(?:cm|mm|px)?/i);
+            let lineLen = 180;
+            if (lenMatch) {
+                const val = parseFloat(lenMatch[1]);
+                if (txt.includes('cm')) lineLen = Math.max(40, Math.round(val * 35));
+                else if (txt.includes('mm')) lineLen = Math.max(30, Math.round(val * 3.5));
+                else if (val >= 20 && val <= 800) lineLen = Math.round(val);
+            }
+            const isDashed = txt.includes('dashed');
+            const isDotted = txt.includes('dotted');
+            const sStyle = isDashed ? 'dashed' : (isDotted ? 'dotted' : strokeStyle || 'solid');
+
+            const slot = findAvailableCanvasSpace(lineLen, 40);
+            const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - lineLen / 2));
+            const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy));
+
+            await dispatchTeacherAction({
+                x: targetX + Math.round(lineLen / 2),
+                y: targetY,
+                actionText: isArrow ? 'Drawing arrow...' : 'Drawing straight line...',
+                duration: 250,
+                onExecute: () => {
+                    spawnVoiceShape({
+                        type: isArrow ? 'arrow' : 'line',
+                        x: targetX,
+                        y: targetY,
+                        width: lineLen,
+                        height: 0,
+                        startX: 0,
+                        startY: 0,
+                        endX: lineLen,
+                        endY: 0,
+                        arrowEnd: isArrow ? 'arrow' : 'none',
+                        arrowStart: isDouble ? 'arrow' : 'none',
+                        color: reqColor,
+                        strokeWidth: strokeWidth || 3,
+                        strokeStyle: sStyle
+                    });
+                }
+            });
+            const speech = isArrow ? (isDouble ? 'Here is a double arrow.' : 'Here is a directional arrow.') : 'Here is a straight line.';
+            if (aiSpeechEnabled) speakAiResponse(speech);
+            toast.success(speech, { icon: isArrow ? '➡️' : '━' });
+            setVoiceFeedback(speech);
+            conversationHistoryRef.current.push({ role: 'assistant', content: speech });
+            return;
+        }
+
         // 0.9 Instant Geometric Shapes Fast Path (0ms Local Execution)
         // Strictly handles direct shape commands like "draw circle", "draw concentric circles"
         const isDeleteCommand = /\b(delete|remove|erase|clear\s+the|destroy|drop)\b/i.test(txt);
@@ -13726,20 +14324,27 @@ export default function Whiteboard({
             }
 
             // 5. Right Triangle or Triangle command
-            const isRightTriangle = /\b(right\s*(?:angled?)?\s*triangle)\b/i.test(txt);
-            const isTriangleVoice = (/\b(draw\s+a?\s*triangle|create\s+a?\s*triangle|triangle)\b/i.test(txt)) && !txt.includes('color');
+            const isRightTriangle = /\b(right[\s-]*(?:angled?|angle)?[\s-]*triangle|30[\s-]60[\s-]90[\s-]*triangle|45[\s-]45[\s-]90[\s-]*triangle|triangle\s+with\s+(?:a\s+)?right\s+angle|triangle\s+with\s+90\s*deg)\b/i.test(txt);
+            const isTriangleVoice = (/\b(draw\s+a?\s*triangle|create\s+a?\s*triangle|equilateral\s*triangle|isosceles\s*triangle|triangle)\b/i.test(txt)) && !txt.includes('color');
 
             if (isRightTriangle || isTriangleVoice) {
-                const w = 220, h = 160;
-                const slot = findAvailableCanvasSpace(w, h);
-                const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - w / 2));
-                const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - h / 2));
+                const reqColor = parseColorFromText(txt, color || '#3b82f6');
 
                 if (isRightTriangle) {
+                    const triParams = parseRightTriangleParams(txt);
+                    const w = triParams.w, h = triParams.h;
+                    const slot = findAvailableCanvasSpace(w, h);
+                    const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - w / 2));
+                    const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - h / 2));
+
+                    const actionDesc = triParams.thetaLabel
+                        ? `Drawing right-angled triangle (${triParams.thetaLabel} angle)...`
+                        : `Drawing right-angled triangle (${triParams.edgeLabels[0]} × ${triParams.edgeLabels[1]})...`;
+
                     await dispatchTeacherAction({
                         x: targetX + Math.round(w / 2),
                         y: targetY + Math.round(h / 2),
-                        actionText: 'Drawing right-angled triangle...',
+                        actionText: actionDesc,
                         duration: 320,
                         onExecute: () => {
                             spawnVoiceShape({
@@ -13749,21 +14354,30 @@ export default function Whiteboard({
                                 width: w,
                                 height: h,
                                 showRightAngle: true,
-                                vertexLabels: ['A', 'B', 'C'],
-                                edgeLabels: ['b', 'a', 'c'],
-                                color: color || '#3b82f6',
+                                vertexLabels: triParams.vertexLabels || ['A', 'B', 'C'],
+                                edgeLabels: triParams.edgeLabels || ['b', 'a', 'c'],
+                                thetaLabel: triParams.thetaLabel || null,
+                                angleLabels: triParams.angleLabels || null,
+                                showTopAngle: triParams.showTopAngle || false,
+                                color: reqColor,
                                 strokeWidth: strokeWidth || 3,
                                 fillColor: fillColor && fillColor !== 'transparent' ? fillColor : 'transparent'
                             });
                         }
                     });
-                    const speech = 'Here is a right-angled triangle with vertex labels and hypotenuse.';
+                    const speech = triParams.speechResponse || `Here is a right-angled triangle with sides ${triParams.edgeLabels[0]} and ${triParams.edgeLabels[1]}, and hypotenuse ${triParams.edgeLabels[2]}.`;
                     if (aiSpeechEnabled) speakAiResponse(speech);
                     toast.success(speech, { icon: '📐' });
                     setVoiceFeedback(speech);
                     conversationHistoryRef.current.push({ role: 'assistant', content: speech });
                     return;
                 } else {
+                    const triParams = parseTriangleParams(txt);
+                    const w = triParams.w, h = triParams.h;
+                    const slot = findAvailableCanvasSpace(w, h);
+                    const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - w / 2));
+                    const targetY = slot.hasSpace ? slot.y : Math.max(20, Math.round(cy - h / 2));
+
                     await dispatchTeacherAction({
                         x: targetX + Math.round(w / 2),
                         y: targetY + Math.round(h / 2),
@@ -13777,16 +14391,16 @@ export default function Whiteboard({
                                 width: w,
                                 height: h,
                                 dashedAltitude: true,
-                                altitudeLabel: 'h',
+                                altitudeLabel: triParams.altitudeLabel || 'h',
                                 vertexLabels: ['A', 'B', 'C'],
-                                edgeLabels: ['c', 'a', 'b'],
-                                color: color || '#3b82f6',
+                                edgeLabels: triParams.edgeLabels || ['c', 'a', 'b'],
+                                color: reqColor,
                                 strokeWidth: strokeWidth || 3,
                                 fillColor: fillColor && fillColor !== 'transparent' ? fillColor : 'transparent'
                             });
                         }
                     });
-                    const speech = 'Here is a triangle with altitude and vertex labels.';
+                    const speech = triParams.speechResponse || 'Here is a triangle with altitude and vertex labels.';
                     if (aiSpeechEnabled) speakAiResponse(speech);
                     toast.success(speech, { icon: '🔺' });
                     setVoiceFeedback(speech);
@@ -13940,7 +14554,7 @@ export default function Whiteboard({
             }
         }
 
-        const isExactLocalCommand = /^(pen|pencil|eraser|select|laser|clear|undo|redo|zoom in|zoom out|reset zoom|new page|next page|previous page)$/i.test(txt);
+        const isExactLocalCommand = /^(pen|pencil|eraser|select|laser|clear|undo|redo|zoom\s+in|zoom\s+out|reset\s+zoom|new\s+page|add\s+page|next\s+page|previous\s+page|prev\s+page|straight\s+line|line|arrow|double\s+arrow|highlighter|ruler|protractor|hand|pan|pointer)$/i.test(txt);
         
         if (!isAiRetry && !isExactLocalCommand) {
             setVoiceFeedback(`🤖 Asking AI: "${rawText}"...`);
@@ -14192,7 +14806,9 @@ export default function Whiteboard({
                                         showRightAngle: action.showRightAngle !== false,
                                         vertexLabels: action.vertexLabels || ['A', 'B', 'C'],
                                         edgeLabels: action.edgeLabels || [],
-                                        angleLabels: action.angleLabels || null
+                                        thetaLabel: action.thetaLabel || (action.angleLabels && (action.angleLabels.C || action.angleLabels.theta)) || null,
+                                        angleLabels: action.angleLabels || null,
+                                        showTopAngle: action.showTopAngle || (action.angleLabels && !!action.angleLabels.showTop) || false
                                     });
                                 } else if (action.objectType === 'triangle') {
                                     spawnVoiceShape({
@@ -14771,9 +15387,7 @@ export default function Whiteboard({
                 return;
             }
 
-            // If AI didn't recognize it or failed, we can optionally fallback, but we'll just return.
-            setVoiceFeedback(`Unrecognized by AI: "${rawText}"`);
-            return;
+            // If AI didn't recognize actions, smoothly fall through to rich local command engine below
         }
 
         // Centralized speech & visual narrator helper
@@ -15059,101 +15673,33 @@ export default function Whiteboard({
             txt.includes('chalkboard');
 
         if (isBackgroundCommand) {
-            // Background Colors
-            if (txt.includes('blue') || txt.includes('navy') || txt.includes('dark blue')) {
-                const hex = (txt.includes('navy') || txt.includes('dark blue')) ? '#0f172a' : '#1e3a8a';
-                setBgColor(hex);
-                setBgPattern('plain');
-                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: hex, bgPattern: 'plain' });
-                narrateAction(`Changed whiteboard background to ${txt.includes('navy') ? 'navy' : 'blue'}.`, `🟦 Background: ${txt.includes('navy') ? 'Navy' : 'Blue'}`);
-                return;
-            }
-            if (txt.includes('black') || txt.includes('blackboard') || txt.includes('dark')) {
-                setBgColor('#000000');
-                setBgPattern('plain');
-                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: '#000000', bgPattern: 'plain' });
-                narrateAction('Changed canvas background to black.', '⬛ Background: Black');
-                return;
-            }
-            if (txt.includes('white') || txt.includes('plain') || txt.includes('blank') || txt.includes('light')) {
-                setBgColor('#ffffff');
-                setBgPattern('plain');
-                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: '#ffffff', bgPattern: 'plain' });
-                narrateAction('Changed canvas background to plain white.', '⬜ Background: Plain White');
-                return;
-            }
-            if (txt.includes('chalkboard') || txt.includes('green')) {
-                setBgColor('#1b4332');
-                setBgPattern('plain');
-                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: '#1b4332', bgPattern: 'plain' });
-                narrateAction('Changed canvas background to chalkboard green.', '🟩 Background: Chalkboard Green');
-                return;
-            }
-            if (txt.includes('slate') || txt.includes('charcoal')) {
-                setBgColor('#1e293b');
-                setBgPattern('plain');
-                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: '#1e293b', bgPattern: 'plain' });
-                narrateAction('Changed canvas background to slate.', '🌫️ Background: Slate');
-                return;
-            }
-            if (txt.includes('gray') || txt.includes('grey')) {
-                setBgColor('#334155');
-                setBgPattern('plain');
-                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: '#334155', bgPattern: 'plain' });
-                narrateAction('Changed canvas background to gray.', '🌫️ Background: Gray');
-                return;
-            }
-            if (txt.includes('purple') || txt.includes('violet')) {
-                setBgColor('#4c1d95');
-                setBgPattern('plain');
-                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: '#4c1d95', bgPattern: 'plain' });
-                narrateAction('Changed canvas background to purple.', '🟪 Background: Purple');
-                return;
-            }
-            if (txt.includes('cyan')) {
-                setBgColor('#0891b2');
-                setBgPattern('plain');
-                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor: '#0891b2', bgPattern: 'plain' });
-                narrateAction('Changed canvas background to cyan.', '🟦 Background: Cyan');
-                return;
-            }
+            let targetPattern = undefined;
+            let targetColor = undefined;
 
-            // Background Patterns
-            if (txt.includes('grid') || txt.includes('graph paper')) {
-                const next = bgPattern === 'grid' ? 'plain' : 'grid';
-                setBgPattern(next);
-                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor, bgPattern: next });
-                narrateAction(`Toggled background grid ${next === 'grid' ? 'on' : 'off'}.`, '▦ Background Grid');
-                return;
-            }
-            if (txt.includes('dot') || txt.includes('dotted')) {
-                setBgPattern('dotted');
-                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor, bgPattern: 'dotted' });
-                narrateAction('Set background pattern to dots.', '••• Background: Dots');
-                return;
-            }
-            if (txt.includes('line') || txt.includes('ruled')) {
-                setBgPattern('lined');
-                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor, bgPattern: 'lined' });
-                narrateAction('Set background pattern to ruled lines.', '📋 Background: Ruled Lines');
-                return;
-            }
-            if (txt.includes('music')) {
-                setBgPattern('music');
-                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor, bgPattern: 'music' });
-                narrateAction('Set background pattern to music staff.', '🎵 Background: Music Staff');
-                return;
-            }
-            if (txt.includes('isometric') || txt.includes('iso')) {
-                setBgPattern('iso');
-                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor, bgPattern: 'iso' });
-                narrateAction('Set background pattern to isometric grid.', '📐 Background: Isometric');
-                return;
-            }
-            if (txt.includes('hex')) {
-                setBgPattern('hex');
-                if (socket && sessionId) socket.emit('whiteboard:bg-change', { sessionId, bgColor, bgPattern: 'hex' });
-                narrateAction('Set background pattern to hexagons.', '⬡ Background: Hexagons');
+            if (txt.includes('grid') || txt.includes('graph paper')) targetPattern = 'grid';
+            else if (txt.includes('dot') || txt.includes('dotted')) targetPattern = 'dotted';
+            else if (txt.includes('line') || txt.includes('ruled')) targetPattern = 'lined';
+            else if (txt.includes('iso')) targetPattern = 'iso';
+            else if (txt.includes('hex')) targetPattern = 'hex';
+            else if (txt.includes('music')) targetPattern = 'music';
+            else if (txt.includes('plain') || txt.includes('blank') || txt.includes('white board')) targetPattern = 'plain';
+
+            if (txt.includes('navy') || txt.includes('dark blue')) targetColor = '#0f172a';
+            else if (txt.includes('blue')) targetColor = '#1e3a8a';
+            else if (txt.includes('black') || txt.includes('blackboard') || txt.includes('dark')) targetColor = '#0b0f19';
+            else if (txt.includes('white') || txt.includes('light')) targetColor = '#ffffff';
+            else if (txt.includes('chalkboard') || txt.includes('green')) targetColor = '#1b4332';
+            else if (txt.includes('slate') || txt.includes('charcoal')) targetColor = '#1e293b';
+            else if (txt.includes('gray') || txt.includes('grey')) targetColor = '#334155';
+            else if (txt.includes('purple') || txt.includes('violet')) targetColor = '#4c1d95';
+            else if (txt.includes('cyan')) targetColor = '#0891b2';
+            else if (txt.includes('cream')) targetColor = '#fdfbf7';
+
+            if (targetColor !== undefined || targetPattern !== undefined) {
+                applyBackgroundChange(targetColor, targetPattern);
+                const colorStr = targetColor === '#0b0f19' || targetColor === '#000000' ? 'dark' : (targetColor || '');
+                const patternStr = targetPattern || '';
+                narrateAction(`Updated canvas background to ${colorStr} ${patternStr}`.trim() + '.', '🎨 Background Updated');
                 return;
             }
         }
@@ -17053,6 +17599,8 @@ export default function Whiteboard({
                     { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : (shapeType === 'parallelogram' ? ParallelogramIcon : RectangleHorizontal))), label: 'Shapes', important: true },
                     { id: 'text', icon: Type, label: 'Text (T)', important: true },
                     { id: 'math_tablet', icon: Calculator, label: 'Math Input Tablet (Windows MIP)', important: true },
+                    { id: 'math_solver', icon: Sparkles, label: 'Auto Math Solver (Timed Steps)', important: true },
+                    { id: 'parametric_shape', icon: Compass, label: 'Parametric Geometry (Equations/Angles)', important: true },
                     { id: 'image', icon: ImageIcon, label: 'Insert Image', important: false },
                     { id: 'media', icon: Film, label: 'Media & Documents (PDF, Video, Audio, Record, Web)', important: true },
                     { id: 'domain_3d', icon: Box, label: '3D Objects & Domain Library', important: true },
@@ -17124,6 +17672,14 @@ export default function Whiteboard({
                                     onClick={() => {
                                         if (t.id === 'math_tablet') {
                                             setShowMathTablet(true);
+                                            return;
+                                        }
+                                        if (t.id === 'math_solver') {
+                                            setShowMathSolver(true);
+                                            return;
+                                        }
+                                        if (t.id === 'parametric_shape') {
+                                            setShowParametricModal(true);
                                             return;
                                         }
                                         if (t.id === 'equation') {
@@ -17221,6 +17777,8 @@ export default function Whiteboard({
                                     className={`p-1 rounded-full transition-colors flex items-center justify-center ${
                                         tool === t.id ||
                                         (t.id === 'math_tablet' && showMathTablet) ||
+                                        (t.id === 'math_solver' && showMathSolver) ||
+                                        (t.id === 'parametric_shape' && showParametricModal) ||
                                         (t.id === 'recorder' && showRecorder) ||
                                         (t.id === 'timer' && showClassroomTimer) ||
                                         (t.id === 'spotlight' && isSpotlightActive) ||
@@ -21158,7 +21716,11 @@ export default function Whiteboard({
                                 const showRA = shpObj.showRightAngle !== false;
                                 const sq = Math.min(22, Math.max(12, Math.min(w, h) * 0.15));
                                 const thetaLabel = (shpObj.angleLabels && (shpObj.angleLabels.C || shpObj.angleLabels.theta || shpObj.angleLabels['2'])) || shpObj.thetaLabel;
+                                const topAngleLabel = shpObj.angleLabels && shpObj.angleLabels.A;
+                                const showTopArc = !!(shpObj.showTopAngle || (shpObj.angleLabels && shpObj.angleLabels.showTop));
+                                const hypLen = Math.sqrt(w * w + h * h) || 1;
                                 const arcR = Math.min(32, Math.min(w, h) * 0.25);
+                                const arcRA = Math.min(28, Math.min(w, h) * 0.22);
                                 const thetaAngle = Math.atan2(h, w);
 
                                 return (
@@ -21193,6 +21755,19 @@ export default function Whiteboard({
                                                     strokeWidth={Math.max(1.5, (shpObj.strokeWidth || 2) * 0.7)} 
                                                 />
                                                 {renderSvgLabel(w - arcR - 10, h - 8, thetaLabel, 'end', 13)}
+                                            </g>
+                                        )}
+
+                                        {/* Optional Top Angle Arc at Corner A (0, 0) */}
+                                        {topAngleLabel && showTopArc && (
+                                            <g>
+                                                <path 
+                                                    d={`M 0 ${arcRA} A ${arcRA} ${arcRA} 0 0 0 ${arcRA * (w / hypLen)} ${arcRA * (h / hypLen)}`} 
+                                                    fill="rgba(99, 102, 241, 0.12)" 
+                                                    stroke={shpObj.color} 
+                                                    strokeWidth={Math.max(1.5, (shpObj.strokeWidth || 2) * 0.7)} 
+                                                />
+                                                {renderSvgLabel(arcRA * 0.5 + 8, arcRA * 0.85 + 6, topAngleLabel, 'start', 12)}
                                             </g>
                                         )}
 
@@ -24860,6 +25435,22 @@ export default function Whiteboard({
                 onClose={() => setShowMathTablet(false)}
                 onInsert={handleInsertMathFromTablet}
                 initialLatex={selectedShapeIds.length === 1 ? (shapeObjects.find(s => s.id === selectedShapeIds[0])?.latex || '') : ''}
+            />
+
+            {/* Auto Math Problem Solver Modal (Timed Step-by-Step with Human Coordination) */}
+            <MathSolverModal
+                isOpen={showMathSolver}
+                onClose={() => setShowMathSolver(false)}
+                onInsertStepToCanvas={handleInsertStepToCanvas}
+                onInsertDiagramToCanvas={handleInsertDiagramToCanvas}
+                initialProblem={selectedShapeIds.length === 1 ? (shapeObjects.find(s => s.id === selectedShapeIds[0])?.latex || '') : ''}
+            />
+
+            {/* Parametric Geometry & Equation Shape Creator Modal */}
+            <ParametricShapeModal
+                isOpen={showParametricModal}
+                onClose={() => setShowParametricModal(false)}
+                onInsertShapeToCanvas={handleInsertParametricShape}
             />
 
             {/* Domain-Specific Shape Library Modal */}

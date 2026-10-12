@@ -48,6 +48,7 @@ const compilerRoutes = require('./routes/compiler.routes');
 const implementationPlansRoutes = require('./routes/implementation-plans.routes');
 const quizRoutes = require('./routes/quiz.routes');
 const browserRoutes = require('./routes/browser.routes');
+const mathSolverRoutes = require('./routes/mathSolver.routes');
 const initQuizTables = require('./scripts/init-quiz-tables');
 
 // Import middleware
@@ -191,6 +192,7 @@ app.use('/api/admin/implementation-plans', implementationPlansRoutes);
 app.use('/api/drive', require('./routes/drive.routes'));
 app.use('/api/quiz', quizRoutes);
 app.use('/api/browser', browserRoutes);
+app.use('/api/whiteboard/math-solver', mathSolverRoutes);
 
 // Initialize quiz tables
 initQuizTables().catch(err => console.warn('[App] Quiz tables init warning:', err.message));
