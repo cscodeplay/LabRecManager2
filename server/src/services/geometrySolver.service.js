@@ -446,6 +446,47 @@ class GeometrySolverService {
     }
 
     /**
+     * Parses circle equation and line equation from natural problem text
+     */
+    parseCircleAndLineFromText(str) {
+        if (!str || typeof str !== 'string') return null;
+        let circle = null, line = null;
+
+        // General form: x^2 + y^2 + Dx + Ey + F = 0
+        const genMatch = str.match(/x(?:\^2|²|\^?2)\s*\+\s*y(?:\^2|²|\^?2)\s*([+-]\s*\d*(?:\.\d+)?)\s*x\s*([+-]\s*\d*(?:\.\d+)?)\s*y\s*([+-]\s*\d+(?:\.\d+)?)\s*=\s*0/i);
+        if (genMatch) {
+            const parseCoeff = (s) => parseFloat(s.replace(/\s+/g, '')) || (s.includes('-') ? -1 : 1);
+            const D = parseCoeff(genMatch[1]);
+            const E = parseCoeff(genMatch[2]);
+            const F = parseFloat(genMatch[3].replace(/\s+/g, ''));
+            circle = { D, E, F, raw: genMatch[0].replace(/\s+/g, ' ') };
+        } else {
+            // Standard form: (x - h)^2 + (y - k)^2 = r^2
+            const stdMatch = str.match(/\(x\s*([+-]\s*\d+(?:\.\d+)?)\)(?:\^2|²|\^?2)\s*\+\s*\(y\s*([+-]\s*\d+(?:\.\d+)?)\)(?:\^2|²|\^?2)\s*=\s*(\d+(?:\.\d+)?)/i);
+            if (stdMatch) {
+                const h = -parseFloat(stdMatch[1].replace(/\s+/g, ''));
+                const k = -parseFloat(stdMatch[2].replace(/\s+/g, ''));
+                const rSq = parseFloat(stdMatch[3]);
+                circle = { cx: h, cy: k, r: Math.sqrt(rSq), raw: stdMatch[0] };
+            }
+        }
+
+        // Line match: y = mx + c or y = mx - c or y = mx
+        const lineMatch = str.match(/y\s*=\s*([+-]?\s*\d*(?:\.\d+)?)\s*x(?:\s*([+-]\s*\d+(?:\.\d+)?))?/i);
+        if (lineMatch) {
+            let mStr = (lineMatch[1] || '').replace(/\s+/g, '');
+            let m = mStr === '' || mStr === '+' ? 1 : (mStr === '-' ? -1 : parseFloat(mStr));
+            let c = lineMatch[2] ? parseFloat(lineMatch[2].replace(/\s+/g, '')) : 0;
+            line = { m, k: c, raw: lineMatch[0].replace(/\s+/g, ' ') };
+        }
+
+        if (circle && line) {
+            return { circle, line };
+        }
+        return null;
+    }
+
+    /**
      * Solves intersection of a Circle and a Line in Cartesian space
      * Supports:
      * - Circle: center (cx, cy), radius r OR general form x^2 + y^2 + 2gx + 2fy + c = 0
@@ -458,6 +499,7 @@ class GeometrySolverService {
         let cx = Number(circle.cx) || 0;
         let cy = Number(circle.cy) || 0;
         let r = Number(circle.r) || 5;
+        let rawCircleEq = circle.raw || circle.equation || null;
 
         // If circle is given in general form x^2 + y^2 + 2gx + 2fy + c = 0
         if (circle.g !== undefined && circle.f !== undefined && circle.c !== undefined) {
@@ -476,6 +518,12 @@ class GeometrySolverService {
             const rSq = cx * cx + cy * cy - Fval;
             if (rSq <= 0) throw new Error('Circle radius is imaginary or zero.');
             r = Math.sqrt(rSq);
+            if (!rawCircleEq) {
+                const dSign = Dval >= 0 ? `+ ${Dval}` : `- ${Math.abs(Dval)}`;
+                const eSign = Eval >= 0 ? `+ ${Eval}` : `- ${Math.abs(Eval)}`;
+                const fSign = Fval >= 0 ? `+ ${Fval}` : `- ${Math.abs(Fval)}`;
+                rawCircleEq = `x^2 + y^2 ${dSign}x ${eSign}y ${fSign} = 0`;
+            }
         }
 
         const m = Number(line.m) !== undefined ? Number(line.m) : 1;
@@ -483,7 +531,6 @@ class GeometrySolverService {
 
         // Quadratic equation: (x - cx)^2 + (m*x + k - cy)^2 = r^2
         // Let yDiff = k - cy
-        // x^2 - 2*cx*x + cx^2 + m^2*x^2 + 2*m*yDiff*x + yDiff^2 - r^2 = 0
         // (1 + m^2)*x^2 + 2*(m*yDiff - cx)*x + (cx^2 + yDiff^2 - r^2) = 0
         const yDiff = k - cy;
         const A = 1 + m * m;
@@ -510,27 +557,46 @@ class GeometrySolverService {
             intersections.push({ x: Math.round(x2 * 100) / 100, y: Math.round(y2 * 100) / 100 });
         }
 
+        // Clean LaTeX and human formatting without double-minuses (e.g. "x - -1.5")
+        const formatTerm = (val, varName) => {
+            if (val === 0) return `${varName}^2`;
+            return val < 0 ? `(${varName} + ${Math.abs(val)})^2` : `(${varName} - ${val})^2`;
+        };
+        const standardCircleEq = `${formatTerm(cx, 'x')} + ${formatTerm(cy, 'y')} = ${(r * r).toFixed(2)}`;
+        const lineEq = `y = ${m === 1 ? '' : (m === -1 ? '-' : m)}x ${k >= 0 ? `+ ${k}` : `- ${Math.abs(k)}`}`;
+        const roundNum = (n) => Math.round(n * 100) / 100;
+
+        const bSign = B >= 0 ? `+ ${roundNum(B)}` : `- ${roundNum(Math.abs(B))}`;
+        const cSign = C >= 0 ? `+ ${roundNum(C)}` : `- ${roundNum(Math.abs(C))}`;
+        const quadEq = `${roundNum(A)}x^2 ${bSign}x ${cSign} = 0`;
+
         return {
             status,
-            circle: { cx, cy, r: Math.round(r * 100) / 100 },
-            center: { x: cx, y: cy },
-            radius: Math.round(r * 100) / 100,
+            circle: { cx: roundNum(cx), cy: roundNum(cy), r: roundNum(r) },
+            center: { x: roundNum(cx), y: roundNum(cy) },
+            radius: roundNum(r),
+            rSq: roundNum(r * r),
             line: { m, k },
-            discriminant: Math.round(D * 100) / 100,
+            discriminant: roundNum(D),
             intersections,
             intersectionPoints: intersections,
             equations: {
-                circle: `(x - ${cx})^2 + (y - ${cy})^2 = ${(r * r).toFixed(2)}`,
-                line: `y = ${m}x + ${k}`
+                originalCircle: rawCircleEq || standardCircleEq,
+                circle: standardCircleEq,
+                line: lineEq,
+                quadratic: quadEq
             },
             latexSteps: [
-                `\\text{Circle: } (x - ${cx})^2 + (y - ${cy})^2 = ${Math.round(r * r * 100) / 100}`,
-                `\\text{Line: } y = ${m}x + ${k}`,
-                `\\text{Substitute } y \\text{ into circle: } (1 + ${m}^2)x^2 + 2(${m}(${yDiff.toFixed(2)}) - ${cx})x + (${(cx*cx + yDiff*yDiff - r*r).toFixed(2)}) = 0`,
-                `\\Delta = ${Math.round(D * 100) / 100} \\implies ${intersections.length} \\text{ real point(s)}`,
+                rawCircleEq
+                    ? `\\text{Given Circle: } ${rawCircleEq} \\iff ${standardCircleEq}`
+                    : `\\text{Circle: } ${standardCircleEq}`,
+                `\\text{Center: } C(${roundNum(cx)}, ${roundNum(cy)}), \\quad \\text{Radius } r = \\sqrt{${roundNum(r * r)}} \\approx ${roundNum(r)}`,
+                `\\text{Given Line: } ${lineEq}`,
+                `\\text{Substitute } y \\text{ into circle: } ${quadEq}`,
+                `\\Delta = b^2 - 4ac = (${roundNum(B)})^2 - 4(${roundNum(A)})(${roundNum(C)}) = ${roundNum(D)} \\implies ${intersections.length} \\text{ real point(s)}`,
                 intersections.length === 2
-                    ? `\\text{Points: } (${intersections[0].x}, ${intersections[0].y}) \\text{ and } (${intersections[1].x}, ${intersections[1].y})`
-                    : (intersections.length === 1 ? `\\text{Point: } (${intersections[0].x}, ${intersections[0].y})` : `\\text{No intersection}`)
+                    ? `\\text{Roots: } x_1 = ${intersections[0].x}, \\; x_2 = ${intersections[1].x} \\implies P_1(${intersections[0].x}, ${intersections[0].y}) \\text{ and } P_2(${intersections[1].x}, ${intersections[1].y})`
+                    : (intersections.length === 1 ? `\\text{Point of tangency: } P(${intersections[0].x}, ${intersections[0].y})` : `\\text{No real intersection points}`)
             ]
         };
     }

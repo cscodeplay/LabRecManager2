@@ -3236,19 +3236,19 @@ export default function QuizDashboardPage() {
                                     <div>
                                         <div className="flex items-center justify-between mb-1">
                                             <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                                                Specific Web Source or Domain <span className="text-[11px] font-normal text-slate-400">(Optional)</span>
+                                                Web Source, Domain, or Search Target <span className="text-[11px] font-normal text-slate-400">(Optional)</span>
                                             </label>
-                                            <span className="text-[10px] text-slate-400">e.g. pseb.ac.in, cbse.gov.in, or URL</span>
+                                            <span className="text-[10px] text-slate-400">e.g. geeksforgeeks.org, gateoverflow, or direct URL</span>
                                         </div>
                                         <input
                                             type="text"
                                             value={customSource}
                                             onChange={(e) => setCustomSource(e.target.value)}
-                                            placeholder="e.g. https://pseb.ac.in/sample-paper or pseb.ac.in"
+                                            placeholder="e.g. geeksforgeeks.org, gateoverflow, or https://... quiz link"
                                             className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-primary-500"
                                         />
                                         <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
-                                            If specified, questions will be extracted or grounded strictly from this source. Foreign exams will never be substituted.
+                                            Enter a specific article URL, a domain (e.g. geeksforgeeks.org) to auto-search on that portal, or leave blank to search automatically across archives.
                                         </p>
                                     </div>
 

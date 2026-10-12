@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const geometrySolver = require('./geometrySolver.service');
 
 // Paid & Production Models for Smooth, Uninterrupted Actions and Responses
 const ACTIVE_OPENAI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o1-mini', 'gpt-4-turbo'];
@@ -2747,6 +2748,111 @@ Output MUST be ONLY valid JSON matching this schema:
 
                 return { w, h, edgeLabels, altitudeLabel, speechResponse: speech };
             };
+
+            // Deterministic Circle & Line Intersection Geometry Solver
+            const circleLineParsed = geometrySolver.parseCircleAndLineFromText(text);
+            if (circleLineParsed) {
+                try {
+                    const sol = geometrySolver.solveCircleLineIntersection(circleLineParsed);
+                    const origCircleEq = sol.equations.originalCircle;
+                    const stdCircleEq = sol.equations.circle;
+                    const lineEq = sol.equations.line;
+                    const quadEq = sol.equations.quadratic;
+                    const pts = sol.intersections;
+
+                    const ptsSpeech = pts.length === 2
+                        ? `The line intersects the circle at two points: P1(${pts[0].x}, ${pts[0].y}) and P2(${pts[1].x}, ${pts[1].y}).`
+                        : (pts.length === 1 ? `The line is tangent to the circle at point P(${pts[0].x}, ${pts[0].y}).` : `The line does not intersect the circle in real coordinates.`);
+
+                    const ptsMarkdown = pts.length === 2
+                        ? `**Points of Intersection:**\n- $P_1(${pts[0].x}, ${pts[0].y})$\n- $P_2(${pts[1].x}, ${pts[1].y})$`
+                        : (pts.length === 1 ? `**Point of Tangency:**\n- $P(${pts[0].x}, ${pts[0].y})$` : `**No Real Intersections** (Discriminant $\\Delta < 0$)`);
+
+                    const speechResponse = `Here is the step-by-step solution for the circle ${origCircleEq} and line ${lineEq}: Completing the square gives center C(${sol.center.x}, ${sol.center.y}) and radius r ≈ ${sol.radius}. Substituting y = ${lineEq.replace('y = ', '')} into the circle gives the quadratic ${quadEq}. With discriminant Δ = ${sol.discriminant}, the roots are ${pts.map((p, i) => `x${i + 1} = ${p.x}`).join(' and ')}. ${ptsSpeech}`;
+
+                    const solutionMarkdown = `### Intersection of Circle and Line\n\n` +
+                        `**Given Circle:**\n$$${origCircleEq} \\iff ${stdCircleEq}$$\n` +
+                        `- **Center:** $C(${sol.center.x}, ${sol.center.y})$\n` +
+                        `- **Radius:** $r = \\sqrt{${sol.rSq || 24.25}} \\approx ${sol.radius}$\n\n` +
+                        `**Given Line:**\n$$${lineEq}$$\n\n` +
+                        `**Step 1: Algebraic Substitution**\n` +
+                        `Substitute $y = ${lineEq.replace('y = ', '')}$ into the circle equation:\n` +
+                        `$$${quadEq}$$\n\n` +
+                        `**Step 2: Discriminant & Roots**\n` +
+                        `- $\\Delta = b^2 - 4ac = ${sol.discriminant} > 0$ (${pts.length} real points of intersection)\n` +
+                        `- $x = \\frac{-b \\pm \\sqrt{\\Delta}}{2a} \\implies ${pts.map((p, i) => `x_${i + 1} = ${p.x}`).join(', \\;')}$\n\n` +
+                        `**Step 3: Coordinates of Intersection Points**\n` +
+                        pts.map((p, i) => `- For $x_{${i+1}} = ${p.x}$: $y_{${i+1}} = ${sol.line.m}(${p.x}) ${sol.line.k >= 0 ? `+ ${sol.line.k}` : `- ${Math.abs(sol.line.k)}`} = ${p.y} \\implies P_{${i+1}}(${p.x}, ${p.y})$`).join('\n') +
+                        `\n\n${ptsMarkdown}`;
+
+                    const diagramCurves = [
+                        {
+                            type: 'circle',
+                            cx: sol.center.x,
+                            cy: sol.center.y,
+                            r: sol.radius,
+                            color: '#3b82f6',
+                            label: origCircleEq,
+                            centerLabel: `C(${sol.center.x}, ${sol.center.y})`
+                        },
+                        {
+                            type: 'line',
+                            slope: sol.line.m,
+                            intercept: sol.line.k,
+                            color: '#6366f1',
+                            label: lineEq
+                        }
+                    ];
+
+                    const diagramIntersections = pts.map((p, idx) => ({
+                        x: p.x,
+                        y: p.y,
+                        label: `P${idx + 1}(${p.x}, ${p.y})`
+                    }));
+
+                    const diagramPlottedPoints = [
+                        { x: sol.center.x, y: sol.center.y, label: `C(${sol.center.x}, ${sol.center.y})` }
+                    ];
+
+                    return {
+                        recognized: true,
+                        success: true,
+                        speechResponse,
+                        solutionMarkdown,
+                        suggestedFollowUps: [
+                            `📐 Tangent at P₁(${pts[0]?.x}, ${pts[0]?.y})`,
+                            `📏 Distance between P₁ & P₂`,
+                            `⭕ Circle Center & Radius`,
+                            `📄 New clean board`
+                        ],
+                        canvasAction: {
+                            type: 'draw_problem_with_diagram',
+                            diagramType: 'cartesian_plane',
+                            question: text,
+                            solutionMarkdown,
+                            speechResponse,
+                            curves: diagramCurves,
+                            intersectionPoints: diagramIntersections,
+                            plottedPoints: diagramPlottedPoints,
+                            unitScale: 20
+                        },
+                        actions: [
+                            {
+                                type: 'CREATE_OBJECT',
+                                objectType: 'coordinate_system',
+                                title: 'Circle & Line Intersection',
+                                equation: origCircleEq,
+                                curves: diagramCurves,
+                                intersectionPoints: diagramIntersections,
+                                plottedPoints: diagramPlottedPoints,
+                                unitScale: 20
+                            }
+                        ]
+                    };
+                } catch (e) {
+                    console.warn('[AIService] Deterministic circle-line solver failed, falling back to LLM:', e.message);
+                }
+            }
 
             const whiteboardSystemPrompt = `You are an advanced Spatial & Generative AI reasoning engine for an interactive Whiteboard.
 You receive the user's spoken command along with a JSON representation of the current whiteboard state (objects, sizes, spatial coordinates, pages).

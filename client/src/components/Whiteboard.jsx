@@ -12006,7 +12006,7 @@ export default function Whiteboard({
         const startX = 60;
         const startY = 80;
         const diagW = 340;
-        const diagH = 290;
+        const diagH = 340;
 
         const is3DModel = ['vector_space_3d', 'sphere', 'frustum', 'hemisphere', 'capsule'].includes(dType);
         let diagShapeProps = {};
@@ -12042,16 +12042,20 @@ export default function Whiteboard({
         } else if (dType === 'cartesian_plane') {
             diagShapeProps = {
                 type: 'coordinate_system',
-                title: 'Cartesian Coordinate System',
+                title: data.title || 'Cartesian Coordinate System',
+                equation: data.equation || (data.curves && data.curves[0]?.label) || null,
                 curves: data.curves || [
-                    { type: 'circle', cx: -1.5, cy: -2, r: 4.92, color: '#3b82f6', label: 'x² + y² + 3x + 4y - 18 = 0' },
+                    { type: 'circle', cx: -1.5, cy: -2, r: 4.92, color: '#3b82f6', label: 'x² + y² + 3x + 4y - 18 = 0', centerLabel: 'C(-1.5, -2)' },
                     { type: 'line', slope: 3, intercept: 1, color: '#6366f1', label: 'y = 3x + 1' }
                 ],
                 intersectionPoints: data.intersectionPoints || [
                     { x: 0.5, y: 2.5, label: 'P₁(0.5, 2.5)' },
                     { x: -2.6, y: -6.8, label: 'P₂(-2.6, -6.8)' }
                 ],
-                unitScale: 20
+                plottedPoints: data.plottedPoints || [
+                    { x: -1.5, y: -2, label: 'C(-1.5, -2)' }
+                ],
+                unitScale: data.unitScale || 20
             };
         } else if (dType === 'sector') {
             diagShapeProps = {
@@ -12216,10 +12220,16 @@ export default function Whiteboard({
 
         const targetPage = currentPageRef.current !== undefined ? currentPageRef.current : currentPage;
         const shapesToAdd = diagramObj ? [diagramObj, problemCardObj, guideMarker] : [problemCardObj, guideMarker];
-        setPageShapeObjects(prev => ({
-            ...prev,
-            [targetPage]: [...(prev[targetPage] || []), ...shapesToAdd]
-        }));
+        setPageShapeObjects(prev => {
+            const existing = prev[targetPage] || [];
+            const filtered = dType === 'cartesian_plane'
+                ? existing.filter(s => s.type !== 'coordinate_system' && s.type !== 'cartesian_plane' && !s.id?.startsWith('prob_card_') && !s.id?.startsWith('guide_zone_'))
+                : existing.filter(s => !s.id?.startsWith('prob_card_') && !s.id?.startsWith('guide_zone_'));
+            return {
+                ...prev,
+                [targetPage]: [...filtered, ...shapesToAdd]
+            };
+        });
 
         setSelectedShapeIds(diagramObj ? [diagramObj.id, problemCardObj.id] : [problemCardObj.id]);
         setTool('pen'); // Auto-activate pen so teacher can start writing solution derivations immediately!
@@ -13002,8 +13012,8 @@ export default function Whiteboard({
         if (!solution) return;
 
         // 0. Problem + Diagram Side-by-Side Layout (Diagram Left • Problem Right • Free Space Below)
-        if (mode === 'problem_diagram_layout' || (mode === 'auto' && solution.question && /\b(cone|conical|cylinder|cylindrical|triangle|right triangle|pyramid|incline|ramp|wedge|pythagor|radius|slant|hypotenuse|friction|surface area|volume|free body)\b/i.test(solution.question))) {
-            const executed = executeProblemWithDiagramLayout(solution);
+        if (mode === 'problem_diagram_layout' || (mode === 'auto' && solution.question && /\b(cone|conical|cylinder|cylindrical|triangle|right triangle|pyramid|incline|ramp|wedge|pythagor|radius|slant|hypotenuse|friction|surface area|volume|free body|circle|intersect|intersection|equation|cartesian)\b/i.test(solution.question))) {
+            const executed = executeProblemWithDiagramLayout(solution.canvasAction || solution);
             if (executed) return;
         }
 
@@ -14828,9 +14838,18 @@ export default function Whiteboard({
                             speechResponse: data.speechResponse,
                             solutionMarkdown: data.solutionMarkdown || data.speechResponse,
                             suggestedFollowUps: data.suggestedFollowUps || [],
+                            canvasAction: data.canvasAction,
+                            curves: data.canvasAction?.curves || data.curves,
+                            intersectionPoints: data.canvasAction?.intersectionPoints || data.intersectionPoints,
+                            plottedPoints: data.canvasAction?.plottedPoints || data.plottedPoints,
                             modelUsed: data.modelUsed,
                             providerUsed: data.providerUsed
                         });
+                    }
+
+                    const hasProblemDiagramLayout = data.canvasAction && data.canvasAction.type === 'draw_problem_with_diagram';
+                    if (hasProblemDiagramLayout) {
+                        executeProblemWithDiagramLayout(data.canvasAction);
                     }
                     
                     let hasAutoPagedForTurn = false;
@@ -14971,6 +14990,10 @@ export default function Whiteboard({
                             });
                         } 
                         else if (action.type === 'CREATE_OBJECT') {
+                            if (hasProblemDiagramLayout && (action.objectType === 'coordinate_system' || action.objectType === 'cartesian_plane')) {
+                                // Unified problem + diagram layout was already generated; skip duplicate raw plane
+                                continue;
+                            }
                             // Calculate bounding box for incoming object to scan available contiguous spaces
                             let objW = 240;
                             let objH = 200;
@@ -23027,12 +23050,18 @@ export default function Whiteboard({
                                                         />
                                                         <circle cx={circleCx} cy={circleCy} r={2.5} fill={curve.color || '#3b82f6'} />
                                                         {curve.centerLabel && renderSvgLabel(circleCx + 6, circleCy - 6, curve.centerLabel, 'start', 11)}
-                                                        {curve.label && (
-                                                            <g>
-                                                                <rect x={circleCx - 40} y={circleCy - circleR - 18} width={80} height={16} rx={4} fill="rgba(255,255,255,0.88)" stroke={curve.color || '#3b82f6'} strokeWidth={0.8} />
-                                                                {renderSvgLabel(circleCx, circleCy - circleR - 6, curve.label, 'middle', 10, curve.color || '#3b82f6')}
-                                                            </g>
-                                                        )}
+                                                        {curve.label && (() => {
+                                                            const cLabel = curve.label || '';
+                                                            const cLabelW = Math.max(80, cLabel.length * 6.5 + 16);
+                                                            const cLabelX = Math.max(8, Math.min(w - cLabelW - 8, circleCx - cLabelW / 2));
+                                                            const cLabelY = Math.max(8, Math.min(h - 22, circleCy - circleR - 20));
+                                                            return (
+                                                                <g>
+                                                                    <rect x={cLabelX} y={cLabelY} width={cLabelW} height={18} rx={4} fill="rgba(255,255,255,0.92)" stroke={curve.color || '#3b82f6'} strokeWidth={0.8} />
+                                                                    {renderSvgLabel(cLabelX + cLabelW / 2, cLabelY + 12, cLabel, 'middle', 10, curve.color || '#3b82f6')}
+                                                                </g>
+                                                            );
+                                                        })()}
                                                     </g>
                                                 );
                                             } else if (curve.type === 'line') {
@@ -23055,12 +23084,18 @@ export default function Whiteboard({
                                                             strokeWidth={curve.strokeWidth || 2}
                                                             strokeDasharray={curve.dashArray || undefined}
                                                         />
-                                                        {curve.label && (
-                                                            <g>
-                                                                <rect x={Math.min(w - 90, Math.max(10, lx2 - 80))} y={Math.min(h - 22, Math.max(10, ly2 - 10))} width={80} height={16} rx={4} fill="rgba(255,255,255,0.88)" stroke={curve.color || '#6366f1'} strokeWidth={0.8} />
-                                                                {renderSvgLabel(Math.min(w - 50, Math.max(50, lx2 - 40)), Math.min(h - 10, Math.max(22, ly2 + 2)), curve.label, 'middle', 10, curve.color || '#6366f1')}
-                                                            </g>
-                                                        )}
+                                                        {curve.label && (() => {
+                                                            const lLabel = curve.label || '';
+                                                            const lLabelW = Math.max(70, lLabel.length * 6.5 + 16);
+                                                            const lLabelX = Math.max(8, Math.min(w - lLabelW - 8, lx2 - lLabelW));
+                                                            const lLabelY = Math.max(8, Math.min(h - 22, ly2 - 10));
+                                                            return (
+                                                                <g>
+                                                                    <rect x={lLabelX} y={lLabelY} width={lLabelW} height={18} rx={4} fill="rgba(255,255,255,0.92)" stroke={curve.color || '#6366f1'} strokeWidth={0.8} />
+                                                                    {renderSvgLabel(lLabelX + lLabelW / 2, lLabelY + 12, lLabel, 'middle', 10, curve.color || '#6366f1')}
+                                                                </g>
+                                                            );
+                                                        })()}
                                                     </g>
                                                 );
                                             }
@@ -23071,10 +23106,13 @@ export default function Whiteboard({
                                         {Array.isArray(shpObj.plottedPoints) && shpObj.plottedPoints.map((pt, idx) => {
                                             const px = cx + (Number(pt.x) || 0) * scale;
                                             const py = cy - (Number(pt.y) || 0) * scale;
+                                            const ptLabel = pt.label || `(${pt.x}, ${pt.y})`;
+                                            const ptLabelX = Math.max(8, Math.min(w - 75, px + 8));
+                                            const ptLabelY = Math.max(14, Math.min(h - 8, py - 6));
                                             return (
                                                 <g key={`pt_${idx}`}>
-                                                    <circle cx={px} cy={py} r={4.5} fill="#ef4444" stroke="#ffffff" strokeWidth={1.5} />
-                                                    {renderSvgLabel(px + 8, py - 6, pt.label || `(${pt.x}, ${pt.y})`, 'start', 12)}
+                                                    <circle cx={px} cy={py} r={4.5} fill="#2563eb" stroke="#ffffff" strokeWidth={1.5} />
+                                                    {renderSvgLabel(ptLabelX, ptLabelY, ptLabel, 'start', 11.5, '#1e293b')}
                                                 </g>
                                             );
                                         })}
@@ -23085,11 +23123,15 @@ export default function Whiteboard({
                                             const py = cy - (Number(pt.y) || 0) * scale;
                                             const labelText = pt.label || `P(${pt.x}, ${pt.y})`;
                                             const badgeW = Math.max(68, labelText.length * 6.5 + 16);
+                                            const rawBadgeX = px > cx ? px + 8 : px - badgeW - 8;
+                                            const badgeX = Math.max(6, Math.min(w - badgeW - 6, rawBadgeX));
+                                            const rawBadgeY = py < cy ? py + 4 : py - 24;
+                                            const badgeY = Math.max(6, Math.min(h - 22, rawBadgeY));
                                             return (
                                                 <g key={`inter_${idx}`}>
                                                     <circle cx={px} cy={py} r={9} fill="none" stroke="#ef4444" strokeWidth={1.2} opacity={0.5} strokeDasharray="2,2" />
                                                     <circle cx={px} cy={py} r={5} fill="#ef4444" stroke="#ffffff" strokeWidth={2} />
-                                                    <g transform={`translate(${px > cx ? px + 8 : px - badgeW - 8}, ${py < cy ? py + 4 : py - 24})`}>
+                                                    <g transform={`translate(${badgeX}, ${badgeY})`}>
                                                         <rect x="0" y="0" width={badgeW} height={18} rx={4} fill="#0f172a" stroke="#ef4444" strokeWidth={1.2} />
                                                         <text x={badgeW / 2} y={13} fill="#f8fafc" fontSize={10.5} fontWeight="bold" textAnchor="middle" fontFamily="sans-serif">
                                                             {labelText}
