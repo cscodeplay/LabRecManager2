@@ -129,6 +129,20 @@ function RotationDial3D({ cx, cy, radius, rotation }) {
 /* ─── Default Dimensions and Units Helper ─── */
 export function getDefaultDimensions(modelType = 'cube') {
     switch ((modelType || '').toLowerCase()) {
+        case 'frustum':
+            return { r1: 8, r2: 4, height: 10 };
+        case 'hemisphere':
+            return { radius: 6 };
+        case 'spherical_cap':
+            return { radius: 6, height: 4 };
+        case 'capsule':
+            return { radius: 4, height: 10 };
+        case 'half_cylinder':
+            return { radius: 5, height: 12 };
+        case 'cone_cylinder':
+            return { radius: 5, height: 8, coneHeight: 6 };
+        case 'vector_space_3d':
+            return { range: 10 };
         case 'prism':
             return { base: 10, height: 10, depth: 12 };
         case 'cylinder':
@@ -253,6 +267,61 @@ export function getDimensionAnnotations(obj, transformedVertices, w, h) {
                 midX: topCenter.px + offX + 22, midY: (topCenter.py + botCenter.py) / 2
             });
         }
+    } else if (mType === 'frustum') {
+        const topCenter = transformedVertices[transformedVertices.length - 2];
+        const botCenter = transformedVertices[transformedVertices.length - 1];
+        const topRim0 = transformedVertices[0];
+        const botRim0 = transformedVertices[1];
+        if (topCenter && topRim0 && botCenter && botRim0) {
+            annotations.push({
+                type: 'line',
+                dimensionKey: 'r2',
+                x1: topCenter.px, y1: topCenter.py, x2: topRim0.px, y2: topRim0.py,
+                label: `r₂ = ${dims.r2 || 4} ${unit}`,
+                midX: (topCenter.px + topRim0.px) / 2, midY: (topCenter.py + topRim0.py) / 2 - 14
+            });
+            annotations.push({
+                type: 'line',
+                dimensionKey: 'r1',
+                x1: botCenter.px, y1: botCenter.py, x2: botRim0.px, y2: botRim0.py,
+                label: `r₁ = ${dims.r1 || 8} ${unit}`,
+                midX: (botCenter.px + botRim0.px) / 2, midY: (botCenter.py + botRim0.py) / 2 + 16
+            });
+            const offX = 22;
+            annotations.push({
+                type: 'dashed-line',
+                dimensionKey: 'height',
+                x1: botCenter.px + offX, y1: botCenter.py, x2: topCenter.px + offX, y2: topCenter.py,
+                label: `h = ${dims.height || 10} ${unit}`,
+                midX: topCenter.px + offX + 26, midY: (topCenter.py + botCenter.py) / 2
+            });
+        }
+    } else if (mType === 'capsule') {
+        const cx = w / 2;
+        const cy = h / 2;
+        annotations.push({
+            type: 'line',
+            dimensionKey: 'radius',
+            x1: cx, y1: cy - 40, x2: cx + 35, y2: cy - 40,
+            label: `r = ${dims.radius || 4} ${unit}`,
+            midX: cx + 18, midY: cy - 54
+        });
+        annotations.push({
+            type: 'dashed-line',
+            dimensionKey: 'height',
+            x1: cx + 45, y1: cy - 35, x2: cx + 45, y2: cy + 35,
+            label: `h = ${dims.height || 10} ${unit}`,
+            midX: cx + 65, midY: cy
+        });
+    } else if (mType === 'vector_space_3d') {
+        const cx = w / 2;
+        const cy = h / 2;
+        annotations.push({
+            type: 'text',
+            label: '3D Cartesian Frame (X, Y, Z)',
+            midX: cx,
+            midY: cy + h / 2 - 16
+        });
     } else if (mType === 'cone') {
         const apex = transformedVertices[0];
         const baseCenter = transformedVertices[transformedVertices.length - 1];
@@ -837,6 +906,25 @@ export function get3DModelMesh(modelType = 'cube', dimensions = null) {
         case 'ip_patch_panel': {
             return buildIpPanelMesh(dims);
         }
+        case 'frustum': {
+            return buildFrustumMesh(dims);
+        }
+        case 'hemisphere':
+        case 'spherical_cap': {
+            return buildHemisphereMesh(dims);
+        }
+        case 'capsule': {
+            return buildCapsuleMesh(dims);
+        }
+        case 'half_cylinder': {
+            return buildHalfCylinderMesh(dims);
+        }
+        case 'cone_cylinder': {
+            return buildConeCylinderMesh(dims);
+        }
+        case 'vector_space_3d': {
+            return buildVectorSpace3DMesh(dims);
+        }
         default:
             return get3DModelMesh('cube');
     }
@@ -859,6 +947,351 @@ function addMeshBox(v, f, faceColors, minX, maxX, minY, maxY, minZ, maxZ, boxCol
         f.push(face);
         if (faceColors) faceColors.push(boxColor);
     });
+}
+
+/* ─── 3D Vector Arrow Primitive Helper ─── */
+function add3DArrow(v, f, faceColors, start, end, color, shaftRadius = 0.035, headRadius = 0.1, headLen = 0.22) {
+    const dx = end[0] - start[0];
+    const dy = end[1] - start[1];
+    const dz = end[2] - start[2];
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 0.05) return;
+
+    const ux = dx / len, uy = dy / len, uz = dz / len;
+    let px = 0, py = 1, pz = 0;
+    if (Math.abs(uy) > 0.9) { px = 1; py = 0; pz = 0; }
+    let rx = uy * pz - uz * py, ry = uz * px - ux * pz, rz = ux * py - uy * px;
+    const rLen = Math.hypot(rx, ry, rz);
+    rx /= rLen; ry /= rLen; rz /= rLen;
+    const sx = uy * rz - uz * ry, sy = uz * rx - ux * rz, sz = ux * ry - uy * rx;
+
+    const segs = 8;
+    const shaftLen = Math.max(0.02, len - headLen);
+    const shaftEnd = [start[0] + ux * shaftLen, start[1] + uy * shaftLen, start[2] + uz * shaftLen];
+
+    const baseIdx = v.length;
+    for (let i = 0; i < segs; i++) {
+        const ang = (i / segs) * Math.PI * 2;
+        const cos = Math.cos(ang), sin = Math.sin(ang);
+        const ox = (rx * cos + sx * sin) * shaftRadius;
+        const oy = (ry * cos + sy * sin) * shaftRadius;
+        const oz = (rz * cos + sz * sin) * shaftRadius;
+        v.push([start[0] + ox, start[1] + oy, start[2] + oz]);
+        v.push([shaftEnd[0] + ox, shaftEnd[1] + oy, shaftEnd[2] + oz]);
+    }
+
+    for (let i = 0; i < segs; i++) {
+        const nxt = (i + 1) % segs;
+        f.push([baseIdx + i * 2, baseIdx + nxt * 2, baseIdx + nxt * 2 + 1, baseIdx + i * 2 + 1]);
+        if (faceColors) faceColors.push(color);
+    }
+
+    const headBaseIdx = v.length;
+    for (let i = 0; i < segs; i++) {
+        const ang = (i / segs) * Math.PI * 2;
+        const cos = Math.cos(ang), sin = Math.sin(ang);
+        const ox = (rx * cos + sx * sin) * headRadius;
+        const oy = (ry * cos + sy * sin) * headRadius;
+        const oz = (rz * cos + sz * sin) * headRadius;
+        v.push([shaftEnd[0] + ox, shaftEnd[1] + oy, shaftEnd[2] + oz]);
+    }
+    const tipIdx = v.length;
+    v.push([end[0], end[1], end[2]]);
+    const headBaseCenterIdx = v.length;
+    v.push([shaftEnd[0], shaftEnd[1], shaftEnd[2]]);
+
+    for (let i = 0; i < segs; i++) {
+        const nxt = (i + 1) % segs;
+        f.push([headBaseIdx + i, headBaseIdx + nxt, tipIdx]);
+        if (faceColors) faceColors.push(color);
+        f.push([headBaseCenterIdx, headBaseIdx + nxt, headBaseIdx + i]);
+        if (faceColors) faceColors.push(color);
+    }
+}
+
+/* ─── 3D Vector Space & Coordinate Geometry ─── */
+function buildVectorSpace3DMesh(dims = {}) {
+    const v = [];
+    const f = [];
+    const faceColors = [];
+
+    // Orthogonal Cartesian Axes
+    // X Axis (Red #ef4444)
+    add3DArrow(v, f, faceColors, [-0.2, 0, 0], [1.7, 0, 0], '#ef4444', 0.035, 0.1, 0.2);
+    // Y Axis (Green #10b981) - oriented up in 3D projection
+    add3DArrow(v, f, faceColors, [0, 0.2, 0], [0, -1.7, 0], '#10b981', 0.035, 0.1, 0.2);
+    // Z Axis (Blue #3b82f6)
+    add3DArrow(v, f, faceColors, [0, 0, -0.2], [0, 0, 1.7], '#3b82f6', 0.035, 0.1, 0.2);
+
+    // Origin marker cube
+    addMeshBox(v, f, faceColors, -0.05, 0.05, -0.05, 0.05, -0.05, 0.05, '#64748b');
+
+    // Unit Basis tick markers
+    addMeshBox(v, f, faceColors, 0.96, 1.04, -0.04, 0.04, -0.04, 0.04, '#f87171');
+    addMeshBox(v, f, faceColors, -0.04, 0.04, -1.04, -0.96, -0.04, 0.04, '#34d399');
+    addMeshBox(v, f, faceColors, -0.04, 0.04, -0.04, 0.04, 0.96, 1.04, '#60a5fa');
+
+    // Vector A (Amber #f59e0b)
+    const rawA = dims?.vectorA || (Array.isArray(dims?.vectors) && dims.vectors[0]) || [1.2, 0.9, 0.4];
+    const ax = Number(rawA[0]) || 1.2, ay = Number(rawA[1]) || 0.9, az = Number(rawA[2]) || 0.4;
+    add3DArrow(v, f, faceColors, [0, 0, 0], [ax, -ay, az], '#f59e0b', 0.045, 0.13, 0.24);
+
+    // Vector B (Cyan #06b6d4)
+    const rawB = dims?.vectorB || (Array.isArray(dims?.vectors) && dims.vectors[1]) || [0.3, 1.3, 0.8];
+    const bx = Number(rawB[0]) || 0.3, by = Number(rawB[1]) || 1.3, bz = Number(rawB[2]) || 0.8;
+    add3DArrow(v, f, faceColors, [0, 0, 0], [bx, -by, bz], '#06b6d4', 0.045, 0.13, 0.24);
+
+    // Normal Cross Product Vector A x B (Purple #a855f7)
+    if (dims?.showCrossProduct !== false) {
+        const cx = ay * bz - az * by;
+        const cy = az * bx - ax * bz;
+        const cz = ax * by - ay * bx;
+        const cLen = Math.hypot(cx, cy, cz);
+        if (cLen > 0.01) {
+            const scale = Math.min(1.6, Math.max(0.8, cLen));
+            const nx = (cx / cLen) * scale;
+            const ny = (cy / cLen) * scale;
+            const nz = (cz / cLen) * scale;
+            add3DArrow(v, f, faceColors, [0, 0, 0], [nx, -ny, nz], '#a855f7', 0.045, 0.13, 0.24);
+        }
+    }
+
+    // Parallelogram spanned by a and b
+    const p0 = [0, 0, 0];
+    const p1 = [ax, -ay, az];
+    const p2 = [ax + bx, -ay - by, az + bz];
+    const p3 = [bx, -by, bz];
+    const baseP = v.length;
+    v.push(p0, p1, p2, p3);
+    f.push([baseP, baseP + 1, baseP + 2, baseP + 3]);
+    f.push([baseP + 3, baseP + 2, baseP + 1, baseP]);
+    if (faceColors) {
+        faceColors.push('rgba(245, 158, 11, 0.35)');
+        faceColors.push('rgba(245, 158, 11, 0.35)');
+    }
+
+    return { vertices: v, faces: f, color: '#6366f1', faceColors };
+}
+
+/* ─── Frustum of a Cone ─── */
+function buildFrustumMesh(dims = {}) {
+    const r1 = Math.max(0.2, (Number(dims.r1 || dims.radius1 || 8) / 8) * 1.1);
+    const r2 = Math.max(0.1, (Number(dims.r2 || dims.radius2 || 4) / 8) * 1.1);
+    const halfH = Math.max(0.3, (Number(dims.height || 10) / 10) * 1.1);
+    const segments = 16;
+    const v = [];
+    const f = [];
+    const faceColors = [];
+
+    for (let i = 0; i < segments; i++) {
+        const a = (i / segments) * Math.PI * 2;
+        const cos = Math.cos(a), sin = Math.sin(a);
+        v.push([cos * r2, -halfH, sin * r2]); // Top rim (i*2)
+        v.push([cos * r1, halfH, sin * r1]);  // Bottom rim (i*2 + 1)
+    }
+    const topCenter = v.length;
+    v.push([0, -halfH, 0]);
+    const botCenter = v.length;
+    v.push([0, halfH, 0]);
+
+    for (let i = 0; i < segments; i++) {
+        const next = (i + 1) % segments;
+        f.push([i * 2, next * 2, next * 2 + 1, i * 2 + 1]);
+        faceColors.push(i % 2 === 0 ? '#f59e0b' : '#d97706');
+        f.push([topCenter, next * 2, i * 2]);
+        faceColors.push('#fbbf24');
+        f.push([botCenter, i * 2 + 1, next * 2 + 1]);
+        faceColors.push('#b45309');
+    }
+
+    return { vertices: v, faces: f, color: '#f59e0b', faceColors };
+}
+
+/* ─── Hemisphere & Spherical Cap ─── */
+function buildHemisphereMesh(dims = {}) {
+    const r = Math.max(0.3, (Number(dims.radius || 6) / 6) * 1.1);
+    const latBands = 8;
+    const lonBands = 16;
+    const v = [];
+    const f = [];
+    const faceColors = [];
+
+    for (let lat = 0; lat <= latBands; lat++) {
+        const theta = (lat * (Math.PI / 2)) / latBands;
+        const sinTheta = Math.sin(theta);
+        const cosTheta = Math.cos(theta);
+        for (let lon = 0; lon <= lonBands; lon++) {
+            const phi = (lon * 2 * Math.PI) / lonBands;
+            v.push([Math.cos(phi) * sinTheta * r, -cosTheta * r, Math.sin(phi) * sinTheta * r]);
+        }
+    }
+
+    for (let lat = 0; lat < latBands; lat++) {
+        for (let lon = 0; lon < lonBands; lon++) {
+            const first = lat * (lonBands + 1) + lon;
+            const second = first + lonBands + 1;
+            f.push([first, second, second + 1, first + 1]);
+            faceColors.push((lat + lon) % 2 === 0 ? '#06b6d4' : '#0891b2');
+        }
+    }
+
+    const baseCenter = v.length;
+    v.push([0, 0, 0]);
+    const equatorStart = latBands * (lonBands + 1);
+    for (let lon = 0; lon < lonBands; lon++) {
+        f.push([baseCenter, equatorStart + lon, equatorStart + lon + 1]);
+        faceColors.push('#0e7490');
+    }
+
+    return { vertices: v, faces: f, color: '#06b6d4', faceColors };
+}
+
+/* ─── 3D Capsule (Test Tube) ─── */
+function buildCapsuleMesh(dims = {}) {
+    const r = Math.max(0.2, (Number(dims.radius || 4) / 5) * 0.9);
+    const halfH = Math.max(0.3, (Number(dims.height || 10) / 10) * 0.7);
+    const latBands = 5;
+    const lonBands = 14;
+    const v = [];
+    const f = [];
+    const faceColors = [];
+
+    // Top Dome
+    for (let lat = 0; lat <= latBands; lat++) {
+        const theta = (lat * (Math.PI / 2)) / latBands;
+        const sinTheta = Math.sin(theta);
+        const cosTheta = Math.cos(theta);
+        for (let lon = 0; lon <= lonBands; lon++) {
+            const phi = (lon * 2 * Math.PI) / lonBands;
+            v.push([Math.cos(phi) * sinTheta * r, -halfH - cosTheta * r, Math.sin(phi) * sinTheta * r]);
+        }
+    }
+
+    for (let lat = 0; lat < latBands; lat++) {
+        for (let lon = 0; lon < lonBands; lon++) {
+            const first = lat * (lonBands + 1) + lon;
+            const second = first + lonBands + 1;
+            f.push([first, second, second + 1, first + 1]);
+            faceColors.push('#ec4899');
+        }
+    }
+
+    // Cylinder Wall
+    const topRimStart = latBands * (lonBands + 1);
+    const botRimStart = v.length;
+    for (let lon = 0; lon <= lonBands; lon++) {
+        const phi = (lon * 2 * Math.PI) / lonBands;
+        v.push([Math.cos(phi) * r, halfH, Math.sin(phi) * r]);
+    }
+
+    for (let lon = 0; lon < lonBands; lon++) {
+        f.push([topRimStart + lon, botRimStart + lon, botRimStart + lon + 1, topRimStart + lon + 1]);
+        faceColors.push('#f43f5e');
+    }
+
+    // Bottom Dome
+    const botDomeBase = v.length;
+    for (let lat = 0; lat <= latBands; lat++) {
+        const theta = (lat * (Math.PI / 2)) / latBands;
+        const sinTheta = Math.sin(theta);
+        const cosTheta = Math.cos(theta);
+        for (let lon = 0; lon <= lonBands; lon++) {
+            const phi = (lon * 2 * Math.PI) / lonBands;
+            v.push([Math.cos(phi) * sinTheta * r, halfH + cosTheta * r, Math.sin(phi) * sinTheta * r]);
+        }
+    }
+
+    for (let lat = 0; lat < latBands; lat++) {
+        for (let lon = 0; lon < lonBands; lon++) {
+            const first = botDomeBase + lat * (lonBands + 1) + lon;
+            const second = first + lonBands + 1;
+            f.push([first, first + 1, second + 1, second]);
+            faceColors.push('#db2777');
+        }
+    }
+
+    return { vertices: v, faces: f, color: '#ec4899', faceColors };
+}
+
+/* ─── Half Cylinder ─── */
+function buildHalfCylinderMesh(dims = {}) {
+    const r = Math.max(0.3, (Number(dims.radius || 5) / 5) * 1.1);
+    const halfH = Math.max(0.3, (Number(dims.height || 12) / 10) * 1.1);
+    const segs = 12;
+    const v = [];
+    const f = [];
+    const faceColors = [];
+
+    for (let i = 0; i <= segs; i++) {
+        const a = (i / segs) * Math.PI;
+        const x = Math.cos(a) * r;
+        const z = Math.sin(a) * r;
+        v.push([x, -halfH, z]);
+        v.push([x, halfH, z]);
+    }
+
+    for (let i = 0; i < segs; i++) {
+        f.push([i * 2, (i + 1) * 2, (i + 1) * 2 + 1, i * 2 + 1]);
+        faceColors.push(i % 2 === 0 ? '#3b82f6' : '#2563eb');
+    }
+
+    const topCenter = v.length;
+    v.push([0, -halfH, 0]);
+    for (let i = 0; i < segs; i++) {
+        f.push([topCenter, (i + 1) * 2, i * 2]);
+        faceColors.push('#60a5fa');
+    }
+
+    const botCenter = v.length;
+    v.push([0, halfH, 0]);
+    for (let i = 0; i < segs; i++) {
+        f.push([botCenter, i * 2 + 1, (i + 1) * 2 + 1]);
+        faceColors.push('#1d4ed8');
+    }
+
+    f.push([0, 1, segs * 2 + 1, segs * 2]);
+    faceColors.push('#1e40af');
+
+    return { vertices: v, faces: f, color: '#3b82f6', faceColors };
+}
+
+/* ─── Cone on Cylinder ─── */
+function buildConeCylinderMesh(dims = {}) {
+    const r = Math.max(0.3, (Number(dims.radius || 5) / 5) * 1.0);
+    const hCyl = Math.max(0.3, (Number(dims.height || 8) / 10) * 0.8);
+    const hCone = Math.max(0.3, (Number(dims.coneHeight || 6) / 10) * 0.8);
+    const segs = 16;
+    const v = [];
+    const f = [];
+    const faceColors = [];
+
+    for (let i = 0; i < segs; i++) {
+        const a = (i / segs) * Math.PI * 2;
+        v.push([Math.cos(a) * r, 0, Math.sin(a) * r]);
+        v.push([Math.cos(a) * r, hCyl, Math.sin(a) * r]);
+    }
+
+    const botCenter = v.length;
+    v.push([0, hCyl, 0]);
+
+    for (let i = 0; i < segs; i++) {
+        const next = (i + 1) % segs;
+        f.push([i * 2, next * 2, next * 2 + 1, i * 2 + 1]);
+        faceColors.push(i % 2 === 0 ? '#10b981' : '#059669');
+        f.push([botCenter, i * 2 + 1, next * 2 + 1]);
+        faceColors.push('#047857');
+    }
+
+    const apex = v.length;
+    v.push([0, -hCone, 0]);
+
+    for (let i = 0; i < segs; i++) {
+        const next = (i + 1) % segs;
+        f.push([apex, i * 2, next * 2]);
+        faceColors.push(i % 2 === 0 ? '#34d399' : '#10b981');
+    }
+
+    return { vertices: v, faces: f, color: '#10b981', faceColors };
 }
 
 /* ─── 1. Optical Fiber 3D Mesh ─── */

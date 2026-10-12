@@ -2786,7 +2786,7 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
     },
     {
       "type": "CREATE_OBJECT",
-      "objectType": "right_triangle | triangle | circle | concentric_circles | square | rectangle | coordinate_system | line | arrow | star | diamond | pentagon | hexagon | sticky_note | text | 3d_model | lesson_board | drawing",
+      "objectType": "right_triangle | triangle | circle | concentric_circles | square | rectangle | coordinate_system | cartesian_plane | sector | segment | parabolic_arch | line | arrow | star | diamond | pentagon | hexagon | sticky_note | text | 3d_model | lesson_board | drawing",
       "title": "<name or subject of drawing, e.g. 'cat', 'dog', 'car', 'tree', 'house', 'apple', 'flower', 'fish', 'rocket', 'robot'>",
       "svg": "<optional custom SVG string or omit to use builtin illustration library>",
       "width": "<number or omit>",
@@ -2811,9 +2811,13 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
       "showRadius": "<true to draw radius line on circle with radiusLabel>",
       "radiusLabel": "<string e.g. 'r = 5 cm'>",
       "showRadii": "<true to show radius lines on concentric_circles>",
+      "plottedPoints": [{"x": "<number>", "y": "<number>", "label": "<string, e.g. '(0.5, 2.5)'>"}],
       "text": "<For text/sticky_notes: Generated content. Supports markdown and $$LaTeX$$ formulas. YOU MUST GENERATE THIS KNOWLEDGE YOURSELF.>",
       "fontSize": "<number for text>",
-      "modelType": "cube | sphere | pyramid | cylinder | cone | earth | sun | moon | mars | jupiter | saturn | atom | dna | rocket",
+      "modelType": "cube | sphere | pyramid | cylinder | cone | frustum | hemisphere | spherical_cap | capsule | half_cylinder | cone_cylinder | vector_space_3d | earth | sun | moon | mars | jupiter | saturn | atom | dna | rocket",
+      "vectors": ["<3D vector a e.g. [1,0,0]>", "<3D vector b e.g. [0,1,0]>"],
+      "showCrossProduct": "<true to display normal vector a x b in vector_space_3d>",
+      "dimensions": { "radius": "<number>", "height": "<number>", "r1": "<number>", "r2": "<number>" },
       "x": "<Compute specific X coordinate if user requested a location, else omit to center>",
       "y": "<Compute specific Y coordinate if user requested a location, else omit to center>"
     },
@@ -2896,7 +2900,33 @@ CRITICAL RULES:
      - Output individual circle objects sharing the exact same center (center O) with sequential radii (e.g. radii: [45, 85, 125] or user-provided radii e.g. [40, 80]), OR use objectType: "concentric_circles", rings: 3, width: 240, height: 240, showCenter: true, centerLabel: "O", showRadii: true, radiiLabels: ["r₁", "r₂", "r₃"].
   6. RECTANGLE / SQUARE / AREA / PERIMETER:
      - Use objectType: "rectangle", width: <specified width e.g. 50 or 200>, height: <specified height e.g. 30 or 100>, vertexLabels: ["A", "B", "C", "D"], edgeLabels: ["length", "length", "width", "width"], showRightAngle: true.
-  7. EXPLANATION:
+  7. SOLID GEOMETRY (SPHERE, CYLINDER, CONE, FRUSTUM, HEMISPHERE, CAPSULE):
+     - When asked for volume, surface area, or solid geometry formulas (e.g. "what is the volume and surface area of cylinder with radius 4 and height 10", "surface area of sphere", "volume of cone", "frustum volume"):
+       * YOU MUST compute the exact numerical answers and display step-by-step LaTeX formulas in 'speechResponse' and 'solutionMarkdown':
+         - Cylinder: V = \\pi r^2 h, S_{\text{curved}} = 2\\pi r h, S_{\text{total}} = 2\\pi r (h + r)
+         - Sphere: V = \\frac{4}{3}\\pi r^3, S_{\text{total}} = 4\\pi r^2
+         - Cone: V = \\frac{1}{3}\\pi r^2 h, l = \\sqrt{r^2 + h^2}, S_{\text{total}} = \\pi r (r + l)
+         - Frustum of Cone: V = \\frac{1}{3}\\pi h (r_1^2 + r_2^2 + r_1 r_2), l = \\sqrt{h^2 + (r_1 - r_2)^2}, S_{\text{curved}} = \\pi (r_1 + r_2) l
+         - Hemisphere: V = \\frac{2}{3}\\pi r^3, S_{\text{curved}} = 2\\pi r^2, S_{\text{total}} = 3\\pi r^2
+         - Capsule: V = \\pi r^2 h + \\frac{4}{3}\\pi r^3, S = 2\\pi r h + 4\\pi r^2
+       * ALWAYS accompany the answer with a cleanly constructed interactive '3d_model' on canvas matching the solid (modelType: 'cylinder' | 'sphere' | 'cone' | 'frustum' | 'hemisphere' | 'capsule') with 'dimensions' set to the given values!
+  8. 3D VECTOR SPACE & 3D COORDINATE GEOMETRY (CBSE Class 12 / College Math):
+     - When asked to plot vectors or vector operations (e.g. "plot vectors a = [1,0,0] and b = [0,1,0]", "cross product of vectors", "dot product", "3D coordinate frame"):
+       * Output objectType: "3d_model" with modelType: "vector_space_3d", vectors: [[a_x, a_y, a_z], [b_x, b_y, b_z]], and showCrossProduct: true.
+       * In 'speechResponse', calculate:
+         - Magnitudes: |a| = \\sqrt{a_1^2 + a_2^2 + a_3^2}, |b| = \\sqrt{b_1^2 + b_2^2 + b_3^2}
+         - Dot Product: a \\cdot b = a_1 b_1 + a_2 b_2 + a_3 b_3
+         - Angle: \\cos\\theta = \\frac{a\\cdot b}{|a||b|}
+         - Cross Product: a \\times b = (a_2 b_3 - a_3 b_2)\\hat{i} - (a_1 b_3 - a_3 b_1)\\hat{j} + (a_1 b_2 - a_2 b_1)\\hat{k}
+  9. 2D CARTESIAN EQUATIONS & INTERSECTIONS (Circle-Line, Functions, Calculus):
+     - When asked to find intersection points or plot coordinate curves (e.g. "circle with equation x^2 + y^2 + 3x + 4y - 18 = 0 and line y = 3x+1 that intersects this circle what will be points of intersection"):
+       * Perform exact algebraic substitution: substitute y = mx + k into circle equation, form quadratic Ax² + Bx + C = 0, evaluate discriminant Δ = B² - 4AC, and solve for roots (x₁, y₁) and (x₂, y₂).
+       * Output objectType: "cartesian_plane" or "coordinate_system" with plottedPoints: [{ x: x₁, y: y₁, label: "(x₁, y₁)" }, { x: x₂, y: y₂, label: "(x₂, y₂)" }] so the intersection points are marked on the Cartesian plane!
+  10. PHYSICS, CHEMISTRY & BIOLOGY ENGINE:
+     - PHYSICS: Mechanics (Newton's laws, incline plane free-body diagrams, friction, kinematics), Circuits (Ohm's law V = IR, series/parallel resistors), Optics (Snell's law, ray diagrams).
+     - CHEMISTRY: Molecular geometry (VSEPR shapes: linear, bent, trigonal planar, tetrahedral CH₄), Gas laws (PV = nRT), Stoichiometry & balanced equations.
+     - BIOLOGY: Cell structure (plant/animal cells, organelles), Genetics (Punnett squares with Mendelian 3:1 ratio), DNA double helix (A-T, G-C base pairs).
+  11. EXPLANATION:
      - Provide the step-by-step mathematical reasoning, formulas in LaTeX ($$...$$), and calculations inside speechResponse and solutionMarkdown.
      - The interactive diagram on canvas visually anchors the vertices, edges, and angles!
 - **STRICT PROHIBITION ON 'drawing' FOR GEOMETRIC SHAPES**:
@@ -3050,6 +3080,17 @@ Spoken input: "${text}"
                             const actColor = act.color || parseColorFromText(combined, '#3b82f6');
 
                             if (act.type === 'CREATE_OBJECT') {
+                                // PRESERVE TEXT, STICKY NOTES, LESSON BOARDS, AND 3D MODELS - NEVER MUTATE INTO 2D SHAPES!
+                                if (act.objectType === 'text' || act.objectType === 'sticky_note' || act.objectType === 'lesson_board' || act.objectType === 'latex') {
+                                    return [act];
+                                }
+                                if (act.objectType === '3d_model' || act.objectType === 'vector_space_3d') {
+                                    return [act];
+                                }
+                                if (act.objectType === 'cartesian_plane' || act.objectType === 'coordinate_system' || act.objectType === 'sector' || act.objectType === 'segment' || act.objectType === 'annulus_sector' || act.objectType === 'parabolic_arch') {
+                                    return [act];
+                                }
+
                                 if (act.objectType === 'concentric_circles' || ((act.objectType === 'drawing' || act.objectType === 'sketch') && /\bconcentric\b/i.test(act.title || text))) {
                                     return parseConcentricCircles(text, act.width || 240, act);
                                 }
@@ -3113,7 +3154,7 @@ Spoken input: "${text}"
                                     }];
                                 }
 
-                                if (act.objectType === 'circle' || (/\bcircle\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch' || act.objectType === 'text'))) {
+                                if (act.objectType === 'circle' || (/\bcircle\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch') && !act.text)) {
                                     const { r, radiusLabel } = parseCircleParams(combined);
                                     return [{
                                         ...act,
@@ -3130,7 +3171,7 @@ Spoken input: "${text}"
                                     }];
                                 }
 
-                                if (act.objectType === 'rectangle' || (/\b(rectangle|box|quadrilateral|rect)\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch' || act.objectType === 'text'))) {
+                                if (act.objectType === 'rectangle' || (/\b(rectangle|box|quadrilateral|rect)\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch') && !act.text)) {
                                     const { w, h, labelW, labelH } = parseRectangleParams(combined);
                                     return [{
                                         ...act,
@@ -3144,7 +3185,7 @@ Spoken input: "${text}"
                                     }];
                                 }
 
-                                if (act.objectType === 'square' || (/\bsquare\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch' || act.objectType === 'text'))) {
+                                if (act.objectType === 'square' || (/\bsquare\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch') && !act.text)) {
                                     const { side, sideLabel } = parseSquareParams(combined);
                                     return [{
                                         ...act,
@@ -3158,7 +3199,7 @@ Spoken input: "${text}"
                                     }];
                                 }
 
-                                if (act.objectType === 'triangle' || (/\btriangle\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch' || act.objectType === 'text'))) {
+                                if (act.objectType === 'triangle' || (/\btriangle\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch') && !act.text)) {
                                     const tri = parseTriangleParams(combined);
                                     return [{
                                         ...act,
@@ -3173,7 +3214,7 @@ Spoken input: "${text}"
                                     }];
                                 }
 
-                                if (act.objectType === 'cone' || (/\bcone\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch'))) {
+                                if (act.objectType === 'cone' || (/\bcone\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch') && !act.text)) {
                                     return [{
                                         ...act,
                                         objectType: 'cone',
@@ -3186,7 +3227,7 @@ Spoken input: "${text}"
                                         radiusLabel: 'r'
                                     }];
                                 }
-                                if (/\bcylinder\b/i.test(combined)) {
+                                if (act.objectType === 'cylinder' || (/\bcylinder\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch') && !act.text)) {
                                     return [{
                                         ...act,
                                         objectType: 'cylinder',
@@ -3196,7 +3237,7 @@ Spoken input: "${text}"
                                         heightLabel: 'h'
                                     }];
                                 }
-                                if (/\b(incline|ramp|wedge)\b/i.test(combined)) {
+                                if (act.objectType === 'incline_plane' || (/\b(incline|ramp|wedge)\b/i.test(combined) && (act.objectType === 'drawing' || act.objectType === 'sketch') && !act.text)) {
                                     return [{
                                         ...act,
                                         objectType: 'incline_plane',

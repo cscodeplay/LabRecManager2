@@ -5517,6 +5517,61 @@ export default function Whiteboard({
         const spawnX = Math.round(-panOffset.x + cx / zoomLevel);
         const spawnY = Math.round(-panOffset.y + cy / zoomLevel);
 
+        if (shapeData.is3D || shapeData.modelType) {
+            executeAiCanvasAction({
+                type: 'insert_3d_model',
+                modelType: shapeData.modelType || 'vector_space_3d',
+                dimensions: shapeData.dimensions || null,
+                color: shapeData.color || '#6366f1',
+                width: shapeData.width || 260,
+                height: shapeData.height || 260,
+                x: spawnX,
+                y: spawnY,
+                showDimensions: true
+            });
+            return;
+        }
+
+        if (shapeData.type === 'coordinate_system' || shapeData.type === 'cartesian_plane') {
+            const newShape = {
+                id: `coord_${Date.now()}`,
+                type: 'coordinate_system',
+                x: spawnX,
+                y: spawnY,
+                width: shapeData.width || 360,
+                height: shapeData.height || 360,
+                curves: shapeData.curves || null,
+                intersectionPoints: shapeData.intersectionPoints || null,
+                plottedPoints: shapeData.plottedPoints || null,
+                unitScale: shapeData.unitScale || 22,
+                title: shapeData.title || null,
+                equation: shapeData.equation || null
+            };
+            setShapeObjects(prev => [...prev, newShape]);
+            setSelectedShapeIds([newShape.id]);
+            saveToHistory();
+            return;
+        }
+
+        if (['sector', 'segment', 'annulus_sector', 'parabolic_arch'].includes(shapeData.type)) {
+            const newShape = {
+                id: `shape_${Date.now()}`,
+                type: shapeData.type,
+                x: spawnX,
+                y: spawnY,
+                width: shapeData.width || 320,
+                height: shapeData.height || 300,
+                color: shapeData.strokeColor || '#38bdf8',
+                fillColor: shapeData.fillColor || 'transparent',
+                strokeWidth: shapeData.strokeWidth || 3,
+                ...shapeData
+            };
+            setShapeObjects(prev => [...prev, newShape]);
+            setSelectedShapeIds([newShape.id]);
+            saveToHistory();
+            return;
+        }
+
         const pathStr = shapeData.svgPath ? `<path d="${shapeData.svgPath}" stroke="${shapeData.strokeColor || '#38bdf8'}" stroke-width="${shapeData.strokeWidth || 3}" fill="${shapeData.fillColor || 'transparent'}" stroke-linecap="round" stroke-linejoin="round" />` : '';
         const labelsStr = (shapeData.labels || []).map(l => `<text x="${l.x}" y="${l.y}" fill="#1e293b" font-size="12" font-weight="bold" text-anchor="middle">${l.text}</text>`).join('');
         const textCharsStr = (shapeData.textChars || []).map(tc => `<text x="${tc.x}" y="${tc.y}" transform="rotate(${tc.rotation}, ${tc.x}, ${tc.y})" fill="${shapeData.strokeColor || '#38bdf8'}" font-size="15" font-weight="bold" text-anchor="middle" font-family="Caveat, cursive">${tc.char}</text>`).join('');
@@ -5539,7 +5594,7 @@ export default function Whiteboard({
         setSelectedShapeIds([newShape.id]);
         if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShape });
         saveToHistory();
-    }, [canvasWrapperRef, panOffset, zoomLevel, socket, sessionId, saveToHistory, setShapeObjects, setSelectedShapeIds]);
+    }, [canvasWrapperRef, panOffset, zoomLevel, socket, sessionId, saveToHistory, setShapeObjects, setSelectedShapeIds, executeAiCanvasAction]);
     useEffect(() => {
         if (!imageDragState) return;
 
@@ -11913,9 +11968,19 @@ export default function Whiteboard({
             else if (combined.includes('incline') || combined.includes('ramp') || combined.includes('wedge') || combined.includes('friction')) dType = 'incline_plane';
             else if (combined.includes('right triangle') || combined.includes('hypotenuse') || combined.includes('pythagor') || combined.includes('right-angled')) dType = 'right_triangle';
             else if (combined.includes('triangle')) dType = 'triangle';
+            else if (combined.includes('vector') || combined.includes('dot product') || combined.includes('cross product')) dType = 'vector_space_3d';
+            else if (combined.includes('intersect') || combined.includes('intersection') || combined.includes('equation') || combined.includes('cartesian') || combined.includes('coordinate')) dType = 'cartesian_plane';
+            else if (combined.includes('sector')) dType = 'sector';
+            else if (combined.includes('segment')) dType = 'segment';
+            else if (combined.includes('annulus')) dType = 'annulus_sector';
+            else if (combined.includes('arch') || combined.includes('parabola')) dType = 'parabolic_arch';
+            else if (combined.includes('sphere')) dType = 'sphere';
+            else if (combined.includes('frustum')) dType = 'frustum';
+            else if (combined.includes('hemisphere')) dType = 'hemisphere';
+            else if (combined.includes('capsule')) dType = 'capsule';
             else if (combined.includes('circle') || combined.includes('radius') || combined.includes('diameter')) dType = 'circle';
-            else if (combined.includes('graph') || combined.includes('coordinate') || combined.includes('cartesian')) dType = 'graph';
-            else dType = 'cone';
+            else if (combined.includes('graph')) dType = 'graph';
+            else dType = 'cartesian_plane';
         }
 
         // 1. Diagram on the LEFT side:
@@ -11924,8 +11989,75 @@ export default function Whiteboard({
         const diagW = 340;
         const diagH = 290;
 
+        const is3DModel = ['vector_space_3d', 'sphere', 'frustum', 'hemisphere', 'capsule'].includes(dType);
         let diagShapeProps = {};
-        if (dType === 'cone') {
+
+        if (is3DModel) {
+            executeAiCanvasAction({
+                type: 'insert_3d_model',
+                modelType: dType,
+                x: startX,
+                y: startY,
+                width: diagW,
+                height: diagH,
+                showDimensions: true,
+                dimensions: data.dimensions || null
+            });
+        } else if (dType === 'cartesian_plane') {
+            diagShapeProps = {
+                type: 'coordinate_system',
+                title: 'Cartesian Coordinate System',
+                curves: data.curves || [
+                    { type: 'circle', cx: -1.5, cy: -2, r: 4.92, color: '#3b82f6', label: 'x² + y² + 3x + 4y - 18 = 0' },
+                    { type: 'line', slope: 3, intercept: 1, color: '#6366f1', label: 'y = 3x + 1' }
+                ],
+                intersectionPoints: data.intersectionPoints || [
+                    { x: 0.5, y: 2.5, label: 'P₁(0.5, 2.5)' },
+                    { x: -2.6, y: -6.8, label: 'P₂(-2.6, -6.8)' }
+                ],
+                unitScale: 20
+            };
+        } else if (dType === 'sector') {
+            diagShapeProps = {
+                type: 'sector',
+                radius: 120,
+                startAngle: 0,
+                endAngle: 60,
+                centralAngle: 60,
+                showRadius: true,
+                radiusLabel: 'r',
+                showArc: true,
+                arcLabel: 's = rθ',
+                showAngle: true,
+                angleLabel: 'θ = 60°'
+            };
+        } else if (dType === 'segment') {
+            diagShapeProps = {
+                type: 'segment',
+                radius: 120,
+                startAngle: 30,
+                endAngle: 150,
+                centralAngle: 120,
+                showChord: true,
+                chordLabel: 'Chord AB',
+                showRadii: true
+            };
+        } else if (dType === 'annulus_sector') {
+            diagShapeProps = {
+                type: 'annulus_sector',
+                innerRadius: 60,
+                outerRadius: 120,
+                startAngle: 0,
+                endAngle: 90
+            };
+        } else if (dType === 'parabolic_arch') {
+            diagShapeProps = {
+                type: 'parabolic_arch',
+                equation: 'y = 4h/w² · x(w - x)',
+                showFocus: true,
+                showVertex: true
+            };
+        } else if (dType === 'cone') {
             diagShapeProps = {
                 type: 'cone',
                 dashedAltitude: true,
@@ -11980,7 +12112,7 @@ export default function Whiteboard({
             };
         }
 
-        const diagramObj = {
+        const diagramObj = is3DModel ? null : {
             id: `diag_${Date.now()}`,
             x: startX,
             y: startY,
@@ -12024,8 +12156,8 @@ export default function Whiteboard({
             strokeStyle: 'solid',
             text: cardFullText,
             textColor: '#0f172a',
-            fontSize: 14,
-            fontFamily: 'Inter, sans-serif'
+            fontSize: 15,
+            fontFamily: data.fontFamily || 'Caveat, cursive, sans-serif'
         };
 
         // 3. Optional Solving Zone Boundary Divider / Watermark
@@ -12047,12 +12179,13 @@ export default function Whiteboard({
         };
 
         const targetPage = currentPageRef.current !== undefined ? currentPageRef.current : currentPage;
+        const shapesToAdd = diagramObj ? [diagramObj, problemCardObj, guideMarker] : [problemCardObj, guideMarker];
         setPageShapeObjects(prev => ({
             ...prev,
-            [targetPage]: [...(prev[targetPage] || []), diagramObj, problemCardObj, guideMarker]
+            [targetPage]: [...(prev[targetPage] || []), ...shapesToAdd]
         }));
 
-        setSelectedShapeIds([diagramObj.id, problemCardObj.id]);
+        setSelectedShapeIds(diagramObj ? [diagramObj.id, problemCardObj.id] : [problemCardObj.id]);
         setTool('pen'); // Auto-activate pen so teacher can start writing solution derivations immediately!
         saveToHistory();
         toast.success('Generated Problem + Diagram layout! Writing space ready below.', { icon: '📐', duration: 4500 });
@@ -13975,7 +14108,11 @@ export default function Whiteboard({
         // 0.9 Instant Geometric Shapes Fast Path (0ms Local Execution)
         // Strictly handles direct shape commands like "draw circle", "draw concentric circles"
         const isDeleteCommand = /\b(delete|remove|erase|clear\s+the|destroy|drop)\b/i.test(txt);
+        const isSTEMQuestionOrQuery =
+            /\b(volume|surface\s+area|area\s+of|perimeter|circumference|intersect|intersection|equation|tangent|derivative|integral|vector|vectors|cross\s+product|dot\s+product|newton|photosynthesis|mitosis|dna|velocity|acceleration|projectile|molecular)\b/i.test(txt) ||
+            /\b(what\s+is|what\s+are|what\s+will|how\s+does|how\s+do|how\s+to|calculate|solve|derive|prove|find|explain|teach)\b/i.test(txt);
         const isCognitiveExplain =
+            isSTEMQuestionOrQuery ||
             txt.startsWith('explain') ||
             txt.startsWith('teach') ||
             txt.startsWith('solve') ||
@@ -13983,9 +14120,11 @@ export default function Whiteboard({
             txt.startsWith('how do') ||
             txt.startsWith('what is') ||
             txt.startsWith('what are') ||
+            txt.startsWith('what will') ||
             txt.startsWith('derive') ||
             txt.startsWith('prove') ||
             txt.startsWith('calculate') ||
+            txt.startsWith('find') ||
             (txt.includes('formula') && (txt.includes('circle') || txt.includes('area') || txt.includes('what')));
 
         if (!isDeleteCommand && !isCognitiveExplain) {
@@ -14164,13 +14303,11 @@ export default function Whiteboard({
                 return;
             }
 
-            // 2. Single Circle command
+            // 2. Single Circle command (Strict Pure Draw Intent)
             const isCircleVoice =
-                (/\b(draw\s+a?\s*circle|create\s+a?\s*circle|add\s+a?\s*circle|^circle$|\bcircle\s+(?:with\s+)?(?:radius|size|of)\b|\bdraw\s+circle\b|\bcircle\b)/i.test(txt) ||
-                (/\b(round\s+shape|round\s+circle)\b/i.test(txt)) ||
-                (/\bround\b/i.test(txt) && !txt.includes('background') && !txt.includes('ground') && !txt.includes('around') && !txt.includes('surround'))) &&
-                !txt.includes('concentric') &&
-                !txt.includes('color');
+                (/\b(draw\s+a?\s*circle|create\s+a?\s*circle|add\s+a?\s*circle|^circle$|\bcircle\s+(?:with\s+)?(?:radius|size|of)\s*\d+|\bdraw\s+circle\b)\b/i.test(txt) ||
+                (/\b(round\s+shape|round\s+circle)\b/i.test(txt))) &&
+                !/\b(concentric|color|equation|volume|surface|area\s+of|intersect|intersection|find|what|solve|derivative|integral)\b/i.test(txt);
 
             if (isCircleVoice) {
                 const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(txt);
@@ -14235,11 +14372,11 @@ export default function Whiteboard({
                 return;
             }
 
-            // 3. Rectangle / Box command (e.g. "rectangle of side 50px by 30px", "draw rectangle 200 by 100")
+            // 3. Rectangle / Box command (Strict Pure Draw Intent)
             const isRectVoice =
-                (/\b(draw\s+a?\s*rectangle|create\s+a?\s*rectangle|draw\s+a?\s*box|draw\s+rectangle|rectangle|quadrilateral|oblong)\b/i.test(txt) ||
+                (/\b(draw\s+a?\s*rectangle|create\s+a?\s*rectangle|draw\s+a?\s*box|draw\s+rectangle|quadrilateral|oblong)\b/i.test(txt) ||
                 (/\b(rect|box)\b/i.test(txt) && /\b(side|size|width|height|by|x|\d+)\b/i.test(txt))) &&
-                !txt.includes('concentric') && !txt.includes('color');
+                !/\b(concentric|color|area\s+of|perimeter|volume|solve|find|what|equation)\b/i.test(txt);
 
             if (isRectVoice) {
                 const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(txt);
@@ -14391,9 +14528,10 @@ export default function Whiteboard({
                 return;
             }
 
-            // 5. Right Triangle or Triangle command
+            // 5. Right Triangle or Triangle command (Strict Pure Draw Intent)
             const isRightTriangle = /\b(right[\s-]*(?:angled?|angle)?[\s-]*triangle|30[\s-]60[\s-]90[\s-]*triangle|45[\s-]45[\s-]90[\s-]*triangle|triangle\s+with\s+(?:a\s+)?right\s+angle|triangle\s+with\s+90\s*deg)\b/i.test(txt);
-            const isTriangleVoice = (/\b(draw\s+a?\s*triangle|create\s+a?\s*triangle|equilateral\s*triangle|isosceles\s*triangle|triangle)\b/i.test(txt)) && !txt.includes('color');
+            const isTriangleVoice = (/\b(draw\s+a?\s*triangle|create\s+a?\s*triangle|equilateral\s*triangle|isosceles\s*triangle)\b/i.test(txt) || txt === 'triangle') &&
+                !/\b(color|solve|find|what|area\s+of|calculate|prove|theorem)\b/i.test(txt);
 
             if (isRightTriangle || isTriangleVoice) {
                 const reqColor = parseColorFromText(txt, color || '#3b82f6');
@@ -14477,8 +14615,8 @@ export default function Whiteboard({
                 }
             }
 
-            // 6. Cone command
-            if (/\b(draw\s+a?\s*cone|cone)\b/i.test(txt) && !txt.includes('3d') && !txt.includes('color')) {
+            // 6. Cone command (Strict Pure Draw Intent)
+            if (/\b(draw\s+a?\s*cone|create\s+a?\s*cone)\b/i.test(txt) && !/\b(3d|color|volume|surface|area|formula|solve|find|what)\b/i.test(txt)) {
                 const w = 180, h = 210;
                 const slot = findAvailableCanvasSpace(w, h);
                 const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - w / 2));
@@ -14517,8 +14655,8 @@ export default function Whiteboard({
                 return;
             }
 
-            // 7. Cylinder command
-            if (/\b(draw\s+a?\s*cylinder|cylinder)\b/i.test(txt) && !txt.includes('3d') && !txt.includes('color')) {
+            // 7. Cylinder command (Strict Pure Draw Intent)
+            if (/\b(draw\s+a?\s*cylinder|create\s+a?\s*cylinder)\b/i.test(txt) && !/\b(3d|color|volume|surface|area|formula|solve|find|what)\b/i.test(txt)) {
                 const w = 170, h = 220;
                 const slot = findAvailableCanvasSpace(w, h);
                 const targetX = slot.hasSpace ? slot.x : Math.max(20, Math.round(cx - w / 2));
@@ -14850,16 +14988,19 @@ export default function Whiteboard({
                             const targetPy = action.y !== undefined ? Number(action.y) : defaultPy;
 
                             const performCreation = () => {
-                                if (action.objectType === '3d_model') {
+                                if (action.objectType === '3d_model' || ['frustum', 'capsule', 'hemisphere', 'half_cylinder', 'cone_cylinder', 'vector_space_3d', 'vector_space'].includes(action.objectType)) {
+                                    const mType = action.objectType === '3d_model' ? (action.modelType || 'sphere') : (action.objectType === 'vector_space' ? 'vector_space_3d' : action.objectType);
                                     executeAiCanvasAction({ 
                                         type: 'insert_3d_model', 
-                                        modelType: action.modelType || 'sphere', 
+                                        modelType: mType, 
                                         color: actColor,
                                         width: objW,
                                         height: objH,
                                         x: targetPx, 
                                         y: targetPy,
-                                        edgeWidth: action.strokeWidth !== undefined ? Number(action.strokeWidth) : undefined
+                                        edgeWidth: action.strokeWidth !== undefined ? Number(action.strokeWidth) : undefined,
+                                        dimensions: action.dimensions || null,
+                                        showDimensions: action.showDimensions !== undefined ? action.showDimensions : (mType === 'vector_space_3d')
                                     });
                                 } else if (action.objectType === 'sticky_note') {
                                     const note = createStickyNoteObject(targetPx, targetPy, action.color || 'yellow');
@@ -14972,7 +15113,88 @@ export default function Whiteboard({
                                         height: objH,
                                         color: actColor,
                                         strokeWidth: actStroke || 2,
-                                        plottedPoints: action.plottedPoints || null
+                                        plottedPoints: action.plottedPoints || null,
+                                        curves: action.curves || null,
+                                        lines: action.lines || null,
+                                        intersectionPoints: action.intersectionPoints || null,
+                                        unitScale: action.unitScale || action.pixelsPerUnit || 25,
+                                        equation: action.equation || null,
+                                        title: action.title || null,
+                                        labels: action.labels || null
+                                    });
+                                } else if (action.objectType === 'sector') {
+                                    spawnVoiceShape({
+                                        type: 'sector',
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: objH,
+                                        radius: action.radius || Math.round(objW / 2),
+                                        startAngle: action.startAngle !== undefined ? action.startAngle : 0,
+                                        endAngle: action.endAngle !== undefined ? action.endAngle : 60,
+                                        centralAngle: action.centralAngle || action.theta || 60,
+                                        color: actColor,
+                                        strokeWidth: actStroke,
+                                        fillColor: actFill || 'rgba(59, 130, 246, 0.15)',
+                                        showRadius: action.showRadius !== false,
+                                        radiusLabel: action.radiusLabel || 'r',
+                                        showArc: action.showArc !== false,
+                                        arcLabel: action.arcLabel || 's = rθ',
+                                        showAngle: action.showAngle !== false,
+                                        angleLabel: action.angleLabel || 'θ',
+                                        centerLabel: action.centerLabel || 'O'
+                                    });
+                                } else if (action.objectType === 'segment') {
+                                    spawnVoiceShape({
+                                        type: 'segment',
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: objH,
+                                        radius: action.radius || Math.round(objW / 2),
+                                        startAngle: action.startAngle !== undefined ? action.startAngle : 30,
+                                        endAngle: action.endAngle !== undefined ? action.endAngle : 150,
+                                        centralAngle: action.centralAngle || 120,
+                                        color: actColor,
+                                        strokeWidth: actStroke,
+                                        fillColor: actFill || 'rgba(16, 185, 129, 0.2)',
+                                        showChord: action.showChord !== false,
+                                        chordLabel: action.chordLabel || 'Chord',
+                                        showRadii: action.showRadii !== false,
+                                        radiusLabel: action.radiusLabel || 'r',
+                                        centerLabel: action.centerLabel || 'O'
+                                    });
+                                } else if (action.objectType === 'annulus_sector') {
+                                    spawnVoiceShape({
+                                        type: 'annulus_sector',
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: objH,
+                                        innerRadius: action.innerRadius || Math.round(objW * 0.25),
+                                        outerRadius: action.outerRadius || Math.round(objW * 0.45),
+                                        startAngle: action.startAngle !== undefined ? action.startAngle : 0,
+                                        endAngle: action.endAngle !== undefined ? action.endAngle : 90,
+                                        color: actColor,
+                                        strokeWidth: actStroke,
+                                        fillColor: actFill || 'rgba(245, 158, 11, 0.2)',
+                                        innerRadiusLabel: action.innerRadiusLabel || 'r',
+                                        outerRadiusLabel: action.outerRadiusLabel || 'R'
+                                    });
+                                } else if (action.objectType === 'parabolic_arch') {
+                                    spawnVoiceShape({
+                                        type: 'parabolic_arch',
+                                        x: targetPx,
+                                        y: targetPy,
+                                        width: objW,
+                                        height: objH,
+                                        color: actColor,
+                                        strokeWidth: actStroke,
+                                        fillColor: actFill || 'rgba(168, 85, 247, 0.15)',
+                                        equation: action.equation || 'y = 4h/w² · x(w - x)',
+                                        showFocus: action.showFocus !== false,
+                                        showVertex: action.showVertex !== false,
+                                        showDimensions: action.showDimensions !== false
                                     });
                                 } else if (action.objectType === 'line') {
                                     spawnVoiceShape({
@@ -22700,40 +22922,324 @@ export default function Whiteboard({
                                 const w = shpObj.width, h = shpObj.height;
                                 const cx = w / 2, cy = h / 2;
                                 const arrS = 8;
+                                const scale = Number(shpObj.unitScale || shpObj.pixelsPerUnit || shpObj.scale) || (() => {
+                                    const allCoords = [];
+                                    if (Array.isArray(shpObj.plottedPoints)) shpObj.plottedPoints.forEach(p => allCoords.push(Math.abs(p.x || 0), Math.abs(p.y || 0)));
+                                    if (Array.isArray(shpObj.intersectionPoints)) shpObj.intersectionPoints.forEach(p => allCoords.push(Math.abs(p.x || 0), Math.abs(p.y || 0)));
+                                    if (Array.isArray(shpObj.curves)) shpObj.curves.forEach(c => {
+                                        if (c.r) allCoords.push(c.r);
+                                        if (c.cx) allCoords.push(Math.abs(c.cx));
+                                        if (c.cy) allCoords.push(Math.abs(c.cy));
+                                    });
+                                    const maxVal = Math.max(...allCoords, 0);
+                                    if (maxVal > 0 && maxVal <= 10) return Math.min(32, Math.floor((w * 0.4) / maxVal));
+                                    if (maxVal > 10 && maxVal <= 25) return Math.min(18, Math.floor((w * 0.4) / maxVal));
+                                    return 22;
+                                })();
+
                                 return (
                                     <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
-                                        <rect x="0" y="0" width={w} height={h} fill="rgba(241, 245, 249, 0.5)" stroke="rgba(148, 163, 184, 0.4)" strokeWidth={1} rx={8} />
-                                        {[-0.35, -0.18, 0.18, 0.35].map((f, i) => (
-                                            <g key={i}>
-                                                <line x1={cx + f * w} y1={10} x2={cx + f * w} y2={h - 10} stroke="rgba(148, 163, 184, 0.25)" strokeDasharray="3,3" />
-                                                <line x1={10} y1={cy + f * h} x2={w - 10} y2={cy + f * h} stroke="rgba(148, 163, 184, 0.25)" strokeDasharray="3,3" />
-                                            </g>
-                                        ))}
+                                        {/* Background container with subtle math grid */}
+                                        <rect x="0" y="0" width={w} height={h} fill="rgba(248, 250, 252, 0.95)" stroke="rgba(148, 163, 184, 0.5)" strokeWidth={1.5} rx={8} />
+                                        
+                                        {/* Grid subdivisions */}
+                                        {[-4, -3, -2, -1, 1, 2, 3, 4].map((step, i) => {
+                                            const gx = cx + step * scale * 2;
+                                            const gy = cy + step * scale * 2;
+                                            return (
+                                                <g key={i}>
+                                                    {gx > 12 && gx < w - 12 && (
+                                                        <line x1={gx} y1={10} x2={gx} y2={h - 10} stroke="rgba(148, 163, 184, 0.25)" strokeDasharray="2,3" />
+                                                    )}
+                                                    {gy > 12 && gy < h - 12 && (
+                                                        <line x1={10} y1={gy} x2={w - 10} y2={gy} stroke="rgba(148, 163, 184, 0.25)" strokeDasharray="2,3" />
+                                                    )}
+                                                </g>
+                                            );
+                                        })}
+
                                         {/* X Axis */}
-                                        <line x1={10} y1={cy} x2={w - 10} y2={cy} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth || 2} />
-                                        <polygon points={`${w-10},${cy} ${w-10-arrS},${cy-arrS/2} ${w-10-arrS},${cy+arrS/2}`} fill={shpObj.color} />
+                                        <line x1={10} y1={cy} x2={w - 10} y2={cy} stroke={shpObj.color || '#334155'} strokeWidth={shpObj.strokeWidth || 2} />
+                                        <polygon points={`${w-10},${cy} ${w-10-arrS},${cy-arrS/2} ${w-10-arrS},${cy+arrS/2}`} fill={shpObj.color || '#334155'} />
                                         {renderSvgLabel(w - 6, cy - 8, 'X', 'start', 13)}
 
                                         {/* Y Axis */}
-                                        <line x1={cx} y1={h - 10} x2={cx} y2={10} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth || 2} />
-                                        <polygon points={`${cx},10 ${cx-arrS/2},${10+arrS} ${cx+arrS/2},${10+arrS}`} fill={shpObj.color} />
+                                        <line x1={cx} y1={h - 10} x2={cx} y2={10} stroke={shpObj.color || '#334155'} strokeWidth={shpObj.strokeWidth || 2} />
+                                        <polygon points={`${cx},10 ${cx-arrS/2},${10+arrS} ${cx+arrS/2},${10+arrS}`} fill={shpObj.color || '#334155'} />
                                         {renderSvgLabel(cx + 8, 14, 'Y', 'start', 13)}
 
                                         {/* Origin */}
-                                        <circle cx={cx} cy={cy} r={3} fill={shpObj.color} />
-                                        {renderSvgLabel(cx - 12, cy + 16, 'O(0,0)', 'end', 11)}
+                                        <circle cx={cx} cy={cy} r={3} fill={shpObj.color || '#334155'} />
+                                        {renderSvgLabel(cx - 8, cy + 14, 'O', 'end', 11)}
+
+                                        {/* Curves (Circles, Lines, Functions) */}
+                                        {Array.isArray(shpObj.curves) && shpObj.curves.map((curve, idx) => {
+                                            if (curve.type === 'circle') {
+                                                const circleCx = cx + (Number(curve.cx) || 0) * scale;
+                                                const circleCy = cy - (Number(curve.cy) || 0) * scale;
+                                                const circleR = (Number(curve.r) || 4) * scale;
+                                                return (
+                                                    <g key={`curv_c_${idx}`}>
+                                                        <circle
+                                                            cx={circleCx}
+                                                            cy={circleCy}
+                                                            r={circleR}
+                                                            fill={curve.fill || 'rgba(59, 130, 246, 0.08)'}
+                                                            stroke={curve.color || '#3b82f6'}
+                                                            strokeWidth={curve.strokeWidth || 2}
+                                                            strokeDasharray={curve.dashArray || undefined}
+                                                        />
+                                                        <circle cx={circleCx} cy={circleCy} r={2.5} fill={curve.color || '#3b82f6'} />
+                                                        {curve.centerLabel && renderSvgLabel(circleCx + 6, circleCy - 6, curve.centerLabel, 'start', 11)}
+                                                        {curve.label && (
+                                                            <g>
+                                                                <rect x={circleCx - 40} y={circleCy - circleR - 18} width={80} height={16} rx={4} fill="rgba(255,255,255,0.88)" stroke={curve.color || '#3b82f6'} strokeWidth={0.8} />
+                                                                {renderSvgLabel(circleCx, circleCy - circleR - 6, curve.label, 'middle', 10, curve.color || '#3b82f6')}
+                                                            </g>
+                                                        )}
+                                                    </g>
+                                                );
+                                            } else if (curve.type === 'line') {
+                                                const slope = Number(curve.slope) !== undefined ? Number(curve.slope) : 1;
+                                                const intercept = Number(curve.intercept) !== undefined ? Number(curve.intercept) : 0;
+                                                const minXUnit = -(cx - 15) / scale;
+                                                const maxXUnit = (w - cx - 15) / scale;
+                                                const lx1 = cx + minXUnit * scale;
+                                                const ly1 = cy - (slope * minXUnit + intercept) * scale;
+                                                const lx2 = cx + maxXUnit * scale;
+                                                const ly2 = cy - (slope * maxXUnit + intercept) * scale;
+                                                return (
+                                                    <g key={`curv_l_${idx}`}>
+                                                        <line
+                                                            x1={lx1}
+                                                            y1={ly1}
+                                                            x2={lx2}
+                                                            y2={ly2}
+                                                            stroke={curve.color || '#6366f1'}
+                                                            strokeWidth={curve.strokeWidth || 2}
+                                                            strokeDasharray={curve.dashArray || undefined}
+                                                        />
+                                                        {curve.label && (
+                                                            <g>
+                                                                <rect x={Math.min(w - 90, Math.max(10, lx2 - 80))} y={Math.min(h - 22, Math.max(10, ly2 - 10))} width={80} height={16} rx={4} fill="rgba(255,255,255,0.88)" stroke={curve.color || '#6366f1'} strokeWidth={0.8} />
+                                                                {renderSvgLabel(Math.min(w - 50, Math.max(50, lx2 - 40)), Math.min(h - 10, Math.max(22, ly2 + 2)), curve.label, 'middle', 10, curve.color || '#6366f1')}
+                                                            </g>
+                                                        )}
+                                                    </g>
+                                                );
+                                            }
+                                            return null;
+                                        })}
 
                                         {/* Plotted Points */}
                                         {Array.isArray(shpObj.plottedPoints) && shpObj.plottedPoints.map((pt, idx) => {
-                                            const px = cx + (Number(pt.x) || 0);
-                                            const py = cy - (Number(pt.y) || 0);
+                                            const px = cx + (Number(pt.x) || 0) * scale;
+                                            const py = cy - (Number(pt.y) || 0) * scale;
                                             return (
-                                                <g key={idx}>
+                                                <g key={`pt_${idx}`}>
                                                     <circle cx={px} cy={py} r={4.5} fill="#ef4444" stroke="#ffffff" strokeWidth={1.5} />
                                                     {renderSvgLabel(px + 8, py - 6, pt.label || `(${pt.x}, ${pt.y})`, 'start', 12)}
                                                 </g>
                                             );
                                         })}
+
+                                        {/* Intersection Points */}
+                                        {Array.isArray(shpObj.intersectionPoints) && shpObj.intersectionPoints.map((pt, idx) => {
+                                            const px = cx + (Number(pt.x) || 0) * scale;
+                                            const py = cy - (Number(pt.y) || 0) * scale;
+                                            const labelText = pt.label || `P(${pt.x}, ${pt.y})`;
+                                            const badgeW = Math.max(68, labelText.length * 6.5 + 16);
+                                            return (
+                                                <g key={`inter_${idx}`}>
+                                                    <circle cx={px} cy={py} r={9} fill="none" stroke="#ef4444" strokeWidth={1.2} opacity={0.5} strokeDasharray="2,2" />
+                                                    <circle cx={px} cy={py} r={5} fill="#ef4444" stroke="#ffffff" strokeWidth={2} />
+                                                    <g transform={`translate(${px > cx ? px + 8 : px - badgeW - 8}, ${py < cy ? py + 4 : py - 24})`}>
+                                                        <rect x="0" y="0" width={badgeW} height={18} rx={4} fill="#0f172a" stroke="#ef4444" strokeWidth={1.2} />
+                                                        <text x={badgeW / 2} y={13} fill="#f8fafc" fontSize={10.5} fontWeight="bold" textAnchor="middle" fontFamily="sans-serif">
+                                                            {labelText}
+                                                        </text>
+                                                    </g>
+                                                </g>
+                                            );
+                                        })}
+
+                                        {/* Title / Equation Badge at Top */}
+                                        {(shpObj.title || shpObj.equation) && (
+                                            <g transform={`translate(12, 12)`}>
+                                                <rect x="0" y="0" width={Math.min(w - 24, (shpObj.title || shpObj.equation).length * 7 + 24)} height={22} rx={6} fill="rgba(15, 23, 42, 0.88)" />
+                                                <text x={12} y={15} fill="#38bdf8" fontSize={11} fontWeight="bold" fontFamily="sans-serif">
+                                                    {shpObj.title || shpObj.equation}
+                                                </text>
+                                            </g>
+                                        )}
+                                    </g>
+                                );
+                            } else if (shpObj.type === 'sector') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const cx = w / 2, cy = h / 2;
+                                const r = Number(shpObj.radius) || Math.min(w, h) * 0.42;
+                                const startDeg = Number(shpObj.startAngle) || 0;
+                                const endDeg = Number(shpObj.endAngle) || (startDeg + (Number(shpObj.centralAngle) || 60));
+                                const startRad = (startDeg * Math.PI) / 180;
+                                const endRad = (endDeg * Math.PI) / 180;
+                                const x1 = cx + r * Math.cos(startRad);
+                                const y1 = cy - r * Math.sin(startRad);
+                                const x2 = cx + r * Math.cos(endRad);
+                                const y2 = cy - r * Math.sin(endRad);
+                                const angleDiff = ((endDeg - startDeg) % 360 + 360) % 360;
+                                const largeArc = angleDiff > 180 ? 1 : 0;
+                                const pathD = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 0 ${x2} ${y2} Z`;
+                                const midRad = (((startDeg + endDeg) / 2) * Math.PI) / 180;
+                                const thetaR = Math.min(32, r * 0.35);
+                                const tx1 = cx + thetaR * Math.cos(startRad);
+                                const ty1 = cy - thetaR * Math.sin(startRad);
+                                const tx2 = cx + thetaR * Math.cos(endRad);
+                                const ty2 = cy - thetaR * Math.sin(endRad);
+                                const thetaArcD = `M ${tx1} ${ty1} A ${thetaR} ${thetaR} 0 ${largeArc} 0 ${tx2} ${ty2}`;
+
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        <path
+                                            d={pathD}
+                                            fill={shpObj.fillColor && shpObj.fillColor !== 'transparent' ? shpObj.fillColor : 'rgba(59, 130, 246, 0.15)'}
+                                            stroke={shpObj.color || '#3b82f6'}
+                                            strokeWidth={shpObj.strokeWidth || 2.5}
+                                            strokeLinejoin="round"
+                                        />
+                                        <circle cx={cx} cy={cy} r={3} fill={shpObj.color || '#3b82f6'} />
+                                        {shpObj.centerLabel && renderSvgLabel(cx - 10, cy + 14, shpObj.centerLabel, 'end', 12)}
+                                        {shpObj.showAngle !== false && (
+                                            <g>
+                                                <path d={thetaArcD} fill="none" stroke={shpObj.color || '#3b82f6'} strokeWidth={1.5} />
+                                                {renderSvgLabel(cx + (thetaR + 12) * Math.cos(midRad), cy - (thetaR + 12) * Math.sin(midRad), shpObj.angleLabel || `${Math.round(angleDiff)}°`, 'middle', 12)}
+                                            </g>
+                                        )}
+                                        {shpObj.showRadius !== false && (
+                                            renderSvgLabel((cx + x1) / 2 + 8, (cy + y1) / 2 - 8, shpObj.radiusLabel || 'r', 'middle', 12)
+                                        )}
+                                        {shpObj.showArc !== false && (
+                                            renderSvgLabel(cx + (r + 14) * Math.cos(midRad), cy - (r + 14) * Math.sin(midRad), shpObj.arcLabel || 's = rθ', 'middle', 12)
+                                        )}
+                                    </g>
+                                );
+                            } else if (shpObj.type === 'segment') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const cx = w / 2, cy = h / 2;
+                                const r = Number(shpObj.radius) || Math.min(w, h) * 0.42;
+                                const startDeg = Number(shpObj.startAngle) || 30;
+                                const endDeg = Number(shpObj.endAngle) || (startDeg + (Number(shpObj.centralAngle) || 120));
+                                const startRad = (startDeg * Math.PI) / 180;
+                                const endRad = (endDeg * Math.PI) / 180;
+                                const x1 = cx + r * Math.cos(startRad);
+                                const y1 = cy - r * Math.sin(startRad);
+                                const x2 = cx + r * Math.cos(endRad);
+                                const y2 = cy - r * Math.sin(endRad);
+                                const angleDiff = ((endDeg - startDeg) % 360 + 360) % 360;
+                                const largeArc = angleDiff > 180 ? 1 : 0;
+                                const segmentD = `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 0 ${x2} ${y2} Z`;
+                                const midRad = (((startDeg + endDeg) / 2) * Math.PI) / 180;
+
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(148, 163, 184, 0.35)" strokeWidth={1} strokeDasharray="3,3" />
+                                        <path
+                                            d={segmentD}
+                                            fill={shpObj.fillColor && shpObj.fillColor !== 'transparent' ? shpObj.fillColor : 'rgba(16, 185, 129, 0.2)'}
+                                            stroke={shpObj.color || '#10b981'}
+                                            strokeWidth={shpObj.strokeWidth || 2.5}
+                                        />
+                                        {shpObj.showRadii !== false && (
+                                            <g>
+                                                <line x1={cx} y1={cy} x2={x1} y2={y1} stroke="rgba(148, 163, 184, 0.7)" strokeWidth={1.5} strokeDasharray="3,3" />
+                                                <line x1={cx} y1={cy} x2={x2} y2={y2} stroke="rgba(148, 163, 184, 0.7)" strokeWidth={1.5} strokeDasharray="3,3" />
+                                                <circle cx={cx} cy={cy} r={3} fill="#64748b" />
+                                                {shpObj.centerLabel && renderSvgLabel(cx - 10, cy + 14, shpObj.centerLabel, 'end', 12)}
+                                                {shpObj.radiusLabel && renderSvgLabel((cx + x1) / 2 + 8, (cy + y1) / 2 - 8, shpObj.radiusLabel, 'middle', 11)}
+                                            </g>
+                                        )}
+                                        {shpObj.chordLabel && (
+                                            renderSvgLabel((x1 + x2) / 2, (y1 + y2) / 2 + 14, shpObj.chordLabel, 'middle', 11)
+                                        )}
+                                        {shpObj.arcLabel && (
+                                            renderSvgLabel(cx + (r + 14) * Math.cos(midRad), cy - (r + 14) * Math.sin(midRad), shpObj.arcLabel, 'middle', 12)
+                                        )}
+                                    </g>
+                                );
+                            } else if (shpObj.type === 'annulus_sector') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const cx = w / 2, cy = h / 2;
+                                const rIn = Number(shpObj.innerRadius) || Math.min(w, h) * 0.22;
+                                const rOut = Number(shpObj.outerRadius) || Math.min(w, h) * 0.42;
+                                const startDeg = Number(shpObj.startAngle) || 0;
+                                const endDeg = Number(shpObj.endAngle) || (startDeg + 90);
+                                const startRad = (startDeg * Math.PI) / 180;
+                                const endRad = (endDeg * Math.PI) / 180;
+                                const ox1 = cx + rOut * Math.cos(startRad);
+                                const oy1 = cy - rOut * Math.sin(startRad);
+                                const ox2 = cx + rOut * Math.cos(endRad);
+                                const oy2 = cy - rOut * Math.sin(endRad);
+                                const ix2 = cx + rIn * Math.cos(endRad);
+                                const iy2 = cy - rIn * Math.sin(endRad);
+                                const ix1 = cx + rIn * Math.cos(startRad);
+                                const iy1 = cy - rIn * Math.sin(startRad);
+                                const angleDiff = ((endDeg - startDeg) % 360 + 360) % 360;
+                                const largeArc = angleDiff > 180 ? 1 : 0;
+                                const pathD = `M ${ox1} ${oy1} A ${rOut} ${rOut} 0 ${largeArc} 0 ${ox2} ${oy2} L ${ix2} ${iy2} A ${rIn} ${rIn} 0 ${largeArc} 1 ${ix1} ${iy1} Z`;
+
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        <path
+                                            d={pathD}
+                                            fill={shpObj.fillColor && shpObj.fillColor !== 'transparent' ? shpObj.fillColor : 'rgba(245, 158, 11, 0.2)'}
+                                            stroke={shpObj.color || '#f59e0b'}
+                                            strokeWidth={shpObj.strokeWidth || 2.5}
+                                            strokeLinejoin="round"
+                                        />
+                                        <circle cx={cx} cy={cy} r={2.5} fill="#64748b" />
+                                        {shpObj.innerRadiusLabel && renderSvgLabel(cx + (rIn / 2) * Math.cos(startRad) + 8, cy - (rIn / 2) * Math.sin(startRad) - 6, shpObj.innerRadiusLabel, 'start', 11)}
+                                        {shpObj.outerRadiusLabel && renderSvgLabel(cx + ((rIn + rOut) / 2) * Math.cos(startRad) + 8, cy - ((rIn + rOut) / 2) * Math.sin(startRad) - 6, shpObj.outerRadiusLabel, 'start', 11)}
+                                    </g>
+                                );
+                            } else if (shpObj.type === 'parabolic_arch') {
+                                const w = shpObj.width, h = shpObj.height;
+                                const m = 20;
+                                const spanW = w - 2 * m;
+                                const archH = h - 2 * m;
+                                const baseY = h - m;
+                                const apexX = w / 2;
+                                const apexY = m;
+                                let pathD = `M ${m} ${baseY}`;
+                                const steps = 30;
+                                for (let i = 1; i <= steps; i++) {
+                                    const t = i / steps;
+                                    const curX = m + t * spanW;
+                                    const curY = baseY - 4 * archH * t * (1 - t);
+                                    pathD += ` L ${curX} ${curY}`;
+                                }
+
+                                return (
+                                    <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                        <line x1={m - 10} y1={baseY} x2={w - m + 10} y2={baseY} stroke={shpObj.color || '#a855f7'} strokeWidth={1.5} />
+                                        <path
+                                            d={`${pathD} L ${w - m} ${baseY} Z`}
+                                            fill={shpObj.fillColor && shpObj.fillColor !== 'transparent' ? shpObj.fillColor : 'rgba(168, 85, 247, 0.15)'}
+                                            stroke="none"
+                                        />
+                                        <path
+                                            d={pathD}
+                                            fill="none"
+                                            stroke={shpObj.color || '#a855f7'}
+                                            strokeWidth={shpObj.strokeWidth || 3}
+                                            strokeLinecap="round"
+                                        />
+                                        <line x1={apexX} y1={apexY} x2={apexX} y2={baseY} stroke="rgba(168, 85, 247, 0.6)" strokeWidth={1.2} strokeDasharray="3,3" />
+                                        <circle cx={apexX} cy={apexY} r={3.5} fill="#a855f7" />
+                                        {renderSvgLabel(apexX, apexY - 10, 'V(0, h)', 'middle', 11)}
+                                        {renderSvgLabel(apexX - 10, baseY - archH / 2, 'h', 'end', 12)}
+                                        {renderSvgLabel(apexX, baseY + 16, 'w (Span)', 'middle', 12)}
+                                        {shpObj.equation && (
+                                            renderSvgLabel(apexX, apexY - 24, shpObj.equation, 'middle', 11, '#a855f7')
+                                        )}
                                     </g>
                                 );
                             }

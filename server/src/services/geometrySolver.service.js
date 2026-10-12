@@ -261,6 +261,437 @@ class GeometrySolverService {
 
         return placedChars;
     }
+
+    /**
+     * Solves a circular sector: radius R, angle deltaTheta (deg)
+     * Arc length s = R * deltaTheta
+     * Area A = 0.5 * R^2 * deltaTheta
+     * Perimeter P = 2*R + s
+     */
+    solveSector({ radius = 80, angleDeg = 60, startAngleDeg = 0, centerX = 180, centerY = 180 }) {
+        const R = Math.max(10, Number(radius) || 80);
+        const angDeg = Math.max(1, Math.min(360, Number(angleDeg) || 60));
+        const startDeg = Number(startAngleDeg) || 0;
+        const toRad = (d) => (d * Math.PI) / 180;
+
+        const radDelta = toRad(angDeg);
+        const radStart = toRad(startDeg);
+        const radEnd = toRad(startDeg + angDeg);
+
+        const arcLength = R * radDelta;
+        const area = 0.5 * R * R * radDelta;
+        const perimeter = 2 * R + arcLength;
+
+        const p1 = {
+            x: Math.round((centerX + R * Math.cos(radStart)) * 100) / 100,
+            y: Math.round((centerY + R * Math.sin(radStart)) * 100) / 100
+        };
+        const p2 = {
+            x: Math.round((centerX + R * Math.cos(radEnd)) * 100) / 100,
+            y: Math.round((centerY + R * Math.sin(radEnd)) * 100) / 100
+        };
+
+        const largeArc = angDeg > 180 ? 1 : 0;
+        const svgPath = `M ${centerX} ${centerY} L ${p1.x} ${p1.y} A ${R} ${R} 0 ${largeArc} 1 ${p2.x} ${p2.y} Z`;
+
+        // Mid-arc point for label
+        const midRad = toRad(startDeg + angDeg / 2);
+        const midPoint = {
+            x: Math.round((centerX + R * Math.cos(midRad)) * 100) / 100,
+            y: Math.round((centerY + R * Math.sin(midRad)) * 100) / 100
+        };
+
+        return {
+            shapeType: 'sector',
+            radius: R,
+            angleDeg: angDeg,
+            arcLength: Math.round(arcLength * 100) / 100,
+            area: Math.round(area * 100) / 100,
+            perimeter: Math.round(perimeter * 100) / 100,
+            center: { x: centerX, y: centerY },
+            points: [{ x: centerX, y: centerY, label: 'O' }, p1, p2, midPoint],
+            svgPath,
+            labels: [
+                { text: `r = ${R}`, x: (centerX + p1.x) / 2, y: (centerY + p1.y) / 2 - 8 },
+                { text: `θ = ${angDeg}°`, x: centerX + 22 * Math.cos(midRad), y: centerY + 22 * Math.sin(midRad) },
+                { text: `s = ${Math.round(arcLength)}`, x: midPoint.x + 12 * Math.cos(midRad), y: midPoint.y + 12 * Math.sin(midRad) }
+            ],
+            latexFormula: `A = \\frac{1}{2} r^2 \\theta = \\frac{1}{2} (${R})^2 \\left(\\frac{${angDeg}\\pi}{180}\\right) \\approx ${Math.round(area * 100) / 100}`
+        };
+    }
+
+    /**
+     * Solves a circular segment: chord and circular arc region
+     * Chord length c = 2 * R * sin(deltaTheta / 2)
+     * Area A = 0.5 * R^2 * (deltaTheta - sin(deltaTheta))
+     */
+    solveSegment({ radius = 80, angleDeg = 60, startAngleDeg = 0, centerX = 180, centerY = 180 }) {
+        const R = Math.max(10, Number(radius) || 80);
+        const angDeg = Math.max(1, Math.min(360, Number(angleDeg) || 60));
+        const startDeg = Number(startAngleDeg) || 0;
+        const toRad = (d) => (d * Math.PI) / 180;
+
+        const radDelta = toRad(angDeg);
+        const radStart = toRad(startDeg);
+        const radEnd = toRad(startDeg + angDeg);
+
+        const chordLength = 2 * R * Math.sin(radDelta / 2);
+        const arcLength = R * radDelta;
+        const area = 0.5 * R * R * (radDelta - Math.sin(radDelta));
+        const perimeter = chordLength + arcLength;
+
+        const p1 = {
+            x: Math.round((centerX + R * Math.cos(radStart)) * 100) / 100,
+            y: Math.round((centerY + R * Math.sin(radStart)) * 100) / 100
+        };
+        const p2 = {
+            x: Math.round((centerX + R * Math.cos(radEnd)) * 100) / 100,
+            y: Math.round((centerY + R * Math.sin(radEnd)) * 100) / 100
+        };
+
+        const largeArc = angDeg > 180 ? 1 : 0;
+        const svgPath = `M ${p1.x} ${p1.y} A ${R} ${R} 0 ${largeArc} 1 ${p2.x} ${p2.y} Z`;
+
+        const midRad = toRad(startDeg + angDeg / 2);
+        const midArc = {
+            x: Math.round((centerX + R * Math.cos(midRad)) * 100) / 100,
+            y: Math.round((centerY + R * Math.sin(midRad)) * 100) / 100
+        };
+
+        return {
+            shapeType: 'segment',
+            radius: R,
+            angleDeg: angDeg,
+            chordLength: Math.round(chordLength * 100) / 100,
+            arcLength: Math.round(arcLength * 100) / 100,
+            area: Math.round(area * 100) / 100,
+            perimeter: Math.round(perimeter * 100) / 100,
+            svgPath,
+            labels: [
+                { text: `chord = ${Math.round(chordLength)}`, x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 + 14 },
+                { text: `arc = ${Math.round(arcLength)}`, x: midArc.x, y: midArc.y - 10 }
+            ],
+            latexFormula: `A = \\frac{1}{2} r^2 (\\theta - \\sin\\theta) \\approx ${Math.round(area * 100) / 100}`
+        };
+    }
+
+    /**
+     * Solves an annular sector (partial ring washer)
+     * Area A = 0.5 * (R_outer^2 - R_inner^2) * deltaTheta
+     */
+    solveAnnulusSector({ rInner = 40, rOuter = 80, angleDeg = 60, startAngleDeg = 0, centerX = 180, centerY = 180 }) {
+        const rIn = Math.max(5, Number(rInner) || 40);
+        const rOut = Math.max(rIn + 5, Number(rOuter) || 80);
+        const angDeg = Math.max(1, Math.min(360, Number(angleDeg) || 60));
+        const startDeg = Number(startAngleDeg) || 0;
+        const toRad = (d) => (d * Math.PI) / 180;
+
+        const radDelta = toRad(angDeg);
+        const radStart = toRad(startDeg);
+        const radEnd = toRad(startDeg + angDeg);
+
+        const area = 0.5 * (rOut * rOut - rIn * rIn) * radDelta;
+        const largeArc = angDeg > 180 ? 1 : 0;
+
+        const pOutStart = { x: centerX + rOut * Math.cos(radStart), y: centerY + rOut * Math.sin(radStart) };
+        const pOutEnd = { x: centerX + rOut * Math.cos(radEnd), y: centerY + rOut * Math.sin(radEnd) };
+        const pInEnd = { x: centerX + rIn * Math.cos(radEnd), y: centerY + rIn * Math.sin(radEnd) };
+        const pInStart = { x: centerX + rIn * Math.cos(radStart), y: centerY + rIn * Math.sin(radStart) };
+
+        const svgPath = `M ${pOutStart.x} ${pOutStart.y} A ${rOut} ${rOut} 0 ${largeArc} 1 ${pOutEnd.x} ${pOutEnd.y} L ${pInEnd.x} ${pInEnd.y} A ${rIn} ${rIn} 0 ${largeArc} 0 ${pInStart.x} ${pInStart.y} Z`;
+
+        return {
+            shapeType: 'annulus_sector',
+            rInner: rIn,
+            rOuter: rOut,
+            angleDeg: angDeg,
+            area: Math.round(area * 100) / 100,
+            svgPath,
+            latexFormula: `A = \\frac{1}{2} (R^2 - r^2) \\theta = \\frac{1}{2} (${rOut}^2 - ${rIn}^2) (${radDelta.toFixed(2)}) \\approx ${Math.round(area * 100) / 100}`
+        };
+    }
+
+    /**
+     * Parabolic arch: y = h * (1 - 4*x^2 / w^2) for x in [-w/2, w/2]
+     * Area A = (2/3) * w * h
+     */
+    solveParabolicArch({ width = 160, height = 100, centerX = 180, centerY = 180, samples = 30 }) {
+        const w = Math.max(20, Number(width) || 160);
+        const h = Math.max(10, Number(height) || 100);
+        const n = Math.max(10, Number(samples) || 30);
+
+        const halfW = w / 2;
+        const points = [];
+        for (let i = 0; i <= n; i++) {
+            const relX = -halfW + (w * i) / n;
+            const relY = h * (1 - (4 * relX * relX) / (w * w));
+            points.push({
+                x: Math.round((centerX + relX) * 100) / 100,
+                y: Math.round((centerY - relY) * 100) / 100
+            });
+        }
+
+        const pathStr = points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ` L ${centerX + halfW} ${centerY} L ${centerX - halfW} ${centerY} Z`;
+        const area = (2 / 3) * w * h;
+
+        return {
+            shapeType: 'parabolic_arch',
+            width: w,
+            height: h,
+            area: Math.round(area * 100) / 100,
+            points,
+            svgPath: pathStr,
+            latexFormula: `A = \\int_{-w/2}^{w/2} h\\left(1 - \\frac{4x^2}{w^2}\\right) dx = \\frac{2}{3} w h = \\frac{2}{3} (${w}) (${h}) = ${Math.round(area * 100) / 100}`
+        };
+    }
+
+    /**
+     * Solves intersection of a Circle and a Line in Cartesian space
+     * Supports:
+     * - Circle: center (cx, cy), radius r OR general form x^2 + y^2 + 2gx + 2fy + c = 0
+     * - Line: y = m*x + k OR Ax + By + C = 0
+     */
+    solveCircleLineIntersection({
+        circle = { cx: 0, cy: 0, r: 5 },
+        line = { m: 1, k: 0 }
+    }) {
+        let cx = Number(circle.cx) || 0;
+        let cy = Number(circle.cy) || 0;
+        let r = Number(circle.r) || 5;
+
+        // If circle is given in general form x^2 + y^2 + 2gx + 2fy + c = 0
+        if (circle.g !== undefined && circle.f !== undefined && circle.c !== undefined) {
+            cx = -Number(circle.g);
+            cy = -Number(circle.f);
+            const rSq = cx * cx + cy * cy - Number(circle.c);
+            if (rSq <= 0) throw new Error('Circle radius is imaginary or zero.');
+            r = Math.sqrt(rSq);
+        } else if (circle.D !== undefined || circle.d !== undefined) {
+            // General form: x^2 + y^2 + Dx + Ey + F = 0
+            const Dval = Number(circle.D !== undefined ? circle.D : circle.d);
+            const Eval = Number(circle.E !== undefined ? circle.E : circle.e);
+            const Fval = Number(circle.F !== undefined ? circle.F : (circle.c !== undefined ? circle.c : circle.f));
+            cx = -Dval / 2;
+            cy = -Eval / 2;
+            const rSq = cx * cx + cy * cy - Fval;
+            if (rSq <= 0) throw new Error('Circle radius is imaginary or zero.');
+            r = Math.sqrt(rSq);
+        }
+
+        const m = Number(line.m) !== undefined ? Number(line.m) : 1;
+        const k = Number(line.k !== undefined ? line.k : (line.c !== undefined ? line.c : (line.intercept !== undefined ? line.intercept : 0)));
+
+        // Quadratic equation: (x - cx)^2 + (m*x + k - cy)^2 = r^2
+        // Let yDiff = k - cy
+        // x^2 - 2*cx*x + cx^2 + m^2*x^2 + 2*m*yDiff*x + yDiff^2 - r^2 = 0
+        // (1 + m^2)*x^2 + 2*(m*yDiff - cx)*x + (cx^2 + yDiff^2 - r^2) = 0
+        const yDiff = k - cy;
+        const A = 1 + m * m;
+        const B = 2 * (m * yDiff - cx);
+        const C = cx * cx + yDiff * yDiff - r * r;
+
+        const D = B * B - 4 * A * C;
+        const intersections = [];
+        let status = 'no_intersection';
+
+        if (Math.abs(D) < 1e-9) {
+            status = 'tangent';
+            const x = -B / (2 * A);
+            const y = m * x + k;
+            intersections.push({ x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 });
+        } else if (D > 0) {
+            status = 'secant';
+            const sqrtD = Math.sqrt(D);
+            const x1 = (-B + sqrtD) / (2 * A);
+            const y1 = m * x1 + k;
+            const x2 = (-B - sqrtD) / (2 * A);
+            const y2 = m * x2 + k;
+            intersections.push({ x: Math.round(x1 * 100) / 100, y: Math.round(y1 * 100) / 100 });
+            intersections.push({ x: Math.round(x2 * 100) / 100, y: Math.round(y2 * 100) / 100 });
+        }
+
+        return {
+            status,
+            circle: { cx, cy, r: Math.round(r * 100) / 100 },
+            center: { x: cx, y: cy },
+            radius: Math.round(r * 100) / 100,
+            line: { m, k },
+            discriminant: Math.round(D * 100) / 100,
+            intersections,
+            intersectionPoints: intersections,
+            equations: {
+                circle: `(x - ${cx})^2 + (y - ${cy})^2 = ${(r * r).toFixed(2)}`,
+                line: `y = ${m}x + ${k}`
+            },
+            latexSteps: [
+                `\\text{Circle: } (x - ${cx})^2 + (y - ${cy})^2 = ${Math.round(r * r * 100) / 100}`,
+                `\\text{Line: } y = ${m}x + ${k}`,
+                `\\text{Substitute } y \\text{ into circle: } (1 + ${m}^2)x^2 + 2(${m}(${yDiff.toFixed(2)}) - ${cx})x + (${(cx*cx + yDiff*yDiff - r*r).toFixed(2)}) = 0`,
+                `\\Delta = ${Math.round(D * 100) / 100} \\implies ${intersections.length} \\text{ real point(s)}`,
+                intersections.length === 2
+                    ? `\\text{Points: } (${intersections[0].x}, ${intersections[0].y}) \\text{ and } (${intersections[1].x}, ${intersections[1].y})`
+                    : (intersections.length === 1 ? `\\text{Point: } (${intersections[0].x}, ${intersections[0].y})` : `\\text{No intersection}`)
+            ]
+        };
+    }
+
+    /**
+     * 3D Vector Operations Solver (CBSE Class 12 / College Math)
+     * Solves magnitudes, dot product, cross product, angles, and unit vectors.
+     */
+    solveVectors({ a = [1, 0, 0], b = [0, 1, 0] }) {
+        const ax = Number(a[0]) || 0, ay = Number(a[1]) || 0, az = Number(a[2]) || 0;
+        const bx = Number(b[0]) || 0, by = Number(b[1]) || 0, bz = Number(b[2]) || 0;
+
+        const magA = Math.sqrt(ax * ax + ay * ay + az * az);
+        const magB = Math.sqrt(bx * bx + by * by + bz * bz);
+
+        // Dot product: a . b = ax*bx + ay*by + az*bz
+        const dotProduct = ax * bx + ay * by + az * bz;
+
+        // Angle theta: cos(theta) = dot / (|a| * |b|)
+        let angleDeg = 0;
+        let angleRad = 0;
+        if (magA > 0 && magB > 0) {
+            const cosTheta = Math.max(-1, Math.min(1, dotProduct / (magA * magB)));
+            angleRad = Math.acos(cosTheta);
+            angleDeg = (angleRad * 180) / Math.PI;
+        }
+
+        // Cross product: a x b = (ay*bz - az*by)i - (ax*bz - az*bx)j + (ax*by - ay*bx)k
+        const cross = [
+            ay * bz - az * by,
+            az * bx - ax * bz,
+            ax * by - ay * bx
+        ];
+        const magCross = Math.sqrt(cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2]);
+
+        // Direction cosines of a
+        const dirCosA = magA > 0 ? [ax / magA, ay / magA, az / magA] : [0, 0, 0];
+
+        // Normal unit vector
+        const unitNormal = magCross > 0 ? [cross[0] / magCross, cross[1] / magCross, cross[2] / magCross] : [0, 0, 0];
+
+        const formatVec = (v) => `${v[0]}\\hat{i} ${v[1] >= 0 ? '+' : ''}${v[1]}\\hat{j} ${v[2] >= 0 ? '+' : ''}${v[2]}\\hat{k}`;
+
+        return {
+            vectorA: [ax, ay, az],
+            vectorB: [bx, by, bz],
+            a: [ax, ay, az],
+            b: [bx, by, bz],
+            magnitudeA: Math.round(magA * 100) / 100,
+            magnitudeB: Math.round(magB * 100) / 100,
+            magA: Math.round(magA * 100) / 100,
+            magB: Math.round(magB * 100) / 100,
+            dotProduct: Math.round(dotProduct * 100) / 100,
+            angleDeg: Math.round(angleDeg * 10) / 10,
+            angleRad: Math.round(angleRad * 100) / 100,
+            crossProduct: cross.map((c) => Math.round(c * 100) / 100),
+            magnitudeCross: Math.round(magCross * 100) / 100,
+            magCross: Math.round(magCross * 100) / 100,
+            unitNormal: unitNormal.map((u) => Math.round(u * 100) / 100),
+            directionCosinesA: dirCosA.map((d) => Math.round(d * 100) / 100),
+            latexSummary: {
+                vecA: `\\vec{a} = ${formatVec([ax, ay, az])}`,
+                vecB: `\\vec{b} = ${formatVec([bx, by, bz])}`,
+                dot: `\\vec{a} \\cdot \\vec{b} = (${ax})(${bx}) + (${ay})(${by}) + (${az})(${bz}) = ${dotProduct}`,
+                angle: `\\theta = \\arccos\\left(\\frac{\\vec{a}\\cdot\\vec{b}}{|\\vec{a}||\\vec{b}|}\\right) \\approx ${Math.round(angleDeg * 10) / 10}^\\circ`,
+                cross: `\\vec{a} \\times \\vec{b} = ${formatVec(cross)}`,
+                magCross: `|\\vec{a} \\times \\vec{b}| = ${Math.round(magCross * 100) / 100}`
+            }
+        };
+    }
+
+    /**
+     * 3D Solid Measurements Solver: Volume & Surface Area
+     * Cylinder, Cone, Sphere, Frustum, Hemisphere, Capsule
+     */
+    solveSolid({ shape = 'cylinder', radius = 5, height = 10, r1 = 8, r2 = 4, length = 12 }) {
+        const sh = (shape || 'cylinder').toLowerCase();
+        const r = Math.max(0.1, Number(radius) || 5);
+        const h = Math.max(0.1, Number(height) || 10);
+        const pi = Math.PI;
+
+        let volume = 0;
+        let curvedArea = 0;
+        let totalArea = 0;
+        let steps = [];
+
+        if (sh === 'cylinder') {
+            volume = pi * r * r * h;
+            curvedArea = 2 * pi * r * h;
+            totalArea = 2 * pi * r * (h + r);
+            steps = [
+                `V = \\pi r^2 h = \\pi (${r})^2 (${h}) = ${Math.round(r * r * h)}\\pi \\approx ${Math.round(volume * 100) / 100}`,
+                `S_{\\text{curved}} = 2\\pi r h = 2\\pi (${r})(${h}) = ${Math.round(2 * r * h)}\\pi \\approx ${Math.round(curvedArea * 100) / 100}`,
+                `S_{\\text{total}} = 2\\pi r (h + r) = 2\\pi (${r})(${h + r}) = ${Math.round(2 * r * (h + r))}\\pi \\approx ${Math.round(totalArea * 100) / 100}`
+            ];
+        } else if (sh === 'sphere') {
+            volume = (4 / 3) * pi * Math.pow(r, 3);
+            curvedArea = 4 * pi * r * r;
+            totalArea = curvedArea;
+            steps = [
+                `V = \\frac{4}{3}\\pi r^3 = \\frac{4}{3}\\pi (${r})^3 \\approx ${Math.round(volume * 100) / 100}`,
+                `S_{\\text{total}} = 4\\pi r^2 = 4\\pi (${r})^2 = ${Math.round(4 * r * r)}\\pi \\approx ${Math.round(totalArea * 100) / 100}`
+            ];
+        } else if (sh === 'cone') {
+            const slant = Math.sqrt(r * r + h * h);
+            volume = (1 / 3) * pi * r * r * h;
+            curvedArea = pi * r * slant;
+            totalArea = pi * r * (r + slant);
+            steps = [
+                `l = \\sqrt{r^2 + h^2} = \\sqrt{${r}^2 + ${h}^2} \\approx ${Math.round(slant * 100) / 100}`,
+                `V = \\frac{1}{3}\\pi r^2 h = \\frac{1}{3}\\pi (${r})^2 (${h}) \\approx ${Math.round(volume * 100) / 100}`,
+                `S_{\\text{curved}} = \\pi r l \\approx ${Math.round(curvedArea * 100) / 100}`,
+                `S_{\\text{total}} = \\pi r (r + l) \\approx ${Math.round(totalArea * 100) / 100}`
+            ];
+        } else if (sh === 'frustum') {
+            const rad1 = Math.max(0.1, Number(r1) || 8);
+            const rad2 = Math.max(0.1, Number(r2) || 4);
+            const slant = Math.sqrt(h * h + Math.pow(rad1 - rad2, 2));
+            volume = (1 / 3) * pi * h * (rad1 * rad1 + rad2 * rad2 + rad1 * rad2);
+            curvedArea = pi * (rad1 + rad2) * slant;
+            totalArea = curvedArea + pi * rad1 * rad1 + pi * rad2 * rad2;
+            steps = [
+                `l = \\sqrt{h^2 + (r_1 - r_2)^2} = \\sqrt{${h}^2 + (${rad1} - ${rad2})^2} \\approx ${Math.round(slant * 100) / 100}`,
+                `V = \\frac{1}{3}\\pi h (r_1^2 + r_2^2 + r_1 r_2) \\approx ${Math.round(volume * 100) / 100}`,
+                `S_{\\text{curved}} = \\pi (r_1 + r_2) l \\approx ${Math.round(curvedArea * 100) / 100}`,
+                `S_{\\text{total}} = S_{\\text{curved}} + \\pi r_1^2 + \\pi r_2^2 \\approx ${Math.round(totalArea * 100) / 100}`
+            ];
+        } else if (sh === 'hemisphere') {
+            volume = (2 / 3) * pi * Math.pow(r, 3);
+            curvedArea = 2 * pi * r * r;
+            totalArea = 3 * pi * r * r;
+            steps = [
+                `V = \\frac{2}{3}\\pi r^3 = \\frac{2}{3}\\pi (${r})^3 \\approx ${Math.round(volume * 100) / 100}`,
+                `S_{\\text{curved}} = 2\\pi r^2 = 2\\pi (${r})^2 = ${Math.round(2 * r * r)}\\pi \\approx ${Math.round(curvedArea * 100) / 100}`,
+                `S_{\\text{total}} = 3\\pi r^2 = 3\\pi (${r})^2 = ${Math.round(3 * r * r)}\\pi \\approx ${Math.round(totalArea * 100) / 100}`
+            ];
+        } else if (sh === 'capsule') {
+            // Cylinder of length h with 2 hemispherical end caps of radius r
+            const bodyVol = pi * r * r * h;
+            const capVol = (4 / 3) * pi * Math.pow(r, 3);
+            volume = bodyVol + capVol;
+            curvedArea = 2 * pi * r * h + 4 * pi * r * r;
+            totalArea = curvedArea;
+            steps = [
+                `V = \\pi r^2 h + \\frac{4}{3}\\pi r^3 \\approx ${Math.round(volume * 100) / 100}`,
+                `S = 2\\pi r h + 4\\pi r^2 \\approx ${Math.round(totalArea * 100) / 100}`
+            ];
+        }
+
+        return {
+            shape: sh,
+            dimensions: { radius: r, height: h, r1, r2 },
+            volume: Math.round(volume * 100) / 100,
+            curvedSurfaceArea: Math.round(curvedArea * 100) / 100,
+            totalSurfaceArea: Math.round(totalArea * 100) / 100,
+            surfaceArea: Math.round(totalArea * 100) / 100,
+            lateralArea: Math.round(curvedArea * 100) / 100,
+            latexSteps: steps
+        };
+    }
 }
 
 module.exports = new GeometrySolverService();
+
