@@ -2162,104 +2162,158 @@ Output MUST be ONLY valid JSON matching this schema:
             context.currentRoute?.includes('live-board');
 
         if (isWhiteboard) {
-            const parseConcentricCircles = (inputText, baseWidth = 240) => {
-                const lowTxt = (inputText || '').toLowerCase();
-                const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(lowTxt);
-                const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(lowTxt);
-                const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
-
-                // Dynamically parse any count specified in natural language (1 to 10)
-                const countDigitMatch = lowTxt.match(/\b(\d+)\s*(?:concentric|nested|rings?|circles?)\b/i) ||
-                                        lowTxt.match(/\b(?:concentric|nested|rings?|circles?)\s*(?:of|with)?\s*(\d+)\b/i);
-                let count = countDigitMatch ? parseInt(countDigitMatch[1], 10) : null;
-                if (!count) {
-                    if (/\btwo\b/i.test(lowTxt)) count = 2;
-                    else if (/\bthree\b/i.test(lowTxt)) count = 3;
-                    else if (/\bfour\b/i.test(lowTxt)) count = 4;
-                    else if (/\bfive\b/i.test(lowTxt)) count = 5;
-                    else if (/\bsix\b/i.test(lowTxt)) count = 6;
-                    else if (/\bseven\b/i.test(lowTxt)) count = 7;
-                    else if (/\beight\b/i.test(lowTxt)) count = 8;
+            const parseConcentricCircles = (inputText, baseWidth = 240, aiAction = null) => {
+                // If aiAction already provided valid radii array, prioritize and use it!
+                if (aiAction && Array.isArray(aiAction.radii) && aiAction.radii.length >= 2) {
+                    const validRadii = aiAction.radii.map(Number).filter(r => !isNaN(r) && r > 0);
+                    if (validRadii.length >= 2) {
+                        const angles = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
+                        return validRadii.map((r, idx) => ({
+                            type: 'CREATE_OBJECT',
+                            objectType: 'circle',
+                            radius: r,
+                            width: r * 2,
+                            height: r * 2,
+                            showCenter: idx === 0,
+                            centerLabel: idx === 0 ? 'O' : null,
+                            showRadius: true,
+                            radiusLabel: `r${idx + 1} = ${r}px`,
+                            radiusAngle: angles[idx % angles.length],
+                            isConcentricMember: true
+                        }));
+                    }
                 }
 
-                const cleaned = lowTxt
-                    .replace(/\b(?:two|three|four|five|six|seven|eight|\d+)\s+(?:concentric|nested|rings?|circles?)/gi, '')
-                    .replace(/\b(?:concentric|nested|rings?|circles?)\s+of\s+/gi, 'of ');
+                const lowTxt = (inputText || '').toLowerCase();
+                const hasCm = /(?:^|\W|\d)(cm|centimeters?|centimetres?)\b/i.test(lowTxt);
+                const hasMm = /(?:^|\W|\d)(mm|millimeters?|millimetres?)\b/i.test(lowTxt);
+                const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
 
-                const numMatches = [];
-                const numRegex = /(\d+(?:\.\d+)?)\s*(cm|mm|px)?/gi;
-                let m;
-                while ((m = numRegex.exec(cleaned)) !== null) {
-                    const val = parseFloat(m[1]);
-                    if (!isNaN(val) && val > 0) {
-                        numMatches.push({ val, unit: m[2] || unit });
+                // 1. Parse Count N
+                let count = null;
+                const countMatch = lowTxt.match(/\b(\d+)\s*(?:concentric|nested|rings?|circles?)\b/i) ||
+                                   lowTxt.match(/\b(?:concentric|nested|rings?|circles?)\s*(?:of|with)?\s*(\d+)\b/i);
+                if (countMatch) {
+                    count = parseInt(countMatch[1], 10);
+                } else {
+                    const words = { 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10 };
+                    for (const [w, n] of Object.entries(words)) {
+                        if (new RegExp(`\\b${w}\\s+(?:concentric|nested|rings?|circles?)`, 'i').test(lowTxt) ||
+                            new RegExp(`\\b(?:concentric|nested|rings?|circles?)\\s+(?:of|with)?\\s*${w}\\b`, 'i').test(lowTxt)) {
+                            count = n;
+                            break;
+                        }
+                    }
+                }
+                if (aiAction && !count && Number(aiAction.rings)) {
+                    count = Number(aiAction.rings);
+                }
+
+                // 2. Parse Innermost / Initial Radius rStart
+                let rStart = null;
+                const innerMatch = lowTxt.match(/(?:inner(?:most)?|first|smallest|start(?:ing)?)\s*(?:circle)?\s*(?:of|with)?\s*(?:a\s*)?(?:radius|r)?\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i) ||
+                                   lowTxt.match(/radius\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?\s*(?:for\s*)?(?:the\s*)?(?:inner(?:most)?|first|smallest)/i);
+                if (innerMatch) {
+                    rStart = parseFloat(innerMatch[1]);
+                }
+
+                // 3. Parse Step / Separation / Gap
+                let rStep = null;
+                const sepMatch = lowTxt.match(/(?:separated|seperated|spaced|apart|gap|difference|step|interval)\s*(?:by|of)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i) ||
+                                 lowTxt.match(/(\d+(?:\.\d+)?)\s*(cm|mm|px)?\s*(?:separation|apart|gap|spacing|interval)/i);
+                if (sepMatch) {
+                    rStep = parseFloat(sepMatch[1]);
+                }
+
+                // 4. Parse Explicit Radii List (e.g. radii 30, 60, 90)
+                const listMatch = lowTxt.match(/(?:radii|radius(?:es)?)\s*(?:of|are|=|:)?\s*([0-9\s,\.pxcmm]+)/i);
+                let explicitRadii = null;
+                if (listMatch) {
+                    const numbers = listMatch[1].match(/\d+(?:\.\d+)?/g);
+                    if (numbers && numbers.length >= 2) {
+                        const parsed = numbers.map(parseFloat).filter(n => !isNaN(n) && n > 0);
+                        if (parsed.length >= 2) explicitRadii = parsed;
                     }
                 }
 
                 let radiiList = [];
                 let labelsList = [];
 
-                if (numMatches.length >= 2) {
-                    const sorted = [...numMatches].sort((a, b) => a.val - b.val);
-                    count = sorted.length;
-                    const maxVal = sorted[sorted.length - 1].val;
-                    let pxScale = 1;
-                    if (unit === 'cm') {
-                        pxScale = maxVal <= 10 ? 25 : (maxVal <= 20 ? 15 : 10);
-                    } else if (unit === 'mm') {
-                        pxScale = maxVal <= 50 ? 3 : 1.5;
-                    } else {
-                        if (maxVal <= 15) pxScale = 25;
-                        else if (maxVal > 250) pxScale = 240 / maxVal;
-                        else pxScale = 1;
+                if (rStart !== null && rStep !== null) {
+                    const finalCount = count || 3;
+                    for (let i = 0; i < finalCount; i++) {
+                        const r = rStart + i * rStep;
+                        radiiList.push(r);
+                        labelsList.push(`r${i + 1} = ${r}${unit}`);
                     }
-
-                    radiiList = sorted.map(item => Math.max(25, Math.round(item.val * pxScale)));
-                    labelsList = sorted.map((item, idx) => {
-                        const prefix = count === 2 ? (idx === 0 ? 'r' : 'R') : `r${idx + 1}`;
-                        const unitStr = (unit === 'cm' || unit === 'mm') ? unit : (maxVal <= 15 ? 'cm' : 'px');
-                        return `${prefix} = ${item.val}${unitStr}`;
-                    });
-                } else if (numMatches.length === 1 && numMatches[0].val > 0) {
-                    const baseR = numMatches[0].val;
-                    const basePx = unit === 'cm' ? Math.round(baseR * 25) : (baseR <= 15 ? Math.round(baseR * 25) : baseR);
-                    const actualCount = count || 2;
-                    radiiList = [];
-                    labelsList = [];
-                    for (let i = 1; i <= actualCount; i++) {
-                        const frac = i / actualCount;
-                        const rPx = Math.max(25 * i, Math.round(basePx * frac));
-                        radiiList.push(rPx);
-                        const valStr = (baseR * frac).toFixed(1).replace(/\.0$/, '');
-                        labelsList.push(actualCount === 2 ? (i === 1 ? `r = ${valStr}${unit}` : `R = ${valStr}${unit}`) : `r${i} = ${valStr}${unit}`);
-                    }
-                    count = actualCount;
+                } else if (explicitRadii && explicitRadii.length >= 2) {
+                    radiiList = explicitRadii;
+                    labelsList = radiiList.map((r, i) => `r${i + 1} = ${r}${unit}`);
                 } else {
-                    const actualCount = count || 2;
-                    radiiList = [];
-                    labelsList = [];
-                    const step = actualCount <= 3 ? 45 : Math.max(25, Math.round(180 / actualCount));
-                    for (let i = 1; i <= actualCount; i++) {
-                        radiiList.push(25 + i * step);
-                        labelsList.push(actualCount === 2 ? (i === 1 ? 'r' : 'R') : `r${i}`);
+                    const cleaned = lowTxt.replace(/\b(?:two|three|four|five|six|seven|eight|\d+)\s+(?:concentric|nested|rings?|circles?)/gi, '');
+                    const allNums = [];
+                    const numRegex = /(\d+(?:\.\d+)?)/g;
+                    let nm;
+                    while ((nm = numRegex.exec(cleaned)) !== null) {
+                        const val = parseFloat(nm[1]);
+                        if (!isNaN(val) && val > 0) allNums.push(val);
                     }
-                    count = actualCount;
+                    const uniqueNums = Array.from(new Set(allNums)).sort((a, b) => a - b);
+                    if (uniqueNums.length >= 2 && (!count || count === uniqueNums.length)) {
+                        radiiList = uniqueNums;
+                        labelsList = radiiList.map((r, i) => `r${i + 1} = ${r}${unit}`);
+                    } else if (rStart !== null || uniqueNums.length === 1) {
+                        const baseR = rStart !== null ? rStart : uniqueNums[0];
+                        const finalCount = count || 3;
+                        const step = (rStep !== null) ? rStep : baseR;
+                        for (let i = 0; i < finalCount; i++) {
+                            const r = baseR + i * step;
+                            radiiList.push(r);
+                            labelsList.push(`r${i + 1} = ${r}${unit}`);
+                        }
+                    } else if (rStep !== null) {
+                        const finalCount = count || 3;
+                        for (let i = 1; i <= finalCount; i++) {
+                            const r = i * rStep;
+                            radiiList.push(r);
+                            labelsList.push(`r${i} = ${r}${unit}`);
+                        }
+                    } else {
+                        const finalCount = count || 3;
+                        const step = Math.max(30, Math.round(180 / finalCount));
+                        for (let i = 1; i <= finalCount; i++) {
+                            const r = i * step;
+                            radiiList.push(r);
+                            labelsList.push(`r${i} = ${r}px`);
+                        }
+                    }
+                }
+
+                let scale = 1;
+                if (unit === 'cm') {
+                    const maxR = Math.max(...radiiList);
+                    scale = maxR <= 10 ? 25 : (maxR <= 20 ? 15 : 10);
+                } else if (unit === 'mm') {
+                    scale = 2;
                 }
 
                 const angles = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
-                return radiiList.map((r, idx) => ({
-                    type: 'CREATE_OBJECT',
-                    objectType: 'circle',
-                    radius: r,
-                    width: r * 2,
-                    height: r * 2,
-                    showCenter: idx === 0,
-                    centerLabel: idx === 0 ? 'O' : null,
-                    showRadius: true,
-                    radiusLabel: labelsList[idx],
-                    radiusAngle: angles[idx % angles.length],
-                    isConcentricMember: true
-                }));
+                return radiiList.map((r, idx) => {
+                    const pxRadius = Math.round(r * scale);
+                    return {
+                        type: 'CREATE_OBJECT',
+                        objectType: 'circle',
+                        radius: pxRadius,
+                        width: pxRadius * 2,
+                        height: pxRadius * 2,
+                        showCenter: idx === 0,
+                        centerLabel: idx === 0 ? 'O' : null,
+                        showRadius: true,
+                        radiusLabel: labelsList[idx] || `r${idx + 1}`,
+                        radiusAngle: angles[idx % angles.length],
+                        isConcentricMember: true
+                    };
+                });
             };
 
             const parseRectangleParams = (inputText) => {
@@ -2739,6 +2793,7 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
       "height": "<number or omit>",
       "radius": "<number for circle or omit>",
       "rings": "<number of concentric rings e.g. 2 or 3>",
+      "radii": "<array of numbers for concentric circle radii in px e.g. [40, 80, 120, 160]>",
       "radiiLabels": ["<string for inner radius e.g. 'r1'>", "<string for outer radius e.g. 'r2'>"],
       "size": "<number for square/star/triangle or omit>",
       "strokeWidth": "<number in pixels, e.g. 4 for 4px border>",
@@ -2995,8 +3050,18 @@ Spoken input: "${text}"
                             const actColor = act.color || parseColorFromText(combined, '#3b82f6');
 
                             if (act.type === 'CREATE_OBJECT') {
-                                if (act.objectType === 'concentric_circles' || /\bconcentric\b/i.test(combined)) {
-                                    return parseConcentricCircles(text, act.width || 240);
+                                if (act.objectType === 'concentric_circles' || ((act.objectType === 'drawing' || act.objectType === 'sketch') && /\bconcentric\b/i.test(act.title || text))) {
+                                    return parseConcentricCircles(text, act.width || 240, act);
+                                }
+
+                                if (act.objectType === 'circle') {
+                                    if (/\b(concentric|nested)\b/i.test(text)) {
+                                        act.isConcentricMember = true;
+                                    }
+                                    return [{
+                                        ...act,
+                                        color: actColor
+                                    }];
                                 }
 
                                 const isRightTri = act.objectType === 'right_triangle' ||

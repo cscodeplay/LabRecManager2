@@ -9296,8 +9296,11 @@ export default function Whiteboard({
                 const ry = Math.abs(shpObj.height / 2);
                 const centerX = shpObj.x + rx;
                 const centerY = shpObj.y + ry;
-                const rings = Math.max(2, Math.min(6, Number(shpObj.rings) || 3));
-                const ringFactors = rings === 2 ? [0.55, 1.0] : rings === 4 ? [0.28, 0.52, 0.76, 1.0] : [0.38, 0.70, 1.0];
+                const hasRadii = Array.isArray(shpObj.radii) && shpObj.radii.length >= 2;
+                const rings = hasRadii ? shpObj.radii.length : Math.max(2, Math.min(8, Number(shpObj.rings) || 3));
+                const ringFactors = hasRadii
+                    ? shpObj.radii.map(r => r / Math.max(...shpObj.radii))
+                    : (rings === 2 ? [0.55, 1.0] : rings === 4 ? [0.28, 0.52, 0.76, 1.0] : Array.from({ length: rings }, (_, i) => (i + 1) / rings));
                 ringFactors.forEach((factor, idx) => {
                     ctx.beginPath();
                     ctx.ellipse(centerX, centerY, rx * factor, ry * factor, 0, 0, Math.PI * 2);
@@ -13988,87 +13991,123 @@ export default function Whiteboard({
         if (!isDeleteCommand && !isCognitiveExplain) {
             // 1. Concentric Circles: dynamically extracts any number of rings N and custom dimensions
             if (/\b(concentric\s*circles?|nested\s*circles?|concentric\s*rings?|bullseye)\b/i.test(txt)) {
-                const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(txt);
-                const hasMm = /\b(mm|millimeters?|millimetres?)\b/i.test(txt);
+                const lowTxt = (txt || '').toLowerCase();
+                const hasCm = /(?:^|\W|\d)(cm|centimeters?|centimetres?)\b/i.test(lowTxt);
+                const hasMm = /(?:^|\W|\d)(mm|millimeters?|millimetres?)\b/i.test(lowTxt);
                 const unit = hasCm ? 'cm' : (hasMm ? 'mm' : 'px');
 
-                // Dynamically parse any count specified in natural language (1 to 10)
-                const countDigitMatch = txt.match(/\b(\d+)\s*(?:concentric|nested|rings?|circles?)\b/i) ||
-                                        txt.match(/\b(?:concentric|nested|rings?|circles?)\s*(?:of|with)?\s*(\d+)\b/i);
-                let count = countDigitMatch ? parseInt(countDigitMatch[1], 10) : null;
-                if (!count) {
-                    if (/\btwo\b/i.test(txt)) count = 2;
-                    else if (/\bthree\b/i.test(txt)) count = 3;
-                    else if (/\bfour\b/i.test(txt)) count = 4;
-                    else if (/\bfive\b/i.test(txt)) count = 5;
-                    else if (/\bsix\b/i.test(txt)) count = 6;
-                    else if (/\bseven\b/i.test(txt)) count = 7;
-                    else if (/\beight\b/i.test(txt)) count = 8;
+                // 1. Dynamically parse any count specified in natural language or digits
+                let count = null;
+                const countDigitMatch = lowTxt.match(/\b(\d+)\s*(?:concentric|nested|rings?|circles?)\b/i) ||
+                                        lowTxt.match(/\b(?:concentric|nested|rings?|circles?)\s*(?:of|with)?\s*(\d+)\b/i);
+                if (countDigitMatch) {
+                    count = parseInt(countDigitMatch[1], 10);
+                } else {
+                    const words = { 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10 };
+                    for (const [w, n] of Object.entries(words)) {
+                        if (new RegExp(`\\b${w}\\s+(?:concentric|nested|rings?|circles?)`, 'i').test(lowTxt) ||
+                            new RegExp(`\\b(?:concentric|nested|rings?|circles?)\\s+(?:of|with)?\\s*${w}\\b`, 'i').test(lowTxt)) {
+                            count = n;
+                            break;
+                        }
+                    }
                 }
 
-                const cleanedTxt = txt
-                    .replace(/\b(?:two|three|four|five|six|seven|eight|\d+)\s+(?:concentric|nested|rings?|circles?)/gi, '')
-                    .replace(/\b(?:concentric|nested|rings?|circles?)\s+of\s+/gi, 'of ');
-                
-                const numMatches = [];
-                const numRegex = /(\d+(?:\.\d+)?)\s*(cm|mm|px)?/gi;
-                let m;
-                while ((m = numRegex.exec(cleanedTxt)) !== null) {
-                    const val = parseFloat(m[1]);
-                    if (!isNaN(val) && val > 0) {
-                        numMatches.push({ val, unit: m[2] || unit });
+                // 2. Parse Innermost / Initial Radius rStart
+                let rStart = null;
+                const innerMatch = lowTxt.match(/(?:inner(?:most)?|first|smallest|start(?:ing)?)\s*(?:circle)?\s*(?:of|with)?\s*(?:a\s*)?(?:radius|r)?\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i) ||
+                                   lowTxt.match(/radius\s*(?:of|is|=)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?\s*(?:for\s*)?(?:the\s*)?(?:inner(?:most)?|first|smallest)/i);
+                if (innerMatch) {
+                    rStart = parseFloat(innerMatch[1]);
+                }
+
+                // 3. Parse Step / Separation / Gap
+                let rStep = null;
+                const sepMatch = lowTxt.match(/(?:separated|seperated|spaced|apart|gap|difference|step|interval)\s*(?:by|of)?\s*(\d+(?:\.\d+)?)\s*(cm|mm|px)?/i) ||
+                                 lowTxt.match(/(\d+(?:\.\d+)?)\s*(cm|mm|px)?\s*(?:separation|apart|gap|spacing|interval)/i);
+                if (sepMatch) {
+                    rStep = parseFloat(sepMatch[1]);
+                }
+
+                // 4. Parse Explicit Radii List (e.g. radii 30, 60, 90)
+                const listMatch = lowTxt.match(/(?:radii|radius(?:es)?)\s*(?:of|are|=|:)?\s*([0-9\s,\.pxcmm]+)/i);
+                let explicitRadii = null;
+                if (listMatch) {
+                    const numbers = listMatch[1].match(/\d+(?:\.\d+)?/g);
+                    if (numbers && numbers.length >= 2) {
+                        const parsed = numbers.map(parseFloat).filter(n => !isNaN(n) && n > 0);
+                        if (parsed.length >= 2) explicitRadii = parsed;
                     }
                 }
 
                 let radiiList = [];
                 let labelsList = [];
 
-                if (numMatches.length >= 2) {
-                    const sorted = [...numMatches].sort((a, b) => a.val - b.val);
-                    count = sorted.length;
-                    const maxVal = sorted[sorted.length - 1].val;
-                    let pxScale = 1;
-                    if (unit === 'cm') {
-                        pxScale = maxVal <= 10 ? 25 : (maxVal <= 20 ? 15 : 10);
-                    } else if (unit === 'mm') {
-                        pxScale = maxVal <= 50 ? 3 : 1.5;
-                    } else {
-                        if (maxVal <= 15) pxScale = 25;
-                        else if (maxVal > 250) pxScale = 240 / maxVal;
-                        else pxScale = 1;
+                if (rStart !== null && rStep !== null) {
+                    const finalCount = count || 3;
+                    for (let i = 0; i < finalCount; i++) {
+                        const r = rStart + i * rStep;
+                        radiiList.push(r);
+                        labelsList.push(`r${i + 1} = ${r}${unit}`);
                     }
-
-                    radiiList = sorted.map(item => Math.max(25, Math.round(item.val * pxScale)));
-                    labelsList = sorted.map((item, idx) => {
-                        const prefix = count === 2 ? (idx === 0 ? 'r' : 'R') : `r${idx + 1}`;
-                        const unitStr = (unit === 'cm' || unit === 'mm') ? unit : (maxVal <= 15 ? 'cm' : 'px');
-                        return `${prefix} = ${item.val}${unitStr}`;
-                    });
-                } else if (numMatches.length === 1 && numMatches[0].val > 0) {
-                    const baseR = numMatches[0].val;
-                    const basePx = unit === 'cm' ? Math.round(baseR * 25) : (baseR <= 15 ? Math.round(baseR * 25) : baseR);
-                    const actualCount = count || 2;
-                    radiiList = [];
-                    labelsList = [];
-                    for (let i = 1; i <= actualCount; i++) {
-                        const frac = i / actualCount;
-                        const rPx = Math.max(25 * i, Math.round(basePx * frac));
-                        radiiList.push(rPx);
-                        const valStr = (baseR * frac).toFixed(1).replace(/\.0$/, '');
-                        labelsList.push(actualCount === 2 ? (i === 1 ? `r = ${valStr}${unit}` : `R = ${valStr}${unit}`) : `r${i} = ${valStr}${unit}`);
-                    }
-                    count = actualCount;
+                    count = finalCount;
+                } else if (explicitRadii && explicitRadii.length >= 2) {
+                    radiiList = explicitRadii;
+                    labelsList = radiiList.map((r, i) => `r${i + 1} = ${r}${unit}`);
+                    count = radiiList.length;
                 } else {
-                    // Dynamic procedural geometric progression if no numbers given
-                    const actualCount = count || 2;
-                    radiiList = [];
-                    labelsList = [];
-                    const step = actualCount <= 3 ? 45 : Math.max(25, Math.round(180 / actualCount));
-                    for (let i = 1; i <= actualCount; i++) {
-                        radiiList.push(25 + i * step);
-                        labelsList.push(actualCount === 2 ? (i === 1 ? 'r' : 'R') : `r${i}`);
+                    const cleaned = lowTxt.replace(/\b(?:two|three|four|five|six|seven|eight|\d+)\s+(?:concentric|nested|rings?|circles?)/gi, '');
+                    const allNums = [];
+                    const numRegex = /(\d+(?:\.\d+)?)/g;
+                    let nm;
+                    while ((nm = numRegex.exec(cleaned)) !== null) {
+                        const val = parseFloat(nm[1]);
+                        if (!isNaN(val) && val > 0) allNums.push(val);
                     }
-                    count = actualCount;
+                    const uniqueNums = Array.from(new Set(allNums)).sort((a, b) => a - b);
+                    if (uniqueNums.length >= 2 && (!count || count === uniqueNums.length)) {
+                        radiiList = uniqueNums;
+                        labelsList = radiiList.map((r, i) => `r${i + 1} = ${r}${unit}`);
+                        count = radiiList.length;
+                    } else if (rStart !== null || uniqueNums.length === 1) {
+                        const baseR = rStart !== null ? rStart : uniqueNums[0];
+                        const finalCount = count || 3;
+                        const step = (rStep !== null) ? rStep : baseR;
+                        for (let i = 0; i < finalCount; i++) {
+                            const r = baseR + i * step;
+                            radiiList.push(r);
+                            labelsList.push(`r${i + 1} = ${r}${unit}`);
+                        }
+                        count = finalCount;
+                    } else if (rStep !== null) {
+                        const finalCount = count || 3;
+                        for (let i = 1; i <= finalCount; i++) {
+                            const r = i * rStep;
+                            radiiList.push(r);
+                            labelsList.push(`r${i} = ${r}${unit}`);
+                        }
+                        count = finalCount;
+                    } else {
+                        const finalCount = count || 3;
+                        const step = Math.max(30, Math.round(180 / finalCount));
+                        for (let i = 1; i <= finalCount; i++) {
+                            const r = i * step;
+                            radiiList.push(r);
+                            labelsList.push(`r${i} = ${r}px`);
+                        }
+                        count = finalCount;
+                    }
+                }
+
+                let pxScale = 1;
+                if (unit === 'cm') {
+                    const maxVal = Math.max(...radiiList);
+                    pxScale = maxVal <= 10 ? 25 : (maxVal <= 20 ? 15 : 10);
+                } else if (unit === 'mm') {
+                    pxScale = 2;
+                }
+                if (pxScale !== 1) {
+                    radiiList = radiiList.map(r => Math.round(r * pxScale));
                 }
 
                 const maxR = radiiList[radiiList.length - 1];
@@ -14630,15 +14669,22 @@ export default function Whiteboard({
                     const normalizedActions = [];
                     for (const act of data.actions) {
                         if (act.type === 'CREATE_OBJECT' && act.objectType === 'concentric_circles') {
-                            const rings = Math.max(2, Math.min(5, Number(act.rings) || 3));
+                            const validRadii = Array.isArray(act.radii) && act.radii.length >= 2
+                                ? act.radii.map(Number).filter(r => !isNaN(r) && r > 0)
+                                : null;
+                            const rings = validRadii ? validRadii.length : Math.max(2, Math.min(8, Number(act.rings) || 3));
                             const baseW = Number(act.width) || Number(act.size) || 240;
-                            const maxR = Math.round(baseW / 2);
-                            const factors = rings === 2 ? [0.55, 1.0] : rings === 4 ? [0.28, 0.52, 0.76, 1.0] : [0.38, 0.70, 1.0];
-                            const labels = Array.isArray(act.radiiLabels) ? act.radiiLabels : (rings === 2 ? ['r', 'R'] : ['r₁', 'r₂', 'r₃']);
+                            const maxR = validRadii ? Math.max(...validRadii) : Math.round(baseW / 2);
+                            const factors = rings === 2 ? [0.55, 1.0] : rings === 4 ? [0.28, 0.52, 0.76, 1.0] : Array.from({ length: rings }, (_, i) => (i + 1) / rings);
+                            const labels = Array.isArray(act.radiiLabels)
+                                ? act.radiiLabels
+                                : (validRadii
+                                    ? validRadii.map((r, i) => `r${i + 1} = ${r}px`)
+                                    : (rings === 2 ? ['r', 'R'] : ['r₁', 'r₂', 'r₃']));
                             const angles = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
 
                             for (let ri = 0; ri < rings; ri++) {
-                                const r = Math.round(maxR * factors[ri]);
+                                const r = validRadii ? validRadii[ri] : Math.round(maxR * (factors[ri] !== undefined ? factors[ri] : (ri + 1) / rings));
                                 normalizedActions.push({
                                     type: 'CREATE_OBJECT',
                                     objectType: 'circle',
@@ -14648,7 +14694,7 @@ export default function Whiteboard({
                                     showCenter: ri === 0,
                                     centerLabel: ri === 0 ? (act.centerLabel || 'O') : null,
                                     showRadius: true,
-                                    radiusLabel: labels[ri] || `r${ri + 1}`,
+                                    radiusLabel: labels[ri] || `r${ri + 1} = ${r}px`,
                                     radiusAngle: angles[ri % angles.length],
                                     color: act.color,
                                     strokeWidth: act.strokeWidth,
@@ -21633,11 +21679,18 @@ export default function Whiteboard({
                             } else if (shpObj.type === 'concentric_circles') {
                                 const rx = shpObj.width / 2;
                                 const ry = shpObj.height / 2;
-                                const rings = Math.max(2, Math.min(6, Number(shpObj.rings) || 3));
-                                const ringFactors = rings === 2 ? [0.55, 1.0] : rings === 4 ? [0.28, 0.52, 0.76, 1.0] : [0.38, 0.70, 1.0];
+                                const hasRadii = Array.isArray(shpObj.radii) && shpObj.radii.length >= 2;
+                                const rings = hasRadii ? shpObj.radii.length : Math.max(2, Math.min(8, Number(shpObj.rings) || 3));
+                                const ringFactors = hasRadii
+                                    ? shpObj.radii.map(r => r / Math.max(...shpObj.radii))
+                                    : (rings === 2 ? [0.55, 1.0] : rings === 4 ? [0.28, 0.52, 0.76, 1.0] : Array.from({ length: rings }, (_, i) => (i + 1) / rings));
                                 const showC = shpObj.showCenter !== false;
                                 const showR = shpObj.showRadii !== false;
-                                const rLabels = Array.isArray(shpObj.radiiLabels) ? shpObj.radiiLabels : (rings === 2 ? ['r', 'R'] : ['r₁', 'r₂', 'r₃']);
+                                const rLabels = Array.isArray(shpObj.radiiLabels)
+                                    ? shpObj.radiiLabels
+                                    : (hasRadii
+                                        ? shpObj.radii.map((r, i) => `r${i + 1} = ${r}px`)
+                                        : (rings === 2 ? ['r', 'R'] : ['r₁', 'r₂', 'r₃']));
                                 const angles = [0, Math.PI / 5, (2 * Math.PI) / 5, (3 * Math.PI) / 5];
 
                                 return (
