@@ -4,6 +4,7 @@ const path = require('path');
 const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const geometrySolver = require('./geometrySolver.service');
+const stemSolver = require('./stemProblemSolver.service');
 
 // Paid & Production Models for Smooth, Uninterrupted Actions and Responses
 const ACTIVE_OPENAI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o1-mini', 'gpt-4-turbo'];
@@ -381,7 +382,7 @@ class AIService {
         throw error;
     }
 
-    async callGemini({ contents, systemInstruction, model, temperature = 0.1, apiKey }) {
+    async callGemini({ contents, systemInstruction, model, temperature = 0.1, jsonMode = false, apiKey }) {
         let client = this.genAI;
         if (apiKey && typeof apiKey === 'string' && apiKey.trim()) {
             client = new GoogleGenerativeAI(apiKey.trim());
@@ -390,13 +391,18 @@ class AIService {
         const modelsToTry = model ? [model] : ACTIVE_GEMINI_MODELS;
         let lastErr = null;
 
+        const generationConfig = { temperature };
+        if (jsonMode) {
+            generationConfig.responseMimeType = 'application/json';
+        }
+
         for (const m of modelsToTry) {
             try {
                 console.log(`[AIService] Calling Gemini (${m})...`);
                 const geminiModel = client.getGenerativeModel({
                     model: m,
                     systemInstruction: systemInstruction || undefined,
-                    generationConfig: { temperature }
+                    generationConfig
                 });
                 const result = await geminiModel.generateContent(contents);
                 const text = (await result.response).text();
@@ -762,7 +768,7 @@ class AIService {
                     const prompt = userParts.join('\n\n') || 'Proceed';
                     for (const m of ACTIVE_GEMINI_MODELS.slice(0, 3)) {
                         try {
-                            return await this.callGemini({ contents: prompt, systemInstruction: systemPrompt, model: m, temperature });
+                            return await this.callGemini({ contents: prompt, systemInstruction: systemPrompt, model: m, temperature, jsonMode });
                         } catch (mErr) {
                             attemptErrors.push({ provider: 'gemini', model: m, error: mErr.message, isQuota: mErr.isQuotaError });
                             if (mErr.isQuotaError) break;
@@ -2749,6 +2755,12 @@ Output MUST be ONLY valid JSON matching this schema:
                 return { w, h, edgeLabels, altitudeLabel, speechResponse: speech };
             };
 
+            // Deterministic STEM Problem Solver (Ideal Gas Law, Ohm's Law, Energy, Mechanics, Density)
+            const stemSolved = stemSolver.solveSTEMProblem(text);
+            if (stemSolved) {
+                return stemSolved;
+            }
+
             // Deterministic Circle & Line Intersection Geometry Solver
             const circleLineParsed = geometrySolver.parseCircleAndLineFromText(text);
             if (circleLineParsed) {
@@ -3168,18 +3180,69 @@ Spoken input: "${text}"
                 low.includes('structure of') ||
                 low.includes('cycle');
 
+            const hasCanvasDirectives = /\b(draw|sketch|illustrate|3d|model|circle|square|triangle|rectangle|line|arrow|move|delete|clear|zoom|page|color|border|stroke)\b/i.test(low);
+            const systemPromptToUse = (isCognitiveQuery && !hasCanvasDirectives)
+                ? `You are an expert STEM teacher and educational reasoning assistant for an interactive Whiteboard.
+Analyze the user's question, derive the step-by-step mathematical or scientific solution, and output valid JSON.
+
+OUTPUT EXACTLY ONE VALID JSON OBJECT:
+{
+  "recognized": true,
+  "speechResponse": "<Concise, natural spoken explanation (2 to 3 sentences) to read aloud via TTS. Clean conversational text without raw LaTeX or markdown syntax.>",
+  "solutionMarkdown": "<Complete step-by-step solution with headings, given parameters, and formulas in KaTeX ($$...$$ for display block, $...$ for inline).>",
+  "suggestedFollowUps": [
+    "<3 to 4 actionable learning pills with relevant emojis, e.g. '💡 Example', '📐 Formula', '📝 Summary'>"
+  ],
+  "actions": []
+}
+
+PEDAGOGICAL RULES:
+1. Clearly identify given parameters and units.
+2. State the governing scientific/mathematical formula.
+3. Show substitution and intermediate calculation steps.
+4. Conclude with the final numerical answer and units.
+5. In speechResponse, state the final answer clearly and directly so it sounds natural when spoken aloud.`
+                : whiteboardSystemPrompt;
+
             // Dispatch to Unified AI Completion (OpenAI Paid -> Anthropic -> DeepSeek -> OpenRouter -> Groq -> Gemini -> SambaNova)
             try {
                 const completionRes = await this.executeChatCompletion({
-                    systemPrompt: whiteboardSystemPrompt,
+                    systemPrompt: systemPromptToUse,
                     messages: [{ role: 'user', content: `Spoken input: "${text}"` }],
                     preferredProvider: context.preferredProvider || this.preferredProvider || 'auto',
                     temperature: 0.1,
                     jsonMode: true
                 });
 
-                const parsed = this.parseJSONResponse(completionRes.text || '{}');
-                if (parsed && (parsed.translatedCommand || parsed.recognized || parsed.actions || parsed.type === 'solution' || parsed.type === 'canvas_generation')) {
+                let parsed = this.parseJSONResponse(completionRes.text || '{}');
+                if (!parsed && completionRes.text && completionRes.text.trim().length > 15) {
+                    const rawTxt = completionRes.text.trim();
+                    const cleanSpeech = rawTxt
+                        .replace(/```[\s\S]*?```/g, '')
+                        .replace(/<[^>]*>/g, '')
+                        .replace(/\$\$[\s\S]*?\$\$/g, '')
+                        .replace(/\$[^$\n]+\$/g, '')
+                        .replace(/[\*#_`]/g, '')
+                        .split('\n')
+                        .map(l => l.trim())
+                        .filter(l => l.length > 0)[0] || 'Here is the step-by-step solution.';
+
+                    parsed = {
+                        recognized: true,
+                        success: true,
+                        speechResponse: cleanSpeech.substring(0, 250),
+                        solutionMarkdown: rawTxt,
+                        suggestedFollowUps: [
+                            '💡 Give a real-world example',
+                            '📐 Show core formula',
+                            '📝 Step-by-step derivation',
+                            '📄 New clean board'
+                        ],
+                        actions: []
+                    };
+                }
+
+                if (parsed && (parsed.translatedCommand || parsed.recognized || parsed.actions || parsed.type === 'solution' || parsed.type === 'canvas_generation' || parsed.solutionMarkdown || parsed.speechResponse)) {
                     if (Array.isArray(parsed.actions)) {
                         parsed.actions = parsed.actions.flatMap(act => {
                             const combined = `${act.title || ''} ${act.text || ''} ${text}`.toLowerCase();
@@ -8970,16 +9033,33 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
         cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
         cleanText = cleanText.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
 
-        // Find JSON bounds
-        const firstSquare = cleanText.indexOf('[');
-        const lastSquare = cleanText.lastIndexOf(']');
-        const firstCurly = cleanText.indexOf('{');
-        const lastCurly = cleanText.lastIndexOf('}');
+        // Find JSON bounds - prioritize genuine JSON objects {"key": ... or arrays
+        const objMatch = cleanText.match(/\{\s*"[a-zA-Z0-9_-]+"\s*:/);
+        const arrMatch = cleanText.match(/\[\s*(?:\{|"[^"]*"|\d+)/);
 
-        if (firstSquare !== -1 && lastSquare > firstSquare && (firstCurly === -1 || firstSquare < firstCurly)) {
-            cleanText = cleanText.substring(firstSquare, lastSquare + 1);
-        } else if (firstCurly !== -1 && lastCurly > firstCurly) {
-            cleanText = cleanText.substring(firstCurly, lastCurly + 1);
+        if (arrMatch && (!objMatch || arrMatch.index < objMatch.index)) {
+            const firstSquare = arrMatch.index;
+            const lastSquare = cleanText.lastIndexOf(']');
+            if (lastSquare > firstSquare) {
+                cleanText = cleanText.substring(firstSquare, lastSquare + 1);
+            }
+        } else if (objMatch) {
+            const firstCurly = objMatch.index;
+            const lastCurly = cleanText.lastIndexOf('}');
+            if (lastCurly > firstCurly) {
+                cleanText = cleanText.substring(firstCurly, lastCurly + 1);
+            }
+        } else {
+            const firstSquare = cleanText.indexOf('[');
+            const lastSquare = cleanText.lastIndexOf(']');
+            const firstCurly = cleanText.indexOf('{');
+            const lastCurly = cleanText.lastIndexOf('}');
+
+            if (firstSquare !== -1 && lastSquare > firstSquare && (firstCurly === -1 || firstSquare < firstCurly)) {
+                cleanText = cleanText.substring(firstSquare, lastSquare + 1);
+            } else if (firstCurly !== -1 && lastCurly > firstCurly && !/\\[a-zA-Z]+$/.test(cleanText.substring(Math.max(0, firstCurly - 15), firstCurly))) {
+                cleanText = cleanText.substring(firstCurly, lastCurly + 1);
+            }
         }
 
         // Helper to escape raw control characters (literal unescaped newlines/tabs) inside quotes
