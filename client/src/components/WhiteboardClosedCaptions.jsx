@@ -20,7 +20,9 @@ import {
     StickyNote as StickyNoteIcon,
     Type as TypeIcon,
     Copy,
-    Check
+    Check,
+    AlertTriangle,
+    RefreshCw
 } from 'lucide-react';
 import katex from 'katex';
 
@@ -220,41 +222,67 @@ export default function WhiteboardClosedCaptions({
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-xl w-[92%] sm:w-[540px] pointer-events-auto select-none transition-all duration-200 flex flex-col">
             {/* Collapsible AI Explanation & Knowledge Pane Above CC Box (Integrated Solution Hub) */}
             {activeAiResponse && !isPaneDismissed && !isMinimized && (
-                <div className="mb-2 bg-slate-950/95 backdrop-blur-md border border-indigo-500/50 rounded-2xl shadow-2xl overflow-hidden transition-all duration-200 animate-in fade-in slide-in-from-bottom-2">
+                <div className={`mb-2 bg-slate-950/95 backdrop-blur-md border rounded-2xl shadow-2xl overflow-hidden transition-all duration-200 animate-in fade-in slide-in-from-bottom-2 ${
+                    aiSolution?.isError ? 'border-rose-500/70 shadow-rose-950/40' : 'border-indigo-500/50'
+                }`}>
                     {/* Header Bar with Tabs & Controls */}
-                    <div className="px-3.5 py-1.5 bg-indigo-950/60 border-b border-indigo-500/30 flex items-center justify-between text-xs">
+                    <div className={`px-3.5 py-1.5 border-b flex items-center justify-between text-xs ${
+                        aiSolution?.isError ? 'bg-rose-950/80 border-rose-500/40 text-rose-200' : 'bg-indigo-950/60 border-indigo-500/30'
+                    }`}>
                         <div className="flex items-center gap-2">
-                            <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                            {aiSolution?.isError ? (
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 animate-pulse" />
+                            ) : (
+                                <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                            )}
                             
-                            {/* Tabs: Summary vs Full Solution */}
-                            <div className="flex items-center gap-1 bg-slate-900/80 p-0.5 rounded-lg border border-indigo-500/30">
-                                <button
-                                    type="button"
-                                    onClick={() => setActiveTab('summary')}
-                                    className={`px-2.5 py-0.5 rounded text-[11px] font-semibold transition ${
-                                        activeTab === 'summary'
-                                            ? 'bg-indigo-600 text-white shadow-sm'
-                                            : 'text-slate-400 hover:text-slate-200'
-                                    }`}
-                                >
-                                    💬 Summary
-                                </button>
-                                {aiSolution?.solutionMarkdown && (
+                            {/* If error: Show Error Details Tag & 1-Click Retry */}
+                            {aiSolution?.isError ? (
+                                <div className="flex items-center gap-1.5 text-rose-300 font-semibold text-[11px]">
+                                    <span>⚠️ AI Request Error</span>
+                                    {aiSolution?.question && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onExecuteCommand(aiSolution.question)}
+                                            className="ml-2 px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold flex items-center gap-1 transition shadow-xs cursor-pointer"
+                                            title="Retry this question"
+                                        >
+                                            <RefreshCw className="w-2.5 h-2.5" />
+                                            <span>Retry</span>
+                                        </button>
+                                    )}
+                                </div>
+                            ) : (
+                                /* Tabs: Summary vs Full Solution */
+                                <div className="flex items-center gap-1 bg-slate-900/80 p-0.5 rounded-lg border border-indigo-500/30">
                                     <button
                                         type="button"
-                                        onClick={() => setActiveTab('solution')}
+                                        onClick={() => setActiveTab('summary')}
                                         className={`px-2.5 py-0.5 rounded text-[11px] font-semibold transition ${
-                                            activeTab === 'solution'
+                                            activeTab === 'summary'
                                                 ? 'bg-indigo-600 text-white shadow-sm'
                                                 : 'text-slate-400 hover:text-slate-200'
                                         }`}
                                     >
-                                        📑 Full Solution
+                                        💬 Summary
                                     </button>
-                                )}
-                            </div>
+                                    {aiSolution?.solutionMarkdown && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setActiveTab('solution')}
+                                            className={`px-2.5 py-0.5 rounded text-[11px] font-semibold transition ${
+                                                activeTab === 'solution'
+                                                    ? 'bg-indigo-600 text-white shadow-sm'
+                                                    : 'text-slate-400 hover:text-slate-200'
+                                            }`}
+                                        >
+                                            📑 Full Solution
+                                        </button>
+                                    )}
+                                </div>
+                            )}
 
-                            {aiSolution?.question && (
+                            {aiSolution?.question && !aiSolution?.isError && (
                                 <span className="text-[10px] text-slate-400 truncate max-w-[160px] hidden sm:inline">
                                     {aiSolution.question}
                                 </span>

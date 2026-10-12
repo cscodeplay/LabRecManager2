@@ -2755,12 +2755,6 @@ Output MUST be ONLY valid JSON matching this schema:
                 return { w, h, edgeLabels, altitudeLabel, speechResponse: speech };
             };
 
-            // Deterministic STEM Problem Solver (Ideal Gas Law, Ohm's Law, Energy, Mechanics, Density)
-            const stemSolved = stemSolver.solveSTEMProblem(text);
-            if (stemSolved) {
-                return stemSolved;
-            }
-
             // Deterministic Circle & Line Intersection Geometry Solver
             const circleLineParsed = geometrySolver.parseCircleAndLineFromText(text);
             if (circleLineParsed) {
@@ -3432,19 +3426,24 @@ PEDAGOGICAL RULES:
             } catch (err) {
                 console.warn('[AIService] executeChatCompletion failed for whiteboard voice:', err.message);
                 if (err.isQuotaExhausted || isCognitiveQuery) {
-                    // USER DIRECTIVE: Strictly NO local fallbacks for questions / educational queries.
-                    // If quota is exhausted or AI failed, clearly show error and do not proceed!
+                    // USER DIRECTIVE: Strictly NO local fallbacks or hidden errors. Return actual detailed error!
+                    const providerDetails = err.attemptErrors && err.attemptErrors.length > 0
+                        ? `\n\n**Provider Attempts:**\n${err.attemptErrors.map(a => `- **${a.provider}** (${a.model || 'default'}): \`${a.error}\``).join('\n')}`
+                        : '';
+
                     return {
                         recognized: false,
                         success: false,
                         quotaExhausted: Boolean(err.isQuotaExhausted),
                         error: err.message,
-                        spokenFeedback: err.isQuotaExhausted
-                            ? 'AI service quota exhausted. Please check your API keys or configure a paid model in Settings.'
-                            : 'AI service unavailable. Please check your network connection or API settings.',
-                        speechResponse: err.isQuotaExhausted
-                            ? 'The AI service quota is currently exhausted. Please update your API keys or configure a paid model in Settings to continue.'
-                            : 'The AI model could not process this request right now. Please try again.'
+                        attemptErrors: err.attemptErrors || [],
+                        spokenFeedback: `AI Error: ${err.message.slice(0, 120)}`,
+                        speechResponse: `AI request failed: ${err.message.slice(0, 150)}`,
+                        solutionMarkdown: `### ⚠️ AI Model Error\n\n**Question / Command:** "${text}"\n\n**Actual Error Details:**\n\`\`\`\n${err.message}\n\`\`\`${providerDetails}\n\n**Next Steps:**\n- Check your API keys and quotas in **Settings**.\n- If using free tier (e.g. Groq/Gemini), rate limits or context limits may be reached.\n- Configure a paid plan (OpenAI, Anthropic, DeepSeek) in Settings for high RPM and uninterrupted requests.\n- Click **Retry** or run the command again.`,
+                        suggestedFollowUps: [
+                            `🔄 Retry: "${text.slice(0, 30)}"`,
+                            '⚙️ Check API Settings'
+                        ]
                     };
                 }
             }

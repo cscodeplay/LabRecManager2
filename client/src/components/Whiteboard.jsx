@@ -15997,23 +15997,36 @@ export default function Whiteboard({
                 return;
             }
 
-            // USER DIRECTIVE: Strictly NO local fallbacks for questions/queries.
-            // If quota is exhausted or AI failed, clearly show error and DO NOT proceed!
+            // USER DIRECTIVE: Strictly NO local fallbacks or hidden errors.
+            // If quota is exhausted or AI failed, show REAL error and populate solution card for inspection!
+            const rawError = data?.error || reqError || '';
             const isQuota = Boolean(
                 data?.quotaExhausted ||
-                (reqError && /quota|rate limit|429|resource_exhausted|credit balance/i.test(reqError)) ||
-                (data?.error && /quota|rate limit|429|resource_exhausted|credit balance/i.test(data.error))
+                (rawError && /quota|rate limit|429|resource_exhausted|credit balance/i.test(rawError))
             );
 
-            const displayError = data?.error || reqError || (isQuota
+            const displayError = rawError || (isQuota
                 ? 'AI Quota Exhausted across all configured providers. Please check your API keys or configure a paid model (OpenAI, Anthropic, DeepSeek) in Settings.'
-                : `AI was unable to answer: "${rawText}". Please check API status or try again.`
+                : `AI model error processing: "${rawText}". Check API keys or network connection.`
             );
 
-            setVoiceFeedback(`⚠️ ${isQuota ? 'AI Quota Exhausted' : 'AI Error'}`);
-            toast.error(displayError, { id: 'ai-cognitive-quota-error', duration: 7000 });
+            // Populates the real error into the solution pane so the user can inspect it, copy it, and retry!
+            setAiSolutionData({
+                question: rawText,
+                isError: true,
+                error: displayError,
+                speechResponse: data?.speechResponse || `AI model failed: ${displayError.slice(0, 140)}`,
+                solutionMarkdown: data?.solutionMarkdown || `### ⚠️ AI Model Error\n\n**Request:** "${rawText}"\n\n**Actual Provider Error:**\n\`\`\`\n${displayError}\n\`\`\`\n\n**Next Steps:**\n- Check your API keys and quotas in **Settings**.\n- If using free tier (e.g. Groq/Gemini), rate limits or context limits may be reached.\n- Configure a paid plan (OpenAI, Anthropic, DeepSeek) in Settings for higher RPM and uninterrupted requests.\n- Click **Retry** below to try again.`,
+                suggestedFollowUps: [
+                    `🔄 Retry this request`,
+                    '⚙️ Open API Settings'
+                ]
+            });
+
+            setVoiceFeedback(`❌ ${displayError.slice(0, 80)}`);
+            toast.error(displayError, { id: 'ai-cognitive-quota-error', duration: 10000 });
             if (aiSpeechEnabled) {
-                speakAiResponse(data?.speechResponse || (isQuota ? 'The AI service quota is currently exhausted. Please update your API keys or configure a paid model in settings to continue.' : 'AI model could not answer this query.'));
+                speakAiResponse(data?.speechResponse || `AI request failed: ${displayError.slice(0, 120)}`);
             }
             return; // STRICT: HALT IMMEDIATELY. NEVER FALL THROUGH TO SHAPES OR CLEAR CANVAS!
         }
