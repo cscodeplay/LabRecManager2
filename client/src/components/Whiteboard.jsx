@@ -98,6 +98,7 @@ import WhiteboardBrowserSideroll from './WhiteboardBrowserSideroll';
 import WhiteboardPageQuizWidget from './WhiteboardPageQuizWidget';
 import WhiteboardAIPanel from './WhiteboardAIPanel';
 import WhiteboardAISlideShow from './WhiteboardAISlideShow';
+import { GeometryInstrumentsOverlay } from './geometryTools';
 import api, { aiAPI } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { useAuthStore, useVoiceStore } from '@/lib/store';
@@ -1681,6 +1682,7 @@ export default function Whiteboard({
     const quizObjects = pageQuizObjects[currentPage] || [];
     const [leftSiderollMode, setLeftSiderollMode] = useState('closed'); // 'closed' | 'partial' | 'full'
     const [rightSiderollMode, setRightSiderollMode] = useState('closed'); // 'closed' | 'partial' | 'full'
+    const [showGeometryInstruments, setShowGeometryInstruments] = useState(false);
     const [activeTakingQuiz, setActiveTakingQuiz] = useState(null);
 
     const attachQuizToPage = useCallback((quiz, targetPage = currentPage) => {
@@ -7205,6 +7207,14 @@ export default function Whiteboard({
             }
             ctx.closePath();
             ctx.stroke();
+        } else if (shape.type === 'arc') {
+            const cx = shape.cx !== undefined ? shape.cx : (shape.x + shape.width / 2);
+            const cy = shape.cy !== undefined ? shape.cy : (shape.y + shape.height / 2);
+            const r = shape.radius || Math.min(shape.width, shape.height) / 2;
+            const sAngle = shape.startAngle !== undefined ? shape.startAngle : 0;
+            const eAngle = shape.endAngle !== undefined ? shape.endAngle : Math.PI * 2;
+            ctx.arc(cx, cy, Math.abs(r), sAngle, eAngle, false);
+            ctx.stroke();
         }
         ctx.restore();
     };
@@ -11135,12 +11145,16 @@ export default function Whiteboard({
     const handleToolClick = useCallback((toolId) => {
         if (toolId === 'image') {
             imageInputRef.current?.click();
+        } else if (toolId === 'geometry_instruments') {
+            setShowGeometryInstruments(prev => !prev);
+        } else if (toolId === 'browser_panel') {
+            setRightSiderollMode(prev => prev === 'closed' ? 'partial' : 'closed');
         } else {
             setTool(toolId);
         }
     }, []);
 
-    // ─── Research Browser Sideroll Clippers ───
+    // ─── Research Browser Sideroll Clippers & Media Embedding ───
     const handleAddTextFromBrowser = useCallback((text) => {
         if (!text || !text.trim()) return;
         const canvas = canvasRef.current;
@@ -11164,6 +11178,321 @@ export default function Whiteboard({
         if (!imageUrl) return;
         insertImageFromSrc(imageUrl);
     }, [insertImageFromSrc]);
+
+    const handleAddMediaFromBrowser = useCallback((mediaData) => {
+        if (!mediaData) return;
+        const canvas = canvasRef.current;
+        const cx = canvas ? Math.max(50, Math.round(canvas.width / 2 - 240)) : 120;
+        const cy = canvas ? Math.max(50, Math.round(canvas.height / 2 - 135)) : 120;
+        const newMedia = {
+            id: `media_${Date.now()}`,
+            mediaType: mediaData.mediaType || 'youtube',
+            url: mediaData.url,
+            title: mediaData.title || 'YouTube Video',
+            x: cx,
+            y: cy,
+            width: 480,
+            height: 270,
+            isPlaying: false,
+            volume: 1,
+            isMuted: false,
+            isCollapsed: false,
+            isLocked: false,
+            rotation: 0
+        };
+        setPageMediaObjects(prev => ({
+            ...prev,
+            [currentPage]: [...(prev[currentPage] || []), newMedia]
+        }));
+        setSelectedMediaId(newMedia.id);
+        toast.success(`Embedded "${newMedia.title.slice(0, 30)}..." on canvas!`, { icon: '🎥' });
+    }, [currentPage]);
+
+    // Canvas Drop Handler for Drag-and-Drop from Browser Panel
+    const handleCanvasDrop = useCallback((e) => {
+        e.preventDefault();
+        const rect = canvasWrapperRef.current?.getBoundingClientRect();
+        if (!rect) return;
+
+        // Calculate board coordinates considering zoom and pan
+        const dropX = Math.round((e.clientX - rect.left) / currentZoom);
+        const dropY = Math.round((e.clientY - rect.top) / currentZoom);
+
+        // 1. Whiteboard Image payload
+        const imagePayload = e.dataTransfer.getData('application/x-whiteboard-image');
+        if (imagePayload) {
+            try {
+                const data = JSON.parse(imagePayload);
+                if (data.url) {
+                    insertImageFromSrc(data.url);
+                    return;
+                }
+            } catch (err) {}
+        }
+
+        // 2. Whiteboard Media (YouTube) payload
+        const mediaPayload = e.dataTransfer.getData('application/x-whiteboard-media');
+        if (mediaPayload) {
+            try {
+                const data = JSON.parse(mediaPayload);
+                if (data.type === 'youtube' && data.url) {
+                    const newMedia = {
+                        id: `media_${Date.now()}`,
+                        mediaType: 'youtube',
+                        url: data.url,
+                        title: data.title || 'YouTube Video',
+                        x: Math.max(20, dropX - 240),
+                        y: Math.max(20, dropY - 135),
+                        width: 480,
+                        height: 270,
+                        isPlaying: false,
+                        volume: 1,
+                        isMuted: false,
+                        isCollapsed: false,
+                        isLocked: false,
+                        rotation: 0
+                    };
+                    setPageMediaObjects(prev => ({
+                        ...prev,
+                        [currentPage]: [...(prev[currentPage] || []), newMedia]
+                    }));
+                    setSelectedMediaId(newMedia.id);
+                    toast.success('Dropped video onto canvas!', { icon: '▶️' });
+                    return;
+                }
+            } catch (err) {}
+        }
+
+        // 3. Fallback URL drop
+        const rawUri = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
+        if (rawUri && rawUri.startsWith('http')) {
+            if (rawUri.includes('youtube.com') || rawUri.includes('youtu.be')) {
+                const newMedia = {
+                    id: `media_${Date.now()}`,
+                    mediaType: 'youtube',
+                    url: rawUri,
+                    title: 'YouTube Video',
+                    x: Math.max(20, dropX - 240),
+                    y: Math.max(20, dropY - 135),
+                    width: 480,
+                    height: 270,
+                    isPlaying: false,
+                    volume: 1,
+                    isMuted: false,
+                    isCollapsed: false,
+                    isLocked: false,
+                    rotation: 0
+                };
+                setPageMediaObjects(prev => ({
+                    ...prev,
+                    [currentPage]: [...(prev[currentPage] || []), newMedia]
+                }));
+                setSelectedMediaId(newMedia.id);
+                toast.success('Dropped video onto canvas!', { icon: '▶️' });
+            } else {
+                insertImageFromSrc(rawUri);
+            }
+        }
+    }, [currentZoom, insertImageFromSrc, currentPage]);
+
+    // ─── Geometry Instruments Stamping Callbacks (myViewBoard Inspired) ───
+    const handleGeometryDrawLine = useCallback(({ startX, startY, endX, endY, lengthCm, angleDeg }) => {
+        const newLine = {
+            id: `geom_line_${Date.now()}`,
+            type: 'line',
+            x: Math.min(startX, endX),
+            y: Math.min(startY, endY),
+            width: Math.max(Math.abs(endX - startX), 2),
+            height: Math.max(Math.abs(endY - startY), 2),
+            startX,
+            startY,
+            endX,
+            endY,
+            color,
+            strokeWidth: strokeWidth || 3,
+            isLocked: false
+        };
+        setShapeObjects(prev => [...prev, newLine]);
+        saveToHistory();
+        toast.success(`Drawn line: ${lengthCm.toFixed(1)} cm at ${angleDeg.toFixed(0)}°`, { icon: '📏' });
+    }, [color, strokeWidth, setShapeObjects, saveToHistory]);
+
+    const handleGeometryDrawCircle = useCallback(({ cx, cy, radius, radiusCm }) => {
+        const newCircle = {
+            id: `geom_circ_${Date.now()}`,
+            type: 'circle',
+            x: cx - radius,
+            y: cy - radius,
+            width: radius * 2,
+            height: radius * 2,
+            color,
+            strokeWidth: strokeWidth || 3,
+            fillColor: 'transparent',
+            isLocked: false
+        };
+        setShapeObjects(prev => [...prev, newCircle]);
+        saveToHistory();
+        toast.success(`Drawn circle (r = ${radiusCm.toFixed(1)} cm)`, { icon: '⭕' });
+    }, [color, strokeWidth, setShapeObjects, saveToHistory]);
+
+    const handleGeometryDrawArc = useCallback(({ cx, cy, radius, startAngleDeg, endAngleDeg, sweepDeg }) => {
+        const startRad = (startAngleDeg * Math.PI) / 180;
+        const endRad = (endAngleDeg * Math.PI) / 180;
+        const newArc = {
+            id: `geom_arc_${Date.now()}`,
+            type: 'arc',
+            cx,
+            cy,
+            radius,
+            startAngle: startRad,
+            endAngle: endRad,
+            x: cx - radius,
+            y: cy - radius,
+            width: radius * 2,
+            height: radius * 2,
+            color,
+            strokeWidth: strokeWidth || 3,
+            isLocked: false
+        };
+        setShapeObjects(prev => [...prev, newArc]);
+        saveToHistory();
+        toast.success(`Drawn arc (${sweepDeg}° sweep)`, { icon: '📐' });
+    }, [color, strokeWidth, setShapeObjects, saveToHistory]);
+
+    const handleGeometryDrawAngle = useCallback(({ vertexX, vertexY, baseEndX, baseEndY, armEndX, armEndY, angleDeg, radiusPx }) => {
+        const timestamp = Date.now();
+        const baseRay = {
+            id: `geom_ray1_${timestamp}`,
+            type: 'line',
+            x: Math.min(vertexX, baseEndX),
+            y: Math.min(vertexY, baseEndY),
+            width: Math.max(Math.abs(baseEndX - vertexX), 2),
+            height: Math.max(Math.abs(baseEndY - vertexY), 2),
+            startX: vertexX,
+            startY: vertexY,
+            endX: baseEndX,
+            endY: baseEndY,
+            color,
+            strokeWidth: strokeWidth || 3,
+            isLocked: false
+        };
+        const armRay = {
+            id: `geom_ray2_${timestamp}`,
+            type: 'line',
+            x: Math.min(vertexX, armEndX),
+            y: Math.min(vertexY, armEndY),
+            width: Math.max(Math.abs(armEndX - vertexX), 2),
+            height: Math.max(Math.abs(armEndY - vertexY), 2),
+            startX: vertexX,
+            startY: vertexY,
+            endX: armEndX,
+            endY: armEndY,
+            color,
+            strokeWidth: strokeWidth || 3,
+            isLocked: false
+        };
+        const arcRadius = Math.min(radiusPx * 0.45, 60);
+        const newArc = {
+            id: `geom_arc_${timestamp}`,
+            type: 'arc',
+            cx: vertexX,
+            cy: vertexY,
+            radius: arcRadius,
+            startAngle: Math.atan2(baseEndY - vertexY, baseEndX - vertexX),
+            endAngle: Math.atan2(armEndY - vertexY, armEndX - vertexX),
+            x: vertexX - arcRadius,
+            y: vertexY - arcRadius,
+            width: arcRadius * 2,
+            height: arcRadius * 2,
+            color: '#f59e0b',
+            strokeWidth: 2,
+            isLocked: false
+        };
+        setShapeObjects(prev => [...prev, baseRay, armRay, newArc]);
+        saveToHistory();
+        toast.success(`Drawn ${angleDeg.toFixed(1)}° angle rays`, { icon: '📐' });
+    }, [color, strokeWidth, setShapeObjects, saveToHistory]);
+
+    const handleGeometryDrawPerpendicular = useCallback(({ corner, baseEnd, heightEnd }) => {
+        const timestamp = Date.now();
+        const baseLeg = {
+            id: `geom_perp1_${timestamp}`,
+            type: 'line',
+            x: Math.min(corner.x, baseEnd.x),
+            y: Math.min(corner.y, baseEnd.y),
+            width: Math.max(Math.abs(baseEnd.x - corner.x), 2),
+            height: Math.max(Math.abs(baseEnd.y - corner.y), 2),
+            startX: corner.x,
+            startY: corner.y,
+            endX: baseEnd.x,
+            endY: baseEnd.y,
+            color,
+            strokeWidth: strokeWidth || 3,
+            isLocked: false
+        };
+        const heightLeg = {
+            id: `geom_perp2_${timestamp}`,
+            type: 'line',
+            x: Math.min(corner.x, heightEnd.x),
+            y: Math.min(corner.y, heightEnd.y),
+            width: Math.max(Math.abs(heightEnd.x - corner.x), 2),
+            height: Math.max(Math.abs(heightEnd.y - corner.y), 2),
+            startX: corner.x,
+            startY: corner.y,
+            endX: heightEnd.x,
+            endY: heightEnd.y,
+            color,
+            strokeWidth: strokeWidth || 3,
+            isLocked: false
+        };
+        setShapeObjects(prev => [...prev, baseLeg, heightLeg]);
+        saveToHistory();
+        toast.success('Drawn 90° perpendicular construction', { icon: '📐' });
+    }, [color, strokeWidth, setShapeObjects, saveToHistory]);
+
+    const handleGeometryDrawTriangle = useCallback(({ p1, p2, p3, squareType }) => {
+        const minX = Math.min(p1.x, p2.x, p3.x);
+        const minY = Math.min(p1.y, p2.y, p3.y);
+        const maxX = Math.max(p1.x, p2.x, p3.x);
+        const maxY = Math.max(p1.y, p2.y, p3.y);
+        const newPoly = {
+            id: `geom_tri_${Date.now()}`,
+            type: 'polygon',
+            points: [p1, p2, p3],
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY,
+            color,
+            strokeWidth: strokeWidth || 3,
+            fillColor: 'transparent',
+            isLocked: false
+        };
+        setShapeObjects(prev => [...prev, newPoly]);
+        saveToHistory();
+        toast.success(`Drawn ${squareType === '45' ? '45°-45°-90°' : '30°-60°-90°'} triangle`, { icon: '📐' });
+    }, [color, strokeWidth, setShapeObjects, saveToHistory]);
+
+    const handleGeometryMarkDistance = useCallback(({ startX, startY, endX, endY, distanceCm }) => {
+        const markLine = {
+            id: `geom_dist_${Date.now()}`,
+            type: 'line',
+            x: Math.min(startX, endX),
+            y: Math.min(startY, endY),
+            width: Math.max(Math.abs(endX - startX), 2),
+            height: Math.max(Math.abs(endY - startY), 2),
+            startX,
+            startY,
+            endX,
+            endY,
+            color: '#38bdf8',
+            strokeWidth: 2,
+            isLocked: false
+        };
+        setShapeObjects(prev => [...prev, markLine]);
+        saveToHistory();
+        toast.success(`Marked distance: ${distanceCm.toFixed(1)} cm`, { icon: '📍' });
+    }, [setShapeObjects, saveToHistory]);
 
     // Whiteboard text context helper for AI Slide Show
     const getWhiteboardTextContext = useCallback(() => {
@@ -18192,6 +18521,8 @@ export default function Whiteboard({
                     { id: 'math_tablet', icon: Calculator, label: 'Math Input Tablet (Windows MIP)', important: true },
                     { id: 'math_solver', icon: Sparkles, label: 'Auto Math Solver (Timed Steps)', important: true },
                     { id: 'parametric_shape', icon: Compass, label: 'Parametric Geometry (Equations/Angles)', important: true },
+                    { id: 'geometry_instruments', icon: Compass, label: 'Geometry Instruments (myViewBoard)', important: true },
+                    { id: 'browser_panel', icon: Globe, label: 'Search Panel (Google & YouTube)', important: true },
                     { id: 'image', icon: ImageIcon, label: 'Insert Image', important: false },
                     { id: 'media', icon: Film, label: 'Media & Documents (PDF, Video, Audio, Record, Web)', important: true },
                     { id: 'domain_3d', icon: Box, label: '3D Objects & Domain Library', important: true },
@@ -19993,6 +20324,11 @@ export default function Whiteboard({
                     onPointerCancel={handlePointerCancel}
                     onPointerLeave={handlePointerLeave}
                     onClick={handleCanvasClick}
+                    onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'copy';
+                    }}
+                    onDrop={handleCanvasDrop}
                 >
                     <canvas
                         ref={canvasRef}
@@ -26099,6 +26435,20 @@ export default function Whiteboard({
                             onSendToCanvasImage={(imageUrl) => insertImageFromSrc(imageUrl)}
                         />
                     ))}
+
+                    {/* Interactive Classroom Geometry Instruments (myViewBoard Inspired) */}
+                    <GeometryInstrumentsOverlay
+                        isOpen={showGeometryInstruments}
+                        onClose={() => setShowGeometryInstruments(false)}
+                        scale={currentZoom}
+                        onDrawLine={handleGeometryDrawLine}
+                        onDrawCircle={handleGeometryDrawCircle}
+                        onDrawArc={handleGeometryDrawArc}
+                        onDrawAngle={handleGeometryDrawAngle}
+                        onDrawPerpendicular={handleGeometryDrawPerpendicular}
+                        onDrawTriangle={handleGeometryDrawTriangle}
+                        onMarkDistance={handleGeometryMarkDistance}
+                    />
                 </div>
 
                 {/* Interactive 16:9 Canvas Minimap with Zoom & Viewport Navigation */}
@@ -27432,6 +27782,7 @@ export default function Whiteboard({
                 onAddTextToBoard={handleAddTextFromBrowser}
                 onAddImageToBoard={handleAddImageFromBrowser}
                 onAddAIPanelToBoard={handleAddAIPanelToBoard}
+                onAddMediaToBoard={handleAddMediaFromBrowser}
             />
 
         </div>

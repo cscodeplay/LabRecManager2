@@ -826,6 +826,8 @@ export const browserAPI = {
     search: (params) => api.get('/browser/search', { params }),
     getArticle: (params) => api.get('/browser/article', { params }),
     generateSlides: (data) => api.post('/browser/generate-slides', data),
+    searchYoutube: (params) => api.get('/browser/youtube', { params }),
+    searchImages: (params) => api.get('/browser/images', { params }),
 };
 
 export default api;
