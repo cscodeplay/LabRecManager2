@@ -3195,6 +3195,11 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
   "graphEquations": [
     "<Optional array of clean 2D or 3D mathematical equations in x, y, z to plot on the interactive graphing panel when the problem involves functions, curves, circles, conics, or 3D surfaces, e.g. '(x - 2)^2 + (y + 3)^2 = 25', 'y = x^2 - 4', 'z = sin(x)*cos(y)'>"
   ],
+  "physicsAction": {
+    "chapter": "<Optional Class XI or XII physics chapter: 'kinematics_1d' | 'projectile_motion' | 'newton_laws_fbd' | 'work_power_energy' | 'rotational_motion' | 'gravitation' | 'simple_harmonic_motion' | 'waves_sound' | 'thermodynamics' | 'electrostatics' | 'current_electricity' | 'magnetism_lorentz' | 'emi_ac_circuits' | 'ray_optics' | 'wave_optics' | 'modern_physics_bohr' | 'semiconductor_logic'>",
+    "simulationType": "<Optional interactive simulation: 'projectile' | 'incline_fbd' | 'pulley' | 'shm_oscillator' | 'gravity_orbit' | 'carnot_engine' | 'coulomb_field' | 'circuit_dc' | 'lorentz_force' | 'lcr_circuit' | 'ray_optics' | 'ydse_interference' | 'bohr_atom' | 'logic_gates'>",
+    "parameters": { "<numeric simulation parameters extracted from the problem e.g. velocity: 25, angle: 45, mass: 5, friction: 0.2, etc.>" }
+  },
   "suggestedFollowUps": [
     "<3 to 4 smart, highly topic-relevant follow-up actions or questions with emojis, e.g. '📐 Show formula', '🌿 Draw diagram', '✨ Show in 3D', '💡 Give a real-world example', '📝 Summarize in 3 points'>"
   ],
@@ -3352,10 +3357,36 @@ CRITICAL RULES:
      - When asked to find intersection points or plot coordinate curves (e.g. "circle with equation x^2 + y^2 + 3x + 4y - 18 = 0 and line y = 3x+1 that intersects this circle what will be points of intersection"):
        * Perform exact algebraic substitution: substitute y = mx + k into circle equation, form quadratic Ax² + Bx + C = 0, evaluate discriminant Δ = B² - 4AC, and solve for roots (x₁, y₁) and (x₂, y₂).
        * Output objectType: "cartesian_plane" or "coordinate_system" with plottedPoints: [{ x: x₁, y: y₁, label: "(x₁, y₁)" }, { x: x₂, y: y₂, label: "(x₂, y₂)" }] so the intersection points are marked on the Cartesian plane!
-  10. PHYSICS, CHEMISTRY & BIOLOGY ENGINE:
-     - PHYSICS: Mechanics (Newton's laws, incline plane free-body diagrams, friction, kinematics), Circuits (Ohm's law V = IR, series/parallel resistors), Optics (Snell's law, ray diagrams).
-     - CHEMISTRY: Molecular geometry (VSEPR shapes: linear, bent, trigonal planar, tetrahedral CH₄), Gas laws (PV = nRT), Stoichiometry & balanced equations.
-     - BIOLOGY: Cell structure (plant/animal cells, organelles), Genetics (Punnett squares with Mendelian 3:1 ratio), DNA double helix (A-T, G-C base pairs).
+  10. PHYSICS LAWS, VECTOR CONVENTIONS & SIMULATION LAB (CBSE/NCERT Class XI & XII, JEE, NEET):
+     - RIGOROUS VECTOR NOTATION:
+       * Vectors MUST ALWAYS use LaTeX arrow notation: \vec{F}, \vec{v}, \vec{a}, \vec{p}, \vec{E}, \vec{B}, \vec{\tau}, \vec{r}, \vec{s}, \vec{L}.
+       * Cartesian unit vectors MUST ALWAYS use hat notation: \hat{i}, \hat{j}, \hat{k} (e.g. \vec{r} = x\hat{i} + y\hat{j} + z\hat{k}, \vec{F} = (4\hat{i} + 3\hat{j})\text{ N}).
+       * Scalar / Dot Products: W = \vec{F} \cdot \vec{d} = F d \cos\theta = F_x d_x + F_y d_y + F_z d_z.
+       * Vector / Cross Products: \vec{\tau} = \vec{r} \times \vec{F}, \vec{F}_B = q(\vec{v} \times \vec{B}), |\vec{A} \times \vec{B}| = A B \sin\theta.
+       * Magnitudes: |\vec{A}| or A = \sqrt{A_x^2 + A_y^2 + A_z^2}.
+       * Standard SI Units: Specify explicit units in LaTeX (\text{m/s}, \text{m/s}^2, \text{N}, \text{J}, \text{W}, \text{kg}, \text{C}, \text{V}, \Omega, \text{T}, \text{H}, \text{F}, \text{Hz}, \text{eV}) and dimensional formulas (e.g. [MLT^{-2}] for Force, [ML^2T^{-2}] for Energy/Work).
+       * Sign Conventions: State sign conventions clearly (e.g. upward positive vs downward g = 9.8 m/s²; Cartesian sign convention for optics: optical center at origin, incident light from left to right).
+     - CLASS XI & XII CHAPTER COVERAGE & PHYSICS SPACE LAUNCH:
+       * Kinematics 1D & 2D: equations of motion, projectile trajectory (y = x\tan\theta - \frac{g x^2}{2 v_0^2 \cos^2\theta}).
+       * Laws of Motion & Friction: free body diagrams (FBD), inclined plane (mg\sin\theta, mg\cos\theta, normal force N, friction f_s \le \mu_s N), Atwood machine / pulleys.
+       * Work, Energy & Power: work-energy theorem, conservation of mechanical energy, elastic/inelastic collisions.
+       * Rotational Motion: torque, moment of inertia I, angular momentum L = I\omega, rolling without slipping.
+       * Gravitation: Newton's law of gravitation, Kepler's 3 laws, orbital speed v = \sqrt{GM/r}, escape velocity v_e = \sqrt{2gR}.
+       * SHM & Oscillations: spring-mass T = 2\pi\sqrt{m/k}, simple pendulum T = 2\pi\sqrt{L/g}, energy in SHM.
+       * Waves & Sound: wave speed v = f\lambda, Doppler effect f' = f\frac{v \pm v_o}{v \mp v_s}.
+       * Heat & Thermodynamics: first law dQ = dU + dW, Carnot cycle efficiency \eta = 1 - T_C/T_H, adiabatic PV^\gamma = C.
+       * Electrostatics: Coulomb's law F = \frac{1}{4\pi\varepsilon_0}\frac{q_1 q_2}{r^2}, electric dipole, Gauss's law, capacitance C = \frac{\varepsilon_0 A}{d}.
+       * Current Electricity: Ohm's law V = IR, resistivity, series & parallel resistors, Kirchhoff's rules (KCL, KVL), Wheatstone bridge.
+       * Magnetism: Biot-Savart law, Ampere's law, Lorentz force \vec{F} = q(\vec{E} + \vec{v} \times \vec{B}), cyclotron frequency.
+       * EMI & AC Circuits: Faraday's law \varepsilon = -\frac{d\Phi_B}{dt}, Lenz's law, series LCR circuit resonance \omega_0 = \frac{1}{\sqrt{LC}}, impedance Z = \sqrt{R^2 + (X_L - X_C)^2}.
+       * Optics: Snell's law n_1\sin i = n_2\sin r, lens maker's formula, mirror equation \frac{1}{f} = \frac{1}{v} + \frac{1}{u}, magnification m = -v/u.
+       * Wave Optics: Young's Double Slit Experiment (YDSE) fringe width \beta = \frac{\lambda D}{d}, Brewster's law.
+       * Modern Physics: photoelectric effect h\nu = \Phi + KE_{\max}, de Broglie wavelength \lambda = h/p, Bohr atom model E_n = -\frac{13.6}{n^2}\text{ eV}, Rydberg formula \frac{1}{\lambda} = R_H\left(\frac{1}{n_1^2} - \frac{1}{n_2^2}\right).
+       * Semiconductors: p-n junction, forward/reverse bias, logic gates (AND, OR, NOT, NAND, NOR, XOR), Boolean algebra.
+     - CHEMISTRY & BIOLOGY ENGINE:
+       * CHEMISTRY: Molecular geometry (VSEPR shapes: linear, bent, trigonal planar, tetrahedral CH₄), Gas laws (PV = nRT), Stoichiometry & balanced equations.
+       * BIOLOGY: Cell structure (plant/animal cells, organelles), Genetics (Punnett squares with Mendelian 3:1 ratio), DNA double helix (A-T, G-C base pairs).
+     - SIMULATION LAB TRIGGER: Whenever any physics question is presented, populate 'physicsAction' with the corresponding chapter, simulationType, and extracted numerical parameters so the user can interactively simulate the physical law!
   11. EXPLANATION:
      - Provide the step-by-step mathematical reasoning, formulas in LaTeX ($$...$$), and calculations inside speechResponse and solutionMarkdown.
      - The interactive diagram on canvas visually anchors the vertices, edges, and angles!
@@ -3486,7 +3517,7 @@ Spoken input: "${text}"
                 /[=^²³]/.test(low) ||
                 /\b(area|perimeter|circumference|radius|diameter|domain|range|asymptote|limit|maxima|minima|extrema|inflection|tangent|normal|parabola|ellipse|hyperbola|conic|roots|zeros|quadratic|polynomial|integral|derivative|calculus|differential|matrix|matrices|determinant|eigen|linear algebra|trigonometr|sin|cos|tan|logarithm|ln|log|probability|statistics|mean|median|variance|standard deviation|permutation|combination|binomial)\b/i.test(low) ||
                 /\b(ap|gp|hp|arithmetic progression|geometric progression|progression|sequence|series|common difference|first term|nth term)\b/i.test(low) ||
-                /\b(newton|law of motion|laws of motion|three law|magnetic|lorentz|photosynthesis|pythagor|ohm|formula|equation|ideal gas|mole|pressure|temperature|volume|gas constant|thermodynamic|stoichiometry|molarity|reaction|velocity|acceleration|momentum|gravity|kinetic|potential)\b/i.test(low);
+                /\b(physics|vector|kinematic|projectile|trajectory|newton|law of motion|laws of motion|friction|incline|pulley|atwood|tension|momentum|collision|work|energy|power|rotational|torque|moment of inertia|gravit|kepler|orbit|satellite|escape velocity|shm|harmonic|oscillation|pendulum|spring|wave|sound|doppler|thermodynamic|carnot|heat engine|isothermal|adiabatic|electrostatic|coulomb|electric field|charge|potential|capacit|current|resistor|ohm|kirchhoff|circuit|magnetic|lorentz|biot|savart|faraday|lenz|induction|lcr|alternating current|impedance|resonance|optics|snell|refraction|lens|mirror|ydse|double slit|interference|diffraction|bohr|hydrogen atom|spectral|photoelectric|de broglie|semiconductor|logic gate|truth table|nand|nor|photosynthesis|pythagor|ideal gas|mole|pressure|temperature|volume|gas constant|stoichiometry|molarity|reaction|velocity|acceleration|kinetic)\b/i.test(low);
 
             const isCognitiveQuery =
                 isMathOrScienceProblem ||
@@ -3502,7 +3533,7 @@ Spoken input: "${text}"
             const hasCanvasDirectives = hasExplicitCanvasAction || hasShapeObjectDirective;
 
             const systemPromptToUse = (isCognitiveQuery && !hasCanvasDirectives)
-                ? `You are an expert STEM teacher and scientific reasoning assistant for an interactive Whiteboard with an integrated 2D/3D Graphing Engine.
+                ? `You are an expert STEM teacher and scientific reasoning assistant for an interactive Whiteboard with an integrated 2D/3D Graphing Engine and Physics Space simulation laboratory.
 Analyze the user's question, derive the step-by-step mathematical or scientific solution, and output valid JSON.
 
 OUTPUT EXACTLY ONE VALID JSON OBJECT:
@@ -3516,6 +3547,11 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT:
   "plottedPoints": [
     { "x": 0, "y": 0, "label": "<Optional key points such as Center, Vertex, Root, Intersection, Local Max/Min with numeric x and y coordinates>" }
   ],
+  "physicsAction": {
+    "chapter": "<Optional Class XI or XII physics chapter: 'kinematics_1d' | 'projectile_motion' | 'newton_laws_fbd' | 'work_power_energy' | 'rotational_motion' | 'gravitation' | 'simple_harmonic_motion' | 'waves_sound' | 'thermodynamics' | 'electrostatics' | 'current_electricity' | 'magnetism_lorentz' | 'emi_ac_circuits' | 'ray_optics' | 'wave_optics' | 'modern_physics_bohr' | 'semiconductor_logic'>",
+    "simulationType": "<Optional interactive simulation: 'projectile' | 'incline_fbd' | 'pulley' | 'shm_oscillator' | 'gravity_orbit' | 'carnot_engine' | 'coulomb_field' | 'circuit_dc' | 'lorentz_force' | 'lcr_circuit' | 'ray_optics' | 'ydse_interference' | 'bohr_atom' | 'logic_gates'>",
+    "parameters": { "<numeric simulation parameters extracted from the problem e.g. velocity: 25, angle: 45, mass: 5, friction: 0.2, etc.>" }
+  },
   "suggestedFollowUps": [
     "<3 to 4 actionable learning pills with relevant emojis, e.g. '💡 Example', '📐 Formula', '📝 Summary'>"
   ],
@@ -3532,7 +3568,7 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
        \`$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$\`
        \`$$F = G\\frac{m_1 m_2}{r^2}$$\`
      * Inline variables, expressions, and units wrapped in \`$...$\`, e.g. \`$a = 5$\`, \`$d = 3$\`, \`$\\theta = 45^\\circ$\`, \`$E = mc^2$\`, \`$9.8\\text{ m/s}^2$\`.
-     * Remember to double-escape backslashes inside JSON strings (e.g. \`\\\\frac\`, \`\\\\sqrt\`, \`\\\\pi\`, \`\\\\times\`, \`\\\\theta\`, \`\\\\text\`, \`\\\\boxed\`).
+     * Remember to double-escape backslashes inside JSON strings (e.g. \`\\\\frac\`, \`\\\\sqrt\`, \`\\\\pi\`, \`\\\\times\`, \`\\\\theta\`, \`\\\\text\`, \`\\\\boxed\`, \`\\\\vec\`, \`\\\\hat\`).
 2. REQUIRED STRUCTURED TEMPLATE FOR 'solutionMarkdown':
    Structure your response cleanly using these Markdown headings:
    ### 📌 Given & Concept
@@ -3554,7 +3590,14 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
      * Derivative/integral of \`f(x) = x^3 - 3x\` -> \`["y = x^3 - 3*x", "y = 3*x^2 - 3"]\`
      * 3D surface or quadric -> \`"z = x^2 - y^2"\` or \`"x^2 + y^2 + z^2 = 25"\`
    - In 'plottedPoints', include key numeric 2D coordinates (roots, intersections, center, vertices, extrema) with descriptive labels.
-4. In 'speechResponse', state the explanation and final answer naturally so it sounds clear when spoken aloud.`
+4. RIGOROUS PHYSICS CONVENTIONS & SIMULATION LAB (CBSE/NCERT Class XI & XII):
+   - Vectors: Write all vectors with LaTeX arrows: \\vec{F}, \\vec{v}, \\vec{a}, \\vec{p}, \\vec{E}, \\vec{B}, \\vec{\\tau}, \\vec{r}, \\vec{s}, \\vec{L}.
+   - Unit vectors: Write Cartesian unit vectors strictly as \\hat{i}, \\hat{j}, \\hat{k} (e.g. \\vec{r} = x\\hat{i} + y\\hat{j} + z\\hat{k}).
+   - Products: Scalar dot products with \\cdot (\\vec{F} \\cdot \\vec{d}), vector cross products with \\times (\\vec{r} \\times \\vec{F}, q(\\vec{v} \\times \\vec{B})).
+   - Magnitudes: |\\vec{A}| or \\sqrt{A_x^2 + A_y^2 + A_z^2}.
+   - SI Units: Standard units in LaTeX (\\text{m/s}, \\text{m/s}^2, \\text{N}, \\text{J}, \\text{W}, \\text{kg}, \\text{C}, \\text{V}, \\Omega, \\text{T}, \\text{H}, \\text{F}, \\text{Hz}, \\text{eV}).
+   - Whenever any physics problem is presented, ALWAYS populate 'physicsAction' with the corresponding chapter, simulationType, and extracted numeric parameters!
+5. In 'speechResponse', state the explanation and final answer naturally so it sounds clear when spoken aloud.`
                 : whiteboardSystemPrompt;
 
             // Dispatch to Unified AI Completion (OpenAI Paid -> Anthropic -> DeepSeek -> OpenRouter -> Groq -> Gemini -> SambaNova)
@@ -3804,9 +3847,229 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                             return [act];
                         });
                     }
+
+                    // Deterministic Physics Action inference for all Class XI & XII chapters
+                    const inferPhysicsAction = (queryText = '', solMarkdown = '', existing = null) => {
+                        if (existing && existing.simulationType) {
+                            return {
+                                chapter: existing.chapter || 'projectile_motion',
+                                simulationType: existing.simulationType,
+                                parameters: existing.parameters || {}
+                            };
+                        }
+
+                        const combined = `${queryText} ${solMarkdown}`.toLowerCase();
+
+                        const num = (regex, fallback) => {
+                            const m = combined.match(regex);
+                            if (m) {
+                                const v = parseFloat(m[1]);
+                                if (!isNaN(v)) return v;
+                            }
+                            return fallback;
+                        };
+
+                        // 1. Projectile Motion
+                        if (/\b(projectile|trajectory|launch(?:ed)?\s+at\s+angle|angle\s+of\s+projection|horizontal\s+range|maximum\s+height\s+of\s+projectile|flight\s+time)\b/i.test(combined)) {
+                            return {
+                                chapter: 'projectile_motion',
+                                simulationType: 'projectile',
+                                parameters: {
+                                    velocity: num(/(?:velocity|speed|v0?|u)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 25),
+                                    angle: num(/(?:angle|theta|θ)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 45),
+                                    gravity: num(/(?:gravity|g)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 9.8),
+                                    launchHeight: num(/(?:height|h0?)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 0)
+                                }
+                            };
+                        }
+
+                        // 2. Incline Plane & Friction / FBD
+                        if (/\b(inclined?\s*plane|incline|fbd|free\s*body\s*diagram|coefficient\s+of\s+friction|friction\s*force|sliding\s+down)\b/i.test(combined)) {
+                            return {
+                                chapter: 'newton_laws_fbd',
+                                simulationType: 'incline_fbd',
+                                parameters: {
+                                    angle: num(/(?:angle|theta|θ|incline)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 30),
+                                    mass: num(/(?:mass|m)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 5),
+                                    friction: num(/(?:friction|mu|μ)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 0.2),
+                                    gravity: 9.8
+                                }
+                            };
+                        }
+
+                        // 3. Pulley / Atwood Machine
+                        if (/\b(pulley|atwood|masses\s+connected\s+by|tension\s+in\s+string)\b/i.test(combined)) {
+                            return {
+                                chapter: 'newton_laws_fbd',
+                                simulationType: 'pulley',
+                                parameters: {
+                                    m1: num(/(?:m1|mass\s*1|first\s*mass)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 3),
+                                    m2: num(/(?:m2|mass\s*2|second\s*mass)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 5),
+                                    gravity: 9.8
+                                }
+                            };
+                        }
+
+                        // 4. SHM / Harmonic Oscillator / Pendulum
+                        if (/\b(simple\s*harmonic|shm|spring\s*mass|spring\s*constant|pendulum|oscillation|time\s*period\s+of\s+oscillation)\b/i.test(combined)) {
+                            const isPend = /\b(pendulum)\b/i.test(combined);
+                            return {
+                                chapter: 'simple_harmonic_motion',
+                                simulationType: 'shm_oscillator',
+                                parameters: {
+                                    mode: isPend ? 'pendulum' : 'spring',
+                                    mass: num(/(?:mass|m)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 1),
+                                    k: num(/(?:spring\s*constant|k)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 50),
+                                    amplitude: num(/(?:amplitude|a)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 1.5),
+                                    length: num(/(?:length|l)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 1.0)
+                                }
+                            };
+                        }
+
+                        // 5. Gravitation & Kepler Orbit
+                        if (/\b(kepler|planetary\s*orbit|gravitational\s*force|satellite\s*orbit|escape\s*velocity)\b/i.test(combined)) {
+                            return {
+                                chapter: 'gravitation',
+                                simulationType: 'gravity_orbit',
+                                parameters: {
+                                    orbitRadius: num(/(?:radius|r)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 1.5),
+                                    centralMass: num(/(?:mass|m)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 10),
+                                    speed: num(/(?:speed|velocity|v)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 2.5)
+                                }
+                            };
+                        }
+
+                        // 6. Carnot Engine & Thermodynamics
+                        if (/\b(carnot|heat\s*engine|efficiency\s+of\s+engine|thermal\s*reservoir|isothermal|adiabatic)\b/i.test(combined)) {
+                            return {
+                                chapter: 'thermodynamics',
+                                simulationType: 'carnot_engine',
+                                parameters: {
+                                    th: num(/(?:t_?h|hot|source)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 600),
+                                    tc: num(/(?:t_?c|cold|sink)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 300)
+                                }
+                            };
+                        }
+
+                        // 7. Coulomb Force & Electrostatic Field
+                        if (/\b(coulomb|electric\s*field|point\s*charge|electrostatic\s*force)\b/i.test(combined)) {
+                            return {
+                                chapter: 'electrostatics',
+                                simulationType: 'coulomb_field',
+                                parameters: {
+                                    q1: num(/(?:q_?1|first\s*charge)\s*(?:=|is|of)?\s*(-?\d+(?:\.\d+)?)/i, 5),
+                                    q2: num(/(?:q_?2|second\s*charge)\s*(?:=|is|of)?\s*(-?\d+(?:\.\d+)?)/i, -5),
+                                    distance: num(/(?:distance|r|separation)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 2)
+                                }
+                            };
+                        }
+
+                        // 8. DC Circuits & Ohm's Law
+                        if (/\b(ohm'?s?\s*law|resistor|series\s+parallel|kirchhoff|equivalent\s*resistance|circuit)\b/i.test(combined)) {
+                            return {
+                                chapter: 'current_electricity',
+                                simulationType: 'circuit_dc',
+                                parameters: {
+                                    voltage: num(/(?:voltage|v|emf)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 12),
+                                    r1: num(/(?:r_?1|resistor\s*1)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 10),
+                                    r2: num(/(?:r_?2|resistor\s*2)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 20),
+                                    connection: /\bparallel\b/i.test(combined) ? 'parallel' : 'series'
+                                }
+                            };
+                        }
+
+                        // 9. Lorentz Force & Magnetism
+                        if (/\b(lorentz|magnetic\s*force|charge\s+moving\s+in\s+magnetic|b-field|cyclotron)\b/i.test(combined)) {
+                            return {
+                                chapter: 'magnetism_lorentz',
+                                simulationType: 'lorentz_force',
+                                parameters: {
+                                    charge: num(/(?:charge|q)\s*(?:=|is|of)?\s*(-?\d+(?:\.\d+)?)/i, 1),
+                                    velocity: num(/(?:speed|velocity|v)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 30),
+                                    bField: num(/(?:b(?:field)?|magnetic\s*field)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 0.5)
+                                }
+                            };
+                        }
+
+                        // 10. AC Circuits / Series LCR
+                        if (/\b(lcr|resonant\s*frequency|impedance|alternating\s*current|inductor\s+and\s+capacitor|ac\s+circuit)\b/i.test(combined)) {
+                            return {
+                                chapter: 'emi_ac_circuits',
+                                simulationType: 'lcr_circuit',
+                                parameters: {
+                                    r: num(/(?:r|resistance)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 50),
+                                    l: num(/(?:l|inductance)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 0.2),
+                                    c: num(/(?:c|capacitance)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 100),
+                                    freq: num(/(?:frequency|f)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 50)
+                                }
+                            };
+                        }
+
+                        // 11. Ray Optics (Refraction, Lens, Mirror)
+                        if (/\b(ray\s*optics|snell|refraction|focal\s*length|convex\s*lens|concave\s*lens|lens\s*formula|mirror\s*formula)\b/i.test(combined)) {
+                            return {
+                                chapter: 'ray_optics',
+                                simulationType: 'ray_optics',
+                                parameters: {
+                                    f: num(/(?:focal\s*length|f)\s*(?:=|is|of)?\s*(-?\d+(?:\.\d+)?)/i, 100),
+                                    u: num(/(?:object\s*distance|u)\s*(?:=|is|of)?\s*(-?\d+(?:\.\d+)?)/i, -180),
+                                    height: num(/(?:height|h)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 50)
+                                }
+                            };
+                        }
+
+                        // 12. Wave Optics & YDSE
+                        if (/\b(young'?s?\s*double\s*slit|ydse|fringe\s*width|interference\s+of\s+light|slit\s*separation)\b/i.test(combined)) {
+                            return {
+                                chapter: 'wave_optics',
+                                simulationType: 'ydse_interference',
+                                parameters: {
+                                    wavelength: num(/(?:wavelength|lambda|λ)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 600),
+                                    d: num(/(?:slit\s*separation|d)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 0.5),
+                                    bigD: num(/(?:screen\s*distance|D)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 1.5)
+                                }
+                            };
+                        }
+
+                        // 13. Modern Physics & Bohr Atom
+                        if (/\b(bohr|hydrogen\s*atom|energy\s*levels?|spectral\s*series|lyman|balmer|paschen|rydberg)\b/i.test(combined)) {
+                            return {
+                                chapter: 'modern_physics_bohr',
+                                simulationType: 'bohr_atom',
+                                parameters: {
+                                    initialN: Math.max(1, Math.min(6, Math.round(num(/(?:level|n1?|from\s+n\s*=?)\s*(\d+)/i, 3)))),
+                                    finalN: Math.max(1, Math.min(6, Math.round(num(/(?:to\s+n\s*=?|ground|n2?)\s*(\d+)/i, 1))))
+                                }
+                            };
+                        }
+
+                        // 14. Semiconductor & Logic Gates
+                        if (/\b(logic\s*gate|truth\s*table|nand|nor\b|xor\b|and\s+gate|or\s+gate|not\s+gate)\b/i.test(combined)) {
+                            let gate = 'AND';
+                            if (/\bnand\b/i.test(combined)) gate = 'NAND';
+                            else if (/\bnor\b/i.test(combined)) gate = 'NOR';
+                            else if (/\bxor\b/i.test(combined)) gate = 'XOR';
+                            else if (/\bor\s*gate\b/i.test(combined)) gate = 'OR';
+                            else if (/\bnot\s*gate\b/i.test(combined)) gate = 'NOT';
+                            return {
+                                chapter: 'semiconductor_logic',
+                                simulationType: 'logic_gates',
+                                parameters: { gate }
+                            };
+                        }
+
+                        return null;
+                    };
+
+                    const resolvedPhysics = inferPhysicsAction(text, parsed.solutionMarkdown || parsed.speechResponse, parsed.physicsAction);
+                    if (resolvedPhysics) {
+                        parsed.physicsAction = resolvedPhysics;
+                    }
+
                     return {
                         ...parsed,
                         recognized: parsed.recognized !== false,
+                        physicsAction: parsed.physicsAction || null,
                         modelUsed: completionRes.model,
                         providerUsed: completionRes.provider
                     };

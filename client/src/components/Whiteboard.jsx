@@ -17,7 +17,7 @@ import {
     Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX,
     ChevronUp, ChevronsUp, ChevronsDown, FileText, Check, Pause, Play, RotateCcw, Globe, Music,
     Underline, Bold, Italic, Shapes, Database, MessageSquare, Sigma, Calculator, Layers, ScanText,
-    ZoomIn, ZoomOut, BookOpen, Gamepad2, Bot
+    ZoomIn, ZoomOut, BookOpen, Gamepad2, Bot, Atom
 } from 'lucide-react';
 import fixWebmDuration from 'fix-webm-duration';
 import katex from 'katex';
@@ -88,6 +88,7 @@ import WhiteboardPdfViewer from './WhiteboardPdfViewer';
 import Whiteboard3DObject, { get3DModelMesh, parseOBJ, parseSTL, parseJSON3D, shadeColor, render3DObjectSVG, getDefaultDimensions } from './Whiteboard3DObject';
 import { WhiteboardGraphObject, getEquationColor } from './graphPlotter';
 import TorchIcon from './TorchIcon';
+import PhysicsSpacePanel from './physicsSpace/PhysicsSpacePanel';
 import GameSelectorModal from './games/GameSelectorModal';
 import WhiteboardShooterGame from './games/WhiteboardShooterGame';
 import WhiteboardSnakeGame from './games/WhiteboardSnakeGame';
@@ -1067,6 +1068,8 @@ export default function Whiteboard({
     const [externalGraphEquations, setExternalGraphEquations] = useState([]);
     const [showAiAssistantModal, setShowAiAssistantModal] = useState(false);
     const [whiteboardAiProvider, setWhiteboardAiProvider] = useState('auto');
+    const [showPhysicsSpace, setShowPhysicsSpace] = useState(false);
+    const [physicsSpaceConfig, setPhysicsSpaceConfig] = useState(null);
 
     const voiceRecognitionRef = useRef(null);
     const isVoiceListeningRef = useRef(false);
@@ -14973,9 +14976,15 @@ export default function Whiteboard({
                             curves: data.canvasAction?.curves || data.curves || coordAction?.curves,
                             intersectionPoints: data.canvasAction?.intersectionPoints || data.intersectionPoints || coordAction?.intersectionPoints,
                             plottedPoints: data.canvasAction?.plottedPoints || data.plottedPoints || coordAction?.plottedPoints,
+                            physicsAction: data.physicsAction || null,
                             modelUsed: data.modelUsed,
                             providerUsed: data.providerUsed
                         });
+
+                        if (data?.physicsAction) {
+                            setPhysicsSpaceConfig(data.physicsAction);
+                            setShowPhysicsSpace(true);
+                        }
                     }
 
                     const isCartesianDiagram = data.canvasAction?.diagramType === 'cartesian_plane' || data.canvasAction?.diagramType === 'coordinate_system';
@@ -17883,6 +17892,34 @@ export default function Whiteboard({
         toast.success('Inserted AI response as text!', { icon: '🔤' });
     }, [panOffset, zoomLevel, color, saveToHistory]);
 
+    // Stamp Physics Simulation Snapshot onto Whiteboard Canvas
+    const handleStampPhysicsToCanvas = useCallback(({ dataUrl, width = 640, height = 360, title = 'Physics Simulation' }) => {
+        if (!dataUrl) return;
+        const cWidth = canvasRef.current?.width || 1200;
+        const cHeight = canvasRef.current?.height || 800;
+        const cx = Math.round((cWidth / 2 - panOffset.x) / zoomLevel);
+        const cy = Math.round((cHeight / 2 - panOffset.y) / zoomLevel);
+        const w = Math.min(width || 640, 720);
+        const h = Math.min(height || 360, 480);
+        const newImgId = `phys_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+        const newImg = {
+            id: newImgId,
+            x: Math.round(cx - w / 2),
+            y: Math.round(cy - h / 2),
+            width: w,
+            height: h,
+            src: dataUrl,
+            title: title || 'Physics Simulation',
+            rotation: 0,
+            isLocked: false
+        };
+        setImageObjects(prev => [...prev, newImg]);
+        setSelectedImageId(newImgId);
+        setSelectedImageIds([newImgId]);
+        saveToHistory();
+        toast.success(`Stamped "${title}" simulation to Whiteboard!`, { icon: '⚛️' });
+    }, [panOffset, zoomLevel, saveToHistory, setImageObjects, setSelectedImageId, setSelectedImageIds]);
+
     const toggleVoiceListening = useCallback(() => {
         const SpeechRecognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
         if (!SpeechRecognition) {
@@ -18159,6 +18196,7 @@ export default function Whiteboard({
                     { id: 'media', icon: Film, label: 'Media & Documents (PDF, Video, Audio, Record, Web)', important: true },
                     { id: 'domain_3d', icon: Box, label: '3D Objects & Domain Library', important: true },
                     { id: 'graph_plotter', icon: LineChart, label: 'Graph Plotter / Equation Graphing', important: true },
+                    { id: 'physics_space', icon: Atom, label: 'Physics Space (Simulation Lab)', important: true },
                     { id: 'tasks', icon: ListTodo, label: 'Whiteboard Tasks Checklist', important: true },
                     { id: 'templates', icon: LayoutTemplate, label: 'Templates & SmartArt', important: false },
                     { id: 'shortcuts', icon: Keyboard, label: 'Keyboard Shortcuts (Cmd+/ or ?)', important: false },
@@ -18252,6 +18290,10 @@ export default function Whiteboard({
                                         }
                                         if (t.id === 'graph_plotter') {
                                             handleInsertGraph();
+                                            return;
+                                        }
+                                        if (t.id === 'physics_space') {
+                                            setShowPhysicsSpace(prev => !prev);
                                             return;
                                         }
                                         if (t.id === 'tasks') {
@@ -26556,6 +26598,14 @@ export default function Whiteboard({
                 isOpenByDefault={true}
             />
 
+            {/* Interactive Physics Space Simulation Lab for Class XI & XII */}
+            <PhysicsSpacePanel
+                isOpen={showPhysicsSpace}
+                onClose={() => setShowPhysicsSpace(false)}
+                initialConfig={physicsSpaceConfig}
+                onStampToWhiteboard={handleStampPhysicsToCanvas}
+            />
+
             {/* Live Real-Time Closed Captions (CC) Overlay with Right-of-Center Minimal AI Solution Pane */}
             <WhiteboardClosedCaptions
                 isVisible={showClosedCaptions && (isVoiceListening || Boolean(interimVoiceTranscript || voiceTranscript || voiceFeedback || isAiSpeaking || isAiThinking || aiSolutionData?.speechResponse))}
@@ -26576,6 +26626,7 @@ export default function Whiteboard({
                 onCreateStickyNote={handleInsertAiStickyNote}
                 onInsertAsText={handleInsertAiTextObject}
                 onOpenAiSolution={() => setShowAiAssistantModal(true)}
+                onOpenPhysicsSpace={() => setShowPhysicsSpace(true)}
                 onStopSpeaking={stopAiSpeech}
                 onPauseSpeaking={pauseAiSpeech}
                 onResumeSpeaking={resumeAiSpeech}

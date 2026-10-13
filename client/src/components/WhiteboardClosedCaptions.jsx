@@ -88,13 +88,15 @@ function normalizeScientificLatex(rawText) {
         .replace(/\bsquare\s+root\s+of\s+([a-zA-Z0-9_()+-]+)\b/gi, '$$\\sqrt{$1}$$')
     );
 
-    // 7. Auto-wrap bare LaTeX commands with braces outside math: \frac{...}{...}, \sqrt{...}, \boxed{...}, \vec{...}
+    // 7. Auto-wrap bare LaTeX commands with braces outside math: \frac{...}{...}, \sqrt{...}, \boxed{...}, \vec{...}, \hat{...}
     s = transformOutsideMath(s, str => {
         return str
             .replace(/(\\frac\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}(?:\s*(?:\\[a-zA-Z]+|[a-zA-Z0-9^]+))?)/g, '$$$1$$')
             .replace(/(\\sqrt(?:\s*\[[^{}]*\])?\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})/g, '$$$1$$')
             .replace(/(\\boxed\s*\{[^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}[^{}]*)*\})/g, '$$$1$$')
-            .replace(/(\\vec\s*\{[^{}]*\})/g, '$$$1$$');
+            .replace(/(\\vec\s*\{[^{}]*\})/g, '$$$1$$')
+            .replace(/(\\hat\s*\{[^{}]*\}|\\[ij]hat\b)/g, '$$$1$$')
+            .replace(/(\\(?:mathbf|mathbfit)\s*\{[^{}]*\})/g, '$$$1$$');
     });
 
     // 8. Auto-wrap bare Greek letters or math symbols outside math
@@ -374,6 +376,7 @@ export default function WhiteboardClosedCaptions({
     preferredProvider = 'auto',
     onClose = () => {},
     onExecuteCommand = () => {},
+    onOpenPhysicsSpace = null,
     audioLevel = 0
 }) {
     const [isMinimized, setIsMinimized] = useState(false);
@@ -641,6 +644,16 @@ export default function WhiteboardClosedCaptions({
                                                 }`}
                                             >
                                                 Summary
+                                            </button>
+                                        )}
+                                        {onOpenPhysicsSpace && (
+                                            <button
+                                                type="button"
+                                                onClick={onOpenPhysicsSpace}
+                                                className="px-2 py-0.5 rounded text-[11px] font-semibold transition bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 border border-indigo-500/40 flex items-center gap-1 cursor-pointer"
+                                                title="Open interactive physics simulation laboratory"
+                                            >
+                                                <span>⚛️ Lab</span>
                                             </button>
                                         )}
                                     </div>
@@ -1005,6 +1018,16 @@ export default function WhiteboardClosedCaptions({
                                         >
                                             📝 Sticky Note
                                         </button>
+                                        {onOpenPhysicsSpace && (
+                                            <button
+                                                type="button"
+                                                onClick={onOpenPhysicsSpace}
+                                                className="px-2 py-0.5 rounded-md bg-indigo-900/60 hover:bg-indigo-800/80 text-indigo-200 hover:text-white border border-indigo-500/50 text-[10px] font-medium transition flex items-center gap-1 cursor-pointer"
+                                                title="Open interactive physics simulation laboratory"
+                                            >
+                                                ⚛️ Physics Lab
+                                            </button>
+                                        )}
                                     </div>
 
                                     <form

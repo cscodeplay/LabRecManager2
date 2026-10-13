@@ -75,11 +75,14 @@ function repairLatexClosures(str) {
     // 2. Fix single dollar opened but closed with double dollar: $...$$ -> $$...$$
     out = out.replace(/(?<!\$)\$([^\$]+?)\$\$/g, '$$$$$1$$$$');
 
-    // 3. Auto-wrap bare LaTeX commands (e.g. \frac{...}{...}, \sqrt{...}, \vec{...}, \mathbf{...}, \sum, \int) strictly outside math delimiters
+    // 3. Auto-wrap bare LaTeX commands (e.g. \frac{...}{...}, \sqrt{...}, \vec{...}, \hat{...}, \mathbf{...}, \sum, \int) strictly outside math delimiters
     out = transformOutsideMath(out, str => {
         return str
             .replace(/(\\frac\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}(?:\s*(?:\\[a-zA-Z]+|[a-zA-Z0-9^]+))?)/g, '$$$1$$')
             .replace(/(\\sqrt(?:\s*\[[^{}]*\])?\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})/g, '$$$1$$')
+            .replace(/(\\vec\s*\{[^{}]*\}\s*(?:[=+\-\*]\s*[^$\n,;.]+)?)/g, '$$$1$$')
+            .replace(/((?:[-+]?\s*\d*\.?\d*\s*\\hat\{[ijkrnu]\}\s*)+)/g, '$$$1$$')
+            .replace(/(\\hat\s*\{[^{}]*\})/g, '$$$1$$')
             .replace(/(\\vec\s*\{[^{}]*\})/g, '$$$1$$')
             .replace(/(\\mathbf\s*\{[^{}]*\})/g, '$$$1$$')
             .replace(/(\\sum_\{[^{}]*\}\^\{[^{}]*\})/g, '$$$1$$')
@@ -560,8 +563,8 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = '
 function renderInlineFormattedText(rawText, size = 'base', textClassName = '') {
     if (!rawText) return null;
 
-    // Tokenize inline code (`...`), inline math ($...$ or \(...\)), and standalone LaTeX commands (\rightleftharpoons, \Delta, etc.)
-    const tokenRegex = /(?:`([^`\n]+)`)|(?:\$([^\$]+?)\$)|(?:\\\(([\s\S]*?)\\\))|(?:(\\(?:rightleftharpoons|leftarrow|rightarrow|Leftarrow|Rightarrow|Leftrightarrow|Delta|nabla|infty|alpha|beta|gamma|theta|lambda|mu|pi|sigma|omega|times|pm|approx|neq|le|ge|frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|ce\{(?:[^{}]*(?:\{[^{}]*\}[^{}]*)*)\})))/g;
+    // Tokenize inline code (`...`), inline math ($...$ or \(...\)), and standalone LaTeX commands (\rightleftharpoons, \Delta, \vec, \hat, etc.)
+    const tokenRegex = /(?:`([^`\n]+)`)|(?:\$([^\$]+?)\$)|(?:\\\(([\s\S]*?)\\\))|(?:(\\(?:rightleftharpoons|leftarrow|rightarrow|Leftarrow|Rightarrow|Leftrightarrow|Delta|nabla|infty|alpha|beta|gamma|theta|lambda|mu|pi|sigma|omega|tau|phi|psi|hbar|varepsilon|times|cdot|pm|approx|neq|le|ge|vec\{[^{}]*\}|hat\{[^{}]*\}|mathbf\{[^{}]*\}|frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|ce\{(?:[^{}]*(?:\{[^{}]*\}[^{}]*)*)\})))/g;
     const tokens = [];
     let lastIdx = 0;
     let match;
