@@ -16,8 +16,39 @@ import {
 } from 'lucide-react';
 import GraphCanvas from './graphPlotter/GraphCanvas';
 import Graph3DCanvas from './graphPlotter/Graph3DCanvas';
-import { parseEquation, compileExpression } from './graphPlotter/mathParser';
+import { parseEquation, compileExpression, formatMathSuperscripts } from './graphPlotter/mathParser';
 import { getEquationColor } from './graphPlotter/colorPalette';
+import katex from 'katex';
+
+/**
+ * Render a graph equation into formatted KaTeX HTML (or Unicode superscript fallback)
+ * Converts programming multiplication (2*x -> 2x, 3*y -> 3y) and superscripts powers (x^2 -> x²)
+ */
+export function renderEquationMathHtml(expr) {
+    if (!expr || typeof expr !== 'string') return '';
+    try {
+        let latex = expr.trim();
+        // Remove explicit multiplication between numbers and variables/parentheses: 2*x -> 2x, 3*y -> 3y, 2*(x+1) -> 2(x+1)
+        latex = latex.replace(/(\d(?:\.\d+)?)\s*\*\s*([a-zA-Z(])/g, '$1$2');
+        latex = latex.replace(/(\))\s*\*\s*([0-9a-zA-Z(])/g, '$1$2');
+        latex = latex.replace(/([a-zA-Z])\s*\*\s*([a-zA-Z])/g, '$1$2');
+        // Convert fractions like ((a)/(b)) -> \frac{a}{b}
+        latex = latex.replace(/\(\(([^\/()]+)\)\/\(([^\/()]+)\)\)/g, '\\frac{$1}{$2}');
+        // Convert remaining * to \cdot
+        latex = latex.replace(/\*/g, ' \\cdot ');
+        // Greek letters
+        latex = latex.replace(/\btheta\b/gi, '\\theta');
+        latex = latex.replace(/\bpi\b/gi, '\\pi');
+
+        return katex.renderToString(latex, {
+            displayMode: false,
+            throwOnError: false,
+            strict: false
+        });
+    } catch {
+        return `<span class="font-mono">${formatMathSuperscripts(expr) || expr}</span>`;
+    }
+}
 
 /**
  * Convert a LaTeX math string into a clean expression understood by `parseEquation`
@@ -1036,9 +1067,11 @@ export default function WhiteboardGraphingPanel({
                                         className="w-2.5 h-2.5 rounded-full shrink-0"
                                         style={{ backgroundColor: isStepActive ? '#facc15' : eq.color }}
                                     />
-                                    <span className="font-mono truncate" title={eq.rawInput}>
-                                        {eq.rawInput}
-                                    </span>
+                                    <span
+                                        className="truncate inline-flex items-center text-xs tracking-wide"
+                                        title={eq.rawInput}
+                                        dangerouslySetInnerHTML={{ __html: renderEquationMathHtml(eq.rawInput) }}
+                                    />
                                     {eq.is3D && (
                                         <span className="px-1 py-0.2 rounded bg-slate-800 text-amber-300 text-[9px] font-bold shrink-0">
                                             3D

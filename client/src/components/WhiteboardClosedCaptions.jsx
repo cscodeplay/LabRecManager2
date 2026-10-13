@@ -30,6 +30,17 @@ import katex from 'katex';
 import toast from 'react-hot-toast';
 import { aiAPI } from '@/lib/api';
 
+function transformOutsideMath(input, transformFn) {
+    if (!input) return '';
+    const parts = input.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$)/g);
+    for (let i = 0; i < parts.length; i += 2) {
+        if (parts[i]) {
+            parts[i] = transformFn(parts[i]);
+        }
+    }
+    return parts.join('');
+}
+
 function normalizeScientificLatex(rawText) {
     if (!rawText || typeof rawText !== 'string') return '';
     let s = rawText
@@ -50,22 +61,53 @@ function normalizeScientificLatex(rawText) {
         return `$$${singleLine}$$`;
     });
 
-    // 4. Convert plain-English math phrases into LaTeX if not already inside $...$
-    s = s
+    // 4. Line-by-line check for pure unadorned equations outside math (e.g. "1. (x + 1)^2 + y^2 = 7" or "x^2 + y^2 + 2x = 6")
+    const lines = s.split('\n');
+    const normalizedLines = lines.map(line => {
+        if (line.includes('$')) return line;
+        const m = line.match(/^(\s*(?:(?:\d+[\.\)]|Step\s+\d+[:\.]?|Stage\s+\d+[:\.]?|[-*•])\s+)?)([^:=]+=[^:=]+)$/i);
+        if (m) {
+            const prefix = m[1] || '';
+            const candidate = m[2].trim();
+            const words = candidate.match(/\b[a-zA-Z]{4,}\b/g) || [];
+            if (words.length === 0 && /[xyzrhtk]/i.test(candidate) && /[0-9^+\-*\/]/.test(candidate)) {
+                return `${prefix}$${candidate}$`;
+            }
+        }
+        return line;
+    });
+    s = normalizedLines.join('\n');
+
+    // 5. Convert unicode superscripts outside math: ² -> ^2, ³ -> ^3
+    s = transformOutsideMath(s, str => str.replace(/²/g, '^2').replace(/³/g, '^3').replace(/⁴/g, '^4'));
+
+    // 6. Convert plain-English math phrases into LaTeX if outside math
+    s = transformOutsideMath(s, str => str
         .replace(/\b([a-zA-Z])\s+squared\b/gi, '$$$1^2$$')
         .replace(/\b([a-zA-Z])\s+cubed\b/gi, '$$$1^3$$')
-        .replace(/\bsquare\s+root\s+of\s+([a-zA-Z0-9_()+-]+)\b/gi, '$$\\sqrt{$1}$$');
+        .replace(/\bsquare\s+root\s+of\s+([a-zA-Z0-9_()+-]+)\b/gi, '$$\\sqrt{$1}$$')
+    );
 
-    // 5. Auto-wrap bare LaTeX commands (\frac, \sqrt, \boxed, \vec) that are outside $...$
-    const barePatterns = [
-        /(?<!\$)\\(frac\{[^{}]*\}\{[^{}]*\})(?!\$)/g,
-        /(?<!\$)\\(sqrt\{[^{}]*\})(?!\$)/g,
-        /(?<!\$)\\(boxed\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})(?!\$)/g,
-        /(?<!\$)\\(vec\{[^{}]*\})(?!\$)/g
-    ];
-    for (const pat of barePatterns) {
-        s = s.replace(pat, '$\\$1$');
-    }
+    // 7. Auto-wrap bare LaTeX commands with braces outside math: \frac{...}{...}, \sqrt{...}, \boxed{...}, \vec{...}
+    s = transformOutsideMath(s, str => {
+        return str
+            .replace(/(\\frac\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}(?:\s*(?:\\[a-zA-Z]+|[a-zA-Z0-9^]+))?)/g, '$$$1$$')
+            .replace(/(\\sqrt(?:\s*\[[^{}]*\])?\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})/g, '$$$1$$')
+            .replace(/(\\boxed\s*\{[^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}[^{}]*)*\})/g, '$$$1$$')
+            .replace(/(\\vec\s*\{[^{}]*\})/g, '$$$1$$');
+    });
+
+    // 8. Auto-wrap bare Greek letters or math symbols outside math
+    s = transformOutsideMath(s, str => {
+        return str.replace(/(\\(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa|lambda|mu|nu|xi|pi|rho|sigma|tau|upsilon|phi|chi|psi|omega|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega|approx|neq|le|ge|leq|geq|pm|mp|times|div|cdot|in|notin|subset|subseteq|cup|cap|infty|partial|nabla|forall|exists|to|rightarrow|leftarrow|Rightarrow|Leftarrow|iff|implies)\b)/g, '$$$1$$');
+    });
+
+    // 9. Auto-wrap isolated powers outside math: (x + 1)^2, x^2, y^2, r^2, cm^2, 10^5
+    s = transformOutsideMath(s, str => {
+        let res = str.replace(/(\([a-zA-Z0-9_\s*+\-.]+\)\^[0-9a-zA-Z+-]+)/g, '$$$1$$');
+        res = res.replace(/\b([a-zA-Z0-9_]\^[0-9a-zA-Z+-]+)\b/g, '$$$1$$');
+        return res;
+    });
 
     return s;
 }

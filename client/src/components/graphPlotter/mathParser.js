@@ -1756,15 +1756,20 @@ export function formatMathSuperscripts(raw) {
         'n': 'ⁿ', 'i': 'ⁱ', 'x': 'ˣ', 'y': 'ʸ', 'a': 'ᵃ', 'b': 'ᵇ', 't': 'ᵗ'
     };
 
+    // Remove explicit multiplication between numbers and variables/parentheses: 2*x -> 2x, 3*y -> 3y, 2*(x+1) -> 2(x+1)
+    let formatted = raw.replace(/(\d(?:\.\d+)?)\s*\*\s*([a-zA-Z(])/g, '$1$2');
+    formatted = formatted.replace(/(\))\s*\*\s*([0-9a-zA-Z(])/g, '$1$2');
+    formatted = formatted.replace(/([a-zA-Z])\s*\*\s*([a-zA-Z])/g, '$1$2');
+
     // Replace ^(expression)
-    let formatted = raw.replace(/\^\(([^)]+)\)/g, (_, exp) => {
+    formatted = formatted.replace(/\^\(([^)]+)\)/g, (_, exp) => {
         return exp.split('').map(c => SUPERSCRIPTS[c] || c).join('');
     });
     // Replace ^alphanumeric
     formatted = formatted.replace(/\^([0-9a-zA-Z+-]+)/g, (_, exp) => {
         return exp.split('').map(c => SUPERSCRIPTS[c] || c).join('');
     });
-    // Replace * with ·
+    // Replace remaining * with ·
     formatted = formatted.replace(/\*/g, '·');
     // Replace greek letters
     formatted = formatted.replace(/\btheta\b/gi, 'θ');

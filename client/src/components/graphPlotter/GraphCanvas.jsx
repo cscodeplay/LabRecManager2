@@ -1645,7 +1645,7 @@ export default function GraphCanvas({
                     </div>
                     <div className="flex flex-col gap-1 max-h-[160px] overflow-y-auto pr-1">
                         {equations.map((eq, idx) => {
-                            const displayFormula = eq.label || formatMathSuperscripts(eq.raw);
+                            const displayFormula = formatMathSuperscripts(eq.label || eq.raw);
                             return (
                                 <button
                                     key={eq.id}

@@ -53,6 +53,17 @@ export default function MathRenderer({
     );
 }
 
+function transformOutsideMath(input, transformFn) {
+    if (!input) return '';
+    const parts = input.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$)/g);
+    for (let i = 0; i < parts.length; i += 2) {
+        if (parts[i]) {
+            parts[i] = transformFn(parts[i]);
+        }
+    }
+    return parts.join('');
+}
+
 // Robust LaTeX closure fixer and delimiter balancer
 function repairLatexClosures(str) {
     if (!str || typeof str !== 'string') return '';
@@ -64,18 +75,16 @@ function repairLatexClosures(str) {
     // 2. Fix single dollar opened but closed with double dollar: $...$$ -> $$...$$
     out = out.replace(/(?<!\$)\$([^\$]+?)\$\$/g, '$$$$$1$$$$');
 
-    // 3. Auto-wrap bare LaTeX commands (e.g. \frac{...}{...}, \sqrt{...}, \vec{...}, \mathbf{...}, \sum, \int, \ce)
-    const barePatterns = [
-        /(?<!\$)\\(frac\{[^{}]*\}\{[^{}]*\})(?!\$)/g,
-        /(?<!\$)\\(sqrt\{[^{}]*\})(?!\$)/g,
-        /(?<!\$)\\(vec\{[^{}]*\})(?!\$)/g,
-        /(?<!\$)\\(mathbf\{[^{}]*\})(?!\$)/g,
-        /(?<!\$)\\(sum_\{[^{}]*\}\^\{[^{}]*\})(?!\$)/g,
-        /(?<!\$)\\(int_\{[^{}]*\}\^\{[^{}]*\})(?!\$)/g,
-    ];
-    for (const pat of barePatterns) {
-        out = out.replace(pat, '$\\$1$');
-    }
+    // 3. Auto-wrap bare LaTeX commands (e.g. \frac{...}{...}, \sqrt{...}, \vec{...}, \mathbf{...}, \sum, \int) strictly outside math delimiters
+    out = transformOutsideMath(out, str => {
+        return str
+            .replace(/(\\frac\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}(?:\s*(?:\\[a-zA-Z]+|[a-zA-Z0-9^]+))?)/g, '$$$1$$')
+            .replace(/(\\sqrt(?:\s*\[[^{}]*\])?\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})/g, '$$$1$$')
+            .replace(/(\\vec\s*\{[^{}]*\})/g, '$$$1$$')
+            .replace(/(\\mathbf\s*\{[^{}]*\})/g, '$$$1$$')
+            .replace(/(\\sum_\{[^{}]*\}\^\{[^{}]*\})/g, '$$$1$$')
+            .replace(/(\\int_\{[^{}]*\}\^\{[^{}]*\})/g, '$$$1$$');
+    });
 
     // 4. Balance unclosed inline '$' per line
     const lines = out.split('\n');
@@ -552,7 +561,7 @@ function renderInlineFormattedText(rawText, size = 'base', textClassName = '') {
     if (!rawText) return null;
 
     // Tokenize inline code (`...`), inline math ($...$ or \(...\)), and standalone LaTeX commands (\rightleftharpoons, \Delta, etc.)
-    const tokenRegex = /(?:`([^`\n]+)`)|(?:\$([^\$]+?)\$)|(?:\\\(([\s\S]*?)\\\))|(?:(\\(?:rightleftharpoons|leftarrow|rightarrow|Leftarrow|Rightarrow|Leftrightarrow|Delta|nabla|infty|alpha|beta|gamma|theta|lambda|mu|pi|sigma|omega|times|pm|approx|neq|le|ge|frac\{[^{}]*\}\{[^{}]*\}|ce\{(?:[^{}]*(?:\{[^{}]*\}[^{}]*)*)\})))/g;
+    const tokenRegex = /(?:`([^`\n]+)`)|(?:\$([^\$]+?)\$)|(?:\\\(([\s\S]*?)\\\))|(?:(\\(?:rightleftharpoons|leftarrow|rightarrow|Leftarrow|Rightarrow|Leftrightarrow|Delta|nabla|infty|alpha|beta|gamma|theta|lambda|mu|pi|sigma|omega|times|pm|approx|neq|le|ge|frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|ce\{(?:[^{}]*(?:\{[^{}]*\}[^{}]*)*)\})))/g;
     const tokens = [];
     let lastIdx = 0;
     let match;
