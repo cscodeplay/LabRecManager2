@@ -1852,6 +1852,10 @@ export default function Whiteboard({
         return () => window.removeEventListener('resize', updateScale);
     }, [isFullscreen, width, height]);
 
+    // Scale factors for constant-sized context toolbars across canvas zoom, auto-fit container bounds, and fullscreen
+    const currentZoom = ((isFullscreen ? fullscreenScale : containerFitScale) * zoomLevel) || 1;
+    const invZoom = 1 / currentZoom;
+
     // Get current page's image objects (derived state)
     const imageObjects = pageImageObjects[currentPage] || [];
 
@@ -11211,12 +11215,16 @@ export default function Whiteboard({
     // Canvas Drop Handler for Drag-and-Drop from Browser Panel
     const handleCanvasDrop = useCallback((e) => {
         e.preventDefault();
-        const rect = canvasWrapperRef.current?.getBoundingClientRect();
-        if (!rect) return;
+        const canvasEl = canvasRef.current;
+        if (!canvasEl) return;
+        const rect = canvasEl.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
 
-        // Calculate board coordinates considering zoom and pan
-        const dropX = Math.round((e.clientX - rect.left) / currentZoom);
-        const dropY = Math.round((e.clientY - rect.top) / currentZoom);
+        // Calculate exact canvas coordinates accounting for zoom and pan
+        const scaleX = canvasEl.width / rect.width;
+        const scaleY = canvasEl.height / rect.height;
+        const dropX = Math.round((e.clientX - rect.left) * scaleX);
+        const dropY = Math.round((e.clientY - rect.top) * scaleY);
 
         // 1. Whiteboard Image payload
         const imagePayload = e.dataTransfer.getData('application/x-whiteboard-image');
@@ -11293,7 +11301,7 @@ export default function Whiteboard({
                 insertImageFromSrc(rawUri);
             }
         }
-    }, [currentZoom, insertImageFromSrc, currentPage]);
+    }, [insertImageFromSrc, currentPage]);
 
     // ─── Geometry Instruments Stamping Callbacks (myViewBoard Inspired) ───
     const handleGeometryDrawLine = useCallback(({ startX, startY, endX, endY, lengthCm, angleDeg }) => {
@@ -18392,10 +18400,6 @@ export default function Whiteboard({
             }
         };
     }, []);
-
-    // Scale factors for constant-sized context toolbars across canvas zoom, auto-fit container bounds, and fullscreen
-    const currentZoom = ((isFullscreen ? fullscreenScale : containerFitScale) * zoomLevel) || 1;
-    const invZoom = 1 / currentZoom;
 
     return (
         <div
