@@ -712,9 +712,25 @@ export const aiAPI = {
     parseAssignments: (formData) => api.post('/ai/parse-assignments', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
     }),
-    scanQuestionImage: (formData) => api.post('/ai/scan-question-image', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-    }),
+    scanQuestionImage: (payload, preferredProvider = 'auto') => {
+        if (payload instanceof FormData) {
+            return api.post('/ai/scan-question-image', payload, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+        }
+        if (typeof window !== 'undefined' && (payload instanceof File || payload instanceof Blob)) {
+            const fd = new FormData();
+            fd.append('image', payload);
+            if (preferredProvider) fd.append('preferredProvider', preferredProvider);
+            return api.post('/ai/scan-question-image', fd, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+        }
+        const body = (typeof payload === 'string')
+            ? { image: payload, preferredProvider }
+            : (payload || {});
+        return api.post('/ai/scan-question-image', body);
+    },
     batchCreate: (data) => api.post('/ai/batch-create', data),
     cardAssist: (data) => api.post('/ai/card-assist', data),
     voiceCommand: (data) => api.post('/ai/voice-command', data),

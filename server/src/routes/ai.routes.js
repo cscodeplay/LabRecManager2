@@ -402,14 +402,24 @@ router.post('/card-assist', authenticate, asyncHandler(async (req, res) => {
  * @access  Private
  */
 router.post('/voice-command', optionalAuth, asyncHandler(async (req, res) => {
-    const { speechText, context = {} } = req.body;
+    const { speechText, context = {}, image = null } = req.body;
 
-    if (!speechText || !speechText.trim()) {
-        return res.status(400).json({ success: false, message: 'speechText is required' });
+    const hasText = Boolean(speechText && speechText.trim());
+    const imageInput = image || context.image || context.imageDataUrl;
+    const hasImage = Boolean(imageInput);
+
+    if (!hasText && !hasImage) {
+        return res.status(400).json({ success: false, message: 'speechText or image is required' });
     }
 
+    const commandText = hasText ? speechText : 'Solve the problem shown in this image';
+    const mergedContext = {
+        ...context,
+        ...(hasImage ? { image: imageInput } : {})
+    };
+
     try {
-        const result = await aiService.executeVoiceCommand(speechText, context);
+        const result = await aiService.executeVoiceCommand(commandText, mergedContext);
 
         if (result && result.quotaExhausted) {
             return res.status(429).json({
@@ -699,26 +709,46 @@ router.post('/test-provider', authenticate, authorize('admin', 'principal'), asy
  * @desc    Scan an uploaded/dragged/pasted image and extract the question/problem text for the Whiteboard AI request box
  * @access  Private (Authenticated users)
  */
-router.post('/scan-question-image', authenticate, upload.single('image'), asyncHandler(async (req, res) => {
+router.post('/scan-question-image', optionalAuth, upload.single('image'), asyncHandler(async (req, res) => {
     const { provider = 'auto' } = req.body;
 
-    if (!req.file || !req.file.buffer) {
+    let buffer = req.file?.buffer;
+    let mimeType = req.file?.mimetype || 'image/png';
+
+    // Support either multipart file upload OR base64 image in req.body.image
+    if (!buffer && req.body.image) {
+        const imgStr = req.body.image;
+        const match = imgStr.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+            mimeType = match[1];
+            buffer = Buffer.from(match[2], 'base64');
+        } else {
+            buffer = Buffer.from(imgStr, 'base64');
+        }
+    }
+
+    if (!buffer) {
         return res.status(400).json({
             success: false,
-            message: 'An image file is required to scan a question.'
+            message: 'An image file or base64 image data is required to scan a question.'
         });
     }
 
     try {
         const result = await aiService.extractQuestionFromImage(
-            req.file.buffer,
-            req.file.mimetype || 'image/png',
+            buffer,
+            mimeType,
             provider
         );
+        const questionText = result?.questionText || result?.question || '';
         res.json({
             success: true,
             message: 'Scanned question from image successfully',
-            data: result
+            data: {
+                ...result,
+                question: questionText,
+                questionText: questionText
+            }
         });
     } catch (err) {
         console.error('[AI Route] Scan question image error:', err.message);

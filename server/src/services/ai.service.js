@@ -938,7 +938,29 @@ RULES:
      * for the Whiteboard AI Request Scanner.
      */
     async extractQuestionFromImage(buffer, mimeType = 'image/png', preferredProvider = 'auto') {
-        const base64Data = buffer.toString('base64');
+        let base64Data = '';
+        if (Buffer.isBuffer(buffer)) {
+            base64Data = buffer.toString('base64');
+        } else if (typeof buffer === 'string') {
+            if (buffer.startsWith('data:')) {
+                const matches = buffer.match(/^data:([^;]+);base64,(.+)$/);
+                if (matches) {
+                    mimeType = matches[1] || mimeType;
+                    base64Data = matches[2];
+                } else {
+                    base64Data = buffer.replace(/^data:[^;]+;base64,/, '');
+                }
+            } else {
+                base64Data = buffer;
+            }
+        } else if (buffer && typeof buffer === 'object' && buffer.data) {
+            base64Data = Buffer.isBuffer(buffer.data) ? buffer.data.toString('base64') : String(buffer.data);
+        }
+
+        if (!base64Data) {
+            throw new Error('Valid image data or buffer is required to extract question.');
+        }
+
         const dataUrl = `data:${mimeType};base64,${base64Data}`;
 
         const promptText = `You are an expert OCR and STEM problem scanner for an interactive educational whiteboard.
@@ -981,7 +1003,7 @@ RULES:
                     }
                 );
                 const text = response.data?.choices?.[0]?.message?.content?.trim();
-                if (text) return { questionText: text, provider: 'openai', model: 'gpt-4o-mini' };
+                if (text) return { question: text, questionText: text, provider: 'openai', model: 'gpt-4o-mini' };
             } catch (err) {
                 attemptErrors.push(`openai: ${err.response?.data?.error?.message || err.message}`);
             }
@@ -997,7 +1019,7 @@ RULES:
                         promptText
                     ]);
                     const text = result.response.text()?.trim();
-                    if (text) return { questionText: text, provider: 'gemini', model: modelName };
+                    if (text) return { question: text, questionText: text, provider: 'gemini', model: modelName };
                 } catch (err) {
                     attemptErrors.push(`gemini (${modelName}): ${err.message}`);
                 }
@@ -1024,7 +1046,7 @@ RULES:
                         max_tokens: 600
                     });
                     const text = completion.choices?.[0]?.message?.content?.trim();
-                    if (text) return { questionText: text, provider: 'groq', model: vModel };
+                    if (text) return { question: text, questionText: text, provider: 'groq', model: vModel };
                 } catch (err) {
                     attemptErrors.push(`groq (${vModel}): ${err.message}`);
                 }
@@ -1060,10 +1082,21 @@ RULES:
                     }
                 );
                 const text = response.data?.choices?.[0]?.message?.content?.trim();
-                if (text) return { questionText: text, provider: 'openrouter', model: 'openai/gpt-4o-mini' };
+                if (text) return { question: text, questionText: text, provider: 'openrouter', model: 'openai/gpt-4o-mini' };
             } catch (err) {
                 attemptErrors.push(`openrouter: ${err.response?.data?.error?.message || err.message}`);
             }
+        }
+
+        // 5. Fallback to OCR / recognizeImageTextAndMath
+        try {
+            const fallbackOcr = await this.recognizeImageTextAndMath(dataUrl);
+            if (fallbackOcr && fallbackOcr.trim()) {
+                const cleanOcr = fallbackOcr.trim();
+                return { question: cleanOcr, questionText: cleanOcr, provider: 'ocr-fallback', model: 'recognizeImageTextAndMath' };
+            }
+        } catch (ocrErr) {
+            attemptErrors.push(`ocr-fallback: ${ocrErr.message}`);
         }
 
         throw new Error(`Failed to scan question from image. ${attemptErrors.join(' | ') || 'No vision-capable AI provider available.'}`);
@@ -2315,7 +2348,28 @@ Output MUST be ONLY valid JSON matching this schema:
      * Voice Command Natural Language Interpreter
      */
     async executeVoiceCommand(speechText, context = {}) {
-        const text = (speechText || '').trim();
+        let text = (speechText || '').trim();
+        const imageInput = context.image || context.imageDataUrl;
+        let extractedImageQuestion = null;
+
+        if (imageInput) {
+            try {
+                console.log('[AIService] Processing image input in executeVoiceCommand...');
+                const scanRes = await this.extractQuestionFromImage(imageInput);
+                const extracted = (scanRes?.questionText || scanRes?.question || '').trim();
+                if (extracted) {
+                    extractedImageQuestion = extracted;
+                    if (!text || text.toLowerCase() === 'solve the problem shown in this image' || text.toLowerCase() === 'solve this image') {
+                        text = extracted;
+                    } else if (!text.includes(extracted)) {
+                        text = `${text}: ${extracted}`;
+                    }
+                }
+            } catch (imgErr) {
+                console.warn('[AIService] Failed to extract question from image in executeVoiceCommand:', imgErr.message);
+            }
+        }
+
         const low = text.toLowerCase();
 
         const isWhiteboard = context.module === 'whiteboard' ||

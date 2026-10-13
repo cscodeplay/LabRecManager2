@@ -13470,15 +13470,17 @@ export default function Whiteboard({
     };
 
     // ─── Voice Control & Speech Recognition Engine ──────────────────────
-    const executeVoiceCommand = useCallback(async (rawText, isAiRetry = false) => {
-        if (!rawText || typeof rawText !== 'string') return;
-        const normalized = normalizeSpokenNumbers(rawText);
+    const executeVoiceCommand = useCallback(async (rawText, isAiRetry = false, options = null) => {
+        const hasImage = Boolean(options?.imageDataUrl || options?.image || options?.imageFile);
+        if ((!rawText || typeof rawText !== 'string') && !hasImage) return;
+        const effectiveText = (rawText && typeof rawText === 'string') ? rawText : (hasImage ? 'Solve the problem shown in this image' : '');
+        const normalized = normalizeSpokenNumbers(effectiveText);
         const txt = normalized.trim().toLowerCase();
-        setVoiceTranscript(rawText);
+        setVoiceTranscript(effectiveText);
 
         // Sequential Compound Command Execution (e.g., "Set background to dark grid, create a new page, and draw...")
-        if (!isAiRetry) {
-            const subCommands = splitCompoundCommands(rawText);
+        if (!isAiRetry && !hasImage) {
+            const subCommands = splitCompoundCommands(effectiveText);
             if (subCommands.length > 1) {
                 for (const sub of subCommands) {
                     await executeVoiceCommand(sub, false);
@@ -14897,18 +14899,20 @@ export default function Whiteboard({
             }
         }
 
-        const isExactLocalCommand = /^(pen|pencil|eraser|select|laser|clear|undo|redo|zoom\s+in|zoom\s+out|reset\s+zoom|new\s+page|add\s+page|next\s+page|previous\s+page|prev\s+page|straight\s+line|line|arrow|double\s+arrow|highlighter|ruler|protractor|hand|pan|pointer)$/i.test(txt);
+        const isExactLocalCommand = !hasImage && /^(pen|pencil|eraser|select|laser|clear|undo|redo|zoom\s+in|zoom\s+out|reset\s+zoom|new\s+page|add\s+page|next\s+page|previous\s+page|prev\s+page|straight\s+line|line|arrow|double\s+arrow|highlighter|ruler|protractor|hand|pan|pointer)$/i.test(txt);
         
-        if (!isAiRetry && !isExactLocalCommand) {
-            setVoiceFeedback(`🤖 Asking AI: "${rawText}"...`);
+        if (!isAiRetry && (!isExactLocalCommand || hasImage)) {
+            setVoiceFeedback(hasImage ? `🤖 Analyzing image question...` : `🤖 Asking AI: "${effectiveText}"...`);
             setIsAiThinking(true);
             try {
                 const response = await aiAPI.voiceCommand({
-                    speechText: rawText,
+                    speechText: effectiveText,
+                    image: options?.imageDataUrl || options?.image || undefined,
                     context: {
                         module: 'whiteboard',
                         currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard',
                         preferredProvider: whiteboardAiProvider !== 'auto' ? whiteboardAiProvider : undefined,
+                        ...(options?.imageDataUrl ? { imageDataUrl: options.imageDataUrl } : {}),
                         ...getWhiteboardSpatialContext()
                     }
                 });
@@ -14921,14 +14925,14 @@ export default function Whiteboard({
                     const rawError = data?.error || 'AI Model execution failed.';
                     const speech = data?.speechResponse || `AI model failed: ${rawError.slice(0, 140)}`;
                     setAiSolutionData({
-                        question: rawText,
+                        question: effectiveText || rawText,
                         isError: true,
                         error: rawError,
                         attemptErrors: data?.attemptErrors || [],
                         speechResponse: speech,
-                        solutionMarkdown: data?.solutionMarkdown || `### ⚠️ AI Model Error\n\n**Question:** "${rawText}"\n\n**Actual Error Details:**\n\`\`\`\n${rawError}\n\`\`\`\n\n**Next Steps:**\n- Check your API keys and quotas in **Settings**.\n- Configure a paid plan (OpenAI, Anthropic, DeepSeek) in Settings for higher RPM and uninterrupted requests.\n- Click **Retry** below to try again.`,
+                        solutionMarkdown: data?.solutionMarkdown || `### ⚠️ AI Model Error\n\n**Question:** "${effectiveText || rawText}"\n\n**Actual Error Details:**\n\`\`\`\n${rawError}\n\`\`\`\n\n**Next Steps:**\n- Check your API keys and quotas in **Settings**.\n- Configure a paid plan (OpenAI, Anthropic, DeepSeek) in Settings for higher RPM and uninterrupted requests.\n- Click **Retry** below to try again.`,
                         suggestedFollowUps: data?.suggestedFollowUps || [
-                            `🔄 Retry: "${rawText.slice(0, 30)}"`,
+                            `🔄 Retry: "${(effectiveText || rawText).slice(0, 30)}"`,
                             '⚙️ Check API Settings'
                         ]
                     });
@@ -14957,7 +14961,7 @@ export default function Whiteboard({
                             });
                         }
                         setAiSolutionData({
-                            question: rawText,
+                            question: data?.extractedQuestion || effectiveText || rawText,
                             speechResponse: speech,
                             solutionMarkdown: data.solutionMarkdown || speech,
                             graphEquations: [
@@ -14985,8 +14989,8 @@ export default function Whiteboard({
 
                     // Normalize actions:
                     // 1. Expand composite concentric_circles into individual circle shapes
-                    // 2. Anchor concentric circles to shared center (centerCx, centerCy) so findAvailableCanvasSpace does not scatter them
-                    const isConcentricVoice = /\b(concentric|nested|rings?)\b/i.test(rawText);
+                    // 2. Anchor concentric circles to shared center (centerCx, centerCy) so findAvailableCanvas space does not scatter them
+                    const isConcentricVoice = /\b(concentric|nested|rings?)\b/i.test(effectiveText);
                     const normalizedActions = [];
                     for (const act of actionsToRun) {
                         if (act.type === 'CREATE_OBJECT' && act.objectType === 'concentric_circles') {
@@ -26595,7 +26599,7 @@ export default function Whiteboard({
                 }}
                 preferredProvider={whiteboardAiProvider}
                 onClose={() => setShowClosedCaptions(false)}
-                onExecuteCommand={(cmd) => executeVoiceCommand(cmd)}
+                onExecuteCommand={(cmd, options) => executeVoiceCommand(cmd, false, options)}
                 audioLevel={audioInputLevel}
             />
 

@@ -390,6 +390,8 @@ export default function WhiteboardClosedCaptions({
     // Image question scanner state
     const [isScanningImage, setIsScanningImage] = useState(false);
     const [scannedPreviewUrl, setScannedPreviewUrl] = useState(null);
+    const [scannedFile, setScannedFile] = useState(null);
+    const [scannedDataUrl, setScannedDataUrl] = useState(null);
     const [isDraggingImage, setIsDraggingImage] = useState(false);
     const fileInputRef = useRef(null);
     const editInputRef = useRef(null);
@@ -503,27 +505,49 @@ export default function WhiteboardClosedCaptions({
 
         const previewUrl = URL.createObjectURL(file);
         setScannedPreviewUrl(previewUrl);
+        setScannedFile(file);
         setIsScanningImage(true);
         setIsEditing(true);
 
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            setScannedDataUrl(ev.target?.result);
+        };
+        reader.readAsDataURL(file);
+
         try {
             const res = await aiAPI.scanQuestionImage(file, preferredProvider);
-            const extractedQuestion = res?.data?.data?.question?.trim();
+            const extractedQuestion = res?.data?.data?.questionText?.trim() || res?.data?.data?.question?.trim();
             if (extractedQuestion) {
                 setEditText(extractedQuestion);
-                toast.success('Question scanned from image! Press Enter or click Send to solve.', { icon: '📸', duration: 4000 });
-                setTimeout(() => {
-                    editInputRef.current?.focus();
-                }, 80);
-            } else {
-                toast.error('Could not detect a question in the image.');
             }
+            setTimeout(() => {
+                editInputRef.current?.focus();
+            }, 80);
         } catch (err) {
             const errMsg = err?.response?.data?.message || err?.message || 'Failed to scan image';
             toast.error(`Image scan error: ${errMsg}`);
         } finally {
             setIsScanningImage(false);
         }
+    };
+
+    const handleFormSubmit = (e) => {
+        e?.preventDefault();
+        const trimmed = editText.trim();
+        const hasImg = Boolean(scannedPreviewUrl || scannedDataUrl || scannedFile);
+        if (!trimmed && !hasImg) return;
+
+        const cmdText = trimmed || 'Solve the problem shown in this image';
+        onExecuteCommand(cmdText, {
+            imageDataUrl: scannedDataUrl || scannedPreviewUrl,
+            imageFile: scannedFile
+        });
+        setIsEditing(false);
+        setScannedPreviewUrl(null);
+        setScannedDataUrl(null);
+        setScannedFile(null);
+        setEditText('');
     };
 
     const handleDropImage = (e) => {
@@ -1057,9 +1081,9 @@ export default function WhiteboardClosedCaptions({
                                     {isListening && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
                                     <span className={`relative inline-flex rounded-full h-2 w-2 ${isListening ? 'bg-emerald-500' : 'bg-slate-500'}`}></span>
                                 </span>
-                                <span className="font-semibold text-[11px] text-amber-300">CC</span>
+                                <span className="font-semibold text-[11px] text-indigo-300">Voice AI</span>
                                 <span className="text-slate-400 text-[11px] truncate max-w-[200px]">
-                                    {isAiSpeaking ? '🔊 AI Speaking...' : isListening ? (interimTranscript || transcript || 'Listening...') : 'AI Request & Captions'}
+                                    {isAiSpeaking ? '🔊 AI Speaking...' : isListening ? (interimTranscript || transcript || 'Listening...') : 'Voice AI'}
                                 </span>
                             </div>
 
@@ -1099,58 +1123,40 @@ export default function WhiteboardClosedCaptions({
                                         </div>
                                     ) : (
                                         <div className="flex items-center gap-1.5 text-slate-400">
-                                            <span className="w-2 h-2 rounded-full bg-slate-600" />
-                                            <span>AI Request Box (Drop/Upload Image or Type)</span>
+                                            <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                                            <span className="font-medium text-slate-300">Voice AI</span>
                                         </div>
                                     )}
-
-                                    <span className="bg-amber-500/20 text-amber-300 font-mono text-[9px] px-1.5 py-0.2 rounded border border-amber-500/40 uppercase font-bold tracking-wider">
-                                        AI
-                                    </span>
                                 </div>
 
-                                {/* Controls: Upload Image, Type/Edit, Stop Speech, Minimize, Close */}
+                                {/* Controls: Stop Speech, Edit Toggle (Pencil), Minimize, Close */}
                                 <div className="flex items-center gap-1">
                                     {isAiSpeaking && (
                                         <button
                                             type="button"
                                             onClick={onStopSpeaking}
-                                            className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10px] font-semibold flex items-center gap-1 transition border border-rose-500/30"
-                                            title="Stop Speech Output"
+                                            className="p-1 rounded text-rose-300 hover:text-white hover:bg-rose-500/30 transition border border-rose-500/30"
+                                            title="Mute Speech Output"
                                         >
-                                            <VolumeX className="w-3 h-3" />
-                                            <span>Mute</span>
+                                            <VolumeX className="w-3.5 h-3.5" />
                                         </button>
                                     )}
 
-                                    {/* Scan Question Image Button */}
-                                    <button
-                                        type="button"
-                                        onClick={() => fileInputRef.current?.click()}
-                                        disabled={isScanningImage}
-                                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 text-[10px] font-semibold flex items-center gap-1 transition"
-                                        title="Upload or drag-and-drop an image of a question to scan and solve"
-                                    >
-                                        {isScanningImage ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <ImageIcon className="w-2.5 h-2.5" />}
-                                        <span>Scan Image</span>
-                                    </button>
-
-                                    {/* Type or Correct in CC Button */}
+                                    {/* Edit / Type Toggle with Tooltip */}
                                     <button
                                         type="button"
                                         onClick={() => {
                                             setIsEditing(prev => !prev);
                                             if (!editText && transcript) setEditText(transcript);
                                         }}
-                                        className={`px-2 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 transition border ${
+                                        className={`p-1 rounded transition border ${
                                             isEditing
                                                 ? 'bg-indigo-600 text-white border-indigo-400'
-                                                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700'
+                                                : 'text-slate-400 hover:text-white hover:bg-slate-800 border-transparent hover:border-slate-700'
                                         }`}
-                                        title="Click to type a question or command"
+                                        title={isEditing ? 'Close input' : 'Edit or type question'}
                                     >
-                                        <Pencil className="w-2.5 h-2.5" />
-                                        <span>{isEditing ? 'Close' : 'Type / Edit'}</span>
+                                        <Pencil className="w-3.5 h-3.5" />
                                     </button>
 
                                     <button
@@ -1159,7 +1165,7 @@ export default function WhiteboardClosedCaptions({
                                         className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
                                         title="Minimize"
                                     >
-                                        <Minimize2 className="w-3 h-3" />
+                                        <Minimize2 className="w-3.5 h-3.5" />
                                     </button>
 
                                     <button
@@ -1168,7 +1174,7 @@ export default function WhiteboardClosedCaptions({
                                         className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
                                         title="Close"
                                     >
-                                        <X className="w-3 h-3" />
+                                        <X className="w-3.5 h-3.5" />
                                     </button>
                                 </div>
                             </div>
@@ -1177,31 +1183,7 @@ export default function WhiteboardClosedCaptions({
                             {isDraggingImage && (
                                 <div className="px-4 py-3 bg-indigo-950/90 border-b border-indigo-500/40 flex items-center justify-center gap-2 text-xs text-indigo-200 font-semibold">
                                     <Upload className="w-4 h-4 text-indigo-400 animate-bounce" />
-                                    <span>Drop image here to scan the question into the AI request box</span>
-                                </div>
-                            )}
-
-                            {/* Scanned Image Preview Strip */}
-                            {scannedPreviewUrl && (
-                                <div className="px-4 pt-2 flex items-center justify-between gap-2 bg-slate-900/60 border-b border-slate-800/70 pb-1.5">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <img
-                                            src={scannedPreviewUrl}
-                                            alt="Scanned question"
-                                            className="h-9 w-12 object-cover rounded border border-indigo-500/50 shrink-0"
-                                        />
-                                        <span className="text-[11px] text-slate-300 truncate">
-                                            {isScanningImage ? 'Extracting question text from image...' : 'Scanned question ready — press Enter or click Send to solve'}
-                                        </span>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setScannedPreviewUrl(null)}
-                                        className="p-1 text-slate-400 hover:text-white rounded"
-                                        title="Remove image preview"
-                                    >
-                                        <X className="w-3 h-3" />
-                                    </button>
+                                    <span>Drop image here to scan the question</span>
                                 </div>
                             )}
 
@@ -1209,48 +1191,75 @@ export default function WhiteboardClosedCaptions({
                             <div className="px-4 py-2.5 min-h-[48px] max-h-32 overflow-y-auto custom-scrollbar flex flex-col justify-center">
                                 {isEditing ? (
                                     <form
-                                        onSubmit={(e) => {
-                                            e.preventDefault();
-                                            if (editText.trim()) {
-                                                onExecuteCommand(editText.trim());
-                                                setIsEditing(false);
-                                                setScannedPreviewUrl(null);
-                                            }
-                                        }}
+                                        onSubmit={handleFormSubmit}
                                         className="flex items-center gap-1.5 w-full my-0.5"
                                     >
+                                        {/* Retained Single Scan Image Button */}
                                         <button
                                             type="button"
                                             onClick={() => fileInputRef.current?.click()}
                                             disabled={isScanningImage}
                                             className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 shrink-0 transition"
-                                            title="Upload image to scan question"
+                                            title="Scan or upload question image"
                                         >
-                                            {isScanningImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageIcon className="w-3.5 h-3.5" />}
+                                            {isScanningImage ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" /> : <ImageIcon className="w-3.5 h-3.5" />}
                                         </button>
+
+                                        {/* Compact Image Chip if image is attached */}
+                                        {scannedPreviewUrl && (
+                                            <div className="relative shrink-0 flex items-center">
+                                                <img
+                                                    src={scannedPreviewUrl}
+                                                    alt="Attached question"
+                                                    className="h-7 w-7 object-cover rounded-md border border-indigo-500/70 shadow-sm"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setScannedPreviewUrl(null);
+                                                        setScannedDataUrl(null);
+                                                        setScannedFile(null);
+                                                    }}
+                                                    className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-rose-600 hover:bg-rose-500 text-white rounded-full flex items-center justify-center text-[9px] shadow"
+                                                    title="Remove image"
+                                                >
+                                                    <X className="w-2.5 h-2.5" />
+                                                </button>
+                                            </div>
+                                        )}
+
                                         <input
                                             ref={editInputRef}
                                             type="text"
                                             value={editText}
                                             onChange={(e) => setEditText(e.target.value)}
-                                            placeholder={isScanningImage ? 'Scanning image for question...' : 'Type or paste/drop an image of a question, then press Enter...'}
+                                            onPaste={handlePasteImage}
+                                            placeholder={
+                                                isScanningImage
+                                                    ? 'Scanning image for question...'
+                                                    : scannedPreviewUrl
+                                                        ? 'Enter optional instructions, or press Enter to solve image...'
+                                                        : 'Type question, or paste an image...'
+                                            }
                                             autoFocus
                                             className="flex-1 bg-slate-900 border border-indigo-500/80 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-400"
                                         />
+
                                         <button
                                             type="submit"
-                                            disabled={!editText.trim() || isScanningImage}
+                                            disabled={(!editText.trim() && !scannedPreviewUrl) || isScanningImage}
                                             className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs font-semibold shadow-sm transition flex items-center gap-1 shrink-0"
                                             title="Send to AI"
                                         >
                                             <Send className="w-3 h-3" />
                                             <span>Send</span>
                                         </button>
+
                                         <button
                                             type="button"
                                             onClick={() => setIsEditing(false)}
                                             className="p-1 text-slate-400 hover:text-white rounded shrink-0"
-                                            title="Cancel"
+                                            title="Close"
                                         >
                                             <X className="w-3.5 h-3.5" />
                                         </button>
