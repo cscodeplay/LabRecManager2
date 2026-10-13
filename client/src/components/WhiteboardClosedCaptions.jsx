@@ -171,9 +171,9 @@ export function parseContentBlocks(rawText) {
             continue;
         }
 
-        // 1. Markdown Section Headings (e.g. ### 📌 Given & Concept, ### 📐 Formula, **Given:**)
+        // 1. Markdown Section Headings (e.g. ### 📌 Given & Concept, ### 📐 Formula, **Given:**, **Formula**)
         const headingMatch = trimmed.match(/^(?:#{1,4}\s+)(.+)$/) ||
-            (trimmed.match(/^\*\*([^*]{2,45}):\*\*$/) ? [trimmed, trimmed.replace(/\*\*/g, '')] : null);
+            (trimmed.match(/^\*\*([^*]{2,55}):?\*\*$/) ? [trimmed, trimmed.replace(/\*\*/g, '')] : null);
 
         if (headingMatch) {
             const titleText = headingMatch[1].replace(/\*\*/g, '').trim();
@@ -206,7 +206,7 @@ export function parseContentBlocks(rawText) {
                 type: isBoxedAnswer ? 'answer' : 'formula',
                 prefix: isBoxedAnswer ? '✅' : '📐',
                 text: trimmed,
-                spokenText: isBoxedAnswer ? `Final Answer: ${trimmed}` : `Formula: ${trimmed}`,
+                spokenText: trimmed,
                 equations: meta.equations,
                 points: meta.points,
                 startChar: charOffset,
@@ -226,9 +226,6 @@ export function parseContentBlocks(rawText) {
             const meta = extractStepMathMetadata(content);
             stepSequenceNum += 1;
             const cleanPrefix = isAnswerLine ? '✅' : (isBulletSymbol ? '•' : rawPrefix.replace(/[:\.]$/, ''));
-            const spokenPrefix = isAnswerLine
-                ? 'Final Answer: '
-                : (!isBulletSymbol && /^\d+$/.test(cleanPrefix) ? `Step ${cleanPrefix}: ` : '');
             blocks.push({
                 id: `blk_${blocks.length}`,
                 index: blocks.length,
@@ -236,7 +233,7 @@ export function parseContentBlocks(rawText) {
                 type: isAnswerLine ? 'answer' : (isBulletSymbol ? 'bullet' : 'step'),
                 prefix: cleanPrefix,
                 text: content,
-                spokenText: `${spokenPrefix}${content}`,
+                spokenText: content,
                 equations: meta.equations,
                 points: meta.points,
                 startChar: charOffset,
@@ -287,7 +284,7 @@ export function parseContentBlocks(rawText) {
             type: isAnswerLine ? 'answer' : 'statement',
             prefix: isAnswerLine ? '✅' : '•',
             text: trimmed,
-            spokenText: isAnswerLine ? `Final Answer: ${trimmed}` : trimmed,
+            spokenText: trimmed,
             equations: meta.equations,
             points: meta.points,
             startChar: charOffset,

@@ -14947,22 +14947,35 @@ export default function Whiteboard({
                         const speech = data.speechResponse || 'Here is the step-by-step solution.';
                         conversationHistoryRef.current.push({ role: 'assistant', content: speech });
                         setVoiceFeedback(speech);
+                        const coordAction = actionsToRun.find(a => a.objectType === 'coordinate_system' || a.objectType === 'cartesian_plane');
+                        const actionEqs = [];
+                        if (coordAction?.equation) actionEqs.push(coordAction.equation);
+                        if (Array.isArray(coordAction?.curves)) {
+                            coordAction.curves.forEach(c => {
+                                if (c?.equation) actionEqs.push(c.equation);
+                                else if (c?.label && /[=<>]|x|y|z/i.test(c.label)) actionEqs.push(c.label);
+                            });
+                        }
                         setAiSolutionData({
                             question: rawText,
                             speechResponse: speech,
                             solutionMarkdown: data.solutionMarkdown || speech,
-                            graphEquations: data.graphEquations || data.canvasAction?.graphEquations || [],
+                            graphEquations: [
+                                ...(data.graphEquations || data.canvasAction?.graphEquations || []),
+                                ...actionEqs
+                            ],
                             suggestedFollowUps: data.suggestedFollowUps || [],
-                            canvasAction: data.canvasAction,
-                            curves: data.canvasAction?.curves || data.curves,
-                            intersectionPoints: data.canvasAction?.intersectionPoints || data.intersectionPoints,
-                            plottedPoints: data.canvasAction?.plottedPoints || data.plottedPoints,
+                            canvasAction: data.canvasAction || coordAction || null,
+                            curves: data.canvasAction?.curves || data.curves || coordAction?.curves,
+                            intersectionPoints: data.canvasAction?.intersectionPoints || data.intersectionPoints || coordAction?.intersectionPoints,
+                            plottedPoints: data.canvasAction?.plottedPoints || data.plottedPoints || coordAction?.plottedPoints,
                             modelUsed: data.modelUsed,
                             providerUsed: data.providerUsed
                         });
                     }
 
-                    const hasProblemDiagramLayout = data.canvasAction && data.canvasAction.type === 'draw_problem_with_diagram';
+                    const isCartesianDiagram = data.canvasAction?.diagramType === 'cartesian_plane' || data.canvasAction?.diagramType === 'coordinate_system';
+                    const hasProblemDiagramLayout = data.canvasAction && data.canvasAction.type === 'draw_problem_with_diagram' && !isCartesianDiagram;
                     if (hasProblemDiagramLayout) {
                         executeProblemWithDiagramLayout(data.canvasAction);
                     }
@@ -15105,8 +15118,8 @@ export default function Whiteboard({
                             });
                         } 
                         else if (action.type === 'CREATE_OBJECT') {
-                            if (hasProblemDiagramLayout && (action.objectType === 'coordinate_system' || action.objectType === 'cartesian_plane')) {
-                                // Unified problem + diagram layout was already generated; skip duplicate raw plane
+                            if ((hasProblemDiagramLayout || isCartesianDiagram || Boolean(data.solutionMarkdown)) && (action.objectType === 'coordinate_system' || action.objectType === 'cartesian_plane')) {
+                                // Interactive Graphing Panel renders the coordinate system and equations on the left; skip duplicate static plane
                                 continue;
                             }
                             // Calculate bounding box for incoming object to scan available contiguous spaces
@@ -26536,6 +26549,7 @@ export default function Whiteboard({
                 aiSolution={aiSolutionData}
                 activeSolutionStep={activeSolutionStep}
                 externalEquations={externalGraphEquations}
+                isOpenByDefault={true}
             />
 
             {/* Live Real-Time Closed Captions (CC) Overlay with Right-of-Center Minimal AI Solution Pane */}

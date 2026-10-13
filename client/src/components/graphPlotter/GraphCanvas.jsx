@@ -1432,8 +1432,56 @@ export default function GraphCanvas({
                         );
                         const fmt = (v) => Number.isInteger(Number(v.toFixed(2))) ? String(Math.round(v)) : v.toFixed(2);
                         const lbl = pt.label || `(${fmt(pt.x)}, ${fmt(pt.y)})`;
+                        const hasRadius = Number.isFinite(pt.radius) && pt.radius > 0;
+                        const rEndX = hasRadius ? mathToScreenX(pt.x + pt.radius) : sx;
+                        const rEndY = sy;
+                        const rMidX = (sx + rEndX) / 2;
+                        const rLabel = hasRadius ? `r = ${fmt(pt.radius)}` : '';
                         return (
                             <g key={`ext_pt_${idx}`} className="pointer-events-none">
+                                {hasRadius && (
+                                    <g>
+                                        <line
+                                            x1={sx}
+                                            y1={sy}
+                                            x2={rEndX}
+                                            y2={rEndY}
+                                            stroke={isPtHighlighted ? '#facc15' : '#38bdf8'}
+                                            strokeWidth="2"
+                                            strokeDasharray="5,4"
+                                        />
+                                        <circle
+                                            cx={rEndX}
+                                            cy={rEndY}
+                                            r="3.5"
+                                            fill={isPtHighlighted ? '#facc15' : '#38bdf8'}
+                                            stroke="#ffffff"
+                                            strokeWidth="1.5"
+                                        />
+                                        <g transform={`translate(${rMidX - (rLabel.length * 3.3 + 6)}, ${sy + 6})`}>
+                                            <rect
+                                                x="0"
+                                                y="0"
+                                                width={(rLabel.length * 6.6) + 12}
+                                                height="16"
+                                                rx="4"
+                                                fill="#0f172a"
+                                                stroke={isPtHighlighted ? '#facc15' : '#38bdf8'}
+                                                strokeWidth="1.2"
+                                            />
+                                            <text
+                                                x="6"
+                                                y="11.5"
+                                                fill="#fde047"
+                                                fontSize="9.5"
+                                                fontFamily="monospace"
+                                                fontWeight="bold"
+                                            >
+                                                {rLabel}
+                                            </text>
+                                        </g>
+                                    </g>
+                                )}
                                 {isPtHighlighted && (
                                     <circle
                                         cx={sx}

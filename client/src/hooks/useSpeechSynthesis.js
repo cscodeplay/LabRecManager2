@@ -10,31 +10,39 @@ import { useVoiceStore } from '@/lib/store';
 export function cleanTextForSpeech(text = '') {
     if (!text || typeof text !== 'string') return '';
 
+    // Helper to convert '-' inside math expressions ($...$ or $$...$$) before stripping delimiters
+    const formatMathMinus = (mathStr) =>
+        mathStr
+            .replace(/(^|[=({[,<>+*/:])\s*-\s*([0-9a-zA-Z\\(])/g, '$1 negative $2')
+            .replace(/([0-9a-zA-Z)\]}])\s*-\s*([0-9a-zA-Z\\(])/g, '$1 minus $2');
+
     return text
         // Remove horizontal rules and markdown headers
         .replace(/^---+$/gm, ' ')
-        // Remove LaTeX math delimiters $$ ... $$, $ ... $, \[ ... \], \( ... \)
-        .replace(/\$\$([\s\S]*?)\$\$/g, ' $1 ')
-        .replace(/\$([^$]+)\$/g, ' $1 ')
-        .replace(/\\\[([\s\S]*?)\\\]/g, ' $1 ')
-        .replace(/\\\(([\s\S]*?)\\\)/g, ' $1 ')
+        // Remove structural section labels at start of lines/blocks (e.g. "Formula:", "Given & Concept:", "Final Answer:")
+        .replace(/^(?:[*#\s]*)(?:formula(?:s|\s*&\s*units)?|given(?:\s*&\s*concept)?|concept|step-by-step\s+solution|solution\s+steps?|final\s+answer|definition|key\s+takeaway)\s*:?\s*/gim, ' ')
+        // Format math minus inside $$ ... $$ and $ ... $ before unwrapping delimiters
+        .replace(/\$\$([\s\S]*?)\$\$/g, (_, m) => ` ${formatMathMinus(m)} `)
+        .replace(/\$([^$]+)\$/g, (_, m) => ` ${formatMathMinus(m)} `)
+        .replace(/\\\[([\s\S]*?)\\\]/g, (_, m) => ` ${formatMathMinus(m)} `)
+        .replace(/\\\(([\s\S]*?)\\\)/g, (_, m) => ` ${formatMathMinus(m)} `)
         // Clean common LaTeX wrappers first (run twice for nested wrappers)
-        .replace(/\\(?:boxed|text|textbf|textit|mathrm|mathbf|mathcal)\{([^{}]*)\}/g, '$1')
-        .replace(/\\(?:boxed|text|textbf|textit|mathrm|mathbf|mathcal)\{([^{}]*)\}/g, '$1')
+        .replace(/\\(?:boxed|text|textbf|textit|mathrm|mathbf|mathcal)\s*\{([^{}]*)\}/g, '$1')
+        .replace(/\\(?:boxed|text|textbf|textit|mathrm|mathbf|mathcal)\s*\{([^{}]*)\}/g, '$1')
         .replace(/\\left\s*([()[\]|.]?)/g, '$1')
         .replace(/\\right\s*([()[\]|.]?)/g, '$1')
         // Clean common math commands for natural pronunciation (handle nested braces)
-        .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '$1 over $2')
-        .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '$1 over $2')
-        .replace(/\\sqrt\{([^{}]+)\}/g, 'square root of $1')
-        .replace(/\^\{2\}|\^2(?![0-9])/g, ' squared ')
-        .replace(/\^\{3\}|\^3(?![0-9])/g, ' cubed ')
+        .replace(/\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g, '$1 over $2')
+        .replace(/\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g, '$1 over $2')
+        .replace(/\\sqrt\s*\{([^{}]+)\}/g, 'square root of $1')
+        .replace(/\^\{2\}|\^2(?![0-9])|²/g, ' squared ')
+        .replace(/\^\{3\}|\^3(?![0-9])|³/g, ' cubed ')
         .replace(/\^\{([^{}]+)\}/g, ' to the power of $1 ')
         .replace(/\^([0-9a-zA-Z]+)/g, ' to the power of $1 ')
         .replace(/_\{([^{}]+)\}/g, ' sub $1 ')
         .replace(/_([0-9a-zA-Z]+)/g, ' sub $1 ')
-        .replace(/\\cdot|\\times/g, ' times ')
-        .replace(/\\div/g, ' divided by ')
+        .replace(/\\cdot|\\times|×/g, ' times ')
+        .replace(/\\div|÷/g, ' divided by ')
         .replace(/\\pm|±/g, ' plus or minus ')
         .replace(/\\mp/g, ' minus or plus ')
         .replace(/\\approx|≈/g, ' is approximately ')
@@ -64,12 +72,16 @@ export function cleanTextForSpeech(text = '') {
         // Pronounce math operators (=, +, -) naturally without breaking hyphenated English words
         .replace(/=/g, ' equals ')
         .replace(/\+/g, ' plus ')
-        .replace(/\s+-\s+/g, ' minus ')
-        .replace(/(^|[=(,])\s*-([0-9a-zA-Z])/g, '$1 negative $2')
+        .replace(/\s+[−–-]\s+/g, ' minus ')
+        .replace(/(^|[=(,])\s*[−–-]([0-9a-zA-Z])/g, '$1 negative $2')
         // Remove remaining backslashes and LaTeX commands
         .replace(/\\[a-zA-Z]+/g, ' ')
-        // Clean markdown bold, italic, code backticks, headers, braces
-        .replace(/[*_#`~>{}]/g, ' ')
+        // Strip ALL Unicode emojis, pictographs, dingbats, and variation selectors so TTS never reads emoji names
+        .replace(/\p{Extended_Pictographic}|\p{Emoji_Presentation}|[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{2B55}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}]/gu, ' ')
+        // Clean markdown bold, italic, code backticks, headers, braces, bullet symbols
+        .replace(/[*_#`~>{}•]/g, ' ')
+        // Strip any remaining leading "Formula:" or "Final Answer:" prefix after markdown cleanup
+        .replace(/^\s*(?:formula|final\s+answer|given\s+and\s+concept|given|concept)\s*:?\s+/i, '')
         // Replace multiple whitespace/newlines
         .replace(/\s+/g, ' ')
         .trim();
@@ -322,7 +334,9 @@ export function useSpeechSynthesis({
 
         const rawStepText = typeof stepItem === 'string'
             ? stepItem
-            : (stepItem.spokenText || stepItem.text || '');
+            : (stepItem.type === 'heading'
+                ? ''
+                : (stepItem.spokenText !== undefined ? stepItem.spokenText : (stepItem.text || '')));
         const cleaned = cleanTextForSpeech(rawStepText);
 
         // If a step has no speakable text, advance cleanly to the next step
@@ -333,7 +347,7 @@ export function useSpeechSynthesis({
                     if (!isPausedRef.current) {
                         speakStepAtIndex(stepIdx + 1, customOptions);
                     }
-                }, 120);
+                }, 40);
             } else {
                 setIsSpeaking(false);
                 setIsPaused(false);
@@ -486,19 +500,25 @@ export function useSpeechSynthesis({
         });
     }, [isEnabled, isSpeaking, speakStepAtIndex]);
 
-    // Advance to the next step
+    // Advance to the next speakable step (skipping structural headings)
     const nextStep = useCallback((options = {}) => {
         const queue = stepsQueueRef.current;
         if (!queue || queue.length === 0) return;
-        const nextIdx = activeStepIndexRef.current < 0 ? 0 : Math.min(activeStepIndexRef.current + 1, queue.length - 1);
+        let nextIdx = activeStepIndexRef.current < 0 ? 0 : Math.min(activeStepIndexRef.current + 1, queue.length - 1);
+        while (nextIdx < queue.length - 1 && queue[nextIdx]?.type === 'heading') {
+            nextIdx += 1;
+        }
         goToStep(nextIdx, options);
     }, [goToStep]);
 
-    // Go back to the previous step
+    // Go back to the previous speakable step (skipping structural headings)
     const prevStep = useCallback((options = {}) => {
         const queue = stepsQueueRef.current;
         if (!queue || queue.length === 0) return;
-        const prevIdx = activeStepIndexRef.current <= 0 ? 0 : activeStepIndexRef.current - 1;
+        let prevIdx = activeStepIndexRef.current <= 0 ? 0 : activeStepIndexRef.current - 1;
+        while (prevIdx > 0 && queue[prevIdx]?.type === 'heading') {
+            prevIdx -= 1;
+        }
         goToStep(prevIdx, options);
     }, [goToStep]);
 

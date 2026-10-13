@@ -34,12 +34,25 @@ export function latexToGraphExpression(raw = '') {
         .replace(/^\\\(|\\\)$/g, '')
         .trim();
 
-    // Unwrap \boxed{...}
-    s = s.replace(/\\boxed\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g, '$1');
-    // Remove \text{...}, \mathrm{...}, \mathbf{...}
-    s = s.replace(/\\(?:text|textbf|textit|mathrm|mathbf)\{[^{}]*\}/g, ' ');
+    // Unwrap \boxed{...} (run twice for nested braces)
+    for (let i = 0; i < 2; i++) {
+        s = s.replace(/\\boxed\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g, '$1');
+    }
+    // Remove \text{...}, \mathrm{...}, \mathbf{...}, \quad, \qquad, \displaystyle
+    s = s
+        .replace(/\\(?:text|textbf|textit|mathrm|mathbf|mathcal)\s*\{[^{}]*\}/g, ' ')
+        .replace(/\\(?:quad|qquad|displaystyle|,|;|!|:)\b/g, ' ');
     // Remove \left and \right
     s = s.replace(/\\left\s*/g, '').replace(/\\right\s*/g, '');
+
+    // Normalize Unicode superscripts and math operators
+    s = s
+        .replace(/²/g, '^2')
+        .replace(/³/g, '^3')
+        .replace(/⁴/g, '^4')
+        .replace(/[−–—]/g, '-')
+        .replace(/×/g, '*')
+        .replace(/÷/g, '/');
 
     // Convert \frac{a}{b} -> ((a)/(b)) (run 3 times for nested fractions)
     for (let i = 0; i < 3; i++) {
@@ -84,6 +97,8 @@ export function latexToGraphExpression(raw = '') {
         // Replace remaining curly braces with parentheses
         .replace(/\{/g, '(')
         .replace(/\}/g, ')')
+        // Strip leading prose labels like "Equation:" or "Circle:"
+        .replace(/^[a-zA-Z\s]{2,20}:\s*/g, '')
         .replace(/\s+/g, ' ')
         .trim();
 
@@ -91,15 +106,60 @@ export function latexToGraphExpression(raw = '') {
 }
 
 /**
+ * Numerically check if an implicit 2D function f(x, y) = 0 represents a circle A(x^2 + y^2) + Dx + Ey + F = 0.
+ * Returns { cx, cy, r } if it is a valid circle with positive radius, or null otherwise.
+ */
+function detectImplicitCircleMeta(compiledFn) {
+    if (typeof compiledFn !== 'function') return null;
+    try {
+        const f00 = compiledFn({ x: 0, y: 0, z: 0 }, {});
+        const f10 = compiledFn({ x: 1, y: 0, z: 0 }, {});
+        const fm10 = compiledFn({ x: -1, y: 0, z: 0 }, {});
+        const f01 = compiledFn({ x: 0, y: 1, z: 0 }, {});
+        const f0m1 = compiledFn({ x: 0, y: -1, z: 0 }, {});
+        if (![f00, f10, fm10, f01, f0m1].every(Number.isFinite)) return null;
+
+        const Ax = (f10 + fm10) / 2 - f00;
+        const Ay = (f01 + f0m1) / 2 - f00;
+        const D = (f10 - fm10) / 2;
+        const E = (f01 - f0m1) / 2;
+
+        if (Math.abs(Ax - Ay) > 1e-5 || Math.abs(Ax) < 1e-5) return null;
+
+        // Verify at two off-axis points that there are no xy or higher-degree terms
+        const f23 = compiledFn({ x: 2, y: 3, z: 0 }, {});
+        const exp23 = Ax * 4 + Ay * 9 + 2 * D + 3 * E + f00;
+        if (!Number.isFinite(f23) || Math.abs(f23 - exp23) > 1e-4) return null;
+
+        const fm21 = compiledFn({ x: -2, y: 1.5, z: 0 }, {});
+        const expm21 = Ax * 4 + Ay * 2.25 - 2 * D + 1.5 * E + f00;
+        if (!Number.isFinite(fm21) || Math.abs(fm21 - expm21) > 1e-4) return null;
+
+        const cx = -D / (2 * Ax);
+        const cy = -E / (2 * Ax);
+        const rSq = cx * cx + cy * cy - f00 / Ax;
+        if (rSq <= 1e-6) return null;
+
+        return {
+            cx: Number(cx.toFixed(4)),
+            cy: Number(cy.toFixed(4)),
+            r: Number(Math.sqrt(rSq).toFixed(4))
+        };
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Determine whether a candidate math expression is a genuine plotworthy 2D/3D equation
  * (and not an arithmetic step like `12 + 4 + 9 = 25` or scalar assignment like `r = 5`).
  */
-export function normalizeCandidateEquation(rawCandidate = '') {
+export function normalizeCandidateEquation(rawCandidate = '', allowParameters = false) {
     if (!rawCandidate || typeof rawCandidate !== 'string') return null;
 
-    // Split on logical implication arrows (\iff, \implies, =>) and pick plotworthy clauses
+    // Split on logical implication arrows (\iff, \implies, =>), semicolons, or newlines
     const clauses = rawCandidate
-        .split(/\\iff|\\Longleftrightarrow|\\implies|\\Rightarrow|<=>|=>|;|,\s*(?=[xyz]\b|\([xyz])/i)
+        .split(/\\iff|\\Longleftrightarrow|\\implies|\\Rightarrow|<=>|=>|;|\n|,\s*(?=(?:[xyz]\b|\([xyz]))/i)
         .map(c => c.trim())
         .filter(Boolean);
 
@@ -107,14 +167,19 @@ export function normalizeCandidateEquation(rawCandidate = '') {
 
     for (const clause of clauses) {
         let expr = latexToGraphExpression(clause);
-        if (!expr || expr.length < 3 || expr.length > 140) continue;
+        if (!expr || expr.length < 3 || expr.length > 160) continue;
 
         // Reject expressions with ± or \pm that aren't standard equations
         if (expr.includes('±') || expr.includes('\\pm')) continue;
 
         // If chained equality like `(x-2)^2 + (y+3)^2 = 12 + 4 + 9 = 25`, reduce to `firstLHS = lastRHS`
         if (expr.includes('=') && !/[<>]=/.test(expr)) {
-            const eqParts = expr.split('=').map(p => p.trim()).filter(Boolean);
+            const rawParts = expr.split('=').map(p => p.trim()).filter(Boolean);
+            // Filter out single-letter label prefixes like `C = ...` that aren't x, y, z, r, f(x)
+            const eqParts = rawParts.filter((p, idx) => {
+                if (idx === 0 && /^[a-zA-Z]$/.test(p) && !/^[xyzr]$/i.test(p)) return false;
+                return true;
+            });
             if (eqParts.length >= 2) {
                 expr = `${eqParts[0]} = ${eqParts[eqParts.length - 1]}`;
             } else {
@@ -131,38 +196,88 @@ export function normalizeCandidateEquation(rawCandidate = '') {
         if (!hasX && !hasY && !hasZ && !hasTheta) continue;
 
         // Reject scalar definitions like `r = 5`, `r^2 = 25`, `h = 2`, `k = -3`, `g = -2`, `f = 3`, `c = -12`
-        if (/^(?:r|r\^\(?2\)?|h|k|g|f|c|m|a|b|d)\s*=/i.test(expr) && !hasTheta && !hasX && !hasY && !hasZ) {
+        if (/^(?:r|r\^\(?2\)?|h|k|g|f|c|m|a|b|d)\s*=/i.test(expr) && !hasTheta) {
             continue;
         }
 
-        // Reject general template formulas with Symbolic constants like g, f, c, h, k, r unless they have numbers
-        if (/\b(?:h|k|g|f|c|a|b|m)\b/.test(expr.replace(/\b(?:sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|asin|acos|atan|sqrt|ln|log|abs|exp|pi|theta)\b/gi, ''))) {
-            continue;
+        // Track if this is a trivial single-coordinate assignment like `x = 2` or `y = -3`
+        const isTrivialAssignment = /^[xy]\s*=\s*[-+]?\d+(?:\.\d+)?$/i.test(expr);
+
+        // If it's a single-variable nonlinear equation in x only (e.g. `x^2 - 5x + 6 = 0`),
+        // convert to `y = ...` so its curve and roots are plotted on the 2D plane
+        let plotExpr = expr;
+        if (hasX && !hasY && !hasZ && !hasTheta && !isTrivialAssignment && expr.includes('=') && !/[<>]=/.test(expr)) {
+            const [lhs, rhs] = expr.split('=').map(s => s.trim());
+            if (lhs && rhs) {
+                if (rhs === '0') {
+                    plotExpr = `y = ${lhs}`;
+                } else if (lhs === '0') {
+                    plotExpr = `y = ${rhs}`;
+                } else {
+                    plotExpr = `y = (${lhs}) - (${rhs})`;
+                }
+            }
         }
 
-        // Let's test if parseEquation + compileExpression succeeds!
-        const parsed = parseEquation(expr);
-        if (!parsed.valid) continue;
+        const parsed = parseEquation(plotExpr);
+        if (!parsed || parsed.error) continue;
 
         // If it's a polar equation (`r = ...`), ensure it actually uses `theta`
         if (parsed.type === 'polar' && !hasTheta) continue;
 
-        const compiled = compileExpression(parsed.expr, parsed.variables);
-        if (!compiled.valid) continue;
+        // Reject symbolic template formulas (like `(x-h)^2 + (y-k)^2 = r^2` or `x^2 + y^2 + 2gx + 2fy + c = 0`)
+        // during automatic extraction unless allowParameters is true
+        if (!allowParameters && Array.isArray(parsed.parameters) && parsed.parameters.length > 0) {
+            continue;
+        }
 
-        // Test evaluation at a sample point to ensure no unresolved symbols remain
+        let compiled = null;
+        let compiledX = null;
+        let compiledY = null;
         try {
-            const testVal = compiled.fn({ x: 1.5, y: 1.5, z: 1.5, theta: 0.5, t: 0.5 }, {});
-            if (typeof testVal !== 'number') continue;
+            if (parsed.type === 'parametric' && parsed.parametric) {
+                compiledX = compileExpression(parsed.parametric.xExpr);
+                compiledY = compileExpression(parsed.parametric.yExpr);
+                const tx = compiledX({ t: 0.5, x: 0.5 }, {});
+                const ty = compiledY({ t: 0.5, y: 0.5 }, {});
+                if (typeof tx !== 'number' || typeof ty !== 'number') continue;
+            } else if (parsed.expression) {
+                compiled = compileExpression(parsed.expression);
+                const testVal = compiled({ x: 1.5, y: 1.5, z: 1.5, theta: 0.5, t: 0.5 }, {});
+                if (typeof testVal !== 'number') continue;
+            } else {
+                continue;
+            }
         } catch {
             continue;
         }
 
+        // Note: `quadricType === 'cylinder'` without `z` is `(x-h)^2 + (y-k)^2 = r^2`, which is a 2D circle!
+        const is3D = hasZ || parsed.type === 'cartesian3d' || (parsed.type === 'quadric3d' && parsed.quadricType !== 'cylinder');
+
+        let circleMeta = null;
+        if (!is3D) {
+            if (parsed.type === 'quadric3d' && parsed.quadric?.type === 'cylinder') {
+                circleMeta = {
+                    cx: parsed.quadric.center?.x || 0,
+                    cy: parsed.quadric.center?.y || 0,
+                    r: parsed.quadric.radius || 5
+                };
+            } else if (parsed.type === 'implicit' && compiled) {
+                circleMeta = detectImplicitCircleMeta(compiled);
+            }
+        }
+
         results.push({
             expr,
+            plotExpr,
             parsed,
-            compiled: compiled.fn,
-            is3D: parsed.type === 'quadric3d' || parsed.type === 'surface3d' || hasZ
+            compiled,
+            compiledX,
+            compiledY,
+            is3D,
+            isTrivialAssignment,
+            circleMeta
         });
     }
 
@@ -176,13 +291,38 @@ export function extractGraphDataFromAiSolution(aiSolution, activeTabText = '') {
     const equations = [];
     const keyPoints = [];
     const seenNormalized = new Set();
+    const seenPts = new Set();
 
     const canonicalize = (exprStr) => exprStr.replace(/\s+/g, '').toLowerCase();
 
+    const addPoint = (x, y, label = '', color = '#38bdf8', radius = undefined) => {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        if (Math.abs(x) > 500 || Math.abs(y) > 500) return;
+        const key = `${x.toFixed(2)}_${y.toFixed(2)}`;
+        if (seenPts.has(key)) {
+            if (radius !== undefined) {
+                const existingPt = keyPoints.find(p => Math.hypot(p.x - x, p.y - y) < 0.05);
+                if (existingPt && !existingPt.radius) existingPt.radius = radius;
+            }
+            return;
+        }
+        seenPts.add(key);
+        const fmt = (v) => Number.isInteger(Number(v.toFixed(2))) ? String(Math.round(v)) : v.toFixed(2);
+        keyPoints.push({
+            x,
+            y,
+            radius,
+            label: label || `(${fmt(x)}, ${fmt(y)})`,
+            color
+        });
+    };
+
     const addCandidate = (rawStr, source = 'solution') => {
-        const candidates = normalizeCandidateEquation(rawStr);
+        const candidates = normalizeCandidateEquation(rawStr, false);
         if (!candidates) return;
         for (const item of candidates) {
+            // Skip trivial `x = 2` or `y = -3` coordinate lines extracted from intermediate solution steps
+            if (source === 'solution' && item.isTrivialAssignment) continue;
             const key = canonicalize(item.expr);
             if (seenNormalized.has(key)) continue;
             seenNormalized.add(key);
@@ -198,13 +338,28 @@ export function extractGraphDataFromAiSolution(aiSolution, activeTabText = '') {
         aiSolution.graphEquations.forEach(eq => addCandidate(String(eq), 'ai'));
     }
 
+    // 1b. Explicit curves from canvasAction / AI response
+    if (Array.isArray(aiSolution?.curves)) {
+        aiSolution.curves.forEach(c => {
+            if (c?.label) addCandidate(String(c.label), 'ai');
+            if (c?.type === 'circle' && Number.isFinite(c.cx) && Number.isFinite(c.cy) && Number.isFinite(c.r)) {
+                const hTerm = c.cx === 0 ? 'x^2' : `(x ${c.cx > 0 ? '-' : '+'} ${Math.abs(c.cx)})^2`;
+                const kTerm = c.cy === 0 ? 'y^2' : `(y ${c.cy > 0 ? '-' : '+'} ${Math.abs(c.cy)})^2`;
+                addCandidate(`${hTerm} + ${kTerm} = ${Number((c.r * c.r).toFixed(4))}`, 'ai');
+                addPoint(c.cx, c.cy, c.centerLabel || `Center (${c.cx}, ${c.cy})`, '#38bdf8', c.r);
+            } else if (c?.type === 'line' && Number.isFinite(c.slope) && Number.isFinite(c.intercept)) {
+                addCandidate(`y = ${c.slope}*x ${c.intercept >= 0 ? '+' : '-'} ${Math.abs(c.intercept)}`, 'ai');
+            }
+        });
+    }
+
     // 2. Question text
     const qText = aiSolution?.question || '';
     if (qText) {
         const qLatex = [...qText.matchAll(/\$\$([\s\S]*?)\$\$|\$([^$\n]+?)\$/g)];
         qLatex.forEach(m => addCandidate(m[1] || m[2], 'question'));
         // Also scan plain-text equations in the question (e.g. "x^2 + y^2 - 4x + 6y - 12 = 0" or "y = x^2 - 4")
-        const plainEqMatches = qText.match(/(?:[xyz]\s*=|[xyz]\^2|\([xyz]\s*[-+])[^,.;?!]+=\s*[-+0-9a-zA-Z^().\s*/]+/gi) || [];
+        const plainEqMatches = qText.match(/(?:[xyz]\s*=|[xyz]\s*\^\s*\d|[xyz][²³]|\([xyz]\s*[-+])[^,.;?!]+=\s*[-+0-9a-zA-Z^²³().\s*/]+/gi) || [];
         plainEqMatches.forEach(m => addCandidate(m, 'question'));
     }
 
@@ -218,15 +373,22 @@ export function extractGraphDataFromAiSolution(aiSolution, activeTabText = '') {
         inlineMatches.forEach(m => addCandidate(m[1], 'solution'));
     }
 
-    // Deduplicate equivalent circle/implicit forms if we have more than 2 implicit equations of the same curve
+    // Deduplicate algebraically equivalent equations (e.g. `x^2 + y^2 - 4x + 6y - 12 = 0` and `(x - 2)^2 + (y + 3)^2 = 25`)
     const deduplicated = [];
     for (const eq of equations) {
-        if (eq.parsed.type === 'implicit' || eq.parsed.type === 'cartesian') {
+        if (eq.compiled && !eq.is3D) {
             const p1 = eq.compiled({ x: 1.2, y: -0.7, z: 0 }, {});
             const p2 = eq.compiled({ x: -2.3, y: 1.9, z: 0 }, {});
             const p3 = eq.compiled({ x: 3.1, y: 2.4, z: 0 }, {});
             const existing = deduplicated.find(d => {
-                if (d.parsed.type !== eq.parsed.type) return false;
+                if (!d.compiled || d.is3D) return false;
+                // Check if both are circle equations with the same center and radius
+                if (eq.circleMeta && d.circleMeta) {
+                    return (
+                        Math.hypot(eq.circleMeta.cx - d.circleMeta.cx, eq.circleMeta.cy - d.circleMeta.cy) < 1e-2 &&
+                        Math.abs(eq.circleMeta.r - d.circleMeta.r) < 1e-2
+                    );
+                }
                 const d1 = d.compiled({ x: 1.2, y: -0.7, z: 0 }, {});
                 const d2 = d.compiled({ x: -2.3, y: 1.9, z: 0 }, {});
                 const d3 = d.compiled({ x: 3.1, y: 2.4, z: 0 }, {});
@@ -241,6 +403,14 @@ export function extractGraphDataFromAiSolution(aiSolution, activeTabText = '') {
                 if (!existing.aliases.includes(eq.expr)) {
                     existing.aliases.push(eq.expr);
                 }
+                if (!existing.circleMeta && eq.circleMeta) {
+                    existing.circleMeta = eq.circleMeta;
+                }
+                // Prefer analytic quadric circle representation for crisp 240-segment rendering
+                if (eq.parsed.type === 'quadric3d' && existing.parsed.type === 'implicit') {
+                    existing.parsed = eq.parsed;
+                    existing.compiled = eq.compiled;
+                }
                 continue;
             }
         }
@@ -250,20 +420,38 @@ export function extractGraphDataFromAiSolution(aiSolution, activeTabText = '') {
         });
     }
 
-    // 4. Extract key coordinate points (e.g. Center (2, -3), Vertex, intersections) from solution text
+    // 4. Add circle centers & radii detected from equations
+    for (const eq of deduplicated) {
+        if (eq.circleMeta) {
+            const { cx, cy, r } = eq.circleMeta;
+            const fmt = (v) => Number.isInteger(Number(v.toFixed(2))) ? String(Math.round(v)) : v.toFixed(2);
+            addPoint(cx, cy, `Center (${fmt(cx)}, ${fmt(cy)})`, '#38bdf8', r);
+        }
+    }
+
+    // 5. Add explicit points from AI response (`plottedPoints` and `intersectionPoints`)
+    if (Array.isArray(aiSolution?.plottedPoints)) {
+        aiSolution.plottedPoints.forEach(pt => {
+            if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
+                addPoint(pt.x, pt.y, pt.label || '', '#38bdf8');
+            }
+        });
+    }
+    if (Array.isArray(aiSolution?.intersectionPoints)) {
+        aiSolution.intersectionPoints.forEach(pt => {
+            if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
+                addPoint(pt.x, pt.y, pt.label || '', '#f43f5e');
+            }
+        });
+    }
+
+    // 6. Extract key coordinate points (e.g. Center (2, -3), Vertex, intersections) from solution text
     const cleanPtText = `${qText}\n${fullText}`.replace(/\\left|\\right/g, '');
     const ptRegex = /\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g;
-    const seenPts = new Set();
     let pm;
     while ((pm = ptRegex.exec(cleanPtText)) !== null) {
         const x = parseFloat(pm[1]);
         const y = parseFloat(pm[2]);
-        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-        if (Math.abs(x) > 500 || Math.abs(y) > 500) continue;
-        const key = `${x.toFixed(2)}_${y.toFixed(2)}`;
-        if (seenPts.has(key)) continue;
-        seenPts.add(key);
-
         const prefixSlice = cleanPtText.slice(Math.max(0, pm.index - 35), pm.index);
         let labelPrefix = '';
         if (/center/i.test(prefixSlice)) labelPrefix = 'Center ';
@@ -271,40 +459,7 @@ export function extractGraphDataFromAiSolution(aiSolution, activeTabText = '') {
         else if (/focus/i.test(prefixSlice)) labelPrefix = 'Focus ';
 
         const fmt = (v) => Number.isInteger(Number(v.toFixed(2))) ? String(Math.round(v)) : v.toFixed(2);
-        keyPoints.push({
-            x,
-            y,
-            label: `${labelPrefix}(${fmt(x)}, ${fmt(y)})`,
-            color: labelPrefix ? '#38bdf8' : '#a855f7'
-        });
-    }
-
-    // Also detect standard circle center `(x - h)^2 + (y - k)^2 = r^2` if not already in keyPoints
-    for (const eq of deduplicated) {
-        for (const alias of (eq.aliases || [eq.expr])) {
-            const circleMatch = alias.match(/^\(\s*x\s*([+-]\s*\d+(?:\.\d+)?)\s*\)\^\(?2\)?\s*\+\s*\(\s*y\s*([+-]\s*\d+(?:\.\d+)?)\s*\)\^\(?2\)?\s*=\s*(\d+(?:\.\d+)?)/i);
-            if (circleMatch) {
-                const h = -parseFloat(circleMatch[1].replace(/\s+/g, ''));
-                const k = -parseFloat(circleMatch[2].replace(/\s+/g, ''));
-                const rSq = parseFloat(circleMatch[3]);
-                if (Number.isFinite(h) && Number.isFinite(k)) {
-                    const key = `${h.toFixed(2)}_${k.toFixed(2)}`;
-                    if (!seenPts.has(key)) {
-                        seenPts.add(key);
-                        keyPoints.push({
-                            x: h,
-                            y: k,
-                            radius: rSq > 0 ? Math.sqrt(rSq) : undefined,
-                            label: `Center (${h}, ${k})`,
-                            color: '#38bdf8'
-                        });
-                    } else {
-                        const existingPt = keyPoints.find(p => Math.hypot(p.x - h, p.y - k) < 0.05);
-                        if (existingPt && rSq > 0) existingPt.radius = Math.sqrt(rSq);
-                    }
-                }
-            }
-        }
+        addPoint(x, y, `${labelPrefix}(${fmt(x)}, ${fmt(y)})`, labelPrefix ? '#38bdf8' : '#a855f7');
     }
 
     return {
@@ -317,7 +472,7 @@ export default function WhiteboardGraphingPanel({
     aiSolution = null,
     activeSolutionStep = null, // { index, text, equations, points }
     externalEquations = [], // equations added via voice commands or external triggers
-    isOpenByDefault = false,
+    isOpenByDefault = true,
     onClose = null
 }) {
     const [isCollapsed, setIsCollapsed] = useState(false);
@@ -328,7 +483,7 @@ export default function WhiteboardGraphingPanel({
     // Resizable panel dimensions
     const [panelSize, setPanelSize] = useState({ width: 390, height: 430 });
 
-    // Plotted equations state: Array<{ id, rawInput, parsed, compiled, color, visible, aliases, is3D }>
+    // Plotted equations state: Array<{ id, raw, rawInput, label, parsed, compiled, compiledX, compiledY, color, visible, aliases, is3D }>
     const [equations, setEquations] = useState([]);
     const [selectedEqId, setSelectedEqId] = useState(null);
     const [keyPoints, setKeyPoints] = useState([]);
@@ -344,40 +499,63 @@ export default function WhiteboardGraphingPanel({
     const lastAiSignatureRef = useRef('');
     const lastExternalSigRef = useRef('');
 
-    // Build a plotted equation record from an expression string
-    const createEquationItem = useCallback((exprStr, existingList = [], aliases = null) => {
-        const cleaned = latexToGraphExpression(exprStr) || exprStr.trim();
-        const parsed = parseEquation(cleaned);
-        if (!parsed.valid) {
-            return { valid: false, error: parsed.error || 'Invalid mathematical expression' };
-        }
-        const compiled = compileExpression(parsed.expr, parsed.variables);
-        if (!compiled.valid) {
-            return { valid: false, error: compiled.error || 'Could not compile expression. Check syntax (e.g., y = x^2 - 4 or z = sin(x)*cos(y)).' };
+    // Build a plotted equation record from an expression string or pre-parsed candidate
+    const createEquationItem = useCallback((exprOrCandidate, existingList = [], aliases = null) => {
+        const isObj = exprOrCandidate && typeof exprOrCandidate === 'object';
+        const displayRaw = isObj ? exprOrCandidate.expr : (latexToGraphExpression(exprOrCandidate) || String(exprOrCandidate).trim());
+        const plotTarget = isObj ? (exprOrCandidate.plotExpr || exprOrCandidate.expr) : displayRaw;
+
+        const parsed = isObj && exprOrCandidate.parsed ? exprOrCandidate.parsed : parseEquation(plotTarget);
+        if (!parsed || parsed.error) {
+            return { valid: false, error: parsed?.error || 'Invalid mathematical expression' };
         }
 
-        // Verify evaluation doesn't throw on standard coordinates
-        try {
-            compiled.fn({ x: 1, y: 1, z: 1, theta: 0.5, t: 0.5 }, {});
-        } catch (err) {
-            return { valid: false, error: 'Unsupported function or unrecognized symbol.' };
+        let compiled = isObj ? exprOrCandidate.compiled : null;
+        let compiledX = isObj ? exprOrCandidate.compiledX : null;
+        let compiledY = isObj ? exprOrCandidate.compiledY : null;
+
+        if (!compiled && !compiledX) {
+            try {
+                if (parsed.type === 'parametric' && parsed.parametric) {
+                    compiledX = compileExpression(parsed.parametric.xExpr);
+                    compiledY = compileExpression(parsed.parametric.yExpr);
+                    compiledX({ t: 0.5, x: 0.5 }, {});
+                    compiledY({ t: 0.5, y: 0.5 }, {});
+                } else if (parsed.expression) {
+                    compiled = compileExpression(parsed.expression);
+                    compiled({ x: 1, y: 1, z: 1, theta: 0.5, t: 0.5 }, {});
+                } else {
+                    return { valid: false, error: 'Incomplete equation.' };
+                }
+            } catch (err) {
+                return {
+                    valid: false,
+                    error: 'Could not compile expression. Check syntax (e.g., y = x^2 - 4, x^2 + y^2 = 25, or z = sin(x)*cos(y)).'
+                };
+            }
         }
 
-        const hasZ = /\bz\b/i.test(cleaned);
-        const is3D = parsed.type === 'quadric3d' || parsed.type === 'surface3d' || hasZ;
+        const hasZ = /\bz\b/i.test(displayRaw);
+        const is3D = isObj && exprOrCandidate.is3D !== undefined
+            ? exprOrCandidate.is3D
+            : (hasZ || parsed.type === 'cartesian3d' || (parsed.type === 'quadric3d' && parsed.quadricType !== 'cylinder'));
         const color = getEquationColor(existingList.length);
 
         return {
             valid: true,
             item: {
                 id: `eq_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-                rawInput: cleaned,
+                raw: displayRaw,
+                rawInput: displayRaw,
+                label: displayRaw,
                 parsed,
-                compiled: compiled.fn,
+                compiled,
+                compiledX,
+                compiledY,
                 color,
                 visible: true,
                 is3D,
-                aliases: aliases || [cleaned]
+                aliases: aliases || (isObj && exprOrCandidate.aliases) || [displayRaw]
             }
         };
     }, []);
@@ -385,8 +563,8 @@ export default function WhiteboardGraphingPanel({
     // Automatically populate graph when AI generates or explains a mathematical problem
     useEffect(() => {
         if (!aiSolution || aiSolution.isError) return;
-        const sig = `${aiSolution.question || ''}::${aiSolution.solutionMarkdown || ''}`;
-        if (!sig || sig === '::' || sig === lastAiSignatureRef.current) return;
+        const sig = `${aiSolution.question || ''}::${aiSolution.solutionMarkdown || ''}::${(aiSolution.graphEquations || []).join(',')}`;
+        if (!sig || sig === '::::' || sig === lastAiSignatureRef.current) return;
         lastAiSignatureRef.current = sig;
 
         const { equations: extractedEqs, keyPoints: extractedPts } = extractGraphDataFromAiSolution(aiSolution);
@@ -394,15 +572,17 @@ export default function WhiteboardGraphingPanel({
 
         const builtEquations = [];
         for (const eqData of extractedEqs) {
-            const res = createEquationItem(eqData.expr, builtEquations, eqData.aliases);
+            const res = createEquationItem(eqData, builtEquations, eqData.aliases);
             if (res.valid) {
                 builtEquations.push(res.item);
             }
         }
 
-        if (builtEquations.length > 0) {
-            setEquations(builtEquations);
-            setSelectedEqId(builtEquations[0].id);
+        if (builtEquations.length > 0 || extractedPts.length > 0) {
+            if (builtEquations.length > 0) {
+                setEquations(builtEquations);
+                setSelectedEqId(builtEquations[0].id);
+            }
             setKeyPoints(extractedPts);
             setIsVisible(true);
             setIsCollapsed(false);
@@ -415,9 +595,9 @@ export default function WhiteboardGraphingPanel({
 
             // Auto-frame coordinate bounds around key points & circle radius if applicable
             if (!needs3D && extractedPts.length > 0) {
-                let minX = -8, maxX = 8, minY = -8, maxY = 8;
+                let minX = -6, maxX = 6, minY = -6, maxY = 6;
                 extractedPts.forEach(pt => {
-                    const pad = (pt.radius || 3) + 2.5;
+                    const pad = (pt.radius || 2.5) + 2.5;
                     minX = Math.min(minX, Math.floor(pt.x - pad));
                     maxX = Math.max(maxX, Math.ceil(pt.x + pad));
                     minY = Math.min(minY, Math.floor(pt.y - pad));
