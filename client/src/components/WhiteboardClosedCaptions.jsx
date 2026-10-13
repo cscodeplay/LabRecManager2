@@ -15,6 +15,10 @@ import {
     Send,
     ChevronDown,
     ChevronUp,
+    ChevronLeft,
+    ChevronRight,
+    Play,
+    Pause,
     Copy,
     Check,
     AlertTriangle,
@@ -115,14 +119,47 @@ function renderFormattedText(rawText) {
     return html;
 }
 
-// Parse text into structured sections, formulas, steps, and statements for real-time voice highlighting
-function parseContentBlocks(rawText) {
+// Extract math expressions and coordinate points from a single block of text for synchronized graphing
+function extractStepMathMetadata(text = '') {
+    const equations = [];
+    const points = [];
+    if (!text) return { equations, points };
+
+    // Extract LaTeX blocks $$...$$ and inline $...$
+    const blockMatches = [...text.matchAll(/\$\$([\s\S]*?)\$\$/g)];
+    for (const m of blockMatches) {
+        if (m[1]?.trim()) equations.push(m[1].trim());
+    }
+    const strippedBlocks = text.replace(/\$\$[\s\S]*?\$\$/g, ' ');
+    const inlineMatches = [...strippedBlocks.matchAll(/\$([^$\n]+?)\$/g)];
+    for (const m of inlineMatches) {
+        if (m[1]?.trim()) equations.push(m[1].trim());
+    }
+
+    // Extract 2D coordinate points like (2, -3) or \left( 2, -3 \right)
+    const cleanForPoints = text.replace(/\\left|\\right/g, '');
+    const ptMatches = [...cleanForPoints.matchAll(/\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g)];
+    for (const pm of ptMatches) {
+        const x = parseFloat(pm[1]);
+        const y = parseFloat(pm[2]);
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+            points.push({ x, y });
+        }
+    }
+
+    return { equations, points };
+}
+
+// Parse text into structured sections, formulas, steps, and statements as the SINGLE SOURCE OF TRUTH
+// for both visual display and step-by-step voice narration.
+export function parseContentBlocks(rawText) {
     if (!rawText) return [];
     const normalizedText = normalizeScientificLatex(rawText);
     const lines = normalizedText.split('\n');
     const blocks = [];
     let charOffset = 0;
     let inAnswerSection = false;
+    let stepSequenceNum = 0;
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
@@ -143,9 +180,13 @@ function parseContentBlocks(rawText) {
             inAnswerSection = /\b(final\s+answer|conclusion|result|answer)\b/i.test(titleText);
             blocks.push({
                 id: `blk_${blocks.length}`,
+                index: blocks.length,
                 type: 'heading',
                 prefix: '',
                 text: titleText,
+                spokenText: '', // Headings are structural; voice narration advances directly to the content step
+                equations: [],
+                points: [],
                 startChar: charOffset,
                 endChar: charOffset + trimmed.length
             });
@@ -156,11 +197,18 @@ function parseContentBlocks(rawText) {
         // 2. Standalone Display Formula Block ($$...$$)
         if (/^\$\$[\s\S]+\$\$$/.test(trimmed)) {
             const isBoxedAnswer = inAnswerSection || trimmed.includes('\\boxed');
+            const meta = extractStepMathMetadata(trimmed);
+            stepSequenceNum += 1;
             blocks.push({
                 id: `blk_${blocks.length}`,
+                index: blocks.length,
+                stepNumber: stepSequenceNum,
                 type: isBoxedAnswer ? 'answer' : 'formula',
                 prefix: isBoxedAnswer ? '✅' : '📐',
                 text: trimmed,
+                spokenText: isBoxedAnswer ? `Final Answer: ${trimmed}` : `Formula: ${trimmed}`,
+                equations: meta.equations,
+                points: meta.points,
                 startChar: charOffset,
                 endChar: charOffset + trimmed.length
             });
@@ -175,11 +223,22 @@ function parseContentBlocks(rawText) {
             const isBulletSymbol = /^[-*•]$/.test(rawPrefix);
             const content = bulletMatch[2].trim();
             const isAnswerLine = inAnswerSection || content.includes('\\boxed');
+            const meta = extractStepMathMetadata(content);
+            stepSequenceNum += 1;
+            const cleanPrefix = isAnswerLine ? '✅' : (isBulletSymbol ? '•' : rawPrefix.replace(/[:\.]$/, ''));
+            const spokenPrefix = isAnswerLine
+                ? 'Final Answer: '
+                : (!isBulletSymbol && /^\d+$/.test(cleanPrefix) ? `Step ${cleanPrefix}: ` : '');
             blocks.push({
                 id: `blk_${blocks.length}`,
+                index: blocks.length,
+                stepNumber: stepSequenceNum,
                 type: isAnswerLine ? 'answer' : (isBulletSymbol ? 'bullet' : 'step'),
-                prefix: isAnswerLine ? '✅' : (isBulletSymbol ? '•' : rawPrefix.replace(/[:\.]$/, '')),
+                prefix: cleanPrefix,
                 text: content,
+                spokenText: `${spokenPrefix}${content}`,
+                equations: meta.equations,
+                points: meta.points,
                 startChar: charOffset,
                 endChar: charOffset + trimmed.length
             });
@@ -195,11 +254,18 @@ function parseContentBlocks(rawText) {
                 sentences.forEach((sent) => {
                     const sTrim = sent.trim();
                     if (sTrim) {
+                        const meta = extractStepMathMetadata(sTrim);
+                        stepSequenceNum += 1;
                         blocks.push({
                             id: `blk_${blocks.length}`,
+                            index: blocks.length,
+                            stepNumber: stepSequenceNum,
                             type: 'statement',
                             prefix: '•',
                             text: sTrim,
+                            spokenText: sTrim,
+                            equations: meta.equations,
+                            points: meta.points,
                             startChar: sOffset,
                             endChar: sOffset + sTrim.length
                         });
@@ -212,11 +278,18 @@ function parseContentBlocks(rawText) {
         }
 
         const isAnswerLine = inAnswerSection || trimmed.includes('\\boxed');
+        const meta = extractStepMathMetadata(trimmed);
+        stepSequenceNum += 1;
         blocks.push({
             id: `blk_${blocks.length}`,
+            index: blocks.length,
+            stepNumber: stepSequenceNum,
             type: isAnswerLine ? 'answer' : 'statement',
             prefix: isAnswerLine ? '✅' : '•',
             text: trimmed,
+            spokenText: isAnswerLine ? `Final Answer: ${trimmed}` : trimmed,
+            equations: meta.equations,
+            points: meta.points,
             startChar: charOffset,
             endChar: charOffset + trimmed.length
         });
@@ -235,8 +308,11 @@ export default function WhiteboardClosedCaptions({
     feedback = '',
     isAiThinking = false,
     isAiSpeaking = false,
+    isAiPaused = false,
     aiSpeakingText = '',
     speakingCharIndex = 0,
+    activeStepIndex = -1,
+    isStepMode = false,
     aiSolution = null,
     aiResponseText = '',
     suggestedFollowUps = [],
@@ -244,7 +320,14 @@ export default function WhiteboardClosedCaptions({
     onInsertAsText = () => {},
     onOpenAiSolution = () => {},
     onStopSpeaking = () => {},
+    onPauseSpeaking = () => {},
+    onResumeSpeaking = () => {},
     onSpeak = () => {},
+    onSpeakSteps = null,
+    onGoToStep = null,
+    onNextStep = null,
+    onPrevStep = null,
+    onActiveStepChange = null,
     speechRate = 1.0,
     onChangeSpeechRate = () => {},
     aiSpeechEnabled = true,
@@ -273,6 +356,7 @@ export default function WhiteboardClosedCaptions({
     const editInputRef = useRef(null);
 
     const lastResponseSeenRef = useRef('');
+    const lastNarratedSolutionRef = useRef('');
     const scrollContainerRef = useRef(null);
     const userIsScrollingRef = useRef(false);
     const scrollTimeoutRef = useRef(null);
@@ -291,13 +375,6 @@ export default function WhiteboardClosedCaptions({
         }
     }, [activeAiResponse, aiSolution?.solutionMarkdown]);
 
-    // Clear clickedBlockIdx once speech stops
-    useEffect(() => {
-        if (!isAiSpeaking) {
-            setClickedBlockIdx(null);
-        }
-    }, [isAiSpeaking]);
-
     // Keep track of the most recent utterance or feedback
     useEffect(() => {
         if (transcript) {
@@ -314,30 +391,61 @@ export default function WhiteboardClosedCaptions({
 
     const blocks = React.useMemo(() => parseContentBlocks(displayText), [displayText]);
 
-    // Track active step or statement based on speakingCharIndex from speech synthesis
+    // Automatically start step-synchronized narration whenever a fresh AI solution arrives
+    useEffect(() => {
+        if (!displayText || aiSolution?.isError || blocks.length === 0) return;
+        const solutionKey = `${activeTab}::${displayText}`;
+        if (solutionKey !== lastNarratedSolutionRef.current) {
+            lastNarratedSolutionRef.current = solutionKey;
+            if (typeof onSpeakSteps === 'function') {
+                const firstContentIdx = Math.max(0, blocks.findIndex(b => b.type !== 'heading'));
+                onSpeakSteps(blocks, {
+                    rate: speechRate,
+                    startIndex: firstContentIdx,
+                    autoPlay: aiSpeechEnabled
+                });
+            }
+        }
+    }, [displayText, activeTab, blocks, aiSolution?.isError, onSpeakSteps, speechRate, aiSpeechEnabled]);
+
+    // Determine the active step index from step-based narration (primary source of truth)
+    // with fallback to character-index mapping only when speaking non-step text.
     const activeBlockIndex = React.useMemo(() => {
-        if (!isAiSpeaking || blocks.length === 0) return -1;
+        if (blocks.length === 0) return -1;
+        if (isStepMode && activeStepIndex >= 0 && activeStepIndex < blocks.length) {
+            return activeStepIndex;
+        }
         if (clickedBlockIdx !== null && clickedBlockIdx >= 0 && clickedBlockIdx < blocks.length) {
             return clickedBlockIdx;
         }
+        if (!isAiSpeaking) return -1;
         const spokenLen = Math.max(1, (aiSpeakingText || '').length);
         const totalBlockEnd = blocks[blocks.length - 1]?.endChar || displayText?.length || 1;
-        // Scale speakingCharIndex proportionally across the full displayText character range
         const progress = Math.min(0.995, Math.max(0, speakingCharIndex / spokenLen));
         const mappedChar = progress * totalBlockEnd;
         const idx = blocks.findIndex(b => mappedChar >= b.startChar && mappedChar <= b.endChar);
         if (idx !== -1) return idx;
         return Math.min(blocks.length - 1, Math.floor(progress * blocks.length));
-    }, [isAiSpeaking, speakingCharIndex, blocks, aiSpeakingText, clickedBlockIdx, displayText]);
+    }, [isStepMode, activeStepIndex, isAiSpeaking, speakingCharIndex, blocks, aiSpeakingText, clickedBlockIdx, displayText]);
 
-    // Auto-scroll to active step/statement while dictating (respecting user manual scrolling)
+    // Notify parent (Whiteboard & Graphing Panel) whenever the active step changes
     useEffect(() => {
-        if (!isAiSpeaking || userIsScrollingRef.current || activeBlockIndex < 0) return;
+        if (typeof onActiveStepChange === 'function') {
+            const activeBlock = activeBlockIndex >= 0 && activeBlockIndex < blocks.length
+                ? blocks[activeBlockIndex]
+                : null;
+            onActiveStepChange(activeBlock, activeBlockIndex, blocks);
+        }
+    }, [activeBlockIndex, blocks, onActiveStepChange]);
+
+    // Auto-scroll to active step/statement while dictating or navigating (respecting user manual scrolling)
+    useEffect(() => {
+        if (userIsScrollingRef.current || activeBlockIndex < 0) return;
         const el = document.getElementById(`cc-block-${activeBlockIndex}`);
         if (el && scrollContainerRef.current) {
             el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
-    }, [activeBlockIndex, isAiSpeaking]);
+    }, [activeBlockIndex]);
 
     const handleUserScroll = () => {
         userIsScrollingRef.current = true;
@@ -476,8 +584,82 @@ export default function WhiteboardClosedCaptions({
                                 )}
                             </div>
 
-                            {/* Voice Speed Control + Speak/Mute + Utility Buttons */}
+                            {/* Voice Speed Control + Step Controls + Speak/Mute + Utility Buttons */}
                             <div className="flex items-center gap-1 shrink-0">
+                                {/* Step Navigation Controls (Prev / Play-Pause / Next) */}
+                                {!aiSolution?.isError && blocks.length > 0 && (
+                                    <div
+                                        style={{ backgroundColor: '#020617' }}
+                                        className="flex items-center bg-slate-950 border border-slate-700 rounded-lg p-0.5 gap-0.5"
+                                        title="Step-Synchronized Voice Controls"
+                                    >
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (typeof onPrevStep === 'function') {
+                                                    // Find previous non-heading block
+                                                    let prev = (activeBlockIndex > 0 ? activeBlockIndex : 0) - 1;
+                                                    while (prev > 0 && blocks[prev]?.type === 'heading') prev--;
+                                                    if (typeof onGoToStep === 'function') {
+                                                        onGoToStep(Math.max(0, prev), { rate: speechRate, shouldSpeak: isAiSpeaking });
+                                                    } else {
+                                                        onPrevStep({ rate: speechRate });
+                                                    }
+                                                }
+                                            }}
+                                            className="p-0.5 rounded text-slate-300 hover:text-yellow-400 hover:bg-slate-800 transition"
+                                            title="Previous Step"
+                                        >
+                                            <ChevronLeft className="w-3.5 h-3.5" />
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (isAiSpeaking && !isAiPaused) {
+                                                    onPauseSpeaking();
+                                                } else if (isAiPaused) {
+                                                    onResumeSpeaking();
+                                                } else if (typeof onSpeakSteps === 'function') {
+                                                    const startIdx = activeBlockIndex >= 0
+                                                        ? activeBlockIndex
+                                                        : Math.max(0, blocks.findIndex(b => b.type !== 'heading'));
+                                                    onSpeakSteps(blocks, { rate: speechRate, startIndex: startIdx, autoPlay: true });
+                                                } else {
+                                                    onSpeak(displayText, { rate: speechRate });
+                                                }
+                                            }}
+                                            className={`p-0.5 rounded transition ${
+                                                isAiSpeaking && !isAiPaused
+                                                    ? 'bg-yellow-400 text-slate-950 font-bold'
+                                                    : 'text-yellow-400 hover:bg-slate-800'
+                                            }`}
+                                            title={isAiSpeaking && !isAiPaused ? 'Pause step narration' : (isAiPaused ? 'Resume step narration' : 'Play step-by-step narration')}
+                                        >
+                                            {isAiSpeaking && !isAiPaused ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (typeof onNextStep === 'function') {
+                                                    let next = (activeBlockIndex >= 0 ? activeBlockIndex : -1) + 1;
+                                                    while (next < blocks.length - 1 && blocks[next]?.type === 'heading') next++;
+                                                    if (typeof onGoToStep === 'function') {
+                                                        onGoToStep(Math.min(blocks.length - 1, next), { rate: speechRate, shouldSpeak: isAiSpeaking });
+                                                    } else {
+                                                        onNextStep({ rate: speechRate });
+                                                    }
+                                                }
+                                            }}
+                                            className="p-0.5 rounded text-slate-300 hover:text-yellow-400 hover:bg-slate-800 transition"
+                                            title="Next Step"
+                                        >
+                                            <ChevronRight className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                )}
+
                                 {/* Voice Speed Selector */}
                                 <div
                                     style={{ backgroundColor: '#020617' }}
@@ -491,10 +673,14 @@ export default function WhiteboardClosedCaptions({
                                             onClick={() => {
                                                 onChangeSpeechRate(spd);
                                                 if (isAiSpeaking) {
-                                                    onSpeak(aiSpeakingText || displayText, { rate: spd });
+                                                    if (typeof onGoToStep === 'function' && activeBlockIndex >= 0) {
+                                                        onGoToStep(activeBlockIndex, { rate: spd, shouldSpeak: true });
+                                                    } else {
+                                                        onSpeak(aiSpeakingText || displayText, { rate: spd });
+                                                    }
                                                 }
                                             }}
-                                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${
+                                            className={`px-1 py-0.5 rounded text-[10px] font-mono transition ${
                                                 Math.abs((speechRate || 1) - spd) < 0.05
                                                     ? 'bg-yellow-400 text-slate-950 font-bold'
                                                     : 'text-slate-400 hover:text-white'
@@ -505,16 +691,20 @@ export default function WhiteboardClosedCaptions({
                                     ))}
                                 </div>
 
-                                {/* Play / Stop Voice Toggle */}
+                                {/* Stop / Read Aloud Voice Toggle */}
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        if (isAiSpeaking) {
+                                        if (isAiSpeaking || isAiPaused) {
                                             setClickedBlockIdx(null);
                                             onStopSpeaking();
+                                        } else if (typeof onSpeakSteps === 'function' && blocks.length > 0) {
+                                            setClickedBlockIdx(null);
+                                            const firstContentIdx = Math.max(0, blocks.findIndex(b => b.type !== 'heading'));
+                                            onSpeakSteps(blocks, { rate: speechRate, startIndex: firstContentIdx, autoPlay: true });
                                         } else {
                                             setClickedBlockIdx(null);
-                                            onSpeak(aiSolution?.speechResponse || displayText, { rate: speechRate });
+                                            onSpeak(displayText, { rate: speechRate });
                                         }
                                     }}
                                     className={`p-1 rounded transition ${
@@ -522,7 +712,7 @@ export default function WhiteboardClosedCaptions({
                                             ? 'bg-yellow-400 text-slate-950 hover:bg-rose-500 hover:text-white'
                                             : 'text-slate-300 hover:text-white hover:bg-slate-800'
                                     }`}
-                                    title={isAiSpeaking ? 'Stop speaking' : 'Read aloud'}
+                                    title={isAiSpeaking ? 'Stop speaking' : 'Read steps aloud'}
                                 >
                                     {isAiSpeaking ? <Volume2 className="w-3.5 h-3.5 animate-pulse" /> : <VolumeX className="w-3.5 h-3.5" />}
                                 </button>
@@ -563,14 +753,32 @@ export default function WhiteboardClosedCaptions({
                             </div>
                         </div>
 
-                        {/* Question Subtitle */}
-                        {!isPaneCollapsed && aiSolution?.question && (
+                        {/* Question Subtitle + Active Step Synchronizer Badge */}
+                        {!isPaneCollapsed && (aiSolution?.question || activeBlockIndex >= 0) && (
                             <div
                                 style={{ backgroundColor: '#1e293b' }}
-                                className="px-3 py-1.5 bg-slate-900 border-b border-slate-700 text-[11px] text-slate-200 truncate font-medium"
+                                className="px-3 py-1.5 bg-slate-900 border-b border-slate-700 text-[11px] text-slate-200 flex items-center justify-between gap-2 font-medium"
                             >
-                                <span className="text-yellow-400 font-bold mr-1">Q:</span>
-                                {aiSolution.question}
+                                <div className="truncate min-w-0">
+                                    {aiSolution?.question ? (
+                                        <>
+                                            <span className="text-yellow-400 font-bold mr-1">Q:</span>
+                                            <span>{aiSolution.question}</span>
+                                        </>
+                                    ) : (
+                                        <span className="text-slate-400">Step-by-Step Solution</span>
+                                    )}
+                                </div>
+                                {activeBlockIndex >= 0 && blocks[activeBlockIndex] && (
+                                    <span
+                                        style={{ backgroundColor: '#422006', borderColor: '#facc15' }}
+                                        className="shrink-0 px-1.5 py-0.5 rounded border text-[10px] font-bold text-yellow-300"
+                                    >
+                                        {blocks[activeBlockIndex].stepNumber
+                                            ? `Step ${blocks[activeBlockIndex].stepNumber}/${blocks.filter(b => b.type !== 'heading').length}`
+                                            : `Active`}
+                                    </span>
+                                )}
                             </div>
                         )}
 
@@ -587,7 +795,15 @@ export default function WhiteboardClosedCaptions({
                                 >
                                     {blocks.length > 0 ? (
                                         blocks.map((block, idx) => {
-                                            const isActive = isAiSpeaking && (idx === activeBlockIndex);
+                                            const isActive = (idx === activeBlockIndex) && (isAiSpeaking || isAiPaused || isStepMode || clickedBlockIdx !== null);
+                                            const handleSelectStep = () => {
+                                                setClickedBlockIdx(idx);
+                                                if (typeof onGoToStep === 'function') {
+                                                    onGoToStep(idx, { rate: speechRate, shouldSpeak: true });
+                                                } else {
+                                                    onSpeak(block.spokenText || block.text, { rate: speechRate });
+                                                }
+                                            };
 
                                             if (block.type === 'heading') {
                                                 return (
@@ -614,10 +830,7 @@ export default function WhiteboardClosedCaptions({
                                                     <div
                                                         id={`cc-block-${idx}`}
                                                         key={block.id || idx}
-                                                        onClick={() => {
-                                                            setClickedBlockIdx(idx);
-                                                            onSpeak(block.text, { rate: speechRate });
-                                                        }}
+                                                        onClick={handleSelectStep}
                                                         style={{
                                                             backgroundColor: isActive ? '#422006' : '#1e293b',
                                                             borderColor: isActive ? '#facc15' : '#475569'
@@ -627,7 +840,7 @@ export default function WhiteboardClosedCaptions({
                                                                 ? 'border-yellow-400 text-yellow-50 ring-2 ring-yellow-400 shadow-lg'
                                                                 : 'bg-slate-900 hover:border-yellow-400/60 border-slate-700 text-slate-100'
                                                         }`}
-                                                        title="Click to hear this formula"
+                                                        title="Click to jump to and hear this formula"
                                                     >
                                                         <div
                                                             className="w-full min-w-0 leading-relaxed text-[12px]"
@@ -642,10 +855,7 @@ export default function WhiteboardClosedCaptions({
                                                     <div
                                                         id={`cc-block-${idx}`}
                                                         key={block.id || idx}
-                                                        onClick={() => {
-                                                            setClickedBlockIdx(idx);
-                                                            onSpeak(block.text, { rate: speechRate });
-                                                        }}
+                                                        onClick={handleSelectStep}
                                                         style={{
                                                             backgroundColor: isActive ? '#422006' : '#064e3b',
                                                             borderColor: isActive ? '#facc15' : '#10b981'
@@ -655,7 +865,7 @@ export default function WhiteboardClosedCaptions({
                                                                 ? 'border-yellow-400 text-yellow-50 ring-2 ring-yellow-400 shadow-lg'
                                                                 : 'bg-emerald-950 hover:border-yellow-400/70 border-emerald-500 text-emerald-100'
                                                         }`}
-                                                        title="Click to hear final answer"
+                                                        title="Click to jump to and hear final answer"
                                                     >
                                                         <div className="flex items-start gap-2">
                                                             <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded border ${
@@ -678,10 +888,7 @@ export default function WhiteboardClosedCaptions({
                                                 <div
                                                     id={`cc-block-${idx}`}
                                                     key={block.id || idx}
-                                                    onClick={() => {
-                                                        setClickedBlockIdx(idx);
-                                                        onSpeak(block.text, { rate: speechRate });
-                                                    }}
+                                                    onClick={handleSelectStep}
                                                     style={{
                                                         backgroundColor: isActive ? '#422006' : '#1e293b',
                                                         borderColor: isActive ? '#facc15' : '#334155'
@@ -691,7 +898,7 @@ export default function WhiteboardClosedCaptions({
                                                             ? 'border-yellow-400 text-yellow-50 ring-2 ring-yellow-400 shadow-lg'
                                                             : 'bg-slate-900 hover:border-yellow-400/60 border-slate-700 text-slate-200'
                                                     }`}
-                                                    title="Click to hear this step"
+                                                    title="Click to jump to and hear this step"
                                                 >
                                                     <div className="flex items-start gap-2">
                                                         <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${

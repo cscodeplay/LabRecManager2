@@ -77,6 +77,7 @@ import WhiteboardMinimap from './WhiteboardMinimap';
 import useSpeechSynthesis, { cleanTextForSpeech } from '../hooks/useSpeechSynthesis';
 import WhiteboardMicSelector from './WhiteboardMicSelector';
 import WhiteboardClosedCaptions from './WhiteboardClosedCaptions';
+import WhiteboardGraphingPanel from './WhiteboardGraphingPanel';
 import WhiteboardAIAssistantModal from './WhiteboardAIAssistantModal';
 import DomainShapeLibraryModal, { DOMAIN_SHAPES } from './DomainShapeLibrary';
 import { getBuiltinIllustration, getBuiltinIllustrationSvg } from './WhiteboardIllustrations';
@@ -1062,6 +1063,8 @@ export default function Whiteboard({
     const [audioInputLevel, setAudioInputLevel] = useState(0);
     const [isAiThinking, setIsAiThinking] = useState(false);
     const [aiSolutionData, setAiSolutionData] = useState(null);
+    const [activeSolutionStep, setActiveSolutionStep] = useState(null);
+    const [externalGraphEquations, setExternalGraphEquations] = useState([]);
     const [showAiAssistantModal, setShowAiAssistantModal] = useState(false);
     const [whiteboardAiProvider, setWhiteboardAiProvider] = useState('auto');
 
@@ -1072,16 +1075,25 @@ export default function Whiteboard({
     const micAnalyserRef = useRef(null);
     const micAnimFrameRef = useRef(null);
 
-    // Speech AI Synthesizer (TTS) Engine
+    // Speech AI Synthesizer (TTS) Engine with Step-Synchronized Narration
     const {
         isSupported: isTtsSupported,
         isSpeaking: isAiSpeaking,
+        isPaused: isAiPaused,
         speakingText: aiSpeakingText,
         speakingCharIndex,
+        activeStepIndex,
+        isStepMode,
         voices: ttsVoices,
         selectedVoice: ttsSelectedVoice,
         setSelectedVoice: setTtsSelectedVoice,
         speak: speakAiResponse,
+        speakSteps: speakAiSteps,
+        goToStep: goToAiStep,
+        nextStep: nextAiStep,
+        prevStep: prevAiStep,
+        pause: pauseAiSpeech,
+        resume: resumeAiSpeech,
         stop: stopAiSpeech
     } = useSpeechSynthesis({
         defaultRate: speechRate,
@@ -13858,16 +13870,59 @@ export default function Whiteboard({
         }
 
         // 0.2 Undo & Redo History
-        if (/\b(undo|revert|step\s+back)\b/i.test(txt) || txt === 'undo') {
+        if (/\b(undo|revert)\b/i.test(txt) || txt === 'undo') {
             handleUndo();
             setVoiceFeedback('↩️ Undo');
             toast('Undo', { icon: '↩️' });
             return;
         }
-        if (/\b(redo|reapply|step\s+forward)\b/i.test(txt) || txt === 'redo') {
+        if (/\b(redo|reapply)\b/i.test(txt) || txt === 'redo') {
             handleRedo();
             setVoiceFeedback('↪️ Redo');
             toast('Redo', { icon: '↪️' });
+            return;
+        }
+
+        // 0.25 Step-Synchronized Narration & Interactive Graphing Voice Commands
+        if (/\b(next\s+step|step\s+forward)\b/i.test(txt)) {
+            nextAiStep({ rate: speechRate });
+            setVoiceFeedback('⏭️ Next Solution Step');
+            return;
+        }
+        if (/\b(previous\s+step|prev\s+step|step\s+back|last\s+step)\b/i.test(txt)) {
+            prevAiStep({ rate: speechRate });
+            setVoiceFeedback('⏮️ Previous Solution Step');
+            return;
+        }
+        if (/\b(pause\s+(?:speech|voice|narration|explanation|step))\b/i.test(txt) || txt === 'pause') {
+            pauseAiSpeech();
+            setVoiceFeedback('⏸️ Paused Step Narration');
+            return;
+        }
+        if (/\b(resume\s+(?:speech|voice|narration|explanation|step)|continue\s+(?:speech|narration|explanation|step))\b/i.test(txt) || txt === 'resume') {
+            resumeAiSpeech();
+            setVoiceFeedback('▶️ Resumed Step Narration');
+            return;
+        }
+
+        // Natural-language graphing voice command (e.g. "plot y = x^2 - 4", "graph z = sin(x) * cos(y)")
+        const graphVoiceMatch = rawText.match(/^(?:please\s+)?(?:plot|graph)\s+(?:the\s+(?:equation|function|curve|surface)\s+)?(.+)$/i);
+        if (graphVoiceMatch && /[xyz=^]|squared|cubed|sin|cos|tan|sqrt|log|ln/i.test(graphVoiceMatch[1])) {
+            const spokenEq = graphVoiceMatch[1]
+                .replace(/\bsquared\b/gi, '^2')
+                .replace(/\bcubed\b/gi, '^3')
+                .replace(/\bto the power of\s*(\d+)/gi, '^$1')
+                .replace(/\bequals\b/gi, '=')
+                .replace(/\bplus\b/gi, '+')
+                .replace(/\bminus\b/gi, '-')
+                .replace(/\btimes\b/gi, '*')
+                .replace(/\bdivided by\b|\bover\b/gi, '/')
+                .trim();
+            const eqParts = spokenEq.split(/\s+and\s+/i).map(s => s.trim()).filter(Boolean);
+            setExternalGraphEquations(eqParts);
+            const msg = `Plotted ${eqParts.join(', ')} on the Graphing Panel`;
+            setVoiceFeedback(`📈 ${msg}`);
+            if (aiSpeechEnabled) speakAiResponse(msg);
             return;
         }
 
@@ -14887,16 +14942,16 @@ export default function Whiteboard({
                     const actionsToRun = Array.isArray(data.actions) ? data.actions : [];
                     const hasDeleteActions = actionsToRun.some(a => a.type === 'DELETE_OBJECT');
 
-                    // If NOT a deletion action, provide standard narration & solution card immediately
+                    // If NOT a deletion action, populate solution card (step-synchronized voice narration starts automatically via WhiteboardClosedCaptions)
                     if (!hasDeleteActions && (data.speechResponse || data.solutionMarkdown)) {
                         const speech = data.speechResponse || 'Here is the step-by-step solution.';
                         conversationHistoryRef.current.push({ role: 'assistant', content: speech });
-                        if (aiSpeechEnabled) speakAiResponse(speech);
                         setVoiceFeedback(speech);
                         setAiSolutionData({
                             question: rawText,
                             speechResponse: speech,
                             solutionMarkdown: data.solutionMarkdown || speech,
+                            graphEquations: data.graphEquations || data.canvasAction?.graphEquations || [],
                             suggestedFollowUps: data.suggestedFollowUps || [],
                             canvasAction: data.canvasAction,
                             curves: data.canvasAction?.curves || data.curves,
@@ -16081,18 +16136,17 @@ export default function Whiteboard({
                 if (data.canvasAction && data.canvasAction.type && data.canvasAction.type !== 'insert_solution_card') {
                     executeAiCanvasAction(data.canvasAction);
                 }
+                const speech = data.speechResponse || data.spokenFeedback || 'Here is the step-by-step solution.';
                 setAiSolutionData({
                     question: rawText,
-                    speechResponse: data.speechResponse || data.spokenFeedback,
-                    solutionMarkdown: data.solutionMarkdown,
+                    speechResponse: speech,
+                    solutionMarkdown: data.solutionMarkdown || speech,
+                    graphEquations: data.graphEquations || data.canvasAction?.graphEquations || [],
                     canvasAction: data.canvasAction,
                     modelUsed: data.modelUsed,
                     providerUsed: data.providerUsed
                 });
-                narrateAction(
-                    data.speechResponse || data.spokenFeedback || 'Here is the explanation and formulas.',
-                    data.spokenFeedback || '🧠 AI Explanation Ready'
-                );
+                setVoiceFeedback(data.spokenFeedback || '🧠 AI Explanation Ready');
                 return;
             }
 
@@ -26477,6 +26531,13 @@ export default function Whiteboard({
                 onExecuteCommand={executeVoiceCommand}
             />
 
+            {/* Left-Side Interactive 2D/3D Graphing Panel (Synchronized with AI Steps & Voice Narration) */}
+            <WhiteboardGraphingPanel
+                aiSolution={aiSolutionData}
+                activeSolutionStep={activeSolutionStep}
+                externalEquations={externalGraphEquations}
+            />
+
             {/* Live Real-Time Closed Captions (CC) Overlay with Right-of-Center Minimal AI Solution Pane */}
             <WhiteboardClosedCaptions
                 isVisible={showClosedCaptions && (isVoiceListening || Boolean(interimVoiceTranscript || voiceTranscript || voiceFeedback || isAiSpeaking || isAiThinking || aiSolutionData?.speechResponse))}
@@ -26486,8 +26547,11 @@ export default function Whiteboard({
                 feedback={voiceFeedback}
                 isAiThinking={isAiThinking}
                 isAiSpeaking={isAiSpeaking}
+                isAiPaused={isAiPaused}
                 aiSpeakingText={aiSpeakingText}
                 speakingCharIndex={speakingCharIndex}
+                activeStepIndex={activeStepIndex}
+                isStepMode={isStepMode}
                 aiSolution={aiSolutionData}
                 aiResponseText={aiSolutionData?.solutionMarkdown || aiSolutionData?.speechResponse || aiSpeakingText}
                 suggestedFollowUps={aiSolutionData?.suggestedFollowUps || []}
@@ -26495,7 +26559,14 @@ export default function Whiteboard({
                 onInsertAsText={handleInsertAiTextObject}
                 onOpenAiSolution={() => setShowAiAssistantModal(true)}
                 onStopSpeaking={stopAiSpeech}
+                onPauseSpeaking={pauseAiSpeech}
+                onResumeSpeaking={resumeAiSpeech}
                 onSpeak={speakAiResponse}
+                onSpeakSteps={speakAiSteps}
+                onGoToStep={goToAiStep}
+                onNextStep={nextAiStep}
+                onPrevStep={prevAiStep}
+                onActiveStepChange={(stepBlock) => setActiveSolutionStep(stepBlock)}
                 speechRate={speechRate}
                 onChangeSpeechRate={(newRate) => {
                     setSpeechRate(newRate);

@@ -47,6 +47,9 @@ export default function GraphCanvas({
     height = 500,
     equations = [],
     selectedEqId = null,
+    highlightedEqIds = [],
+    externalPoints = [],
+    highlightedPoints = [],
     onSelectEquation,
     viewBounds = { xMin: -10, xMax: 10, yMin: -6, yMax: 6 },
     onUpdateViewBounds,
@@ -504,41 +507,86 @@ export default function GraphCanvas({
     // Automatic intersection calculation across visible curves when showIntersections is enabled
     const curveIntersections = useMemo(() => {
         if (!showIntersections) return [];
-        const visibleFuncs = equations.filter(e => e.visible && e.compiled && (!e.parsed || e.parsed.type === 'cartesian'));
-        if (visibleFuncs.length < 2) return [];
+        const visibleEqs = equations.filter(e => e.visible && e.compiled);
+        if (visibleEqs.length < 2) return [];
 
         const pts = [];
         const seen = new Set();
-        for (let i = 0; i < visibleFuncs.length; i++) {
-            for (let j = i + 1; j < visibleFuncs.length; j++) {
-                const eq1 = visibleFuncs[i];
-                const eq2 = visibleFuncs[j];
+        const addPt = (x, y, eq1, eq2) => {
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+            if (x < xMin - 0.5 || x > xMax + 0.5 || y < yMin - 0.5 || y > yMax + 0.5) return;
+            const cleanX = Math.abs(x) < 1e-7 ? 0 : x;
+            const cleanY = Math.abs(y) < 1e-7 ? 0 : y;
+            const key = `${cleanX.toFixed(2)}_${cleanY.toFixed(2)}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                const fmt = (v) => Number.isInteger(Number(v.toFixed(2))) ? String(Math.round(v)) : v.toFixed(2);
+                pts.push({
+                    x: cleanX,
+                    y: cleanY,
+                    screenX: mathToScreenX(cleanX),
+                    screenY: mathToScreenY(cleanY),
+                    eq1Id: eq1.id,
+                    eq2Id: eq2.id,
+                    color1: eq1.color,
+                    color2: eq2.color,
+                    label: `(${fmt(cleanX)}, ${fmt(cleanY)})`
+                });
+            }
+        };
+
+        for (let i = 0; i < visibleEqs.length; i++) {
+            for (let j = i + 1; j < visibleEqs.length; j++) {
+                const eq1 = visibleEqs[i];
+                const eq2 = visibleEqs[j];
+                const t1 = eq1.parsed?.type || 'cartesian';
+                const t2 = eq2.parsed?.type || 'cartesian';
                 try {
-                    const rawPts = findIntersections(eq1.compiled, eq2.compiled, xMin, xMax, parameters, 250);
-                    rawPts.forEach(p => {
-                        const key = `${p.x.toFixed(2)}_${p.y.toFixed(2)}`;
-                        if (!seen.has(key)) {
-                            seen.add(key);
-                            pts.push({
-                                x: p.x,
-                                y: p.y,
-                                screenX: mathToScreenX(p.x),
-                                screenY: mathToScreenY(p.y),
-                                eq1Id: eq1.id,
-                                eq2Id: eq2.id,
-                                color1: eq1.color,
-                                color2: eq2.color,
-                                label: `(${p.x.toFixed(2)}, ${p.y.toFixed(2)})`
-                            });
-                        }
-                    });
+                    if (t1 === 'cartesian' && t2 === 'cartesian') {
+                        const rawPts = findIntersections(eq1.compiled, eq2.compiled, xMin, xMax, parameters, 260);
+                        rawPts.forEach(p => addPt(p.x, p.y, eq1, eq2));
+                    } else if (t1 === 'cartesian' && (t2 === 'implicit' || t2 === 'quadric3d')) {
+                        const diffFn = (vars, p) => {
+                            const yVal = eq1.compiled({ x: vars.x }, p);
+                            if (!Number.isFinite(yVal)) return NaN;
+                            return eq2.compiled({ x: vars.x, y: yVal, z: 0 }, p);
+                        };
+                        const roots = findRoots(diffFn, xMin, xMax, parameters, 280);
+                        roots.forEach(r => addPt(r.x, eq1.compiled({ x: r.x }, parameters), eq1, eq2));
+                    } else if ((t1 === 'implicit' || t1 === 'quadric3d') && t2 === 'cartesian') {
+                        const diffFn = (vars, p) => {
+                            const yVal = eq2.compiled({ x: vars.x }, p);
+                            if (!Number.isFinite(yVal)) return NaN;
+                            return eq1.compiled({ x: vars.x, y: yVal, z: 0 }, p);
+                        };
+                        const roots = findRoots(diffFn, xMin, xMax, parameters, 280);
+                        roots.forEach(r => addPt(r.x, eq2.compiled({ x: r.x }, parameters), eq1, eq2));
+                    } else if (t1 === 'x-relation' && (t2 === 'implicit' || t2 === 'quadric3d')) {
+                        const diffFn = (vars, p) => {
+                            const yVal = vars.x;
+                            const xVal = eq1.compiled({ y: yVal }, p);
+                            if (!Number.isFinite(xVal)) return NaN;
+                            return eq2.compiled({ x: xVal, y: yVal, z: 0 }, p);
+                        };
+                        const roots = findRoots(diffFn, yMin, yMax, parameters, 280);
+                        roots.forEach(r => addPt(eq1.compiled({ y: r.x }, parameters), r.x, eq1, eq2));
+                    } else if ((t1 === 'implicit' || t1 === 'quadric3d') && t2 === 'x-relation') {
+                        const diffFn = (vars, p) => {
+                            const yVal = vars.x;
+                            const xVal = eq2.compiled({ y: yVal }, p);
+                            if (!Number.isFinite(xVal)) return NaN;
+                            return eq1.compiled({ x: xVal, y: yVal, z: 0 }, p);
+                        };
+                        const roots = findRoots(diffFn, yMin, yMax, parameters, 280);
+                        roots.forEach(r => addPt(eq2.compiled({ y: r.x }, parameters), r.x, eq1, eq2));
+                    }
                 } catch (err) {
                     console.warn('Intersection calc error:', err);
                 }
             }
         }
         return pts;
-    }, [showIntersections, equations, xMin, xMax, parameters, mathToScreenX, mathToScreenY]);
+    }, [showIntersections, equations, xMin, xMax, yMin, yMax, parameters, mathToScreenX, mathToScreenY]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // PAN & ZOOM EVENT HANDLERS
@@ -1113,16 +1161,29 @@ export default function GraphCanvas({
 
                     {/* Main Function Curves */}
                     {plottedCurves.map(curve => {
-                        const isEmphasized = curve.isSelected;
-                        const isSubdued = selectedEqId && !curve.isSelected;
-                        const strokeWidthVal = isEmphasized ? 3.5 : 2.5;
+                        const isStepHighlighted = Array.isArray(highlightedEqIds) && highlightedEqIds.includes(curve.id);
+                        const isEmphasized = curve.isSelected || isStepHighlighted;
+                        const isSubdued = selectedEqId && !curve.isSelected && !isStepHighlighted;
+                        const strokeWidthVal = isStepHighlighted ? 4.2 : (isEmphasized ? 3.5 : 2.5);
 
                         return (
                             <g key={`curve_${curve.id}`} className="transition-opacity duration-150">
+                                {/* Synchronized Step Yellow Outer Glow Path */}
+                                {isStepHighlighted && (
+                                    <path
+                                        d={curve.pathD}
+                                        fill="none"
+                                        stroke="#facc15"
+                                        strokeWidth={strokeWidthVal + 5}
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        opacity="0.45"
+                                    />
+                                )}
                                 <path
                                     d={curve.pathD}
                                     fill="none"
-                                    stroke={curve.color}
+                                    stroke={isStepHighlighted ? '#facc15' : curve.color}
                                     strokeWidth={strokeWidthVal}
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
@@ -1144,14 +1205,14 @@ export default function GraphCanvas({
                                                 width={(formattedText.length * 7.5) + 14}
                                                 height="20"
                                                 rx="5"
-                                                fill={isDark ? 'rgba(15, 23, 42, 0.92)' : 'rgba(255, 255, 255, 0.95)'}
-                                                stroke={curve.color}
-                                                strokeWidth="1.5"
+                                                fill={isStepHighlighted ? '#422006' : (isDark ? '#0f172a' : '#ffffff')}
+                                                stroke={isStepHighlighted ? '#facc15' : curve.color}
+                                                strokeWidth={isStepHighlighted ? '2' : '1.5'}
                                             />
                                             <text
                                                 x="0"
                                                 y="0"
-                                                fill={curve.color}
+                                                fill={isStepHighlighted ? '#fef08a' : curve.color}
                                                 fontSize="11"
                                                 fontWeight="bold"
                                                 fontFamily="monospace"
@@ -1306,52 +1367,116 @@ export default function GraphCanvas({
                     ))}
 
                     {/* Automatic Points of Intersection of Curves */}
-                    {showIntersections && curveIntersections.map((pt, idx) => (
-                        <g key={`intersect_pt_${idx}`} className="animate-in fade-in duration-200 pointer-events-none">
-                            {/* Outer pulse/glow circle */}
-                            <circle
-                                cx={pt.screenX}
-                                cy={pt.screenY}
-                                r="8"
-                                fill="none"
-                                stroke="#f43f5e"
-                                strokeWidth="2"
-                                opacity="0.75"
-                            />
-                            {/* Inner solid intersection dot */}
-                            <circle
-                                cx={pt.screenX}
-                                cy={pt.screenY}
-                                r="4.5"
-                                fill="#f43f5e"
-                                stroke="#ffffff"
-                                strokeWidth="2"
-                            />
-                            {/* Intersection Coordinate Badge */}
-                            <g transform={`translate(${pt.screenX + 8}, ${pt.screenY - 20})`}>
-                                <rect
-                                    x="0"
-                                    y="0"
-                                    width={(pt.label.length * 6.8) + 14}
-                                    height="18"
-                                    rx="4"
-                                    fill={isDark ? "rgba(15, 23, 42, 0.95)" : "rgba(255, 255, 255, 0.95)"}
-                                    stroke="#f43f5e"
-                                    strokeWidth="1.2"
+                    {showIntersections && curveIntersections.map((pt, idx) => {
+                        const isPtHighlighted = Array.isArray(highlightedPoints) && highlightedPoints.some(
+                            hp => Math.hypot((hp.x || 0) - pt.x, (hp.y || 0) - pt.y) < 0.2
+                        );
+                        return (
+                            <g key={`intersect_pt_${idx}`} className="animate-in fade-in duration-200 pointer-events-none">
+                                {/* Outer pulse/glow circle */}
+                                <circle
+                                    cx={pt.screenX}
+                                    cy={pt.screenY}
+                                    r={isPtHighlighted ? '12' : '8'}
+                                    fill={isPtHighlighted ? 'rgba(250, 204, 21, 0.25)' : 'none'}
+                                    stroke={isPtHighlighted ? '#facc15' : '#f43f5e'}
+                                    strokeWidth={isPtHighlighted ? '2.5' : '2'}
+                                    opacity="0.9"
                                 />
-                                <text
-                                    x="6"
-                                    y="13"
-                                    fill={isDark ? "#fca5a5" : "#e11d48"}
-                                    fontSize="10"
-                                    fontFamily="monospace"
-                                    fontWeight="bold"
-                                >
-                                    {pt.label}
-                                </text>
+                                {/* Inner solid intersection dot */}
+                                <circle
+                                    cx={pt.screenX}
+                                    cy={pt.screenY}
+                                    r={isPtHighlighted ? '5.5' : '4.5'}
+                                    fill={isPtHighlighted ? '#facc15' : '#f43f5e'}
+                                    stroke="#ffffff"
+                                    strokeWidth="2"
+                                />
+                                {/* Intersection Coordinate Badge */}
+                                <g transform={`translate(${pt.screenX + 8}, ${pt.screenY - 20})`}>
+                                    <rect
+                                        x="0"
+                                        y="0"
+                                        width={(pt.label.length * 6.8) + 14}
+                                        height="18"
+                                        rx="4"
+                                        fill={isPtHighlighted ? '#422006' : (isDark ? '#0f172a' : '#ffffff')}
+                                        stroke={isPtHighlighted ? '#facc15' : '#f43f5e'}
+                                        strokeWidth={isPtHighlighted ? '1.8' : '1.2'}
+                                    />
+                                    <text
+                                        x="6"
+                                        y="13"
+                                        fill={isPtHighlighted ? '#fef08a' : (isDark ? '#fca5a5' : '#e11d48')}
+                                        fontSize="10"
+                                        fontFamily="monospace"
+                                        fontWeight="bold"
+                                    >
+                                        {pt.label}
+                                    </text>
+                                </g>
                             </g>
-                        </g>
-                    ))}
+                        );
+                    })}
+
+                    {/* Step-Synchronized External Key Points (Centers, Vertices, Step Coordinates) */}
+                    {Array.isArray(externalPoints) && externalPoints.map((pt, idx) => {
+                        if (!Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return null;
+                        const sx = mathToScreenX(pt.x);
+                        const sy = mathToScreenY(pt.y);
+                        if (sx < -20 || sx > width + 20 || sy < -20 || sy > height + 20) return null;
+                        const isPtHighlighted = pt.isHighlighted || (
+                            Array.isArray(highlightedPoints) && highlightedPoints.some(
+                                hp => Math.hypot((hp.x || 0) - pt.x, (hp.y || 0) - pt.y) < 0.2
+                            )
+                        );
+                        const fmt = (v) => Number.isInteger(Number(v.toFixed(2))) ? String(Math.round(v)) : v.toFixed(2);
+                        const lbl = pt.label || `(${fmt(pt.x)}, ${fmt(pt.y)})`;
+                        return (
+                            <g key={`ext_pt_${idx}`} className="pointer-events-none">
+                                {isPtHighlighted && (
+                                    <circle
+                                        cx={sx}
+                                        cy={sy}
+                                        r="12"
+                                        fill="rgba(250, 204, 21, 0.25)"
+                                        stroke="#facc15"
+                                        strokeWidth="2.5"
+                                    />
+                                )}
+                                <circle
+                                    cx={sx}
+                                    cy={sy}
+                                    r={isPtHighlighted ? '5.5' : '4.5'}
+                                    fill={isPtHighlighted ? '#facc15' : (pt.color || '#38bdf8')}
+                                    stroke="#ffffff"
+                                    strokeWidth="2"
+                                />
+                                <g transform={`translate(${sx + 8}, ${sy - 20})`}>
+                                    <rect
+                                        x="0"
+                                        y="0"
+                                        width={(lbl.length * 6.8) + 14}
+                                        height="18"
+                                        rx="4"
+                                        fill={isPtHighlighted ? '#422006' : '#0f172a'}
+                                        stroke={isPtHighlighted ? '#facc15' : (pt.color || '#38bdf8')}
+                                        strokeWidth={isPtHighlighted ? '1.8' : '1.2'}
+                                    />
+                                    <text
+                                        x="6"
+                                        y="13"
+                                        fill={isPtHighlighted ? '#fef08a' : '#e0f2fe'}
+                                        fontSize="10"
+                                        fontFamily="monospace"
+                                        fontWeight="bold"
+                                    >
+                                        {lbl}
+                                    </text>
+                                </g>
+                            </g>
+                        );
+                    })}
                 </g>
 
                 {/* 7. Persistent Pinned Inspection Points */}

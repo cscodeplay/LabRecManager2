@@ -2961,6 +2961,7 @@ Output MUST be ONLY valid JSON matching this schema:
                         success: true,
                         speechResponse,
                         solutionMarkdown,
+                        graphEquations: [origCircleEq, lineEq].filter(Boolean),
                         suggestedFollowUps: [
                             `📐 Tangent at P₁(${pts[0]?.x}, ${pts[0]?.y})`,
                             `📏 Distance between P₁ & P₂`,
@@ -3014,6 +3015,9 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
   "recognized": true,
   "speechResponse": "<A natural, engaging spoken summary (2 to 3 sentences) to read aloud via TTS. Clean conversational text without raw LaTeX backslashes.>",
   "solutionMarkdown": "<REQUIRED for all questions, problems, formulas, derivations, and explanations: Well-structured Markdown with clear section headings (### 📌 Given & Concept, ### 📐 Formula, ### 🔢 Step-by-Step Solution, ### ✅ Final Answer) and ALL formulas/equations/variables/units written in proper LaTeX/KaTeX scientific notation ($$...$$ for display equations, $...$ for inline math). NEVER write formulas in plain English words!>",
+  "graphEquations": [
+    "<Optional array of clean 2D or 3D mathematical equations in x, y, z to plot on the interactive graphing panel when the problem involves functions, curves, circles, conics, or 3D surfaces, e.g. '(x - 2)^2 + (y + 3)^2 = 25', 'y = x^2 - 4', 'z = sin(x)*cos(y)'>"
+  ],
   "suggestedFollowUps": [
     "<3 to 4 smart, highly topic-relevant follow-up actions or questions with emojis, e.g. '📐 Show formula', '🌿 Draw diagram', '✨ Show in 3D', '💡 Give a real-world example', '📝 Summarize in 3 points'>"
   ],

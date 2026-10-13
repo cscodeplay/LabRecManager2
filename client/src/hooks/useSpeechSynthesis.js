@@ -18,42 +18,54 @@ export function cleanTextForSpeech(text = '') {
         .replace(/\$([^$]+)\$/g, ' $1 ')
         .replace(/\\\[([\s\S]*?)\\\]/g, ' $1 ')
         .replace(/\\\(([\s\S]*?)\\\)/g, ' $1 ')
-        // Clean common LaTeX wrappers first
-        .replace(/\\(?:boxed|text|textbf|mathrm|mathbf)\{([^{}]*)\}/g, '$1')
-        .replace(/\\left\s*([()[\]|.]?)/g, '')
-        .replace(/\\right\s*([()[\]|.]?)/g, '')
-        // Clean common math commands for natural pronunciation (handle nested braces once)
+        // Clean common LaTeX wrappers first (run twice for nested wrappers)
+        .replace(/\\(?:boxed|text|textbf|textit|mathrm|mathbf|mathcal)\{([^{}]*)\}/g, '$1')
+        .replace(/\\(?:boxed|text|textbf|textit|mathrm|mathbf|mathcal)\{([^{}]*)\}/g, '$1')
+        .replace(/\\left\s*([()[\]|.]?)/g, '$1')
+        .replace(/\\right\s*([()[\]|.]?)/g, '$1')
+        // Clean common math commands for natural pronunciation (handle nested braces)
         .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '$1 over $2')
         .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '$1 over $2')
         .replace(/\\sqrt\{([^{}]+)\}/g, 'square root of $1')
-        .replace(/\^\{2\}|\^2\b/g, ' squared')
-        .replace(/\^\{3\}|\^3\b/g, ' cubed')
-        .replace(/\^\{([^{}]+)\}/g, ' to the power of $1')
-        .replace(/\^([0-9a-zA-Z]+)/g, ' to the power of $1')
-        .replace(/_\{([^{}]+)\}/g, ' sub $1')
-        .replace(/_([0-9a-zA-Z]+)/g, ' sub $1')
-        .replace(/\\cdot/g, ' times ')
-        .replace(/\\times/g, ' times ')
+        .replace(/\^\{2\}|\^2(?![0-9])/g, ' squared ')
+        .replace(/\^\{3\}|\^3(?![0-9])/g, ' cubed ')
+        .replace(/\^\{([^{}]+)\}/g, ' to the power of $1 ')
+        .replace(/\^([0-9a-zA-Z]+)/g, ' to the power of $1 ')
+        .replace(/_\{([^{}]+)\}/g, ' sub $1 ')
+        .replace(/_([0-9a-zA-Z]+)/g, ' sub $1 ')
+        .replace(/\\cdot|\\times/g, ' times ')
         .replace(/\\div/g, ' divided by ')
-        .replace(/\\pm/g, ' plus or minus ')
-        .replace(/\\approx/g, ' approximately ')
-        .replace(/\\le|\\leq/g, ' less than or equal to ')
-        .replace(/\\ge|\\geq/g, ' greater than or equal to ')
-        .replace(/\\neq/g, ' is not equal to ')
+        .replace(/\\pm|±/g, ' plus or minus ')
+        .replace(/\\mp/g, ' minus or plus ')
+        .replace(/\\approx|≈/g, ' is approximately ')
+        .replace(/\\le|\\leq|≤/g, ' is less than or equal to ')
+        .replace(/\\ge|\\geq|≥/g, ' is greater than or equal to ')
+        .replace(/\\neq|≠/g, ' is not equal to ')
+        .replace(/\\iff|\\Longleftrightarrow|<=>/g, ', which is equivalent to ')
         .replace(/\\Rightarrow|\\implies|=>|→/g, ', which gives ')
         .replace(/\\rightarrow|\\to/g, ' to ')
         .replace(/\\therefore|∴/g, ' therefore ')
-        .replace(/\\pi\b/g, ' pi ')
-        .replace(/\\theta\b/g, ' theta ')
-        .replace(/\\alpha\b/g, ' alpha ')
-        .replace(/\\beta\b/g, ' beta ')
-        .replace(/\\gamma\b/g, ' gamma ')
-        .replace(/\\delta\b|\\Delta\b/g, ' delta ')
-        .replace(/\\lambda\b/g, ' lambda ')
-        .replace(/\\omega\b|\\Omega\b/g, ' omega ')
-        .replace(/\\infty\b/g, ' infinity ')
-        .replace(/\\sum\b/g, ' sum of ')
-        .replace(/\\int\b/g, ' integral of ')
+        .replace(/\\sin\b/g, ' sine ')
+        .replace(/\\cos\b/g, ' cosine ')
+        .replace(/\\tan\b/g, ' tangent ')
+        .replace(/\\ln\b/g, ' natural log of ')
+        .replace(/\\log\b/g, ' log of ')
+        .replace(/\\pi\b|π/g, ' pi ')
+        .replace(/\\theta\b|θ/g, ' theta ')
+        .replace(/\\alpha\b|α/g, ' alpha ')
+        .replace(/\\beta\b|β/g, ' beta ')
+        .replace(/\\gamma\b|γ/g, ' gamma ')
+        .replace(/\\delta\b|\\Delta\b|Δ/g, ' delta ')
+        .replace(/\\lambda\b|λ/g, ' lambda ')
+        .replace(/\\omega\b|\\Omega\b|ω|Ω/g, ' omega ')
+        .replace(/\\infty\b|∞/g, ' infinity ')
+        .replace(/\\sum\b|∑/g, ' sum of ')
+        .replace(/\\int\b|∫/g, ' integral of ')
+        // Pronounce math operators (=, +, -) naturally without breaking hyphenated English words
+        .replace(/=/g, ' equals ')
+        .replace(/\+/g, ' plus ')
+        .replace(/\s+-\s+/g, ' minus ')
+        .replace(/(^|[=(,])\s*-([0-9a-zA-Z])/g, '$1 negative $2')
         // Remove remaining backslashes and LaTeX commands
         .replace(/\\[a-zA-Z]+/g, ' ')
         // Clean markdown bold, italic, code backticks, headers, braces
@@ -221,12 +233,25 @@ export function useSpeechSynthesis({
     }, [setVoiceName, setVoiceProfile]);
 
     const [speakingCharIndex, setSpeakingCharIndex] = useState(0);
+    const [activeStepIndex, setActiveStepIndex] = useState(-1);
+    const [totalSteps, setTotalSteps] = useState(0);
+    const [isStepMode, setIsStepMode] = useState(false);
 
-    // Stop and cancel speech cleanly without triggering stale onend/onerror callbacks
-    const stop = useCallback(() => {
+    const stepsQueueRef = useRef([]);
+    const activeStepIndexRef = useRef(-1);
+    const stepOptionsRef = useRef({});
+    const stepAdvanceTimerRef = useRef(null);
+    const isPausedRef = useRef(false);
+
+    // Helper to cancel active synthesis utterance and timers without resetting step queue
+    const cancelActiveUtterance = useCallback(() => {
         if (speakTimerRef.current) {
             clearTimeout(speakTimerRef.current);
             speakTimerRef.current = null;
+        }
+        if (stepAdvanceTimerRef.current) {
+            clearTimeout(stepAdvanceTimerRef.current);
+            stepAdvanceTimerRef.current = null;
         }
         if (utteranceRef.current) {
             utteranceRef.current.onstart = null;
@@ -244,27 +269,274 @@ export function useSpeechSynthesis({
                 console.warn('[useSpeechSynthesis] cancel error:', e);
             }
         }
+    }, []);
+
+    // Stop and cancel speech cleanly without triggering stale onend/onerror callbacks
+    const stop = useCallback((resetStepSelection = false) => {
+        cancelActiveUtterance();
+        isPausedRef.current = false;
         setIsSpeaking(false);
         setIsPaused(false);
         setSpeakingText('');
         setSpeakingCharIndex(0);
+        if (resetStepSelection) {
+            activeStepIndexRef.current = -1;
+            setActiveStepIndex(-1);
+            setIsStepMode(false);
+        }
+    }, [cancelActiveUtterance]);
+
+    // Internal helper to speak a single step at `stepIdx` and gate advancement on `utterance.onend`
+    const speakStepAtIndex = useCallback((stepIdx, customOptions = {}) => {
+        const queue = stepsQueueRef.current;
+        if (!queue || stepIdx < 0 || stepIdx >= queue.length) {
+            cancelActiveUtterance();
+            isPausedRef.current = false;
+            setIsSpeaking(false);
+            setIsPaused(false);
+            setSpeakingText('');
+            setSpeakingCharIndex(0);
+            if (stepOptionsRef.current?.onComplete) {
+                stepOptionsRef.current.onComplete();
+            }
+            return;
+        }
+
+        const stepItem = queue[stepIdx];
+        activeStepIndexRef.current = stepIdx;
+        setActiveStepIndex(stepIdx);
+        setIsStepMode(true);
+
+        if (stepOptionsRef.current?.onStepChange) {
+            stepOptionsRef.current.onStepChange(stepIdx, stepItem);
+        }
+
+        if (!isEnabled || customOptions.shouldSpeak === false) {
+            cancelActiveUtterance();
+            setIsSpeaking(false);
+            setIsPaused(false);
+            return;
+        }
+
+        if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+        const rawStepText = typeof stepItem === 'string'
+            ? stepItem
+            : (stepItem.spokenText || stepItem.text || '');
+        const cleaned = cleanTextForSpeech(rawStepText);
+
+        // If a step has no speakable text, advance cleanly to the next step
+        if (!cleaned) {
+            if (customOptions.autoAdvance !== false && stepIdx + 1 < queue.length) {
+                stepAdvanceTimerRef.current = setTimeout(() => {
+                    stepAdvanceTimerRef.current = null;
+                    if (!isPausedRef.current) {
+                        speakStepAtIndex(stepIdx + 1, customOptions);
+                    }
+                }, 120);
+            } else {
+                setIsSpeaking(false);
+                setIsPaused(false);
+            }
+            return;
+        }
+
+        cancelActiveUtterance();
+        currentCleanedTextRef.current = cleaned;
+        lastBoundaryUpdateRef.current = 0;
+        lastCharIndexRef.current = 0;
+        isPausedRef.current = false;
+
+        speakTimerRef.current = setTimeout(() => {
+            speakTimerRef.current = null;
+            try {
+                const utterance = new SpeechSynthesisUtterance(cleaned);
+                utteranceRef.current = utterance;
+                window.__activeSpeechUtterance = utterance;
+
+                const mergedOpts = { ...stepOptionsRef.current, ...customOptions };
+                const voiceToUse = mergedOpts.voice || selectedVoice;
+                if (voiceToUse) {
+                    utterance.voice = voiceToUse;
+                }
+
+                utterance.rate = mergedOpts.rate !== undefined ? mergedOpts.rate : rate;
+                utterance.pitch = mergedOpts.pitch !== undefined ? mergedOpts.pitch : pitch;
+                utterance.volume = mergedOpts.volume !== undefined ? mergedOpts.volume : volume;
+
+                utterance.onstart = () => {
+                    if (utteranceRef.current !== utterance) return;
+                    setIsSpeaking(true);
+                    setIsPaused(false);
+                    isPausedRef.current = false;
+                    setSpeakingText(cleaned);
+                    setSpeakingCharIndex(0);
+                    if (mergedOpts.onStepStart) mergedOpts.onStepStart(stepIdx, stepItem);
+                };
+
+                utterance.onboundary = (e) => {
+                    if (utteranceRef.current !== utterance) return;
+                    if (e.charIndex !== undefined) {
+                        const now = performance.now();
+                        if (
+                            e.charIndex === 0 ||
+                            (now - lastBoundaryUpdateRef.current >= 140 && Math.abs(e.charIndex - lastCharIndexRef.current) >= 8)
+                        ) {
+                            lastBoundaryUpdateRef.current = now;
+                            lastCharIndexRef.current = e.charIndex;
+                            setSpeakingCharIndex(e.charIndex);
+                        }
+                    }
+                };
+
+                utterance.onend = () => {
+                    if (utteranceRef.current !== utterance) return;
+                    utteranceRef.current = null;
+                    currentCleanedTextRef.current = '';
+                    window.__activeSpeechUtterance = null;
+
+                    if (mergedOpts.onStepEnd) mergedOpts.onStepEnd(stepIdx, stepItem);
+
+                    // Strictly wait for current step's utterance.onend before advancing to the next step
+                    const shouldAdvance = mergedOpts.autoAdvance !== false && !isPausedRef.current;
+                    if (shouldAdvance && stepIdx + 1 < stepsQueueRef.current.length) {
+                        stepAdvanceTimerRef.current = setTimeout(() => {
+                            stepAdvanceTimerRef.current = null;
+                            if (!isPausedRef.current) {
+                                speakStepAtIndex(stepIdx + 1, customOptions);
+                            }
+                        }, 180);
+                    } else if (!isPausedRef.current) {
+                        setIsSpeaking(false);
+                        setIsPaused(false);
+                        setSpeakingText('');
+                        setSpeakingCharIndex(0);
+                        if (mergedOpts.onComplete) mergedOpts.onComplete();
+                    }
+                };
+
+                utterance.onerror = (e) => {
+                    if (utteranceRef.current !== utterance) return;
+                    if (e.error !== 'interrupted' && e.error !== 'canceled') {
+                        console.warn('[useSpeechSynthesis] Step utterance error:', e.error);
+                    }
+                    utteranceRef.current = null;
+                    currentCleanedTextRef.current = '';
+                    window.__activeSpeechUtterance = null;
+                    if (!isPausedRef.current) {
+                        setIsSpeaking(false);
+                        setIsPaused(false);
+                        setSpeakingText('');
+                        setSpeakingCharIndex(0);
+                    }
+                };
+
+                if (window.speechSynthesis.paused) {
+                    window.speechSynthesis.resume();
+                }
+
+                window.speechSynthesis.speak(utterance);
+            } catch (err) {
+                console.error('[useSpeechSynthesis] Failed to speak step:', err);
+                setIsSpeaking(false);
+                setIsPaused(false);
+            }
+        }, 40);
+    }, [isEnabled, selectedVoice, rate, pitch, volume, cancelActiveUtterance]);
+
+    // Start step-synchronized narration from an array of parsed solution blocks/steps
+    const speakSteps = useCallback((steps = [], options = {}) => {
+        if (!Array.isArray(steps) || steps.length === 0) {
+            stepsQueueRef.current = [];
+            activeStepIndexRef.current = -1;
+            setTotalSteps(0);
+            setActiveStepIndex(-1);
+            setIsStepMode(false);
+            return;
+        }
+
+        stepsQueueRef.current = steps;
+        stepOptionsRef.current = options;
+        setTotalSteps(steps.length);
+        setIsStepMode(true);
+
+        const startIdx = Math.max(0, Math.min(options.startIndex || 0, steps.length - 1));
+        const shouldAutoPlay = options.autoPlay !== false && isEnabled;
+
+        speakStepAtIndex(startIdx, {
+            ...options,
+            shouldSpeak: shouldAutoPlay,
+            autoAdvance: true
+        });
+    }, [isEnabled, speakStepAtIndex]);
+
+    // Jump to a specific step (maintaining synchronization whether speaking or paused)
+    const goToStep = useCallback((stepIdx, options = {}) => {
+        const queue = stepsQueueRef.current;
+        if (!queue || queue.length === 0) return;
+        const clamped = Math.max(0, Math.min(stepIdx, queue.length - 1));
+        const shouldSpeak = options.shouldSpeak !== undefined
+            ? options.shouldSpeak
+            : (isEnabled && (isSpeaking || !isPausedRef.current));
+
+        speakStepAtIndex(clamped, {
+            ...options,
+            shouldSpeak,
+            autoAdvance: options.autoAdvance !== undefined ? options.autoAdvance : true
+        });
+    }, [isEnabled, isSpeaking, speakStepAtIndex]);
+
+    // Advance to the next step
+    const nextStep = useCallback((options = {}) => {
+        const queue = stepsQueueRef.current;
+        if (!queue || queue.length === 0) return;
+        const nextIdx = activeStepIndexRef.current < 0 ? 0 : Math.min(activeStepIndexRef.current + 1, queue.length - 1);
+        goToStep(nextIdx, options);
+    }, [goToStep]);
+
+    // Go back to the previous step
+    const prevStep = useCallback((options = {}) => {
+        const queue = stepsQueueRef.current;
+        if (!queue || queue.length === 0) return;
+        const prevIdx = activeStepIndexRef.current <= 0 ? 0 : activeStepIndexRef.current - 1;
+        goToStep(prevIdx, options);
+    }, [goToStep]);
+
+    // Pause speech while preserving active step synchronization
+    const pause = useCallback(() => {
+        if (stepAdvanceTimerRef.current) {
+            clearTimeout(stepAdvanceTimerRef.current);
+            stepAdvanceTimerRef.current = null;
+        }
+        isPausedRef.current = true;
+        setIsPaused(true);
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis.speaking) {
+            try {
+                window.speechSynthesis.pause();
+            } catch (e) {}
+        }
     }, []);
 
-    // Pause speech
-    const pause = useCallback(() => {
-        if (typeof window !== 'undefined' && 'speechSynthesis' in window && isSpeaking) {
-            window.speechSynthesis.pause();
-            setIsPaused(true);
-        }
-    }, [isSpeaking]);
-
-    // Resume speech
+    // Resume speech from exact paused point or active step
     const resume = useCallback(() => {
-        if (typeof window !== 'undefined' && 'speechSynthesis' in window && isPaused) {
-            window.speechSynthesis.resume();
-            setIsPaused(false);
+        if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+        isPausedRef.current = false;
+        setIsPaused(false);
+
+        if (window.speechSynthesis.paused && window.speechSynthesis.speaking) {
+            try {
+                window.speechSynthesis.resume();
+                setIsSpeaking(true);
+                return;
+            } catch (e) {}
         }
-    }, [isPaused]);
+
+        // If paused between steps or after navigation, resume speaking from activeStepIndex
+        if (stepsQueueRef.current.length > 0) {
+            const resumeIdx = activeStepIndexRef.current >= 0 ? activeStepIndexRef.current : 0;
+            speakStepAtIndex(resumeIdx, { shouldSpeak: true, autoAdvance: true });
+        }
+    }, [speakStepAtIndex]);
 
     // Speak text with synthesis (debounced & race-safe to prevent stuttering)
     const speak = useCallback((text, options = {}) => {
@@ -285,30 +557,16 @@ export function useSpeechSynthesis({
             return;
         }
 
-        // Clear any pending scheduled speak call
-        if (speakTimerRef.current) {
-            clearTimeout(speakTimerRef.current);
-            speakTimerRef.current = null;
+        // Clear any pending step queue timers when speaking a standalone message
+        if (!options.keepStepMode) {
+            setIsStepMode(false);
         }
-
-        // Detach listeners from previous utterance BEFORE calling cancel() so its async cancel event doesn't clobber the new utterance
-        if (utteranceRef.current) {
-            utteranceRef.current.onstart = null;
-            utteranceRef.current.onboundary = null;
-            utteranceRef.current.onend = null;
-            utteranceRef.current.onerror = null;
-            utteranceRef.current = null;
-        }
-
-        try {
-            if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
-                window.speechSynthesis.cancel();
-            }
-        } catch (e) {}
+        cancelActiveUtterance();
 
         currentCleanedTextRef.current = cleaned;
         lastBoundaryUpdateRef.current = 0;
         lastCharIndexRef.current = 0;
+        isPausedRef.current = false;
 
         // Short 45ms delay allows Chromium audio pipeline to flush cancel() cleanly and deduplicates rapid calls
         speakTimerRef.current = setTimeout(() => {
@@ -398,7 +656,7 @@ export function useSpeechSynthesis({
                 window.__activeSpeechUtterance = null;
             }
         }, 45);
-    }, [isEnabled, selectedVoice, rate, pitch, volume]);
+    }, [isEnabled, selectedVoice, rate, pitch, volume, cancelActiveUtterance]);
 
     return {
         isSupported,
@@ -406,6 +664,10 @@ export function useSpeechSynthesis({
         isPaused,
         speakingText,
         speakingCharIndex,
+        activeStepIndex,
+        setActiveStepIndex,
+        totalSteps,
+        isStepMode,
         voices,
         selectedVoice,
         setSelectedVoice,
@@ -418,6 +680,10 @@ export function useSpeechSynthesis({
         isEnabled,
         setIsEnabled,
         speak,
+        speakSteps,
+        goToStep,
+        nextStep,
+        prevStep,
         stop,
         pause,
         resume
