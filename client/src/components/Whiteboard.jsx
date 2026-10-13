@@ -1088,6 +1088,19 @@ export default function Whiteboard({
         enabledByDefault: aiSpeechEnabled
     });
 
+    const isAiSpeakingRef = useRef(false);
+    const lastAiSpeechEndTimeRef = useRef(0);
+    useEffect(() => {
+        if (isAiSpeaking) {
+            isAiSpeakingRef.current = true;
+        } else {
+            if (isAiSpeakingRef.current) {
+                lastAiSpeechEndTimeRef.current = Date.now();
+            }
+            isAiSpeakingRef.current = false;
+        }
+    }, [isAiSpeaking]);
+
     // Start microphone audio analyzer for live volume level meter
     const startMicAudioAnalyzer = useCallback(async (deviceId) => {
         if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) return;
@@ -1124,17 +1137,26 @@ export default function Whiteboard({
             source.connect(analyser);
 
             const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            let lastLevelUpdateTime = 0;
+            let lastReportedLevel = 0;
 
             const updateLevel = () => {
                 if (!micAnalyserRef.current) return;
-                micAnalyserRef.current.getByteFrequencyData(dataArray);
-                let sum = 0;
-                for (let i = 0; i < dataArray.length; i++) {
-                    sum += dataArray[i];
+                const now = performance.now();
+                if (now - lastLevelUpdateTime >= 150) {
+                    micAnalyserRef.current.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) {
+                        sum += dataArray[i];
+                    }
+                    const avg = sum / dataArray.length;
+                    const normalized = Math.min(100, Math.round((avg / 128) * 100));
+                    if (Math.abs(normalized - lastReportedLevel) >= 5 || (normalized === 0 && lastReportedLevel !== 0)) {
+                        lastReportedLevel = normalized;
+                        setAudioInputLevel(normalized);
+                    }
+                    lastLevelUpdateTime = now;
                 }
-                const avg = sum / dataArray.length;
-                const normalized = Math.min(100, Math.round((avg / 128) * 100));
-                setAudioInputLevel(normalized);
                 micAnimFrameRef.current = requestAnimationFrame(updateLevel);
             };
 
@@ -12231,7 +12253,6 @@ export default function Whiteboard({
         setSelectedShapeIds(shapesToAdd.map(s => s.id));
         setTool('pen'); // Auto-activate pen so teacher can start writing solution derivations immediately!
         saveToHistory();
-        toast.success('Placed diagram to the left of center!', { icon: '📐', duration: 3500 });
         return true;
     }, [canvasWidth, canvasHeight, panOffset, zoomLevel, currentPage, saveToHistory]);
 
@@ -13401,11 +13422,19 @@ export default function Whiteboard({
         const trimmed = text.trim();
         if (!trimmed) return [];
 
+        // Never split questions, math equations, or STEM problem/explanation requests into multiple commands
+        if (
+            /[?=+\-*/^]/.test(trimmed) ||
+            /\b(solve|find|calculate|evaluate|simplify|prove|derive|explain|what|how|why|teach|integrate|differentiate|plot|graph|area|volume|perimeter|radius|diameter|angle|equation|formula|theorem|law|intersections?|coordinates?|parabola|hyperbola|ellipse|polynomial|quadratic|matrix|vector|force|velocity|acceleration)\b/i.test(trimmed)
+        ) {
+            return [trimmed];
+        }
+
         const actionKeywords = [
-            'set', 'change', 'switch', 'create', 'add', 'draw', 'sketch', 'illustrate', 
-            'paint', 'make', 'select', 'pick', 'choose', 'clear', 'delete', 'remove', 
+            'change', 'switch', 'create', 'draw', 'sketch', 'illustrate', 
+            'paint', 'select', 'pick', 'choose', 'clear', 'delete', 'remove', 
             'zoom', 'turn', 'undo', 'redo', 'new page', 'next page', 'previous page',
-            'duplicate page', 'delete page', 'straight line', 'line', 'arrow', 'type', 'write'
+            'duplicate page', 'delete page', 'straight line', 'arrow'
         ];
         const actionPattern = actionKeywords.map(k => k.replace(/\s+/g, '\\s+')).join('|');
 
@@ -14863,7 +14892,6 @@ export default function Whiteboard({
                         const speech = data.speechResponse || 'Here is the step-by-step solution.';
                         conversationHistoryRef.current.push({ role: 'assistant', content: speech });
                         if (aiSpeechEnabled) speakAiResponse(speech);
-                        toast.success(speech, { icon: '🤖' });
                         setVoiceFeedback(speech);
                         setAiSolutionData({
                             question: rawText,
@@ -15810,12 +15838,14 @@ export default function Whiteboard({
         // Centralized speech & visual narrator helper
         const narrateAction = (spokenPhrase, visualFeedback) => {
             const feedback = visualFeedback || spokenPhrase;
-            setVoiceFeedback(feedback);
-            if (feedback) {
-                toast(feedback, { id: 'voice-action-toast' });
-            }
-            if (aiSpeechEnabled && spokenPhrase) {
-                speakAiResponse(spokenPhrase);
+            if (!isAiRetry) {
+                setVoiceFeedback(feedback);
+                if (feedback) {
+                    toast(feedback, { id: 'voice-action-toast' });
+                }
+                if (aiSpeechEnabled && spokenPhrase) {
+                    speakAiResponse(spokenPhrase);
+                }
             }
         };
 
@@ -17736,8 +17766,10 @@ export default function Whiteboard({
         }
 
         // 10. AI-Powered Assistant, Solutions & Fallback Translation
-        setVoiceFeedback(`Unrecognized: "${rawText}" - say "help" for commands`);
-        toast(`Command not recognized: "${rawText}"`, { icon: '❓' });
+        if (!isAiRetry) {
+            setVoiceFeedback(`Unrecognized: "${rawText}" - say "help" for commands`);
+            toast(`Command not recognized: "${rawText}"`, { id: 'voice-action-toast', icon: '❓' });
+        }
     }, [panOffset, zoomLevel, color, strokeWidth, fillColor, strokeStyle, socket, sessionId, saveToHistory, handleClear, handleUndo, handleRedo, addNewPage, duplicateCurrentPage, deletePage, loadPage, currentPage, totalPages, selectedShapeIds, selectedTextIds, selectedImageId, selectedImageIds, selected3DIds, pageShapeObjects, pageTextObjects, pageImageObjects, page3DObjects, setBgPattern, setBgColor, onToggleFullscreen, handleInsertGraph, handleInsertDateTime, handleDelete, handleCopy, handlePaste, handleDuplicate, handleToggleLock, handleGroup, handleUngroup, handleBringToFront, handleSendToBack, handleAlign, handleDistribute, handleFlipSelection, handleRemoveImageBackground, updateSelectedImageFilters, setIsAutoShape, setIsOcrActive, handleConvertSelectedInkToText, setBrushType, setPenMode, setSparkleTheme, setPenOpacity, setPressureSensitivity, setHighlighterColor, setEraserMode, setEraserSize, setSelectMode, setIsSelectionInfiniteCloner, setLineType, setShowMinimap, setShowClipboard, setIsChatOpen, setShowPermissions, aiSpeechEnabled, speakAiResponse, executeAiCanvasAction, handleScreenshot, getWhiteboardSpatialContext]);
 
     // Insert AI response as Sticky Note on Canvas
@@ -17797,7 +17829,7 @@ export default function Whiteboard({
             isVoiceListeningRef.current = false;
             stopMicAudioAnalyzer();
             setInterimVoiceTranscript('');
-            toast('🎙️ Voice Control stopped', { icon: '⏹️' });
+            toast('🎙️ Voice Control stopped', { id: 'voice-action-toast', icon: '⏹️' });
         } else {
             // Stop any ongoing AI speech so microphone doesn't pick up speaker audio
             stopAiSpeech();
@@ -17813,10 +17845,23 @@ export default function Whiteboard({
                     setIsVoiceListening(true);
                     isVoiceListeningRef.current = true;
                     lastVoiceResultIndexRef.current = -1;
-                    toast.success('🎙️ Voice Control active! Listening to commands...', { icon: '🎤' });
+                    toast.success('🎙️ Voice Control active! Listening to commands...', { id: 'voice-action-toast', icon: '🎤' });
                 };
 
                 recognition.onresult = (event) => {
+                    // Ignore microphone transcripts while AI TTS is speaking (or within 450ms cooldown)
+                    // to prevent speaker-to-mic feedback loops that spam notifications and stutter speech
+                    const isCurrentlySpeaking =
+                        isAiSpeakingRef.current ||
+                        (typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.speaking) ||
+                        (Date.now() - lastAiSpeechEndTimeRef.current < 450);
+
+                    if (isCurrentlySpeaking) {
+                        lastVoiceResultIndexRef.current = event.results.length - 1;
+                        setInterimVoiceTranscript('');
+                        return;
+                    }
+
                     let interim = '';
                     let newFinalTranscript = '';
                     for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -17838,8 +17883,8 @@ export default function Whiteboard({
                     const trimmedFinal = newFinalTranscript.trim();
                     if (trimmedFinal) {
                         const now = Date.now();
-                        // Prevent duplicated execution within 800ms of identical transcript
-                        if (trimmedFinal === lastExecutedVoiceTextRef.current && (now - lastExecutedVoiceTimeRef.current) < 800) {
+                        // Prevent duplicated execution within 1200ms of identical transcript
+                        if (trimmedFinal === lastExecutedVoiceTextRef.current && (now - lastExecutedVoiceTimeRef.current) < 1200) {
                             return;
                         }
                         lastExecutedVoiceTextRef.current = trimmedFinal;

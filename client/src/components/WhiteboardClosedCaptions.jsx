@@ -76,7 +76,7 @@ function renderFormattedText(rawText) {
         const cleanMath = (math || '').trim();
         if (!cleanMath) return '';
         try {
-            const rendered = `<div class="my-1.5 py-2 px-3 bg-slate-950/90 rounded-lg border border-indigo-500/35 overflow-x-auto text-center shadow-inner">${katex.renderToString(cleanMath, { displayMode: true, throwOnError: false, strict: false, trust: true })}</div>`;
+            const rendered = `<div class="my-1.5 py-2 px-3 bg-slate-950 rounded-lg border border-slate-700 overflow-x-auto text-center shadow-inner" style="background-color:#020617">${katex.renderToString(cleanMath, { displayMode: true, throwOnError: false, strict: false, trust: true })}</div>`;
             const idx = mathTokens.length;
             mathTokens.push(rendered);
             return `@@MATH_TOKEN_${idx}@@`;
@@ -90,7 +90,7 @@ function renderFormattedText(rawText) {
         const cleanMath = (math || '').trim();
         if (!cleanMath) return match;
         try {
-            const rendered = `<span class="inline-block px-0.5 text-indigo-100">${katex.renderToString(cleanMath, { displayMode: false, throwOnError: false, strict: false, trust: true })}</span>`;
+            const rendered = `<span class="inline-block px-0.5 text-amber-100">${katex.renderToString(cleanMath, { displayMode: false, throwOnError: false, strict: false, trust: true })}</span>`;
             const idx = mathTokens.length;
             mathTokens.push(rendered);
             return `@@MATH_TOKEN_${idx}@@`;
@@ -263,6 +263,7 @@ export default function WhiteboardClosedCaptions({
     const [activeTab, setActiveTab] = useState('solution'); // 'solution' | 'summary'
     const [followUpInput, setFollowUpInput] = useState('');
     const [copied, setCopied] = useState(false);
+    const [clickedBlockIdx, setClickedBlockIdx] = useState(null);
 
     // Image question scanner state
     const [isScanningImage, setIsScanningImage] = useState(false);
@@ -285,9 +286,17 @@ export default function WhiteboardClosedCaptions({
             lastResponseSeenRef.current = activeAiResponse;
             setIsPaneDismissed(false);
             setIsPaneCollapsed(false);
+            setClickedBlockIdx(null);
             setActiveTab(aiSolution?.solutionMarkdown ? 'solution' : 'summary');
         }
     }, [activeAiResponse, aiSolution?.solutionMarkdown]);
+
+    // Clear clickedBlockIdx once speech stops
+    useEffect(() => {
+        if (!isAiSpeaking) {
+            setClickedBlockIdx(null);
+        }
+    }, [isAiSpeaking]);
 
     // Keep track of the most recent utterance or feedback
     useEffect(() => {
@@ -308,17 +317,18 @@ export default function WhiteboardClosedCaptions({
     // Track active step or statement based on speakingCharIndex from speech synthesis
     const activeBlockIndex = React.useMemo(() => {
         if (!isAiSpeaking || blocks.length === 0) return -1;
-        // First try direct character offset match
-        const idx = blocks.findIndex(b => speakingCharIndex >= b.startChar && speakingCharIndex <= b.endChar);
-        if (idx !== -1) return idx;
-        // Proportional fallback when speaking speechResponse while viewing solutionMarkdown
-        const spokenLen = (aiSpeakingText || '').length;
-        if (spokenLen > 0 && speakingCharIndex > 0) {
-            const progress = Math.min(0.99, speakingCharIndex / spokenLen);
-            return Math.min(blocks.length - 1, Math.floor(progress * blocks.length));
+        if (clickedBlockIdx !== null && clickedBlockIdx >= 0 && clickedBlockIdx < blocks.length) {
+            return clickedBlockIdx;
         }
-        return 0;
-    }, [isAiSpeaking, speakingCharIndex, blocks, aiSpeakingText]);
+        const spokenLen = Math.max(1, (aiSpeakingText || '').length);
+        const totalBlockEnd = blocks[blocks.length - 1]?.endChar || displayText?.length || 1;
+        // Scale speakingCharIndex proportionally across the full displayText character range
+        const progress = Math.min(0.995, Math.max(0, speakingCharIndex / spokenLen));
+        const mappedChar = progress * totalBlockEnd;
+        const idx = blocks.findIndex(b => mappedChar >= b.startChar && mappedChar <= b.endChar);
+        if (idx !== -1) return idx;
+        return Math.min(blocks.length - 1, Math.floor(progress * blocks.length));
+    }, [isAiSpeaking, speakingCharIndex, blocks, aiSpeakingText, clickedBlockIdx, displayText]);
 
     // Auto-scroll to active step/statement while dictating (respecting user manual scrolling)
     useEffect(() => {
@@ -401,18 +411,24 @@ export default function WhiteboardClosedCaptions({
             {/* 1. MINIMAL SOLUTION PANE — Placed to the RIGHT of the Center of the Whiteboard */}
             {activeAiResponse && !isPaneDismissed && (
                 <div className="fixed top-1/2 left-[calc(50%+20px)] -translate-y-1/2 z-40 w-[350px] sm:w-[410px] max-w-[44vw] pointer-events-auto select-none transition-all duration-200 flex flex-col">
-                    <div className={`bg-slate-950/92 backdrop-blur-md border rounded-2xl shadow-2xl overflow-hidden transition-all duration-200 ${
-                        aiSolution?.isError ? 'border-rose-500/70 shadow-rose-950/40' : 'border-slate-700/80'
-                    }`}>
+                    <div
+                        style={{ backgroundColor: '#0f172a' }}
+                        className={`bg-slate-950 border-2 rounded-2xl shadow-2xl overflow-hidden transition-all duration-200 ${
+                            aiSolution?.isError ? 'border-rose-500 shadow-rose-950/40' : 'border-slate-700'
+                        }`}
+                    >
                         {/* Minimal Header Bar: Title + Voice Speed Controls + Actions */}
-                        <div className={`px-3 py-2 border-b flex items-center justify-between gap-2 text-xs ${
-                            aiSolution?.isError ? 'bg-rose-950/80 border-rose-500/40 text-rose-200' : 'bg-slate-900/90 border-slate-800'
-                        }`}>
+                        <div
+                            style={{ backgroundColor: aiSolution?.isError ? '#4c0519' : '#1e293b' }}
+                            className={`px-3 py-2 border-b flex items-center justify-between gap-2 text-xs ${
+                                aiSolution?.isError ? 'bg-rose-950 border-rose-500 text-rose-200' : 'bg-slate-900 border-slate-700'
+                            }`}
+                        >
                             <div className="flex items-center gap-1.5 min-w-0">
                                 {aiSolution?.isError ? (
                                     <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                                 ) : (
-                                    <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                    <Sparkles className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
                                 )}
 
                                 {aiSolution?.isError ? (
@@ -437,8 +453,8 @@ export default function WhiteboardClosedCaptions({
                                             onClick={() => setActiveTab('solution')}
                                             className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${
                                                 activeTab === 'solution'
-                                                    ? 'bg-indigo-600 text-white'
-                                                    : 'text-slate-400 hover:text-slate-200'
+                                                    ? 'bg-yellow-400 text-slate-950 font-bold'
+                                                    : 'text-slate-300 hover:text-white'
                                             }`}
                                         >
                                             Solution
@@ -449,8 +465,8 @@ export default function WhiteboardClosedCaptions({
                                                 onClick={() => setActiveTab('summary')}
                                                 className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${
                                                     activeTab === 'summary'
-                                                        ? 'bg-indigo-600 text-white'
-                                                        : 'text-slate-400 hover:text-slate-200'
+                                                        ? 'bg-yellow-400 text-slate-950 font-bold'
+                                                        : 'text-slate-300 hover:text-white'
                                                 }`}
                                             >
                                                 Summary
@@ -463,7 +479,11 @@ export default function WhiteboardClosedCaptions({
                             {/* Voice Speed Control + Speak/Mute + Utility Buttons */}
                             <div className="flex items-center gap-1 shrink-0">
                                 {/* Voice Speed Selector */}
-                                <div className="flex items-center bg-slate-950/90 border border-slate-800 rounded-lg p-0.5" title="AI Voice Speed">
+                                <div
+                                    style={{ backgroundColor: '#020617' }}
+                                    className="flex items-center bg-slate-950 border border-slate-700 rounded-lg p-0.5"
+                                    title="AI Voice Speed"
+                                >
                                     {SPEED_OPTIONS.map((spd) => (
                                         <button
                                             key={spd}
@@ -476,7 +496,7 @@ export default function WhiteboardClosedCaptions({
                                             }}
                                             className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${
                                                 Math.abs((speechRate || 1) - spd) < 0.05
-                                                    ? 'bg-indigo-600 text-white font-bold'
+                                                    ? 'bg-yellow-400 text-slate-950 font-bold'
                                                     : 'text-slate-400 hover:text-white'
                                             }`}
                                         >
@@ -490,15 +510,17 @@ export default function WhiteboardClosedCaptions({
                                     type="button"
                                     onClick={() => {
                                         if (isAiSpeaking) {
+                                            setClickedBlockIdx(null);
                                             onStopSpeaking();
                                         } else {
+                                            setClickedBlockIdx(null);
                                             onSpeak(aiSolution?.speechResponse || displayText, { rate: speechRate });
                                         }
                                     }}
                                     className={`p-1 rounded transition ${
                                         isAiSpeaking
-                                            ? 'bg-indigo-600/30 text-indigo-300 hover:bg-rose-500/30 hover:text-rose-300'
-                                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                            ? 'bg-yellow-400 text-slate-950 hover:bg-rose-500 hover:text-white'
+                                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
                                     }`}
                                     title={isAiSpeaking ? 'Stop speaking' : 'Read aloud'}
                                 >
@@ -513,7 +535,7 @@ export default function WhiteboardClosedCaptions({
                                         setCopied(true);
                                         setTimeout(() => setCopied(false), 1800);
                                     }}
-                                    className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                                    className="p-1 rounded text-slate-300 hover:text-white hover:bg-slate-800 transition"
                                     title="Copy solution"
                                 >
                                     {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -523,7 +545,7 @@ export default function WhiteboardClosedCaptions({
                                 <button
                                     type="button"
                                     onClick={() => setIsPaneCollapsed(prev => !prev)}
-                                    className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                                    className="p-1 rounded text-slate-300 hover:text-white hover:bg-slate-800 transition"
                                     title={isPaneCollapsed ? 'Expand' : 'Collapse'}
                                 >
                                     {isPaneCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
@@ -533,7 +555,7 @@ export default function WhiteboardClosedCaptions({
                                 <button
                                     type="button"
                                     onClick={() => setIsPaneDismissed(true)}
-                                    className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                                    className="p-1 rounded text-slate-300 hover:text-white hover:bg-slate-800 transition"
                                     title="Close Solution Pane"
                                 >
                                     <X className="w-3.5 h-3.5" />
@@ -543,21 +565,25 @@ export default function WhiteboardClosedCaptions({
 
                         {/* Question Subtitle */}
                         {!isPaneCollapsed && aiSolution?.question && (
-                            <div className="px-3 py-1.5 bg-slate-900/50 border-b border-slate-800/70 text-[11px] text-slate-300 truncate font-medium">
-                                <span className="text-indigo-400 font-semibold mr-1">Q:</span>
+                            <div
+                                style={{ backgroundColor: '#1e293b' }}
+                                className="px-3 py-1.5 bg-slate-900 border-b border-slate-700 text-[11px] text-slate-200 truncate font-medium"
+                            >
+                                <span className="text-yellow-400 font-bold mr-1">Q:</span>
                                 {aiSolution.question}
                             </div>
                         )}
 
                         {/* Step / Statement Body with Real-Time Voice Highlighting */}
                         {!isPaneCollapsed && (
-                            <div className="flex flex-col">
+                            <div className="flex flex-col" style={{ backgroundColor: '#0f172a' }}>
                                 <div
                                     ref={scrollContainerRef}
                                     onScroll={handleUserScroll}
                                     onWheel={handleUserScroll}
                                     onTouchStart={handleUserScroll}
-                                    className="p-3 text-xs text-slate-200 space-y-1.5 max-h-[52vh] overflow-y-auto custom-scrollbar select-text"
+                                    style={{ backgroundColor: '#0f172a' }}
+                                    className="p-3 text-xs text-slate-100 space-y-1.5 max-h-[52vh] overflow-y-auto custom-scrollbar select-text bg-slate-950"
                                 >
                                     {blocks.length > 0 ? (
                                         blocks.map((block, idx) => {
@@ -568,10 +594,11 @@ export default function WhiteboardClosedCaptions({
                                                     <div
                                                         id={`cc-block-${idx}`}
                                                         key={block.id || idx}
-                                                        className={`pt-2 pb-1 px-1 flex items-center gap-1.5 border-b transition-colors ${
+                                                        style={isActive ? { backgroundColor: '#422006', borderColor: '#facc15' } : undefined}
+                                                        className={`pt-2 pb-1 px-2 flex items-center gap-1.5 border-b transition-colors ${
                                                             isActive
-                                                                ? 'border-indigo-400/60 text-indigo-200'
-                                                                : 'border-slate-800/80 text-indigo-300'
+                                                                ? 'border-yellow-400 text-yellow-300 rounded-lg'
+                                                                : 'border-slate-700 text-amber-300'
                                                         }`}
                                                     >
                                                         <span
@@ -587,11 +614,18 @@ export default function WhiteboardClosedCaptions({
                                                     <div
                                                         id={`cc-block-${idx}`}
                                                         key={block.id || idx}
-                                                        onClick={() => onSpeak(block.text, { rate: speechRate })}
-                                                        className={`p-2 rounded-xl transition-all duration-200 border cursor-pointer ${
+                                                        onClick={() => {
+                                                            setClickedBlockIdx(idx);
+                                                            onSpeak(block.text, { rate: speechRate });
+                                                        }}
+                                                        style={{
+                                                            backgroundColor: isActive ? '#422006' : '#1e293b',
+                                                            borderColor: isActive ? '#facc15' : '#475569'
+                                                        }}
+                                                        className={`p-2 rounded-xl transition-all duration-200 border-2 cursor-pointer ${
                                                             isActive
-                                                                ? 'bg-indigo-600/25 border-indigo-400 text-white ring-1 ring-indigo-400/40 shadow-md'
-                                                                : 'bg-slate-900/70 hover:bg-slate-900/95 border-indigo-500/30 text-slate-100'
+                                                                ? 'border-yellow-400 text-yellow-50 ring-2 ring-yellow-400 shadow-lg'
+                                                                : 'bg-slate-900 hover:border-yellow-400/60 border-slate-700 text-slate-100'
                                                         }`}
                                                         title="Click to hear this formula"
                                                     >
@@ -608,16 +642,27 @@ export default function WhiteboardClosedCaptions({
                                                     <div
                                                         id={`cc-block-${idx}`}
                                                         key={block.id || idx}
-                                                        onClick={() => onSpeak(block.text, { rate: speechRate })}
-                                                        className={`p-2.5 rounded-xl transition-all duration-200 border cursor-pointer ${
+                                                        onClick={() => {
+                                                            setClickedBlockIdx(idx);
+                                                            onSpeak(block.text, { rate: speechRate });
+                                                        }}
+                                                        style={{
+                                                            backgroundColor: isActive ? '#422006' : '#064e3b',
+                                                            borderColor: isActive ? '#facc15' : '#10b981'
+                                                        }}
+                                                        className={`p-2.5 rounded-xl transition-all duration-200 border-2 cursor-pointer ${
                                                             isActive
-                                                                ? 'bg-emerald-600/25 border-emerald-400 text-white ring-1 ring-emerald-400/50 shadow-md'
-                                                                : 'bg-emerald-950/35 hover:bg-emerald-950/50 border-emerald-500/40 text-emerald-100'
+                                                                ? 'border-yellow-400 text-yellow-50 ring-2 ring-yellow-400 shadow-lg'
+                                                                : 'bg-emerald-950 hover:border-yellow-400/70 border-emerald-500 text-emerald-100'
                                                         }`}
                                                         title="Click to hear final answer"
                                                     >
                                                         <div className="flex items-start gap-2">
-                                                            <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-600/40 text-emerald-200 border border-emerald-500/40">
+                                                            <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                                                                isActive
+                                                                    ? 'bg-yellow-400 text-slate-950 font-extrabold border-yellow-300'
+                                                                    : 'bg-emerald-700 text-emerald-100 border-emerald-500'
+                                                            }`}>
                                                                 {block.prefix || '✅'}
                                                             </span>
                                                             <div
@@ -633,17 +678,24 @@ export default function WhiteboardClosedCaptions({
                                                 <div
                                                     id={`cc-block-${idx}`}
                                                     key={block.id || idx}
-                                                    onClick={() => onSpeak(block.text, { rate: speechRate })}
-                                                    className={`p-2 rounded-xl transition-all duration-200 border cursor-pointer ${
+                                                    onClick={() => {
+                                                        setClickedBlockIdx(idx);
+                                                        onSpeak(block.text, { rate: speechRate });
+                                                    }}
+                                                    style={{
+                                                        backgroundColor: isActive ? '#422006' : '#1e293b',
+                                                        borderColor: isActive ? '#facc15' : '#334155'
+                                                    }}
+                                                    className={`p-2 rounded-xl transition-all duration-200 border-2 cursor-pointer ${
                                                         isActive
-                                                            ? 'bg-indigo-600/25 border-indigo-400 text-white ring-1 ring-indigo-400/40 shadow-md'
-                                                            : 'bg-slate-900/50 hover:bg-slate-900/80 border-slate-800/70 text-slate-300'
+                                                            ? 'border-yellow-400 text-yellow-50 ring-2 ring-yellow-400 shadow-lg'
+                                                            : 'bg-slate-900 hover:border-yellow-400/60 border-slate-700 text-slate-200'
                                                     }`}
                                                     title="Click to hear this step"
                                                 >
                                                     <div className="flex items-start gap-2">
                                                         <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                                            isActive ? 'bg-indigo-500 text-white' : 'bg-slate-800 text-indigo-300'
+                                                            isActive ? 'bg-yellow-400 text-slate-950 font-extrabold' : 'bg-slate-800 text-yellow-300'
                                                         }`}>
                                                             {block.prefix || '•'}
                                                         </span>
@@ -657,26 +709,29 @@ export default function WhiteboardClosedCaptions({
                                         })
                                     ) : (
                                         <div
-                                            className="leading-relaxed whitespace-pre-wrap select-text text-slate-200 text-[12px]"
+                                            className="leading-relaxed whitespace-pre-wrap select-text text-slate-100 text-[12px]"
                                             dangerouslySetInnerHTML={{ __html: renderFormattedText(displayText) }}
                                         />
                                     )}
                                 </div>
 
                                 {/* Minimal Footer Actions + Follow-up Input */}
-                                <div className="px-3 py-2 border-t border-slate-800/80 bg-slate-950/60 flex flex-col gap-1.5">
+                                <div
+                                    style={{ backgroundColor: '#1e293b' }}
+                                    className="px-3 py-2 border-t border-slate-700 bg-slate-900 flex flex-col gap-1.5"
+                                >
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                         <button
                                             type="button"
                                             onClick={() => onInsertAsText(displayText)}
-                                            className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[10px] font-medium transition"
+                                            className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-600 text-[10px] font-medium transition"
                                         >
                                             🔤 Insert as Text
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => onCreateStickyNote(displayText)}
-                                            className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[10px] font-medium transition"
+                                            className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-600 text-[10px] font-medium transition"
                                         >
                                             📝 Sticky Note
                                         </button>
@@ -697,12 +752,13 @@ export default function WhiteboardClosedCaptions({
                                             value={followUpInput}
                                             onChange={(e) => setFollowUpInput(e.target.value)}
                                             placeholder="Ask follow-up..."
-                                            className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400"
+                                            style={{ backgroundColor: '#0f172a' }}
+                                            className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-yellow-400"
                                         />
                                         <button
                                             type="submit"
                                             disabled={!followUpInput.trim()}
-                                            className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs font-semibold transition flex items-center gap-1"
+                                            className="px-2.5 py-1 rounded-lg bg-yellow-400 hover:bg-yellow-300 disabled:opacity-40 text-slate-950 text-xs font-bold transition flex items-center gap-1"
                                         >
                                             <Send className="w-3 h-3" />
                                         </button>
