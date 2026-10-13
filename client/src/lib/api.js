@@ -712,6 +712,9 @@ export const aiAPI = {
     parseAssignments: (formData) => api.post('/ai/parse-assignments', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
     }),
+    scanQuestionImage: (formData) => api.post('/ai/scan-question-image', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    }),
     batchCreate: (data) => api.post('/ai/batch-create', data),
     cardAssist: (data) => api.post('/ai/card-assist', data),
     voiceCommand: (data) => api.post('/ai/voice-command', data),

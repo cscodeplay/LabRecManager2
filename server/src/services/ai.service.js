@@ -916,6 +916,142 @@ RULES:
     }
 
     /**
+     * Extract a mathematical, scientific, or general question / problem statement from an uploaded image
+     * for the Whiteboard AI Request Scanner.
+     */
+    async extractQuestionFromImage(buffer, mimeType = 'image/png', preferredProvider = 'auto') {
+        const base64Data = buffer.toString('base64');
+        const dataUrl = `data:${mimeType};base64,${base64Data}`;
+
+        const promptText = `You are an expert OCR and STEM problem scanner for an interactive educational whiteboard.
+Carefully read the provided image and extract the exact question, mathematical problem, physics/chemistry numerical, or instruction shown in the image.
+
+RULES:
+1. Return ONLY the clean, plain-text question or problem statement so the user can review and submit it to the AI solver.
+2. Convert mathematical symbols and equations into clean, readable inline notation (e.g. "Solve x^2 + y^2 + 3x + 4y - 18 = 0 and y = 3x + 1", "Find the volume of a cone with radius 7 cm and height 12 cm").
+3. If the image shows a geometric figure or diagram with labeled sides/angles, include those given values in the extracted question text.
+4. Do NOT solve the problem yet, and do NOT wrap the output in quotes or markdown code blocks. Output only the extracted question text.`;
+
+        const attemptErrors = [];
+
+        // 1. Try OpenAI Vision if configured
+        if ((preferredProvider === 'openai' || preferredProvider === 'auto') && this.openAIKey) {
+            try {
+                const axios = require('axios');
+                const response = await axios.post(
+                    'https://api.openai.com/v1/chat/completions',
+                    {
+                        model: 'gpt-4o-mini',
+                        messages: [
+                            {
+                                role: 'user',
+                                content: [
+                                    { type: 'text', text: promptText },
+                                    { type: 'image_url', image_url: { url: dataUrl } }
+                                ]
+                            }
+                        ],
+                        temperature: 0.1,
+                        max_tokens: 600
+                    },
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${this.openAIKey}`,
+                            'Content-Type': 'application/json'
+                        },
+                        timeout: 25000
+                    }
+                );
+                const text = response.data?.choices?.[0]?.message?.content?.trim();
+                if (text) return { questionText: text, provider: 'openai', model: 'gpt-4o-mini' };
+            } catch (err) {
+                attemptErrors.push(`openai: ${err.response?.data?.error?.message || err.message}`);
+            }
+        }
+
+        // 2. Try Gemini Vision
+        if (this.genAI) {
+            for (const modelName of ACTIVE_GEMINI_MODELS.slice(0, 3)) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent([
+                        { inlineData: { data: base64Data, mimeType } },
+                        promptText
+                    ]);
+                    const text = result.response.text()?.trim();
+                    if (text) return { questionText: text, provider: 'gemini', model: modelName };
+                } catch (err) {
+                    attemptErrors.push(`gemini (${modelName}): ${err.message}`);
+                }
+            }
+        }
+
+        // 3. Try Groq Vision
+        if (this.groq) {
+            const groqVisionModels = ['meta-llama/llama-4-scout-17b-16e-instruct', 'llama-3.2-11b-vision-preview', 'llama-3.2-90b-vision-preview'];
+            for (const vModel of groqVisionModels) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: vModel,
+                        messages: [
+                            {
+                                role: 'user',
+                                content: [
+                                    { type: 'text', text: promptText },
+                                    { type: 'image_url', image_url: { url: dataUrl } }
+                                ]
+                            }
+                        ],
+                        temperature: 0.1,
+                        max_tokens: 600
+                    });
+                    const text = completion.choices?.[0]?.message?.content?.trim();
+                    if (text) return { questionText: text, provider: 'groq', model: vModel };
+                } catch (err) {
+                    attemptErrors.push(`groq (${vModel}): ${err.message}`);
+                }
+            }
+        }
+
+        // 4. Try OpenRouter Vision
+        if (this.openRouterKey) {
+            try {
+                const axios = require('axios');
+                const response = await axios.post(
+                    'https://openrouter.ai/api/v1/chat/completions',
+                    {
+                        model: 'openai/gpt-4o-mini',
+                        messages: [
+                            {
+                                role: 'user',
+                                content: [
+                                    { type: 'text', text: promptText },
+                                    { type: 'image_url', image_url: { url: dataUrl } }
+                                ]
+                            }
+                        ],
+                        temperature: 0.1,
+                        max_tokens: 600
+                    },
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${this.openRouterKey}`,
+                            'Content-Type': 'application/json'
+                        },
+                        timeout: 25000
+                    }
+                );
+                const text = response.data?.choices?.[0]?.message?.content?.trim();
+                if (text) return { questionText: text, provider: 'openrouter', model: 'openai/gpt-4o-mini' };
+            } catch (err) {
+                attemptErrors.push(`openrouter: ${err.response?.data?.error?.message || err.message}`);
+            }
+        }
+
+        throw new Error(`Failed to scan question from image. ${attemptErrors.join(' | ') || 'No vision-capable AI provider available.'}`);
+    }
+
+    /**
      * Generate structured assignment list from natural language text prompt (non-image case)
      */
     async extractAssignmentsFromText(customPrompt = '', preferredProvider = 'gemini') {
@@ -2797,7 +2933,7 @@ Output MUST be ONLY valid JSON matching this schema:
                             cx: sol.center.x,
                             cy: sol.center.y,
                             r: sol.radius,
-                            color: '#3b82f6',
+                            color: '#000000',
                             label: origCircleEq,
                             centerLabel: `C(${sol.center.x}, ${sol.center.y})`
                         },
@@ -2805,7 +2941,7 @@ Output MUST be ONLY valid JSON matching this schema:
                             type: 'line',
                             slope: sol.line.m,
                             intercept: sol.line.k,
-                            color: '#6366f1',
+                            color: '#000000',
                             label: lineEq
                         }
                     ];
@@ -2930,8 +3066,8 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
       "vectors": ["<3D vector a e.g. [1,0,0]>", "<3D vector b e.g. [0,1,0]>"],
       "showCrossProduct": "<true to display normal vector a x b in vector_space_3d>",
       "dimensions": { "radius": "<number>", "height": "<number>", "r1": "<number>", "r2": "<number>" },
-      "x": "<Compute specific X coordinate if user requested a location, else omit to center>",
-      "y": "<Compute specific Y coordinate if user requested a location, else omit to center>"
+      "x": "<OMIT by default so the whiteboard places diagrams to the left of the center origin (cx, cy). Only specify if user explicitly requests a specific coordinate/location>",
+      "y": "<OMIT by default so the whiteboard places diagrams vertically centered at the origin (cx, cy). Only specify if user explicitly requests a specific coordinate/location>"
     },
     {
       "type": "MODIFY_PROPERTY",
@@ -2993,8 +3129,8 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
 CRITICAL RULES:
 - **MATHEMATICAL & GEOMETRY PROBLEM SOLVING (Pythagoras, Trigonometry, Geometry Diagrams, Marking Corners & Edges)**:
   When the user asks for a step-by-step solution, proof, derivation, or explanation of a mathematical problem or theorem involving geometry (e.g. "step by step solution for pythagoras theorem", "solve triangle with sides 3 and 4", "trigonometry sin cos tan", "area of circle with radius 7", "perimeter of rectangle"):
-  1. ALWAYS create an accurately constructed, cleanly labeled geometry diagram placed in the central visible area of the whiteboard:
-     - PLACEMENT: Use the visible viewport center (e.g. center.x - 120, center.y - 100) or omit x and y so it automatically centers. NEVER place in the bottom-right corner or off-screen!
+  1. ALWAYS create an accurately constructed, cleanly labeled geometry diagram placed to the LEFT of the whiteboard center origin (since the Solution Pane is displayed to the right of the center origin):
+     - PLACEMENT: Omit x and y (or use x = center.x - width - 40, y = center.y - height / 2) so the diagram is placed to the left of the center of the whiteboard. NEVER place in the bottom-right corner or off-screen!
   2. PYTHAGOREAN THEOREM & RIGHT-ANGLED TRIANGLES:
      - Use objectType: "right_triangle".
      - Set showRightAngle: true to display the right-angle corner indicator (small square).

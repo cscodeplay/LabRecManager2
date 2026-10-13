@@ -11158,13 +11158,15 @@ export default function Whiteboard({
     // ─── TEACHER DEMONSTRATION & SPATIAL REASONING ENGINE ──────────────
     // 1. Gather rich spatial and conversational context of active board
     const getWhiteboardSpatialContext = useCallback(() => {
-        const baseCx = Math.round((-panOffset.x + (containerRef.current?.clientWidth || 1200) / 2) / zoomLevel);
-        const baseCy = Math.round((-panOffset.y + (containerRef.current?.clientHeight || 800) / 2) / zoomLevel);
+        const cWidth = canvasWidth || 1200;
+        const cHeight = canvasHeight || 700;
+        const baseCx = Math.round((cWidth / 2 - panOffset.x) / zoomLevel);
+        const baseCy = Math.round((cHeight / 2 - panOffset.y) / zoomLevel);
         const margin = 40;
         const xMin = Math.max(margin, Math.round(-panOffset.x / zoomLevel) + margin);
-        const xMax = Math.round((-panOffset.x + (containerRef.current?.clientWidth || 1200)) / zoomLevel) - margin;
+        const xMax = Math.min(cWidth - margin, Math.round((-panOffset.x + cWidth) / zoomLevel) - margin);
         const yMin = Math.max(margin, Math.round(-panOffset.y / zoomLevel) + margin);
-        const yMax = Math.round((-panOffset.y + (containerRef.current?.clientHeight || 800)) / zoomLevel) - margin;
+        const yMax = Math.min(cHeight - margin, Math.round((-panOffset.y + cHeight) / zoomLevel) - margin);
 
         const currentShapes = (pageShapeObjects[currentPage] || []).map(s => {
             const cx = Math.round((s.x || 0) + (s.width || 0) / 2);
@@ -11283,8 +11285,8 @@ export default function Whiteboard({
             texts: currentTexts,
             images: currentImages,
             viewport: {
-                width: canvasWidth,
-                height: canvasHeight,
+                width: cWidth,
+                height: cHeight,
                 visibleBox: { xMin, xMax, yMin, yMax },
                 center: { x: baseCx, y: baseCy },
                 zoomLevel,
@@ -11298,14 +11300,18 @@ export default function Whiteboard({
     }, [currentPage, totalPages, pageShapeObjects, page3DObjects, pageTextObjects, pageImageObjects, canvasWidth, canvasHeight, panOffset, zoomLevel, laserPos, selectedShapeIds]);
 
     // 2. Intelligent Space Allocation & Collision Avoidance
+    // Default Origin: Center of Whiteboard (baseCx, baseCy).
+    // Default Diagram Placement: To the LEFT of Center Origin (leaving Right of Center for the Minimal Solution Pane).
     const findAvailableCanvasSpace = useCallback((desiredW = 160, desiredH = 160, preference = null) => {
+        const cWidth = canvasWidth || 1200;
+        const cHeight = canvasHeight || 700;
         const margin = 40;
         const xMin = Math.max(margin, Math.round(-panOffset.x / zoomLevel) + margin);
-        const xMax = Math.round((-panOffset.x + (containerRef.current?.clientWidth || 1200)) / zoomLevel) - margin;
+        const xMax = Math.min(cWidth - margin, Math.round((-panOffset.x + cWidth) / zoomLevel) - margin);
         const yMin = Math.max(margin, Math.round(-panOffset.y / zoomLevel) + margin);
-        const yMax = Math.round((-panOffset.y + (containerRef.current?.clientHeight || 800)) / zoomLevel) - margin;
-        const baseCx = Math.round((xMin + xMax) / 2);
-        const baseCy = Math.round((yMin + yMax) / 2);
+        const yMax = Math.min(cHeight - margin, Math.round((-panOffset.y + cHeight) / zoomLevel) - margin);
+        const baseCx = Math.round((cWidth / 2 - panOffset.x) / zoomLevel);
+        const baseCy = Math.round((cHeight / 2 - panOffset.y) / zoomLevel);
 
         const activeShapes = pageShapeObjects[currentPage] || [];
         const active3D = page3DObjects[currentPage] || [];
@@ -11401,9 +11407,30 @@ export default function Whiteboard({
             }
         }
 
-        // Case C: Contiguous whitespace scanner prioritizing left-most available space first (User Mandate)
-        const candXs = new Set([xMin]);
-        const candYs = new Set([yMin]);
+        // Case C: Default Origin is Center of Whiteboard (baseCx, baseCy).
+        // Place diagrams TO THE LEFT of the center origin:
+        const leftOfCenterSlotX = Math.max(xMin, Math.min(xMax - desiredW, Math.round(baseCx - desiredW - 40)));
+        const leftOfCenterSlotY = Math.max(yMin, Math.min(yMax - desiredH, Math.round(baseCy - desiredH / 2)));
+
+        const leftSlotCollides = obstacles.some(obs => {
+            const noOverlap = (leftOfCenterSlotX + desiredW < obs.x1 - 10) || (leftOfCenterSlotX > obs.x2 + 10) || (leftOfCenterSlotY + desiredH < obs.y1 - 10) || (leftOfCenterSlotY > obs.y2 + 10);
+            return !noOverlap;
+        });
+
+        if (!leftSlotCollides) {
+            return {
+                x: leftOfCenterSlotX,
+                y: leftOfCenterSlotY,
+                width: desiredW,
+                height: desiredH,
+                hasSpace: true,
+                overlapCount: 0
+            };
+        }
+
+        // If the primary left-of-center slot is occupied, scan candidate slots prioritizing the left half of the whiteboard
+        const candXs = new Set([xMin, leftOfCenterSlotX]);
+        const candYs = new Set([yMin, leftOfCenterSlotY]);
 
         for (const obs of obstacles) {
             if (obs.x2 + margin <= xMax - desiredW) candXs.add(obs.x2 + margin);
@@ -11412,33 +11439,12 @@ export default function Whiteboard({
             if (obs.y1 - desiredH - margin >= yMin) candYs.add(obs.y1 - desiredH - margin);
         }
 
-        // Add regular grid sweep across viewport to discover free gaps between shapes
         for (let x = xMin; x <= xMax - desiredW; x += 60) candXs.add(x);
         for (let y = yMin; y <= yMax - desiredH; y += 60) candYs.add(y);
 
-        // Sort candidate positions: X ascending (prioritizing left-most first), then Y ascending (top-most second)
         const sortedXs = Array.from(candXs).map(x => Math.round(x)).filter(x => x >= xMin && x <= xMax - desiredW).sort((a, b) => a - b);
-        // Prioritize viewport center slot for clean, prominent presentation
-        const centerSlotX = Math.max(xMin, Math.min(xMax - desiredW, Math.round(baseCx - desiredW / 2)));
-        const centerSlotY = Math.max(yMin, Math.min(yMax - desiredH, Math.round(baseCy - desiredH / 2)));
+        const sortedYs = Array.from(candYs).map(y => Math.round(y)).filter(y => y >= yMin && y <= yMax - desiredH).sort((a, b) => a - b);
 
-        const centerCollides = obstacles.some(obs => {
-            const noOverlap = (centerSlotX + desiredW < obs.x1 - 10) || (centerSlotX > obs.x2 + 10) || (centerSlotY + desiredH < obs.y1 - 10) || (centerSlotY > obs.y2 + 10);
-            return !noOverlap;
-        });
-
-        if (!centerCollides) {
-            return {
-                x: centerSlotX,
-                y: centerSlotY,
-                width: desiredW,
-                height: desiredH,
-                hasSpace: true,
-                overlapCount: 0
-            };
-        }
-
-        // If center is occupied, find collision-free slot closest to center
         const validSlots = [];
         for (const cx of sortedXs) {
             for (const cy of sortedYs) {
@@ -11460,8 +11466,12 @@ export default function Whiteboard({
 
         if (validSlots.length > 0) {
             validSlots.sort((a, b) => {
-                const distA = Math.hypot((a.x + desiredW / 2) - baseCx, (a.y + desiredH / 2) - baseCy);
-                const distB = Math.hypot((b.x + desiredW / 2) - baseCx, (b.y + desiredH / 2) - baseCy);
+                // Strongly prefer slots on the left half of the whiteboard (left of baseCx)
+                const aIsLeft = (a.x + desiredW <= baseCx + 20) ? 0 : 1;
+                const bIsLeft = (b.x + desiredW <= baseCx + 20) ? 0 : 1;
+                if (aIsLeft !== bIsLeft) return aIsLeft - bIsLeft;
+                const distA = Math.hypot(a.x - leftOfCenterSlotX, a.y - leftOfCenterSlotY);
+                const distB = Math.hypot(b.x - leftOfCenterSlotX, b.y - leftOfCenterSlotY);
                 return distA - distB;
             });
             return {
@@ -11474,16 +11484,16 @@ export default function Whiteboard({
             };
         }
 
-        // If no contiguous slot fits without collision, mark page as having no space
+        // If no contiguous slot fits without collision, mark page as having no space and return left-of-center slot
         return {
-            x: Math.round(centerSlotX),
-            y: Math.round(centerSlotY),
+            x: Math.round(leftOfCenterSlotX),
+            y: Math.round(leftOfCenterSlotY),
             width: desiredW,
             height: desiredH,
             hasSpace: false,
             overlapCount: 1
         };
-    }, [currentPage, pageShapeObjects, page3DObjects, pageTextObjects, pageImageObjects, panOffset, zoomLevel]);
+    }, [currentPage, pageShapeObjects, page3DObjects, pageTextObjects, pageImageObjects, canvasWidth, canvasHeight, panOffset, zoomLevel]);
 
     // 3. 60fps Teacher Laser Glide Animation Engine
     const animateTeacherLaserPath = useCallback((waypoints = [], duration = 700, onStep = null, onComplete = null) => {
@@ -11960,8 +11970,10 @@ export default function Whiteboard({
         const solution = (data.solutionMarkdown || data.speechResponse || '').trim();
         if (!rawQuestion && !solution) return false;
 
-        const wrapper = canvasWrapperRef.current;
-        const boardWidth = wrapper ? wrapper.clientWidth : 1400;
+        const boardWidth = canvasWidth || 1200;
+        const boardHeight = canvasHeight || 700;
+        const baseCx = Math.round((-panOffset.x + boardWidth / 2) / zoomLevel);
+        const baseCy = Math.round((-panOffset.y + boardHeight / 2) / zoomLevel);
 
         // Auto-detect subject and theme
         const combined = `${rawQuestion} ${solution}`.toLowerCase();
@@ -12002,11 +12014,11 @@ export default function Whiteboard({
             else dType = 'cartesian_plane';
         }
 
-        // 1. Diagram on the LEFT side:
-        const startX = 60;
-        const startY = 80;
+        // 1. Diagram placed to the LEFT of the center of the whiteboard:
         const diagW = 340;
         const diagH = 340;
+        const startX = Math.max(40, Math.round(baseCx - diagW - 40));
+        const startY = Math.max(40, Math.round(baseCy - diagH / 2));
 
         const is3DModel = ['vector_space_3d', 'sphere', 'frustum', 'hemisphere', 'capsule'].includes(dType);
         let diagShapeProps = {};
@@ -12044,10 +12056,11 @@ export default function Whiteboard({
                 type: 'coordinate_system',
                 title: data.title || 'Cartesian Coordinate System',
                 equation: data.equation || (data.curves && data.curves[0]?.label) || null,
-                curves: data.curves || [
-                    { type: 'circle', cx: -1.5, cy: -2, r: 4.92, color: '#3b82f6', label: 'x² + y² + 3x + 4y - 18 = 0', centerLabel: 'C(-1.5, -2)' },
-                    { type: 'line', slope: 3, intercept: 1, color: '#6366f1', label: 'y = 3x + 1' }
-                ],
+                color: '#000000',
+                curves: (data.curves || [
+                    { type: 'circle', cx: -1.5, cy: -2, r: 4.92, color: '#000000', label: 'x² + y² + 3x + 4y - 18 = 0', centerLabel: 'C(-1.5, -2)' },
+                    { type: 'line', slope: 3, intercept: 1, color: '#000000', label: 'y = 3x + 1' }
+                ]).map(c => ({ ...c, color: '#000000' })),
                 intersectionPoints: data.intersectionPoints || [
                     { x: 0.5, y: 2.5, label: 'P₁(0.5, 2.5)' },
                     { x: -2.6, y: -6.8, label: 'P₂(-2.6, -6.8)' }
@@ -12158,7 +12171,7 @@ export default function Whiteboard({
             y: startY,
             width: diagW,
             height: diagH,
-            color: themeColor,
+            color: dType === 'cartesian_plane' ? '#000000' : themeColor,
             strokeWidth: 3,
             fillColor: 'transparent',
             strokeStyle: 'solid',
@@ -12167,59 +12180,43 @@ export default function Whiteboard({
             ...(data.diagramProps || {})
         };
 
-        // 2. Problem Statement Card on RIGHT side near top:
-        const gap = 36;
-        const problemX = startX + diagW + gap; // 60 + 340 + 36 = 436px
-        const problemY = startY;
+        // 2. Optional Problem Statement Card (only if explicitly requested; otherwise the Minimal Solution Pane on the right displays it)
+        const shapesToAdd = [];
+        if (diagramObj) shapesToAdd.push(diagramObj);
 
-        // CONSTRAINED SO IT NEVER CROSSES THE RIGHT EDGE OF BOARD
-        const rightMargin = 60;
-        const maxAvailableWidth = Math.max(380, boardWidth - problemX - rightMargin);
-        const problemWidth = Math.min(620, maxAvailableWidth);
+        if (data.includeProblemCard) {
+            const problemX = Math.round(baseCx + 24);
+            const problemY = startY;
+            const rightMargin = 40;
+            const maxAvailableWidth = Math.max(320, boardWidth - problemX - rightMargin);
+            const problemWidth = Math.min(440, maxAvailableWidth);
 
-        const cleanProblemText = rawQuestion || cleanTextForSpeech(solution).slice(0, 320) || 'Problem Statement';
-        const cardFullText = `${subjectPill}\n\n${cleanProblemText}`;
-        const approxLines = Math.ceil(cardFullText.length / 42);
-        const problemHeight = Math.max(160, Math.min(260, approxLines * 22 + 50));
+            const cleanProblemText = rawQuestion || cleanTextForSpeech(solution).slice(0, 320) || 'Problem Statement';
+            const cardFullText = `${subjectPill}\n\n${cleanProblemText}`;
+            const approxLines = Math.ceil(cardFullText.length / 42);
+            const problemHeight = Math.max(140, Math.min(240, approxLines * 22 + 50));
 
-        const problemCardObj = {
-            id: `prob_card_${Date.now()}`,
-            type: 'rounded_rect',
-            x: problemX,
-            y: problemY,
-            width: problemWidth,
-            height: problemHeight,
-            rotation: 0,
-            color: themeColor,
-            strokeWidth: 2,
-            fillColor: themeBg,
-            strokeStyle: 'solid',
-            text: cardFullText,
-            textColor: '#0f172a',
-            fontSize: 15,
-            fontFamily: data.fontFamily || 'Caveat, cursive, sans-serif'
-        };
-
-        // 3. Optional Solving Zone Boundary Divider / Watermark
-        const dividerY = Math.max(startY + diagH, problemY + problemHeight) + 30;
-        const guideMarker = {
-            id: `guide_zone_${Date.now()}`,
-            type: 'dashed_line',
-            x: 40,
-            y: dividerY,
-            width: Math.max(600, boardWidth - 80),
-            height: 0,
-            startX: 0,
-            startY: 0,
-            endX: Math.max(600, boardWidth - 80),
-            endY: 0,
-            color: 'rgba(148, 163, 184, 0.4)',
-            strokeWidth: 1.5,
-            text: '✍️ Teacher Derivation & Solving Workspace (Write with Pen below)'
-        };
+            const problemCardObj = {
+                id: `prob_card_${Date.now()}`,
+                type: 'rounded_rect',
+                x: problemX,
+                y: problemY,
+                width: problemWidth,
+                height: problemHeight,
+                rotation: 0,
+                color: themeColor,
+                strokeWidth: 2,
+                fillColor: themeBg,
+                strokeStyle: 'solid',
+                text: cardFullText,
+                textColor: '#0f172a',
+                fontSize: 15,
+                fontFamily: data.fontFamily || 'Caveat, cursive, sans-serif'
+            };
+            shapesToAdd.push(problemCardObj);
+        }
 
         const targetPage = currentPageRef.current !== undefined ? currentPageRef.current : currentPage;
-        const shapesToAdd = diagramObj ? [diagramObj, problemCardObj, guideMarker] : [problemCardObj, guideMarker];
         setPageShapeObjects(prev => {
             const existing = prev[targetPage] || [];
             const filtered = dType === 'cartesian_plane'
@@ -12231,16 +12228,21 @@ export default function Whiteboard({
             };
         });
 
-        setSelectedShapeIds(diagramObj ? [diagramObj.id, problemCardObj.id] : [problemCardObj.id]);
+        setSelectedShapeIds(shapesToAdd.map(s => s.id));
         setTool('pen'); // Auto-activate pen so teacher can start writing solution derivations immediately!
         saveToHistory();
-        toast.success('Generated Problem + Diagram layout! Writing space ready below.', { icon: '📐', duration: 4500 });
+        toast.success('Placed diagram to the left of center!', { icon: '📐', duration: 3500 });
         return true;
-    }, [currentPage, saveToHistory]);
+    }, [canvasWidth, canvasHeight, panOffset, zoomLevel, currentPage, saveToHistory]);
 
     // Execute AI-generated native canvas actions (3D models, flowcharts, diagrams, educational lesson boards)
     const executeAiCanvasAction = useCallback((canvasAction, options = {}) => {
         if (!canvasAction || !canvasAction.type) return false;
+
+        const boardW = canvasWidth || 1200;
+        const boardH = canvasHeight || 700;
+        const baseCx = Math.round((-panOffset.x + boardW / 2) / zoomLevel);
+        const baseCy = Math.round((-panOffset.y + boardH / 2) / zoomLevel);
 
         // Problem with diagram side-by-side layout
         if (canvasAction.type === 'draw_problem_with_diagram') {
@@ -12255,17 +12257,17 @@ export default function Whiteboard({
 
             // Intelligent board space check: auto-paginate if current board has 3+ objects or no clear space
             const activeCount = (pageShapeObjects[currentPageRef.current]?.length || 0) + (page3DObjects[currentPageRef.current]?.length || 0);
-            if (activeCount >= 3) {
-                const spaceCheck = findAvailableCanvasSpace(reqW, reqH);
-                if (!spaceCheck.hasSpace) {
-                    addNewPage();
-                    toast.info('📄 Board was crowded — opened a fresh board for this diagram', { icon: '✨' });
-                }
+            const spaceCheck = findAvailableCanvasSpace(reqW, reqH);
+            if (activeCount >= 3 && !spaceCheck.hasSpace) {
+                addNewPage();
+                toast.info('📄 Board was crowded — opened a fresh board for this diagram', { icon: '✨' });
             }
 
             const activeTargetPage = currentPageRef.current;
-            const posX = canvasAction.x !== undefined ? Number(canvasAction.x) : Math.max(30, Math.round(baseCx - reqW / 2));
-            const posY = canvasAction.y !== undefined ? Number(canvasAction.y) : Math.max(30, Math.round(baseCy - reqH / 2));
+            const defaultLeftX = spaceCheck.hasSpace ? spaceCheck.x : Math.max(40, Math.round(baseCx - reqW - 40));
+            const defaultLeftY = spaceCheck.hasSpace ? spaceCheck.y : Math.max(40, Math.round(baseCy - reqH / 2));
+            const posX = canvasAction.x !== undefined ? Number(canvasAction.x) : defaultLeftX;
+            const posY = canvasAction.y !== undefined ? Number(canvasAction.y) : defaultLeftY;
 
             const mathShape = {
                 id: `math_shp_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
@@ -12338,8 +12340,11 @@ export default function Whiteboard({
 
             const reqW = canvasAction.width ? Number(canvasAction.width) : 240;
             const reqH = canvasAction.height ? Number(canvasAction.height) : reqW;
-            const posX = canvasAction.x !== undefined ? Number(canvasAction.x) : Math.max(20, baseCx - reqW / 2);
-            const posY = canvasAction.y !== undefined ? Number(canvasAction.y) : Math.max(20, baseCy - reqH / 2);
+            const spaceCheck3D = findAvailableCanvasSpace(reqW, reqH);
+            const default3DX = spaceCheck3D.hasSpace ? spaceCheck3D.x : Math.max(40, Math.round(baseCx - reqW - 40));
+            const default3DY = spaceCheck3D.hasSpace ? spaceCheck3D.y : Math.max(40, Math.round(baseCy - reqH / 2));
+            const posX = canvasAction.x !== undefined ? Number(canvasAction.x) : default3DX;
+            const posY = canvasAction.y !== undefined ? Number(canvasAction.y) : default3DY;
 
             const new3D = {
                 id: `3d_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
@@ -13481,10 +13486,9 @@ export default function Whiteboard({
             return;
         }
 
-        // Center calculation in current canvas coordinate space
-        const canvas = canvasRef.current;
-        const cWidth = canvas?.width || 1200;
-        const cHeight = canvas?.height || 800;
+        // Center calculation in current canvas coordinate space (Whiteboard Center Origin)
+        const cWidth = canvasWidth || 1200;
+        const cHeight = canvasHeight || 700;
         const cx = Math.round((cWidth / 2 - panOffset.x) / zoomLevel);
         const cy = Math.round((cHeight / 2 - panOffset.y) / zoomLevel);
 
@@ -15050,8 +15054,20 @@ export default function Whiteboard({
                                 objW = Number(action.width) || 280; objH = Number(action.height) || 280;
                             }
 
-                            // Scan available contiguous spaces prioritizing left-most slot first (User Mandate)
-                            const freeSpace = findAvailableCanvasSpace(objW, objH);
+                            // Detect explicit relative or positional intent in user request
+                            const relativeMatch = rawText.match(/\b(below|under|beneath|above|over|left\s+of|to\s+the\s+left|right\s+of|to\s+the\s+right|next\s+to|beside|at\s+laser|here)\b/i);
+                            let spatialPref = {};
+                            if (relativeMatch) {
+                                const relWord = relativeMatch[1].toLowerCase();
+                                if (relWord.includes('below') || relWord.includes('under') || relWord.includes('beneath')) spatialPref.relative = 'below';
+                                else if (relWord.includes('above') || relWord.includes('over')) spatialPref.relative = 'above';
+                                else if (relWord.includes('left')) spatialPref.relative = 'left';
+                                else if (relWord.includes('right') || relWord.includes('next') || relWord.includes('beside')) spatialPref.relative = 'right';
+                                else if (relWord.includes('laser') || relWord.includes('here')) spatialPref.atLaser = true;
+                            }
+
+                            // Scan available contiguous spaces prioritizing left-of-center slot first
+                            const freeSpace = findAvailableCanvasSpace(objW, objH, spatialPref);
                             const activeCount = (pageShapeObjects[currentPageRef.current]?.length || 0) + (page3DObjects[currentPageRef.current]?.length || 0);
 
                             // Only auto-page if current page genuinely has NO contiguous space that fits the object and already has 4+ objects
@@ -15065,11 +15081,16 @@ export default function Whiteboard({
                             const actColor = action.color || color || '#3b82f6';
                             const actFill = action.fillColor || fillColor || 'transparent';
 
-                            // Determine target position: use user-specified coords or available contiguous space (prioritize left-most first)
-                            const defaultPx = freeSpace.hasSpace ? freeSpace.x : Math.max(20, Math.round(cx - objW / 2));
-                            const defaultPy = freeSpace.hasSpace ? freeSpace.y : Math.max(20, Math.round(cy - objH / 2));
-                            const targetPx = action.x !== undefined ? Number(action.x) : defaultPx;
-                            const targetPy = action.y !== undefined ? Number(action.y) : defaultPy;
+                            // Default origin is center of whiteboard (cx, cy); place diagrams to the LEFT of center when no position is specified
+                            const leftOfCenterDefaultX = Math.max(40, Math.round(cx - objW - 40));
+                            const leftOfCenterDefaultY = Math.max(40, Math.round(cy - objH / 2));
+                            const defaultPx = freeSpace.hasSpace ? freeSpace.x : leftOfCenterDefaultX;
+                            const defaultPy = freeSpace.hasSpace ? freeSpace.y : leftOfCenterDefaultY;
+
+                            // Only use action.x / action.y if the user explicitly specified a position/coordinate or if it's a concentric circle member
+                            const userSpecifiedPos = Boolean(relativeMatch) || /\b(at\s*\(?\s*\d+|x\s*=\s*\d+|top\s+left|top\s+right|bottom\s+left|bottom\s+right|center\s+of)\b/i.test(rawText) || Boolean(action.isConcentricMember);
+                            const targetPx = (userSpecifiedPos && action.x !== undefined) ? Number(action.x) : defaultPx;
+                            const targetPy = (userSpecifiedPos && action.y !== undefined) ? Number(action.y) : defaultPy;
 
                             const performCreation = () => {
                                 if (action.objectType === '3d_model' || ['frustum', 'capsule', 'hemisphere', 'half_cylinder', 'cone_cylinder', 'vector_space_3d', 'vector_space'].includes(action.objectType)) {
@@ -15195,10 +15216,10 @@ export default function Whiteboard({
                                         y: targetPy,
                                         width: objW,
                                         height: objH,
-                                        color: actColor,
+                                        color: '#000000',
                                         strokeWidth: actStroke || 2,
                                         plottedPoints: action.plottedPoints || null,
-                                        curves: action.curves || null,
+                                        curves: Array.isArray(action.curves) ? action.curves.map(c => ({ ...c, color: '#000000' })) : null,
                                         lines: action.lines || null,
                                         intersectionPoints: action.intersectionPoints || null,
                                         unitScale: action.unitScale || action.pixelsPerUnit || 25,
@@ -21948,20 +21969,22 @@ export default function Whiteboard({
                                     ? `${Math.max(2, shpObj.strokeWidth || 2)},${Math.max(3, (shpObj.strokeWidth || 2) * 1.5)}`
                                     : undefined;
 
-                            const renderSvgLabel = (lx, ly, txt, anchor = 'middle', fSize = 13, bold = true) => {
+                            const renderSvgLabel = (lx, ly, txt, anchor = 'middle', fSize = 13, boldOrColor = true) => {
                                 if (txt === undefined || txt === null || String(txt).trim() === '') return null;
+                                const resolvedColor = typeof boldOrColor === 'string' ? boldOrColor : (shpObj.textColor || shpObj.color || '#000000');
+                                const isBold = typeof boldOrColor === 'boolean' ? boldOrColor : true;
                                 return (
                                     <text
                                         x={lx}
                                         y={ly}
                                         textAnchor={anchor}
-                                        fill={shpObj.textColor || shpObj.color || '#1e293b'}
-                                        stroke="rgba(255, 255, 255, 0.95)"
-                                        strokeWidth={3.5}
+                                        fill={resolvedColor}
+                                        stroke="rgba(255, 255, 255, 0.9)"
+                                        strokeWidth={3}
                                         paintOrder="stroke fill"
                                         strokeLinejoin="round"
                                         fontSize={fSize}
-                                        fontWeight={bold ? 'bold' : '600'}
+                                        fontWeight={isBold ? 'bold' : '600'}
                                         fontFamily="Inter, system-ui, -apple-system, sans-serif"
                                         style={{ pointerEvents: 'none', userSelect: 'none' }}
                                     >
@@ -23056,40 +23079,40 @@ export default function Whiteboard({
 
                                 return (
                                     <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
-                                        {/* Background container with subtle math grid */}
-                                        <rect x="0" y="0" width={w} height={h} fill="rgba(248, 250, 252, 0.95)" stroke="rgba(148, 163, 184, 0.5)" strokeWidth={1.5} rx={8} />
+                                        {/* Transparent hit area (no opaque white box) */}
+                                        <rect x="0" y="0" width={w} height={h} fill="transparent" stroke="none" />
                                         
-                                        {/* Grid subdivisions */}
+                                        {/* Subtle grid subdivisions in black */}
                                         {[-4, -3, -2, -1, 1, 2, 3, 4].map((step, i) => {
                                             const gx = cx + step * scale * 2;
                                             const gy = cy + step * scale * 2;
                                             return (
                                                 <g key={i}>
                                                     {gx > 12 && gx < w - 12 && (
-                                                        <line x1={gx} y1={10} x2={gx} y2={h - 10} stroke="rgba(148, 163, 184, 0.25)" strokeDasharray="2,3" />
+                                                        <line x1={gx} y1={10} x2={gx} y2={h - 10} stroke="rgba(0, 0, 0, 0.16)" strokeDasharray="2,3" />
                                                     )}
                                                     {gy > 12 && gy < h - 12 && (
-                                                        <line x1={10} y1={gy} x2={w - 10} y2={gy} stroke="rgba(148, 163, 184, 0.25)" strokeDasharray="2,3" />
+                                                        <line x1={10} y1={gy} x2={w - 10} y2={gy} stroke="rgba(0, 0, 0, 0.16)" strokeDasharray="2,3" />
                                                     )}
                                                 </g>
                                             );
                                         })}
 
-                                        {/* X Axis */}
-                                        <line x1={10} y1={cy} x2={w - 10} y2={cy} stroke={shpObj.color || '#334155'} strokeWidth={shpObj.strokeWidth || 2} />
-                                        <polygon points={`${w-10},${cy} ${w-10-arrS},${cy-arrS/2} ${w-10-arrS},${cy+arrS/2}`} fill={shpObj.color || '#334155'} />
-                                        {renderSvgLabel(w - 6, cy - 8, 'X', 'start', 13)}
+                                        {/* X Axis in Black */}
+                                        <line x1={10} y1={cy} x2={w - 10} y2={cy} stroke="#000000" strokeWidth={shpObj.strokeWidth || 2} />
+                                        <polygon points={`${w-10},${cy} ${w-10-arrS},${cy-arrS/2} ${w-10-arrS},${cy+arrS/2}`} fill="#000000" />
+                                        {renderSvgLabel(w - 6, cy - 8, 'X', 'start', 13, '#000000')}
 
-                                        {/* Y Axis */}
-                                        <line x1={cx} y1={h - 10} x2={cx} y2={10} stroke={shpObj.color || '#334155'} strokeWidth={shpObj.strokeWidth || 2} />
-                                        <polygon points={`${cx},10 ${cx-arrS/2},${10+arrS} ${cx+arrS/2},${10+arrS}`} fill={shpObj.color || '#334155'} />
-                                        {renderSvgLabel(cx + 8, 14, 'Y', 'start', 13)}
+                                        {/* Y Axis in Black */}
+                                        <line x1={cx} y1={h - 10} x2={cx} y2={10} stroke="#000000" strokeWidth={shpObj.strokeWidth || 2} />
+                                        <polygon points={`${cx},10 ${cx-arrS/2},${10+arrS} ${cx+arrS/2},${10+arrS}`} fill="#000000" />
+                                        {renderSvgLabel(cx + 8, 14, 'Y', 'start', 13, '#000000')}
 
-                                        {/* Origin */}
-                                        <circle cx={cx} cy={cy} r={3} fill={shpObj.color || '#334155'} />
-                                        {renderSvgLabel(cx - 8, cy + 14, 'O', 'end', 11)}
+                                        {/* Origin in Black */}
+                                        <circle cx={cx} cy={cy} r={3} fill="#000000" />
+                                        {renderSvgLabel(cx - 8, cy + 14, 'O', 'end', 11, '#000000')}
 
-                                        {/* Curves (Circles, Lines, Functions) */}
+                                        {/* Curves (Circles, Lines, Functions) in Black */}
                                         {Array.isArray(shpObj.curves) && shpObj.curves.map((curve, idx) => {
                                             if (curve.type === 'circle') {
                                                 const circleCx = cx + (Number(curve.cx) || 0) * scale;
@@ -23101,24 +23124,19 @@ export default function Whiteboard({
                                                             cx={circleCx}
                                                             cy={circleCy}
                                                             r={circleR}
-                                                            fill={curve.fill || 'rgba(59, 130, 246, 0.08)'}
-                                                            stroke={curve.color || '#3b82f6'}
+                                                            fill="transparent"
+                                                            stroke="#000000"
                                                             strokeWidth={curve.strokeWidth || 2}
                                                             strokeDasharray={curve.dashArray || undefined}
                                                         />
-                                                        <circle cx={circleCx} cy={circleCy} r={2.5} fill={curve.color || '#3b82f6'} />
-                                                        {curve.centerLabel && renderSvgLabel(circleCx + 6, circleCy - 6, curve.centerLabel, 'start', 11)}
+                                                        <circle cx={circleCx} cy={circleCy} r={2.5} fill="#000000" />
+                                                        {curve.centerLabel && renderSvgLabel(circleCx + 6, circleCy - 6, curve.centerLabel, 'start', 11, '#000000')}
                                                         {curve.label && (() => {
                                                             const cLabel = curve.label || '';
                                                             const cLabelW = Math.max(80, cLabel.length * 6.5 + 16);
                                                             const cLabelX = Math.max(8, Math.min(w - cLabelW - 8, circleCx - cLabelW / 2));
                                                             const cLabelY = Math.max(8, Math.min(h - 22, circleCy - circleR - 20));
-                                                            return (
-                                                                <g>
-                                                                    <rect x={cLabelX} y={cLabelY} width={cLabelW} height={18} rx={4} fill="rgba(255,255,255,0.92)" stroke={curve.color || '#3b82f6'} strokeWidth={0.8} />
-                                                                    {renderSvgLabel(cLabelX + cLabelW / 2, cLabelY + 12, cLabel, 'middle', 10, curve.color || '#3b82f6')}
-                                                                </g>
-                                                            );
+                                                            return renderSvgLabel(cLabelX + cLabelW / 2, cLabelY + 12, cLabel, 'middle', 11, '#000000');
                                                         })()}
                                                     </g>
                                                 );
@@ -23138,7 +23156,7 @@ export default function Whiteboard({
                                                             y1={ly1}
                                                             x2={lx2}
                                                             y2={ly2}
-                                                            stroke={curve.color || '#6366f1'}
+                                                            stroke="#000000"
                                                             strokeWidth={curve.strokeWidth || 2}
                                                             strokeDasharray={curve.dashArray || undefined}
                                                         />
@@ -23147,12 +23165,7 @@ export default function Whiteboard({
                                                             const lLabelW = Math.max(70, lLabel.length * 6.5 + 16);
                                                             const lLabelX = Math.max(8, Math.min(w - lLabelW - 8, lx2 - lLabelW));
                                                             const lLabelY = Math.max(8, Math.min(h - 22, ly2 - 10));
-                                                            return (
-                                                                <g>
-                                                                    <rect x={lLabelX} y={lLabelY} width={lLabelW} height={18} rx={4} fill="rgba(255,255,255,0.92)" stroke={curve.color || '#6366f1'} strokeWidth={0.8} />
-                                                                    {renderSvgLabel(lLabelX + lLabelW / 2, lLabelY + 12, lLabel, 'middle', 10, curve.color || '#6366f1')}
-                                                                </g>
-                                                            );
+                                                            return renderSvgLabel(lLabelX + lLabelW / 2, lLabelY + 12, lLabel, 'middle', 11, '#000000');
                                                         })()}
                                                     </g>
                                                 );
@@ -23160,7 +23173,7 @@ export default function Whiteboard({
                                             return null;
                                         })}
 
-                                        {/* Plotted Points */}
+                                        {/* Plotted Points in Black */}
                                         {Array.isArray(shpObj.plottedPoints) && shpObj.plottedPoints.map((pt, idx) => {
                                             const px = cx + (Number(pt.x) || 0) * scale;
                                             const py = cy - (Number(pt.y) || 0) * scale;
@@ -23169,13 +23182,13 @@ export default function Whiteboard({
                                             const ptLabelY = Math.max(14, Math.min(h - 8, py - 6));
                                             return (
                                                 <g key={`pt_${idx}`}>
-                                                    <circle cx={px} cy={py} r={4.5} fill="#2563eb" stroke="#ffffff" strokeWidth={1.5} />
-                                                    {renderSvgLabel(ptLabelX, ptLabelY, ptLabel, 'start', 11.5, '#1e293b')}
+                                                    <circle cx={px} cy={py} r={4} fill="#000000" />
+                                                    {renderSvgLabel(ptLabelX, ptLabelY, ptLabel, 'start', 11.5, '#000000')}
                                                 </g>
                                             );
                                         })}
 
-                                        {/* Intersection Points */}
+                                        {/* Intersection Points in Black */}
                                         {Array.isArray(shpObj.intersectionPoints) && shpObj.intersectionPoints.map((pt, idx) => {
                                             const px = cx + (Number(pt.x) || 0) * scale;
                                             const py = cy - (Number(pt.y) || 0) * scale;
@@ -23187,26 +23200,16 @@ export default function Whiteboard({
                                             const badgeY = Math.max(6, Math.min(h - 22, rawBadgeY));
                                             return (
                                                 <g key={`inter_${idx}`}>
-                                                    <circle cx={px} cy={py} r={9} fill="none" stroke="#ef4444" strokeWidth={1.2} opacity={0.5} strokeDasharray="2,2" />
-                                                    <circle cx={px} cy={py} r={5} fill="#ef4444" stroke="#ffffff" strokeWidth={2} />
-                                                    <g transform={`translate(${badgeX}, ${badgeY})`}>
-                                                        <rect x="0" y="0" width={badgeW} height={18} rx={4} fill="#0f172a" stroke="#ef4444" strokeWidth={1.2} />
-                                                        <text x={badgeW / 2} y={13} fill="#f8fafc" fontSize={10.5} fontWeight="bold" textAnchor="middle" fontFamily="sans-serif">
-                                                            {labelText}
-                                                        </text>
-                                                    </g>
+                                                    <circle cx={px} cy={py} r={8} fill="none" stroke="#000000" strokeWidth={1.2} strokeDasharray="2,2" />
+                                                    <circle cx={px} cy={py} r={4.5} fill="#000000" />
+                                                    {renderSvgLabel(badgeX + badgeW / 2, badgeY + 13, labelText, 'middle', 11, '#000000')}
                                                 </g>
                                             );
                                         })}
 
-                                        {/* Title / Equation Badge at Top */}
+                                        {/* Title / Equation Label at Top in Black */}
                                         {(shpObj.title || shpObj.equation) && (
-                                            <g transform={`translate(12, 12)`}>
-                                                <rect x="0" y="0" width={Math.min(w - 24, (shpObj.title || shpObj.equation).length * 7 + 24)} height={22} rx={6} fill="rgba(15, 23, 42, 0.88)" />
-                                                <text x={12} y={15} fill="#38bdf8" fontSize={11} fontWeight="bold" fontFamily="sans-serif">
-                                                    {shpObj.title || shpObj.equation}
-                                                </text>
-                                            </g>
+                                            renderSvgLabel(12, 18, shpObj.title || shpObj.equation, 'start', 12, '#000000')
                                         )}
                                     </g>
                                 );
@@ -26426,7 +26429,7 @@ export default function Whiteboard({
                 onExecuteCommand={executeVoiceCommand}
             />
 
-            {/* Live Real-Time Closed Captions (CC) Overlay with Collapsible AI Knowledge Pane */}
+            {/* Live Real-Time Closed Captions (CC) Overlay with Right-of-Center Minimal AI Solution Pane */}
             <WhiteboardClosedCaptions
                 isVisible={showClosedCaptions && (isVoiceListening || Boolean(interimVoiceTranscript || voiceTranscript || voiceFeedback || isAiSpeaking || isAiThinking || aiSolutionData?.speechResponse))}
                 isListening={isVoiceListening}
@@ -26444,6 +26447,20 @@ export default function Whiteboard({
                 onInsertAsText={handleInsertAiTextObject}
                 onOpenAiSolution={() => setShowAiAssistantModal(true)}
                 onStopSpeaking={stopAiSpeech}
+                onSpeak={speakAiResponse}
+                speechRate={speechRate}
+                onChangeSpeechRate={(newRate) => {
+                    setSpeechRate(newRate);
+                    setStoreSpeechRate?.(newRate);
+                }}
+                aiSpeechEnabled={aiSpeechEnabled}
+                onToggleAiSpeech={() => {
+                    const next = !aiSpeechEnabled;
+                    setAiSpeechEnabled(next);
+                    setStoreAutoRead?.(next);
+                    if (!next) stopAiSpeech();
+                }}
+                preferredProvider={whiteboardAiProvider}
                 onClose={() => setShowClosedCaptions(false)}
                 onExecuteCommand={(cmd) => executeVoiceCommand(cmd)}
                 audioLevel={audioInputLevel}

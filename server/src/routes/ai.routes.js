@@ -694,6 +694,41 @@ router.post('/test-provider', authenticate, authorize('admin', 'principal'), asy
     }
 }));
 
+/**
+ * @route   POST /api/ai/scan-question-image
+ * @desc    Scan an uploaded/dragged/pasted image and extract the question/problem text for the Whiteboard AI request box
+ * @access  Private (Authenticated users)
+ */
+router.post('/scan-question-image', authenticate, upload.single('image'), asyncHandler(async (req, res) => {
+    const { provider = 'auto' } = req.body;
+
+    if (!req.file || !req.file.buffer) {
+        return res.status(400).json({
+            success: false,
+            message: 'An image file is required to scan a question.'
+        });
+    }
+
+    try {
+        const result = await aiService.extractQuestionFromImage(
+            req.file.buffer,
+            req.file.mimetype || 'image/png',
+            provider
+        );
+        res.json({
+            success: true,
+            message: 'Scanned question from image successfully',
+            data: result
+        });
+    } catch (err) {
+        console.error('[AI Route] Scan question image error:', err.message);
+        res.status(502).json({
+            success: false,
+            message: err.message || 'Failed to scan question from image'
+        });
+    }
+}));
+
 module.exports = router;
 
 
