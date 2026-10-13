@@ -14159,8 +14159,10 @@ export default function Whiteboard({
         // Strictly handles direct shape commands like "draw circle", "draw concentric circles"
         const isDeleteCommand = /\b(delete|remove|erase|clear\s+the|destroy|drop)\b/i.test(txt);
         const isSTEMQuestionOrQuery =
-            /\b(volume|surface\s+area|area\s+of|perimeter|circumference|intersect|intersection|equation|tangent|derivative|integral|vector|vectors|cross\s+product|dot\s+product|newton|photosynthesis|mitosis|dna|velocity|acceleration|projectile|molecular)\b/i.test(txt) ||
-            /\b(what\s+is|what\s+are|what\s+will|how\s+does|how\s+do|how\s+to|calculate|solve|derive|prove|find|explain|teach)\b/i.test(txt);
+            /\b(volume|surface\s+area|area\s+of|perimeter|circumference|intersect|intersection|equation|formula|theorem|pythagor|hypotenuse|trigonometr|sin|cos|tan|tangent|derivative|integral|vector|vectors|cross\s+product|dot\s+product|newton|photosynthesis|mitosis|dna|velocity|acceleration|projectile|molecular|ap|gp|arithmetic\s+progression|geometric\s+progression|nth\s+term|quadratic|roots|discriminant|matrix|determinant|probability|mean|median|mode|force|energy|power|work|current|voltage|resistance|ohm|molarity|mole)\b/i.test(txt) ||
+            /\b(what\s+is|what\s+are|what\s+will|how\s+does|how\s+do|how\s+to|how\s+many|how\s+much|calculate|solve|derive|prove|find|explain|teach|evaluate|simplify|compute|determine)\b/i.test(txt) ||
+            txt.includes('?') ||
+            txt.includes('=');
         const isCognitiveExplain =
             isSTEMQuestionOrQuery ||
             txt.startsWith('explain') ||
@@ -14175,7 +14177,7 @@ export default function Whiteboard({
             txt.startsWith('prove') ||
             txt.startsWith('calculate') ||
             txt.startsWith('find') ||
-            (txt.includes('formula') && (txt.includes('circle') || txt.includes('area') || txt.includes('what')));
+            txt.includes('formula');
 
         if (!isDeleteCommand && !isCognitiveExplain) {
             // 1. Concentric Circles: dynamically extracts any number of rings N and custom dimensions
@@ -14515,8 +14517,8 @@ export default function Whiteboard({
 
             // 4. Square command (e.g. "square of side 60px", "draw square side 100")
             const isSquareVoice =
-                (/\b(draw\s+a?\s*square|create\s+a?\s*square|draw\s+square|^square$|\bsquare\s+(?:with\s+)?(?:side|size|of)\b|\bsquare\b)/i.test(txt)) &&
-                !txt.includes('concentric') && !txt.includes('color');
+                (/\b(draw\s+a?\s*square|create\s+a?\s*square|draw\s+square|^square$|\bsquare\s+(?:with\s+)?(?:side|size|of)\s*\d+)\b/i.test(txt)) &&
+                !/\b(concentric|color|root|area\s+of|perimeter|solve|find|what|equation|calculate|prove|theorem)\b/i.test(txt);
 
             if (isSquareVoice) {
                 const hasCm = /\b(cm|centimeters?|centimetres?)\b/i.test(txt);
@@ -14579,7 +14581,8 @@ export default function Whiteboard({
             }
 
             // 5. Right Triangle or Triangle command (Strict Pure Draw Intent)
-            const isRightTriangle = /\b(right[\s-]*(?:angled?|angle)?[\s-]*triangle|30[\s-]60[\s-]90[\s-]*triangle|45[\s-]45[\s-]90[\s-]*triangle|triangle\s+with\s+(?:a\s+)?right\s+angle|triangle\s+with\s+90\s*deg)\b/i.test(txt);
+            const isRightTriangle = /\b(right[\s-]*(?:angled?|angle)?[\s-]*triangle|30[\s-]60[\s-]90[\s-]*triangle|45[\s-]45[\s-]90[\s-]*triangle|triangle\s+with\s+(?:a\s+)?right\s+angle|triangle\s+with\s+90\s*deg)\b/i.test(txt) &&
+                !/\b(color|solve|find|what|area\s+of|perimeter|hypotenuse|calculate|prove|theorem|pythagor)\b/i.test(txt);
             const isTriangleVoice = (/\b(draw\s+a?\s*triangle|create\s+a?\s*triangle|equilateral\s*triangle|isosceles\s*triangle)\b/i.test(txt) || txt === 'triangle') &&
                 !/\b(color|solve|find|what|area\s+of|calculate|prove|theorem)\b/i.test(txt);
 
@@ -26441,7 +26444,7 @@ export default function Whiteboard({
                 aiSpeakingText={aiSpeakingText}
                 speakingCharIndex={speakingCharIndex}
                 aiSolution={aiSolutionData}
-                aiResponseText={aiSolutionData?.speechResponse || aiSpeakingText}
+                aiResponseText={aiSolutionData?.solutionMarkdown || aiSolutionData?.speechResponse || aiSpeakingText}
                 suggestedFollowUps={aiSolutionData?.suggestedFollowUps || []}
                 onCreateStickyNote={handleInsertAiStickyNote}
                 onInsertAsText={handleInsertAiTextObject}

@@ -3012,7 +3012,8 @@ Determine what the user wants to accomplish:
 OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
 {
   "recognized": true,
-  "speechResponse": "<A natural, engaging response to read aloud via TTS. Be concise.>",
+  "speechResponse": "<A natural, engaging spoken summary (2 to 3 sentences) to read aloud via TTS. Clean conversational text without raw LaTeX backslashes.>",
+  "solutionMarkdown": "<REQUIRED for all questions, problems, formulas, derivations, and explanations: Well-structured Markdown with clear section headings (### 📌 Given & Concept, ### 📐 Formula, ### 🔢 Step-by-Step Solution, ### ✅ Final Answer) and ALL formulas/equations/variables/units written in proper LaTeX/KaTeX scientific notation ($$...$$ for display equations, $...$ for inline math). NEVER write formulas in plain English words!>",
   "suggestedFollowUps": [
     "<3 to 4 smart, highly topic-relevant follow-up actions or questions with emojis, e.g. '📐 Show formula', '🌿 Draw diagram', '✨ Show in 3D', '💡 Give a real-world example', '📝 Summarize in 3 points'>"
   ],
@@ -3180,20 +3181,34 @@ CRITICAL RULES:
 - **STRICT PROHIBITION ON 'drawing' FOR GEOMETRIC SHAPES**:
   NEVER output objectType: 'drawing' or 'sketch' for geometric shapes (circle, concentric_circles, rectangle, square, triangle, right_triangle, cone, cylinder, incline_plane, coordinate_system, box).
   Geometric shapes MUST ALWAYS use their dedicated geometric objectType ('circle', 'rectangle', 'triangle', 'right_triangle', 'cone', 'cylinder', 'incline_plane', 'coordinate_system') with exact dimensions, vertices, and measurement labels! 'drawing' is reserved solely for non-geometric artwork illustrations (cat, dog, car, tree, house, etc.).
-- **ADAPTIVE RESPONSE FORMATTING (BULLET STEPS FOR DERIVATIONS VS CONCISE PROSE FOR DEFINITIONS)**:
-  Adapt your response format to the specific pedagogical nature of the user's prompt:
-  1. FOR MULTI-STEP PROBLEMS, THEOREMS, DERIVATIONS, & PROOFS (e.g. "step by step solution for pythagoras theorem", "solve triangle with sides 3 and 4", "derive kinetic energy", "how does photosynthesis work"):
-     - Use 3 to 4 concise, scannable bullet points or numbered steps for both 'speechResponse' and 'solutionMarkdown':
-       • 📌 **Concept & Given**: What is being solved in 1 crisp sentence.
-       • 📐 **Formula**: Core equation in clean LaTeX ($$...$$).
-       • 🔢 **Step-by-Step Calculation**: Step 1 → Step 2 → Result.
-       • 🎯 **Conclusion & Intuition**: Key takeaway.
-     - Synchronize spoken dictation with visual whiteboard presentation so students can easily follow along.
-  2. FOR DEFINITIONS, CORE CONCEPTS & SINGLE-FACT QUESTIONS (e.g. "what is velocity?", "define gravity", "what is inertia?", "explain Ohm's law"):
-     - DO NOT force artificial bullet points!
-     - Provide a direct, cohesive explanation (2 to 3 sentences) giving the formal scientific definition, physical intuition, and key equation/units if applicable.
-     - Keep it crisp and direct so it fits neatly on screen and sounds completely natural when spoken.
-  3. STRICTLY AVOID large walls of text, narrative essays, or unbroken paragraphs! Whiteboard teaching requires high visual clarity and minimal cognitive load.
+- **MANDATORY LATEX SCIENTIFIC NOTATION & STRUCTURED MARKDOWN IN 'solutionMarkdown'**:
+  1. STRICT PROHIBITION ON PLAIN-ENGLISH FORMULAS:
+     - NEVER write mathematical, physics, or chemistry formulas in plain English words in 'solutionMarkdown' (e.g., NEVER write "a plus n minus 1 times d", "a squared plus b squared equals c squared", "half base times height", "pi r squared", or "P times V equals n R T").
+     - ALWAYS write every formula, equation, variable, fraction, exponent, subscript, square root, trigonometric function, Greek symbol, chemical equation, and scientific unit in proper LaTeX / KaTeX notation:
+       * Display equations (centered on their own line): \`$$a_n = a + (n - 1)d$$\`, \`$$a^2 + b^2 = c^2$$\`, \`$$A = \\frac{1}{2}bh$$\`, \`$$PV = nRT$$\`, \`$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$\`
+       * Inline variables, expressions, and units: \`$r = 7\\text{ cm}$\`, \`$\\theta = 30^\\circ$\`, \`$v = 9.8\\text{ m/s}^2$\`, \`$\\Delta = b^2 - 4ac$\`
+       * Escape backslashes properly inside JSON strings (e.g. \`\\\\frac\`, \`\\\\sqrt\`, \`\\\\pi\`, \`\\\\times\`, \`\\\\theta\`, \`\\\\text\`, \`\\\\boxed\`).
+  2. STRUCTURED SECTIONS FOR PROBLEMS, DERIVATIONS, & FORMULAS:
+     When answering any math/science problem, formula request, theorem, or derivation, format 'solutionMarkdown' into clean, scannable sections:
+     \`\`\`markdown
+     ### 📌 Given & Concept
+     - Identify given values, variables, and the core scientific/mathematical principle using inline LaTeX ($...$).
+
+     ### 📐 Formula
+     $$<core governing equation in LaTeX>$$
+
+     ### 🔢 Step-by-Step Solution
+     1. **Substitute Values:** Show substitution in LaTeX ($...$ or $$...$$).
+     2. **Simplify & Compute:** Show intermediate algebraic/numerical steps clearly.
+
+     ### ✅ Final Answer
+     $$\\boxed{<final result with units>}$$
+     \`\`\`
+  3. FOR DEFINITIONS & CONCEPTUAL QUESTIONS (e.g. "what is velocity?", "explain Ohm's law"):
+     - Structure 'solutionMarkdown' with \`### 💡 Definition\`, \`### 📐 Formula & Units\` (using \`$$...$$\` and \`$...$\`), and \`### 🎯 Key Takeaway\`.
+  4. 'speechResponse' vs 'solutionMarkdown':
+     - 'speechResponse' is for natural spoken TTS audio (2 to 3 concise sentences, no raw LaTeX backslashes).
+     - 'solutionMarkdown' is for visual display in the Solution Pane and MUST contain the complete structured Markdown with LaTeX/KaTeX formulas.
 - **INTELLIGENT BOARD SPACE MANAGEMENT & CONTIGUOUS SPACES**:
   Inspect BOARD SPACE STATUS below.
   ONLY prepend action '{ "type": "UI_COMMAND", "command": "new page" }' if:
@@ -3210,8 +3225,8 @@ CRITICAL RULES:
   For every response, generate 3 to 4 highly contextual, actionable follow-up suggestion pills tailored to the topic (e.g. for physics: ["📐 Show formula", "✨ Show in 3D model", "💡 Give real-world example"], for math: ["🔢 Solve with numbers", "📈 Graph this function", "📝 Step-by-step derivation"], for biology: ["🌿 Show cell diagram", "🔬 Explain function", "📝 Key definitions"]). Each should start with a relevant emoji.
 - **STRICTLY NO AUTOMATIC STICKY NOTES ON ANSWERS / EXPLANATIONS**:
   When the user asks an educational question, concept explanation, math problem, doubt, or conversational query (e.g. "what is photosynthesis", "explain gravity", "solve 3x + 9 = 27", "teach newton's laws"):
-  - Provide the complete, structured explanation inside 'speechResponse'.
-  - DO NOT output a CREATE_OBJECT action for a sticky_note! The Whiteboard now displays your response in a sleek collapsible pane directly above the CC box with instant user action pills ("Create sticky note of above", "Insert as text").
+  - Provide the spoken summary in 'speechResponse' and the complete structured LaTeX solution in 'solutionMarkdown'.
+  - DO NOT output a CREATE_OBJECT action for a sticky_note! The Whiteboard displays 'solutionMarkdown' in the right-of-center Minimal Solution Pane.
   - ONLY output CREATE_OBJECT for sticky_note if the user EXPLICITLY commanded you to create a sticky note (e.g. "create a sticky note with...", "make a sticky note about...", "put a yellow note with...").
 - **BACKGROUND CONTROLS**:
   - If user says "change background to black", set color: "#000000", pattern: "plain", scope: "current".
@@ -3315,26 +3330,46 @@ Spoken input: "${text}"
 
             const hasCanvasDirectives = /\b(draw|sketch|illustrate|3d|model|circle|square|triangle|rectangle|line|arrow|move|delete|clear|zoom|page|color|border|stroke)\b/i.test(low);
             const systemPromptToUse = (isCognitiveQuery && !hasCanvasDirectives)
-                ? `You are an expert STEM teacher and educational reasoning assistant for an interactive Whiteboard.
+                ? `You are an expert STEM teacher and scientific reasoning assistant for an interactive Whiteboard.
 Analyze the user's question, derive the step-by-step mathematical or scientific solution, and output valid JSON.
 
 OUTPUT EXACTLY ONE VALID JSON OBJECT:
 {
   "recognized": true,
-  "speechResponse": "<Concise, natural spoken explanation (2 to 3 sentences) to read aloud via TTS. Clean conversational text without raw LaTeX or markdown syntax.>",
-  "solutionMarkdown": "<Complete step-by-step solution with headings, given parameters, and formulas in KaTeX ($$...$$ for display block, $...$ for inline).>",
+  "speechResponse": "<Concise, natural spoken explanation (2 to 3 sentences) to read aloud via TTS. Clean conversational text without raw LaTeX backslashes.>",
+  "solutionMarkdown": "<Complete, well-structured Markdown solution with section headings and ALL formulas/equations/variables/units in LaTeX/KaTeX ($$...$$ for display block equations, $...$ for inline math). NEVER write formulas in plain English words!>",
   "suggestedFollowUps": [
     "<3 to 4 actionable learning pills with relevant emojis, e.g. '💡 Example', '📐 Formula', '📝 Summary'>"
   ],
   "actions": []
 }
 
-PEDAGOGICAL RULES:
-1. Clearly identify given parameters and units.
-2. State the governing scientific/mathematical formula.
-3. Show substitution and intermediate calculation steps.
-4. Conclude with the final numerical answer and units.
-5. In speechResponse, state the final answer clearly and directly so it sounds natural when spoken aloud.`
+MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
+1. STRICTLY NO PLAIN-ENGLISH FORMULAS:
+   - NEVER write formulas or equations in plain English words (e.g., NEVER write "a plus (n minus 1) times d", "v equals u plus a t", "a squared plus b squared", "pi r squared", or "force equals mass times acceleration").
+   - ALWAYS write every formula, equation, fraction, exponent, subscript, root, vector, Greek letter, chemical reaction, and unit in proper LaTeX / KaTeX notation:
+     * Display equations on their own line wrapped in \`$$...$$\`, e.g.:
+       \`$$a_n = a + (n - 1)d$$\`
+       \`$$S_n = \\frac{n}{2}\\left[2a + (n - 1)d\\right]$$\`
+       \`$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$\`
+       \`$$F = G\\frac{m_1 m_2}{r^2}$$\`
+     * Inline variables, expressions, and units wrapped in \`$...$\`, e.g. \`$a = 5$\`, \`$d = 3$\`, \`$\\theta = 45^\\circ$\`, \`$E = mc^2$\`, \`$9.8\\text{ m/s}^2$\`.
+     * Remember to double-escape backslashes inside JSON strings (e.g. \`\\\\frac\`, \`\\\\sqrt\`, \`\\\\pi\`, \`\\\\times\`, \`\\\\theta\`, \`\\\\text\`, \`\\\\boxed\`).
+2. REQUIRED STRUCTURED TEMPLATE FOR 'solutionMarkdown':
+   Structure your response cleanly using these Markdown headings:
+   ### 📌 Given & Concept
+   - Bullet points listing given parameters in inline LaTeX (\`$...$\`) and the governing concept.
+
+   ### 📐 Formula
+   $$<governing mathematical or scientific formula in LaTeX>$$
+
+   ### 🔢 Step-by-Step Solution
+   1. **Step 1:** Substitute the given values into the formula using LaTeX (\`$...$\` or \`$$...$$\`).
+   2. **Step 2:** Show intermediate algebraic or numerical simplification clearly.
+
+   ### ✅ Final Answer
+   $$\\boxed{<final answer with scientific units>}$$
+3. In 'speechResponse', state the explanation and final answer naturally so it sounds clear when spoken aloud.`
                 : whiteboardSystemPrompt;
 
             // Dispatch to Unified AI Completion (OpenAI Paid -> Anthropic -> DeepSeek -> OpenRouter -> Groq -> Gemini -> SambaNova)
@@ -3376,6 +3411,35 @@ PEDAGOGICAL RULES:
                 }
 
                 if (parsed && (parsed.translatedCommand || parsed.recognized || parsed.actions || parsed.type === 'solution' || parsed.type === 'canvas_generation' || parsed.solutionMarkdown || parsed.speechResponse)) {
+                    // Repair any control-char-corrupted LaTeX commands and ensure structured scientific markdown
+                    const repairLatexAndStructure = (str) => {
+                        if (!str || typeof str !== 'string') return '';
+                        let s = str
+                            // Restore JSON control characters that collided with LaTeX commands (\f, \t, \b, \r)
+                            .replace(/\x0c(rac|orall|lat|box|ootnotesize)/g, '\\f$1')
+                            .replace(/\x09(imes|ext|extbf|extit|extrm|heta|an|anh|au|riangle|o\b|herefore|ilde|op\b|frac)/g, '\\t$1')
+                            .replace(/\x08(eta|oxed|ar\b|f\b|inom|egin|ig|ullet|ot\b|ackslash|ecause)/g, '\\b$1')
+                            .replace(/\x0d(ightarrow|ight|ho\b|angle|isingdotseq|times)/g, '\\r$1')
+                            // Normalize \[ ... \] and \( ... \) to $$ ... $$ and $ ... $
+                            .replace(/\\\[([\s\S]*?)\\\]/g, '$$$$$1$$$$')
+                            .replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
+
+                        // Convert common plain-English math phrases into scientific LaTeX if not already inside $...$
+                        s = s
+                            .replace(/\b([a-zA-Z])\s+squared\b/gi, '$$$1^2$$')
+                            .replace(/\b([a-zA-Z])\s+cubed\b/gi, '$$$1^3$$')
+                            .replace(/\bsquare\s+root\s+of\s+([a-zA-Z0-9_()+-]+)\b/gi, '$$\\sqrt{$1}$$')
+                            .replace(/\bpi\s*\*\s*r\^2\b/gi, '\\pi r^2')
+                            .replace(/\b1\/2\s*\*\s*([a-zA-Z0-9]+)\s*\*\s*([a-zA-Z0-9]+)\b/g, '\\frac{1}{2} \\cdot $1 \\cdot $2');
+
+                        return s;
+                    };
+
+                    if (parsed.solutionMarkdown) {
+                        parsed.solutionMarkdown = repairLatexAndStructure(parsed.solutionMarkdown);
+                    } else if (parsed.speechResponse) {
+                        parsed.solutionMarkdown = repairLatexAndStructure(parsed.speechResponse);
+                    }
                     if (Array.isArray(parsed.actions)) {
                         parsed.actions = parsed.actions.flatMap(act => {
                             const combined = `${act.title || ''} ${act.text || ''} ${text}`.toLowerCase();
@@ -9222,6 +9286,14 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
             return out;
         };
 
+        // Protect single-backslash LaTeX commands that collide with JSON escape chars (\f, \t, \b, \r, \n)
+        const preserveLatexBackslashes = (jsonStr) => {
+            return jsonStr
+                .replace(/(?<!\\)\\(frac|forall|flat|fbox|footnotesize|times|text|textbf|textit|textrm|texttt|theta|vartheta|tan|tanh|tau|triangle|triangleq|to\b|therefore|tilde|top\b|tfrac|tiny|beta|boxed|bar\b|mathbf|mathbb|mathcal|mathrm|mathsf|mathtt|binom|begin|big|Big|bigg|Bigg|bullet|bot\b|backslash|because|bowtie|breve|rightarrow|Rightarrow|right|rvert|rVert|rfloor|rceil|rangle|rho|varrho|risingdotseq|rtimes|neq|ne\b|nabla|nu\b|notin|ni\b|natural|neg\b|nless|ngtr|nleq|ngeq|nsubseteq|nsupseteq|nmid|nparallel|nwarrow|nearrow)/g, '\\\\$1');
+        };
+
+        cleanText = preserveLatexBackslashes(cleanText);
+
         try {
             return JSON.parse(cleanText);
         } catch (err) {
@@ -9229,14 +9301,14 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
             try {
                 let fixed = sanitizeControlCharsInStrings(cleanText);
                 fixed = fixed.replace(/,\s*([\]}])/g, '$1');
-                // Escape backslashes that are not valid JSON escape characters
-                fixed = fixed.replace(/\\([^"\\/bfnrtu]|u(?![\da-fA-F]{4}))/g, '\\\\$1');
+                // Escape single backslashes that are not valid JSON escape characters (without corrupting existing \\)
+                fixed = fixed.replace(/(?<!\\)\\([^"\\/bfnrtu]|u(?![\da-fA-F]{4}))/g, '\\\\$1');
                 return JSON.parse(fixed);
             } catch (innerErr) {
                 // If truncated, attempt to balance braces/brackets and fix cut-off strings/keys
                 try {
                     let repaired = sanitizeControlCharsInStrings(cleanText);
-                    repaired = repaired.replace(/\\([^"\\/bfnrtu]|u(?![\da-fA-F]{4}))/g, '\\\\$1');
+                    repaired = repaired.replace(/(?<!\\)\\([^"\\/bfnrtu]|u(?![\da-fA-F]{4}))/g, '\\\\$1');
                     // Check if truncated inside an open quote
                     const quoteMatches = repaired.match(/(^|[^\\])"/g);
                     if (quoteMatches && quoteMatches.length % 2 !== 0) {

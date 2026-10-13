@@ -26,123 +26,202 @@ import katex from 'katex';
 import toast from 'react-hot-toast';
 import { aiAPI } from '@/lib/api';
 
+function normalizeScientificLatex(rawText) {
+    if (!rawText || typeof rawText !== 'string') return '';
+    let s = rawText
+        // 1. Recover LaTeX commands whose leading backslash was parsed as a JSON control character (\f, \t, \b, \r)
+        .replace(/\x0c(rac|orall|lat|box|ootnotesize)/g, '\\f$1')
+        .replace(/\x09(imes|ext|extbf|extit|extrm|heta|an|anh|au|riangle|o\b|herefore|ilde|op\b|frac)/g, '\\t$1')
+        .replace(/\x08(eta|oxed|ar\b|f\b|inom|egin|ig|ullet|ot\b|ackslash|ecause)/g, '\\b$1')
+        .replace(/\x0d(ightarrow|ight|ho\b|angle|isingdotseq|times)/g, '\\r$1')
+        // 2. Normalize \[ ... \] and \( ... \) to $$ ... $$ and $ ... $
+        .replace(/\\\[([\s\S]*?)\\\]/g, '$$$$$1$$$$')
+        .replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
+
+    // 3. Collapse multi-line $$ ... $$ blocks onto a single line so line splitting keeps display equations intact
+    s = s.replace(/\$\$([\s\S]*?)\$\$/g, (match, inner) => {
+        const singleLine = inner
+            .trim()
+            .replace(/\r?\n\s*/g, ' ');
+        return `$$${singleLine}$$`;
+    });
+
+    // 4. Convert plain-English math phrases into LaTeX if not already inside $...$
+    s = s
+        .replace(/\b([a-zA-Z])\s+squared\b/gi, '$$$1^2$$')
+        .replace(/\b([a-zA-Z])\s+cubed\b/gi, '$$$1^3$$')
+        .replace(/\bsquare\s+root\s+of\s+([a-zA-Z0-9_()+-]+)\b/gi, '$$\\sqrt{$1}$$');
+
+    // 5. Auto-wrap bare LaTeX commands (\frac, \sqrt, \boxed, \vec) that are outside $...$
+    const barePatterns = [
+        /(?<!\$)\\(frac\{[^{}]*\}\{[^{}]*\})(?!\$)/g,
+        /(?<!\$)\\(sqrt\{[^{}]*\})(?!\$)/g,
+        /(?<!\$)\\(boxed\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})(?!\$)/g,
+        /(?<!\$)\\(vec\{[^{}]*\})(?!\$)/g
+    ];
+    for (const pat of barePatterns) {
+        s = s.replace(pat, '$\\$1$');
+    }
+
+    return s;
+}
+
 function renderFormattedText(rawText) {
     if (!rawText) return '';
+    const normalized = normalizeScientificLatex(rawText);
+    const mathTokens = [];
+
+    // 1. Extract Block Math $$...$$ BEFORE HTML escaping so <, >, & inside LaTeX are preserved for KaTeX
+    let tokenized = normalized.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
+        const cleanMath = (math || '').trim();
+        if (!cleanMath) return '';
+        try {
+            const rendered = `<div class="my-1.5 py-2 px-3 bg-slate-950/90 rounded-lg border border-indigo-500/35 overflow-x-auto text-center shadow-inner">${katex.renderToString(cleanMath, { displayMode: true, throwOnError: false, strict: false, trust: true })}</div>`;
+            const idx = mathTokens.length;
+            mathTokens.push(rendered);
+            return `@@MATH_TOKEN_${idx}@@`;
+        } catch (e) {
+            return match;
+        }
+    });
+
+    // 2. Extract Inline Math $...$ BEFORE HTML escaping
+    tokenized = tokenized.replace(/\$([^$\n]+?)\$/g, (match, math) => {
+        const cleanMath = (math || '').trim();
+        if (!cleanMath) return match;
+        try {
+            const rendered = `<span class="inline-block px-0.5 text-indigo-100">${katex.renderToString(cleanMath, { displayMode: false, throwOnError: false, strict: false, trust: true })}</span>`;
+            const idx = mathTokens.length;
+            mathTokens.push(rendered);
+            return `@@MATH_TOKEN_${idx}@@`;
+        } catch (e) {
+            return match;
+        }
+    });
+
+    // 3. Escape HTML on the remaining non-math text
     const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    let html = escapeHtml(rawText);
+    let html = escapeHtml(tokenized);
 
-    // Block math $$...$$
-    html = html.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
-        try {
-            return `<div class="my-1.5 p-1 bg-slate-900/80 rounded border border-indigo-500/30 overflow-x-auto text-center">${katex.renderToString(math.trim(), { displayMode: true, throwOnError: false })}</div>`;
-        } catch (e) { return match; }
+    // 4. Format Markdown Bold **text**, Italic *text*, and Inline Code `code`
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-white">$1</strong>');
+    html = html.replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded bg-slate-800 text-indigo-300 font-mono text-[11px]">$1</code>');
+
+    // 5. Restore rendered KaTeX tokens
+    html = html.replace(/@@MATH_TOKEN_(\d+)@@/g, (_, idxStr) => {
+        return mathTokens[Number(idxStr)] || '';
     });
 
-    // Inline math $...$
-    html = html.replace(/\$([^$\n]+)\$/g, (match, math) => {
-        try {
-            return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false });
-        } catch (e) { return match; }
-    });
-
-    // Bold **text**
-    html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-white">$1</strong>');
     return html;
 }
 
-// Parse text into structured steps or sentence-level statements for real-time voice highlighting
+// Parse text into structured sections, formulas, steps, and statements for real-time voice highlighting
 function parseContentBlocks(rawText) {
     if (!rawText) return [];
-    const lines = rawText.split('\n');
+    const normalizedText = normalizeScientificLatex(rawText);
+    const lines = normalizedText.split('\n');
     const blocks = [];
-    let currentBlock = null;
     let charOffset = 0;
+    let inAnswerSection = false;
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const trimmed = line.trim();
         const lineLen = line.length + 1;
 
-        if (!trimmed) {
+        if (!trimmed || trimmed === '---') {
             charOffset += lineLen;
             continue;
         }
 
-        const bulletMatch = trimmed.match(/^(?:(?:\d+[\.\)]|Step\s+\d+[:\.]?|Stage\s+\d+[:\.]?|[-*•])\s*)(.+)$/i);
-        const isHeading = trimmed.startsWith('#') || (trimmed.endsWith(':') && trimmed.length < 60 && !trimmed.includes('. '));
+        // 1. Markdown Section Headings (e.g. ### 📌 Given & Concept, ### 📐 Formula, **Given:**)
+        const headingMatch = trimmed.match(/^(?:#{1,4}\s+)(.+)$/) ||
+            (trimmed.match(/^\*\*([^*]{2,45}):\*\*$/) ? [trimmed, trimmed.replace(/\*\*/g, '')] : null);
 
-        if (bulletMatch) {
-            if (currentBlock) {
-                blocks.push(currentBlock);
-                currentBlock = null;
-            }
-            const prefix = trimmed.slice(0, trimmed.length - bulletMatch[1].length).trim();
-            blocks.push({
-                id: `blk_${blocks.length}`,
-                type: 'bullet',
-                prefix: prefix || `${blocks.length + 1}.`,
-                text: bulletMatch[1].trim(),
-                startChar: charOffset,
-                endChar: charOffset + trimmed.length
-            });
-        } else if (isHeading) {
-            if (currentBlock) {
-                blocks.push(currentBlock);
-                currentBlock = null;
-            }
+        if (headingMatch) {
+            const titleText = headingMatch[1].replace(/\*\*/g, '').trim();
+            inAnswerSection = /\b(final\s+answer|conclusion|result|answer)\b/i.test(titleText);
             blocks.push({
                 id: `blk_${blocks.length}`,
                 type: 'heading',
-                prefix: '📌',
-                text: trimmed.replace(/^#+\s*/, ''),
+                prefix: '',
+                text: titleText,
                 startChar: charOffset,
                 endChar: charOffset + trimmed.length
             });
-        } else {
-            // Plain response or paragraph: split into individual sentences so each statement highlights as spoken
-            if (!trimmed.includes('$$')) {
-                const sentences = trimmed.split(/(?<=[.?!])\s+(?=[A-Z0-9$])/);
-                if (sentences.length > 1) {
-                    if (currentBlock) {
-                        blocks.push(currentBlock);
-                        currentBlock = null;
-                    }
-                    let sOffset = charOffset;
-                    sentences.forEach((sent) => {
-                        const sTrim = sent.trim();
-                        if (sTrim) {
-                            blocks.push({
-                                id: `blk_${blocks.length}`,
-                                type: 'statement',
-                                prefix: '•',
-                                text: sTrim,
-                                startChar: sOffset,
-                                endChar: sOffset + sTrim.length
-                            });
-                        }
-                        sOffset += sent.length + 1;
-                    });
-                    charOffset += lineLen;
-                    continue;
-                }
-            }
+            charOffset += lineLen;
+            continue;
+        }
 
-            if (currentBlock) {
-                blocks.push(currentBlock);
-                currentBlock = null;
-            }
+        // 2. Standalone Display Formula Block ($$...$$)
+        if (/^\$\$[\s\S]+\$\$$/.test(trimmed)) {
+            const isBoxedAnswer = inAnswerSection || trimmed.includes('\\boxed');
             blocks.push({
                 id: `blk_${blocks.length}`,
-                type: 'statement',
-                prefix: '•',
+                type: isBoxedAnswer ? 'answer' : 'formula',
+                prefix: isBoxedAnswer ? '✅' : '📐',
                 text: trimmed,
                 startChar: charOffset,
                 endChar: charOffset + trimmed.length
             });
+            charOffset += lineLen;
+            continue;
         }
+
+        // 3. Numbered Steps or Bullet Points (1. ..., Step 1: ..., - ..., • ...)
+        const bulletMatch = trimmed.match(/^(?:(\d+[\.\)]|Step\s+\d+[:\.]?|Stage\s+\d+[:\.]?|[-*•])\s+)(.+)$/i);
+        if (bulletMatch) {
+            const rawPrefix = bulletMatch[1].trim();
+            const isBulletSymbol = /^[-*•]$/.test(rawPrefix);
+            const content = bulletMatch[2].trim();
+            const isAnswerLine = inAnswerSection || content.includes('\\boxed');
+            blocks.push({
+                id: `blk_${blocks.length}`,
+                type: isAnswerLine ? 'answer' : (isBulletSymbol ? 'bullet' : 'step'),
+                prefix: isAnswerLine ? '✅' : (isBulletSymbol ? '•' : rawPrefix.replace(/[:\.]$/, '')),
+                text: content,
+                startChar: charOffset,
+                endChar: charOffset + trimmed.length
+            });
+            charOffset += lineLen;
+            continue;
+        }
+
+        // 4. Plain paragraph: only split into sentences if it has NO math delimiters ($) and is long
+        if (!trimmed.includes('$') && trimmed.length > 140) {
+            const sentences = trimmed.split(/(?<=[.?!])\s+(?=[A-Z])/);
+            if (sentences.length > 1) {
+                let sOffset = charOffset;
+                sentences.forEach((sent) => {
+                    const sTrim = sent.trim();
+                    if (sTrim) {
+                        blocks.push({
+                            id: `blk_${blocks.length}`,
+                            type: 'statement',
+                            prefix: '•',
+                            text: sTrim,
+                            startChar: sOffset,
+                            endChar: sOffset + sTrim.length
+                        });
+                    }
+                    sOffset += sent.length + 1;
+                });
+                charOffset += lineLen;
+                continue;
+            }
+        }
+
+        const isAnswerLine = inAnswerSection || trimmed.includes('\\boxed');
+        blocks.push({
+            id: `blk_${blocks.length}`,
+            type: isAnswerLine ? 'answer' : 'statement',
+            prefix: isAnswerLine ? '✅' : '•',
+            text: trimmed,
+            startChar: charOffset,
+            endChar: charOffset + trimmed.length
+        });
         charOffset += lineLen;
     }
-    if (currentBlock) blocks.push(currentBlock);
     return blocks;
 }
 
@@ -483,6 +562,73 @@ export default function WhiteboardClosedCaptions({
                                     {blocks.length > 0 ? (
                                         blocks.map((block, idx) => {
                                             const isActive = isAiSpeaking && (idx === activeBlockIndex);
+
+                                            if (block.type === 'heading') {
+                                                return (
+                                                    <div
+                                                        id={`cc-block-${idx}`}
+                                                        key={block.id || idx}
+                                                        className={`pt-2 pb-1 px-1 flex items-center gap-1.5 border-b transition-colors ${
+                                                            isActive
+                                                                ? 'border-indigo-400/60 text-indigo-200'
+                                                                : 'border-slate-800/80 text-indigo-300'
+                                                        }`}
+                                                    >
+                                                        <span
+                                                            className="text-[11px] font-bold uppercase tracking-wider"
+                                                            dangerouslySetInnerHTML={{ __html: renderFormattedText(block.text) }}
+                                                        />
+                                                    </div>
+                                                );
+                                            }
+
+                                            if (block.type === 'formula') {
+                                                return (
+                                                    <div
+                                                        id={`cc-block-${idx}`}
+                                                        key={block.id || idx}
+                                                        onClick={() => onSpeak(block.text, { rate: speechRate })}
+                                                        className={`p-2 rounded-xl transition-all duration-200 border cursor-pointer ${
+                                                            isActive
+                                                                ? 'bg-indigo-600/25 border-indigo-400 text-white ring-1 ring-indigo-400/40 shadow-md'
+                                                                : 'bg-slate-900/70 hover:bg-slate-900/95 border-indigo-500/30 text-slate-100'
+                                                        }`}
+                                                        title="Click to hear this formula"
+                                                    >
+                                                        <div
+                                                            className="w-full min-w-0 leading-relaxed text-[12px]"
+                                                            dangerouslySetInnerHTML={{ __html: renderFormattedText(block.text) }}
+                                                        />
+                                                    </div>
+                                                );
+                                            }
+
+                                            if (block.type === 'answer') {
+                                                return (
+                                                    <div
+                                                        id={`cc-block-${idx}`}
+                                                        key={block.id || idx}
+                                                        onClick={() => onSpeak(block.text, { rate: speechRate })}
+                                                        className={`p-2.5 rounded-xl transition-all duration-200 border cursor-pointer ${
+                                                            isActive
+                                                                ? 'bg-emerald-600/25 border-emerald-400 text-white ring-1 ring-emerald-400/50 shadow-md'
+                                                                : 'bg-emerald-950/35 hover:bg-emerald-950/50 border-emerald-500/40 text-emerald-100'
+                                                        }`}
+                                                        title="Click to hear final answer"
+                                                    >
+                                                        <div className="flex items-start gap-2">
+                                                            <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-600/40 text-emerald-200 border border-emerald-500/40">
+                                                                {block.prefix || '✅'}
+                                                            </span>
+                                                            <div
+                                                                className="flex-1 min-w-0 leading-relaxed text-[12px] font-medium"
+                                                                dangerouslySetInnerHTML={{ __html: renderFormattedText(block.text) }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
+
                                             return (
                                                 <div
                                                     id={`cc-block-${idx}`}
@@ -499,7 +645,7 @@ export default function WhiteboardClosedCaptions({
                                                         <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${
                                                             isActive ? 'bg-indigo-500 text-white' : 'bg-slate-800 text-indigo-300'
                                                         }`}>
-                                                            {block.prefix || (idx + 1)}
+                                                            {block.prefix || '•'}
                                                         </span>
                                                         <div
                                                             className="flex-1 min-w-0 leading-relaxed text-[12px]"
