@@ -13,16 +13,14 @@ const ACTIVE_DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-reasoner'];
 const ACTIVE_OPENROUTER_MODELS = ['openai/gpt-4o', 'anthropic/claude-3.5-sonnet', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct'];
 const ACTIVE_GEMINI_MODELS = [
     'gemini-2.5-flash',
-    'gemini-flash-latest',
-    'gemini-3.8-flash',
-    'gemini-3.7-flash',
-    'gemini-3.5-flash'
+    'gemini-2.0-flash',
+    'gemini-flash-latest'
 ];
 const ACTIVE_GROQ_MODELS = [
-    'qwen/qwen3.8-27b',
+    'llama-3.3-70b-versatile',
     'openai/gpt-oss-120b',
     'openai/gpt-oss-20b',
-    'allam-2-7b'
+    'llama-3.1-8b-instant'
 ];
 const ACTIVE_SAMBANOVA_MODELS = ['Meta-Llama-3.1-8B-Instruct'];
 const ACTIVE_NVIDIA_MODELS = [
@@ -367,8 +365,28 @@ class AIService {
                 const text = completion.choices[0]?.message?.content || completion.choices[0]?.message?.reasoning || '';
                 return { text, model: m, provider: 'groq' };
             } catch (err) {
-                lastErr = err;
                 const status = err.status || err.response?.status;
+                const failedGen = err?.error?.failed_generation || err?.error?.error?.failed_generation || err?.response?.data?.error?.failed_generation;
+                if (jsonMode && failedGen && typeof failedGen === 'string' && failedGen.trim().length > 10) {
+                    console.log(`[AIService] Groq (${m}) returned failed_generation in jsonMode; recovering via resilient JSON parser...`);
+                    return { text: failedGen, model: m, provider: 'groq' };
+                }
+                if (jsonMode && status === 400 && /json_validate_failed|response_format|json/i.test(err.message || '')) {
+                    try {
+                        console.log(`[AIService] Retrying Groq (${m}) without strict response_format...`);
+                        const retryCompletion = await client.chat.completions.create({
+                            model: m,
+                            messages,
+                            temperature,
+                            max_tokens
+                        });
+                        const text = retryCompletion.choices[0]?.message?.content || retryCompletion.choices[0]?.message?.reasoning || '';
+                        if (text) return { text, model: m, provider: 'groq' };
+                    } catch (retryErr) {
+                        err = retryErr;
+                    }
+                }
+                lastErr = err;
                 const isQuota = status === 429 || (err.message && /rate limit|quota|tokens per minute/i.test(err.message));
                 console.warn(`[AIService] Groq ${m} failed (${status || 'error'}): ${err.message?.substring(0, 80)}`);
                 if (isQuota) {
@@ -606,7 +624,7 @@ class AIService {
                     err.noKey = true;
                     throw err;
                 }
-                const testModel = model || 'qwen/qwen3.8-27b';
+                const testModel = model || 'llama-3.3-70b-versatile';
                 const res = await this.callGroq({
                     messages: testMessages,
                     model: testModel,
@@ -2997,6 +3015,111 @@ Output MUST be ONLY valid JSON matching this schema:
                 }
             }
 
+            // Deterministic Standalone Circle Equation Solver (Center, Radius, Area, Circumference, Standard Form)
+            if (!circleLineParsed && !/\b(tangent|normal|chord|secant|derivative|differentiate|integral|integrate|parabola|ellipse|hyperbola|sphere|cylinder|cone)\b/i.test(low)) {
+                const singleCircleParsed = geometrySolver.parseCircleEquationFromText(text);
+                if (singleCircleParsed) {
+                    try {
+                        const sol = geometrySolver.solveCircleEquation(singleCircleParsed);
+                        const origCircleEq = sol.equations.originalCircle;
+                        const stdCircleEq = sol.equations.standardCircle;
+                        const wantsArea = /\barea\b/i.test(low);
+                        const wantsCircumference = /\b(circumference|perimeter)\b/i.test(low);
+                        const wantsDiameter = /\bdiameter\b/i.test(low);
+
+                        let primarySpeechFocus = `Its center is C(${sol.center.x}, ${sol.center.y}), radius r ≈ ${sol.radius}, area A = ${sol.rSq}π ≈ ${sol.area} square units, and circumference C ≈ ${sol.circumference} units.`;
+                        let boxedFinalLatex = `\\text{Center } C(${sol.center.x}, ${sol.center.y}), \\quad r = ${sol.rLatex}, \\quad \\text{Area} = ${sol.areaExactLatex} \\approx ${sol.area}`;
+
+                        if (wantsArea && !wantsCircumference) {
+                            primarySpeechFocus = `Completing the square gives center C(${sol.center.x}, ${sol.center.y}) and radius squared r² = ${sol.rSq} (so r ≈ ${sol.radius}). Therefore, the area of the circle is A = πr² = ${sol.rSq}π ≈ ${sol.area} square units.`;
+                            boxedFinalLatex = `\\text{Area } A = \\pi r^2 = ${sol.areaExactLatex} \\approx ${sol.area}\\text{ sq. units}`;
+                        } else if (wantsCircumference && !wantsArea) {
+                            primarySpeechFocus = `Completing the square gives center C(${sol.center.x}, ${sol.center.y}) and radius r ≈ ${sol.radius}. Therefore, the circumference of the circle is C = 2πr ≈ ${sol.circumference} units.`;
+                            boxedFinalLatex = `\\text{Circumference } C = 2\\pi r = ${sol.circumExactLatex} \\approx ${sol.circumference}\\text{ units}`;
+                        } else if (wantsDiameter) {
+                            primarySpeechFocus = `Completing the square gives center C(${sol.center.x}, ${sol.center.y}) and radius r ≈ ${sol.radius}, so the diameter is d = 2r ≈ ${sol.diameter} units.`;
+                            boxedFinalLatex = `\\text{Diameter } d = 2r \\approx ${sol.diameter}\\text{ units}`;
+                        }
+
+                        const speechResponse = `For the circle ${origCircleEq}, converting to standard form gives ${stdCircleEq}. ${primarySpeechFocus}`;
+
+                        const solutionMarkdown = `### 📌 Given & Concept\n` +
+                            `- **Given Circle Equation:** $${origCircleEq}$\n` +
+                            `- **Standard Circle Equation:** $(x - h)^2 + (y - k)^2 = r^2$, with center $C(h, k)$ and radius $r$\n\n` +
+                            `### 📐 Formula\n` +
+                            `$$(x - h)^2 + (y - k)^2 = r^2, \\qquad \\text{Area } A = \\pi r^2, \\qquad \\text{Circumference } C = 2\\pi r$$\n\n` +
+                            `### 🔢 Step-by-Step Solution\n` +
+                            `1. **Step 1 (Complete the Square to Standard Form):**\n` +
+                            `   Rewrite the given equation by completing the square for the $x$ and $y$ terms:\n` +
+                            `   $$${origCircleEq} \\iff ${stdCircleEq}$$\n` +
+                            `2. **Step 2 (Identify Center and Radius):**\n` +
+                            `   Comparing with $(x - h)^2 + (y - k)^2 = r^2$:\n` +
+                            `   - **Center:** $C(h, k) = (${sol.center.x}, ${sol.center.y})$\n` +
+                            `   - **Radius Squared:** $r^2 = ${sol.rSq} \\implies r = ${sol.rLatex}$ (Diameter $d = 2r \\approx ${sol.diameter}$)\n` +
+                            `3. **Step 3 (Calculate Area and Circumference):**\n` +
+                            `   - **Area:** $A = \\pi r^2 = \\pi (${sol.rSq}) = ${sol.areaExactLatex} \\approx ${sol.area}\\text{ sq. units}$\n` +
+                            `   - **Circumference:** $C = 2\\pi r = ${sol.circumExactLatex} \\approx ${sol.circumference}\\text{ units}$\n\n` +
+                            `### ✅ Final Answer\n` +
+                            `$$\\boxed{${boxedFinalLatex}}$$`;
+
+                        const diagramCurves = [
+                            {
+                                type: 'circle',
+                                cx: sol.center.x,
+                                cy: sol.center.y,
+                                r: sol.radius,
+                                color: '#3b82f6',
+                                label: origCircleEq,
+                                centerLabel: `C(${sol.center.x}, ${sol.center.y})`
+                            }
+                        ];
+
+                        const diagramPlottedPoints = [
+                            { x: sol.center.x, y: sol.center.y, label: `Center (${sol.center.x}, ${sol.center.y})` }
+                        ];
+
+                        return {
+                            recognized: true,
+                            success: true,
+                            speechResponse,
+                            solutionMarkdown,
+                            graphEquations: [origCircleEq],
+                            plottedPoints: diagramPlottedPoints,
+                            curves: diagramCurves,
+                            suggestedFollowUps: [
+                                `⭕ Circumference of ${origCircleEq}`,
+                                `📐 Tangent to ${origCircleEq}`,
+                                `📏 Intersection with y = x + 1`,
+                                `📄 New clean board`
+                            ],
+                            canvasAction: {
+                                type: 'draw_problem_with_diagram',
+                                diagramType: 'cartesian_plane',
+                                question: text,
+                                solutionMarkdown,
+                                speechResponse,
+                                curves: diagramCurves,
+                                plottedPoints: diagramPlottedPoints,
+                                unitScale: 25
+                            },
+                            actions: [
+                                {
+                                    type: 'CREATE_OBJECT',
+                                    objectType: 'coordinate_system',
+                                    title: 'Circle Graph & Properties',
+                                    equation: origCircleEq,
+                                    curves: diagramCurves,
+                                    plottedPoints: diagramPlottedPoints,
+                                    unitScale: 25
+                                }
+                            ]
+                        };
+                    } catch (e) {
+                        console.warn('[AIService] Deterministic standalone circle solver failed, falling back to LLM:', e.message);
+                    }
+                }
+            }
+
             const whiteboardSystemPrompt = `You are an advanced Spatial & Generative AI reasoning engine for an interactive Whiteboard.
 You receive the user's spoken command along with a JSON representation of the current whiteboard state (objects, sizes, spatial coordinates, pages).
 Your goal is to parse the user's intent, perform any required knowledge-base reasoning (like deriving formulas, writing code, or generating scientific explanations), and return a sequence of autonomous actions to modify the canvas.
@@ -3303,38 +3426,29 @@ Spoken input: "${text}"
 `;
 
 
+            const isMathOrScienceProblem =
+                /^(explain|teach|solve|how\b|what\b|derive|prove|calculate|evaluate|simplify|expand|factor|integrate|differentiate|compute|determine|why\b|find\b)/i.test(low) ||
+                low.includes('?') ||
+                /[=^²³]/.test(low) ||
+                /\b(area|perimeter|circumference|radius|diameter|domain|range|asymptote|limit|maxima|minima|extrema|inflection|tangent|normal|parabola|ellipse|hyperbola|conic|roots|zeros|quadratic|polynomial|integral|derivative|calculus|differential|matrix|matrices|determinant|eigen|linear algebra|trigonometr|sin|cos|tan|logarithm|ln|log|probability|statistics|mean|median|variance|standard deviation|permutation|combination|binomial)\b/i.test(low) ||
+                /\b(ap|gp|hp|arithmetic progression|geometric progression|progression|sequence|series|common difference|first term|nth term)\b/i.test(low) ||
+                /\b(newton|law of motion|laws of motion|three law|magnetic|lorentz|photosynthesis|pythagor|ohm|formula|equation|ideal gas|mole|pressure|temperature|volume|gas constant|thermodynamic|stoichiometry|molarity|reaction|velocity|acceleration|momentum|gravity|kinetic|potential)\b/i.test(low);
+
             const isCognitiveQuery =
-                low.startsWith('explain') ||
-                low.startsWith('teach') ||
-                low.startsWith('solve') ||
-                low.startsWith('how does') ||
-                low.startsWith('how do') ||
-                low.startsWith('what is') ||
-                low.startsWith('what are') ||
-                low.startsWith('derive') ||
-                low.startsWith('prove') ||
-                low.startsWith('calculate') ||
+                isMathOrScienceProblem ||
                 low.startsWith('display') ||
                 low.startsWith('show') ||
-                low.startsWith('find') ||
                 low.startsWith('list') ||
                 low.startsWith('give') ||
                 low.startsWith('write') ||
-                low.startsWith('evaluate') ||
-                low.startsWith('simplify') ||
-                low.startsWith('expand') ||
-                low.startsWith('compute') ||
-                low.startsWith('determine') ||
-                low.startsWith('why') ||
-                low.includes('?') ||
-                /\b(ap|gp|hp|arithmetic progression|geometric progression|progression|sequence|series|common difference|first term|nth term)\b/i.test(low) ||
-                /\b(newton|law of motion|laws of motion|three law|magnetic|lorentz|photosynthesis|pythagor|ohm|formula|equation|diagram|flowchart|3d model|structure of|cycle)\b/i.test(low) ||
-                /\b(integral|derivative|calculus|differential|matrix|matrices|determinant|eigen|polynomial|quadratic|linear algebra|trigonometr|sin|cos|tan)\b/i.test(low) ||
-                /\b(ideal gas|mole|pressure|temperature|volume|gas constant|thermodynamic|stoichiometry|molarity|reaction|velocity|acceleration|momentum|gravity|kinetic|potential)\b/i.test(low);
+                /\b(diagram|flowchart|3d model|structure of|cycle)\b/i.test(low);
 
-            const hasCanvasDirectives = /\b(draw|sketch|illustrate|3d|model|circle|square|triangle|rectangle|line|arrow|move|delete|clear|zoom|page|color|border|stroke)\b/i.test(low);
+            const hasExplicitCanvasAction = /\b(draw|sketch|illustrate|spawn|move|drag|delete|remove|erase|clear|wipe|zoom|page|color|recolor|border|stroke|align|group|ungroup|connect|resize|rotate|3d\s+model)\b/i.test(low);
+            const hasShapeObjectDirective = !isMathOrScienceProblem && /\b(3d|model|circle|square|triangle|rectangle|line|arrow)\b/i.test(low);
+            const hasCanvasDirectives = hasExplicitCanvasAction || hasShapeObjectDirective;
+
             const systemPromptToUse = (isCognitiveQuery && !hasCanvasDirectives)
-                ? `You are an expert STEM teacher and scientific reasoning assistant for an interactive Whiteboard.
+                ? `You are an expert STEM teacher and scientific reasoning assistant for an interactive Whiteboard with an integrated 2D/3D Graphing Engine.
 Analyze the user's question, derive the step-by-step mathematical or scientific solution, and output valid JSON.
 
 OUTPUT EXACTLY ONE VALID JSON OBJECT:
@@ -3342,6 +3456,12 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT:
   "recognized": true,
   "speechResponse": "<Concise, natural spoken explanation (2 to 3 sentences) to read aloud via TTS. Clean conversational text without raw LaTeX backslashes.>",
   "solutionMarkdown": "<Complete, well-structured Markdown solution with section headings and ALL formulas/equations/variables/units in LaTeX/KaTeX ($$...$$ for display block equations, $...$ for inline math). NEVER write formulas in plain English words!>",
+  "graphEquations": [
+    "<Array of 1 to 4 clean, plot-ready 2D/3D equations in standard ASCII math syntax using variables x, y, z, or theta whenever the problem involves functions, curves, algebra, conics, trigonometry, calculus (include both the function y = f(x) and its derivative/tangent/antiderivative if relevant), 3D surfaces (z = f(x,y) or x^2+y^2+z^2=R^2), or physics trajectories. Examples: 'x^2 + y^2 + 2*x = 6', 'y = x^2 - 5*x + 6', 'z = sin(x)*cos(y)', 'r = 2*cos(theta)'. Use [] only if the topic has no coordinate graph.>"
+  ],
+  "plottedPoints": [
+    { "x": 0, "y": 0, "label": "<Optional key points such as Center, Vertex, Root, Intersection, Local Max/Min with numeric x and y coordinates>" }
+  ],
   "suggestedFollowUps": [
     "<3 to 4 actionable learning pills with relevant emojis, e.g. '💡 Example', '📐 Formula', '📝 Summary'>"
   ],
@@ -3373,7 +3493,14 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
 
    ### ✅ Final Answer
    $$\\boxed{<final answer with scientific units>}$$
-3. In 'speechResponse', state the explanation and final answer naturally so it sounds clear when spoken aloud.`
+3. GRAPHING RULES FOR 'graphEquations' AND 'plottedPoints':
+   - In 'graphEquations', write clean plot-ready ASCII math expressions using only x, y, z, or theta (with all constants substituted numerically, no LaTeX backslashes, no integrals/limits symbols). For example:
+     * Single-variable equation \`x^2 - 4 = 0\` -> \`"y = x^2 - 4"\`
+     * Circle/conic \`x^2 + y^2 + 2x = 6\` -> \`"x^2 + y^2 + 2*x = 6"\`
+     * Derivative/integral of \`f(x) = x^3 - 3x\` -> \`["y = x^3 - 3*x", "y = 3*x^2 - 3"]\`
+     * 3D surface or quadric -> \`"z = x^2 - y^2"\` or \`"x^2 + y^2 + z^2 = 25"\`
+   - In 'plottedPoints', include key numeric 2D coordinates (roots, intersections, center, vertices, extrema) with descriptive labels.
+4. In 'speechResponse', state the explanation and final answer naturally so it sounds clear when spoken aloud.`
                 : whiteboardSystemPrompt;
 
             // Dispatch to Unified AI Completion (OpenAI Paid -> Anthropic -> DeepSeek -> OpenRouter -> Groq -> Gemini -> SambaNova)

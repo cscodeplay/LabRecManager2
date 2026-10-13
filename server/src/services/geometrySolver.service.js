@@ -446,32 +446,186 @@ class GeometrySolverService {
     }
 
     /**
+     * Parses any 2D circle equation (general form Ax^2 + Ay^2 + Dx + Ey + F = C or standard form (x-h)^2 + (y-k)^2 = r^2)
+     * from natural problem text and returns { cx, cy, r, rSq, D, E, F, A, raw, standardForm, generalForm }.
+     */
+    parseCircleEquationFromText(str) {
+        if (!str || typeof str !== 'string') return null;
+
+        // Normalize superscripts and unicode minus signs
+        const norm = str
+            .replace(/²/g, '^2')
+            .replace(/³/g, '^3')
+            .replace(/[−–—]/g, '-')
+            .replace(/\$/g, ' ');
+
+        // Split into clauses (e.g. if there is "and line y = ...") and find the clause with both x and y squared terms
+        const clauses = norm.split(/\band\b|,|;/i);
+        let candidateRaw = null;
+
+        for (const clause of clauses) {
+            const m = clause.match(/((?:\d*\.?\d*\s*\*?\s*)?(?:\(\s*x\s*[+-]\s*\d+(?:\.\d+)?\s*\)|x)\s*\^\s*2[\s\S]*?=\s*[-+0-9xXyY^().\s*/]+)/i) ||
+                      clause.match(/((?:\d*\.?\d*\s*\*?\s*)?(?:\(\s*y\s*[+-]\s*\d+(?:\.\d+)?\s*\)|y)\s*\^\s*2[\s\S]*?=\s*[-+0-9xXyY^().\s*/]+)/i);
+            if (m) {
+                const eqStr = m[1].trim().replace(/[?.!]+$/, '').trim();
+                if (/\bx\b/i.test(eqStr) && /\by\b/i.test(eqStr) && !/\bz\b/i.test(eqStr)) {
+                    candidateRaw = eqStr;
+                    break;
+                }
+            }
+        }
+
+        if (!candidateRaw) return null;
+
+        const eqParts = candidateRaw.split('=');
+        if (eqParts.length !== 2) return null;
+        const [lhsRaw, rhsRaw] = eqParts.map(s => s.trim());
+        if (!lhsRaw || !rhsRaw) return null;
+
+        // Prepare safe JS arithmetic expression for f(x, y) = LHS - RHS
+        const toJsExpr = (side) => {
+            let s = side.toLowerCase().replace(/\s+/g, '');
+            // Only allow safe characters: digits, x, y, ., +, -, *, /, ^, (, )
+            if (!/^[0-9xy.+\-*/^()]+$/.test(s)) return null;
+            // Implicit multiplication: 2x -> 2*x, 2( -> 2*(, )x -> )*x, )( -> )*(, x( -> x*(
+            s = s
+                .replace(/(\d(?:\.\d+)?)([xy(])/g, '$1*$2')
+                .replace(/(\))([0-9xy(])/g, '$1*$2')
+                .replace(/([xy])(\()/g, '$1*$2')
+                .replace(/([xy])([xy])/g, '$1*$2')
+                .replace(/\^/g, '**');
+            return s;
+        };
+
+        const lhsJs = toJsExpr(lhsRaw);
+        const rhsJs = toJsExpr(rhsRaw);
+        if (!lhsJs || !rhsJs) return null;
+
+        try {
+            const evalFn = new Function('x', 'y', `"use strict"; return ((${lhsJs}) - (${rhsJs}));`);
+            const f00 = evalFn(0, 0);
+            const f10 = evalFn(1, 0);
+            const fm10 = evalFn(-1, 0);
+            const f01 = evalFn(0, 1);
+            const f0m1 = evalFn(0, -1);
+
+            if (![f00, f10, fm10, f01, f0m1].every(Number.isFinite)) return null;
+
+            const Ax = (f10 + fm10) / 2 - f00;
+            const Ay = (f01 + f0m1) / 2 - f00;
+            const D = (f10 - fm10) / 2;
+            const E = (f01 - f0m1) / 2;
+
+            // A circle requires equal non-zero x^2 and y^2 coefficients
+            if (Math.abs(Ax - Ay) > 1e-6 || Math.abs(Ax) < 1e-6) return null;
+
+            // Verify at two off-axis points that there are no xy or higher-degree terms
+            const f23 = evalFn(2, 3);
+            const exp23 = Ax * 4 + Ay * 9 + 2 * D + 3 * E + f00;
+            if (!Number.isFinite(f23) || Math.abs(f23 - exp23) > 1e-5) return null;
+
+            const fm21 = evalFn(-2, 1.5);
+            const expm21 = Ax * 4 + Ay * 2.25 - 2 * D + 1.5 * E + f00;
+            if (!Number.isFinite(fm21) || Math.abs(fm21 - expm21) > 1e-5) return null;
+
+            // Normalize by dividing through by Ax so x^2 + y^2 + dNorm*x + eNorm*y + fNorm = 0
+            const dNorm = D / Ax;
+            const eNorm = E / Ax;
+            const fNorm = f00 / Ax;
+
+            const cx = -dNorm / 2;
+            const cy = -eNorm / 2;
+            const rSq = cx * cx + cy * cy - fNorm;
+            if (rSq <= 1e-7) return null;
+
+            const roundNum = (n) => {
+                const v = Math.round(n * 10000) / 10000;
+                return Object.is(v, -0) ? 0 : v;
+            };
+            const r = Math.sqrt(rSq);
+
+            return {
+                cx: roundNum(cx),
+                cy: roundNum(cy),
+                r: roundNum(r),
+                rSq: roundNum(rSq),
+                D: roundNum(dNorm),
+                E: roundNum(eNorm),
+                F: roundNum(fNorm),
+                A: roundNum(Ax),
+                raw: candidateRaw.replace(/\s+/g, ' ')
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Solves standalone 2D Circle properties (Center, Radius, Diameter, Area, Circumference, Standard Form)
+     * with full pedagogical Completing-the-Square LaTeX steps.
+     */
+    solveCircleEquation(circleInput) {
+        const parsed = (circleInput && typeof circleInput === 'object' && circleInput.r !== undefined)
+            ? circleInput
+            : this.parseCircleEquationFromText(typeof circleInput === 'string' ? circleInput : '');
+
+        if (!parsed) {
+            throw new Error('Could not parse a valid circle equation.');
+        }
+
+        const round2 = (n) => {
+            const v = Math.round(n * 100) / 100;
+            return Object.is(v, -0) ? 0 : v;
+        };
+        const cx = round2(parsed.cx);
+        const cy = round2(parsed.cy);
+        const rSq = round2(parsed.rSq !== undefined ? parsed.rSq : parsed.r * parsed.r);
+        const r = round2(Math.sqrt(rSq));
+        const diameter = round2(2 * r);
+        const area = round2(Math.PI * rSq);
+        const circumference = round2(2 * Math.PI * r);
+
+        const formatSqTerm = (centerCoord, varName) => {
+            if (Math.abs(centerCoord) < 1e-6) return `${varName}^2`;
+            return centerCoord < 0
+                ? `(${varName} + ${round2(Math.abs(centerCoord))})^2`
+                : `(${varName} - ${round2(centerCoord)})^2`;
+        };
+
+        const standardCircleEq = `${formatSqTerm(cx, 'x')} + ${formatSqTerm(cy, 'y')} = ${rSq}`;
+        const isPerfectSquareR = Math.abs(r - Math.round(r)) < 1e-6;
+        const rLatex = isPerfectSquareR ? `${Math.round(r)}` : `\\sqrt{${rSq}} \\approx ${r}`;
+        const areaExactLatex = `${rSq}\\pi`;
+        const circumExactLatex = isPerfectSquareR ? `${2 * Math.round(r)}\\pi` : `2\\pi\\sqrt{${rSq}}`;
+
+        return {
+            circle: { cx, cy, r, rSq },
+            center: { x: cx, y: cy },
+            radius: r,
+            rSq,
+            diameter,
+            area,
+            circumference,
+            rLatex,
+            areaExactLatex,
+            circumExactLatex,
+            equations: {
+                originalCircle: parsed.raw || standardCircleEq,
+                standardCircle: standardCircleEq
+            }
+        };
+    }
+
+    /**
      * Parses circle equation and line equation from natural problem text
      */
     parseCircleAndLineFromText(str) {
         if (!str || typeof str !== 'string') return null;
-        let circle = null, line = null;
 
-        // General form: x^2 + y^2 + Dx + Ey + F = 0
-        const genMatch = str.match(/x(?:\^2|²|\^?2)\s*\+\s*y(?:\^2|²|\^?2)\s*([+-]\s*\d*(?:\.\d+)?)\s*x\s*([+-]\s*\d*(?:\.\d+)?)\s*y\s*([+-]\s*\d+(?:\.\d+)?)\s*=\s*0/i);
-        if (genMatch) {
-            const parseCoeff = (s) => parseFloat(s.replace(/\s+/g, '')) || (s.includes('-') ? -1 : 1);
-            const D = parseCoeff(genMatch[1]);
-            const E = parseCoeff(genMatch[2]);
-            const F = parseFloat(genMatch[3].replace(/\s+/g, ''));
-            circle = { D, E, F, raw: genMatch[0].replace(/\s+/g, ' ') };
-        } else {
-            // Standard form: (x - h)^2 + (y - k)^2 = r^2
-            const stdMatch = str.match(/\(x\s*([+-]\s*\d+(?:\.\d+)?)\)(?:\^2|²|\^?2)\s*\+\s*\(y\s*([+-]\s*\d+(?:\.\d+)?)\)(?:\^2|²|\^?2)\s*=\s*(\d+(?:\.\d+)?)/i);
-            if (stdMatch) {
-                const h = -parseFloat(stdMatch[1].replace(/\s+/g, ''));
-                const k = -parseFloat(stdMatch[2].replace(/\s+/g, ''));
-                const rSq = parseFloat(stdMatch[3]);
-                circle = { cx: h, cy: k, r: Math.sqrt(rSq), raw: stdMatch[0] };
-            }
-        }
+        const circle = this.parseCircleEquationFromText(str);
 
         // Line match: y = mx + c or y = mx - c or y = mx
+        let line = null;
         const lineMatch = str.match(/y\s*=\s*([+-]?\s*\d*(?:\.\d+)?)\s*x(?:\s*([+-]\s*\d+(?:\.\d+)?))?/i);
         if (lineMatch) {
             let mStr = (lineMatch[1] || '').replace(/\s+/g, '');

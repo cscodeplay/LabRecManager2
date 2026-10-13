@@ -224,19 +224,9 @@ Solve this step-by-step so that a student or colleague can coordinate and follow
         });
 
         let raw = (res.text || '').trim();
-        raw = raw.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
-
-        let parsed;
-        try {
-            parsed = JSON.parse(raw);
-        } catch (e) {
-            // Attempt to locate JSON block if model included commentary
-            const jsonMatch = raw.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                parsed = JSON.parse(jsonMatch[0]);
-            } else {
-                throw new Error('Failed to parse structured math solution from AI response.');
-            }
+        let parsed = aiService.parseJSONResponse(raw);
+        if (!parsed) {
+            throw new Error('Failed to parse structured math solution from AI response.');
         }
 
         // Ensure steps array exists

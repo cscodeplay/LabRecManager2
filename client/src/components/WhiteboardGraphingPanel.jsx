@@ -45,6 +45,34 @@ export function latexToGraphExpression(raw = '') {
     // Remove \left and \right
     s = s.replace(/\\left\s*/g, '').replace(/\\right\s*/g, '');
 
+    // Handle Calculus Integrals: extract integrand from \int_{a}^{b} f(x) dx or \int f(x) dx
+    if (/\\int\b/.test(s)) {
+        const intMatch = s.match(/\\int(?:\s*_(?:\{[^{}]*\}|[^\s^]+))?(?:\s*\^(?:\{[^{}]*\}|[^\s_]+))?\s*([\s\S]+?)\s*(?:\\[,;!]\s*)?d([xyzt]|\\theta)\b/i);
+        if (intMatch && intMatch[1]) {
+            const integrand = intMatch[1].trim();
+            if (integrand && !integrand.includes('=')) {
+                s = `y = ${integrand}`;
+            }
+        }
+    }
+
+    // Handle Calculus Limits: \lim_{x \to a} f(x) = L -> extract y = f(x)
+    if (/\\lim\b/.test(s)) {
+        s = s.replace(/\\lim\s*(?:_\{[^{}]*\})?\s*/g, '');
+        if (s.includes('=')) {
+            const lhs = s.split('=')[0].trim();
+            if (lhs) s = `y = ${lhs}`;
+        }
+    }
+
+    // Normalize derivative LHS notations: \frac{dy}{dx} = ..., \frac{d}{dx}(...) = ..., f'(x) = ..., y' = ...
+    s = s
+        .replace(/^\\frac\s*\{\s*d(?:\^2)?\s*y\s*\}\s*\{\s*d\s*x(?:\^2)?\s*\}\s*=/i, 'y =')
+        .replace(/^(?:[fghy])\s*'+(\s*\(\s*x\s*\))?\s*=/i, 'y =');
+
+    // Strip trailing constant of integration "+ C" or "+ c"
+    s = s.replace(/\+\s*C\s*$/, '');
+
     // Normalize Unicode superscripts and math operators
     s = s
         .replace(/²/g, '^2')
@@ -178,6 +206,7 @@ export function normalizeCandidateEquation(rawCandidate = '', allowParameters = 
             // Filter out single-letter label prefixes like `C = ...` that aren't x, y, z, r, f(x)
             const eqParts = rawParts.filter((p, idx) => {
                 if (idx === 0 && /^[a-zA-Z]$/.test(p) && !/^[xyzr]$/i.test(p)) return false;
+                if (idx === 0 && /^\(\(d\)\/\(dx\)\)/i.test(p)) return false;
                 return true;
             });
             if (eqParts.length >= 2) {
