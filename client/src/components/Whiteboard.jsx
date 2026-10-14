@@ -18631,6 +18631,14 @@ export default function Whiteboard({
                                             setShowPhysicsSpace(prev => !prev);
                                             return;
                                         }
+                                        if (t.id === 'geometry_instruments') {
+                                            setShowGeometryInstruments(prev => !prev);
+                                            return;
+                                        }
+                                        if (t.id === 'browser_panel') {
+                                            setRightSiderollMode(prev => prev === 'closed' ? 'partial' : 'closed');
+                                            return;
+                                        }
                                         if (t.id === 'tasks') {
                                             setShowTasksPanel(prev => !prev);
                                             return;
@@ -18710,6 +18718,8 @@ export default function Whiteboard({
                                         (t.id === 'math_tablet' && showMathTablet) ||
                                         (t.id === 'math_solver' && showMathSolver) ||
                                         (t.id === 'parametric_shape' && showParametricModal) ||
+                                        (t.id === 'geometry_instruments' && showGeometryInstruments) ||
+                                        (t.id === 'browser_panel' && rightSiderollMode !== 'closed') ||
                                         (t.id === 'recorder' && showRecorder) ||
                                         (t.id === 'timer' && showClassroomTimer) ||
                                         (t.id === 'spotlight' && isSpotlightActive) ||
