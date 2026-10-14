@@ -99,10 +99,143 @@ import WhiteboardPageQuizWidget from './WhiteboardPageQuizWidget';
 import WhiteboardAIPanel from './WhiteboardAIPanel';
 import WhiteboardAISlideShow from './WhiteboardAISlideShow';
 import { GeometryInstrumentsOverlay } from './geometryTools';
+import WhiteboardEZWritePalette from './WhiteboardEZWritePalette';
 import api, { aiAPI } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { useAuthStore, useVoiceStore } from '@/lib/store';
 import { formatDate, formatTime } from '@/lib/dateUtils';
+
+/**
+ * Classroom-friendly color themes inspired by ViewSonic myViewBoard & BenQ EZWrite
+ */
+const TOOL_CLASSROOM_STYLES = {
+    select: {
+        bgActive: 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-300 scale-105',
+        bgInactive: 'text-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/30 hover:text-indigo-200 hover:scale-105',
+        iconColor: 'text-indigo-400',
+        badge: 'bg-indigo-500'
+    },
+    pen: {
+        bgActive: 'bg-sky-500 text-slate-950 font-bold shadow-lg shadow-sky-500/30 ring-2 ring-sky-300 scale-105',
+        bgInactive: 'text-sky-400 bg-sky-500/15 hover:bg-sky-500/30 hover:text-sky-200 hover:scale-105',
+        iconColor: 'text-sky-400',
+        badge: 'bg-sky-500'
+    },
+    highlighter: {
+        bgActive: 'bg-amber-400 text-slate-950 font-bold shadow-lg shadow-amber-400/40 ring-2 ring-amber-200 scale-105',
+        bgInactive: 'text-amber-300 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-100 hover:scale-105',
+        iconColor: 'text-amber-400',
+        badge: 'bg-amber-400'
+    },
+    eraser: {
+        bgActive: 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 ring-2 ring-rose-300 scale-105',
+        bgInactive: 'text-rose-400 bg-rose-500/15 hover:bg-rose-500/30 hover:text-rose-200 hover:scale-105',
+        iconColor: 'text-rose-400',
+        badge: 'bg-rose-500'
+    },
+    line: {
+        bgActive: 'bg-teal-500 text-slate-950 font-bold shadow-lg shadow-teal-500/30 ring-2 ring-teal-200 scale-105',
+        bgInactive: 'text-teal-400 bg-teal-500/15 hover:bg-teal-500/30 hover:text-teal-200 hover:scale-105',
+        iconColor: 'text-teal-400',
+        badge: 'bg-teal-500'
+    },
+    shape: {
+        bgActive: 'bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-200 scale-105',
+        bgInactive: 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200 hover:scale-105',
+        iconColor: 'text-emerald-400',
+        badge: 'bg-emerald-500'
+    },
+    text: {
+        bgActive: 'bg-purple-600 text-white shadow-lg shadow-purple-500/30 ring-2 ring-purple-300 scale-105',
+        bgInactive: 'text-purple-400 bg-purple-500/15 hover:bg-purple-500/30 hover:text-purple-200 hover:scale-105',
+        iconColor: 'text-purple-400',
+        badge: 'bg-purple-500'
+    },
+    math_tablet: {
+        bgActive: 'bg-purple-600 text-white shadow-lg shadow-purple-500/30 ring-2 ring-purple-300 scale-105',
+        bgInactive: 'text-purple-400 bg-purple-500/15 hover:bg-purple-500/30 hover:text-purple-200 hover:scale-105'
+    },
+    math_solver: {
+        bgActive: 'bg-amber-400 text-slate-950 font-bold shadow-lg shadow-amber-400/30 ring-2 ring-amber-200 scale-105',
+        bgInactive: 'text-amber-400 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-200 hover:scale-105'
+    },
+    parametric_shape: {
+        bgActive: 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-200 scale-105',
+        bgInactive: 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/30 hover:text-cyan-200 hover:scale-105'
+    },
+    geometry_instruments: {
+        bgActive: 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-200 scale-105',
+        bgInactive: 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/30 hover:text-cyan-200 hover:scale-105'
+    },
+    browser_panel: {
+        bgActive: 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-300 scale-105',
+        bgInactive: 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200 hover:scale-105'
+    },
+    image: {
+        bgActive: 'bg-pink-600 text-white shadow-lg shadow-pink-500/30 ring-2 ring-pink-300 scale-105',
+        bgInactive: 'text-pink-400 bg-pink-500/15 hover:bg-pink-500/30 hover:text-pink-200 hover:scale-105'
+    },
+    media: {
+        bgActive: 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-500/30 ring-2 ring-amber-200 scale-105',
+        bgInactive: 'text-amber-400 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-200 hover:scale-105'
+    },
+    domain_3d: {
+        bgActive: 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 ring-2 ring-blue-300 scale-105',
+        bgInactive: 'text-blue-400 bg-blue-500/15 hover:bg-blue-500/30 hover:text-blue-200 hover:scale-105'
+    },
+    graph_plotter: {
+        bgActive: 'bg-sky-500 text-slate-950 font-bold shadow-lg shadow-sky-500/30 ring-2 ring-sky-200 scale-105',
+        bgInactive: 'text-sky-400 bg-sky-500/15 hover:bg-sky-500/30 hover:text-sky-200 hover:scale-105'
+    },
+    physics_space: {
+        bgActive: 'bg-violet-600 text-white shadow-lg shadow-violet-500/30 ring-2 ring-violet-300 scale-105',
+        bgInactive: 'text-violet-400 bg-violet-500/15 hover:bg-violet-500/30 hover:text-violet-200 hover:scale-105'
+    },
+    tasks: {
+        bgActive: 'bg-teal-600 text-white shadow-lg shadow-teal-500/30 ring-2 ring-teal-300 scale-105',
+        bgInactive: 'text-teal-400 bg-teal-500/15 hover:bg-teal-500/30 hover:text-teal-200 hover:scale-105'
+    },
+    templates: {
+        bgActive: 'bg-purple-600 text-white shadow-lg shadow-purple-500/30 ring-2 ring-purple-300 scale-105',
+        bgInactive: 'text-purple-400 bg-purple-500/15 hover:bg-purple-500/30 hover:text-purple-200 hover:scale-105'
+    },
+    shortcuts: {
+        bgActive: 'bg-slate-700 text-white shadow-md ring-2 ring-slate-400',
+        bgInactive: 'text-slate-300 bg-slate-800/60 hover:bg-slate-700 hover:text-white'
+    },
+    timer: {
+        bgActive: 'bg-orange-500 text-white shadow-lg shadow-orange-500/30 ring-2 ring-orange-300 scale-105',
+        bgInactive: 'text-orange-400 bg-orange-500/15 hover:bg-orange-500/30 hover:text-orange-200 hover:scale-105'
+    },
+    spotlight: {
+        bgActive: 'bg-yellow-400 text-slate-950 font-bold shadow-lg shadow-yellow-400/40 ring-2 ring-yellow-200 scale-105',
+        bgInactive: 'text-yellow-400 bg-yellow-500/15 hover:bg-yellow-500/30 hover:text-yellow-200 hover:scale-105'
+    },
+    curtain: {
+        bgActive: 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-300 scale-105',
+        bgInactive: 'text-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/30 hover:text-indigo-200 hover:scale-105'
+    },
+    laser: {
+        bgActive: 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 ring-2 ring-rose-300 scale-105',
+        bgInactive: 'text-rose-400 bg-rose-500/15 hover:bg-rose-500/30 hover:text-rose-200 hover:scale-105'
+    },
+    datetime: {
+        bgActive: 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-200 scale-105',
+        bgInactive: 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/30 hover:text-cyan-200 hover:scale-105'
+    },
+    recorder: {
+        bgActive: 'bg-red-600 text-white shadow-lg shadow-red-500/30 ring-2 ring-red-300 scale-105',
+        bgInactive: 'text-red-400 bg-red-500/15 hover:bg-red-500/30 hover:text-red-200 hover:scale-105'
+    },
+    games: {
+        bgActive: 'bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-200 scale-105',
+        bgInactive: 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200 hover:scale-105'
+    },
+    permissions: {
+        bgActive: 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-500/30 ring-2 ring-amber-200 scale-105',
+        bgInactive: 'text-amber-400 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-200 hover:scale-105'
+    }
+};
 
 /**
  * Render mixed plain text and KaTeX math formulas within text fields
@@ -688,6 +821,7 @@ export default function Whiteboard({
     const [showScienceFlyout, setShowScienceFlyout] = useState(false);
     const [showMediaFlyout, setShowMediaFlyout] = useState(false);
     const [showToolsFlyout, setShowToolsFlyout] = useState(false);
+    const [showEZWritePalette, setShowEZWritePalette] = useState(true);
 
     const [shapeType, setShapeType] = useState('rectangle'); // rectangle, circle, triangle, star
     const [shapePreview, setShapePreview] = useState(null);
@@ -18741,8 +18875,8 @@ export default function Whiteboard({
                                             setShowImagePicker(t.id === 'image');
                                         }
                                     }}
-                                    className={`p-1 rounded-full transition-colors flex items-center justify-center ${
-                                        tool === t.id ||
+                                    className={`p-1.5 rounded-xl transition-all flex items-center justify-center relative ${
+                                        (tool === t.id ||
                                         (t.id === 'math_tablet' && showMathTablet) ||
                                         (t.id === 'math_solver' && showMathSolver) ||
                                         (t.id === 'parametric_shape' && showParametricModal) ||
@@ -18752,22 +18886,30 @@ export default function Whiteboard({
                                         (t.id === 'timer' && showClassroomTimer) ||
                                         (t.id === 'spotlight' && isSpotlightActive) ||
                                         (t.id === 'curtain' && isCurtainActive) ||
-                                        (t.id === 'tasks' && showTasksPanel)
-                                            ? 'bg-primary-500 text-white shadow-inner'
-                                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                        (t.id === 'tasks' && showTasksPanel))
+                                            ? (TOOL_CLASSROOM_STYLES[t.id]?.bgActive || 'bg-primary-500 text-white shadow-md ring-2 ring-primary-300 scale-105')
+                                            : (TOOL_CLASSROOM_STYLES[t.id]?.bgInactive || 'text-slate-300 hover:bg-slate-800 hover:text-white')
                                     }`}
                                     title={t.label}
                                 >
                                     {t.id === 'highlighter' ? (
                                         <div className="relative flex items-center justify-center">
-                                            <t.icon className="w-3.5 h-3.5" style={{ color: highlighterColor }} />
+                                            <t.icon className="w-4 h-4" style={{ color: highlighterColor }} />
                                             <span
                                                 className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-slate-900 shadow-xs"
                                                 style={{ backgroundColor: highlighterColor }}
                                             />
                                         </div>
+                                    ) : t.id === 'pen' ? (
+                                        <div className="relative flex items-center justify-center">
+                                            <t.icon className="w-4 h-4" />
+                                            <span
+                                                className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-slate-900 shadow-xs"
+                                                style={{ backgroundColor: color }}
+                                            />
+                                        </div>
                                     ) : (
-                                        <t.icon className="w-3.5 h-3.5" />
+                                        <t.icon className="w-4 h-4" />
                                     )}
                                 </button>
                                 
@@ -19407,21 +19549,21 @@ export default function Whiteboard({
                                             setShowHighlighterPicker(false);
                                             setShowLinePicker(false);
                                         }}
-                                        className={`p-1 rounded-full transition-colors flex items-center justify-center relative ${
+                                        className={`p-1.5 rounded-xl transition-all flex items-center justify-center relative ${
                                             showMathFlyout ||
                                             showGeometryInstruments ||
                                             showParametricModal ||
                                             showMathTablet ||
                                             showMathSolver ||
                                             showEquationModal
-                                                ? 'bg-primary-500 text-white shadow-inner'
-                                                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-200 scale-105'
+                                                : 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/30 hover:text-cyan-200 hover:scale-105'
                                         }`}
                                         title="Math & Geometry Suite (Instruments, Graph, Solver, MIP)"
                                     >
-                                        <Calculator className="w-3.5 h-3.5" />
+                                        <Calculator className="w-4 h-4" />
                                         {(showGeometryInstruments || showParametricModal || showMathTablet || showMathSolver || showEquationModal) && (
-                                            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 border border-slate-900" />
+                                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-cyan-400 border border-slate-900 animate-pulse" />
                                         )}
                                     </button>
 
@@ -19575,16 +19717,16 @@ export default function Whiteboard({
                                             setShowHighlighterPicker(false);
                                             setShowLinePicker(false);
                                         }}
-                                        className={`p-1 rounded-full transition-colors flex items-center justify-center relative ${
+                                        className={`p-1.5 rounded-xl transition-all flex items-center justify-center relative ${
                                             showScienceFlyout || showPhysicsSpace || showDomainLibrary
-                                                ? 'bg-primary-500 text-white shadow-inner'
-                                                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                ? 'bg-violet-600 text-white font-bold shadow-lg shadow-violet-500/30 ring-2 ring-violet-300 scale-105'
+                                                : 'text-violet-400 bg-violet-500/15 hover:bg-violet-500/30 hover:text-violet-200 hover:scale-105'
                                         }`}
                                         title="Science Lab & 3D (Physics Space, 3D Domain Models)"
                                     >
-                                        <Atom className="w-3.5 h-3.5" />
+                                        <Atom className="w-4 h-4" />
                                         {(showPhysicsSpace || showDomainLibrary) && (
-                                            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-violet-400 border border-slate-900" />
+                                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-violet-400 border border-slate-900 animate-pulse" />
                                         )}
                                     </button>
 
@@ -19664,16 +19806,16 @@ export default function Whiteboard({
                                             setShowHighlighterPicker(false);
                                             setShowLinePicker(false);
                                         }}
-                                        className={`p-1 rounded-full transition-colors flex items-center justify-center relative ${
+                                        className={`p-1.5 rounded-xl transition-all flex items-center justify-center relative ${
                                             showMediaFlyout || rightSiderollMode !== 'closed' || showMediaModal
-                                                ? 'bg-primary-500 text-white shadow-inner'
-                                                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                ? 'bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-300 scale-105'
+                                                : 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200 hover:scale-105'
                                         }`}
                                         title="Media & Research (Google Images, YouTube, PDF, Video, Audio)"
                                     >
-                                        <Globe className="w-3.5 h-3.5" />
+                                        <Globe className="w-4 h-4" />
                                         {(rightSiderollMode !== 'closed' || showMediaModal) && (
-                                            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 border border-slate-900" />
+                                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-slate-900 animate-pulse" />
                                         )}
                                     </button>
 
@@ -19770,7 +19912,7 @@ export default function Whiteboard({
                                             setShowHighlighterPicker(false);
                                             setShowLinePicker(false);
                                         }}
-                                        className={`p-1 rounded-full transition-colors flex items-center justify-center relative ${
+                                        className={`p-1.5 rounded-xl transition-all flex items-center justify-center relative ${
                                             showToolsFlyout ||
                                             showClassroomTimer ||
                                             isSpotlightActive ||
@@ -19782,14 +19924,14 @@ export default function Whiteboard({
                                             showGameSelector ||
                                             showShortcutsModal ||
                                             showPermissions
-                                                ? 'bg-primary-500 text-white shadow-inner'
-                                                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                ? 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-400/40 ring-2 ring-amber-200 scale-105'
+                                                : 'text-amber-400 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-200 hover:scale-105'
                                         }`}
                                         title="Classroom Toolbox & Utilities (Timer, Spotlight, Curtain, Laser, Recorder...)"
                                     >
-                                        <MoreHorizontal className="w-3.5 h-3.5" />
+                                        <MoreHorizontal className="w-4 h-4" />
                                         {(showClassroomTimer || isSpotlightActive || isCurtainActive || tool === 'laser' || showRecorder || showTasksPanel) && (
-                                            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 border border-slate-900" />
+                                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 border border-slate-900 animate-pulse" />
                                         )}
                                     </button>
 
@@ -19811,6 +19953,25 @@ export default function Whiteboard({
                                                     <X className="w-3 h-3" />
                                                 </button>
                                             </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowEZWritePalette(prev => !prev);
+                                                    setShowToolsFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showEZWritePalette ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
+                                                    <Pencil className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span>Floating EZWrite Bar</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">BenQ / ViewSonic quick companion</span>
+                                                </div>
+                                            </button>
 
                                             <button
                                                 type="button"
@@ -27111,6 +27272,26 @@ export default function Whiteboard({
                         onMarkDistance={handleGeometryMarkDistance}
                     />
                 </div>
+
+                {/* BenQ EZWrite & ViewSonic Floating Companion Palette */}
+                {showEZWritePalette && (
+                    <WhiteboardEZWritePalette
+                        tool={tool}
+                        setTool={setTool}
+                        color={color}
+                        setColor={setColor}
+                        onUndo={handleUndo}
+                        canUndo={(pageHistoryIndices[currentPage] !== undefined ? pageHistoryIndices[currentPage] : -1) > 0}
+                        showGeometryInstruments={showGeometryInstruments}
+                        setShowGeometryInstruments={setShowGeometryInstruments}
+                        isSpotlightActive={isSpotlightActive}
+                        setIsSpotlightActive={setIsSpotlightActive}
+                        isCurtainActive={isCurtainActive}
+                        setIsCurtainActive={setIsCurtainActive}
+                        isInstructor={isInstructor}
+                        onClose={() => setShowEZWritePalette(false)}
+                    />
+                )}
 
                 {/* Interactive 16:9 Canvas Minimap with Zoom & Viewport Navigation */}
                 {showMinimap && (

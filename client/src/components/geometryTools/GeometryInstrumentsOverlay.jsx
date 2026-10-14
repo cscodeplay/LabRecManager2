@@ -43,14 +43,14 @@ export default function GeometryInstrumentsOverlay({
                     <span>Geometry Tools</span>
                 </div>
 
-                {/* Ruler Button */}
+                {/* Ruler Button (Amber) */}
                 <button
                     type="button"
                     onClick={() => setActiveTool(activeTool === 'ruler' ? null : 'ruler')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
                         activeTool === 'ruler'
-                            ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/20'
-                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                            ? 'bg-amber-400 text-slate-950 font-bold shadow-lg shadow-amber-400/30 ring-2 ring-amber-300'
+                            : 'text-amber-400 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-200'
                     }`}
                     title="Ruler (Straightedge with Metric and Imperial graduations)"
                 >
@@ -58,14 +58,14 @@ export default function GeometryInstrumentsOverlay({
                     <span>Ruler</span>
                 </button>
 
-                {/* Compass Button */}
+                {/* Compass Button (Cyan) */}
                 <button
                     type="button"
                     onClick={() => setActiveTool(activeTool === 'compass' ? null : 'compass')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
                         activeTool === 'compass'
-                            ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/20'
-                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                            ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-300'
+                            : 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/30 hover:text-cyan-200'
                     }`}
                     title="Compass (Draw exact circles and swept arcs)"
                 >
@@ -73,14 +73,14 @@ export default function GeometryInstrumentsOverlay({
                     <span>Compass</span>
                 </button>
 
-                {/* Divider Button */}
+                {/* Divider Button (Purple) */}
                 <button
                     type="button"
                     onClick={() => setActiveTool(activeTool === 'divider' ? null : 'divider')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
                         activeTool === 'divider'
-                            ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/20'
-                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                            ? 'bg-purple-600 text-white font-bold shadow-lg shadow-purple-500/30 ring-2 ring-purple-300'
+                            : 'text-purple-400 bg-purple-500/15 hover:bg-purple-500/30 hover:text-purple-200'
                     }`}
                     title="Divider (Compare, mark, and transfer exact measurements)"
                 >
@@ -88,14 +88,14 @@ export default function GeometryInstrumentsOverlay({
                     <span>Divider</span>
                 </button>
 
-                {/* Protractor Button */}
+                {/* Protractor Button (Emerald) */}
                 <button
                     type="button"
                     onClick={() => setActiveTool(activeTool === 'protractor' ? null : 'protractor')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
                         activeTool === 'protractor'
-                            ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/20'
-                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                            ? 'bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-300'
+                            : 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200'
                     }`}
                     title="Protractor (Measure and draw rays at exact angles 0°-180° / 360°)"
                 >
@@ -103,14 +103,14 @@ export default function GeometryInstrumentsOverlay({
                     <span>Protractor</span>
                 </button>
 
-                {/* Set Square Button */}
+                {/* Set Square Button (Rose) */}
                 <button
                     type="button"
                     onClick={() => setActiveTool(activeTool === 'set_square' ? null : 'set_square')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
                         activeTool === 'set_square'
-                            ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/20'
-                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                            ? 'bg-rose-500 text-white font-bold shadow-lg shadow-rose-500/30 ring-2 ring-rose-300'
+                            : 'text-rose-400 bg-rose-500/15 hover:bg-rose-500/30 hover:text-rose-200'
                     }`}
                     title="Set Square (45° and 30°/60° Drafting Triangles & 90° Perpendiculars)"
                 >
