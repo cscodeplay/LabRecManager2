@@ -132,8 +132,8 @@ async function fetchHighResolutionImages(query) {
             });
 
             const html = res.data || '';
-            const murls = [...html.matchAll(/&quot;murl&quot;:&quot;(https?:\/\/[^&]+)&quot;/g)].map(m => m[1]);
-            const titles = [...html.matchAll(/&quot;t&quot;:&quot;([^&]+)&quot;/g)].map(m => m[1]);
+            const murls = [...html.matchAll(/murl&quot;:&quot;(https?:[^\s"&]+)&quot;/g)].map(m => m[1].replace(/\\/g, ''));
+            const titles = [...html.matchAll(/t&quot;:&quot;([^&"]+)&quot;/g)].map(m => m[1]);
 
             murls.slice(0, 14).forEach((rawUrl, i) => {
                 let imgUrl = rawUrl;
@@ -886,4 +886,162 @@ Ensure each slide is conceptually progressive from introduction to deep dive to 
     }
 }));
 
+/**
+ * @route   GET /api/browser/proxy
+ * @desc    Direct in-panel web browser proxy allowing live navigation of Google Search and educational sites
+ * @access  Public
+ */
+router.get('/proxy', asyncHandler(async (req, res) => {
+    let rawUrl = (req.query.url || '').trim();
+
+    if (!rawUrl) {
+        rawUrl = 'https://www.google.com';
+    }
+
+    // If user entered a search query instead of a URL, convert to Google Search
+    let targetUrl = rawUrl;
+    const looksLikeUrl = /^https?:\/\//i.test(targetUrl) || (/^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/i.test(targetUrl) && !targetUrl.includes(' '));
+    if (!looksLikeUrl) {
+        targetUrl = `https://www.google.com/search?q=${encodeURIComponent(targetUrl)}`;
+    } else if (!/^https?:\/\//i.test(targetUrl)) {
+        targetUrl = `https://${targetUrl}`;
+    }
+
+    try {
+        const response = await axios.get(targetUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+            },
+            timeout: 12000,
+            maxRedirects: 5,
+            responseType: 'text',
+            validateStatus: () => true
+        });
+
+        // Strip framing restrictions
+        res.removeHeader('X-Frame-Options');
+        res.removeHeader('Content-Security-Policy');
+        res.removeHeader('Content-Security-Policy-Report-Only');
+        res.removeHeader('Cross-Origin-Opener-Policy');
+        res.removeHeader('Cross-Origin-Embedder-Policy');
+
+        res.setHeader('X-Frame-Options', 'ALLOWALL');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+
+        const contentType = response.headers['content-type'] || 'text/html; charset=utf-8';
+        res.setHeader('Content-Type', contentType);
+
+        if (contentType.includes('text/html') && typeof response.data === 'string') {
+            let html = response.data;
+            const finalUrl = response.request?.res?.responseUrl || targetUrl;
+
+            const baseTag = `<base href="${finalUrl}">`;
+            const proxyScript = `
+<script>
+(function() {
+    try {
+        window.parent.postMessage({
+            type: 'BROWSER_URL_CHANGED',
+            url: ${JSON.stringify(finalUrl)},
+            title: document.title || ''
+        }, '*');
+    } catch(e) {}
+
+    // Intercept all link clicks inside the iframe
+    document.addEventListener('click', function(e) {
+        var anchor = e.target.closest('a');
+        if (anchor && anchor.href && !anchor.href.startsWith('javascript:') && !anchor.href.startsWith('#')) {
+            e.preventDefault();
+            e.stopPropagation();
+            window.location.href = '/api/browser/proxy?url=' + encodeURIComponent(anchor.href);
+        }
+    }, true);
+
+    // Intercept form submissions (e.g. search boxes)
+    document.addEventListener('submit', function(e) {
+        var form = e.target;
+        if (form) {
+            e.preventDefault();
+            var actionUrl = form.action || ${JSON.stringify(finalUrl)};
+            var method = (form.method || 'GET').toUpperCase();
+            if (method === 'GET') {
+                var formData = new FormData(form);
+                var params = new URLSearchParams(formData);
+                var sep = actionUrl.includes('?') ? '&' : '?';
+                var fullUrl = actionUrl + sep + params.toString();
+                window.location.href = '/api/browser/proxy?url=' + encodeURIComponent(fullUrl);
+            }
+        }
+    }, true);
+
+    // Draggable images support onto whiteboard
+    document.addEventListener('dragstart', function(e) {
+        if (e.target.tagName === 'IMG' && e.target.src) {
+            e.dataTransfer.setData('text/plain', e.target.src);
+            e.dataTransfer.setData('text/uri-list', e.target.src);
+            e.dataTransfer.setData('application/x-whiteboard-image', JSON.stringify({
+                type: 'image',
+                url: e.target.src,
+                title: e.target.alt || document.title || 'Web Image'
+            }));
+        }
+    }, true);
+})();
+</script>
+`;
+
+            if (html.includes('<head>')) {
+                html = html.replace('<head>', `<head>${baseTag}${proxyScript}`);
+            } else if (html.includes('<html>')) {
+                html = html.replace('<html>', `<html><head>${baseTag}${proxyScript}</head>`);
+            } else {
+                html = `${baseTag}${proxyScript}${html}`;
+            }
+
+            return res.send(html);
+        }
+
+        return res.send(response.data);
+    } catch (err) {
+        console.error('[BrowserProxy] Error loading URL:', targetUrl, err.message);
+        return res.status(500).send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>Unable to load in browser</title>
+                <style>
+                    body { font-family: system-ui, -apple-system, sans-serif; background: #090d16; color: #f8fafc; padding: 32px 16px; margin: 0; display: flex; align-items: center; justify-content: center; min-height: 80vh; }
+                    .card { max-width: 440px; width: 100%; background: #131c2e; border: 1px solid #1e293b; border-radius: 20px; padding: 28px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
+                    .icon { width: 48px; height: 48px; background: rgba(244, 63, 94, 0.15); color: #f43f5e; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; font-size: 24px; }
+                    h2 { font-size: 17px; font-weight: 700; margin: 0 0 8px; color: #f8fafc; }
+                    p { color: #94a3b8; font-size: 13px; line-height: 1.5; margin: 0 0 20px; }
+                    .url-box { background: #090d16; border: 1px solid #334155; padding: 8px 12px; border-radius: 8px; font-family: monospace; font-size: 11px; color: #38bdf8; word-break: break-all; margin-bottom: 20px; text-align: left; }
+                    .actions { display: flex; gap: 10px; justify-content: center; }
+                    .btn-primary { background: #0284c7; color: white; border: none; padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+                    .btn-primary:hover { background: #0369a1; }
+                    .btn-secondary { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; }
+                    .btn-secondary:hover { background: #334155; color: white; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <div class="icon">&#9888;</div>
+                    <h2>Web Page Framing Protected</h2>
+                    <p>This destination website blocks direct embedding inside frames, or the connection timed out.</p>
+                    <div class="url-box">${targetUrl}</div>
+                    <div class="actions">
+                        <a class="btn-primary" href="${targetUrl}" target="_blank" rel="noopener noreferrer">Open in New Tab &nearr;</a>
+                        <button class="btn-secondary" onclick="window.location.reload()">Retry</button>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `);
+    }
+}));
+
 module.exports = router;
+
