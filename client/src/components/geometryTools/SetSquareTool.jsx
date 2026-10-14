@@ -25,7 +25,8 @@ export default function SetSquareTool({
     scale = 1,
     onDrawPerpendicular,
     onDrawTriangle,
-    onClose
+    onClose,
+    onStateChange
 }) {
     // Right-angle vertex position (Origin at 90° corner) in Canvas Coordinates
     const [pos, setPos] = useState({ x: initialX, y: initialY });
@@ -37,6 +38,21 @@ export default function SetSquareTool({
     // Calculate dimensions in px
     const basePx = sizeCm * PX_PER_CM;
     const heightPx = squareType === '45' ? basePx : basePx * Math.tan(degToRad(60));
+
+    // Report physical boundary for outer edge pen guidance
+    React.useEffect(() => {
+        if (onStateChange) {
+            onStateChange({
+                type: 'setsquare',
+                x: pos.x,
+                y: pos.y,
+                angle,
+                basePx,
+                heightPx,
+                isFlipped
+            });
+        }
+    }, [onStateChange, pos.x, pos.y, angle, basePx, heightPx, isFlipped]);
 
     // Drag repositioning ref
     const isDraggingRef = useRef(false);

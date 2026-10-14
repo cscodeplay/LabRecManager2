@@ -25,7 +25,8 @@ export default function ProtractorTool({
     scale = 1,
     onDrawAngle,
     onDrawLine,
-    onClose
+    onClose,
+    onStateChange
 }) {
     // Vertex position (center origin of protractor) in pure Canvas Coordinates
     const [vertex, setVertex] = useState({ x: initialX, y: initialY });
@@ -34,6 +35,19 @@ export default function ProtractorTool({
     const [measureAngle, setMeasureAngle] = useState(initialMeasureAngle);
 
     const radiusPx = radiusCm * PX_PER_CM;
+
+    // Report physical boundary for outer edge pen guidance
+    React.useEffect(() => {
+        if (onStateChange) {
+            onStateChange({
+                type: 'protractor',
+                centerX: vertex.x,
+                centerY: vertex.y,
+                radiusPx,
+                baseRotation
+            });
+        }
+    }, [onStateChange, vertex.x, vertex.y, radiusPx, baseRotation]);
 
     // Body drag ref (repositioning protractor)
     const isDraggingBodyRef = useRef(false);

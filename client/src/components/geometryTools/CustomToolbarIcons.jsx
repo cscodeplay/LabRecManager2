@@ -351,13 +351,92 @@ export const ARGON_TOOL_ICON_MAP = {
     compass: ArgonCompassIcon,
     ruler: ArgonRulerIcon,
     protractor: ArgonProtractorIcon,
+    setsquare: ArgonRulerIcon,
     divider: ArgonDividerIcon,
     math_tablet: ArgonMathIcon,
     graph_plotter: ArgonGraphIcon,
     physics_space: ArgonPhysicsIcon,
-    ai_assistant: ArgonSparkleIcon
+    ai_assistant: ArgonSparkleIcon,
+    ai_copilot: ArgonSparkleIcon
 };
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * HOW TO PROVIDE EXTERNAL AI-GENERATED ICONS:
+ * ══════════════════════════════════════════════════════════════════════════════
+ * You can easily provide external icons that you generate using any AI (Midjourney,
+ * DALL-E, Recraft, Claude, Gemini, etc.) using any of the two methods below:
+ *
+ * METHOD 1: Direct File Drop-in (Zero Code Changes)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Simply place your AI-generated SVG or PNG file into the `client/public/custom-icons/`
+ * folder with the tool's ID as the filename:
+ *
+ *   • client/public/custom-icons/select.svg
+ *   • client/public/custom-icons/pen.svg
+ *   • client/public/custom-icons/highlighter.svg
+ *   • client/public/custom-icons/eraser.svg
+ *   • client/public/custom-icons/ruler.svg
+ *   • client/public/custom-icons/compass.svg
+ *   • client/public/custom-icons/protractor.svg
+ *   • client/public/custom-icons/divider.svg
+ *   • client/public/custom-icons/setsquare.svg
+ *   • client/public/custom-icons/math_tablet.svg
+ *   • client/public/custom-icons/graph_plotter.svg
+ *   • client/public/custom-icons/physics_space.svg
+ *   • client/public/custom-icons/ai_assistant.svg
+ *
+ * Supported formats: .svg (recommended for crisp vector scaling) or .png (transparent 64x64 or 128x128).
+ *
+ * METHOD 2: Direct In-Memory / Global Override Registry
+ * ─────────────────────────────────────────────────────────────────────────────
+ * You can also set a base64 or URL map in `window.__CUSTOM_WHITEBOARD_ICONS__` or
+ * in the `EXTERNAL_AI_ICONS_REGISTRY` object below:
+ */
+export const EXTERNAL_AI_ICONS_REGISTRY = {
+    // Example:
+    // ruler: '/custom-icons/ruler.svg',
+    // compass: '/custom-icons/compass.svg',
+};
+
+/**
+ * Dynamic Custom Icon Component
+ * Automatically tries to load the external AI-generated icon first;
+ * if not provided or fails to load, falls back to Argon vector or Lucide component.
+ */
+export function CustomToolIcon({ toolId, fallback: FallbackComponent, className = "w-4 h-4", alt = "", ...props }) {
+    const [hasError, setHasError] = React.useState(false);
+
+    // Check runtime registry or window global
+    const registeredUrl = (typeof window !== 'undefined' && window.__CUSTOM_WHITEBOARD_ICONS__ && window.__CUSTOM_WHITEBOARD_ICONS__[toolId])
+        || EXTERNAL_AI_ICONS_REGISTRY[toolId]
+        || null;
+
+    if (registeredUrl && !hasError) {
+        return (
+            <img
+                src={registeredUrl}
+                alt={alt || toolId}
+                className={`${className} object-contain`}
+                onError={() => setHasError(true)}
+                {...props}
+            />
+        );
+    }
+
+    const ArgonComp = ARGON_TOOL_ICON_MAP[toolId];
+    if (ArgonComp) {
+        return <ArgonComp className={className} {...props} />;
+    }
+
+    if (FallbackComponent) {
+        return <FallbackComponent className={className} {...props} />;
+    }
+
+    return null;
+}
 
 export function getCustomToolbarIcon(toolId, FallbackComponent) {
     return ARGON_TOOL_ICON_MAP[toolId] || FallbackComponent;
 }
+

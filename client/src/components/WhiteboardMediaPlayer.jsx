@@ -4,7 +4,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
     Play, Pause, Volume2, VolumeX, Maximize2, Minimize2,
     Lock, Unlock, Trash2, Video, Music, Globe,
-    ChevronDown, ChevronUp, GripHorizontal, RotateCcw
+    ChevronDown, ChevronUp, GripHorizontal, RotateCcw,
+    ExternalLink, Copy
 } from 'lucide-react';
 
 export default function WhiteboardMediaPlayer({
@@ -216,12 +217,16 @@ export default function WhiteboardMediaPlayer({
     // Helper to extract clean YouTube embed URL
     const getYouTubeEmbedUrl = (url) => {
         if (!url) return '';
-        if (url.includes('embed/')) return url;
-        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-        const match = url.match(regExp);
-        const id = (match && match[2].length === 11) ? match[2] : null;
+        // Extract 11-char YouTube Video ID across watch, shorts, youtu.be, embed, mobile
+        const idMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|shorts\/|live\/|watch\?.+&v=)|(?:^))([a-zA-Z0-9_-]{11})/);
+        const id = idMatch ? idMatch[1] : null;
         if (id) {
-            return `https://www.youtube.com/embed/${id}?autoplay=0&enablejsapi=1&mute=${isMuted ? 1 : 0}`;
+            const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : '';
+            return `https://www.youtube-nocookie.com/embed/${id}?autoplay=0&enablejsapi=1&origin=${encodeURIComponent(origin)}&mute=${isMuted ? 1 : 0}`;
+        }
+        if (url.includes('youtube.com/embed/')) {
+            const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : '';
+            return `${url}${url.includes('?') ? '&' : '?'}enablejsapi=1&origin=${encodeURIComponent(origin)}`;
         }
         return url;
     };
@@ -250,6 +255,123 @@ export default function WhiteboardMediaPlayer({
                 isSelected ? 'ring-2 ring-indigo-500 shadow-2xl' : 'shadow-lg hover:shadow-xl'
             }`}
         >
+            {/* Standardized Floating Media Context Toolbar (Shown when selected) */}
+            {isSelected && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        left: '50%',
+                        top: '-40px',
+                        transform: 'translateX(-50%)',
+                        pointerEvents: 'auto'
+                    }}
+                    className="h-8 min-h-[32px] px-2 py-0.5 rounded-full bg-slate-900/90 backdrop-blur-md border border-slate-700/60 shadow-xl flex items-center gap-1.5 z-40 text-xs select-none"
+                >
+                    {/* Open original link */}
+                    {media.src && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                window.open(media.src, '_blank', 'noopener,noreferrer');
+                            }}
+                            className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors"
+                            title="Open Video in New Tab"
+                        >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+
+                    {/* Mute / Unmute */}
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            toggleMute(e);
+                        }}
+                        className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors"
+                        title={isMuted ? 'Unmute' : 'Mute'}
+                    >
+                        {isMuted ? <VolumeX className="w-3.5 h-3.5 text-amber-400" /> : <Volume2 className="w-3.5 h-3.5 text-emerald-400" />}
+                    </button>
+
+                    <div className="h-4 w-[1px] bg-slate-700/60 mx-0.5" />
+
+                    {/* 16:9 Aspect Ratio preset */}
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            const curW = media.width || 480;
+                            onUpdate && onUpdate({ height: Math.round((curW * 9) / 16) });
+                        }}
+                        className="px-1.5 h-6 rounded text-[10px] font-mono font-bold text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors"
+                        title="Set 16:9 Widescreen"
+                    >
+                        16:9
+                    </button>
+
+                    {/* 4:3 Aspect Ratio preset */}
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            const curW = media.width || 480;
+                            onUpdate && onUpdate({ height: Math.round((curW * 3) / 4) });
+                        }}
+                        className="px-1.5 h-6 rounded text-[10px] font-mono font-bold text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors"
+                        title="Set 4:3 Standard"
+                    >
+                        4:3
+                    </button>
+
+                    <div className="h-4 w-[1px] bg-slate-700/60 mx-0.5" />
+
+                    {/* Duplicate */}
+                    {onDuplicate && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDuplicate(media.id);
+                            }}
+                            className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors"
+                            title="Duplicate Video"
+                        >
+                            <Copy className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+
+                    {/* Lock / Unlock */}
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            toggleLock(e);
+                        }}
+                        className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors"
+                        title={isLocked ? 'Unlock Element' : 'Lock Element'}
+                    >
+                        {isLocked ? <Lock className="w-3.5 h-3.5 text-amber-400" /> : <Unlock className="w-3.5 h-3.5" />}
+                    </button>
+
+                    {/* Delete */}
+                    {onDelete && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDelete(media.id);
+                            }}
+                            className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-rose-400 hover:bg-slate-800/80 transition-colors"
+                            title="Delete Video"
+                        >
+                            <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                </div>
+            )}
+
             {/* Collapsed Pill View */}
             {isCollapsed ? (
                 <div 
@@ -374,7 +496,8 @@ export default function WhiteboardMediaPlayer({
                                 src={getYouTubeEmbedUrl(media.src)}
                                 title={media.title || 'YouTube Player'}
                                 className="w-full h-full border-0 pointer-events-auto"
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                referrerPolicy="strict-origin-when-cross-origin"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
                                 allowFullScreen
                             />
                         ) : isEmbed ? (

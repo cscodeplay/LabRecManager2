@@ -343,6 +343,7 @@ const SPEED_OPTIONS = [0.75, 1, 1.25, 1.5];
 
 export default function WhiteboardClosedCaptions({
     isVisible = true,
+    isOpen = false,
     isListening = false,
     transcript = '',
     interimTranscript = '',
@@ -359,6 +360,7 @@ export default function WhiteboardClosedCaptions({
     suggestedFollowUps = [],
     onCreateStickyNote = () => {},
     onInsertAsText = () => {},
+    onInsertToBoard = null,
     onOpenAiSolution = () => {},
     onStopSpeaking = () => {},
     onPauseSpeaking = () => {},
@@ -408,7 +410,7 @@ export default function WhiteboardClosedCaptions({
     // Determine the active display response
     const activeAiResponse = aiSolution?.solutionMarkdown || aiResponseText || aiSolution?.speechResponse || (isAiSpeaking ? aiSpeakingText : '');
 
-    // Reset pane expansion & visibility whenever a fresh AI response arrives
+    // Reset pane expansion & visibility whenever a fresh AI response arrives or panel is opened
     useEffect(() => {
         if (activeAiResponse && activeAiResponse !== lastResponseSeenRef.current) {
             lastResponseSeenRef.current = activeAiResponse;
@@ -418,6 +420,12 @@ export default function WhiteboardClosedCaptions({
             setActiveTab(aiSolution?.solutionMarkdown ? 'solution' : 'summary');
         }
     }, [activeAiResponse, aiSolution?.solutionMarkdown]);
+
+    useEffect(() => {
+        if (isVisible || isOpen) {
+            setIsPaneDismissed(false);
+        }
+    }, [isVisible, isOpen]);
 
     // Keep track of the most recent utterance or feedback
     useEffect(() => {
@@ -578,12 +586,12 @@ export default function WhiteboardClosedCaptions({
         }
     };
 
-    if (!isVisible && !activeAiResponse) return null;
+    if (!isVisible && !activeAiResponse && !isOpen) return null;
 
     return (
         <>
             {/* 1. MINIMAL SOLUTION PANE — Placed to the RIGHT of the Center of the Whiteboard */}
-            {activeAiResponse && !isPaneDismissed && (
+            {(activeAiResponse || isVisible || isOpen) && !isPaneDismissed && (
                 <div className="fixed top-1/2 left-[calc(50%+20px)] -translate-y-1/2 z-40 w-[350px] sm:w-[410px] max-w-[44vw] pointer-events-auto select-none transition-all duration-200 flex flex-col">
                     <div
                         style={{ backgroundColor: '#0f172a' }}
@@ -591,6 +599,104 @@ export default function WhiteboardClosedCaptions({
                             aiSolution?.isError ? 'border-rose-500 shadow-rose-950/40' : 'border-slate-700'
                         }`}
                     >
+                        {!activeAiResponse ? (
+                            /* Ask AI Solver Initial Card when opened directly without prior solution */
+                            <div className="flex flex-col">
+                                <div
+                                    style={{ backgroundColor: '#1e293b' }}
+                                    className="px-3 py-2 border-b border-slate-700 flex items-center justify-between gap-2 text-xs text-white"
+                                >
+                                    <div className="flex items-center gap-1.5 font-bold text-yellow-400">
+                                        <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
+                                        <span>AI Problem Solver & Co-Pilot</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsPaneDismissed(true);
+                                            if (onClose) onClose();
+                                        }}
+                                        className="p-1 rounded text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                                        title="Close Solver"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+
+                                <div className="p-4 space-y-3 bg-slate-950 text-slate-100">
+                                    {isAiThinking ? (
+                                        <div className="py-8 flex flex-col items-center justify-center gap-2.5 text-xs text-yellow-400 animate-pulse">
+                                            <Loader2 className="w-6 h-6 animate-spin text-yellow-400" />
+                                            <span>Formulating step-by-step solution & graphs...</span>
+                                        </div>
+                                    ) : (
+                                        <form onSubmit={handleFormSubmit} className="space-y-2.5">
+                                            <textarea
+                                                ref={editInputRef}
+                                                rows={3}
+                                                value={editText}
+                                                onChange={(e) => setEditText(e.target.value)}
+                                                placeholder="Ask any math problem, line equation, science question, or whiteboard command..."
+                                                className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-yellow-400 resize-none leading-relaxed"
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                                        e.preventDefault();
+                                                        handleFormSubmit(e);
+                                                    }
+                                                }}
+                                            />
+
+                                            <div className="flex items-center justify-between gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => fileInputRef.current?.click()}
+                                                    className="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+                                                    title="Upload problem image / handwriting"
+                                                >
+                                                    <Upload className="w-3.5 h-3.5 text-cyan-400" />
+                                                    <span>Scan Image</span>
+                                                </button>
+
+                                                <button
+                                                    type="submit"
+                                                    disabled={!editText.trim() && !scannedDataUrl}
+                                                    className="py-1.5 px-4 rounded-lg bg-yellow-400 hover:bg-yellow-300 disabled:opacity-40 text-slate-950 text-xs font-bold transition flex items-center gap-1.5 shadow-md cursor-pointer"
+                                                >
+                                                    <Sparkles className="w-3.5 h-3.5" />
+                                                    <span>Solve</span>
+                                                </button>
+                                            </div>
+
+                                            {/* Quick Examples */}
+                                            <div className="pt-1 space-y-1">
+                                                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Examples:</span>
+                                                <div className="flex flex-col gap-1 text-[11px]">
+                                                    {[
+                                                        'Solve 2x + 3y = 6 and x - y = 1',
+                                                        'Find intersection of y = x^2 and y = 2x + 3',
+                                                        'Plot y = sin(x) and y = cos(x)',
+                                                        'Explain conservation of energy'
+                                                    ].map((promptText, pIdx) => (
+                                                        <button
+                                                            key={pIdx}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setEditText(promptText);
+                                                                onExecuteCommand(promptText);
+                                                            }}
+                                                            className="text-left px-2 py-1 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-yellow-300 border border-slate-800 hover:border-slate-700 truncate transition"
+                                                        >
+                                                            💡 {promptText}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </form>
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            <>
                         {/* Minimal Header Bar: Title + Voice Speed Controls + Actions */}
                         <div
                             style={{ backgroundColor: aiSolution?.isError ? '#4c0519' : '#1e293b' }}
@@ -1004,10 +1110,20 @@ export default function WhiteboardClosedCaptions({
                                     className="px-3 py-2 border-t border-slate-700 bg-slate-900 flex flex-col gap-1.5"
                                 >
                                     <div className="flex items-center gap-1.5 flex-wrap">
+                                        {onInsertToBoard && (
+                                            <button
+                                                type="button"
+                                                onClick={() => onInsertToBoard(aiSolution)}
+                                                className="px-2 py-0.5 rounded-md bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold text-[10px] transition cursor-pointer flex items-center gap-1 shadow-xs"
+                                                title="Insert structured solution card onto canvas"
+                                            >
+                                                ✨ Insert to Board
+                                            </button>
+                                        )}
                                         <button
                                             type="button"
                                             onClick={() => onInsertAsText(displayText)}
-                                            className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-600 text-[10px] font-medium transition"
+                                            className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-600 text-[10px] font-medium transition cursor-pointer"
                                         >
                                             🔤 Insert as Text
                                         </button>
@@ -1059,12 +1175,14 @@ export default function WhiteboardClosedCaptions({
                                 </div>
                             </div>
                         )}
+                        </>
+                        )}
                     </div>
                 </div>
             )}
 
             {/* 2. BOTTOM AI REQUEST & CLOSED CAPTIONS BAR — Supports Image Upload & Drag-and-Drop Question Scanning */}
-            {isVisible && (
+            {isVisible && (isListening || Boolean(interimTranscript || transcript || feedback)) && (
                 <div
                     onDragOver={(e) => {
                         e.preventDefault();

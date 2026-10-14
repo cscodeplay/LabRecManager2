@@ -28,7 +28,8 @@ export default function CompassTool({
     scale = 1,
     onDrawCircle,
     onDrawArc,
-    onClose
+    onClose,
+    onStateChange
 }) {
     // Anchor needle position (center of circle) in canvas coordinates
     const [center, setCenter] = useState({ x: initialX, y: initialY });
@@ -45,6 +46,18 @@ export default function CompassTool({
 
     const radiusPx = radiusCm * PX_PER_CM;
 
+    // Report compass boundary
+    React.useEffect(() => {
+        if (onStateChange) {
+            onStateChange({
+                type: 'compass',
+                centerX: center.x,
+                centerY: center.y,
+                radiusPx
+            });
+        }
+    }, [onStateChange, center.x, center.y, radiusPx]);
+
     // Needle drag ref
     const isDraggingNeedleRef = useRef(false);
     const needleDragStartRef = useRef({ canvasStartX: 0, canvasStartY: 0, initialCenterX: 0, initialCenterY: 0 });
@@ -57,6 +70,7 @@ export default function CompassTool({
     const sweepStartAngleRef = useRef(0);
     const currentSweepDegRef = useRef(0);
     const startAngleDegRef = useRef(0);
+    const isAnimatingCircleRef = useRef(false);
 
     // ─── 1. Needle Drag (Reposition entire compass) ───
     const handleNeedlePointerDown = (e) => {
@@ -94,7 +108,7 @@ export default function CompassTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // ─── 2. Adjust Compass Radius (Opening / closing arms) ───
+    // ─── 2. Adjust Compass Radius (Opening / closing arms in 0.1 cm steps) ───
     const handleRadiusPointerDown = (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -107,8 +121,8 @@ export default function CompassTool({
 
             // Maximum radius limited by arm geometry (never exceeds 2 * ARM_LENGTH - 10px)
             const maxPx = ARM_LENGTH * 1.85;
-            const clampedPx = Math.max(PX_PER_CM * 1.5, Math.min(maxPx, distPx));
-            const newCm = Math.round((clampedPx / PX_PER_CM) * 2) / 2;
+            const clampedPx = Math.max(PX_PER_CM * 1.0, Math.min(maxPx, distPx));
+            const newCm = Math.round((clampedPx / PX_PER_CM) * 10) / 10;
             setRadiusCm(newCm);
         };
 
@@ -185,16 +199,49 @@ export default function CompassTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // ─── 4. Draw Full Circle Action ───
+    // ─── 4. Draw Full Circle Action with Animated In-Action Drawing ───
     const handleDrawFullCircle = useCallback(() => {
-        if (!onDrawCircle) return;
-        onDrawCircle({
-            cx: Math.round(center.x),
-            cy: Math.round(center.y),
-            radius: radiusPx,
-            radiusCm
-        });
-    }, [onDrawCircle, center, radiusPx, radiusCm]);
+        if (!onDrawCircle || isAnimatingCircleRef.current) return;
+        isAnimatingCircleRef.current = true;
+        setIsSweepingArc(true);
+
+        const initialPencilAngle = angle;
+        setArcStartAngle(initialPencilAngle);
+        setArcSweepDeg(0);
+
+        const duration = 650; // ms for full 360 circle sweep
+        const startTime = performance.now();
+
+        const animateCircleSweep = (currentTime) => {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(1, elapsed / duration);
+            // Smooth ease in-out
+            const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+            const currentSweep = ease * 360;
+
+            setArcSweepDeg(currentSweep);
+            setAngle((initialPencilAngle + currentSweep) % 360);
+
+            if (progress < 1) {
+                requestAnimationFrame(animateCircleSweep);
+            } else {
+                setArcSweepDeg(360);
+                setTimeout(() => {
+                    setIsSweepingArc(false);
+                    setArcSweepDeg(0);
+                    isAnimatingCircleRef.current = false;
+                    onDrawCircle({
+                        cx: Math.round(center.x),
+                        cy: Math.round(center.y),
+                        radius: radiusPx,
+                        radiusCm
+                    });
+                }, 40);
+            }
+        };
+
+        requestAnimationFrame(animateCircleSweep);
+    }, [onDrawCircle, center, radiusPx, radiusCm, angle]);
 
     // Pencil Tip Coordinates
     const pencilRad = degToRad(angle);
@@ -406,7 +453,7 @@ export default function CompassTool({
                 />
             </svg>
 
-            {/* ─── Control 1: Center Needle Anchor (Draggable) ─── */}
+            {/* ─── Control 1: Center Needle Anchor (Clean sharp tip, NO icon badge) ─── */}
             <div
                 style={{
                     position: 'absolute',
@@ -416,13 +463,13 @@ export default function CompassTool({
                     pointerEvents: 'auto'
                 }}
                 onPointerDown={handleNeedlePointerDown}
-                className="w-8 h-8 rounded-full bg-slate-900/95 border-2 border-slate-300 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:border-cyan-400 hover:scale-110 transition group"
-                title="Drag needle tip to reposition compass pivot"
+                className="w-7 h-7 rounded-full cursor-grab active:cursor-grabbing hover:bg-cyan-500/15 hover:ring-2 hover:ring-cyan-400/60 transition flex items-center justify-center group"
+                title="Drag needle pivot to reposition compass"
             >
-                <ArgonNeedleIcon className="w-5 h-5 text-slate-200 group-hover:text-cyan-300 transition-colors drop-shadow" />
+                <div className="w-2.5 h-2.5 rounded-full bg-slate-900 border-2 border-slate-300 group-hover:border-cyan-400 transition-colors shadow-sm" />
             </div>
 
-            {/* ─── Control 2: Pencil Tip & Sweep Handle ─── */}
+            {/* ─── Control 2: Pencil Tip & Sweep Handle (Hand cursor, NO pencil icon badge) ─── */}
             <div
                 style={{
                     position: 'absolute',
@@ -432,13 +479,31 @@ export default function CompassTool({
                     pointerEvents: 'auto'
                 }}
                 onPointerDown={(e) => handlePencilPointerDown(e, true)}
-                className="w-8 h-8 rounded-full bg-slate-900/90 border-2 border-amber-400 shadow-xl flex items-center justify-center cursor-crosshair hover:scale-110 transition group"
-                title="Drag pencil to sweep and draw an arc"
+                className="w-7 h-7 rounded-full cursor-grab active:cursor-grabbing hover:bg-amber-400/20 hover:ring-2 hover:ring-amber-400/60 transition flex items-center justify-center group"
+                title="Hover & drag to rotate pencil or sweep an arc"
             >
-                <PencilIcon className="w-3.5 h-3.5 text-amber-300 group-hover:rotate-12 transition-transform" />
+                <div className="w-2.5 h-2.5 rounded-full bg-slate-900/60 border border-amber-400 group-hover:scale-125 transition-transform" />
             </div>
 
-            {/* ─── Control 3: Radius Adjustment Handle (Opening / Closing) ─── */}
+            {/* ─── Control 3: Bending Point Top Hinge Joint (Drag to move whole compass) ─── */}
+            <div
+                style={{
+                    position: 'absolute',
+                    left: `${hinge.x}px`,
+                    top: `${hinge.y}px`,
+                    transform: 'translate(-50%, -50%)',
+                    pointerEvents: 'auto'
+                }}
+                onPointerDown={handleNeedlePointerDown}
+                className="w-9 h-9 rounded-full cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-cyan-400/70 transition flex items-center justify-center group"
+                title="Hold bending point to move compass"
+            >
+                <div className="w-5 h-5 rounded-full bg-slate-900/80 border border-cyan-400/70 group-hover:scale-110 transition-transform flex items-center justify-center">
+                    <div className="w-2 h-2 rounded-full bg-cyan-400" />
+                </div>
+            </div>
+
+            {/* ─── Control 4: Radius Adjustment Handle (0.1 cm Step Buttons) ─── */}
             <div
                 data-handle="true"
                 style={{
@@ -448,16 +513,40 @@ export default function CompassTool({
                     transform: 'translate(-50%, -50%)',
                     pointerEvents: 'auto'
                 }}
-                onPointerDown={handleRadiusPointerDown}
-                className="px-2 py-0.5 rounded-full bg-slate-900/95 border border-cyan-400/80 shadow-md flex items-center gap-1 cursor-ew-resize hover:scale-105 transition"
-                title="Drag to open or close compass radius"
+                className="px-2 py-0.5 rounded-full bg-slate-900/95 border border-cyan-400/80 shadow-md flex items-center gap-1.5 transition select-none"
             >
-                <span className="text-[10px] font-mono font-bold text-cyan-300">
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setRadiusCm(r => +(Math.max(1.0, r - 0.1)).toFixed(1));
+                    }}
+                    className="w-4 h-4 rounded-full bg-slate-800 hover:bg-cyan-600 text-slate-300 hover:text-white flex items-center justify-center text-[10px] font-bold"
+                    title="Decrease radius by 0.1 cm"
+                >
+                    -
+                </button>
+                <span
+                    onPointerDown={handleRadiusPointerDown}
+                    className="text-[10px] font-mono font-bold text-cyan-300 cursor-ew-resize select-none"
+                    title="Drag or click +/- to adjust radius (0.1 cm)"
+                >
                     r = {radiusCm.toFixed(1)} cm
                 </span>
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setRadiusCm(r => +(Math.min(15.0, r + 0.1)).toFixed(1));
+                    }}
+                    className="w-4 h-4 rounded-full bg-slate-800 hover:bg-cyan-600 text-slate-300 hover:text-white flex items-center justify-center text-[10px] font-bold"
+                    title="Increase radius by 0.1 cm"
+                >
+                    +
+                </button>
             </div>
 
-            {/* ─── Floating Top Control HUD: Draw Circle & Dismiss ─── */}
+            {/* ─── Floating Top Control HUD: Icon-Only Draw Circle & Dismiss ─── */}
             <div
                 style={{
                     position: 'absolute',
@@ -466,31 +555,30 @@ export default function CompassTool({
                     transform: 'translate(-50%, -100%)',
                     pointerEvents: 'auto'
                 }}
-                className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full px-2.5 py-1 shadow-2xl"
+                className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full px-2 py-1 shadow-2xl"
             >
-                {/* Real-time Angle & Radius Display */}
-                <span className="text-[10px] font-mono text-slate-300">
+                {/* Real-time Angle Display */}
+                <span className="text-[10px] font-mono text-slate-300 px-1">
                     {angle.toFixed(0)}°
                 </span>
 
                 <div className="w-px h-3 bg-slate-700" />
 
-                {/* Draw Full Circle */}
+                {/* Draw Full Circle (Icon Only with Tooltip) */}
                 <button
                     type="button"
                     onClick={handleDrawFullCircle}
-                    className="flex items-center gap-1 px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[10px] rounded-full shadow transition active:scale-95"
-                    title="Draw exact full circle"
+                    className="w-6 h-6 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white flex items-center justify-center shadow transition active:scale-95"
+                    title="Draw Circle"
                 >
-                    <CircleIcon className="w-2.5 h-2.5" />
-                    <span>Draw Circle</span>
+                    <CircleIcon className="w-3.5 h-3.5" />
                 </button>
 
                 {/* Close Compass */}
                 <button
                     type="button"
                     onClick={onClose}
-                    className="p-1 rounded-full bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white transition"
+                    className="w-6 h-6 rounded-full bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white flex items-center justify-center transition"
                     title="Close Compass"
                 >
                     <X className="w-3 h-3" />

@@ -423,9 +423,11 @@ export function extractGraphDataFromAiSolution(aiSolution, activeTabText = '') {
         plainEqMatches.forEach(m => addCandidate(m, 'question'));
     }
 
-    // 3. Solution markdown math blocks
+    // 3. Solution markdown math blocks: ONLY parse if no primary equations were provided via graphEquations!
+    // This strictly prevents intermediate algebraic simplification lines (e.g. 3x = 9, 2x = 6) from polluting the graph.
+    const hasPrimaryEquations = Array.isArray(aiSolution?.graphEquations) && aiSolution.graphEquations.length > 0;
     const fullText = aiSolution?.solutionMarkdown || activeTabText || '';
-    if (fullText) {
+    if (!hasPrimaryEquations && fullText) {
         const blockMatches = [...fullText.matchAll(/\$\$([\s\S]*?)\$\$/g)];
         blockMatches.forEach(m => addCandidate(m[1], 'solution'));
         const stripped = fullText.replace(/\$\$[\s\S]*?\$\$/g, ' ');
@@ -486,6 +488,50 @@ export function extractGraphDataFromAiSolution(aiSolution, activeTabText = '') {
             const { cx, cy, r } = eq.circleMeta;
             const fmt = (v) => Number.isInteger(Number(v.toFixed(2))) ? String(Math.round(v)) : v.toFixed(2);
             addPoint(cx, cy, `Center (${fmt(cx)}, ${fmt(cy)})`, '#38bdf8', r);
+        }
+    }
+
+    // 4b. Analytical 2D linear intersection solver for systems of equations
+    // If linear equations are present, compute their exact intersection (x0, y0)
+    const linearEqs = deduplicated.filter(eq => eq.compiled && !eq.is3D && !eq.circleMeta);
+    if (linearEqs.length >= 2) {
+        for (let i = 0; i < linearEqs.length - 1; i++) {
+            for (let j = i + 1; j < linearEqs.length; j++) {
+                const eq1 = linearEqs[i];
+                const eq2 = linearEqs[j];
+                try {
+                    const f1_00 = eq1.compiled({ x: 0, y: 0, z: 0 }, {});
+                    const f1_10 = eq1.compiled({ x: 1, y: 0, z: 0 }, {});
+                    const f1_01 = eq1.compiled({ x: 0, y: 1, z: 0 }, {});
+                    const a1 = f1_10 - f1_00;
+                    const b1 = f1_01 - f1_00;
+                    const c1 = -f1_00;
+
+                    const f2_00 = eq2.compiled({ x: 0, y: 0, z: 0 }, {});
+                    const f2_10 = eq2.compiled({ x: 1, y: 0, z: 0 }, {});
+                    const f2_01 = eq2.compiled({ x: 0, y: 1, z: 0 }, {});
+                    const a2 = f2_10 - f2_00;
+                    const b2 = f2_01 - f2_00;
+                    const c2 = -f2_00;
+
+                    const f1_22 = eq1.compiled({ x: 2, y: 2, z: 0 }, {});
+                    const f2_22 = eq2.compiled({ x: 2, y: 2, z: 0 }, {});
+                    const isLin1 = Math.abs((a1 * 2 + b1 * 2 - c1) - f1_22) < 1e-3;
+                    const isLin2 = Math.abs((a2 * 2 + b2 * 2 - c2) - f2_22) < 1e-3;
+
+                    if (isLin1 && isLin2) {
+                        const det = a1 * b2 - a2 * b1;
+                        if (Math.abs(det) > 1e-4) {
+                            const interX = (c1 * b2 - c2 * b1) / det;
+                            const interY = (a1 * c2 - a2 * c1) / det;
+                            if (Number.isFinite(interX) && Number.isFinite(interY)) {
+                                const fmt = (n) => Number.isInteger(Number(n.toFixed(2))) ? String(Math.round(n)) : n.toFixed(2);
+                                addPoint(interX, interY, `Intersection (${fmt(interX)}, ${fmt(interY)})`, '#f43f5e');
+                            }
+                        }
+                    }
+                } catch (_) {}
+            }
         }
     }
 
@@ -821,7 +867,7 @@ export default function WhiteboardGraphingPanel({
                     setIsCollapsed(false);
                 }}
                 style={{ backgroundColor: '#0f172a' }}
-                className="fixed top-16 left-3 z-40 px-3 py-2 rounded-xl border-2 border-slate-700 hover:border-yellow-400 text-slate-100 shadow-2xl flex items-center gap-2 text-xs font-bold transition pointer-events-auto"
+                className="fixed bottom-24 left-3 z-40 px-3 py-2 rounded-xl border-2 border-slate-700 hover:border-yellow-400 text-slate-100 shadow-2xl flex items-center gap-2 text-xs font-bold transition pointer-events-auto"
                 title="Open Interactive 2D/3D Graphing Panel"
             >
                 <Grid className="w-4 h-4 text-yellow-400" />
@@ -840,7 +886,7 @@ export default function WhiteboardGraphingPanel({
         return (
             <div
                 style={{ backgroundColor: '#0f172a' }}
-                className="fixed top-16 left-3 z-40 border-2 border-slate-700 rounded-xl shadow-2xl px-3 py-2 flex items-center gap-2.5 text-xs text-slate-100 pointer-events-auto"
+                className="fixed bottom-24 left-3 z-40 border-2 border-slate-700 rounded-xl shadow-2xl px-3 py-2 flex items-center gap-2.5 text-xs text-slate-100 pointer-events-auto"
             >
                 <Grid className="w-4 h-4 text-yellow-400 shrink-0" />
                 <span className="font-bold">Graph ({graphMode.toUpperCase()})</span>

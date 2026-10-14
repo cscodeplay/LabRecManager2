@@ -98,7 +98,7 @@ import WhiteboardBrowserSideroll from './WhiteboardBrowserSideroll';
 import WhiteboardPageQuizWidget from './WhiteboardPageQuizWidget';
 import WhiteboardAIPanel from './WhiteboardAIPanel';
 import WhiteboardAISlideShow from './WhiteboardAISlideShow';
-import { GeometryInstrumentsOverlay } from './geometryTools';
+import { GeometryInstrumentsOverlay, clampPointToInstrumentOuterEdge } from './geometryTools';
 import { getCustomToolbarIcon } from './geometryTools/CustomToolbarIcons';
 import WhiteboardEZWritePalette from './WhiteboardEZWritePalette';
 import api, { aiAPI } from '@/lib/api';
@@ -1211,6 +1211,12 @@ export default function Whiteboard({
     const [whiteboardAiProvider, setWhiteboardAiProvider] = useState('auto');
     const [showPhysicsSpace, setShowPhysicsSpace] = useState(false);
     const [physicsSpaceConfig, setPhysicsSpaceConfig] = useState(null);
+
+    // Active Geometry Instruments Outer Edge Bounds for pen blocking / barrier snapping
+    const activeInstrumentBoundsRef = useRef(null);
+    const handleInstrumentBoundsChange = useCallback((bounds) => {
+        activeInstrumentBoundsRef.current = bounds;
+    }, []);
 
     const voiceRecognitionRef = useRef(null);
     const isVoiceListeningRef = useRef(false);
@@ -7413,6 +7419,9 @@ export default function Whiteboard({
         if (tool === 'pen' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
             const currentSw = tool === 'highlighter' ? strokeWidth * 4 : strokeWidth;
             pos = snapToGuides(pos, shapeObjects, currentSw);
+            if (activeInstrumentBoundsRef.current && activeInstrumentBoundsRef.current.length > 0) {
+                pos = clampPointToInstrumentOuterEdge(pos, activeInstrumentBoundsRef.current);
+            }
         }
 
         // If text input is open and they click outside, let the blur event commit it.
@@ -7592,6 +7601,9 @@ export default function Whiteboard({
         let pos = getPosition(e);
         if (tool === 'pen' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
             pos = snapToGuides(pos, shapeObjects);
+            if (activeInstrumentBoundsRef.current && activeInstrumentBoundsRef.current.length > 0) {
+                pos = clampPointToInstrumentOuterEdge(pos, activeInstrumentBoundsRef.current);
+            }
         }
 
         // Filter sub-pixel jitter on tablet glass / digitizers
@@ -15436,6 +15448,18 @@ export default function Whiteboard({
         if (!isAiRetry && (!isExactLocalCommand || hasImage)) {
             setVoiceFeedback(hasImage ? `🤖 Analyzing image question...` : `🤖 Asking AI: "${effectiveText}"...`);
             setIsAiThinking(true);
+            setShowAiAssistantModal(true);
+            setShowClosedCaptions(true);
+            if (!conversationHistoryRef.current) {
+                conversationHistoryRef.current = [];
+            }
+            conversationHistoryRef.current.push({
+                role: 'user',
+                content: effectiveText || rawText
+            });
+            if (conversationHistoryRef.current.length > 12) {
+                conversationHistoryRef.current = conversationHistoryRef.current.slice(-12);
+            }
             setAiChatHistory(prev => [...prev, {
                 id: `msg_u_${Date.now()}`,
                 role: 'user',
@@ -15450,7 +15474,7 @@ export default function Whiteboard({
                         module: 'whiteboard',
                         currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard',
                         preferredProvider: whiteboardAiProvider !== 'auto' ? whiteboardAiProvider : undefined,
-                        conversationHistory: conversationHistoryRef.current ? conversationHistoryRef.current.slice(-6) : [],
+                        conversationHistory: conversationHistoryRef.current ? conversationHistoryRef.current.slice(-8) : [],
                         ...(options?.imageDataUrl ? { imageDataUrl: options.imageDataUrl } : {}),
                         ...getWhiteboardSpatialContext()
                     }
@@ -15498,6 +15522,7 @@ export default function Whiteboard({
                     if (!hasDeleteActions && (data.speechResponse || data.solutionMarkdown)) {
                         const speech = data.speechResponse || 'Here is the step-by-step solution.';
                         conversationHistoryRef.current.push({ role: 'assistant', content: speech });
+                        setShowClosedCaptions(true);
                         setVoiceFeedback(speech);
                         const coordAction = actionsToRun.find(a => a.objectType === 'coordinate_system' || a.objectType === 'cartesian_plane');
                         const actionEqs = [];
@@ -18081,7 +18106,8 @@ export default function Whiteboard({
         }
         if (txt.includes('ai tutor') || txt.includes('ai assistant') || txt.includes('ai bot') || txt.includes('co pilot') || txt.includes('copilot') || txt.includes('open ai')) {
             setShowAiAssistantModal(true);
-            setVoiceFeedback('🤖 Opened AI Assistant & Tutor');
+            setShowClosedCaptions(true);
+            setVoiceFeedback('🤖 Opened AI Solution Panel & Co-Pilot');
             return;
         }
         if (txt.includes('export') || txt.includes('download board') || txt.includes('save board')) {
@@ -21911,11 +21937,11 @@ export default function Whiteboard({
                                         onPointerDown={(e) => e.stopPropagation()}
                                     >
                                         {/* Image Quick Actions Toolbar */}
-                                        <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity">
+                                        <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2.5 py-1 text-slate-200 h-8 min-h-[32px] select-none opacity-90 hover:opacity-100 transition-opacity">
                                             <button
                                                 type="button"
                                                 onClick={() => updateSelectedImageFilters({ flipX: !imgObj.flipX })}
-                                                className={`p-1 rounded-full flex items-center justify-center transition ${imgObj.flipX ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                                                className={`w-6 h-6 rounded-full flex items-center justify-center transition ${imgObj.flipX ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
                                                 title="Flip Horizontally"
                                             >
                                                 <FlipHorizontal className="w-3.5 h-3.5" />
@@ -21923,7 +21949,7 @@ export default function Whiteboard({
                                             <button
                                                 type="button"
                                                 onClick={() => updateSelectedImageFilters({ flipY: !imgObj.flipY })}
-                                                className={`p-1 rounded-full flex items-center justify-center transition ${imgObj.flipY ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                                                className={`w-6 h-6 rounded-full flex items-center justify-center transition ${imgObj.flipY ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
                                                 title="Flip Vertically"
                                             >
                                                 <FlipVertical className="w-3.5 h-3.5" />
@@ -21934,7 +21960,7 @@ export default function Whiteboard({
                                                 type="button"
                                                 disabled={removingBgImageId === imgObj.id}
                                                 onClick={() => handleRemoveImageBackground(imgObj)}
-                                                className={`p-1 rounded-full flex items-center justify-center transition ${removingBgImageId === imgObj.id ? 'opacity-50 cursor-not-allowed bg-slate-800 text-slate-400' : 'text-indigo-400 hover:text-white hover:bg-slate-800'}`}
+                                                className={`w-6 h-6 rounded-full flex items-center justify-center transition ${removingBgImageId === imgObj.id ? 'opacity-50 cursor-not-allowed bg-slate-800 text-slate-400' : 'text-indigo-400 hover:text-white hover:bg-slate-800'}`}
                                                 title={removingBgImageId === imgObj.id ? 'Processing background removal...' : 'Remove Image Background (Make Transparent)'}
                                             >
                                                 <Wand2 className={`w-3.5 h-3.5 ${removingBgImageId === imgObj.id ? 'animate-spin' : ''}`} />
@@ -21945,7 +21971,7 @@ export default function Whiteboard({
                                                 type="button"
                                                 disabled={extractingImageTextId === imgObj.id}
                                                 onClick={() => handleExtractImageText(imgObj)}
-                                                className={`p-1 rounded-full flex items-center justify-center transition ${extractingImageTextId === imgObj.id ? 'opacity-70 cursor-not-allowed bg-slate-800 text-indigo-400' : 'text-indigo-400 hover:text-white hover:bg-slate-800'}`}
+                                                className={`w-6 h-6 rounded-full flex items-center justify-center transition ${extractingImageTextId === imgObj.id ? 'opacity-70 cursor-not-allowed bg-slate-800 text-indigo-400' : 'text-indigo-400 hover:text-white hover:bg-slate-800'}`}
                                                 title={extractingImageTextId === imgObj.id ? 'Recognizing text & math in image...' : 'Extract Text & Math Equations (OCR to Canvas Text)'}
                                             >
                                                 {extractingImageTextId === imgObj.id ? (
@@ -21956,7 +21982,7 @@ export default function Whiteboard({
                                             </button>
                                             <div className="w-px h-4 bg-slate-700 mx-0.5" />
                                             {/* Quick Border Color Picker */}
-                                            <div className="relative w-5 h-5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Border Color (sets 2px border if none)">
+                                            <div className="relative w-4.5 h-4.5 rounded-full border border-slate-600 cursor-pointer overflow-hidden flex items-center justify-center hover:scale-105 transition" title="Border Color (sets 2px border if none)">
                                                 <div className="w-full h-full" style={{ backgroundColor: imgObj.borderColor || '#3b82f6' }} />
                                                 <input
                                                     type="color"
@@ -21976,7 +22002,7 @@ export default function Whiteboard({
                                             <button
                                                 type="button"
                                                 onClick={() => setShowImageAdjustModal(prev => !prev)}
-                                                className={`p-1 rounded-full flex items-center justify-center transition ${showImageAdjustModal || (imgObj.brightness && imgObj.brightness !== 100) || (imgObj.contrast && imgObj.contrast !== 100) || (imgObj.sharpness && imgObj.sharpness > 0) || imgObj.borderWidth ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                                                className={`w-6 h-6 rounded-full flex items-center justify-center transition ${showImageAdjustModal || (imgObj.brightness && imgObj.brightness !== 100) || (imgObj.contrast && imgObj.contrast !== 100) || (imgObj.sharpness && imgObj.sharpness > 0) || imgObj.borderWidth ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
                                                 title="Adjust Image Quality, Borders & Filters"
                                             >
                                                 <Sliders className="w-3.5 h-3.5" />
@@ -22904,7 +22930,7 @@ export default function Whiteboard({
                                         onPointerDown={(e) => e.stopPropagation()}
                                     >
                                         {/* Floating Toolbar Pill */}
-                                        <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 text-slate-200">
+                                        <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2.5 py-1 text-slate-200 h-8 min-h-[32px] select-none">
                                             {/* Font Family */}
                                             <select
                                                 value={txtObj.fontFamily || 'sans-serif'}
@@ -23137,7 +23163,21 @@ export default function Whiteboard({
                                                 )}
                                             </div>
 
-                                            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+                                            {/* Copy Text to Clipboard & Canvas */}
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (txtObj?.text && navigator.clipboard) {
+                                                        navigator.clipboard.writeText(txtObj.text).catch(() => {});
+                                                    }
+                                                    handleCopy();
+                                                    toast.success('Text copied to clipboard', { icon: '📋' });
+                                                }}
+                                                className="w-6 h-6 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                                                title="Copy Text (Clipboard & Whiteboard)"
+                                            >
+                                                <Copy className="w-3.5 h-3.5" />
+                                            </button>
 
                                             {/* Infinite Copy Cloner */}
                                             <button
@@ -25767,7 +25807,7 @@ export default function Whiteboard({
                                     onMouseDown={(e) => e.stopPropagation()}
                                     onPointerDown={(e) => e.stopPropagation()}
                                 >
-                                    <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 text-slate-200 opacity-90 hover:opacity-100 transition-opacity animate-in fade-in zoom-in-95 duration-100">
+                                    <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2.5 py-1 text-slate-200 h-8 min-h-[32px] select-none opacity-90 hover:opacity-100 transition-opacity animate-in fade-in zoom-in-95 duration-100">
                                         {isLineLike ? (
                                             <>
                                                 {/* Line Color */}
@@ -27418,6 +27458,7 @@ export default function Whiteboard({
                         onDrawPerpendicular={handleGeometryDrawPerpendicular}
                         onDrawTriangle={handleGeometryDrawTriangle}
                         onMarkDistance={handleGeometryMarkDistance}
+                        onInstrumentBoundsChange={handleInstrumentBoundsChange}
                     />
                 </div>
 
@@ -27949,7 +27990,8 @@ export default function Whiteboard({
 
             {/* Live Real-Time Closed Captions (CC) Overlay with Right-of-Center Minimal AI Solution Pane */}
             <WhiteboardClosedCaptions
-                isVisible={showClosedCaptions && (isVoiceListening || Boolean(interimVoiceTranscript || voiceTranscript || voiceFeedback || isAiSpeaking || isAiThinking || aiSolutionData?.speechResponse))}
+                isVisible={Boolean(showAiAssistantModal || isAiThinking || isAiSpeaking || aiSolutionData?.speechResponse || aiSolutionData?.solutionMarkdown || aiSpeakingText || (showClosedCaptions && (isVoiceListening || interimVoiceTranscript || voiceTranscript || voiceFeedback)))}
+                isOpen={showAiAssistantModal}
                 isListening={isVoiceListening}
                 transcript={voiceTranscript}
                 interimTranscript={interimVoiceTranscript}
@@ -27966,6 +28008,7 @@ export default function Whiteboard({
                 suggestedFollowUps={aiSolutionData?.suggestedFollowUps || []}
                 onCreateStickyNote={handleInsertAiStickyNote}
                 onInsertAsText={handleInsertAiTextObject}
+                onInsertToBoard={(sol) => handleInsertAiSolutionToBoard(sol || aiSolutionData)}
                 onOpenAiSolution={() => setShowAiAssistantModal(true)}
                 onOpenPhysicsSpace={() => setShowPhysicsSpace(true)}
                 onStopSpeaking={stopAiSpeech}
@@ -27990,14 +28033,17 @@ export default function Whiteboard({
                     if (!next) stopAiSpeech();
                 }}
                 preferredProvider={whiteboardAiProvider}
-                onClose={() => setShowClosedCaptions(false)}
+                onClose={() => {
+                    setShowAiAssistantModal(false);
+                    setShowClosedCaptions(false);
+                }}
                 onExecuteCommand={(cmd, options) => executeVoiceCommand(cmd, false, options)}
                 audioLevel={audioInputLevel}
             />
 
-            {/* Interactive AI Assistant & Problem Solving Modal */}
-            <WhiteboardAIAssistantModal
-                isOpen={showAiAssistantModal}
+            {/* Interactive AI Assistant & Problem Solving Modal - Fully unified into WhiteboardClosedCaptions above */}
+            {/* <WhiteboardAIAssistantModal
+                isOpen={false}
                 onClose={() => setShowAiAssistantModal(false)}
                 chatHistory={aiChatHistory}
                 onClearChat={() => setAiChatHistory([])}
@@ -28026,7 +28072,7 @@ export default function Whiteboard({
                 onAskFollowUp={(query) => {
                     executeVoiceCommand(query);
                 }}
-            />
+            /> */}
 
             {/* Embedded Media Player Insertion Modal */}
             {showMediaModal && (

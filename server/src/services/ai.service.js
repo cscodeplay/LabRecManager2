@@ -3222,7 +3222,10 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
   "speechResponse": "<A natural, engaging spoken summary (2 to 3 sentences) to read aloud via TTS. Clean conversational text without raw LaTeX backslashes.>",
   "solutionMarkdown": "<REQUIRED for all questions, problems, formulas, derivations, and explanations: Well-structured Markdown with clear section headings (### 📌 Given & Concept, ### 📐 Formula, ### 🔢 Step-by-Step Solution, ### ✅ Final Answer) and ALL formulas/equations/variables/units written in proper LaTeX/KaTeX scientific notation ($$...$$ for display equations, $...$ for inline math). NEVER write formulas in plain English words!>",
   "graphEquations": [
-    "<Optional array of clean 2D or 3D mathematical equations in x, y, z to plot on the interactive graphing panel when the problem involves functions, curves, circles, conics, or 3D surfaces, e.g. '(x - 2)^2 + (y + 3)^2 = 25', 'y = x^2 - 4', 'z = sin(x)*cos(y)'>"
+    "<Optional array of clean 2D or 3D mathematical equations in x, y, z to plot on the interactive graphing panel when the problem involves functions, curves, circles, conics, or 3D surfaces, e.g. '(x - 2)^2 + (y + 3)^2 = 25', 'y = x^2 - 4', 'z = sin(x)*cos(y)'. CRITICAL: For systems of equations or multi-step algebra, output ONLY the original given problem equations (e.g. ['2*x + y = 7', 'x - y = 2']). NEVER output intermediate algebraic or simplification steps.>"
+  ],
+  "plottedPoints": [
+    { "x": 0, "y": 0, "label": "<Optional key points such as Center, Vertex, Root, Intersection (e.g. 'Intersection (3, 1)'), Local Max/Min with numeric x and y coordinates>" }
   ],
   "physicsAction": {
     "chapter": "<Optional Class XI or XII physics chapter: 'kinematics_1d' | 'projectile_motion' | 'newton_laws_fbd' | 'work_power_energy' | 'rotational_motion' | 'gravitation' | 'simple_harmonic_motion' | 'waves_sound' | 'thermodynamics' | 'electrostatics' | 'current_electricity' | 'magnetism_lorentz' | 'emi_ac_circuits' | 'ray_optics' | 'wave_optics' | 'modern_physics_bohr' | 'semiconductor_logic'>",
@@ -3571,10 +3574,10 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT:
   "speechResponse": "<Concise, natural spoken explanation (2 to 3 sentences) to read aloud via TTS. Clean conversational text without raw LaTeX backslashes.>",
   "solutionMarkdown": "<Complete, well-structured Markdown solution with section headings and ALL formulas/equations/variables/units in LaTeX/KaTeX ($$...$$ for display block equations, $...$ for inline math). NEVER write formulas in plain English words!>",
   "graphEquations": [
-    "<Array of 1 to 4 clean, plot-ready 2D/3D equations in standard ASCII math syntax using variables x, y, z, or theta whenever the problem involves functions, curves, algebra, conics, trigonometry, calculus (include both the function y = f(x) and its derivative/tangent/antiderivative if relevant), 3D surfaces (z = f(x,y) or x^2+y^2+z^2=R^2), or physics trajectories. Examples: 'x^2 + y^2 + 2*x = 6', 'y = x^2 - 5*x + 6', 'z = sin(x)*cos(y)', 'r = 2*cos(theta)'. Use [] only if the topic has no coordinate graph.>"
+    "<Array of 1 to 4 clean, plot-ready 2D/3D equations in standard ASCII math syntax using variables x, y, z, or theta whenever the problem involves functions, curves, algebra, conics, trigonometry, calculus (include both the function y = f(x) and its derivative/tangent/antiderivative if relevant), 3D surfaces (z = f(x,y) or x^2+y^2+z^2=R^2), or physics trajectories. Examples: 'x^2 + y^2 + 2*x = 6', 'y = x^2 - 5*x + 6', 'z = sin(x)*cos(y)', 'r = 2*cos(theta)'. CRITICAL: For systems of equations or multi-step algebra (e.g. 2x + y = 7 and x - y = 2), output ONLY the original given problem equations (e.g. ['2*x + y = 7', 'x - y = 2']). NEVER output intermediate algebraic or derivation steps as equations (e.g. do NOT output '3*x = 9' or intermediate lines). Use [] only if the topic has no coordinate graph.>"
   ],
   "plottedPoints": [
-    { "x": 0, "y": 0, "label": "<Optional key points such as Center, Vertex, Root, Intersection, Local Max/Min with numeric x and y coordinates>" }
+    { "x": 0, "y": 0, "label": "<Optional key points such as Center, Vertex, Root, and especially the final Intersection / Solution point (e.g. 'Intersection (3, 1)') with numeric x and y coordinates>" }
   ],
   "physicsAction": {
     "chapter": "<Optional Class XI or XII physics chapter: 'kinematics_1d' | 'projectile_motion' | 'newton_laws_fbd' | 'work_power_energy' | 'rotational_motion' | 'gravitation' | 'simple_harmonic_motion' | 'waves_sound' | 'thermodynamics' | 'electrostatics' | 'current_electricity' | 'magnetism_lorentz' | 'emi_ac_circuits' | 'ray_optics' | 'wave_optics' | 'modern_physics_bohr' | 'semiconductor_logic'>",
@@ -3618,7 +3621,8 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
      * Circle/conic \`x^2 + y^2 + 2x = 6\` -> \`"x^2 + y^2 + 2*x = 6"\`
      * Derivative/integral of \`f(x) = x^3 - 3x\` -> \`["y = x^3 - 3*x", "y = 3*x^2 - 3"]\`
      * 3D surface or quadric -> \`"z = x^2 - y^2"\` or \`"x^2 + y^2 + z^2 = 25"\`
-   - In 'plottedPoints', include key numeric 2D coordinates (roots, intersections, center, vertices, extrema) with descriptive labels.
+   - CRITICAL: For systems of equations or multi-step derivations, include ONLY the original given equations in 'graphEquations'. Do NOT include intermediate simplification steps.
+   - In 'plottedPoints', include key numeric 2D coordinates (especially the final intersection / solution point e.g. \`{ "x": 3, "y": 1, "label": "Intersection (3, 1)" }\`, roots, center, vertices, extrema) with descriptive labels.
 4. RIGOROUS PHYSICS CONVENTIONS & SIMULATION LAB (CBSE/NCERT Class XI & XII):
    - Vectors: Write all vectors with LaTeX arrows: \\vec{F}, \\vec{v}, \\vec{a}, \\vec{p}, \\vec{E}, \\vec{B}, \\vec{\\tau}, \\vec{r}, \\vec{s}, \\vec{L}.
    - Unit vectors: Write Cartesian unit vectors strictly as \\hat{i}, \\hat{j}, \\hat{k} (e.g. \\vec{r} = x\\hat{i} + y\\hat{j} + z\\hat{k}).
@@ -3631,9 +3635,22 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
 
             // Dispatch to Unified AI Completion (OpenAI Paid -> Anthropic -> DeepSeek -> OpenRouter -> Groq -> Gemini -> SambaNova)
             try {
+                const messagesToSend = [];
+                if (Array.isArray(context.conversationHistory) && context.conversationHistory.length > 0) {
+                    context.conversationHistory.slice(-8).forEach(turn => {
+                        if (turn && turn.content) {
+                            messagesToSend.push({
+                                role: turn.role === 'assistant' ? 'assistant' : 'user',
+                                content: typeof turn.content === 'string' ? turn.content : JSON.stringify(turn.content)
+                            });
+                        }
+                    });
+                }
+                messagesToSend.push({ role: 'user', content: `Spoken input: "${text}"` });
+
                 const completionRes = await this.executeChatCompletion({
                     systemPrompt: systemPromptToUse,
-                    messages: [{ role: 'user', content: `Spoken input: "${text}"` }],
+                    messages: messagesToSend,
                     preferredProvider: context.preferredProvider || this.preferredProvider || 'auto',
                     temperature: 0.1,
                     jsonMode: true

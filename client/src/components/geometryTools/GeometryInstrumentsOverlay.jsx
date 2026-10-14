@@ -27,10 +27,24 @@ export default function GeometryInstrumentsOverlay({
     onDrawAngle,
     onDrawPerpendicular,
     onDrawTriangle,
-    onMarkDistance
+    onMarkDistance,
+    onInstrumentBoundsChange
 }) {
     // Current active instrument: 'ruler' | 'compass' | 'divider' | 'protractor' | 'set_square' | null
     const [activeTool, setActiveTool] = useState('ruler');
+
+    const handleToolSwitch = (tool) => {
+        const next = activeTool === tool ? null : tool;
+        setActiveTool(next);
+        if (!next && onInstrumentBoundsChange) {
+            onInstrumentBoundsChange(null);
+        }
+    };
+
+    const handleClose = () => {
+        if (onInstrumentBoundsChange) onInstrumentBoundsChange(null);
+        if (onClose) onClose();
+    };
 
     if (!isOpen) return null;
 
@@ -46,7 +60,7 @@ export default function GeometryInstrumentsOverlay({
                 {/* Ruler Button (Amber) */}
                 <button
                     type="button"
-                    onClick={() => setActiveTool(activeTool === 'ruler' ? null : 'ruler')}
+                    onClick={() => handleToolSwitch('ruler')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
                         activeTool === 'ruler'
                             ? 'bg-amber-400 text-slate-950 font-bold shadow-lg shadow-amber-400/30 ring-2 ring-amber-300'
@@ -61,7 +75,7 @@ export default function GeometryInstrumentsOverlay({
                 {/* Compass Button (Cyan) */}
                 <button
                     type="button"
-                    onClick={() => setActiveTool(activeTool === 'compass' ? null : 'compass')}
+                    onClick={() => handleToolSwitch('compass')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
                         activeTool === 'compass'
                             ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-300'
@@ -76,7 +90,7 @@ export default function GeometryInstrumentsOverlay({
                 {/* Divider Button (Purple) */}
                 <button
                     type="button"
-                    onClick={() => setActiveTool(activeTool === 'divider' ? null : 'divider')}
+                    onClick={() => handleToolSwitch('divider')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
                         activeTool === 'divider'
                             ? 'bg-purple-600 text-white font-bold shadow-lg shadow-purple-500/30 ring-2 ring-purple-300'
@@ -91,7 +105,7 @@ export default function GeometryInstrumentsOverlay({
                 {/* Protractor Button (Emerald) */}
                 <button
                     type="button"
-                    onClick={() => setActiveTool(activeTool === 'protractor' ? null : 'protractor')}
+                    onClick={() => handleToolSwitch('protractor')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
                         activeTool === 'protractor'
                             ? 'bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-300'
@@ -106,7 +120,7 @@ export default function GeometryInstrumentsOverlay({
                 {/* Set Square Button (Rose) */}
                 <button
                     type="button"
-                    onClick={() => setActiveTool(activeTool === 'set_square' ? null : 'set_square')}
+                    onClick={() => handleToolSwitch('set_square')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
                         activeTool === 'set_square'
                             ? 'bg-rose-500 text-white font-bold shadow-lg shadow-rose-500/30 ring-2 ring-rose-300'
@@ -123,7 +137,7 @@ export default function GeometryInstrumentsOverlay({
                 {/* Close All Instruments Overlay */}
                 <button
                     type="button"
-                    onClick={onClose}
+                    onClick={handleClose}
                     className="p-1.5 rounded-xl bg-slate-800/80 hover:bg-rose-600 text-slate-400 hover:text-white transition"
                     title="Dismiss Geometry Tools Overlay"
                 >
@@ -138,7 +152,8 @@ export default function GeometryInstrumentsOverlay({
                     initialY={220}
                     scale={scale}
                     onDrawLine={onDrawLine}
-                    onClose={() => setActiveTool(null)}
+                    onClose={() => handleToolSwitch('ruler')}
+                    onStateChange={onInstrumentBoundsChange}
                 />
             )}
 
@@ -149,7 +164,8 @@ export default function GeometryInstrumentsOverlay({
                     scale={scale}
                     onDrawCircle={onDrawCircle}
                     onDrawArc={onDrawArc}
-                    onClose={() => setActiveTool(null)}
+                    onClose={() => handleToolSwitch('compass')}
+                    onStateChange={onInstrumentBoundsChange}
                 />
             )}
 
@@ -159,7 +175,7 @@ export default function GeometryInstrumentsOverlay({
                     initialY={320}
                     scale={scale}
                     onMarkDistance={onMarkDistance}
-                    onClose={() => setActiveTool(null)}
+                    onClose={() => handleToolSwitch('divider')}
                 />
             )}
 
@@ -170,7 +186,8 @@ export default function GeometryInstrumentsOverlay({
                     scale={scale}
                     onDrawAngle={onDrawAngle}
                     onDrawLine={onDrawLine}
-                    onClose={() => setActiveTool(null)}
+                    onClose={() => handleToolSwitch('protractor')}
+                    onStateChange={onInstrumentBoundsChange}
                 />
             )}
 
@@ -181,7 +198,8 @@ export default function GeometryInstrumentsOverlay({
                     scale={scale}
                     onDrawPerpendicular={onDrawPerpendicular}
                     onDrawTriangle={onDrawTriangle}
-                    onClose={() => setActiveTool(null)}
+                    onClose={() => handleToolSwitch('set_square')}
+                    onStateChange={onInstrumentBoundsChange}
                 />
             )}
         </div>

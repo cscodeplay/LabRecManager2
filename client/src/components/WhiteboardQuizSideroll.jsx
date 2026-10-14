@@ -38,7 +38,9 @@ export default function WhiteboardQuizSideroll({
     // Generator Form State
     const [keywords, setKeywords] = useState('');
     const [difficulty, setDifficulty] = useState('medium');
-    const [questionCount, setQuestionCount] = useState(5);
+    const [mcqCount, setMcqCount] = useState(3);
+    const [fillUpsCount, setFillUpsCount] = useState(1);
+    const [trueFalseCount, setTrueFalseCount] = useState(1);
     const [timeLimitMinutes, setTimeLimitMinutes] = useState(10);
     const [customInstructions, setCustomInstructions] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
@@ -141,10 +143,15 @@ export default function WhiteboardQuizSideroll({
             const timer1 = setTimeout(() => setGenerationStep('Formulating 4-choice questions...'), 1200);
             const timer2 = setTimeout(() => setGenerationStep('Validating distractors & explanations...'), 2400);
 
+            const totalToGenerate = Math.max(1, (parseInt(mcqCount) || 0) + (parseInt(fillUpsCount) || 0) + (parseInt(trueFalseCount) || 0));
+
             const res = await quizAPI.generate({
                 keywords: keywords.trim(),
                 difficulty,
-                numberOfQuestions: questionCount,
+                numberOfQuestions: totalToGenerate,
+                mcqCount: parseInt(mcqCount) || 0,
+                fillUpsCount: parseInt(fillUpsCount) || 0,
+                trueFalseCount: parseInt(trueFalseCount) || 0,
                 timeLimitMinutes,
                 customInstructions
             });
@@ -396,11 +403,16 @@ export default function WhiteboardQuizSideroll({
                 let correctCount = 0;
                 const detailed = (takingQuiz.questions || []).map(q => {
                     const selected = userAnswers[q.id];
-                    const isCorrect = selected === q.correctOption;
+                    const isFillIn = q.type === 'fill_in_the_blank' || (!q.options || q.options.length === 0);
+                    const isCorrect = isFillIn
+                        ? String(selected || '').trim().toLowerCase() === String(q.correctOption || '').trim().toLowerCase()
+                        : selected === q.correctOption;
                     if (isCorrect) correctCount++;
                     return {
                         questionId: q.id,
+                        type: q.type,
                         questionText: q.question,
+                        options: q.options || [],
                         selectedOption: selected,
                         correctOption: q.correctOption,
                         isCorrect,
@@ -619,8 +631,8 @@ export default function WhiteboardQuizSideroll({
                                 />
                             </div>
 
-                            {/* Difficulty, Questions, Time Grid */}
-                            <div className="grid grid-cols-3 gap-2">
+                            {/* Difficulty and Time Limit */}
+                            <div className="grid grid-cols-2 gap-2">
                                 <div>
                                     <label className="block text-[11px] font-medium text-slate-400 mb-1">
                                         Difficulty
@@ -638,19 +650,6 @@ export default function WhiteboardQuizSideroll({
                                 </div>
                                 <div>
                                     <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                                        Questions
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        max="30"
-                                        value={questionCount}
-                                        onChange={(e) => setQuestionCount(e.target.value)}
-                                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[11px] font-medium text-slate-400 mb-1">
                                         Time (Mins)
                                     </label>
                                     <input
@@ -664,10 +663,63 @@ export default function WhiteboardQuizSideroll({
                                 </div>
                             </div>
 
+                            {/* Question Types Breakdown (MCQs, Fill-ups, True/False) */}
+                            <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/60">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                                        Question Types Config
+                                    </span>
+                                    <span className="text-[11px] font-bold font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                        Total: {(parseInt(mcqCount) || 0) + (parseInt(fillUpsCount) || 0) + (parseInt(trueFalseCount) || 0)} Questions
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2 pt-1">
+                                    <div>
+                                        <label className="block text-[10px] font-semibold text-slate-400 mb-1">
+                                            MCQs (4-Opt)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="30"
+                                            value={mcqCount}
+                                            onChange={(e) => setMcqCount(Math.max(0, parseInt(e.target.value) || 0))}
+                                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white text-center font-bold focus:outline-none focus:border-indigo-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-semibold text-slate-400 mb-1">
+                                            Fill in Blanks
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="30"
+                                            value={fillUpsCount}
+                                            onChange={(e) => setFillUpsCount(Math.max(0, parseInt(e.target.value) || 0))}
+                                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white text-center font-bold focus:outline-none focus:border-indigo-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-semibold text-slate-400 mb-1">
+                                            True / False
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="30"
+                                            value={trueFalseCount}
+                                            onChange={(e) => setTrueFalseCount(Math.max(0, parseInt(e.target.value) || 0))}
+                                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white text-center font-bold focus:outline-none focus:border-indigo-500"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
                             {/* Generate Button */}
                             <button
                                 onClick={handleGenerateAIQuiz}
-                                disabled={isGenerating || !keywords.trim()}
+                                disabled={isGenerating || !keywords.trim() || ((parseInt(mcqCount) || 0) + (parseInt(fillUpsCount) || 0) + (parseInt(trueFalseCount) || 0) === 0)}
                                 className="w-full py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg transition flex items-center justify-center gap-2"
                             >
                                 {isGenerating ? (
@@ -678,7 +730,7 @@ export default function WhiteboardQuizSideroll({
                                 ) : (
                                     <>
                                         <Sparkles className="w-4 h-4" />
-                                        Generate 4-Choice Questions
+                                        Generate Quiz ({(parseInt(mcqCount) || 0) + (parseInt(fillUpsCount) || 0) + (parseInt(trueFalseCount) || 0)} Questions)
                                     </>
                                 )}
                             </button>
@@ -767,6 +819,15 @@ export default function WhiteboardQuizSideroll({
                                             <span className="text-[11px] text-slate-400 font-medium">
                                                 Question #{q.id}
                                             </span>
+                                            <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border ${
+                                                q.type === 'fill_in_the_blank'
+                                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                                    : q.type === 'true_false'
+                                                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                                                    : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                                            }`}>
+                                                {q.type === 'fill_in_the_blank' ? 'Fill-in' : q.type === 'true_false' ? 'True/False' : 'MCQ'}
+                                            </span>
                                         </div>
 
                                         {/* Move Up / Down & Delete */}
@@ -802,51 +863,103 @@ export default function WhiteboardQuizSideroll({
                                         rows={2}
                                         value={q.question}
                                         onChange={(e) => handleUpdateQuestionText(idx, e.target.value)}
-                                        placeholder="Enter question statement..."
+                                        placeholder="Enter question statement (supports LaTeX math)..."
                                         className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
                                     />
 
-                                    {/* 4 Choices (A, B, C, D) */}
-                                    <div className="space-y-1.5">
-                                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                            4 Choices (Select radio button for Correct Answer)
+                                    {/* Question Content based on Type */}
+                                    {q.type === 'fill_in_the_blank' || (!q.options || q.options.length === 0) ? (
+                                        <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/60">
+                                            <label className="block text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+                                                Expected Answer (Numerical / Keyword)
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={q.correctOption || ''}
+                                                onChange={(e) => handleSetCorrectOption(idx, e.target.value)}
+                                                placeholder="e.g. 42 or Photosynthesis"
+                                                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                                            />
                                         </div>
-                                        {['A', 'B', 'C', 'D'].map((optKey) => {
-                                            const optObj = (q.options || []).find(o => o.key === optKey) || { key: optKey, text: '' };
-                                            const isCorrect = q.correctOption === optKey;
-                                            return (
-                                                <div
-                                                    key={optKey}
-                                                    className={`flex items-center gap-2 p-1.5 rounded-xl border transition ${
-                                                        isCorrect
-                                                            ? 'bg-emerald-950/40 border-emerald-500/50'
-                                                            : 'bg-slate-900/60 border-slate-700/60'
-                                                    }`}
-                                                >
-                                                    <input
-                                                        type="radio"
-                                                        name={`correct-${q.id}`}
-                                                        checked={isCorrect}
-                                                        onChange={() => handleSetCorrectOption(idx, optKey)}
-                                                        className="w-3.5 h-3.5 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
-                                                        title="Mark as Correct Answer"
-                                                    />
-                                                    <span className={`w-5 h-5 rounded font-bold text-xs flex items-center justify-center font-mono ${
-                                                        isCorrect ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'
-                                                    }`}>
-                                                        {optKey}
-                                                    </span>
-                                                    <input
-                                                        type="text"
-                                                        value={optObj.text}
-                                                        onChange={(e) => handleUpdateOptionText(idx, optKey, e.target.value)}
-                                                        placeholder={`Option ${optKey}`}
-                                                        className="flex-1 bg-transparent text-xs text-white focus:outline-none"
-                                                    />
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
+                                    ) : q.type === 'true_false' ? (
+                                        <div className="space-y-1.5">
+                                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                                True / False (Select Correct Choice)
+                                            </div>
+                                            {[
+                                                { key: 'A', text: 'True' },
+                                                { key: 'B', text: 'False' }
+                                            ].map((opt) => {
+                                                const isCorrect = q.correctOption === opt.key || (q.correctOption === 'True' && opt.key === 'A') || (q.correctOption === 'False' && opt.key === 'B');
+                                                return (
+                                                    <div
+                                                        key={opt.key}
+                                                        className={`flex items-center gap-2 p-1.5 rounded-xl border transition ${
+                                                            isCorrect
+                                                                ? 'bg-emerald-950/40 border-emerald-500/50'
+                                                                : 'bg-slate-900/60 border-slate-700/60'
+                                                        }`}
+                                                    >
+                                                        <input
+                                                            type="radio"
+                                                            name={`correct-${q.id}`}
+                                                            checked={isCorrect}
+                                                            onChange={() => handleSetCorrectOption(idx, opt.key)}
+                                                            className="w-3.5 h-3.5 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                                                        />
+                                                        <span className={`w-5 h-5 rounded font-bold text-xs flex items-center justify-center font-mono ${
+                                                            isCorrect ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'
+                                                        }`}>
+                                                            {opt.key}
+                                                        </span>
+                                                        <span className="text-xs text-white font-medium">{opt.text}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        /* 4 Choices (A, B, C, D) */
+                                        <div className="space-y-1.5">
+                                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                                4 Choices (Select radio button for Correct Answer)
+                                            </div>
+                                            {['A', 'B', 'C', 'D'].map((optKey) => {
+                                                const optObj = (q.options || []).find(o => o.key === optKey) || { key: optKey, text: '' };
+                                                const isCorrect = q.correctOption === optKey;
+                                                return (
+                                                    <div
+                                                        key={optKey}
+                                                        className={`flex items-center gap-2 p-1.5 rounded-xl border transition ${
+                                                            isCorrect
+                                                                ? 'bg-emerald-950/40 border-emerald-500/50'
+                                                                : 'bg-slate-900/60 border-slate-700/60'
+                                                        }`}
+                                                    >
+                                                        <input
+                                                            type="radio"
+                                                            name={`correct-${q.id}`}
+                                                            checked={isCorrect}
+                                                            onChange={() => handleSetCorrectOption(idx, optKey)}
+                                                            className="w-3.5 h-3.5 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                                                            title="Mark as Correct Answer"
+                                                        />
+                                                        <span className={`w-5 h-5 rounded font-bold text-xs flex items-center justify-center font-mono ${
+                                                            isCorrect ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'
+                                                        }`}>
+                                                            {optKey}
+                                                        </span>
+                                                        <input
+                                                            type="text"
+                                                            value={optObj.text}
+                                                            onChange={(e) => handleUpdateOptionText(idx, optKey, e.target.value)}
+                                                            placeholder={`Choice ${optKey} statement...`}
+                                                            className="flex-1 bg-transparent text-xs text-white font-medium placeholder-slate-500 focus:outline-none"
+                                                        />
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
 
                                     {/* Explanation Field */}
                                     <div>
@@ -1029,9 +1142,9 @@ export default function WhiteboardQuizSideroll({
                                         >
                                             {/* Question Statement */}
                                             <div className="flex items-start justify-between gap-2 font-bold">
-                                                <div className="flex-1">
+                                                <div className="flex-1 text-white">
                                                     <span className="text-slate-400 mr-1.5">Q{idx + 1}:</span>
-                                                    <MathRenderer content={ans.questionText || `Question ${idx + 1}`} inline />
+                                                    <MathRenderer content={ans.questionText || `Question ${idx + 1}`} inline textClassName="text-white" />
                                                 </div>
                                                 {ans.isCorrect ? (
                                                     <span className="flex items-center gap-1 text-emerald-400 shrink-0 font-bold">
@@ -1044,15 +1157,17 @@ export default function WhiteboardQuizSideroll({
                                                 )}
                                             </div>
 
-                                            {/* All 4 Choices with Green / Red Response Highlighting */}
+                                            {/* Response Review (MCQ / True-False / Fill-in-the-blank) */}
                                             {(() => {
                                                 const originalQ = (takingQuiz?.questions || []).find(q => String(q.id) === String(ans.questionId));
                                                 const optList = (ans.options && ans.options.length > 0) ? ans.options : (originalQ?.options || []);
+                                                const isFillIn = ans.type === 'fill_in_the_blank' || originalQ?.type === 'fill_in_the_blank' || !optList || optList.length === 0;
 
-                                                if (!optList || optList.length === 0) {
+                                                if (isFillIn) {
                                                     return (
-                                                        <div className="text-slate-300">
-                                                            Your Choice: <strong className="font-mono">{ans.selectedOption || 'None'}</strong> • Correct: <strong className="font-mono text-emerald-400">{ans.correctOption}</strong>
+                                                        <div className="text-slate-200 text-xs py-1.5 px-3 bg-slate-900/70 rounded-xl border border-slate-800 space-y-1">
+                                                            <div>Your Answer: <strong className="font-mono text-white text-xs">{ans.selectedOption || '(None)'}</strong></div>
+                                                            <div>Expected Answer: <strong className="font-mono text-emerald-400 text-xs">{ans.correctOption}</strong></div>
                                                         </div>
                                                     );
                                                 }
@@ -1065,8 +1180,8 @@ export default function WhiteboardQuizSideroll({
                                                             const isCorrectOption = optKey === String(ans.correctOption || '').toUpperCase();
 
                                                             let badgeClass = 'bg-slate-800 text-slate-400 border-slate-700';
-                                                            let cardClass = 'bg-slate-900/60 border-slate-800 text-slate-300';
-                                                            let textClass = 'text-slate-300';
+                                                            let cardClass = 'bg-slate-900/60 border-slate-800 text-white';
+                                                            let textClass = 'text-white font-medium';
 
                                                             if (isCorrectOption) {
                                                                 cardClass = 'bg-emerald-600 border-emerald-500 text-white shadow-sm ring-1 ring-emerald-400/40';
@@ -1087,7 +1202,7 @@ export default function WhiteboardQuizSideroll({
                                                                         {optKey}
                                                                     </span>
                                                                     <span className={`flex-1 text-[11px] ${textClass}`}>
-                                                                        <MathRenderer content={opt.text || ''} inline />
+                                                                        <MathRenderer content={opt.text || ''} inline textClassName="text-white" />
                                                                     </span>
                                                                 </div>
                                                             );
@@ -1098,13 +1213,13 @@ export default function WhiteboardQuizSideroll({
 
                                             {/* Correct Answer Explanation Box */}
                                             {ans.explanation && (
-                                                <div className="text-[11px] text-slate-300 bg-amber-950/20 p-2.5 rounded-xl border border-amber-800/40 mt-1 space-y-1">
+                                                <div className="text-[11px] text-white bg-amber-950/20 p-2.5 rounded-xl border border-amber-800/40 mt-1 space-y-1">
                                                     <div className="font-bold text-amber-400 flex items-center gap-1">
                                                         <span>💡</span>
                                                         <span>Explanation</span>
                                                     </div>
-                                                    <div>
-                                                        <MathRenderer content={ans.explanation} inline />
+                                                    <div className="text-white">
+                                                        <MathRenderer content={ans.explanation} inline textClassName="text-white" />
                                                     </div>
                                                 </div>
                                             )}
@@ -1158,35 +1273,50 @@ export default function WhiteboardQuizSideroll({
                                             </div>
 
                                             <div className="text-sm font-bold text-white">
-                                                <MathRenderer content={currentQ.question} />
+                                                <MathRenderer content={currentQ.question} textClassName="text-white font-bold" />
                                             </div>
 
-                                            {/* 4 Choices */}
-                                            <div className="space-y-2 pt-1">
-                                                {(currentQ.options || []).map((opt) => {
-                                                    const isSelected = currentAnswer === opt.key;
-                                                    return (
-                                                        <button
-                                                             key={opt.key}
-                                                             onClick={() => handleSelectAnswer(currentQ.id, opt.key)}
-                                                             className={`w-full p-2.5 rounded-xl border text-left text-xs font-medium transition flex items-center gap-3 ${
-                                                                 isSelected
-                                                                     ? 'bg-indigo-600 border-indigo-400 text-white shadow-md'
-                                                                     : 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-700'
-                                                             }`}
-                                                         >
-                                                             <span className={`w-6 h-6 rounded-lg font-bold font-mono text-xs flex items-center justify-center flex-shrink-0 ${
-                                                                 isSelected ? 'bg-white text-indigo-700' : 'bg-slate-800 text-slate-400'
-                                                             }`}>
-                                                                 {opt.key}
-                                                             </span>
-                                                             <span className="flex-1">
-                                                                 <MathRenderer content={opt.text} inline />
-                                                             </span>
-                                                         </button>
-                                                    );
-                                                })}
-                                            </div>
+                                            {/* Question Response Input (Fill-in vs Choices) */}
+                                            {currentQ.type === 'fill_in_the_blank' || (!currentQ.options || currentQ.options.length === 0) ? (
+                                                <div className="space-y-2 pt-1 bg-slate-900/60 p-3 rounded-xl border border-slate-700/60">
+                                                    <label className="block text-xs font-semibold text-amber-300">
+                                                        Enter Your Answer:
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={currentAnswer || ''}
+                                                        onChange={(e) => handleSelectAnswer(currentQ.id, e.target.value)}
+                                                        placeholder="Type your answer here..."
+                                                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2 pt-1">
+                                                    {(currentQ.options || []).map((opt) => {
+                                                        const isSelected = currentAnswer === opt.key;
+                                                        return (
+                                                            <button
+                                                                key={opt.key}
+                                                                onClick={() => handleSelectAnswer(currentQ.id, opt.key)}
+                                                                className={`w-full p-2.5 rounded-xl border text-left text-xs font-medium transition flex items-center gap-3 ${
+                                                                    isSelected
+                                                                        ? 'bg-indigo-600 border-indigo-400 text-white shadow-md'
+                                                                        : 'bg-slate-900/80 border-slate-700 text-white hover:bg-slate-700/80'
+                                                                }`}
+                                                            >
+                                                                <span className={`w-6 h-6 rounded-lg font-bold font-mono text-xs flex items-center justify-center flex-shrink-0 ${
+                                                                    isSelected ? 'bg-white text-indigo-700' : 'bg-slate-800 text-slate-300'
+                                                                }`}>
+                                                                    {opt.key}
+                                                                </span>
+                                                                <span className="flex-1 text-white">
+                                                                    <MathRenderer content={opt.text} inline textClassName="text-white" />
+                                                                </span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
 
                                             {/* Question Pagination */}
                                             <div className="flex items-center justify-between pt-2">

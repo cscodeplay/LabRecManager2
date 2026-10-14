@@ -23,17 +23,33 @@ export default function RulerTool({
     initialAngle = 0,
     scale = 1,
     onDrawLine,
-    onClose
+    onClose,
+    onStateChange
 }) {
     const [pos, setPos] = useState({ x: initialX, y: initialY });
     const [lengthCm, setLengthCm] = useState(Math.min(20, Math.max(10, initialLengthCm)));
     const [angle, setAngle] = useState(initialAngle);
+    const [customDrawLengthCm, setCustomDrawLengthCm] = useState(5);
 
     // Live edge drawing state { startT: number, endT: number } in local px
     const [activeEdgeDrawing, setActiveEdgeDrawing] = useState(null);
 
     const lengthPx = lengthCm * PX_PER_CM;
     const heightPx = 48; // Slimmer, realistic physical ruler width (48px ~ 1.25 cm visual)
+
+    // Notify parent of physical bounds for outer edge pen barrier
+    React.useEffect(() => {
+        if (onStateChange) {
+            onStateChange({
+                type: 'ruler',
+                x: pos.x,
+                y: pos.y,
+                angle,
+                lengthPx,
+                heightPx
+            });
+        }
+    }, [onStateChange, pos.x, pos.y, angle, lengthPx, heightPx]);
 
     // Repositioning drag ref
     const isDraggingRef = useRef(false);
@@ -52,7 +68,7 @@ export default function RulerTool({
 
     // ─── 1. Reposition Ruler (Draggable from anywhere on surface) ───
     const handleBodyPointerDown = (e) => {
-        if (e.target.closest('button') || e.target.closest('[data-handle="true"]')) return;
+        if (e.target.closest('button') || e.target.closest('input') || e.target.closest('[data-handle="true"]')) return;
         e.stopPropagation();
         e.preventDefault();
         isDraggingRef.current = true;
@@ -228,25 +244,27 @@ export default function RulerTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // ─── 5. Stamping Full Line Along Edge Button ───
-    const handleDrawFullLine = useCallback(() => {
+    // ─── 5. Stamping Line Along Edge with Custom Length ───
+    const handleDrawLineSegment = useCallback(() => {
         if (!onDrawLine) return;
+        const drawCm = Math.min(lengthCm, Math.max(0.2, Number(customDrawLengthCm) || lengthCm));
+        const segmentPx = drawCm * PX_PER_CM;
         const rad = degToRad(angle);
         const startX = pos.x;
         const startY = pos.y;
-        const endX = pos.x + lengthPx * Math.cos(rad);
-        const endY = pos.y + lengthPx * Math.sin(rad);
+        const endX = pos.x + segmentPx * Math.cos(rad);
+        const endY = pos.y + segmentPx * Math.sin(rad);
 
         onDrawLine({
             startX: Math.round(startX),
             startY: Math.round(startY),
             endX: Math.round(endX),
             endY: Math.round(endY),
-            lengthPx,
-            lengthCm,
+            lengthPx: segmentPx,
+            lengthCm: drawCm,
             angleDeg: angle
         });
-    }, [onDrawLine, pos, lengthPx, lengthCm, angle]);
+    }, [onDrawLine, pos, lengthCm, customDrawLengthCm, angle]);
 
     const totalMm = Math.floor(lengthCm * 10);
 
@@ -368,22 +386,44 @@ export default function RulerTool({
                         <RotateCw className="w-3.5 h-3.5" />
                     </div>
 
-                    {/* Action Buttons: Draw Full Line & Close */}
+                    {/* Custom Draw Length Input */}
+                    <div className="flex items-center bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-full px-2 py-0.5 pointer-events-auto shadow-md gap-0.5" title="Length of line to draw along ruler edge">
+                        <span className="text-[9px] text-slate-400 font-medium">Draw:</span>
+                        <input
+                            type="number"
+                            min="0.5"
+                            max={lengthCm}
+                            step="0.1"
+                            value={customDrawLengthCm}
+                            onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                setCustomDrawLengthCm(isNaN(val) ? '' : val);
+                            }}
+                            onBlur={() => {
+                                const val = parseFloat(customDrawLengthCm);
+                                if (isNaN(val) || val <= 0) setCustomDrawLengthCm(5);
+                                else setCustomDrawLengthCm(Math.min(lengthCm, Math.max(0.5, val)));
+                            }}
+                            className="w-10 bg-transparent text-[10.5px] font-mono font-bold text-cyan-300 text-center outline-none focus:ring-1 focus:ring-cyan-400 rounded"
+                        />
+                        <span className="text-[9px] text-slate-400 pr-0.5">cm</span>
+                    </div>
+
+                    {/* Action Buttons: Icon-Only Draw Line & Close */}
                     <div className="flex items-center gap-1 pointer-events-auto">
                         <button
                             type="button"
-                            onClick={handleDrawFullLine}
-                            className="flex items-center gap-1 px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[10px] rounded-full shadow transition active:scale-95"
-                            title="Draw line along full ruler edge"
+                            onClick={handleDrawLineSegment}
+                            className="w-6 h-6 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white flex items-center justify-center shadow transition active:scale-95"
+                            title={`Draw line of ${customDrawLengthCm || lengthCm} cm along ruler edge`}
                         >
-                            <Pencil className="w-2.5 h-2.5" />
-                            <span>Draw Line</span>
+                            <Pencil className="w-3 h-3" />
                         </button>
 
                         <button
                             type="button"
                             onClick={onClose}
-                            className="p-1 rounded-full bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white transition"
+                            className="w-6 h-6 rounded-full bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white flex items-center justify-center transition"
                             title="Close Ruler"
                         >
                             <X className="w-3 h-3" />

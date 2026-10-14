@@ -203,3 +203,140 @@ export function calculateHingePoint(p1, p2, armLength = 180, invertSide = false)
         y: midY + altitude * ny
     };
 }
+
+/**
+ * Physical Barrier & Outer Edge Snapping for Geometry Instruments:
+ * Ensures the pen NEVER draws underneath a ruler, protractor, or set square.
+ * When the pointer is inside the instrument body or near its outer perimeter,
+ * it is clamped/projected directly to the nearest outer edge of the instrument.
+ */
+export function clampPointToInstrumentOuterEdge(p, instrument) {
+    if (!instrument || !p) return p;
+
+    if (instrument.type === 'ruler') {
+        const { x, y, angle, lengthPx, heightPx } = instrument;
+        const rad = degToRad(angle);
+        const cos = Math.cos(-rad);
+        const sin = Math.sin(-rad);
+
+        const dx = p.x - x;
+        const dy = p.y - y;
+        const localX = dx * cos - dy * sin;
+        const localY = dx * sin + dy * cos;
+
+        // Bounding check with outer snap margin
+        const margin = 14;
+        const isInsideX = localX >= -margin && localX <= lengthPx + margin;
+        const isInsideY = localY >= -margin && localY <= heightPx + margin;
+
+        if (isInsideX && isInsideY) {
+            // Constrain localX along ruler length
+            const clampedX = Math.max(0, Math.min(lengthPx, localX));
+            // User is most often drawing along the top measuring edge (y = 0)
+            const clampedY = localY < heightPx / 2 ? 0 : heightPx;
+
+            // Transform back to canvas space
+            const forwardCos = Math.cos(rad);
+            const forwardSin = Math.sin(rad);
+            return {
+                x: x + clampedX * forwardCos - clampedY * forwardSin,
+                y: y + clampedX * forwardSin + clampedY * forwardCos
+            };
+        }
+        return p;
+    }
+
+    if (instrument.type === 'protractor') {
+        const { centerX, centerY, radiusPx, baseRotation } = instrument;
+        const rad = degToRad(baseRotation);
+        const cos = Math.cos(-rad);
+        const sin = Math.sin(-rad);
+
+        const dx = p.x - centerX;
+        const dy = p.y - centerY;
+        const localX = dx * cos - dy * sin;
+        const localY = dx * sin + dy * cos;
+
+        const dist = Math.hypot(localX, localY);
+        const margin = 14;
+
+        // Protractor is a semi-circle: localY <= 0 (upper semi-circle) and dist <= radiusPx
+        if (localY <= margin && dist <= radiusPx + margin) {
+            let clampedLocalX = localX;
+            let clampedLocalY = localY;
+
+            // If closer to outer circular arc than base line:
+            const distToArc = Math.abs(dist - radiusPx);
+            const distToBase = Math.abs(localY);
+
+            if (distToArc < distToBase && dist > 1) {
+                // Snap along outer circular arc
+                clampedLocalX = (localX / dist) * radiusPx;
+                clampedLocalY = Math.min(0, (localY / dist) * radiusPx);
+            } else {
+                // Snap along straight base diameter
+                clampedLocalX = Math.max(-radiusPx, Math.min(radiusPx, localX));
+                clampedLocalY = 0;
+            }
+
+            const forwardCos = Math.cos(rad);
+            const forwardSin = Math.sin(rad);
+            return {
+                x: centerX + clampedLocalX * forwardCos - clampedLocalY * forwardSin,
+                y: centerY + clampedLocalX * forwardSin + clampedLocalY * forwardCos
+            };
+        }
+        return p;
+    }
+
+    if (instrument.type === 'setsquare') {
+        const { x, y, angle, basePx, heightPx, isFlipped } = instrument;
+        const rad = degToRad(angle);
+        const cos = Math.cos(-rad);
+        const sin = Math.sin(-rad);
+
+        const dx = p.x - x;
+        const dy = p.y - y;
+        const localX = dx * cos - dy * sin;
+        const flipSign = isFlipped ? -1 : 1;
+        const localY = (dx * sin + dy * cos) * flipSign;
+
+        // Triangle vertices in local coords: (0, 0), (basePx, 0), (0, heightPx)
+        const margin = 14;
+        if (localX >= -margin && localY >= -margin && (localX / basePx + localY / heightPx) <= 1 + margin / basePx) {
+            const dBase = Math.abs(localY);
+            const dVert = Math.abs(localX);
+            const hypA = heightPx;
+            const hypB = basePx;
+            const hypC = -basePx * heightPx;
+            const dHyp = Math.abs(hypA * localX + hypB * localY + hypC) / Math.hypot(hypA, hypB);
+
+            let clampedX = localX;
+            let clampedY = localY;
+
+            if (dBase <= dVert && dBase <= dHyp) {
+                clampedX = Math.max(0, Math.min(basePx, localX));
+                clampedY = 0;
+            } else if (dVert <= dBase && dVert <= dHyp) {
+                clampedX = 0;
+                clampedY = Math.max(0, Math.min(heightPx, localY));
+            } else {
+                const hypLen2 = basePx * basePx + heightPx * heightPx;
+                const t = Math.max(0, Math.min(1, ((localX - 0) * (basePx - 0) + (localY - heightPx) * (0 - heightPx)) / hypLen2));
+                clampedX = t * basePx;
+                clampedY = (1 - t) * heightPx;
+            }
+
+            const unFlippedY = clampedY * flipSign;
+            const forwardCos = Math.cos(rad);
+            const forwardSin = Math.sin(rad);
+            return {
+                x: x + clampedX * forwardCos - unFlippedY * forwardSin,
+                y: y + clampedX * forwardSin + unFlippedY * forwardCos
+            };
+        }
+        return p;
+    }
+
+    return p;
+}
