@@ -152,6 +152,7 @@ export default function WhiteboardQuizSideroll({
                 mcqCount: parseInt(mcqCount) || 0,
                 fillUpsCount: parseInt(fillUpsCount) || 0,
                 trueFalseCount: parseInt(trueFalseCount) || 0,
+                questionFormat: 'configured_counts',
                 timeLimitMinutes,
                 customInstructions
             });
@@ -498,7 +499,7 @@ export default function WhiteboardQuizSideroll({
 
     return (
         <aside
-            className={`${panelWidthStyle} h-full bg-slate-900/95 backdrop-blur-xl border-r border-slate-800 text-slate-100 flex flex-col z-40 transition-all duration-300 shadow-2xl relative select-none`}
+            className={`${panelWidthStyle} h-full bg-slate-900/95 backdrop-blur-xl border-r border-slate-800 text-slate-100 flex flex-col z-50 transition-all duration-300 shadow-2xl relative select-none`}
         >
             {/* Top Bar Header */}
             <div className="p-3.5 border-b border-slate-800 flex items-center justify-between gap-2 flex-shrink-0 bg-slate-950/60">

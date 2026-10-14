@@ -27977,7 +27977,8 @@ export default function Whiteboard({
                 aiSolution={aiSolutionData}
                 activeSolutionStep={activeSolutionStep}
                 externalEquations={externalGraphEquations}
-                isOpenByDefault={true}
+                isOpenByDefault={Boolean(aiSolutionData?.graphEquations?.length || externalGraphEquations?.length)}
+                leftSiderollMode={leftSiderollMode}
             />
 
             {/* Interactive Physics Space Simulation Lab for Class XI & XII */}

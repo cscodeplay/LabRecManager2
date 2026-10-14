@@ -578,7 +578,8 @@ export default function WhiteboardGraphingPanel({
     aiSolution = null,
     activeSolutionStep = null, // { index, text, equations, points }
     externalEquations = [], // equations added via voice commands or external triggers
-    isOpenByDefault = true,
+    isOpenByDefault = false,
+    leftSiderollMode = 'closed',
     onClose = null
 }) {
     const [isCollapsed, setIsCollapsed] = useState(false);
@@ -857,6 +858,15 @@ export default function WhiteboardGraphingPanel({
         window.addEventListener('mouseup', onMouseUp);
     };
 
+    // If left sideroll is in full screen mode, completely hide the graphing panel to avoid overlap
+    if (leftSiderollMode === 'full') {
+        return null;
+    }
+
+    // Dynamic horizontal offset so panel/icon is never covered by or overlapping the Quiz Sideroll
+    const isQuizSideOpen = leftSiderollMode === 'partial';
+    const leftOffsetClass = isQuizSideOpen ? 'left-[456px]' : 'left-3';
+
     // If closed, render a minimal launcher pill on the left side of the whiteboard
     if (!isVisible) {
         return (
@@ -867,7 +877,7 @@ export default function WhiteboardGraphingPanel({
                     setIsCollapsed(false);
                 }}
                 style={{ backgroundColor: '#0f172a' }}
-                className="fixed bottom-24 left-3 z-40 px-3 py-2 rounded-xl border-2 border-slate-700 hover:border-yellow-400 text-slate-100 shadow-2xl flex items-center gap-2 text-xs font-bold transition pointer-events-auto"
+                className={`fixed bottom-24 ${leftOffsetClass} z-40 px-3 py-2 rounded-xl border-2 border-slate-700 hover:border-yellow-400 text-slate-100 shadow-2xl flex items-center gap-2 text-xs font-bold transition-all duration-300 pointer-events-auto`}
                 title="Open Interactive 2D/3D Graphing Panel"
             >
                 <Grid className="w-4 h-4 text-yellow-400" />
@@ -886,7 +896,7 @@ export default function WhiteboardGraphingPanel({
         return (
             <div
                 style={{ backgroundColor: '#0f172a' }}
-                className="fixed bottom-24 left-3 z-40 border-2 border-slate-700 rounded-xl shadow-2xl px-3 py-2 flex items-center gap-2.5 text-xs text-slate-100 pointer-events-auto"
+                className={`fixed bottom-24 ${leftOffsetClass} z-40 border-2 border-slate-700 rounded-xl shadow-2xl px-3 py-2 flex items-center gap-2.5 text-xs text-slate-100 pointer-events-auto transition-all duration-300`}
             >
                 <Grid className="w-4 h-4 text-yellow-400 shrink-0" />
                 <span className="font-bold">Graph ({graphMode.toUpperCase()})</span>
@@ -915,7 +925,7 @@ export default function WhiteboardGraphingPanel({
                 width: `${panelSize.width}px`,
                 backgroundColor: '#0f172a'
             }}
-            className="fixed top-14 left-3 z-40 border-2 border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col pointer-events-auto select-none"
+            className={`fixed top-14 ${leftOffsetClass} z-40 border-2 border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col pointer-events-auto select-none transition-all duration-300`}
         >
             {/* 1. Minimal Header Bar */}
             <div

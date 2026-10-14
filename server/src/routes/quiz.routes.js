@@ -326,6 +326,138 @@ function cleanLatexChemistry(str) {
     return out;
 }
 
+function isGenericPlaceholder(txt) {
+    if (!txt || typeof txt !== 'string') return true;
+    const clean = txt.trim().toLowerCase();
+    return clean === '' ||
+           /^option\s*[a-d]$/i.test(clean) ||
+           /^option[a-d]$/i.test(clean) ||
+           /^choice\s*[a-d1-4]$/i.test(clean) ||
+           /^placeholder$/i.test(clean) ||
+           clean === 'none' ||
+           clean === 'n/a';
+}
+
+function generateMcqDistractors(validOptions, questionText = '', correctOpt = 'A') {
+    const standardKeys = ['A', 'B', 'C', 'D'];
+    const meaningful = (Array.isArray(validOptions) ? validOptions : []).filter(o => !isGenericPlaceholder(o.text));
+    
+    // Find the correct option text
+    const correctMatch = meaningful.find(o => (o.key || '').toUpperCase() === String(correctOpt).toUpperCase()) || meaningful[0];
+    const baseText = correctMatch?.text?.trim() || '';
+
+    // If we already have 4 meaningful options, return them
+    if (meaningful.length >= 4) {
+        return standardKeys.map((k, idx) => ({
+            key: k,
+            text: cleanLatexChemistry(meaningful[idx].text)
+        }));
+    }
+
+    const distractors = [];
+    meaningful.forEach(m => {
+        if (!distractors.includes(m.text)) distractors.push(m.text);
+    });
+
+    // Extract numbers to synthesize realistic mathematical distractors
+    const numMatch = baseText.match(/[-+]?\d*\.?\d+/);
+    if (numMatch) {
+        const val = parseFloat(numMatch[0]);
+        const unit = baseText.replace(numMatch[0], '').trim();
+        const unitSuffix = unit ? ` ${unit}` : '';
+        const variations = [
+            `${val * 2}${unitSuffix}`,
+            `${Number((val / 2).toFixed(2))}${unitSuffix}`,
+            `${val + 10}${unitSuffix}`,
+            `${Math.max(1, Math.round(val - 5))}${unitSuffix}`,
+            `0${unitSuffix}`,
+            `${Number((val * 1.5).toFixed(2))}${unitSuffix}`
+        ];
+        for (const v of variations) {
+            if (distractors.length >= 4) break;
+            if (!distractors.includes(v)) distractors.push(v);
+        }
+    }
+
+    // Default scientific / conceptual variations
+    const defaultFallbacks = [
+        'Directly proportional to force',
+        'Inversely proportional to mass',
+        'Independent of the coordinate system',
+        'Conserved in an isolated system',
+        'Increases linearly with velocity',
+        'Zero under static equilibrium'
+    ];
+    for (const fb of defaultFallbacks) {
+        if (distractors.length >= 4) break;
+        if (!distractors.includes(fb)) distractors.push(fb);
+    }
+
+    while (distractors.length < 4) {
+        distractors.push(`Distinct Choice ${distractors.length + 1}`);
+    }
+
+    return standardKeys.map((k, idx) => ({
+        key: k,
+        text: cleanLatexChemistry(distractors[idx])
+    }));
+}
+
+function sanitizeSingleQuestion(q, idx, defaultDifficulty = 'medium') {
+    const seqId = idx + 1;
+    const rawType = (q.type || q.questionType || '').toLowerCase();
+    const isFillIn = rawType === 'fill_in_the_blank' || rawType === 'nat' || rawType === 'fill_in' || rawType === 'fib';
+    const isTrueFalse = rawType === 'true_false' || (
+        Array.isArray(q.options) && q.options.length === 2 &&
+        q.options.some(o => /true/i.test(typeof o === 'string' ? o : (o.text || '')))
+    );
+
+    const type = isFillIn ? 'fill_in_the_blank' : (isTrueFalse ? 'true_false' : 'mcq');
+    let normalizedOpts = [];
+    let correctOpt = q.correctOption !== undefined && q.correctOption !== null ? String(q.correctOption).trim() : 'A';
+
+    if (type === 'fill_in_the_blank') {
+        normalizedOpts = [];
+        // Keep the exact correct option string/number
+    } else if (type === 'true_false') {
+        normalizedOpts = [
+            { key: 'A', text: 'True' },
+            { key: 'B', text: 'False' }
+        ];
+        if (correctOpt.toUpperCase() === 'B' || /false/i.test(correctOpt)) {
+            correctOpt = 'B';
+        } else {
+            correctOpt = 'A';
+        }
+    } else {
+        // MCQ: 4 distinct choices
+        const rawOpts = Array.isArray(q.options) ? q.options : [];
+        const optsList = rawOpts.map((o, optIdx) => ({
+            key: ['A', 'B', 'C', 'D'][optIdx] || 'A',
+            text: typeof o === 'string' ? o : (o.text || o.value || '')
+        }));
+
+        normalizedOpts = generateMcqDistractors(optsList, q.question, correctOpt);
+        correctOpt = correctOpt.toUpperCase().replace(/[^A-D]/g, '') || 'A';
+    }
+
+    return {
+        id: seqId,
+        type,
+        question: cleanLatexChemistry(q.question || `Question ${seqId}`),
+        options: normalizedOpts,
+        correctOption: correctOpt,
+        explanation: cleanLatexChemistry(q.explanation || ''),
+        difficulty: q.difficulty || defaultDifficulty || 'medium',
+        points: q.points || 1,
+        diagramSvg: q.diagramSvg || null,
+        diagramUrl: q.diagramUrl || null,
+        isMock: Boolean(q.isMock),
+        webSource: q.webSource || null,
+        examOccurrences: q.examOccurrences || []
+    };
+}
+
 // Comprehensive Competitive & Academic Exams Graph
 const RELATED_EXAMS_GRAPH = {
     'GATE': {
@@ -712,35 +844,9 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
         console.warn('[QuizRoutes] Question bank lookup error:', dbErr.message);
     }
 
-    // If Bank fulfills the entire requested count
-    if (bankQuestions.length >= count) {
-        const selected = bankQuestions.slice(0, count).map((q, idx) => {
-            const isFillInBlank = q.questionType === 'fill_in_the_blank' || (!q.options || q.options.length === 0);
-            return {
-                id: idx + 1,
-                type: isFillInBlank ? 'fill_in_the_blank' : 'mcq',
-                question: cleanLatexChemistry(q.question),
-                diagramSvg: q.diagramSvg || null,
-                diagramUrl: q.diagramUrl || null,
-                options: isFillInBlank ? [] : (Array.isArray(q.options) ? q.options : []).map(opt => ({
-                    key: opt.key,
-                    text: cleanLatexChemistry(opt.text || '')
-                })),
-                correctOption: q.correctOption,
-                explanation: cleanLatexChemistry(q.explanation || ''),
-                difficulty: q.difficulty || validDifficulty,
-                points: q.points || 1,
-                source: 'question_bank',
-                isMock: Boolean(q.isMock),
-                webSource: q.webSource || (q.isMock ? 'Mock / Practice Exam' : 'Official Archive'),
-                examType: q.examType || primaryExam,
-                examYear: q.examYear || primaryYear,
-                examOccurrences: (Array.isArray(q.examOccurrences) && q.examOccurrences.length > 0)
-                    ? q.examOccurrences
-                    : [{ exam: q.examType || primaryExam, year: q.examYear || primaryYear }],
-                topic: q.topic || detectedTopic
-            };
-        });
+    // If Bank fulfills the entire requested count and matches the format (bank only stores MCQs)
+    if (bankQuestions.length >= count && (!hasExplicitTypeCounts || (fCount === 0 && tCount === 0))) {
+        const selected = bankQuestions.slice(0, count).map((q, idx) => sanitizeSingleQuestion(q, idx, validDifficulty));
 
         return res.json({
             success: true,
@@ -913,34 +1019,77 @@ JSON SCHEMA TO RETURN (VALID JSON ONLY, NO MARKDOWN, NO CODEBLOCKS):
   {
     "id": 1,
     "type": "mcq",
-    "question": "Question problem statement (with LaTeX)",
+    "question": "Which physical quantity has the SI unit $\\text{kg}\\cdot\\text{m}^2/\\text{s}^2$?",
     "diagramSvg": null,
     "diagramUrl": null,
     "options": [
-      { "key": "A", "text": "First choice" },
-      { "key": "B", "text": "Second choice" },
-      { "key": "C", "text": "Third choice" },
-      { "key": "D", "text": "Fourth choice" }
+      { "key": "A", "text": "Work or Energy" },
+      { "key": "B", "text": "Linear Momentum" },
+      { "key": "C", "text": "Power" },
+      { "key": "D", "text": "Force" }
     ],
     "correctOption": "A",
-    "explanation": "Step-by-step mathematical derivation...",
+    "explanation": "Work is Force $\\times$ Distance: $[\\text{kg}\\cdot\\text{m}/\\text{s}^2] \\times [\\text{m}] = \\text{kg}\\cdot\\text{m}^2/\\text{s}^2 = \\text{Joule}$.",
     "isMock": false,
-    "webSource": "${customSource ? (customSource.startsWith('http') ? customSource : `https://${customSource}`) : (webSnippets[0]?.url || (primaryExam ? `https://${primaryExam.toLowerCase()}.ac.in` : 'Official Archive'))}",
-    "examOccurrences": [
-      { "exam": "${primaryExam || 'General'}", "year": "${primaryYear || '2024'}" }
+    "webSource": "https://archive.org",
+    "examOccurrences": [{ "exam": "${primaryExam || 'General'}", "year": "${primaryYear || '2024'}" }],
+    "topic": "${detectedTopic}",
+    "difficulty": "${validDifficulty}",
+    "points": 1
+  },
+  {
+    "id": 2,
+    "type": "fill_in_the_blank",
+    "question": "The acceleration due to gravity on the Earth's surface at sea level is approximately _____ $\\text{m/s}^2$.",
+    "diagramSvg": null,
+    "diagramUrl": null,
+    "options": [],
+    "correctOption": "9.8",
+    "explanation": "Standard acceleration due to gravity on Earth is $g \\approx 9.8\\ \\text{m/s}^2$.",
+    "isMock": false,
+    "webSource": "https://archive.org",
+    "examOccurrences": [{ "exam": "${primaryExam || 'General'}", "year": "${primaryYear || '2024'}" }],
+    "topic": "${detectedTopic}",
+    "difficulty": "${validDifficulty}",
+    "points": 1
+  },
+  {
+    "id": 3,
+    "type": "true_false",
+    "question": "Action and reaction forces act on the same body and cancel each other out.",
+    "diagramSvg": null,
+    "diagramUrl": null,
+    "options": [
+      { "key": "A", "text": "True" },
+      { "key": "B", "text": "False" }
     ],
+    "correctOption": "B",
+    "explanation": "According to Newton's 3rd Law, action and reaction forces act on two DIFFERENT interacting bodies, hence they never cancel each other.",
+    "isMock": false,
+    "webSource": "https://archive.org",
+    "examOccurrences": [{ "exam": "${primaryExam || 'General'}", "year": "${primaryYear || '2024'}" }],
     "topic": "${detectedTopic}",
     "difficulty": "${validDifficulty}",
     "points": 1
   }
 ]`;
 
+    const breakdownInstruction = hasExplicitTypeCounts && (mCount + fCount + tCount > 0)
+        ? `\nCRITICAL MANDATORY QUESTION BREAKDOWN (YOU MUST FOLLOW THIS EXACTLY):
+- Generate EXACTLY ${mCount} Multiple Choice Questions (set "type": "mcq", with 4 distinct plausible choices in "options" array with keys A, B, C, D).
+- Generate EXACTLY ${fCount} Fill-in-the-blank questions (set "type": "fill_in_the_blank", "options": [], and "correctOption" to the exact numerical or text answer).
+- Generate EXACTLY ${tCount} True/False questions (set "type": "true_false", with "options": [{"key": "A", "text": "True"}, {"key": "B", "text": "False"}], and "correctOption": "A" or "B").
+TOTAL: EXACTLY ${remainingCount} questions.
+NEVER generate placeholder options like "Option A", "Option B", "Option C", "Option D". Every MCQ option MUST be a meaningful, realistic choice or distractor.`
+        : '';
+
     const userPrompt = `Generate ${remainingCount} authentic examination questions for:
 TOPIC: "${detectedTopic}"
 EXAMS: ${selectedExams.join(', ') || 'General'}
 YEARS: ${selectedYears.join(', ') || 'Any'}
-FORMAT: ${questionFormat}
+FORMAT: ${hasExplicitTypeCounts ? `${mCount} MCQs, ${fCount} Fill-in-the-blank, ${tCount} True/False` : questionFormat}
 DIFFICULTY: ${validDifficulty}
+${breakdownInstruction}
 ${customInstructions ? `ADDITIONAL INSTRUCTIONS: ${customInstructions}` : ''}
 ${webContextBlock}
 
@@ -990,70 +1139,69 @@ Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
             throw new Error('AI returned an empty question list');
         }
 
-        // Normalize newly generated questions
-        const standardKeys = ['A', 'B', 'C', 'D'];
-        newlyGenerated = newlyGenerated.map((q, idx) => {
+        // 1. Detect natural type for each question
+        let allocatedQuestions = newlyGenerated.map((q) => {
             const rawType = (q.type || '').toLowerCase();
-            const isFillInBlank = rawType === 'fill_in_the_blank' || rawType === 'nat' || (!q.options && !q.choices && rawType !== 'true_false');
-            const isTrueFalse = rawType === 'true_false' || (
+            const isTf = rawType === 'true_false' || (
                 Array.isArray(q.options) && q.options.length === 2 &&
                 q.options.some(o => /true/i.test(typeof o === 'string' ? o : (o.text || '')))
             );
+            const isFib = rawType === 'fill_in_the_blank' || rawType === 'nat' || rawType === 'fill_in' || rawType === 'fib' || (!q.options || q.options.length === 0) || /_____/.test(q.question || '');
 
-            let normalizedType = isFillInBlank ? 'fill_in_the_blank' : (isTrueFalse ? 'true_false' : 'mcq');
-            let normalizedOptions = [];
-            let safeCorrect = String(q.correctOption || '').trim();
+            return {
+                ...q,
+                detectedType: isTf ? 'true_false' : (isFib ? 'fill_in_the_blank' : 'mcq')
+            };
+        });
 
-            if (normalizedType === 'fill_in_the_blank') {
-                normalizedOptions = [];
-            } else if (normalizedType === 'true_false') {
-                normalizedOptions = [
-                    { key: 'A', text: 'True' },
-                    { key: 'B', text: 'False' }
-                ];
-                if (safeCorrect.toUpperCase() === 'B' || /false/i.test(safeCorrect)) {
-                    safeCorrect = 'B';
-                } else {
-                    safeCorrect = 'A';
-                }
-            } else {
-                // Robust MCQ options extraction
-                let rawOptions = [];
-                if (Array.isArray(q.options) && q.options.length > 0) {
-                    rawOptions = q.options;
-                } else if (Array.isArray(q.choices) && q.choices.length > 0) {
-                    rawOptions = q.choices;
-                } else if (q.options && typeof q.options === 'object') {
-                    rawOptions = Object.entries(q.options).map(([k, v]) => ({
-                        key: k.replace(/[^A-Za-z]/g, '').slice(-1).toUpperCase() || k,
-                        text: typeof v === 'string' ? v : (v?.text || v?.value || JSON.stringify(v))
-                    }));
-                }
+        // 2. If explicit type counts requested, deterministically enforce exact counts: mCount, fCount, tCount
+        if (hasExplicitTypeCounts && (mCount + fCount + tCount > 0)) {
+            const finalQuestions = [];
+            const mcqsAvailable = allocatedQuestions.filter(q => q.detectedType === 'mcq');
+            const fibsAvailable = allocatedQuestions.filter(q => q.detectedType === 'fill_in_the_blank');
+            const tfsAvailable = allocatedQuestions.filter(q => q.detectedType === 'true_false');
 
-                normalizedOptions = standardKeys.map((key, optIdx) => {
-                    const existing = rawOptions.find(o => (o.key || '').toUpperCase() === key) || rawOptions[optIdx];
-                    let text = '';
-                    if (existing) {
-                        if (typeof existing === 'string') {
-                            text = existing;
-                        } else {
-                            text = existing.text || existing.value || existing.label || existing.optionText || '';
+            // Collect exact requested MCQs
+            for (let i = 0; i < mCount; i++) {
+                const q = mcqsAvailable.shift() || allocatedQuestions.shift();
+                if (q) finalQuestions.push({ ...q, type: 'mcq' });
+            }
+            // Collect exact requested Fill-in-the-blanks
+            for (let i = 0; i < fCount; i++) {
+                const q = fibsAvailable.shift() || allocatedQuestions.shift();
+                if (q) {
+                    let targetAnswer = q.correctOption;
+                    if (Array.isArray(q.options) && q.options.length > 0) {
+                        const matchedOpt = q.options.find(o => (o.key || '').toUpperCase() === String(q.correctOption || 'A').toUpperCase()) || q.options[0];
+                        if (matchedOpt) {
+                            targetAnswer = typeof matchedOpt === 'string' ? matchedOpt : (matchedOpt.text || matchedOpt.value || targetAnswer);
                         }
                     }
-                    if (!text || text === `Option ${key}` || text === `Option${key}`) {
-                        if (q.answers && q.answers[optIdx]) text = String(q.answers[optIdx]);
-                        else if (!text) text = `Option ${key}`;
-                    }
-                    return {
-                        key,
-                        text: cleanLatexChemistry(text)
-                    };
-                });
-
-                safeCorrect = (q.correctOption || 'A').toUpperCase().replace(/[^A-D]/g, '') || 'A';
-                const matchedByKey = normalizedOptions.find(o => o.text.trim().toLowerCase() === String(q.correctOption || '').trim().toLowerCase());
-                if (matchedByKey) safeCorrect = matchedByKey.key;
+                    finalQuestions.push({
+                        ...q,
+                        type: 'fill_in_the_blank',
+                        options: [],
+                        correctOption: targetAnswer
+                    });
+                }
             }
+            // Collect exact requested True/False
+            for (let i = 0; i < tCount; i++) {
+                const q = tfsAvailable.shift() || allocatedQuestions.shift();
+                if (q) finalQuestions.push({ ...q, type: 'true_false' });
+            }
+
+            // Fill remaining if needed
+            while (finalQuestions.length < remainingCount && allocatedQuestions.length > 0) {
+                finalQuestions.push(allocatedQuestions.shift());
+            }
+
+            allocatedQuestions = finalQuestions;
+        }
+
+        // 3. Sanitize every question (ensures 0 placeholder "Option A", exact 4 choices for MCQ, empty [] for fill-in, 2 options for TF)
+        newlyGenerated = allocatedQuestions.map((q, idx) => {
+            const sanitized = sanitizeSingleQuestion(q, idx, validDifficulty);
 
             // Normalizing exam occurrences
             let occs = Array.isArray(q.examOccurrences) ? q.examOccurrences : [];
@@ -1066,7 +1214,6 @@ Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
 
             // Ensure webSource is a verifiable URL
             if (webSourceVal) {
-                // Check if webSource matches a snippet's URL or domain
                 const matchedSnippet = webSnippets.find(s => 
                     (s.url && s.url.toLowerCase().includes(webSourceVal.toLowerCase())) ||
                     (s.source && (s.source.toLowerCase().includes(webSourceVal.toLowerCase()) || webSourceVal.toLowerCase().includes(s.source.toLowerCase())))
@@ -1085,16 +1232,9 @@ Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
             }
 
             return {
-                id: idx + 1,
-                type: normalizedType,
-                question: cleanLatexChemistry(q.question || `Question ${idx + 1}`),
+                ...sanitized,
                 diagramSvg: q.diagramSvg && typeof q.diagramSvg === 'string' && q.diagramSvg.includes('<svg') ? q.diagramSvg.trim() : null,
                 diagramUrl: q.diagramUrl && typeof q.diagramUrl === 'string' ? q.diagramUrl.trim() : null,
-                options: normalizedOptions,
-                correctOption: safeCorrect,
-                explanation: cleanLatexChemistry(q.explanation || 'No explanation provided.'),
-                difficulty: q.difficulty || validDifficulty,
-                points: q.points || 1,
                 source: 'web_source',
                 isMock: isMockVal,
                 webSource: webSourceVal,
@@ -1599,33 +1739,7 @@ router.post('/', authenticate, asyncHandler(async (req, res) => {
         });
     }
 
-    // Ensure sequential IDs and 4 options
-    const standardKeys = ['A', 'B', 'C', 'D'];
-    const sanitizedQuestions = questions.map((q, idx) => {
-        const seqId = idx + 1;
-        const opts = (Array.isArray(q.options) ? q.options : []).slice(0, 4);
-        while (opts.length < 4) {
-            const nextKey = standardKeys[opts.length];
-            opts.push({ key: nextKey, text: `Option ${nextKey}` });
-        }
-        const normalizedOpts = standardKeys.map((key, optIdx) => ({
-            key,
-            text: cleanLatexChemistry(opts[optIdx]?.text || `Option ${key}`)
-        }));
-
-        let correctOpt = (q.correctOption || 'A').toUpperCase();
-        if (!standardKeys.includes(correctOpt)) correctOpt = 'A';
-
-        return {
-            id: seqId,
-            question: cleanLatexChemistry(q.question || `Question ${seqId}`),
-            options: normalizedOpts,
-            correctOption: correctOpt,
-            explanation: cleanLatexChemistry(q.explanation || ''),
-            difficulty: q.difficulty || difficulty || 'medium',
-            points: q.points || 1
-        };
-    });
+    const sanitizedQuestions = questions.map((q, idx) => sanitizeSingleQuestion(q, idx, difficulty));
 
     // Generate unique short code
     let code = generateQuizCode();
@@ -1693,32 +1807,7 @@ router.put('/:id', authenticate, asyncHandler(async (req, res) => {
 
     let sanitizedQuestions = existing.questions;
     if (Array.isArray(questions)) {
-        const standardKeys = ['A', 'B', 'C', 'D'];
-        sanitizedQuestions = questions.map((q, idx) => {
-            const seqId = idx + 1;
-            const opts = (Array.isArray(q.options) ? q.options : []).slice(0, 4);
-            while (opts.length < 4) {
-                const nextKey = standardKeys[opts.length];
-                opts.push({ key: nextKey, text: `Option ${nextKey}` });
-            }
-            const normalizedOpts = standardKeys.map((key, optIdx) => ({
-                key,
-                text: cleanLatexChemistry(opts[optIdx]?.text || `Option ${key}`)
-            }));
-
-            let correctOpt = (q.correctOption || 'A').toUpperCase();
-            if (!standardKeys.includes(correctOpt)) correctOpt = 'A';
-
-            return {
-                id: seqId,
-                question: cleanLatexChemistry(q.question || `Question ${seqId}`),
-                options: normalizedOpts,
-                correctOption: correctOpt,
-                explanation: cleanLatexChemistry(q.explanation || ''),
-                difficulty: q.difficulty || difficulty || existing.difficulty,
-                points: q.points || 1
-            };
-        });
+        sanitizedQuestions = questions.map((q, idx) => sanitizeSingleQuestion(q, idx, difficulty || existing.difficulty));
     }
 
     const updated = await prisma.quiz.update({
