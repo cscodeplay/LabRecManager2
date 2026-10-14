@@ -8,6 +8,7 @@ import {
     Pencil as PencilIcon,
     Crosshair
 } from 'lucide-react';
+import { ArgonNeedleIcon } from './CustomToolbarIcons';
 import {
     PX_PER_CM,
     pxToCm,
@@ -54,6 +55,8 @@ export default function CompassTool({
     // Rotation / sweep drag ref
     const isRotatingPencilRef = useRef(false);
     const sweepStartAngleRef = useRef(0);
+    const currentSweepDegRef = useRef(0);
+    const startAngleDegRef = useRef(0);
 
     // ─── 1. Needle Drag (Reposition entire compass) ───
     const handleNeedlePointerDown = (e) => {
@@ -132,6 +135,8 @@ export default function CompassTool({
         if (startDeg < 0) startDeg += 360;
 
         sweepStartAngleRef.current = startDeg;
+        startAngleDegRef.current = startDeg;
+        currentSweepDegRef.current = 0;
         setArcStartAngle(startDeg);
         setArcSweepDeg(0);
 
@@ -148,6 +153,7 @@ export default function CompassTool({
             if (sweepMode) {
                 let diff = curDeg - sweepStartAngleRef.current;
                 if (diff < 0) diff += 360;
+                currentSweepDegRef.current = diff;
                 setArcSweepDeg(diff);
             }
         };
@@ -157,18 +163,22 @@ export default function CompassTool({
             window.removeEventListener('pointermove', onPointerMove);
             window.removeEventListener('pointerup', onPointerUp);
 
-            if (sweepMode && arcSweepDeg > 5 && onDrawArc) {
+            const finalSweep = currentSweepDegRef.current;
+            const finalStartAngle = startAngleDegRef.current;
+
+            if (sweepMode && finalSweep > 4 && onDrawArc) {
                 onDrawArc({
                     cx: Math.round(center.x),
                     cy: Math.round(center.y),
                     radius: radiusPx,
-                    startAngleDeg: arcStartAngle,
-                    endAngleDeg: (arcStartAngle + arcSweepDeg) % 360,
-                    sweepDeg: Math.round(arcSweepDeg)
+                    startAngleDeg: finalStartAngle,
+                    endAngleDeg: (finalStartAngle + finalSweep) % 360,
+                    sweepDeg: Math.round(finalSweep)
                 });
             }
             setIsSweepingArc(false);
             setArcSweepDeg(0);
+            currentSweepDegRef.current = 0;
         };
 
         window.addEventListener('pointermove', onPointerMove);
@@ -406,10 +416,10 @@ export default function CompassTool({
                     pointerEvents: 'auto'
                 }}
                 onPointerDown={handleNeedlePointerDown}
-                className="w-8 h-8 rounded-full bg-slate-900/90 border-2 border-cyan-400 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:scale-110 transition group"
-                title="Drag to reposition needle pivot"
+                className="w-8 h-8 rounded-full bg-slate-900/95 border-2 border-slate-300 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:border-cyan-400 hover:scale-110 transition group"
+                title="Drag needle tip to reposition compass pivot"
             >
-                <Crosshair className="w-4 h-4 text-cyan-300 group-hover:text-cyan-100" />
+                <ArgonNeedleIcon className="w-5 h-5 text-slate-200 group-hover:text-cyan-300 transition-colors drop-shadow" />
             </div>
 
             {/* ─── Control 2: Pencil Tip & Sweep Handle ─── */}

@@ -17,10 +17,9 @@ const ACTIVE_GEMINI_MODELS = [
     'gemini-flash-latest'
 ];
 const ACTIVE_GROQ_MODELS = [
-    'llama-3.3-70b-versatile',
+    'qwen/qwen3.8-27b',
     'openai/gpt-oss-120b',
-    'openai/gpt-oss-20b',
-    'llama-3.1-8b-instant'
+    'openai/gpt-oss-20b'
 ];
 const ACTIVE_SAMBANOVA_MODELS = ['Meta-Llama-3.1-8B-Instruct'];
 const ACTIVE_NVIDIA_MODELS = [
@@ -414,6 +413,7 @@ class AIService {
             generationConfig.responseMimeType = 'application/json';
         }
 
+        const keyToUse = (apiKey && typeof apiKey === 'string' && apiKey.trim()) ? apiKey.trim() : (this.geminiKey ? this.geminiKey.trim() : '');
         for (const m of modelsToTry) {
             try {
                 console.log(`[AIService] Calling Gemini (${m})...`);
@@ -426,6 +426,35 @@ class AIService {
                 const text = (await result.response).text();
                 return { text, model: m, provider: 'gemini' };
             } catch (err) {
+                // If SDK fetch failed or threw, attempt direct axios REST call as resilient fallback
+                if (keyToUse) {
+                    try {
+                        console.log(`[AIService] Retrying Gemini (${m}) via direct REST API...`);
+                        const restPayload = {
+                            contents: [{ parts: [{ text: typeof contents === 'string' ? contents : JSON.stringify(contents) }] }],
+                            generationConfig: {
+                                temperature,
+                                ...(jsonMode ? { responseMimeType: 'application/json' } : {})
+                            }
+                        };
+                        if (systemInstruction) {
+                            restPayload.systemInstruction = {
+                                parts: [{ text: typeof systemInstruction === 'string' ? systemInstruction : JSON.stringify(systemInstruction) }]
+                            };
+                        }
+                        const restRes = await axios.post(
+                            `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${keyToUse}`,
+                            restPayload,
+                            { timeout: 30000 }
+                        );
+                        const restText = restRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                        if (restText) {
+                            return { text: restText, model: m, provider: 'gemini' };
+                        }
+                    } catch (restErr) {
+                        console.warn(`[AIService] Gemini REST ${m} also failed: ${restErr.message?.substring(0, 80)}`);
+                    }
+                }
                 lastErr = err;
                 const isQuota = err.status === 429 ||
                     (err.message && /resource_exhausted|quota|rate limit|429/i.test(err.message));

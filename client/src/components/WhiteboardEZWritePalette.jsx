@@ -7,15 +7,12 @@ import {
     Eraser,
     Undo2,
     Compass,
-    TorchIcon,
     StickyNote as StickyNoteIcon,
     MousePointer2,
     GripHorizontal,
     Minimize2,
-    Maximize2,
     X,
-    Sparkles,
-    Palette
+    Sparkles
 } from 'lucide-react';
 
 const QUICK_COLORS = [
@@ -38,6 +35,7 @@ export default function WhiteboardEZWritePalette({
     setIsSpotlightActive,
     isCurtainActive,
     setIsCurtainActive,
+    onOpenAiAssistant,
     isInstructor = true,
     onClose
 }) {
@@ -65,10 +63,10 @@ export default function WhiteboardEZWritePalette({
         if (!isDragging) return;
 
         const handlePointerMove = (e) => {
-            const maxX = window.innerWidth - 80;
-            const maxY = window.innerHeight - 80;
-            const newX = Math.max(12, Math.min(maxX, e.clientX - dragOffset.x));
-            const newY = Math.max(60, Math.min(maxY, e.clientY - dragOffset.y));
+            const maxX = window.innerWidth - 60;
+            const maxY = window.innerHeight - 60;
+            const newX = Math.max(8, Math.min(maxX, e.clientX - dragOffset.x));
+            const newY = Math.max(50, Math.min(maxY, e.clientY - dragOffset.y));
             setPos({ x: newX, y: newY });
         };
 
@@ -86,7 +84,7 @@ export default function WhiteboardEZWritePalette({
 
     if (!isVisible) return null;
 
-    // Collapsed Mode: Friendly Floating Pill / Disc (BenQ style)
+    // Collapsed Mode: Compact Floating Disc
     if (isCollapsed) {
         return (
             <div
@@ -98,94 +96,94 @@ export default function WhiteboardEZWritePalette({
                     type="button"
                     onClick={() => setIsCollapsed(false)}
                     onPointerDown={handlePointerDown}
-                    className="p-1 rounded-full bg-gradient-to-tr from-cyan-500 via-indigo-500 to-amber-400 p-[2.5px] shadow-2xl hover:scale-110 active:scale-95 transition-all group"
-                    title="BenQ / ViewSonic Quick Palette (Click to expand)"
+                    className="rounded-full bg-gradient-to-tr from-cyan-500 via-indigo-500 to-amber-400 p-[1.5px] shadow-2xl hover:scale-110 active:scale-95 transition-all group"
+                    title="Quick Palette (Click to expand)"
                 >
-                    <div className="w-11 h-11 rounded-full bg-slate-900/95 backdrop-blur-md flex items-center justify-center text-cyan-300 group-hover:text-white border border-slate-700/80 shadow-inner">
-                        <Pencil className="w-5 h-5 text-sky-400 group-hover:rotate-12 transition-transform" />
+                    <div className="w-8 h-8 rounded-full bg-slate-900/95 backdrop-blur-md flex items-center justify-center text-cyan-300 group-hover:text-white border border-slate-700/80 shadow-inner">
+                        <Pencil className="w-4 h-4 text-sky-400 group-hover:rotate-12 transition-transform" />
                     </div>
                 </button>
             </div>
         );
     }
 
-    // Expanded Mode: Vertical Classroom Floating Companion
+    // Expanded Mode: Compact Vertical Companion matching Main Toolbar proportions
     return (
         <div
             ref={paletteRef}
             style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
-            className={`fixed z-40 select-none bg-slate-900/95 backdrop-blur-xl border-2 border-slate-700/80 rounded-2xl shadow-2xl p-2 flex flex-col gap-2 min-w-[56px] items-center text-slate-200 ${
+            className={`fixed z-40 select-none bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-xl shadow-2xl p-1.5 flex flex-col gap-1 min-w-[42px] items-center text-slate-200 ${
                 isDragging ? 'cursor-grabbing opacity-90 scale-102' : 'transition-all duration-150'
             }`}
         >
             {/* Header & Drag Grip */}
             <div
                 onPointerDown={handlePointerDown}
-                className="w-full flex items-center justify-between pb-1.5 border-b border-slate-700/60 cursor-grab active:cursor-grabbing px-1"
+                className="w-full flex items-center justify-between pb-1 border-b border-slate-700/60 cursor-grab active:cursor-grabbing px-0.5"
                 title="Drag floating palette anywhere on screen"
             >
-                <div className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-                    <GripHorizontal className="w-3.5 h-3.5 text-slate-400 hover:text-white" />
+                <div className="flex items-center gap-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                    <GripHorizontal className="w-3 h-3 text-slate-400 hover:text-white" />
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5">
                     <button
                         type="button"
                         onClick={() => setIsCollapsed(true)}
-                        className="p-1 text-slate-400 hover:text-amber-400 rounded transition"
+                        className="p-0.5 text-slate-400 hover:text-amber-400 rounded transition"
                         title="Minimize to quick disc"
                     >
-                        <Minimize2 className="w-3 h-3" />
+                        <Minimize2 className="w-2.5 h-2.5" />
                     </button>
                     {onClose && (
                         <button
                             type="button"
                             onClick={onClose}
-                            className="p-1 text-slate-400 hover:text-red-400 rounded transition"
+                            className="p-0.5 text-slate-400 hover:text-red-400 rounded transition"
                             title="Close floating palette"
                         >
-                            <X className="w-3 h-3" />
+                            <X className="w-2.5 h-2.5" />
                         </button>
                     )}
                 </div>
             </div>
 
             {/* Quick Core Tools */}
-            <div className="flex flex-col gap-1.5 items-center w-full">
+            <div className="flex flex-col gap-1 items-center w-full">
                 {/* Select Tool */}
                 <button
                     type="button"
                     onClick={() => setTool('select')}
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
                         tool === 'select'
-                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/40 ring-2 ring-indigo-300 scale-105'
+                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/40 ring-1.5 ring-indigo-300 scale-105'
                             : 'text-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/30 hover:scale-105'
                     }`}
                     title="Select & Move (V)"
                 >
-                    <MousePointer2 className="w-4 h-4" />
+                    <MousePointer2 className="w-3.5 h-3.5" />
                 </button>
 
                 {/* Pen Tool with Live Ink Preview */}
                 <button
                     type="button"
                     onClick={() => setTool('pen')}
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all relative ${
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all relative ${
                         tool === 'pen'
-                            ? 'bg-sky-500 text-slate-950 font-bold shadow-lg shadow-sky-500/40 ring-2 ring-sky-300 scale-105'
+                            ? 'bg-sky-500 text-slate-950 font-bold shadow-md shadow-sky-500/40 ring-1.5 ring-sky-300 scale-105'
                             : 'text-sky-400 bg-sky-500/15 hover:bg-sky-500/30 hover:scale-105'
                     }`}
                     title="Drawing Pen (P)"
                 >
-                    <Pencil className="w-4 h-4" />
+                    <Pencil className="w-3.5 h-3.5" />
                     <span
-                        className="absolute bottom-1 right-1 w-2 h-2 rounded-full border border-slate-900 shadow-sm"
+                        className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-full border border-slate-900 shadow-xs"
                         style={{ backgroundColor: color }}
                     />
                 </button>
 
                 {/* 4 Quick Color Chips (ViewSonic / BenQ Classroom style) */}
-                <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-800/80 rounded-xl border border-slate-700/60 my-0.5">
+                <div className="grid grid-cols-2 gap-1 p-0.5 bg-slate-800/80 rounded-lg border border-slate-700/60 my-0.5">
                     {QUICK_COLORS.map(qc => (
                         <button
                             key={qc.value}
@@ -194,8 +192,8 @@ export default function WhiteboardEZWritePalette({
                                 setColor(qc.value);
                                 if (tool !== 'pen') setTool('pen');
                             }}
-                            className={`w-4 h-4 rounded-full border-2 transition-transform ${qc.bgClass} ${
-                                color === qc.value ? 'scale-125 ring-2 ring-white shadow-md' : 'hover:scale-115 opacity-80 hover:opacity-100'
+                            className={`w-3 h-3 rounded-full border transition-transform ${qc.bgClass} ${
+                                color === qc.value ? 'scale-125 ring-1.5 ring-white shadow-xs' : 'hover:scale-115 opacity-80 hover:opacity-100'
                             }`}
                             title={qc.label}
                         />
@@ -206,28 +204,28 @@ export default function WhiteboardEZWritePalette({
                 <button
                     type="button"
                     onClick={() => setTool('highlighter')}
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
                         tool === 'highlighter'
-                            ? 'bg-amber-400 text-slate-950 font-bold shadow-lg shadow-amber-400/40 ring-2 ring-amber-200 scale-105'
+                            ? 'bg-amber-400 text-slate-950 font-bold shadow-md shadow-amber-400/40 ring-1.5 ring-amber-200 scale-105'
                             : 'text-amber-300 bg-amber-500/15 hover:bg-amber-500/30 hover:scale-105'
                     }`}
                     title="Highlighter (H)"
                 >
-                    <Highlighter className="w-4 h-4" />
+                    <Highlighter className="w-3.5 h-3.5" />
                 </button>
 
                 {/* Eraser Tool */}
                 <button
                     type="button"
                     onClick={() => setTool('eraser')}
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
                         tool === 'eraser'
-                            ? 'bg-rose-500 text-white font-bold shadow-lg shadow-rose-500/40 ring-2 ring-rose-300 scale-105'
+                            ? 'bg-rose-500 text-white font-bold shadow-md shadow-rose-500/40 ring-1.5 ring-rose-300 scale-105'
                             : 'text-rose-400 bg-rose-500/15 hover:bg-rose-500/30 hover:scale-105'
                     }`}
                     title="Eraser (E)"
                 >
-                    <Eraser className="w-4 h-4" />
+                    <Eraser className="w-3.5 h-3.5" />
                 </button>
 
                 {/* Undo Button */}
@@ -235,59 +233,71 @@ export default function WhiteboardEZWritePalette({
                     type="button"
                     onClick={onUndo}
                     disabled={!canUndo}
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
                         canUndo
                             ? 'text-blue-400 bg-blue-500/15 hover:bg-blue-500/30 hover:text-white hover:scale-105 active:scale-95'
                             : 'text-slate-600 bg-slate-800/40 cursor-not-allowed opacity-50'
                     }`}
                     title="Undo (Ctrl+Z)"
                 >
-                    <Undo2 className="w-4 h-4" />
+                    <Undo2 className="w-3.5 h-3.5" />
                 </button>
 
-                <div className="w-6 h-px bg-slate-700/80 my-0.5" />
+                <div className="w-5 h-px bg-slate-700/80 my-0.5" />
 
                 {/* Geometry Instruments Toggle */}
                 <button
                     type="button"
                     onClick={() => setShowGeometryInstruments(prev => !prev)}
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
                         showGeometryInstruments
-                            ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/40 ring-2 ring-cyan-200 scale-105'
+                            ? 'bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-500/40 ring-1.5 ring-cyan-200 scale-105'
                             : 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/30 hover:scale-105'
                     }`}
-                    title="Geometry Instruments Box (myViewBoard)"
+                    title="Geometry Instruments Box (Ruler, Compass, Protractor, Divider)"
                 >
-                    <Compass className="w-4 h-4" />
+                    <Compass className="w-3.5 h-3.5" />
                 </button>
 
                 {/* Spotlight Focus Toggle */}
                 <button
                     type="button"
                     onClick={() => setIsSpotlightActive(prev => !prev)}
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
                         isSpotlightActive
-                            ? 'bg-yellow-400 text-slate-950 font-bold shadow-lg shadow-yellow-400/40 ring-2 ring-yellow-200 scale-105'
+                            ? 'bg-yellow-400 text-slate-950 font-bold shadow-md shadow-yellow-400/40 ring-1.5 ring-yellow-200 scale-105'
                             : 'text-yellow-400 bg-yellow-500/15 hover:bg-yellow-500/30 hover:scale-105'
                     }`}
                     title="Classroom Spotlight Focus"
                 >
-                    <div className="w-4 h-4 flex items-center justify-center">🔦</div>
+                    <div className="text-xs">🔦</div>
                 </button>
 
                 {/* Screen Curtain Toggle */}
                 <button
                     type="button"
                     onClick={() => setIsCurtainActive(prev => !prev)}
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
                         isCurtainActive
-                            ? 'bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-500/40 ring-2 ring-indigo-300 scale-105'
+                            ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-500/40 ring-1.5 ring-indigo-300 scale-105'
                             : 'text-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/30 hover:scale-105'
                     }`}
                     title="Screen Curtain Reveal"
                 >
-                    <StickyNoteIcon className="w-4 h-4" />
+                    <StickyNoteIcon className="w-3.5 h-3.5" />
                 </button>
+
+                {/* AI Assistant Co-Pilot Quick Button */}
+                {onOpenAiAssistant && (
+                    <button
+                        type="button"
+                        onClick={onOpenAiAssistant}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-amber-300 bg-amber-500/15 hover:bg-amber-500/30 hover:scale-105 transition-all shadow-xs"
+                        title="Whiteboard AI Co-Pilot & Chat"
+                    >
+                        <Sparkles className="w-3.5 h-3.5" />
+                    </button>
+                )}
             </div>
         </div>
     );

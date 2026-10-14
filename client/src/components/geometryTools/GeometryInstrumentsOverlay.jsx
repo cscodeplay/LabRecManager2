@@ -169,6 +169,7 @@ export default function GeometryInstrumentsOverlay({
                     initialY={340}
                     scale={scale}
                     onDrawAngle={onDrawAngle}
+                    onDrawLine={onDrawLine}
                     onClose={() => setActiveTool(null)}
                 />
             )}

@@ -9,6 +9,7 @@ import {
     Unlock,
     Crosshair
 } from 'lucide-react';
+import { ArgonNeedleIcon } from './CustomToolbarIcons';
 import {
     PX_PER_CM,
     pxToCm,
@@ -268,10 +269,10 @@ export default function DividerTool({
                     pointerEvents: 'auto'
                 }}
                 onPointerDown={handlePointAPointerDown}
-                className="w-8 h-8 rounded-full bg-slate-900/90 border-2 border-purple-400 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:scale-110 transition group"
-                title="Drag primary needle tip A"
+                className="w-8 h-8 rounded-full bg-slate-900/95 border-2 border-slate-300 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:border-purple-400 hover:scale-110 transition group"
+                title="Primary needle tip A (Drag to reposition divider)"
             >
-                <Crosshair className="w-4 h-4 text-purple-300 group-hover:text-purple-100" />
+                <ArgonNeedleIcon className="w-5 h-5 text-purple-300 group-hover:text-purple-100 transition-colors drop-shadow" />
             </div>
 
             {/* ─── Control 2: Secondary Needle B (Draggable to adjust span / rotate) ─── */}
@@ -284,10 +285,10 @@ export default function DividerTool({
                     pointerEvents: 'auto'
                 }}
                 onPointerDown={handlePointBPointerDown}
-                className="w-8 h-8 rounded-full bg-slate-900/90 border-2 border-cyan-400 shadow-xl flex items-center justify-center cursor-crosshair hover:scale-110 transition group"
-                title="Drag needle tip B to adjust span or rotate"
+                className="w-8 h-8 rounded-full bg-slate-900/95 border-2 border-slate-300 shadow-xl flex items-center justify-center cursor-ew-resize hover:border-cyan-400 hover:scale-110 transition group"
+                title="Secondary needle tip B (Drag with double-headed arrow to adjust span distance or angle)"
             >
-                <Crosshair className="w-4 h-4 text-cyan-300 group-hover:text-cyan-100" />
+                <ArgonNeedleIcon className="w-5 h-5 text-cyan-300 group-hover:text-cyan-100 transition-colors drop-shadow" />
             </div>
 
             {/* ─── Control 3: Distance Measurement Badge (Center of span) ─── */}
@@ -300,7 +301,8 @@ export default function DividerTool({
                     transform: 'translate(-50%, -50%)',
                     pointerEvents: 'auto'
                 }}
-                className="px-2.5 py-0.5 rounded-full bg-slate-900/95 border border-purple-400/80 shadow-md flex items-center gap-1.5"
+                className="px-2.5 py-0.5 rounded-full bg-slate-900/95 border border-purple-400/80 shadow-md flex items-center gap-1.5 cursor-ew-resize"
+                title="Current span distance between needle tips"
             >
                 <span className="text-[10.5px] font-mono font-bold text-purple-300">
                     {spanCm.toFixed(1)} cm

@@ -99,6 +99,7 @@ import WhiteboardPageQuizWidget from './WhiteboardPageQuizWidget';
 import WhiteboardAIPanel from './WhiteboardAIPanel';
 import WhiteboardAISlideShow from './WhiteboardAISlideShow';
 import { GeometryInstrumentsOverlay } from './geometryTools';
+import { getCustomToolbarIcon } from './geometryTools/CustomToolbarIcons';
 import WhiteboardEZWritePalette from './WhiteboardEZWritePalette';
 import api, { aiAPI } from '@/lib/api';
 import { toast } from 'react-hot-toast';
@@ -1203,6 +1204,7 @@ export default function Whiteboard({
     const [audioInputLevel, setAudioInputLevel] = useState(0);
     const [isAiThinking, setIsAiThinking] = useState(false);
     const [aiSolutionData, setAiSolutionData] = useState(null);
+    const [aiChatHistory, setAiChatHistory] = useState([]);
     const [activeSolutionStep, setActiveSolutionStep] = useState(null);
     const [externalGraphEquations, setExternalGraphEquations] = useState([]);
     const [showAiAssistantModal, setShowAiAssistantModal] = useState(false);
@@ -11447,17 +11449,25 @@ export default function Whiteboard({
 
     // ─── Geometry Instruments Stamping Callbacks (myViewBoard Inspired) ───
     const handleGeometryDrawLine = useCallback(({ startX, startY, endX, endY, lengthCm, angleDeg }) => {
+        const minX = Math.min(startX, endX);
+        const minY = Math.min(startY, endY);
+        const w = Math.max(Math.abs(endX - startX), 2);
+        const h = Math.max(Math.abs(endY - startY), 2);
         const newLine = {
             id: `geom_line_${Date.now()}`,
             type: 'line',
-            x: Math.min(startX, endX),
-            y: Math.min(startY, endY),
-            width: Math.max(Math.abs(endX - startX), 2),
-            height: Math.max(Math.abs(endY - startY), 2),
-            startX,
-            startY,
-            endX,
-            endY,
+            x: minX,
+            y: minY,
+            width: w,
+            height: h,
+            startX: startX - minX,
+            startY: startY - minY,
+            endX: endX - minX,
+            endY: endY - minY,
+            absStartX: startX,
+            absStartY: startY,
+            absEndX: endX,
+            absEndY: endY,
             color,
             strokeWidth: strokeWidth || 3,
             isLocked: false
@@ -11511,32 +11521,48 @@ export default function Whiteboard({
 
     const handleGeometryDrawAngle = useCallback(({ vertexX, vertexY, baseEndX, baseEndY, armEndX, armEndY, angleDeg, radiusPx }) => {
         const timestamp = Date.now();
+        const minX1 = Math.min(vertexX, baseEndX);
+        const minY1 = Math.min(vertexY, baseEndY);
+        const w1 = Math.max(Math.abs(baseEndX - vertexX), 2);
+        const h1 = Math.max(Math.abs(baseEndY - vertexY), 2);
         const baseRay = {
             id: `geom_ray1_${timestamp}`,
             type: 'line',
-            x: Math.min(vertexX, baseEndX),
-            y: Math.min(vertexY, baseEndY),
-            width: Math.max(Math.abs(baseEndX - vertexX), 2),
-            height: Math.max(Math.abs(baseEndY - vertexY), 2),
-            startX: vertexX,
-            startY: vertexY,
-            endX: baseEndX,
-            endY: baseEndY,
+            x: minX1,
+            y: minY1,
+            width: w1,
+            height: h1,
+            startX: vertexX - minX1,
+            startY: vertexY - minY1,
+            endX: baseEndX - minX1,
+            endY: baseEndY - minY1,
+            absStartX: vertexX,
+            absStartY: vertexY,
+            absEndX: baseEndX,
+            absEndY: baseEndY,
             color,
             strokeWidth: strokeWidth || 3,
             isLocked: false
         };
+        const minX2 = Math.min(vertexX, armEndX);
+        const minY2 = Math.min(vertexY, armEndY);
+        const w2 = Math.max(Math.abs(armEndX - vertexX), 2);
+        const h2 = Math.max(Math.abs(armEndY - vertexY), 2);
         const armRay = {
             id: `geom_ray2_${timestamp}`,
             type: 'line',
-            x: Math.min(vertexX, armEndX),
-            y: Math.min(vertexY, armEndY),
-            width: Math.max(Math.abs(armEndX - vertexX), 2),
-            height: Math.max(Math.abs(armEndY - vertexY), 2),
-            startX: vertexX,
-            startY: vertexY,
-            endX: armEndX,
-            endY: armEndY,
+            x: minX2,
+            y: minY2,
+            width: w2,
+            height: h2,
+            startX: vertexX - minX2,
+            startY: vertexY - minY2,
+            endX: armEndX - minX2,
+            endY: armEndY - minY2,
+            absStartX: vertexX,
+            absStartY: vertexY,
+            absEndX: armEndX,
+            absEndY: armEndY,
             color,
             strokeWidth: strokeWidth || 3,
             isLocked: false
@@ -11565,32 +11591,48 @@ export default function Whiteboard({
 
     const handleGeometryDrawPerpendicular = useCallback(({ corner, baseEnd, heightEnd }) => {
         const timestamp = Date.now();
+        const minX1 = Math.min(corner.x, baseEnd.x);
+        const minY1 = Math.min(corner.y, baseEnd.y);
+        const w1 = Math.max(Math.abs(baseEnd.x - corner.x), 2);
+        const h1 = Math.max(Math.abs(baseEnd.y - corner.y), 2);
         const baseLeg = {
             id: `geom_perp1_${timestamp}`,
             type: 'line',
-            x: Math.min(corner.x, baseEnd.x),
-            y: Math.min(corner.y, baseEnd.y),
-            width: Math.max(Math.abs(baseEnd.x - corner.x), 2),
-            height: Math.max(Math.abs(baseEnd.y - corner.y), 2),
-            startX: corner.x,
-            startY: corner.y,
-            endX: baseEnd.x,
-            endY: baseEnd.y,
+            x: minX1,
+            y: minY1,
+            width: w1,
+            height: h1,
+            startX: corner.x - minX1,
+            startY: corner.y - minY1,
+            endX: baseEnd.x - minX1,
+            endY: baseEnd.y - minY1,
+            absStartX: corner.x,
+            absStartY: corner.y,
+            absEndX: baseEnd.x,
+            absEndY: baseEnd.y,
             color,
             strokeWidth: strokeWidth || 3,
             isLocked: false
         };
+        const minX2 = Math.min(corner.x, heightEnd.x);
+        const minY2 = Math.min(corner.y, heightEnd.y);
+        const w2 = Math.max(Math.abs(heightEnd.x - corner.x), 2);
+        const h2 = Math.max(Math.abs(heightEnd.y - corner.y), 2);
         const heightLeg = {
             id: `geom_perp2_${timestamp}`,
             type: 'line',
-            x: Math.min(corner.x, heightEnd.x),
-            y: Math.min(corner.y, heightEnd.y),
-            width: Math.max(Math.abs(heightEnd.x - corner.x), 2),
-            height: Math.max(Math.abs(heightEnd.y - corner.y), 2),
-            startX: corner.x,
-            startY: corner.y,
-            endX: heightEnd.x,
-            endY: heightEnd.y,
+            x: minX2,
+            y: minY2,
+            width: w2,
+            height: h2,
+            startX: corner.x - minX2,
+            startY: corner.y - minY2,
+            endX: heightEnd.x - minX2,
+            endY: heightEnd.y - minY2,
+            absStartX: corner.x,
+            absStartY: corner.y,
+            absEndX: heightEnd.x,
+            absEndY: heightEnd.y,
             color,
             strokeWidth: strokeWidth || 3,
             isLocked: false
@@ -11624,17 +11666,25 @@ export default function Whiteboard({
     }, [color, strokeWidth, setShapeObjects, saveToHistory]);
 
     const handleGeometryMarkDistance = useCallback(({ startX, startY, endX, endY, distanceCm }) => {
+        const minX = Math.min(startX, endX);
+        const minY = Math.min(startY, endY);
+        const w = Math.max(Math.abs(endX - startX), 2);
+        const h = Math.max(Math.abs(endY - startY), 2);
         const markLine = {
             id: `geom_dist_${Date.now()}`,
             type: 'line',
-            x: Math.min(startX, endX),
-            y: Math.min(startY, endY),
-            width: Math.max(Math.abs(endX - startX), 2),
-            height: Math.max(Math.abs(endY - startY), 2),
-            startX,
-            startY,
-            endX,
-            endY,
+            x: minX,
+            y: minY,
+            width: w,
+            height: h,
+            startX: startX - minX,
+            startY: startY - minY,
+            endX: endX - minX,
+            endY: endY - minY,
+            absStartX: startX,
+            absStartY: startY,
+            absEndX: endX,
+            absEndY: endY,
             color: '#38bdf8',
             strokeWidth: 2,
             isLocked: false
@@ -15386,6 +15436,12 @@ export default function Whiteboard({
         if (!isAiRetry && (!isExactLocalCommand || hasImage)) {
             setVoiceFeedback(hasImage ? `🤖 Analyzing image question...` : `🤖 Asking AI: "${effectiveText}"...`);
             setIsAiThinking(true);
+            setAiChatHistory(prev => [...prev, {
+                id: `msg_u_${Date.now()}`,
+                role: 'user',
+                content: effectiveText || rawText,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            }]);
             try {
                 const response = await aiAPI.voiceCommand({
                     speechText: effectiveText,
@@ -15394,6 +15450,7 @@ export default function Whiteboard({
                         module: 'whiteboard',
                         currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard',
                         preferredProvider: whiteboardAiProvider !== 'auto' ? whiteboardAiProvider : undefined,
+                        conversationHistory: conversationHistoryRef.current ? conversationHistoryRef.current.slice(-6) : [],
                         ...(options?.imageDataUrl ? { imageDataUrl: options.imageDataUrl } : {}),
                         ...getWhiteboardSpatialContext()
                     }
@@ -15406,6 +15463,15 @@ export default function Whiteboard({
                 if (data?.error || data?.solutionMarkdown?.includes('⚠️ AI Model Error') || data?.success === false || data?.quotaExhausted) {
                     const rawError = data?.error || 'AI Model execution failed.';
                     const speech = data?.speechResponse || `AI model failed: ${rawError.slice(0, 140)}`;
+                    setAiChatHistory(prev => [...prev, {
+                        id: `msg_err_${Date.now()}`,
+                        role: 'assistant',
+                        question: effectiveText || rawText,
+                        content: `### ⚠️ AI Error\n\n${rawError}`,
+                        error: rawError,
+                        isError: true,
+                        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    }]);
                     setAiSolutionData({
                         question: effectiveText || rawText,
                         isError: true,
@@ -15459,6 +15525,20 @@ export default function Whiteboard({
                             modelUsed: data.modelUsed,
                             providerUsed: data.providerUsed
                         });
+
+                        setAiChatHistory(prev => [...prev, {
+                            id: `msg_a_${Date.now()}`,
+                            role: 'assistant',
+                            question: data?.extractedQuestion || effectiveText || rawText,
+                            content: data.solutionMarkdown || speech,
+                            speechResponse: speech,
+                            solutionMarkdown: data.solutionMarkdown || speech,
+                            canvasAction: data.canvasAction || coordAction || null,
+                            actions: actionsToRun,
+                            modelUsed: data.modelUsed,
+                            providerUsed: data.providerUsed,
+                            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        }]);
 
                         if (data?.physicsAction) {
                             setPhysicsSpaceConfig(data.physicsAction);
@@ -18892,25 +18972,32 @@ export default function Whiteboard({
                                     }`}
                                     title={t.label}
                                 >
-                                    {t.id === 'highlighter' ? (
-                                        <div className="relative flex items-center justify-center">
-                                            <t.icon className="w-4 h-4" style={{ color: highlighterColor }} />
-                                            <span
-                                                className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-slate-900 shadow-xs"
-                                                style={{ backgroundColor: highlighterColor }}
-                                            />
-                                        </div>
-                                    ) : t.id === 'pen' ? (
-                                        <div className="relative flex items-center justify-center">
-                                            <t.icon className="w-4 h-4" />
-                                            <span
-                                                className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-slate-900 shadow-xs"
-                                                style={{ backgroundColor: color }}
-                                            />
-                                        </div>
-                                    ) : (
-                                        <t.icon className="w-4 h-4" />
-                                    )}
+                                    {(() => {
+                                        const IconComp = getCustomToolbarIcon(t.id, t.icon);
+                                        if (t.id === 'highlighter') {
+                                            return (
+                                                <div className="relative flex items-center justify-center">
+                                                    <IconComp className="w-4 h-4" style={{ color: highlighterColor }} />
+                                                    <span
+                                                        className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-slate-900 shadow-xs"
+                                                        style={{ backgroundColor: highlighterColor }}
+                                                    />
+                                                </div>
+                                            );
+                                        }
+                                        if (t.id === 'pen') {
+                                            return (
+                                                <div className="relative flex items-center justify-center">
+                                                    <IconComp className="w-4 h-4" />
+                                                    <span
+                                                        className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-slate-900 shadow-xs"
+                                                        style={{ backgroundColor: color }}
+                                                    />
+                                                </div>
+                                            );
+                                        }
+                                        return <IconComp className="w-4 h-4" />;
+                                    })()}
                                 </button>
                                 
                                 {/* Popovers rendered with dynamic positioning */}
@@ -23741,6 +23828,31 @@ export default function Whiteboard({
                                     />
                                 );
                             } else if (shpObj.type === 'arc' || shpObj.type === 'curved_line') {
+                                if (shpObj.type === 'arc' && shpObj.radius) {
+                                    const r = shpObj.radius;
+                                    const cxLocal = shpObj.width / 2;
+                                    const cyLocal = shpObj.height / 2;
+                                    const sA = shpObj.startAngle !== undefined ? shpObj.startAngle : 0;
+                                    const eA = shpObj.endAngle !== undefined ? shpObj.endAngle : (sA + Math.PI);
+                                    const x1 = cxLocal + r * Math.cos(sA);
+                                    const y1 = cyLocal + r * Math.sin(sA);
+                                    const x2 = cxLocal + r * Math.cos(eA);
+                                    const y2 = cyLocal + r * Math.sin(eA);
+                                    let diff = eA - sA;
+                                    if (diff < 0) diff += 2 * Math.PI;
+                                    const largeArc = diff > Math.PI ? 1 : 0;
+                                    return (
+                                        <path
+                                            d={`M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`}
+                                            fill={fill}
+                                            stroke={shpObj.color}
+                                            strokeWidth={shpObj.strokeWidth}
+                                            strokeLinecap="round"
+                                            strokeDasharray={dashArray}
+                                            style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}
+                                        />
+                                    );
+                                }
                                 return (
                                     <path
                                         d={`M 0 ${shpObj.height} Q ${shpObj.width / 2} 0 ${shpObj.width} ${shpObj.height}`}
@@ -23819,10 +23931,19 @@ export default function Whiteboard({
                                     </g>
                                 );
                             } else if (shpObj.type === 'line') {
-                                const localStartX = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
-                                const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
-                                const localEndX = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
-                                const localEndY = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                                const norm = (val, maxCoord, basePos) => {
+                                    if (val === undefined) return 0;
+                                    if (basePos !== undefined && val >= (basePos - 2) && val > (maxCoord + 5)) return val - basePos;
+                                    return val;
+                                };
+                                const rawSx = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+                                const rawSy = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+                                const rawEx = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+                                const rawEy = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                                const localStartX = norm(rawSx, shpObj.width, shpObj.x);
+                                const localStartY = norm(rawSy, shpObj.height, shpObj.y);
+                                const localEndX = norm(rawEx, shpObj.width, shpObj.x);
+                                const localEndY = norm(rawEy, shpObj.height, shpObj.y);
                                 return (
                                     <g>
                                         <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke="transparent" strokeWidth={Math.max(shpObj.strokeWidth + 16, 20)} strokeLinecap="round" style={{ pointerEvents: (tool === 'select' || isSelected) ? 'stroke' : 'none', cursor: isSelected ? 'move' : 'pointer' }} />
@@ -23830,10 +23951,19 @@ export default function Whiteboard({
                                     </g>
                                 );
                             } else if (shpObj.type === 'arrow') {
-                                const localStartX = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
-                                const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
-                                const localEndX = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
-                                const localEndY = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                                const norm = (val, maxCoord, basePos) => {
+                                    if (val === undefined) return 0;
+                                    if (basePos !== undefined && val >= (basePos - 2) && val > (maxCoord + 5)) return val - basePos;
+                                    return val;
+                                };
+                                const rawSx = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+                                const rawSy = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+                                const rawEx = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+                                const rawEy = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                                const localStartX = norm(rawSx, shpObj.width, shpObj.x);
+                                const localStartY = norm(rawSy, shpObj.height, shpObj.y);
+                                const localEndX = norm(rawEx, shpObj.width, shpObj.x);
+                                const localEndY = norm(rawEy, shpObj.height, shpObj.y);
                                 const angle = Math.atan2(localEndY - localStartY, localEndX - localStartX);
                                 const headLength = shpObj.strokeWidth * 4;
                                 const p1 = `${localEndX},${localEndY}`;
@@ -23847,10 +23977,19 @@ export default function Whiteboard({
                                     </g>
                                 );
                             } else if (shpObj.type === 'double_arrow') {
-                                const localStartX = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
-                                const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
-                                const localEndX = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
-                                const localEndY = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                                const norm = (val, maxCoord, basePos) => {
+                                    if (val === undefined) return 0;
+                                    if (basePos !== undefined && val >= (basePos - 2) && val > (maxCoord + 5)) return val - basePos;
+                                    return val;
+                                };
+                                const rawSx = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+                                const rawSy = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+                                const rawEx = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+                                const rawEy = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                                const localStartX = norm(rawSx, shpObj.width, shpObj.x);
+                                const localStartY = norm(rawSy, shpObj.height, shpObj.y);
+                                const localEndX = norm(rawEx, shpObj.width, shpObj.x);
+                                const localEndY = norm(rawEy, shpObj.height, shpObj.y);
                                 const angle = Math.atan2(localEndY - localStartY, localEndX - localStartX);
                                 const headLength = shpObj.strokeWidth * 4;
                                 const p1 = `${localEndX},${localEndY}`;
@@ -23868,10 +24007,19 @@ export default function Whiteboard({
                                     </g>
                                 );
                             } else if (shpObj.type === 'dashed_line') {
-                                const localStartX = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
-                                const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
-                                const localEndX = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
-                                const localEndY = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                                const norm = (val, maxCoord, basePos) => {
+                                    if (val === undefined) return 0;
+                                    if (basePos !== undefined && val >= (basePos - 2) && val > (maxCoord + 5)) return val - basePos;
+                                    return val;
+                                };
+                                const rawSx = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+                                const rawSy = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+                                const rawEx = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+                                const rawEy = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+                                const localStartX = norm(rawSx, shpObj.width, shpObj.x);
+                                const localStartY = norm(rawSy, shpObj.height, shpObj.y);
+                                const localEndX = norm(rawEx, shpObj.width, shpObj.x);
+                                const localEndY = norm(rawEy, shpObj.height, shpObj.y);
                                 return (
                                     <g>
                                         <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke="transparent" strokeWidth={Math.max(shpObj.strokeWidth + 16, 20)} strokeLinecap="round" style={{ pointerEvents: (tool === 'select' || isSelected) ? 'stroke' : 'none', cursor: isSelected ? 'move' : 'pointer' }} />
@@ -25605,7 +25753,7 @@ export default function Whiteboard({
                             </div>
 
                             {/* Static Unrotated Floating Shape Format Bar */}
-                            {isSelected && (selectedShapeIds.length === 1 && selectedShapeIds[0] === shpObj.id) && editingShapeTextId !== shpObj.id && !shapeDragState && shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && (
+                            {(isSelected || (hoveredShapeId === shpObj.id && (tool === 'select' || tool === 'line' || tool === 'shape'))) && (!selectedShapeIds.length || selectedShapeIds.includes(shpObj.id) || hoveredShapeId === shpObj.id) && editingShapeTextId !== shpObj.id && !shapeDragState && shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && (
                                 <div
                                     className="absolute pointer-events-auto select-none"
                                     style={{
@@ -27288,6 +27436,7 @@ export default function Whiteboard({
                         setIsSpotlightActive={setIsSpotlightActive}
                         isCurtainActive={isCurtainActive}
                         setIsCurtainActive={setIsCurtainActive}
+                        onOpenAiAssistant={() => setShowAiAssistantModal(true)}
                         isInstructor={isInstructor}
                         onClose={() => setShowEZWritePalette(false)}
                     />
@@ -27850,6 +27999,15 @@ export default function Whiteboard({
             <WhiteboardAIAssistantModal
                 isOpen={showAiAssistantModal}
                 onClose={() => setShowAiAssistantModal(false)}
+                chatHistory={aiChatHistory}
+                onClearChat={() => setAiChatHistory([])}
+                onSendMessage={(msg) => {
+                    setShowAiAssistantModal(true);
+                    executeVoiceCommand(msg);
+                }}
+                onRetryMessage={(msg) => {
+                    executeVoiceCommand(msg, true);
+                }}
                 question={aiSolutionData?.question}
                 speechResponse={aiSolutionData?.speechResponse}
                 solutionMarkdown={aiSolutionData?.solutionMarkdown}

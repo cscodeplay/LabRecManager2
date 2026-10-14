@@ -24,6 +24,7 @@ export default function ProtractorTool({
     initialMeasureAngle = 45, // Angle measured relative to base
     scale = 1,
     onDrawAngle,
+    onDrawLine,
     onClose
 }) {
     // Vertex position (center origin of protractor) in pure Canvas Coordinates
@@ -186,6 +187,28 @@ export default function ProtractorTool({
             radiusPx
         });
     }, [onDrawAngle, vertex, radiusPx, baseRotation, measureAngle]);
+
+    // ─── 5. Draw Baseline Along Protractor Diameter ───
+    const handleDrawBaseline = useCallback(() => {
+        if (!onDrawLine) return;
+        const forwardBaseRad = degToRad(baseRotation);
+        const cos = Math.cos(forwardBaseRad);
+        const sin = Math.sin(forwardBaseRad);
+        const startX = vertex.x - radiusPx * cos;
+        const startY = vertex.y - radiusPx * sin;
+        const endX = vertex.x + radiusPx * cos;
+        const endY = vertex.y + radiusPx * sin;
+
+        onDrawLine({
+            startX: Math.round(startX),
+            startY: Math.round(startY),
+            endX: Math.round(endX),
+            endY: Math.round(endY),
+            lengthPx: radiusPx * 2,
+            lengthCm: radiusCm * 2,
+            angleDeg: baseRotation
+        });
+    }, [onDrawLine, vertex, radiusPx, radiusCm, baseRotation]);
 
     // Local coordinates of measuring arm tip
     const armRad = degToRad(measureAngle);
@@ -378,8 +401,8 @@ export default function ProtractorTool({
                 // Position of measuring handle in canvas coordinates
                 const forwardBaseRad = degToRad(baseRotation);
                 const forwardArmRad = degToRad(baseRotation - measureAngle);
-                const hx = vertex.x + (radiusPx + 14) * Math.cos(forwardArmRad);
-                const hy = vertex.y + (radiusPx + 14) * Math.sin(forwardArmRad);
+                const hx = vertex.x + (radiusPx + 10) * Math.cos(forwardArmRad);
+                const hy = vertex.y + (radiusPx + 10) * Math.sin(forwardArmRad);
 
                 return (
                     <div
@@ -392,10 +415,10 @@ export default function ProtractorTool({
                             pointerEvents: 'auto'
                         }}
                         onPointerDown={handleArmPointerDown}
-                        className="w-7 h-7 rounded-full bg-slate-900 border-2 border-cyan-400 shadow-xl flex items-center justify-center cursor-crosshair hover:bg-cyan-500 hover:text-slate-950 text-cyan-300 transition"
+                        className="w-5 h-5 rounded-full bg-slate-900 border border-cyan-400 shadow-md flex items-center justify-center cursor-crosshair hover:bg-cyan-500 hover:text-slate-950 text-cyan-300 transition hover:scale-110"
                         title="Drag along rim to measure or draw angle"
                     >
-                        <span className="text-[9px] font-mono font-bold leading-none">
+                        <span className="text-[7.5px] font-mono font-bold leading-none">
                             {measureAngle.toFixed(0)}°
                         </span>
                     </div>
@@ -406,8 +429,8 @@ export default function ProtractorTool({
             {(() => {
                 // Handle at the top of the protractor semicircle (at local 90°, upwards)
                 const rotRad = degToRad(baseRotation - 90);
-                const bx = vertex.x + (radiusPx + 16) * Math.cos(rotRad);
-                const by = vertex.y + (radiusPx + 16) * Math.sin(rotRad);
+                const bx = vertex.x + (radiusPx + 12) * Math.cos(rotRad);
+                const by = vertex.y + (radiusPx + 12) * Math.sin(rotRad);
 
                 return (
                     <div
@@ -420,10 +443,10 @@ export default function ProtractorTool({
                             pointerEvents: 'auto'
                         }}
                         onPointerDown={handleRotateBasePointerDown}
-                        className="w-7 h-7 rounded-full bg-slate-900/90 border-2 border-slate-400 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-slate-700 text-slate-200 transition"
+                        className="w-5 h-5 rounded-full bg-slate-900/95 border border-slate-400 shadow-md flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-slate-700 text-slate-200 transition hover:scale-110"
                         title="Drag to rotate protractor baseline"
                     >
-                        <RotateCw className="w-3.5 h-3.5" />
+                        <RotateCw className="w-2.5 h-2.5" />
                     </div>
                 );
             })()}
@@ -458,6 +481,19 @@ export default function ProtractorTool({
                     <Check className="w-2.5 h-2.5 stroke-[3]" />
                     <span>Draw Angle</span>
                 </button>
+
+                {/* Draw Baseline Straight Line */}
+                {onDrawLine && (
+                    <button
+                        type="button"
+                        onClick={handleDrawBaseline}
+                        className="flex items-center gap-1 px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-white font-bold text-[10px] rounded-full border border-slate-700 shadow transition active:scale-95"
+                        title="Draw straight baseline along protractor edge"
+                    >
+                        <Pencil className="w-2.5 h-2.5" />
+                        <span>Baseline</span>
+                    </button>
+                )}
 
                 {/* Close Protractor */}
                 <button
