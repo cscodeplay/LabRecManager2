@@ -17,7 +17,7 @@ import {
     Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX,
     ChevronUp, ChevronsUp, ChevronsDown, FileText, Check, Pause, Play, RotateCcw, Globe, Music,
     Underline, Bold, Italic, Shapes, Database, MessageSquare, Sigma, Calculator, Layers, ScanText,
-    ZoomIn, ZoomOut, BookOpen, Gamepad2, Bot, Atom
+    ZoomIn, ZoomOut, BookOpen, Gamepad2, Bot, Atom, MoreHorizontal
 } from 'lucide-react';
 import fixWebmDuration from 'fix-webm-duration';
 import katex from 'katex';
@@ -684,12 +684,16 @@ export default function Whiteboard({
     const [showRecorder, setShowRecorder] = useState(false);
     const [showSelectPicker, setShowSelectPicker] = useState(false);
     const [showHighlighterPicker, setShowHighlighterPicker] = useState(false);
+    const [showMathFlyout, setShowMathFlyout] = useState(false);
+    const [showScienceFlyout, setShowScienceFlyout] = useState(false);
+    const [showMediaFlyout, setShowMediaFlyout] = useState(false);
+    const [showToolsFlyout, setShowToolsFlyout] = useState(false);
 
     const [shapeType, setShapeType] = useState('rectangle'); // rectangle, circle, triangle, star
     const [shapePreview, setShapePreview] = useState(null);
     const [selectMode, setSelectMode] = useState('rectangle'); // rectangle, lasso
     const [toolbarDock, setToolbarDock] = useState('bottom'); // bottom, top, left, right, float
-    const [isToolbarCollapsed, setIsToolbarCollapsed] = useState(false);
+    const [isToolbarCollapsed, setIsToolbarCollapsed] = useState(true);
     const [toolbarPos, setToolbarPos] = useState({ x: 250, y: 650 });
     const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
     const toolbarRef = useRef(null);
@@ -7263,6 +7267,10 @@ export default function Whiteboard({
     }, [tool, isAutoShape, color, strokeWidth, isShiftDown]);
 
     const startDrawing = useCallback((e) => {
+        setShowMathFlyout(false);
+        setShowScienceFlyout(false);
+        setShowMediaFlyout(false);
+        setShowToolsFlyout(false);
         if (!canUserDraw) return;
         e.preventDefault();
         let pos = getPosition(e);
@@ -18545,7 +18553,17 @@ export default function Whiteboard({
                     ...(isInstructor ? [{ id: 'permissions', icon: Users, label: 'Manage Permissions', important: false }] : []),
                 ];
 
-                const displayedTools = isToolbarCollapsed ? allTools.filter(t => t.important) : allTools;
+                const coreTools = [
+                    { id: 'select', icon: selectMode === 'lasso' ? Wand2 : MousePointer2, label: 'Select (V)' },
+                    { id: 'pen', icon: penMode === 'sparkle' ? Sparkles : Pencil, label: penMode === 'sparkle' ? 'Sparkle Pen (P)' : 'Pen & Smart Draw (P)' },
+                    { id: 'highlighter', icon: Highlighter, label: 'Highlighter (H)' },
+                    { id: 'eraser', icon: Eraser, label: 'Eraser (E)' },
+                    { id: 'line', icon: lineType.startsWith('connector') ? Waypoints : (lineType === 'arrow' ? MoveRight : Minus), label: 'Lines & Arrows' },
+                    { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : (shapeType === 'parallelogram' ? ParallelogramIcon : RectangleHorizontal))), label: 'Shapes' },
+                    { id: 'text', icon: Type, label: 'Text (T)' },
+                ];
+
+                const displayedTools = isToolbarCollapsed ? coreTools : allTools;
 
                 return (
                 <div 
@@ -18579,12 +18597,18 @@ export default function Whiteboard({
                         <GripVertical className="w-3.5 h-3.5" />
                     </div>
 
-                    {/* Collapse to Important Tools Toggle Button */}
+                    {/* Toggle between Grouped Categories Mode (default) and Flat All-Tools Mode */}
                     <button
                         type="button"
-                        onClick={() => setIsToolbarCollapsed(prev => !prev)}
+                        onClick={() => {
+                            setIsToolbarCollapsed(prev => !prev);
+                            setShowMathFlyout(false);
+                            setShowScienceFlyout(false);
+                            setShowMediaFlyout(false);
+                            setShowToolsFlyout(false);
+                        }}
                         className="p-1 hover:bg-slate-800 text-slate-400 hover:text-amber-400 rounded-full transition flex items-center justify-center shrink-0"
-                        title={isToolbarCollapsed ? "Expand Toolbar (Show All Tools)" : "Collapse Toolbar (Important Tools Only)"}
+                        title={isToolbarCollapsed ? "Expand Toolbar: Flat layout (All 28 Tools)" : "Group Toolbar: Compact categories (Clean View)"}
                     >
                         {isToolbarCollapsed ? <Maximize2 className="w-3.5 h-3.5 text-amber-400" /> : <Minimize2 className="w-3.5 h-3.5" />}
                     </button>
@@ -18597,6 +18621,10 @@ export default function Whiteboard({
                             <div key={t.id} className="relative">
                                 <button
                                     onClick={() => {
+                                        setShowMathFlyout(false);
+                                        setShowScienceFlyout(false);
+                                        setShowMediaFlyout(false);
+                                        setShowToolsFlyout(false);
                                         if (t.id === 'math_tablet') {
                                             setShowMathTablet(true);
                                             return;
@@ -19357,6 +19385,625 @@ export default function Whiteboard({
                                 )}
                             </div>
                         ))}
+
+                        {/* Grouped Category Flyouts (Active when Toolbar is in Grouped Mode) */}
+                        {isToolbarCollapsed && (
+                            <>
+                                <div className={`w-px ${isVertical ? 'h-0.5 w-5 my-0.5' : 'h-4 mx-0.5'} bg-slate-700/80 shrink-0`} />
+
+                                {/* 1. Math & Geometry Suite Flyout */}
+                                <div className="relative">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowMathFlyout(prev => !prev);
+                                            setShowScienceFlyout(false);
+                                            setShowMediaFlyout(false);
+                                            setShowToolsFlyout(false);
+                                            setShowStrokePicker(false);
+                                            setShowShapePicker(false);
+                                            setShowEraserPicker(false);
+                                            setShowSelectPicker(false);
+                                            setShowHighlighterPicker(false);
+                                            setShowLinePicker(false);
+                                        }}
+                                        className={`p-1 rounded-full transition-colors flex items-center justify-center relative ${
+                                            showMathFlyout ||
+                                            showGeometryInstruments ||
+                                            showParametricModal ||
+                                            showMathTablet ||
+                                            showMathSolver ||
+                                            showEquationModal
+                                                ? 'bg-primary-500 text-white shadow-inner'
+                                                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                        }`}
+                                        title="Math & Geometry Suite (Instruments, Graph, Solver, MIP)"
+                                    >
+                                        <Calculator className="w-3.5 h-3.5" />
+                                        {(showGeometryInstruments || showParametricModal || showMathTablet || showMathSolver || showEquationModal) && (
+                                            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 border border-slate-900" />
+                                        )}
+                                    </button>
+
+                                    {showMathFlyout && (
+                                        <div
+                                            className={`absolute ${popoverPos} p-2 bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl z-60 flex flex-col gap-1 min-w-[240px] text-slate-200 animate-in fade-in zoom-in-95 duration-100`}
+                                            style={{ backgroundColor: '#0f172a' }}
+                                        >
+                                            <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800 mb-1">
+                                                <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <Calculator className="w-3 h-3 text-primary-400" />
+                                                    Math & Geometry Suite
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowMathFlyout(false)}
+                                                    className="p-0.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowGeometryInstruments(prev => !prev);
+                                                    setShowMathFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showGeometryInstruments ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                                                    <Compass className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-xs">Geometry Instruments</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">Ruler, Compass, Divider, Protractor, Set Square</span>
+                                                </div>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowParametricModal(true);
+                                                    setShowMathFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showParametricModal ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
+                                                    <Compass className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-xs">Parametric Geometry</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">Equations, angles & curves</span>
+                                                </div>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    handleInsertGraph();
+                                                    setShowMathFlyout(false);
+                                                }}
+                                                className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
+                                                    <LineChart className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-xs">Graph Plotter</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">Plot 2D equations & functions</span>
+                                                </div>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowMathTablet(true);
+                                                    setShowMathFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showMathTablet ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
+                                                    <Calculator className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-xs">Math Input Tablet</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">Handwriting to LaTeX (MIP)</span>
+                                                </div>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowMathSolver(true);
+                                                    setShowMathFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showMathSolver ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                                    <Sparkles className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-xs">Auto Math Solver</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">Step-by-step problem solver</span>
+                                                </div>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setEquationInitialLatex('\\int_{0}^{\\infty} x^2 e^{-x}\\,dx = 2');
+                                                    setEditingEquationId(null);
+                                                    setShowEquationModal(true);
+                                                    setShowMathFlyout(false);
+                                                }}
+                                                className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                                                    <Sigma className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-xs">LaTeX Equation Editor</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">Insert custom math formula</span>
+                                                </div>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 2. Science Lab & 3D Flyout */}
+                                <div className="relative">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowScienceFlyout(prev => !prev);
+                                            setShowMathFlyout(false);
+                                            setShowMediaFlyout(false);
+                                            setShowToolsFlyout(false);
+                                            setShowStrokePicker(false);
+                                            setShowShapePicker(false);
+                                            setShowEraserPicker(false);
+                                            setShowSelectPicker(false);
+                                            setShowHighlighterPicker(false);
+                                            setShowLinePicker(false);
+                                        }}
+                                        className={`p-1 rounded-full transition-colors flex items-center justify-center relative ${
+                                            showScienceFlyout || showPhysicsSpace || showDomainLibrary
+                                                ? 'bg-primary-500 text-white shadow-inner'
+                                                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                        }`}
+                                        title="Science Lab & 3D (Physics Space, 3D Domain Models)"
+                                    >
+                                        <Atom className="w-3.5 h-3.5" />
+                                        {(showPhysicsSpace || showDomainLibrary) && (
+                                            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-violet-400 border border-slate-900" />
+                                        )}
+                                    </button>
+
+                                    {showScienceFlyout && (
+                                        <div
+                                            className={`absolute ${popoverPos} p-2 bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl z-60 flex flex-col gap-1 min-w-[240px] text-slate-200 animate-in fade-in zoom-in-95 duration-100`}
+                                            style={{ backgroundColor: '#0f172a' }}
+                                        >
+                                            <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800 mb-1">
+                                                <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <Atom className="w-3 h-3 text-violet-400" />
+                                                    Science Lab & 3D
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowScienceFlyout(false)}
+                                                    className="p-0.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowPhysicsSpace(prev => !prev);
+                                                    setShowScienceFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showPhysicsSpace ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-violet-500/20 text-violet-400 flex items-center justify-center shrink-0">
+                                                    <Atom className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-xs">Physics Space Lab</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">Matter.js 2D physics & gravity</span>
+                                                </div>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowDomainLibrary(true);
+                                                    setShowScienceFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showDomainLibrary ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
+                                                    <Box className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-xs">3D Objects Library</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">Interactive 3D geometry & models</span>
+                                                </div>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 3. Media & Research Flyout */}
+                                <div className="relative">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowMediaFlyout(prev => !prev);
+                                            setShowMathFlyout(false);
+                                            setShowScienceFlyout(false);
+                                            setShowToolsFlyout(false);
+                                            setShowStrokePicker(false);
+                                            setShowShapePicker(false);
+                                            setShowEraserPicker(false);
+                                            setShowSelectPicker(false);
+                                            setShowHighlighterPicker(false);
+                                            setShowLinePicker(false);
+                                        }}
+                                        className={`p-1 rounded-full transition-colors flex items-center justify-center relative ${
+                                            showMediaFlyout || rightSiderollMode !== 'closed' || showMediaModal
+                                                ? 'bg-primary-500 text-white shadow-inner'
+                                                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                        }`}
+                                        title="Media & Research (Google Images, YouTube, PDF, Video, Audio)"
+                                    >
+                                        <Globe className="w-3.5 h-3.5" />
+                                        {(rightSiderollMode !== 'closed' || showMediaModal) && (
+                                            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 border border-slate-900" />
+                                        )}
+                                    </button>
+
+                                    {showMediaFlyout && (
+                                        <div
+                                            className={`absolute ${popoverPos} p-2 bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl z-60 flex flex-col gap-1 min-w-[240px] text-slate-200 animate-in fade-in zoom-in-95 duration-100`}
+                                            style={{ backgroundColor: '#0f172a' }}
+                                        >
+                                            <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800 mb-1">
+                                                <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <Globe className="w-3 h-3 text-emerald-400" />
+                                                    Media & Research
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowMediaFlyout(false)}
+                                                    className="p-0.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setRightSiderollMode(prev => prev === 'closed' ? 'partial' : 'closed');
+                                                    setShowMediaFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                                                    rightSiderollMode !== 'closed' ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                                                    <Globe className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-xs">Search Side Panel</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">Google Images & YouTube search</span>
+                                                </div>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowMediaModal(true);
+                                                    setShowMediaFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showMediaModal ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                                    <Film className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-xs">Media & Documents</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">PDF, Video, Audio, Record, Web</span>
+                                                </div>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    imageInputRef.current?.click();
+                                                    setShowMediaFlyout(false);
+                                                }}
+                                                className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-pink-500/20 text-pink-400 flex items-center justify-center shrink-0">
+                                                    <ImageIcon className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-xs">Insert Local Image</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">Upload image file from device</span>
+                                                </div>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 4. Classroom Toolbox Flyout */}
+                                <div className="relative">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowToolsFlyout(prev => !prev);
+                                            setShowMathFlyout(false);
+                                            setShowScienceFlyout(false);
+                                            setShowMediaFlyout(false);
+                                            setShowStrokePicker(false);
+                                            setShowShapePicker(false);
+                                            setShowEraserPicker(false);
+                                            setShowSelectPicker(false);
+                                            setShowHighlighterPicker(false);
+                                            setShowLinePicker(false);
+                                        }}
+                                        className={`p-1 rounded-full transition-colors flex items-center justify-center relative ${
+                                            showToolsFlyout ||
+                                            showClassroomTimer ||
+                                            isSpotlightActive ||
+                                            isCurtainActive ||
+                                            tool === 'laser' ||
+                                            showRecorder ||
+                                            showTasksPanel ||
+                                            showTemplateGallery ||
+                                            showGameSelector ||
+                                            showShortcutsModal ||
+                                            showPermissions
+                                                ? 'bg-primary-500 text-white shadow-inner'
+                                                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                        }`}
+                                        title="Classroom Toolbox & Utilities (Timer, Spotlight, Curtain, Laser, Recorder...)"
+                                    >
+                                        <MoreHorizontal className="w-3.5 h-3.5" />
+                                        {(showClassroomTimer || isSpotlightActive || isCurtainActive || tool === 'laser' || showRecorder || showTasksPanel) && (
+                                            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 border border-slate-900" />
+                                        )}
+                                    </button>
+
+                                    {showToolsFlyout && (
+                                        <div
+                                            className={`absolute ${isVertical ? popoverPos : (toolbarDock === 'top' ? 'top-full right-0 mt-2' : 'bottom-full right-0 mb-2')} p-2 bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl z-60 flex flex-col gap-1 min-w-[230px] max-h-[70vh] overflow-y-auto hide-scrollbar text-slate-200 animate-in fade-in zoom-in-95 duration-100`}
+                                            style={{ backgroundColor: '#0f172a' }}
+                                        >
+                                            <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800 mb-1 shrink-0">
+                                                <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <MoreHorizontal className="w-3 h-3 text-primary-400" />
+                                                    Classroom Toolbox
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowToolsFlyout(false)}
+                                                    className="p-0.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowClassroomTimer(prev => !prev);
+                                                    setShowToolsFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showClassroomTimer ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center shrink-0">
+                                                    <Clock className="w-3.5 h-3.5" />
+                                                </div>
+                                                <span>Timer & Stopwatch</span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setIsSpotlightActive(prev => {
+                                                        const next = !prev;
+                                                        if (next) {
+                                                            toast('Spotlight active: move cursor to illuminate, scroll to zoom', { icon: '🔦' });
+                                                            setSelectedShapeIds([]);
+                                                            setSelectedTextIds([]);
+                                                            setSelectedImageId(null);
+                                                        }
+                                                        return next;
+                                                    });
+                                                    setShowToolsFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                    isSpotlightActive ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-yellow-500/20 text-yellow-400 flex items-center justify-center shrink-0">
+                                                    <TorchIcon className="w-3.5 h-3.5" />
+                                                </div>
+                                                <span>Spotlight Focus</span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setIsCurtainActive(prev => {
+                                                        const next = !prev;
+                                                        if (next) toast('Screen Curtain active: drag bottom bar to reveal', { icon: '🎭' });
+                                                        return next;
+                                                    });
+                                                    setShowToolsFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                    isCurtainActive ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                                                    <StickyNoteIcon className="w-3.5 h-3.5" />
+                                                </div>
+                                                <span>Screen Curtain</span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setTool('laser');
+                                                    setShowToolsFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                    tool === 'laser' ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+                                                    <Sparkles className="w-3.5 h-3.5" />
+                                                </div>
+                                                <span>Laser Pointer (L)</span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    handleInsertDateTime();
+                                                    setShowToolsFlyout(false);
+                                                }}
+                                                className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
+                                                    <CalendarClock className="w-3.5 h-3.5" />
+                                                </div>
+                                                <span>Insert DateTime</span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowRecorder(!showRecorder);
+                                                    setShowToolsFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showRecorder ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-red-500/20 text-red-400 flex items-center justify-center shrink-0">
+                                                    <Video className="w-3.5 h-3.5" />
+                                                </div>
+                                                <span>Screen Recorder</span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowTasksPanel(prev => !prev);
+                                                    setShowToolsFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showTasksPanel ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-teal-500/20 text-teal-400 flex items-center justify-center shrink-0">
+                                                    <ListTodo className="w-3.5 h-3.5" />
+                                                </div>
+                                                <span>Tasks Checklist</span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowTemplateGallery(true);
+                                                    setShowToolsFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showTemplateGallery ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
+                                                    <LayoutTemplate className="w-3.5 h-3.5" />
+                                                </div>
+                                                <span>Templates & SmartArt</span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowGameSelector(true);
+                                                    setShowToolsFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showGameSelector ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                                                    <Gamepad2 className="w-3.5 h-3.5" />
+                                                </div>
+                                                <span>Whiteboard Games</span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShortcutsModalTab('shortcuts');
+                                                    setShowShortcutsModal(true);
+                                                    setShowToolsFlyout(false);
+                                                }}
+                                                className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-slate-500/20 text-slate-400 flex items-center justify-center shrink-0">
+                                                    <Keyboard className="w-3.5 h-3.5" />
+                                                </div>
+                                                <span>Shortcuts (Cmd+/)</span>
+                                            </button>
+
+                                            {isInstructor && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setShowPermissions(true);
+                                                        setShowToolsFlyout(false);
+                                                    }}
+                                                    className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                        showPermissions ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                    }`}
+                                                >
+                                                    <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                                        <Users className="w-3.5 h-3.5" />
+                                                    </div>
+                                                    <span>Manage Permissions</span>
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
                         <input
                             type="file"
                             ref={imageInputRef}
