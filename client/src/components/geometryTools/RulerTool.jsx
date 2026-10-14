@@ -1,72 +1,78 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
     RotateCw,
     X,
     Check,
-    Move,
-    Maximize2,
-    FlipHorizontal,
-    Ruler as RulerIcon
+    Pencil
 } from 'lucide-react';
 import {
     PX_PER_CM,
     PX_PER_MM,
-    PX_PER_INCH,
     pxToCm,
-    pxToInches,
     snapAngleDeg,
-    degToRad
+    degToRad,
+    screenToCanvasCoords
 } from './geometryMath';
 
 export default function RulerTool({
     initialX = 180,
     initialY = 180,
-    initialLengthCm = 18,
+    initialLengthCm = 20,
     initialAngle = 0,
     scale = 1,
     onDrawLine,
     onClose
 }) {
     const [pos, setPos] = useState({ x: initialX, y: initialY });
-    const [lengthCm, setLengthCm] = useState(initialLengthCm);
+    const [lengthCm, setLengthCm] = useState(Math.min(20, Math.max(10, initialLengthCm)));
     const [angle, setAngle] = useState(initialAngle);
-    const [unitMode, setUnitMode] = useState('cm'); // 'cm' | 'in'
-    const [isFlipped, setIsFlipped] = useState(false);
+
+    // Live edge drawing state { startT: number, endT: number } in local px
+    const [activeEdgeDrawing, setActiveEdgeDrawing] = useState(null);
 
     const lengthPx = lengthCm * PX_PER_CM;
-    const heightPx = 76; // ruler width/thickness
+    const heightPx = 48; // Slimmer, realistic physical ruler width (48px ~ 1.25 cm visual)
 
+    // Repositioning drag ref
     const isDraggingRef = useRef(false);
-    const dragStartRef = useRef({ x: 0, y: 0 });
+    const dragStartRef = useRef({ canvasStartX: 0, canvasStartY: 0, initialPosX: 0, initialPosY: 0 });
 
+    // Inner rotation handle drag ref
     const isRotatingRef = useRef(false);
-    const rotateStartRef = useRef({ x: 0, y: 0, initialAngle: 0 });
+    const rotateOffsetRef = useRef(0);
 
+    // Length resizing drag ref
     const isResizingRef = useRef(false);
-    const resizeStartRef = useRef({ x: 0, initialLength: 0 });
+    const resizeStartRef = useRef({ canvasStartX: 0, initialLengthCm: 20 });
 
-    // Handle Repositioning Drag
+    // Edge drawing drag ref
+    const isDrawingEdgeRef = useRef(false);
+
+    // ─── 1. Reposition Ruler (Draggable from anywhere on surface) ───
     const handleBodyPointerDown = (e) => {
         if (e.target.closest('button') || e.target.closest('[data-handle="true"]')) return;
         e.stopPropagation();
         e.preventDefault();
         isDraggingRef.current = true;
+
+        const coords = screenToCanvasCoords(e.clientX, e.clientY);
         dragStartRef.current = {
-            x: e.clientX,
-            y: e.clientY,
-            posX: pos.x,
-            posY: pos.y
+            canvasStartX: coords.x,
+            canvasStartY: coords.y,
+            initialPosX: pos.x,
+            initialPosY: pos.y
         };
 
         const onPointerMove = (moveEvt) => {
             if (!isDraggingRef.current) return;
-            const dx = (moveEvt.clientX - dragStartRef.current.x) / (scale || 1);
-            const dy = (moveEvt.clientY - dragStartRef.current.y) / (scale || 1);
+            const current = screenToCanvasCoords(moveEvt.clientX, moveEvt.clientY);
+            const dx = current.x - dragStartRef.current.canvasStartX;
+            const dy = current.y - dragStartRef.current.canvasStartY;
             setPos({
-                x: Math.round(dragStartRef.current.posX + dx),
-                y: Math.round(dragStartRef.current.posY + dy)
+                x: Math.round(dragStartRef.current.initialPosX + dx),
+                y: Math.round(dragStartRef.current.initialPosY + dy)
             });
         };
 
@@ -80,21 +86,34 @@ export default function RulerTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // Handle Rotation Drag
-    const handleRotatePointerDown = (e) => {
+    // ─── 2. Inner Rotation Handle (Only inner handle used for rotation) ───
+    const handleInnerRotatePointerDown = (e) => {
         e.stopPropagation();
         e.preventDefault();
         isRotatingRef.current = true;
-        const centerX = pos.x + lengthPx / 2;
-        const centerY = pos.y + heightPx / 2;
+
+        const coords = screenToCanvasCoords(e.clientX, e.clientY);
+        // Angle from ruler origin to mouse
+        const currentAngleRad = Math.atan2(coords.y - pos.y, coords.x - pos.x);
+        let currentAngleDeg = (currentAngleRad * 180) / Math.PI;
+        if (currentAngleDeg < 0) currentAngleDeg += 360;
+
+        // Offset between cursor angle and ruler angle
+        let offset = currentAngleDeg - angle;
+        if (offset < 0) offset += 360;
+        rotateOffsetRef.current = offset;
 
         const onPointerMove = (moveEvt) => {
             if (!isRotatingRef.current) return;
-            // Calculate angle from center
-            const rad = Math.atan2(moveEvt.clientY - centerY, moveEvt.clientX - centerX);
+            const moveCoords = screenToCanvasCoords(moveEvt.clientX, moveEvt.clientY);
+            const rad = Math.atan2(moveCoords.y - pos.y, moveCoords.x - pos.x);
             let deg = (rad * 180) / Math.PI;
             if (deg < 0) deg += 360;
-            const snapped = snapAngleDeg(deg, moveEvt.shiftKey ? 15 : 3, moveEvt.shiftKey);
+
+            let newAngle = deg - rotateOffsetRef.current;
+            if (newAngle < 0) newAngle += 360;
+
+            const snapped = snapAngleDeg(newAngle, moveEvt.shiftKey ? 15 : 2, moveEvt.shiftKey);
             setAngle(snapped);
         };
 
@@ -108,26 +127,31 @@ export default function RulerTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // Handle Length Resizing Drag
+    // ─── 3. Length Resizing Drag (Up to 20 cm) ───
     const handleResizePointerDown = (e) => {
         e.stopPropagation();
         e.preventDefault();
         isResizingRef.current = true;
+        const coords = screenToCanvasCoords(e.clientX, e.clientY);
         resizeStartRef.current = {
-            clientX: e.clientX,
+            canvasStartX: coords.x,
+            canvasStartY: coords.y,
             initialLengthCm: lengthCm
         };
 
         const onPointerMove = (moveEvt) => {
             if (!isResizingRef.current) return;
-            const rad = degToRad(angle);
-            // Project mouse delta along ruler axis
-            const rawDx = (moveEvt.clientX - resizeStartRef.current.clientX) / (scale || 1);
-            const rawDy = (moveEvt.clientY - resizeStartRef.current.clientX) / (scale || 1);
-            const deltaAlongAxis = rawDx * Math.cos(rad) + rawDy * Math.sin(rad);
+            const current = screenToCanvasCoords(moveEvt.clientX, moveEvt.clientY);
+            const dx = current.x - resizeStartRef.current.canvasStartX;
+            const dy = current.y - resizeStartRef.current.canvasStartY;
 
-            const deltaCm = deltaAlongAxis / PX_PER_CM;
-            const newCm = Math.max(8, Math.min(50, Math.round((resizeStartRef.current.initialLengthCm + deltaCm) * 2) / 2));
+            const rad = degToRad(angle);
+            // Project delta along ruler axis
+            const projDeltaPx = dx * Math.cos(rad) + dy * Math.sin(rad);
+            const deltaCm = projDeltaPx / PX_PER_CM;
+
+            // Restrict maximum length strictly to 20 cm, minimum 6 cm
+            const newCm = Math.max(6, Math.min(20, Math.round((resizeStartRef.current.initialLengthCm + deltaCm) * 2) / 2));
             setLengthCm(newCm);
         };
 
@@ -141,8 +165,71 @@ export default function RulerTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // Draw straight line along ruler top edge
-    const handleDrawLineAlongEdge = useCallback(() => {
+    // ─── 4. Interactive Edge Drawing (Click & drag along ruler's edge) ───
+    const handleEdgePointerDown = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        isDrawingEdgeRef.current = true;
+
+        const coords = screenToCanvasCoords(e.clientX, e.clientY);
+        const rad = degToRad(-angle);
+        const dx = coords.x - pos.x;
+        const dy = coords.y - pos.y;
+        const localX = Math.max(0, Math.min(lengthPx, dx * Math.cos(rad) - dy * Math.sin(rad)));
+
+        setActiveEdgeDrawing({ startT: localX, endT: localX });
+
+        const onPointerMove = (moveEvt) => {
+            if (!isDrawingEdgeRef.current) return;
+            const curCoords = screenToCanvasCoords(moveEvt.clientX, moveEvt.clientY);
+            const cdx = curCoords.x - pos.x;
+            const cdy = curCoords.y - pos.y;
+            const curLocalX = Math.max(0, Math.min(lengthPx, cdx * Math.cos(rad) - cdy * Math.sin(rad)));
+            setActiveEdgeDrawing({ startT: localX, endT: curLocalX });
+        };
+
+        const onPointerUp = (upEvt) => {
+            isDrawingEdgeRef.current = false;
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+
+            const upCoords = screenToCanvasCoords(upEvt.clientX, upEvt.clientY);
+            const udx = upCoords.x - pos.x;
+            const udy = upCoords.y - pos.y;
+            const finalLocalX = Math.max(0, Math.min(lengthPx, udx * Math.cos(rad) - udy * Math.sin(rad)));
+
+            const minT = Math.min(localX, finalLocalX);
+            const maxT = Math.max(localX, finalLocalX);
+            const drawnLengthPx = maxT - minT;
+
+            setActiveEdgeDrawing(null);
+
+            if (drawnLengthPx > 6 && onDrawLine) {
+                const forwardRad = degToRad(angle);
+                const startX = pos.x + minT * Math.cos(forwardRad);
+                const startY = pos.y + minT * Math.sin(forwardRad);
+                const endX = pos.x + maxT * Math.cos(forwardRad);
+                const endY = pos.y + maxT * Math.sin(forwardRad);
+                const drawnLengthCm = drawnLengthPx / PX_PER_CM;
+
+                onDrawLine({
+                    startX: Math.round(startX),
+                    startY: Math.round(startY),
+                    endX: Math.round(endX),
+                    endY: Math.round(endY),
+                    lengthPx: drawnLengthPx,
+                    lengthCm: drawnLengthCm,
+                    angleDeg: angle
+                });
+            }
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+    };
+
+    // ─── 5. Stamping Full Line Along Edge Button ───
+    const handleDrawFullLine = useCallback(() => {
         if (!onDrawLine) return;
         const rad = degToRad(angle);
         const startX = pos.x;
@@ -161,14 +248,7 @@ export default function RulerTool({
         });
     }, [onDrawLine, pos, lengthPx, lengthCm, angle]);
 
-    // Quick 45° / 90° step rotation
-    const stepRotation = (step = 45) => {
-        setAngle(prev => (prev + step) % 360);
-    };
-
-    // Render graduation ticks along top (metric cm/mm) and bottom (inches)
     const totalMm = Math.floor(lengthCm * 10);
-    const totalInches = Math.floor(pxToInches(lengthPx));
 
     return (
         <div
@@ -186,49 +266,63 @@ export default function RulerTool({
             onPointerDown={handleBodyPointerDown}
             className="group select-none"
         >
-            {/* Realistic Frosted Acrylic Ruler Body */}
+            {/* Realistic Semi-Transparent Acrylic Physical Ruler Body */}
             <div
-                className={`relative w-full h-full rounded-md border border-cyan-400/60 shadow-2xl backdrop-blur-md transition-all duration-75 cursor-grab active:cursor-grabbing ${
-                    isFlipped
-                        ? 'bg-gradient-to-t from-slate-950/85 via-cyan-950/40 to-slate-900/80'
-                        : 'bg-gradient-to-b from-slate-950/85 via-cyan-950/40 to-slate-900/80'
-                }`}
+                className="relative w-full h-full rounded-xs border border-slate-400/50 shadow-xl backdrop-blur-[2px] transition-all duration-75 cursor-grab active:cursor-grabbing bg-white/25 hover:bg-white/30"
                 style={{
-                    boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.45), inset 0 0 12px 1px rgba(56, 189, 248, 0.25)'
+                    boxShadow: '0 8px 24px 0 rgba(0, 0, 0, 0.18), inset 0 1px 0 0 rgba(255, 255, 255, 0.7), inset 0 -1px 0 0 rgba(0, 0, 0, 0.12)'
                 }}
             >
-                {/* Ruler Straightedge Drawing Guide Highlight Line */}
-                <div className="absolute top-0 left-0 right-0 h-1 bg-cyan-400/80 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+                {/* Ruler Top Edge Drawing Guide & Active Interaction Strip */}
+                <div
+                    data-handle="edge-draw"
+                    onPointerDown={handleEdgePointerDown}
+                    className="absolute -top-1 left-0 right-0 h-3 cursor-crosshair group/edge z-20"
+                    title="Click and drag along this edge to draw a straight pencil line"
+                >
+                    <div className="w-full h-[1.5px] bg-slate-900/60 group-hover/edge:bg-cyan-600 transition-colors" />
+                </div>
 
-                {/* Top Edge: Metric Millimeter & Centimeter Graduations */}
-                <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: 'visible' }}>
+                {/* Live Drawn Line Preview Along Edge */}
+                {activeEdgeDrawing && (
+                    <div
+                        className="absolute top-0 h-[2.5px] bg-cyan-600 shadow-[0_0_6px_rgba(6,182,212,0.8)] z-30 pointer-events-none transition-none"
+                        style={{
+                            left: `${Math.min(activeEdgeDrawing.startT, activeEdgeDrawing.endT)}px`,
+                            width: `${Math.abs(activeEdgeDrawing.endT - activeEdgeDrawing.startT)}px`
+                        }}
+                    />
+                )}
+
+                {/* SVG Clear Black Measurement Markings (0 to 20 cm) */}
+                <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                     {Array.from({ length: totalMm + 1 }).map((_, mm) => {
                         const x = mm * PX_PER_MM;
                         if (x > lengthPx) return null;
                         const isCm = mm % 10 === 0;
                         const isHalfCm = mm % 5 === 0 && !isCm;
-                        const tickHeight = isCm ? 18 : (isHalfCm ? 12 : 7);
+                        const tickHeight = isCm ? 16 : (isHalfCm ? 10 : 6);
                         const cmNumber = mm / 10;
 
                         return (
                             <g key={`mm-${mm}`}>
                                 <line
                                     x1={x}
-                                    y1={1}
+                                    y1={0}
                                     x2={x}
                                     y2={tickHeight}
-                                    stroke={isCm ? '#38bdf8' : '#7dd3fc'}
-                                    strokeWidth={isCm ? 1.5 : 0.8}
-                                    opacity={isCm ? 1 : 0.65}
+                                    stroke="#0f172a"
+                                    strokeWidth={isCm ? 1.5 : (isHalfCm ? 1.1 : 0.75)}
+                                    opacity={isCm ? 1 : (isHalfCm ? 0.9 : 0.7)}
                                 />
-                                {isCm && cmNumber > 0 && (
+                                {isCm && (
                                     <text
                                         x={x}
-                                        y={tickHeight + 11}
-                                        fill="#e0f2fe"
+                                        y={tickHeight + 10}
+                                        fill="#0f172a"
                                         fontSize="9"
                                         fontFamily="sans-serif"
-                                        fontWeight="600"
+                                        fontWeight="700"
                                         textAnchor="middle"
                                     >
                                         {cmNumber}
@@ -238,137 +332,73 @@ export default function RulerTool({
                         );
                     })}
 
-                    {/* Centimeter Unit Label */}
+                    {/* Centimeter Metric Label */}
                     <text
-                        x={16}
-                        y={heightPx / 2 - 2}
-                        fill="#38bdf8"
-                        fontSize="9"
-                        fontWeight="bold"
-                        letterSpacing="1"
+                        x={lengthPx - 26}
+                        y={heightPx - 8}
+                        fill="#1e293b"
+                        fontSize="8.5"
+                        fontWeight="700"
+                        letterSpacing="0.5"
                     >
-                        METRIC (CM / MM)
+                        CM
                     </text>
-
-                    {/* Bottom Edge: Imperial (Inch) Graduations */}
-                    {Array.from({ length: totalInches * 16 + 1 }).map((_, sixteenth) => {
-                        const x = sixteenth * (PX_PER_INCH / 16);
-                        if (x > lengthPx) return null;
-                        const isInch = sixteenth % 16 === 0;
-                        const isHalf = sixteenth % 8 === 0 && !isInch;
-                        const isQuarter = sixteenth % 4 === 0 && !isHalf && !isInch;
-                        const tickH = isInch ? 16 : (isHalf ? 11 : (isQuarter ? 8 : 5));
-                        const inchNum = sixteenth / 16;
-
-                        return (
-                            <g key={`in-${sixteenth}`}>
-                                <line
-                                    x1={x}
-                                    y1={heightPx - 1}
-                                    x2={x}
-                                    y2={heightPx - tickH}
-                                    stroke={isInch ? '#fbbf24' : '#fde68a'}
-                                    strokeWidth={isInch ? 1.5 : 0.8}
-                                    opacity={isInch ? 1 : 0.55}
-                                />
-                                {isInch && inchNum > 0 && (
-                                    <text
-                                        x={x}
-                                        y={heightPx - tickH - 4}
-                                        fill="#fef3c7"
-                                        fontSize="9"
-                                        fontWeight="600"
-                                        textAnchor="middle"
-                                    >
-                                        {inchNum}
-                                    </text>
-                                )}
-                            </g>
-                        );
-                    })}
                 </svg>
 
-                {/* Center Control HUD: Angle, Measurement & Drawing Actions */}
-                <div className="absolute inset-0 flex items-center justify-between px-6 pointer-events-none">
-                    {/* Measurement readout pill */}
-                    <div className="flex items-center gap-2 bg-slate-950/80 border border-slate-700/80 rounded-full px-3 py-1 pointer-events-auto shadow-md">
-                        <span className="text-[11px] font-mono font-bold text-cyan-300">
+                {/* Center / Inner Controls Overlay */}
+                <div className="absolute inset-0 flex items-center justify-between px-3 pointer-events-none">
+                    {/* Dynamic Real-Time Measurement & Angle Display */}
+                    <div className="flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-full px-2.5 py-0.5 pointer-events-auto shadow-md">
+                        <span className="text-[10.5px] font-mono font-bold text-cyan-300">
                             {lengthCm.toFixed(1)} cm
                         </span>
-                        <span className="text-[10px] text-slate-400">|</span>
-                        <span className="text-[11px] font-mono text-amber-300">
+                        <span className="text-[9px] text-slate-500">|</span>
+                        <span className="text-[10.5px] font-mono font-bold text-amber-300">
                             {angle.toFixed(1)}°
                         </span>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex items-center gap-1.5 pointer-events-auto">
-                        {/* Draw Line Along Edge */}
+                    {/* Inner Rotation Handle (Rotates ruler smoothly without outer handle) */}
+                    <div
+                        data-handle="true"
+                        onPointerDown={handleInnerRotatePointerDown}
+                        className="w-7 h-7 rounded-full bg-slate-900/90 border-2 border-cyan-400 shadow-md flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-cyan-500 hover:text-slate-950 text-cyan-300 transition pointer-events-auto"
+                        title="Drag inner handle to rotate ruler (Hold Shift for 15° snap)"
+                    >
+                        <RotateCw className="w-3.5 h-3.5" />
+                    </div>
+
+                    {/* Action Buttons: Draw Full Line & Close */}
+                    <div className="flex items-center gap-1 pointer-events-auto">
                         <button
                             type="button"
-                            onClick={handleDrawLineAlongEdge}
-                            className="flex items-center gap-1 px-2.5 py-1 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[11px] rounded-full shadow-lg transition active:scale-95"
-                            title="Draw mathematically straight line along top ruler edge"
+                            onClick={handleDrawFullLine}
+                            className="flex items-center gap-1 px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[10px] rounded-full shadow transition active:scale-95"
+                            title="Draw line along full ruler edge"
                         >
-                            <Check className="w-3 h-3 stroke-[3]" />
+                            <Pencil className="w-2.5 h-2.5" />
                             <span>Draw Line</span>
                         </button>
 
-                        {/* Step Rotation 45° */}
-                        <button
-                            type="button"
-                            onClick={() => stepRotation(45)}
-                            className="p-1 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white transition"
-                            title="Rotate +45°"
-                        >
-                            <RotateCw className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* Flip Ruler */}
-                        <button
-                            type="button"
-                            onClick={() => setIsFlipped(!isFlipped)}
-                            className="p-1 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white transition"
-                            title="Flip Ruler"
-                        >
-                            <FlipHorizontal className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* Close Ruler */}
                         <button
                             type="button"
                             onClick={onClose}
                             className="p-1 rounded-full bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white transition"
                             title="Close Ruler"
                         >
-                            <X className="w-3.5 h-3.5" />
+                            <X className="w-3 h-3" />
                         </button>
                     </div>
                 </div>
 
-                {/* Right Edge: Length Resizing Handle */}
+                {/* Right Edge: Length Resizing Handle (Max 20 cm) */}
                 <div
                     data-handle="true"
                     onPointerDown={handleResizePointerDown}
-                    className="absolute right-0 top-0 bottom-0 w-4 bg-cyan-500/30 hover:bg-cyan-400/80 border-l border-cyan-400 rounded-r-md cursor-ew-resize flex items-center justify-center transition group-hover:opacity-100"
-                    title="Drag to adjust ruler length"
+                    className="absolute right-0 top-0 bottom-0 w-3 hover:w-3.5 bg-slate-700/30 hover:bg-cyan-500/50 border-l border-slate-400/60 cursor-ew-resize flex items-center justify-center transition"
+                    title="Drag to adjust ruler length (up to 20 cm)"
                 >
-                    <div className="w-1 h-6 bg-cyan-200 rounded-full" />
-                </div>
-
-                {/* Rotation Wheel / Dial Handle */}
-                <div
-                    data-handle="true"
-                    onPointerDown={handleRotatePointerDown}
-                    style={{
-                        right: '-24px',
-                        top: '50%',
-                        transform: 'translateY(-50%)'
-                    }}
-                    className="absolute w-8 h-8 rounded-full bg-slate-900 border-2 border-cyan-400 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-cyan-500 hover:text-slate-950 text-cyan-400 transition"
-                    title="Drag to rotate ruler smoothly (Hold Shift for 15° snap)"
-                >
-                    <RotateCw className="w-3.5 h-3.5" />
+                    <div className="w-0.5 h-4 bg-slate-800 rounded-full" />
                 </div>
             </div>
         </div>

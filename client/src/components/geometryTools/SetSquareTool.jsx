@@ -6,15 +6,14 @@ import {
     X,
     Check,
     Triangle as TriangleIcon,
-    Move,
-    Maximize2,
     FlipHorizontal
 } from 'lucide-react';
 import {
     PX_PER_CM,
     PX_PER_MM,
     snapAngleDeg,
-    degToRad
+    degToRad,
+    screenToCanvasCoords
 } from './geometryMath';
 
 export default function SetSquareTool({
@@ -28,7 +27,7 @@ export default function SetSquareTool({
     onDrawTriangle,
     onClose
 }) {
-    // Right-angle vertex position (Origin at 90° corner)
+    // Right-angle vertex position (Origin at 90° corner) in Canvas Coordinates
     const [pos, setPos] = useState({ x: initialX, y: initialY });
     const [squareType, setSquareType] = useState(initialType);
     const [sizeCm, setSizeCm] = useState(initialSizeCm);
@@ -36,35 +35,37 @@ export default function SetSquareTool({
     const [isFlipped, setIsFlipped] = useState(false);
 
     // Calculate dimensions in px
-    // For 45-45-90: leg1 = leg2 = baseSize
-    // For 30-60-90: baseLeg = baseSize, heightLeg = baseSize * Math.tan(60° or 30°)
     const basePx = sizeCm * PX_PER_CM;
     const heightPx = squareType === '45' ? basePx : basePx * Math.tan(degToRad(60));
 
-    // Drag repositioning
+    // Drag repositioning ref
     const isDraggingRef = useRef(false);
-    const dragStartRef = useRef({ x: 0, y: 0, initialPosX: 0, initialPosY: 0 });
+    const dragStartRef = useRef({ canvasStartX: 0, canvasStartY: 0, initialPosX: 0, initialPosY: 0 });
 
-    // Rotation drag
+    // Rotation drag ref
     const isRotatingRef = useRef(false);
+    const rotateOffsetRef = useRef(0);
 
-    // Reposition Set Square Body
+    // ─── 1. Reposition Set Square Body (Draggable from surface) ───
     const handleBodyPointerDown = (e) => {
         if (e.target.closest('button') || e.target.closest('[data-handle="true"]')) return;
         e.stopPropagation();
         e.preventDefault();
         isDraggingRef.current = true;
+
+        const coords = screenToCanvasCoords(e.clientX, e.clientY);
         dragStartRef.current = {
-            x: e.clientX,
-            y: e.clientY,
+            canvasStartX: coords.x,
+            canvasStartY: coords.y,
             initialPosX: pos.x,
             initialPosY: pos.y
         };
 
         const onPointerMove = (moveEvt) => {
             if (!isDraggingRef.current) return;
-            const dx = (moveEvt.clientX - dragStartRef.current.x) / (scale || 1);
-            const dy = (moveEvt.clientY - dragStartRef.current.y) / (scale || 1);
+            const curCoords = screenToCanvasCoords(moveEvt.clientX, moveEvt.clientY);
+            const dx = curCoords.x - dragStartRef.current.canvasStartX;
+            const dy = curCoords.y - dragStartRef.current.canvasStartY;
             setPos({
                 x: Math.round(dragStartRef.current.initialPosX + dx),
                 y: Math.round(dragStartRef.current.initialPosY + dy)
@@ -81,23 +82,32 @@ export default function SetSquareTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // Rotate Set Square
+    // ─── 2. Rotate Set Square ───
     const handleRotatePointerDown = (e) => {
         e.stopPropagation();
         e.preventDefault();
         isRotatingRef.current = true;
-        const centerX = pos.x + basePx / 3;
-        const centerY = pos.y + heightPx / 3;
+
+        const coords = screenToCanvasCoords(e.clientX, e.clientY);
+        const startRad = Math.atan2(coords.y - pos.y, coords.x - pos.x);
+        let startDeg = (startRad * 180) / Math.PI;
+        if (startDeg < 0) startDeg += 360;
+
+        let offset = startDeg - angle;
+        if (offset < 0) offset += 360;
+        rotateOffsetRef.current = offset;
 
         const onPointerMove = (moveEvt) => {
             if (!isRotatingRef.current) return;
-            const rad = Math.atan2(
-                (moveEvt.clientY - centerY) / (scale || 1),
-                (moveEvt.clientX - centerX) / (scale || 1)
-            );
-            let deg = (rad * 180) / Math.PI;
-            if (deg < 0) deg += 360;
-            const snapped = snapAngleDeg(deg, moveEvt.shiftKey ? 15 : 2, moveEvt.shiftKey);
+            const curCoords = screenToCanvasCoords(moveEvt.clientX, moveEvt.clientY);
+            const curRad = Math.atan2(curCoords.y - pos.y, curCoords.x - pos.x);
+            let curDeg = (curRad * 180) / Math.PI;
+            if (curDeg < 0) curDeg += 360;
+
+            let newAngle = curDeg - rotateOffsetRef.current;
+            if (newAngle < 0) newAngle += 360;
+
+            const snapped = snapAngleDeg(newAngle, moveEvt.shiftKey ? 15 : 2, moveEvt.shiftKey);
             setAngle(snapped);
         };
 
@@ -111,59 +121,62 @@ export default function SetSquareTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // Transform points from local triangle frame to board canvas coordinates
-    const toBoardCoords = (localX, localY) => {
-        const rad = degToRad(angle);
-        const cos = Math.cos(rad);
-        const sin = Math.sin(rad);
-        const fx = isFlipped ? -localX : localX;
-        return {
-            x: Math.round(pos.x + fx * cos - localY * sin),
-            y: Math.round(pos.y + fx * sin + localY * cos)
-        };
-    };
-
-    // Draw Right Angle (90° Perpendicular Lines)
+    // ─── 3. Stamping Perpendicular / Triangle Actions ───
     const handleDrawPerpendicular = useCallback(() => {
         if (!onDrawPerpendicular) return;
-        const vCorner = toBoardCoords(0, 0);
-        const vBase = toBoardCoords(basePx, 0);
-        const vHeight = toBoardCoords(0, heightPx);
+        const rad = degToRad(angle);
+        const perpRad = degToRad(angle + (isFlipped ? -90 : 90));
+
+        const baseEndX = pos.x + basePx * Math.cos(rad);
+        const baseEndY = pos.y + basePx * Math.sin(rad);
+
+        const perpEndX = pos.x + heightPx * Math.cos(perpRad);
+        const perpEndY = pos.y + heightPx * Math.sin(perpRad);
 
         onDrawPerpendicular({
-            corner: vCorner,
-            baseEnd: vBase,
-            heightEnd: vHeight,
-            basePx,
-            heightPx,
+            cornerX: Math.round(pos.x),
+            cornerY: Math.round(pos.y),
+            baseEndX: Math.round(baseEndX),
+            baseEndY: Math.round(baseEndY),
+            perpEndX: Math.round(perpEndX),
+            perpEndY: Math.round(perpEndY),
+            baseLenCm: sizeCm,
+            heightLenCm: heightPx / PX_PER_CM,
             angleDeg: angle
         });
-    }, [onDrawPerpendicular, pos, basePx, heightPx, angle, isFlipped]);
+    }, [onDrawPerpendicular, pos, basePx, heightPx, sizeCm, angle, isFlipped]);
 
-    // Draw Full Triangle Outline
     const handleDrawFullTriangle = useCallback(() => {
         if (!onDrawTriangle) return;
-        const p1 = toBoardCoords(0, 0);
-        const p2 = toBoardCoords(basePx, 0);
-        const p3 = toBoardCoords(0, heightPx);
+        const rad = degToRad(angle);
+        const perpRad = degToRad(angle + (isFlipped ? -90 : 90));
+
+        const p1 = { x: Math.round(pos.x), y: Math.round(pos.y) };
+        const p2 = {
+            x: Math.round(pos.x + basePx * Math.cos(rad)),
+            y: Math.round(pos.y + basePx * Math.sin(rad))
+        };
+        const p3 = {
+            x: Math.round(pos.x + heightPx * Math.cos(perpRad)),
+            y: Math.round(pos.y + heightPx * Math.sin(perpRad))
+        };
 
         onDrawTriangle({
-            p1,
-            p2,
-            p3,
+            points: [p1, p2, p3],
             squareType,
+            baseCm: sizeCm,
             angleDeg: angle
         });
-    }, [onDrawTriangle, pos, basePx, heightPx, angle, squareType, isFlipped]);
+    }, [onDrawTriangle, pos, basePx, heightPx, squareType, sizeCm, angle, isFlipped]);
 
-    // Cutout inner triangle dimensions (35% scale)
-    const innerMargin = 28;
-    const innerBase = Math.max(20, basePx - innerMargin * 2.5);
-    const innerHeight = Math.max(20, heightPx - innerMargin * 2.5);
+    // Cutout margins for realistic hollow triangle center
+    const innerMargin = 32;
+    const innerBase = Math.max(20, basePx - innerMargin * 2.2);
+    const innerHeight = Math.max(20, heightPx - innerMargin * 2.2);
 
     return (
         <div className="absolute inset-0 pointer-events-none select-none z-[66]">
-            {/* SVG Frosted Drafting Triangle with Graduations */}
+            {/* SVG Acrylic Drafting Triangle */}
             <svg
                 style={{
                     position: 'absolute',
@@ -176,14 +189,12 @@ export default function SetSquareTool({
                 className="pointer-events-none"
             >
                 <defs>
-                    <linearGradient id="setSquareGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#0f172a" stopOpacity="0.85" />
-                        <stop offset="60%" stopColor="#0369a1" stopOpacity="0.45" />
-                        <stop offset="100%" stopColor="#082f49" stopOpacity="0.8" />
-                    </linearGradient>
+                    <filter id="setSquareShadow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feDropShadow dx="0" dy="8" stdDeviation="8" floodOpacity="0.25" />
+                    </filter>
                 </defs>
 
-                {/* Outer Triangle Body with Inner Cut-out Hole */}
+                {/* Outer Transparent Acrylic Triangle with Inner Cutout */}
                 <path
                     d={`
                         M 0 0 
@@ -195,26 +206,24 @@ export default function SetSquareTool({
                         L ${innerBase} 0
                         Z
                     `}
-                    fill="url(#setSquareGrad)"
+                    fill="rgba(255, 255, 255, 0.22)"
                     fillRule="evenodd"
-                    stroke="#38bdf8"
-                    strokeWidth="1.5"
-                    className="cursor-grab active:cursor-grabbing pointer-events-auto transition hover:stroke-cyan-300"
+                    stroke="#475569"
+                    strokeWidth="1.2"
+                    filter="url(#setSquareShadow)"
+                    className="cursor-grab active:cursor-grabbing pointer-events-auto transition hover:fill-white/30 backdrop-blur-[2px]"
                     onPointerDown={handleBodyPointerDown}
-                    style={{
-                        filter: 'drop-shadow(0 12px 28px rgba(0,0,0,0.5))'
-                    }}
                 />
 
-                {/* 90° Perpendicular Right-Angle Indicator Mark */}
+                {/* 90° Perpendicular Right-Angle Mark */}
                 <path
                     d="M 0 16 L 16 16 L 16 0"
                     fill="none"
-                    stroke="#22d3ee"
+                    stroke="#0f172a"
                     strokeWidth="1.5"
                 />
 
-                {/* Base Edge Metric Graduations (Ticks) */}
+                {/* Base Edge Clear Black Graduations */}
                 {Array.from({ length: Math.floor(sizeCm * 10) + 1 }).map((_, mm) => {
                     const x = mm * PX_PER_MM;
                     if (x > basePx - 8) return null;
@@ -229,15 +238,17 @@ export default function SetSquareTool({
                                 y1={0}
                                 x2={x}
                                 y2={tickH}
-                                stroke={isCm ? '#38bdf8' : '#7dd3fc'}
-                                strokeWidth={isCm ? 1.2 : 0.6}
+                                stroke="#0f172a"
+                                strokeWidth={isCm ? 1.4 : 0.75}
                             />
                             {isCm && mm > 0 && (
                                 <text
                                     x={x}
                                     y={tickH + 9}
-                                    fill="#f0f9ff"
+                                    fill="#0f172a"
                                     fontSize="8"
+                                    fontFamily="sans-serif"
+                                    fontWeight="700"
                                     textAnchor="middle"
                                 >
                                     {mm / 10}
@@ -247,7 +258,7 @@ export default function SetSquareTool({
                     );
                 })}
 
-                {/* Height Edge Metric Graduations (Ticks) */}
+                {/* Height Edge Clear Black Graduations */}
                 {Array.from({ length: Math.floor((heightPx / PX_PER_CM) * 10) + 1 }).map((_, mm) => {
                     const y = mm * PX_PER_MM;
                     if (y > heightPx - 8) return null;
@@ -262,15 +273,17 @@ export default function SetSquareTool({
                                 y1={y}
                                 x2={tickW}
                                 y2={y}
-                                stroke={isCm ? '#38bdf8' : '#7dd3fc'}
-                                strokeWidth={isCm ? 1.2 : 0.6}
+                                stroke="#0f172a"
+                                strokeWidth={isCm ? 1.4 : 0.75}
                             />
                             {isCm && mm > 0 && (
                                 <text
                                     x={tickW + 8}
                                     y={y + 3}
-                                    fill="#f0f9ff"
+                                    fill="#0f172a"
                                     fontSize="8"
+                                    fontFamily="sans-serif"
+                                    fontWeight="700"
                                     textAnchor="start"
                                 >
                                     {mm / 10}
@@ -280,20 +293,21 @@ export default function SetSquareTool({
                     );
                 })}
 
-                {/* Type Badge Label in Cutout */}
+                {/* Type Label in Cutout */}
                 <text
                     x={innerMargin + 12}
                     y={innerMargin + 24}
-                    fill="#38bdf8"
-                    fontSize="10"
-                    fontWeight="bold"
-                    letterSpacing="1"
+                    fill="#0f172a"
+                    fontSize="9.5"
+                    fontFamily="sans-serif"
+                    fontWeight="700"
+                    letterSpacing="0.5"
                 >
                     {squareType === '45' ? '45° / 45° / 90°' : '30° / 60° / 90°'}
                 </text>
             </svg>
 
-            {/* 1. 90° Corner Vertex Crosshair */}
+            {/* ─── Control 1: 90° Corner Vertex Crosshair ─── */}
             <div
                 style={{
                     position: 'absolute',
@@ -303,13 +317,13 @@ export default function SetSquareTool({
                     pointerEvents: 'auto'
                 }}
                 onPointerDown={handleBodyPointerDown}
-                className="w-7 h-7 rounded-full bg-slate-950/90 border-2 border-cyan-400 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:scale-110 transition"
+                className="w-7 h-7 rounded-full bg-slate-900/90 border-2 border-rose-400 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:scale-110 transition"
                 title="Corner 90°: Drag to reposition Set Square"
             >
-                <div className="w-2 h-2 rounded-full bg-cyan-400 ring-2 ring-cyan-500/40" />
+                <div className="w-2 h-2 rounded-full bg-rose-400 ring-2 ring-rose-500/40" />
             </div>
 
-            {/* 2. Rotation Dial Handle */}
+            {/* ─── Control 2: Rotation Dial Handle ─── */}
             <div
                 data-handle="true"
                 style={{
@@ -320,13 +334,13 @@ export default function SetSquareTool({
                     pointerEvents: 'auto'
                 }}
                 onPointerDown={handleRotatePointerDown}
-                className="w-7 h-7 rounded-full bg-slate-900 border-2 border-cyan-400 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-cyan-500 hover:text-slate-950 text-cyan-400 transition"
+                className="w-7 h-7 rounded-full bg-slate-900 border-2 border-rose-400 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-rose-500 hover:text-white text-rose-300 transition"
                 title="Drag to rotate set square (Hold Shift for 15° snap)"
             >
                 <RotateCw className="w-3.5 h-3.5" />
             </div>
 
-            {/* 3. Top Action HUD */}
+            {/* ─── Control 3: Top Action HUD ─── */}
             <div
                 style={{
                     position: 'absolute',
@@ -340,7 +354,7 @@ export default function SetSquareTool({
                 <button
                     type="button"
                     onClick={() => setSquareType(squareType === '45' ? '30_60' : '45')}
-                    className="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] font-bold text-cyan-300 hover:text-white transition"
+                    className="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] font-bold text-rose-300 hover:text-white transition"
                     title="Switch between 45°-45°-90° and 30°-60°-90° set squares"
                 >
                     {squareType === '45' ? '45° Triangle' : '30°/60° Triangle'}
@@ -360,10 +374,10 @@ export default function SetSquareTool({
                 <button
                     type="button"
                     onClick={handleDrawPerpendicular}
-                    className="flex items-center gap-1 px-2.5 py-0.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[11px] rounded-full shadow transition active:scale-95"
+                    className="flex items-center gap-1 px-2.5 py-0.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] rounded-full shadow transition active:scale-95"
                     title="Draw true 90° perpendicular lines onto whiteboard"
                 >
-                    <Check className="w-3 h-3 stroke-[3]" />
+                    <Check className="w-2.5 h-2.5 stroke-[3]" />
                     <span>Perpendicular (90°)</span>
                 </button>
 
@@ -371,10 +385,10 @@ export default function SetSquareTool({
                 <button
                     type="button"
                     onClick={handleDrawFullTriangle}
-                    className="flex items-center gap-1 px-2.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-[11px] rounded-full shadow transition active:scale-95"
+                    className="flex items-center gap-1 px-2.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-[10px] rounded-full shadow transition active:scale-95"
                     title="Stamp complete drafting triangle onto whiteboard"
                 >
-                    <TriangleIcon className="w-3 h-3" />
+                    <TriangleIcon className="w-2.5 h-2.5" />
                     <span>Triangle</span>
                 </button>
 

@@ -7,16 +7,16 @@ import {
     Check,
     Lock,
     Unlock,
-    Move,
-    Maximize2,
     Crosshair
 } from 'lucide-react';
 import {
     PX_PER_CM,
     pxToCm,
-    pxToInches,
     snapAngleDeg,
-    degToRad
+    degToRad,
+    radToDeg,
+    screenToCanvasCoords,
+    calculateHingePoint
 } from './geometryMath';
 
 export default function DividerTool({
@@ -28,38 +28,44 @@ export default function DividerTool({
     onMarkDistance,
     onClose
 }) {
-    // Needle 1 (Primary Point)
+    // Primary Needle Tip (Point A) in pure Canvas Coordinates
     const [pointA, setPointA] = useState({ x: initialX, y: initialY });
     const [spanCm, setSpanCm] = useState(initialSpanCm);
     const [angle, setAngle] = useState(initialAngle);
     const [isLocked, setIsLocked] = useState(false);
 
+    // Fixed Arm Length for both caliper needle arms (physical divider)
+    const ARM_LENGTH = 180; // px (~4.76 cm)
+
     const spanPx = spanCm * PX_PER_CM;
 
-    // Reposition primary needle / entire divider
+    // Needle A drag ref (repositioning entire divider)
     const isDraggingPointARef = useRef(false);
-    const dragStartRef = useRef({ x: 0, y: 0, initialAx: 0, initialAy: 0 });
+    const dragStartRef = useRef({ canvasStartX: 0, canvasStartY: 0, initialAx: 0, initialAy: 0 });
 
-    // Adjust span / rotate secondary needle (Point B)
+    // Needle B drag ref (adjusting span / rotation)
     const isAdjustingPointBRef = useRef(false);
 
-    // Primary Needle 1 Drag
+    // ─── 1. Primary Needle A Drag (Reposition entire divider) ───
     const handlePointAPointerDown = (e) => {
         if (e.target.closest('button') || e.target.closest('[data-handle="true"]')) return;
         e.stopPropagation();
         e.preventDefault();
         isDraggingPointARef.current = true;
+
+        const coords = screenToCanvasCoords(e.clientX, e.clientY);
         dragStartRef.current = {
-            x: e.clientX,
-            y: e.clientY,
+            canvasStartX: coords.x,
+            canvasStartY: coords.y,
             initialAx: pointA.x,
             initialAy: pointA.y
         };
 
         const onPointerMove = (moveEvt) => {
             if (!isDraggingPointARef.current) return;
-            const dx = (moveEvt.clientX - dragStartRef.current.x) / (scale || 1);
-            const dy = (moveEvt.clientY - dragStartRef.current.y) / (scale || 1);
+            const curCoords = screenToCanvasCoords(moveEvt.clientX, moveEvt.clientY);
+            const dx = curCoords.x - dragStartRef.current.canvasStartX;
+            const dy = curCoords.y - dragStartRef.current.canvasStartY;
             setPointA({
                 x: Math.round(dragStartRef.current.initialAx + dx),
                 y: Math.round(dragStartRef.current.initialAy + dy)
@@ -76,7 +82,7 @@ export default function DividerTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // Secondary Needle 2 Drag (Adjust span or rotate)
+    // ─── 2. Secondary Needle B Drag (Adjust span or rotate angle) ───
     const handlePointBPointerDown = (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -84,11 +90,12 @@ export default function DividerTool({
 
         const onPointerMove = (moveEvt) => {
             if (!isAdjustingPointBRef.current) return;
-            const mouseX = (moveEvt.clientX - pointA.x) / (scale || 1);
-            const mouseY = (moveEvt.clientY - pointA.y) / (scale || 1);
+            const curCoords = screenToCanvasCoords(moveEvt.clientX, moveEvt.clientY);
+            const dx = curCoords.x - pointA.x;
+            const dy = curCoords.y - pointA.y;
 
-            const distPx = Math.hypot(mouseX, mouseY);
-            const rad = Math.atan2(mouseY, mouseX);
+            const distPx = Math.hypot(dx, dy);
+            const rad = Math.atan2(dy, dx);
             let deg = (rad * 180) / Math.PI;
             if (deg < 0) deg += 360;
 
@@ -96,7 +103,10 @@ export default function DividerTool({
             setAngle(snappedAngle);
 
             if (!isLocked) {
-                const cm = Math.max(1.5, Math.min(30, Math.round((distPx / PX_PER_CM) * 2) / 2));
+                // Limit span by maximum physical opening of arms (up to 1.85 * ARM_LENGTH)
+                const maxPx = ARM_LENGTH * 1.85;
+                const clampedPx = Math.max(PX_PER_CM * 1.5, Math.min(maxPx, distPx));
+                const cm = Math.round((clampedPx / PX_PER_CM) * 2) / 2;
                 setSpanCm(cm);
             }
         };
@@ -111,13 +121,14 @@ export default function DividerTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // Mark / Transfer Distance onto Whiteboard
+    // ─── 3. Mathematically Exact Distance Marking (Zero Offset) ───
     const handleMarkDistance = useCallback(() => {
         if (!onMarkDistance) return;
         const rad = degToRad(angle);
         const endX = pointA.x + spanPx * Math.cos(rad);
         const endY = pointA.y + spanPx * Math.sin(rad);
 
+        // Begins at Point A needle tip and ends at Point B needle tip precisely
         onMarkDistance({
             startX: Math.round(pointA.x),
             startY: Math.round(pointA.y),
@@ -129,78 +140,125 @@ export default function DividerTool({
         });
     }, [onMarkDistance, pointA, spanPx, spanCm, angle]);
 
-    // Coordinates of Point B
+    // Exact Canvas Coordinates of Point B
     const bRad = degToRad(angle);
-    const pointBX = pointA.x + spanPx * Math.cos(bRad);
-    const pointBY = pointA.y + spanPx * Math.sin(bRad);
+    const pointB = {
+        x: pointA.x + spanPx * Math.cos(bRad),
+        y: pointA.y + spanPx * Math.sin(bRad)
+    };
 
-    // Hinge top apex
-    const hingeHeight = Math.max(75, spanPx * 0.75);
-    const midX = (pointA.x + pointBX) / 2;
-    const midY = (pointA.y + pointBY) / 2 - hingeHeight;
+    // Hinge apex with strictly constant arm lengths ARM_LENGTH
+    const hinge = calculateHingePoint(pointA, pointB, ARM_LENGTH, false);
+
+    // Spindle top handle
+    const bisectorDx = hinge.x - (pointA.x + pointB.x) / 2;
+    const bisectorDy = hinge.y - (pointA.y + pointB.y) / 2;
+    const bisectorLen = Math.hypot(bisectorDx, bisectorDy) || 1;
+    const spindleTop = {
+        x: hinge.x + (bisectorDx / bisectorLen) * 32,
+        y: hinge.y + (bisectorDy / bisectorLen) * 32
+    };
 
     return (
         <div className="absolute inset-0 pointer-events-none select-none z-[66]">
-            {/* SVG Dual Needle Brass / Steel Arms */}
+            {/* SVG Dual-Needle Steel Caliper Divider Render */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                 <defs>
-                    <linearGradient id="dividerLegGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    {/* Polished Chrome / Brass Metallic Gradients */}
+                    <linearGradient id="dividerSteelGrad" x1="0%" y1="0%" x2="100%" y2="100%">
                         <stop offset="0%" stopColor="#94a3b8" />
-                        <stop offset="50%" stopColor="#cbd5e1" />
-                        <stop offset="100%" stopColor="#38bdf8" />
+                        <stop offset="35%" stopColor="#f1f5f9" />
+                        <stop offset="70%" stopColor="#64748b" />
+                        <stop offset="100%" stopColor="#1e293b" />
                     </linearGradient>
+
+                    {/* Drop shadow */}
+                    <filter id="dividerDropShadow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feDropShadow dx="0" dy="4" stdDeviation="4" floodOpacity="0.45" />
+                    </filter>
                 </defs>
 
-                {/* Primary Needle Leg (Point A to Hinge) */}
+                {/* Direct Line between Tips (Measurement Transfer Baseline) */}
                 <line
                     x1={pointA.x}
                     y1={pointA.y}
-                    x2={midX}
-                    y2={midY}
-                    stroke="url(#dividerLegGrad)"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    filter="drop-shadow(0 4px 6px rgba(0,0,0,0.5))"
-                />
-
-                {/* Secondary Needle Leg (Point B to Hinge) */}
-                <line
-                    x1={pointBX}
-                    y1={pointBY}
-                    x2={midX}
-                    y2={midY}
-                    stroke="url(#dividerLegGrad)"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    filter="drop-shadow(0 4px 6px rgba(0,0,0,0.5))"
-                />
-
-                {/* Top Friction Hinge Joint */}
-                <circle
-                    cx={midX}
-                    cy={midY}
-                    r="8"
-                    fill="#0f172a"
+                    x2={pointB.x}
+                    y2={pointB.y}
                     stroke="#38bdf8"
-                    strokeWidth="2.5"
-                    filter="drop-shadow(0 2px 4px rgba(0,0,0,0.4))"
-                />
-                <circle cx={midX} cy={midY} r="3" fill="#38bdf8" />
-
-                {/* Distance Span Dimension Line */}
-                <line
-                    x1={pointA.x}
-                    y1={pointA.y}
-                    x2={pointBX}
-                    y2={pointBY}
-                    stroke="#38bdf8"
-                    strokeWidth="1.2"
+                    strokeWidth="1.5"
                     strokeDasharray="3 3"
-                    opacity="0.8"
+                    opacity="0.6"
                 />
+
+                {/* ─── Caliper Arm 1: Hinge to Needle Point A ─── */}
+                <line
+                    x1={hinge.x}
+                    y1={hinge.y}
+                    x2={pointA.x}
+                    y2={pointA.y}
+                    stroke="url(#dividerSteelGrad)"
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                    filter="url(#dividerDropShadow)"
+                />
+                {/* Needle Tip A Taper */}
+                <line
+                    x1={pointA.x + (hinge.x - pointA.x) * 0.15}
+                    y1={pointA.y + (hinge.y - pointA.y) * 0.15}
+                    x2={pointA.x}
+                    y2={pointA.y}
+                    stroke="#cbd5e1"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                />
+
+                {/* ─── Caliper Arm 2: Hinge to Needle Point B ─── */}
+                <line
+                    x1={hinge.x}
+                    y1={hinge.y}
+                    x2={pointB.x}
+                    y2={pointB.y}
+                    stroke="url(#dividerSteelGrad)"
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                    filter="url(#dividerDropShadow)"
+                />
+                {/* Needle Tip B Taper */}
+                <line
+                    x1={pointB.x + (hinge.x - pointB.x) * 0.15}
+                    y1={pointB.y + (hinge.y - pointB.y) * 0.15}
+                    x2={pointB.x}
+                    y2={pointB.y}
+                    stroke="#cbd5e1"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                />
+
+                {/* ─── Friction Hinge Joint & Knurled Spindle ─── */}
+                <line
+                    x1={hinge.x}
+                    y1={hinge.y}
+                    x2={spindleTop.x}
+                    y2={spindleTop.y}
+                    stroke="url(#dividerSteelGrad)"
+                    strokeWidth="6"
+                    strokeLinecap="round"
+                    filter="url(#dividerDropShadow)"
+                />
+                <circle
+                    cx={hinge.x}
+                    cy={hinge.y}
+                    r="8.5"
+                    fill="#0f172a"
+                    stroke="#94a3b8"
+                    strokeWidth="2.5"
+                    filter="url(#dividerDropShadow)"
+                />
+                <circle cx={hinge.x} cy={hinge.y} r="3.5" fill="#e2e8f0" />
+                <circle cx={spindleTop.x} cy={spindleTop.y} r="5" fill="#334155" stroke="#cbd5e1" strokeWidth="1.5" />
             </svg>
 
-            {/* 1. Needle Point A (Primary Reference Point) */}
+            {/* ─── Control 1: Primary Needle A (Draggable to move divider) ─── */}
             <div
                 style={{
                     position: 'absolute',
@@ -210,83 +268,84 @@ export default function DividerTool({
                     pointerEvents: 'auto'
                 }}
                 onPointerDown={handlePointAPointerDown}
-                className="w-8 h-8 rounded-full bg-slate-950/90 border-2 border-cyan-400 shadow-2xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:scale-110 transition group"
-                title="Point A: Drag to reposition Divider"
+                className="w-8 h-8 rounded-full bg-slate-900/90 border-2 border-purple-400 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:scale-110 transition group"
+                title="Drag primary needle tip A"
             >
-                <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 ring-4 ring-cyan-500/30 shadow-[0_0_8px_#22d3ee]" />
+                <Crosshair className="w-4 h-4 text-purple-300 group-hover:text-purple-100" />
             </div>
 
-            {/* 2. Needle Point B (Span & Angle Handle) */}
+            {/* ─── Control 2: Secondary Needle B (Draggable to adjust span / rotate) ─── */}
             <div
-                data-handle="true"
                 style={{
                     position: 'absolute',
-                    left: `${pointBX}px`,
-                    top: `${pointBY}px`,
+                    left: `${pointB.x}px`,
+                    top: `${pointB.y}px`,
                     transform: 'translate(-50%, -50%)',
                     pointerEvents: 'auto'
                 }}
                 onPointerDown={handlePointBPointerDown}
-                className="w-8 h-8 rounded-full bg-slate-950/90 border-2 border-emerald-400 shadow-2xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:scale-110 transition group"
-                title="Point B: Drag to adjust span distance or rotate"
+                className="w-8 h-8 rounded-full bg-slate-900/90 border-2 border-cyan-400 shadow-xl flex items-center justify-center cursor-crosshair hover:scale-110 transition group"
+                title="Drag needle tip B to adjust span or rotate"
             >
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 ring-4 ring-emerald-500/30 shadow-[0_0_8px_#34d399]" />
+                <Crosshair className="w-4 h-4 text-cyan-300 group-hover:text-cyan-100" />
             </div>
 
-            {/* 3. Center Span Measurement Badge */}
+            {/* ─── Control 3: Distance Measurement Badge (Center of span) ─── */}
             <div
+                data-handle="true"
                 style={{
                     position: 'absolute',
-                    left: `${(pointA.x + pointBX) / 2}px`,
-                    top: `${(pointA.y + pointBY) / 2}px`,
+                    left: `${(pointA.x + pointB.x) / 2}px`,
+                    top: `${(pointA.y + pointB.y) / 2}px`,
                     transform: 'translate(-50%, -50%)',
                     pointerEvents: 'auto'
                 }}
-                className="px-2.5 py-0.5 rounded-full bg-slate-950/90 border border-slate-700/80 text-[11px] font-mono font-bold text-cyan-300 shadow-xl flex items-center gap-1.5"
+                className="px-2.5 py-0.5 rounded-full bg-slate-900/95 border border-purple-400/80 shadow-md flex items-center gap-1.5"
             >
-                <span>{spanCm.toFixed(1)} cm</span>
+                <span className="text-[10.5px] font-mono font-bold text-purple-300">
+                    {spanCm.toFixed(1)} cm
+                </span>
                 <span className="text-[9px] text-slate-500">|</span>
-                <span className="text-[10px] text-amber-300 font-mono">{angle.toFixed(0)}°</span>
+                <span className="text-[10px] font-mono text-cyan-300">
+                    {angle.toFixed(0)}°
+                </span>
             </div>
 
-            {/* 4. Top Action HUD above Hinge */}
+            {/* ─── Top Control HUD: Mark Distance, Lock, Close ─── */}
             <div
                 style={{
                     position: 'absolute',
-                    left: `${midX}px`,
-                    top: `${midY - 42}px`,
-                    transform: 'translateX(-50%)',
+                    left: `${hinge.x}px`,
+                    top: `${hinge.y - 28}px`,
+                    transform: 'translate(-50%, -100%)',
                     pointerEvents: 'auto'
                 }}
-                className="bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full px-3 py-1 shadow-2xl flex items-center gap-2"
+                className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full px-2.5 py-1 shadow-2xl"
             >
                 {/* Lock Span Toggle */}
                 <button
                     type="button"
                     onClick={() => setIsLocked(!isLocked)}
-                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition ${
-                        isLocked
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                            : 'bg-slate-800 text-slate-300 hover:text-white'
+                    className={`p-1 rounded-full transition ${
+                        isLocked ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                     }`}
-                    title={isLocked ? 'Span locked for exact distance transfer' : 'Lock span distance'}
+                    title={isLocked ? 'Unlock span' : 'Lock span distance'}
                 >
                     {isLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-                    <span>{isLocked ? 'Locked' : 'Lock'}</span>
                 </button>
 
-                {/* Mark / Transfer Distance on Canvas */}
+                {/* Mark Distance onto Whiteboard */}
                 <button
                     type="button"
                     onClick={handleMarkDistance}
-                    className="flex items-center gap-1 px-2.5 py-0.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[11px] rounded-full shadow transition active:scale-95"
-                    title="Transfer distance marks onto whiteboard"
+                    className="flex items-center gap-1 px-2.5 py-0.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-[10px] rounded-full shadow transition active:scale-95"
+                    title="Mark exact distance between needle tips onto canvas"
                 >
-                    <Crosshair className="w-3 h-3" />
+                    <Check className="w-2.5 h-2.5 stroke-[3]" />
                     <span>Mark Distance</span>
                 </button>
 
-                {/* Close Button */}
+                {/* Close Divider */}
                 <button
                     type="button"
                     onClick={onClose}

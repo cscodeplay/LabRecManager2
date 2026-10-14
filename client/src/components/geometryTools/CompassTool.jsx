@@ -4,71 +4,80 @@ import React, { useState, useRef, useCallback } from 'react';
 import {
     RotateCw,
     X,
-    Check,
     Circle as CircleIcon,
-    Move,
-    Maximize2,
-    Compass as CompassIcon
+    Pencil as PencilIcon,
+    Crosshair
 } from 'lucide-react';
 import {
     PX_PER_CM,
     pxToCm,
     snapAngleDeg,
     degToRad,
-    describeArc
+    radToDeg,
+    describeArc,
+    screenToCanvasCoords,
+    calculateHingePoint
 } from './geometryMath';
 
 export default function CompassTool({
     initialX = 350,
     initialY = 280,
     initialRadiusCm = 6,
-    initialAngle = 0,
+    initialAngle = 30,
     scale = 1,
     onDrawCircle,
     onDrawArc,
     onClose
 }) {
-    // Anchor needle position (center of circle)
+    // Anchor needle position (center of circle) in canvas coordinates
     const [center, setCenter] = useState({ x: initialX, y: initialY });
     const [radiusCm, setRadiusCm] = useState(initialRadiusCm);
-    const [angle, setAngle] = useState(initialAngle); // current pencil position angle
-    const [arcStartAngle, setArcStartAngle] = useState(0);
-    const [arcSweepDeg, setArcSweepDeg] = useState(360);
+    const [angle, setAngle] = useState(initialAngle); // Angle of pencil relative to center
+
+    // Arc sweep drawing state
     const [isSweepingArc, setIsSweepingArc] = useState(false);
+    const [arcStartAngle, setArcStartAngle] = useState(0);
+    const [arcSweepDeg, setArcSweepDeg] = useState(0);
+
+    // Constant arm length for both arms (physical geometry compass)
+    const ARM_LENGTH = 180; // px (~4.76 cm)
 
     const radiusPx = radiusCm * PX_PER_CM;
 
-    // Needle drag (moves entire compass)
+    // Needle drag ref
     const isDraggingNeedleRef = useRef(false);
-    const dragStartRef = useRef({ x: 0, y: 0, initialCenterX: 0, initialCenterY: 0 });
+    const needleDragStartRef = useRef({ canvasStartX: 0, canvasStartY: 0, initialCenterX: 0, initialCenterY: 0 });
 
-    // Radius resize drag
+    // Radius adjustment ref
     const isResizingRadiusRef = useRef(false);
 
-    // Rotation / sweep drag
+    // Rotation / sweep drag ref
     const isRotatingPencilRef = useRef(false);
     const sweepStartAngleRef = useRef(0);
 
-    // Reposition Compass Needle (Anchor)
+    // ─── 1. Needle Drag (Reposition entire compass) ───
     const handleNeedlePointerDown = (e) => {
         if (e.target.closest('button') || e.target.closest('[data-handle="true"]')) return;
         e.stopPropagation();
         e.preventDefault();
         isDraggingNeedleRef.current = true;
-        dragStartRef.current = {
-            x: e.clientX,
-            y: e.clientY,
+
+        const coords = screenToCanvasCoords(e.clientX, e.clientY);
+        needleDragStartRef.current = {
+            canvasStartX: coords.x,
+            canvasStartY: coords.y,
             initialCenterX: center.x,
             initialCenterY: center.y
         };
 
         const onPointerMove = (moveEvt) => {
             if (!isDraggingNeedleRef.current) return;
-            const dx = (moveEvt.clientX - dragStartRef.current.x) / (scale || 1);
-            const dy = (moveEvt.clientY - dragStartRef.current.y) / (scale || 1);
+            const curCoords = screenToCanvasCoords(moveEvt.clientX, moveEvt.clientY);
+            const dx = curCoords.x - needleDragStartRef.current.canvasStartX;
+            const dy = curCoords.y - needleDragStartRef.current.canvasStartY;
             setCenter({
-                x: Math.round(dragStartRef.current.initialCenterX + dx),
-                y: Math.round(dragStartRef.current.initialCenterY + dy)
+                x: Math.round(needleDragStartRef.current.initialCenterX + dx),
+                y: Math.round(needleDragStartRef.current.initialCenterY + dy)
             });
         };
 
@@ -82,7 +91,7 @@ export default function CompassTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // Adjust Compass Radius (Distance between Needle and Pencil)
+    // ─── 2. Adjust Compass Radius (Opening / closing arms) ───
     const handleRadiusPointerDown = (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -90,11 +99,14 @@ export default function CompassTool({
 
         const onPointerMove = (moveEvt) => {
             if (!isResizingRadiusRef.current) return;
-            const mouseX = (moveEvt.clientX - center.x) / (scale || 1);
-            const mouseY = (moveEvt.clientY - center.y) / (scale || 1);
-            const distPx = Math.hypot(mouseX, mouseY);
-            const cm = Math.max(2, Math.min(25, Math.round((distPx / PX_PER_CM) * 2) / 2));
-            setRadiusCm(cm);
+            const coords = screenToCanvasCoords(moveEvt.clientX, moveEvt.clientY);
+            const distPx = Math.hypot(coords.x - center.x, coords.y - center.y);
+
+            // Maximum radius limited by arm geometry (never exceeds 2 * ARM_LENGTH - 10px)
+            const maxPx = ARM_LENGTH * 1.85;
+            const clampedPx = Math.max(PX_PER_CM * 1.5, Math.min(maxPx, distPx));
+            const newCm = Math.round((clampedPx / PX_PER_CM) * 2) / 2;
+            setRadiusCm(newCm);
         };
 
         const onPointerUp = () => {
@@ -107,40 +119,36 @@ export default function CompassTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // Rotate or Sweep Pencil around Needle
+    // ─── 3. Rotate Compass & Sweep Arcs ───
     const handlePencilPointerDown = (e, sweepMode = false) => {
         e.stopPropagation();
         e.preventDefault();
         isRotatingPencilRef.current = true;
         setIsSweepingArc(sweepMode);
 
-        const currentRad = Math.atan2(
-            (e.clientY - center.y) / (scale || 1),
-            (e.clientX - center.x) / (scale || 1)
-        );
-        let currentDeg = (currentRad * 180) / Math.PI;
-        if (currentDeg < 0) currentDeg += 360;
+        const coords = screenToCanvasCoords(e.clientX, e.clientY);
+        const startRad = Math.atan2(coords.y - center.y, coords.x - center.x);
+        let startDeg = (startRad * 180) / Math.PI;
+        if (startDeg < 0) startDeg += 360;
 
-        sweepStartAngleRef.current = currentDeg;
-        setArcStartAngle(currentDeg);
+        sweepStartAngleRef.current = startDeg;
+        setArcStartAngle(startDeg);
         setArcSweepDeg(0);
 
         const onPointerMove = (moveEvt) => {
             if (!isRotatingPencilRef.current) return;
-            const rad = Math.atan2(
-                (moveEvt.clientY - center.y) / (scale || 1),
-                (moveEvt.clientX - center.x) / (scale || 1)
-            );
-            let deg = (rad * 180) / Math.PI;
-            if (deg < 0) deg += 360;
+            const curCoords = screenToCanvasCoords(moveEvt.clientX, moveEvt.clientY);
+            const curRad = Math.atan2(curCoords.y - center.y, curCoords.x - center.x);
+            let curDeg = (curRad * 180) / Math.PI;
+            if (curDeg < 0) curDeg += 360;
 
-            const snapped = snapAngleDeg(deg, moveEvt.shiftKey ? 15 : 1, moveEvt.shiftKey);
+            const snapped = snapAngleDeg(curDeg, moveEvt.shiftKey ? 15 : 1, moveEvt.shiftKey);
             setAngle(snapped);
 
             if (sweepMode) {
-                let sweep = snapped - sweepStartAngleRef.current;
-                if (sweep < 0) sweep += 360;
-                setArcSweepDeg(sweep);
+                let diff = curDeg - sweepStartAngleRef.current;
+                if (diff < 0) diff += 360;
+                setArcSweepDeg(diff);
             }
         };
 
@@ -148,143 +156,247 @@ export default function CompassTool({
             isRotatingPencilRef.current = false;
             window.removeEventListener('pointermove', onPointerMove);
             window.removeEventListener('pointerup', onPointerUp);
+
+            if (sweepMode && arcSweepDeg > 5 && onDrawArc) {
+                onDrawArc({
+                    cx: Math.round(center.x),
+                    cy: Math.round(center.y),
+                    radius: radiusPx,
+                    startAngleDeg: arcStartAngle,
+                    endAngleDeg: (arcStartAngle + arcSweepDeg) % 360,
+                    sweepDeg: Math.round(arcSweepDeg)
+                });
+            }
+            setIsSweepingArc(false);
+            setArcSweepDeg(0);
         };
 
         window.addEventListener('pointermove', onPointerMove);
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // Draw Complete 360° Circle onto Whiteboard
+    // ─── 4. Draw Full Circle Action ───
     const handleDrawFullCircle = useCallback(() => {
         if (!onDrawCircle) return;
         onDrawCircle({
             cx: Math.round(center.x),
             cy: Math.round(center.y),
-            radius: Math.round(radiusPx),
+            radius: radiusPx,
             radiusCm
         });
     }, [onDrawCircle, center, radiusPx, radiusCm]);
 
-    // Draw Arc onto Whiteboard
-    const handleDrawSweptArc = useCallback(() => {
-        if (!onDrawArc) return;
-        const start = arcStartAngle;
-        const end = (arcStartAngle + (arcSweepDeg || 90)) % 360;
-        onDrawArc({
-            cx: Math.round(center.x),
-            cy: Math.round(center.y),
-            radius: Math.round(radiusPx),
-            startAngleDeg: Math.round(start),
-            endAngleDeg: Math.round(end),
-            sweepDeg: Math.round(arcSweepDeg || 90)
-        });
-        setIsSweepingArc(false);
-    }, [onDrawArc, center, radiusPx, arcStartAngle, arcSweepDeg]);
-
-    // Compute pencil position in canvas coordinates
+    // Pencil Tip Coordinates
     const pencilRad = degToRad(angle);
-    const pencilX = center.x + radiusPx * Math.cos(pencilRad);
-    const pencilY = center.y + radiusPx * Math.sin(pencilRad);
+    const pencilTip = {
+        x: center.x + radiusPx * Math.cos(pencilRad),
+        y: center.y + radiusPx * Math.sin(pencilRad)
+    };
 
-    // Hinge top apex position
-    const hingeHeight = Math.max(70, radiusPx * 0.7);
-    const midX = (center.x + pencilX) / 2;
-    const midY = (center.y + pencilY) / 2 - hingeHeight;
+    // Mathematically exact apex hinge position ensuring constant arm lengths L
+    const hinge = calculateHingePoint(center, pencilTip, ARM_LENGTH, false);
+
+    // Spindle / top handle extends past the hinge along the hinge bisector
+    const bisectorDx = hinge.x - (center.x + pencilTip.x) / 2;
+    const bisectorDy = hinge.y - (center.y + pencilTip.y) / 2;
+    const bisectorLen = Math.hypot(bisectorDx, bisectorDy) || 1;
+    const spindleTop = {
+        x: hinge.x + (bisectorDx / bisectorLen) * 32,
+        y: hinge.y + (bisectorDy / bisectorLen) * 32
+    };
 
     return (
         <div className="absolute inset-0 pointer-events-none select-none z-[66]">
-            {/* SVG Compass Arms & Sweep Arc Preview */}
+            {/* SVG Realistic Physical Compass Render */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                 <defs>
-                    <radialGradient id="compassCenterGlow" cx="50%" cy="50%" r="50%">
-                        <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.8" />
-                        <stop offset="100%" stopColor="#0284c7" stopOpacity="0" />
-                    </radialGradient>
-                    <linearGradient id="needleLegGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    {/* Metal Steel / Brass Gradients for Arms */}
+                    <linearGradient id="compassSteelGrad" x1="0%" y1="0%" x2="100%" y2="100%">
                         <stop offset="0%" stopColor="#94a3b8" />
-                        <stop offset="50%" stopColor="#cbd5e1" />
-                        <stop offset="100%" stopColor="#38bdf8" />
+                        <stop offset="35%" stopColor="#e2e8f0" />
+                        <stop offset="70%" stopColor="#64748b" />
+                        <stop offset="100%" stopColor="#334155" />
                     </linearGradient>
-                    <linearGradient id="pencilLegGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#94a3b8" />
-                        <stop offset="60%" stopColor="#f59e0b" />
-                        <stop offset="100%" stopColor="#ea580c" />
+
+                    {/* Wooden Pencil Body Gradient */}
+                    <linearGradient id="pencilWoodGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#f59e0b" />
+                        <stop offset="50%" stopColor="#fbbf24" />
+                        <stop offset="100%" stopColor="#d97706" />
                     </linearGradient>
+
+                    {/* Drop shadow for 3D realism */}
+                    <filter id="compassDropShadow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feDropShadow dx="0" dy="4" stdDeviation="4" floodOpacity="0.4" />
+                    </filter>
                 </defs>
 
-                {/* Sweep Circle Guide / Radius Track */}
+                {/* Radius Track Dotted Reference Circle */}
                 <circle
                     cx={center.x}
                     cy={center.y}
                     r={radiusPx}
                     fill="none"
-                    stroke="#38bdf8"
+                    stroke="#0284c7"
                     strokeWidth="1.2"
                     strokeDasharray="4 4"
-                    opacity="0.45"
+                    opacity="0.35"
                 />
 
-                {/* Sweeping Arc preview while drawing */}
+                {/* Sweeping Arc Preview while dragging pencil */}
                 {isSweepingArc && arcSweepDeg > 2 && (
                     <path
                         d={describeArc(center.x, center.y, radiusPx, arcStartAngle, (arcStartAngle + arcSweepDeg) % 360)}
                         fill="none"
-                        stroke="#22d3ee"
-                        strokeWidth="3"
+                        stroke="#0ea5e9"
+                        strokeWidth="2.5"
                         strokeLinecap="round"
                     />
                 )}
 
-                {/* Needle Anchor Leg (Center to Apex) */}
+                {/* ─── Compass Arm 1: Needle Leg (Hinge to Needle Tip) ─── */}
                 <line
-                    x1={center.x}
-                    y1={center.y}
-                    x2={midX}
-                    y2={midY}
-                    stroke="url(#needleLegGrad)"
-                    strokeWidth="4"
+                    x1={hinge.x}
+                    y1={hinge.y}
+                    x2={center.x}
+                    y2={center.y}
+                    stroke="url(#compassSteelGrad)"
+                    strokeWidth="4.5"
                     strokeLinecap="round"
-                    filter="drop-shadow(0 4px 6px rgba(0,0,0,0.5))"
+                    filter="url(#compassDropShadow)"
+                />
+                {/* Needle Point Taper */}
+                <line
+                    x1={center.x + (hinge.x - center.x) * 0.12}
+                    y1={center.y + (hinge.y - center.y) * 0.12}
+                    x2={center.x}
+                    y2={center.y}
+                    stroke="#cbd5e1"
+                    strokeWidth="2"
+                    strokeLinecap="round"
                 />
 
-                {/* Pencil Leg (Apex to Pencil Tip) */}
+                {/* ─── Compass Arm 2: Pencil Leg (Hinge to Pencil Collar) ─── */}
                 <line
-                    x1={midX}
-                    y1={midY}
-                    x2={pencilX}
-                    y2={pencilY}
-                    stroke="url(#pencilLegGrad)"
-                    strokeWidth="4"
+                    x1={hinge.x}
+                    y1={hinge.y}
+                    x2={pencilTip.x}
+                    y2={pencilTip.y}
+                    stroke="url(#compassSteelGrad)"
+                    strokeWidth="4.5"
                     strokeLinecap="round"
-                    filter="drop-shadow(0 4px 6px rgba(0,0,0,0.5))"
+                    filter="url(#compassDropShadow)"
                 />
 
-                {/* Hinge Joint at Top */}
+                {/* Realistic Wooden Pencil clamped to Arm 2 */}
+                {(() => {
+                    const legDx = pencilTip.x - hinge.x;
+                    const legDy = pencilTip.y - hinge.y;
+                    const legLen = Math.hypot(legDx, legDy) || 1;
+                    const ux = legDx / legLen;
+                    const uy = legDy / legLen;
+                    const perpX = -uy * 5;
+                    const perpY = ux * 5;
+
+                    // Pencil body starts 28px back from tip and extends 20px past collar
+                    const collarX = pencilTip.x - ux * 28;
+                    const collarY = pencilTip.y - uy * 28;
+                    const pencilTopX = pencilTip.x - ux * 52;
+                    const pencilTopY = pencilTip.y - uy * 52;
+
+                    return (
+                        <g filter="url(#compassDropShadow)">
+                            {/* Wooden Pencil Shaft */}
+                            <line
+                                x1={pencilTopX + perpX}
+                                y1={pencilTopY + perpY}
+                                x2={collarX + perpX}
+                                y2={collarY + perpY}
+                                stroke="url(#pencilWoodGrad)"
+                                strokeWidth="5"
+                                strokeLinecap="square"
+                            />
+                            {/* Sharpened Lead Cone & Tip */}
+                            <polygon
+                                points={`
+                                    ${collarX + perpX - ux * 2},${collarY + perpY - uy * 2} 
+                                    ${collarX - perpX - ux * 2},${collarY - perpY - uy * 2} 
+                                    ${pencilTip.x},${pencilTip.y}
+                                `}
+                                fill="#fed7aa"
+                                stroke="#d97706"
+                                strokeWidth="0.5"
+                            />
+                            {/* Graphite Lead Tip */}
+                            <polygon
+                                points={`
+                                    ${pencilTip.x - ux * 6 + perpX * 0.4},${pencilTip.y - uy * 6 + perpY * 0.4} 
+                                    ${pencilTip.x - ux * 6 - perpX * 0.4},${pencilTip.y - uy * 6 - perpY * 0.4} 
+                                    ${pencilTip.x},${pencilTip.y}
+                                `}
+                                fill="#0f172a"
+                            />
+                            {/* Metal Clamp Collar with Thumbscrew */}
+                            <rect
+                                x={collarX - 5}
+                                y={collarY - 5}
+                                width="10"
+                                height="10"
+                                rx="2"
+                                fill="#475569"
+                                stroke="#cbd5e1"
+                                strokeWidth="1"
+                            />
+                        </g>
+                    );
+                })()}
+
+                {/* ─── Top Hinge Joint & Knurled Spindle Handle ─── */}
+                <line
+                    x1={hinge.x}
+                    y1={hinge.y}
+                    x2={spindleTop.x}
+                    y2={spindleTop.y}
+                    stroke="url(#compassSteelGrad)"
+                    strokeWidth="6"
+                    strokeLinecap="round"
+                    filter="url(#compassDropShadow)"
+                />
                 <circle
-                    cx={midX}
-                    cy={midY}
-                    r="8"
-                    fill="#0f172a"
-                    stroke="#38bdf8"
-                    strokeWidth="2.5"
-                    filter="drop-shadow(0 2px 4px rgba(0,0,0,0.4))"
+                    cx={hinge.x}
+                    cy={hinge.y}
+                    r="8.5"
+                    fill="#1e293b"
+                    stroke="#94a3b8"
+                    strokeWidth="2"
+                    filter="url(#compassDropShadow)"
                 />
-                <circle cx={midX} cy={midY} r="3" fill="#38bdf8" />
+                <circle cx={hinge.x} cy={hinge.y} r="3.5" fill="#e2e8f0" />
 
-                {/* Compass Radius Dimension Line & Text */}
+                {/* Knurled Grip Top Cap */}
+                <circle
+                    cx={spindleTop.x}
+                    cy={spindleTop.y}
+                    r="5"
+                    fill="#334155"
+                    stroke="#cbd5e1"
+                    strokeWidth="1.5"
+                />
+
+                {/* Radius Reference Dimension Line */}
                 <line
                     x1={center.x}
                     y1={center.y}
-                    x2={pencilX}
-                    y2={pencilY}
-                    stroke="#fbbf24"
+                    x2={pencilTip.x}
+                    y2={pencilTip.y}
+                    stroke="#0284c7"
                     strokeWidth="1"
                     strokeDasharray="2 3"
-                    opacity="0.75"
+                    opacity="0.6"
                 />
             </svg>
 
-            {/* 1. Needle Anchor Point (Center Handle) */}
+            {/* ─── Control 1: Center Needle Anchor (Draggable) ─── */}
             <div
                 style={{
                     position: 'absolute',
@@ -294,92 +406,77 @@ export default function CompassTool({
                     pointerEvents: 'auto'
                 }}
                 onPointerDown={handleNeedlePointerDown}
-                className="w-9 h-9 rounded-full bg-slate-950/90 border-2 border-cyan-400 shadow-2xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:scale-110 transition group"
-                title="Drag to reposition Compass needle anchor"
+                className="w-8 h-8 rounded-full bg-slate-900/90 border-2 border-cyan-400 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:scale-110 transition group"
+                title="Drag to reposition needle pivot"
             >
-                {/* Needle Crosshair */}
-                <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 ring-4 ring-cyan-500/30 shadow-[0_0_8px_#22d3ee]" />
+                <Crosshair className="w-4 h-4 text-cyan-300 group-hover:text-cyan-100" />
             </div>
 
-            {/* 2. Pencil Tip Handle & Sweep Controller */}
+            {/* ─── Control 2: Pencil Tip & Sweep Handle ─── */}
             <div
-                data-handle="true"
                 style={{
                     position: 'absolute',
-                    left: `${pencilX}px`,
-                    top: `${pencilY}px`,
+                    left: `${pencilTip.x}px`,
+                    top: `${pencilTip.y}px`,
                     transform: 'translate(-50%, -50%)',
                     pointerEvents: 'auto'
                 }}
                 onPointerDown={(e) => handlePencilPointerDown(e, true)}
-                className="w-9 h-9 rounded-full bg-slate-950/95 border-2 border-amber-400 shadow-2xl flex items-center justify-center cursor-crosshair hover:scale-110 transition group"
-                title="Drag pencil to sweep and draw arc (Hold Shift for 15° snap)"
+                className="w-8 h-8 rounded-full bg-slate-900/90 border-2 border-amber-400 shadow-xl flex items-center justify-center cursor-crosshair hover:scale-110 transition group"
+                title="Drag pencil to sweep and draw an arc"
             >
-                {/* Pencil Lead Tip */}
-                <div className="w-3 h-3 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 shadow-[0_0_8px_#f59e0b]" />
+                <PencilIcon className="w-3.5 h-3.5 text-amber-300 group-hover:rotate-12 transition-transform" />
             </div>
 
-            {/* 3. Radius Adjustment Handle (Along Radius Spoke) */}
+            {/* ─── Control 3: Radius Adjustment Handle (Opening / Closing) ─── */}
             <div
                 data-handle="true"
                 style={{
                     position: 'absolute',
-                    left: `${(center.x + pencilX) / 2}px`,
-                    top: `${(center.y + pencilY) / 2}px`,
+                    left: `${(center.x + pencilTip.x) / 2}px`,
+                    top: `${(center.y + pencilTip.y) / 2}px`,
                     transform: 'translate(-50%, -50%)',
                     pointerEvents: 'auto'
                 }}
                 onPointerDown={handleRadiusPointerDown}
-                className="px-2 py-0.5 rounded-full bg-slate-900/95 border border-cyan-400/80 text-[10px] font-mono font-bold text-cyan-300 shadow-xl cursor-ew-resize hover:bg-cyan-500 hover:text-slate-950 transition flex items-center gap-1"
-                title="Drag to adjust compass radius"
+                className="px-2 py-0.5 rounded-full bg-slate-900/95 border border-cyan-400/80 shadow-md flex items-center gap-1 cursor-ew-resize hover:scale-105 transition"
+                title="Drag to open or close compass radius"
             >
-                <Maximize2 className="w-2.5 h-2.5" />
-                <span>{radiusCm.toFixed(1)} cm</span>
+                <span className="text-[10px] font-mono font-bold text-cyan-300">
+                    r = {radiusCm.toFixed(1)} cm
+                </span>
             </div>
 
-            {/* 4. Floating Action HUD at Hinge */}
+            {/* ─── Floating Top Control HUD: Draw Circle & Dismiss ─── */}
             <div
                 style={{
                     position: 'absolute',
-                    left: `${midX}px`,
-                    top: `${midY - 42}px`,
-                    transform: 'translateX(-50%)',
+                    left: `${hinge.x}px`,
+                    top: `${hinge.y - 28}px`,
+                    transform: 'translate(-50%, -100%)',
                     pointerEvents: 'auto'
                 }}
-                className="bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full px-3 py-1 shadow-2xl flex items-center gap-2"
+                className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full px-2.5 py-1 shadow-2xl"
             >
-                {/* Angle Readout */}
-                <span className="text-[11px] font-mono font-bold text-amber-300">
+                {/* Real-time Angle & Radius Display */}
+                <span className="text-[10px] font-mono text-slate-300">
                     {angle.toFixed(0)}°
                 </span>
 
-                <div className="w-[1px] h-3.5 bg-slate-700" />
+                <div className="w-px h-3 bg-slate-700" />
 
-                {/* Draw Full Circle Button */}
+                {/* Draw Full Circle */}
                 <button
                     type="button"
                     onClick={handleDrawFullCircle}
-                    className="flex items-center gap-1 px-2.5 py-0.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[11px] rounded-full shadow transition active:scale-95"
-                    title="Stamp 360° circle onto whiteboard canvas"
+                    className="flex items-center gap-1 px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[10px] rounded-full shadow transition active:scale-95"
+                    title="Draw exact full circle"
                 >
-                    <CircleIcon className="w-3 h-3" />
-                    <span>Circle</span>
+                    <CircleIcon className="w-2.5 h-2.5" />
+                    <span>Draw Circle</span>
                 </button>
 
-                {/* Draw Arc Button */}
-                {isSweepingArc && arcSweepDeg > 5 && (
-                    <button
-                        type="button"
-                        onClick={handleDrawSweptArc}
-                        className="flex items-center gap-1 px-2.5 py-0.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] rounded-full shadow transition active:scale-95"
-                        title="Stamp swept arc onto whiteboard canvas"
-                    >
-                        <Check className="w-3 h-3 stroke-[3]" />
-                        <span>Arc ({arcSweepDeg.toFixed(0)}°)</span>
-                    </button>
-                )}
-
-                {/* Close Button */}
+                {/* Close Compass */}
                 <button
                     type="button"
                     onClick={onClose}

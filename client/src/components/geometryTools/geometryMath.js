@@ -149,3 +149,57 @@ export function formatMeasurement(px, unit = 'cm') {
     }
     return `${pxToCm(px)} cm`;
 }
+
+/**
+ * Transform viewport screen coordinates (e.g. e.clientX, e.clientY)
+ * into mathematically exact Whiteboard Canvas internal coordinates.
+ * Works uniformly across any zoom level, pan offset, and screen DPI.
+ */
+export function screenToCanvasCoords(clientX, clientY) {
+    if (typeof document === 'undefined') return { x: clientX, y: clientY };
+    const canvas = document.getElementById('main-whiteboard-canvas');
+    if (!canvas) return { x: clientX, y: clientY };
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return { x: clientX, y: clientY };
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY
+    };
+}
+
+/**
+ * Calculate the exact apex hinge position for a 2-arm instrument (Compass / Divider)
+ * where both arms have fixed length `armLength`.
+ * Ensures arm lengths remain strictly constant regardless of opening angle or rotation.
+ */
+export function calculateHingePoint(p1, p2, armLength = 180, invertSide = false) {
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const d = Math.hypot(dx, dy);
+
+    // Midpoint between tips
+    const midX = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+
+    if (d <= 0.001) {
+        return { x: midX, y: midY - armLength };
+    }
+
+    // Altitude of isosceles triangle with legs = armLength and base = d
+    const halfBase = Math.min(d / 2, armLength - 0.5);
+    const altitude = Math.sqrt(Math.max(0, armLength * armLength - halfBase * halfBase));
+
+    // Perpendicular unit vector to the base vector p1 -> p2
+    const ux = dx / d;
+    const uy = dy / d;
+    const sign = invertSide ? 1 : -1;
+    const nx = -uy * sign;
+    const ny = ux * sign;
+
+    return {
+        x: midX + altitude * nx,
+        y: midY + altitude * ny
+    };
+}
