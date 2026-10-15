@@ -17,7 +17,7 @@ import {
     Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX,
     ChevronUp, ChevronsUp, ChevronsDown, FileText, Check, Pause, Play, RotateCcw, Globe, Music,
     Underline, Bold, Italic, Shapes, Database, MessageSquare, Sigma, Calculator, Layers, ScanText,
-    ZoomIn, ZoomOut, BookOpen, Gamepad2, Bot, Atom, MoreHorizontal
+    ZoomIn, ZoomOut, BookOpen, Gamepad2, Bot, Atom, MoreHorizontal, Hand, Table
 } from 'lucide-react';
 import fixWebmDuration from 'fix-webm-duration';
 import katex from 'katex';
@@ -98,9 +98,11 @@ import WhiteboardBrowserSideroll from './WhiteboardBrowserSideroll';
 import WhiteboardPageQuizWidget from './WhiteboardPageQuizWidget';
 import WhiteboardAIPanel from './WhiteboardAIPanel';
 import WhiteboardAISlideShow from './WhiteboardAISlideShow';
+import WhiteboardPatterns, { PATTERN_PRESETS, GRADIENT_PRESETS } from './WhiteboardPatterns';
+import WhiteboardTableCreatorModal from './WhiteboardTableCreatorModal';
+import WhiteboardTableObject from './WhiteboardTableObject';
 import { GeometryInstrumentsOverlay, clampPointToInstrumentOuterEdge } from './geometryTools';
 import { getCustomToolbarIcon } from './geometryTools/CustomToolbarIcons';
-import WhiteboardEZWritePalette from './WhiteboardEZWritePalette';
 import api, { aiAPI } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { useAuthStore, useVoiceStore } from '@/lib/store';
@@ -110,6 +112,24 @@ import { formatDate, formatTime } from '@/lib/dateUtils';
  * Classroom-friendly color themes inspired by ViewSonic myViewBoard & BenQ EZWrite
  */
 const TOOL_CLASSROOM_STYLES = {
+    grab: {
+        bgActive: 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-300 scale-105',
+        bgInactive: 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200 hover:scale-105',
+        iconColor: 'text-emerald-400',
+        badge: 'bg-emerald-500'
+    },
+    fill: {
+        bgActive: 'bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-500/30 ring-2 ring-fuchsia-300 scale-105',
+        bgInactive: 'text-fuchsia-400 bg-fuchsia-500/15 hover:bg-fuchsia-500/30 hover:text-fuchsia-200 hover:scale-105',
+        iconColor: 'text-fuchsia-400',
+        badge: 'bg-fuchsia-500'
+    },
+    table: {
+        bgActive: 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-300 scale-105',
+        bgInactive: 'text-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/30 hover:text-indigo-200 hover:scale-105',
+        iconColor: 'text-indigo-400',
+        badge: 'bg-indigo-500'
+    },
     select: {
         bgActive: 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-300 scale-105',
         bgInactive: 'text-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/30 hover:text-indigo-200 hover:scale-105',
@@ -814,6 +834,11 @@ export default function Whiteboard({
     const [showStrokeStylePicker, setShowStrokeStylePicker] = useState(false);
     const [showEraserPicker, setShowEraserPicker] = useState(false);
     const [showShapePicker, setShowShapePicker] = useState(false);
+    const [showFillPicker, setShowFillPicker] = useState(false);
+    const [fillMode, setFillMode] = useState('solid'); // 'solid' | 'pattern' | 'gradient'
+    const [fillPatternId, setFillPatternId] = useState('pattern-dots');
+    const [fillGradientId, setFillGradientId] = useState('grad-sunset');
+    const [showTableModal, setShowTableModal] = useState(false);
     const [showAlignMenu, setShowAlignMenu] = useState(false);
     const [showRecorder, setShowRecorder] = useState(false);
     const [showSelectPicker, setShowSelectPicker] = useState(false);
@@ -822,7 +847,6 @@ export default function Whiteboard({
     const [showScienceFlyout, setShowScienceFlyout] = useState(false);
     const [showMediaFlyout, setShowMediaFlyout] = useState(false);
     const [showToolsFlyout, setShowToolsFlyout] = useState(false);
-    const [showEZWritePalette, setShowEZWritePalette] = useState(true);
 
     const [shapeType, setShapeType] = useState('rectangle'); // rectangle, circle, triangle, star
     const [shapePreview, setShapePreview] = useState(null);
@@ -1823,6 +1847,19 @@ export default function Whiteboard({
     const graphObjects = pageGraphObjects[currentPage] || [];
     const [selectedGraphId, setSelectedGraphId] = useState(null);
 
+    // ─── Table / Grid Objects State ───
+    const [pageTableObjects, setPageTableObjects] = useState({ 0: [] });
+    const tableObjects = pageTableObjects[currentPage] || [];
+    const [selectedTableId, setSelectedTableId] = useState(null);
+
+    const setTableObjects = useCallback((updater) => {
+        setPageTableObjects(prev => {
+            const current = prev[currentPage] || [];
+            const next = typeof updater === 'function' ? updater(current) : updater;
+            return { ...prev, [currentPage]: next };
+        });
+    }, [currentPage]);
+
     // ─── AI Quiz Attached Objects State & Sideroll Overlay States ───
     const [pageQuizObjects, setPageQuizObjects] = useState({ 0: [] });
     const quizObjects = pageQuizObjects[currentPage] || [];
@@ -1966,8 +2003,8 @@ export default function Whiteboard({
                 const scaleX = (cw - 24) / targetW;
                 const scaleY = (ch - 24) / targetH;
                 const fit = Math.min(scaleX, scaleY);
-                // When container is smaller than 1200x700, fit completely. When larger, cap at 1 to preserve crisp layout
-                setContainerFitScale(fit < 1 ? Math.max(fit, 0.2) : 1);
+                // Adaptive auto-fit scaling across all screen sizes from iPad Mini (down to 0.3x) up to 100" Smart Panels / 4K IFPs (up to 3.0x)
+                setContainerFitScale(Math.max(0.3, Math.min(fit, 3.0)));
             }
         };
 
@@ -2156,6 +2193,92 @@ export default function Whiteboard({
             wrapper.removeEventListener('touchend', handleTouchEnd);
         };
     }, [zoomLevel, panOffset]);
+
+    // ─── Grab / Pan Tool Physics & Momentum Inertia Engine ───
+    const [isGrabbing, setIsGrabbing] = useState(false);
+    const isGrabbingRef = useRef(false);
+    const grabStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0, time: 0 });
+    const grabVelocityRef = useRef({ vx: 0, vy: 0, lastX: 0, lastY: 0, lastTime: 0 });
+    const inertiaAnimIdRef = useRef(null);
+    const isSpacePressedRef = useRef(false);
+    const previousToolBeforeSpaceRef = useRef(null);
+
+    const stopInertiaAnimation = useCallback(() => {
+        if (inertiaAnimIdRef.current) {
+            cancelAnimationFrame(inertiaAnimIdRef.current);
+            inertiaAnimIdRef.current = null;
+        }
+    }, []);
+
+    const startInertiaGlide = useCallback((initialVx, initialVy) => {
+        stopInertiaAnimation();
+        let vx = initialVx;
+        let vy = initialVy;
+        let lastTimestamp = performance.now();
+
+        const step = (now) => {
+            const dt = Math.min(32, Math.max(1, now - lastTimestamp));
+            lastTimestamp = now;
+
+            // Natural exponential damping friction (~0.92 per frame)
+            const friction = Math.pow(0.92, dt / 16);
+            vx *= friction;
+            vy *= friction;
+
+            setPanOffset(prev => ({
+                x: Math.round(prev.x + vx * (dt / 16)),
+                y: Math.round(prev.y + vy * (dt / 16))
+            }));
+
+            if (Math.hypot(vx, vy) > 0.08) {
+                inertiaAnimIdRef.current = requestAnimationFrame(step);
+            } else {
+                inertiaAnimIdRef.current = null;
+            }
+        };
+
+        inertiaAnimIdRef.current = requestAnimationFrame(step);
+    }, [stopInertiaAnimation]);
+
+    // Spacebar hold-to-pan keyboard listener
+    useEffect(() => {
+        const handleSpaceKeyDown = (e) => {
+            if (e.code === 'Space' && !e.repeat) {
+                const target = e.target;
+                const isInput = target && (
+                    target.tagName === 'INPUT' ||
+                    target.tagName === 'TEXTAREA' ||
+                    target.isContentEditable ||
+                    target.closest?.('input, textarea, [contenteditable="true"]')
+                );
+                if (!isInput && !isSpacePressedRef.current) {
+                    e.preventDefault();
+                    isSpacePressedRef.current = true;
+                    previousToolBeforeSpaceRef.current = tool;
+                    setTool('grab');
+                }
+            }
+        };
+
+        const handleSpaceKeyUp = (e) => {
+            if (e.code === 'Space') {
+                if (isSpacePressedRef.current) {
+                    isSpacePressedRef.current = false;
+                    if (previousToolBeforeSpaceRef.current) {
+                        setTool(previousToolBeforeSpaceRef.current);
+                        previousToolBeforeSpaceRef.current = null;
+                    }
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleSpaceKeyDown, { passive: false });
+        window.addEventListener('keyup', handleSpaceKeyUp, { passive: true });
+        return () => {
+            window.removeEventListener('keydown', handleSpaceKeyDown);
+            window.removeEventListener('keyup', handleSpaceKeyUp);
+        };
+    }, [tool]);
 
     // Persistence: track if state has been loaded from localStorage
     const [isStateLoaded, setIsStateLoaded] = useState(false);
@@ -3026,6 +3149,7 @@ export default function Whiteboard({
         const currentShapes = pageShapeObjects[currentPage] ? [...pageShapeObjects[currentPage]] : [];
         const currentGraphs = pageGraphObjects[currentPage] ? [...pageGraphObjects[currentPage]] : [];
         const current3D = page3DObjects[currentPage] ? [...page3DObjects[currentPage]] : [];
+        const currentTables = pageTableObjects[currentPage] ? [...pageTableObjects[currentPage]] : [];
 
         setPageHistories(prev => {
             const currentHistory = prev[currentPage] || [];
@@ -3037,7 +3161,8 @@ export default function Whiteboard({
                 textObjects: currentTexts,
                 shapeObjects: currentShapes,
                 graphObjects: currentGraphs,
-                threeDObjects: current3D
+                threeDObjects: current3D,
+                tableObjects: currentTables
             });
             return {
                 ...prev,
@@ -3052,7 +3177,7 @@ export default function Whiteboard({
                 [currentPage]: Math.min(currentIndex + 1, 24)
             };
         });
-    }, [pageHistoryIndices, pageImageObjects, pageTextObjects, pageShapeObjects, pageGraphObjects, page3DObjects, currentPage]);
+    }, [pageHistoryIndices, pageImageObjects, pageTextObjects, pageShapeObjects, pageGraphObjects, page3DObjects, pageTableObjects, currentPage]);
 
     // Restore state from history
     const restoreFromHistory = useCallback((index) => {
@@ -3087,6 +3212,9 @@ export default function Whiteboard({
             }
             if (stateSnapshot.threeDObjects) {
                 setPage3DObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.threeDObjects || [] }));
+            }
+            if (stateSnapshot.tableObjects) {
+                setPageTableObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.tableObjects || [] }));
             }
             
             if (socket && sessionId) {
@@ -4034,6 +4162,14 @@ export default function Whiteboard({
             setSelectedPdfId(null);
             hasDeleted = true;
         }
+        if (selectedTableId) {
+            setPageTableObjects(prev => ({
+                ...prev,
+                [currentPage]: (prev[currentPage] || []).filter(t => t.id !== selectedTableId)
+            }));
+            setSelectedTableId(null);
+            hasDeleted = true;
+        }
         if (selection) {
             handleDeleteSelection();
             hasDeleted = true;
@@ -4041,7 +4177,7 @@ export default function Whiteboard({
         if (hasDeleted) {
             saveToHistory();
         }
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DIds, selectedGraphId, selectedPdfId, selection, handleDeleteSelection, saveToHistory, currentPage]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DIds, selectedGraphId, selectedPdfId, selectedTableId, selection, handleDeleteSelection, saveToHistory, currentPage]);
 
     // Unified Copy
     const handleCopy = useCallback(() => {
@@ -4150,13 +4286,15 @@ export default function Whiteboard({
         const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
         const threeDTargets = targetId ? (threeDObjects.some(o => o.id === targetId) ? [targetId] : []) : selected3DIds;
         const graphTarget = targetId ? (graphObjects.some(g => g.id === targetId) ? targetId : null) : selectedGraphId;
+        const tableTarget = targetId ? (tableObjects.some(t => t.id === targetId) ? targetId : null) : selectedTableId;
 
         const allObjects = [
             ...shapeObjects.map(o => o.zIndex || 30),
             ...textObjects.map(o => o.zIndex || 20),
             ...imageObjects.map(o => o.zIndex || 10),
             ...threeDObjects.map(o => o.zIndex || 15),
-            ...graphObjects.map(o => o.zIndex || 25)
+            ...graphObjects.map(o => o.zIndex || 25),
+            ...tableObjects.map(o => o.zIndex || 35)
         ];
         const maxZ = allObjects.length > 0 ? Math.max(...allObjects) : 30;
         const newZ = maxZ + 1;
@@ -4176,8 +4314,11 @@ export default function Whiteboard({
         if (graphTarget) {
             setGraphObjects(prev => prev.map(g => g.id === graphTarget ? { ...g, zIndex: newZ } : g));
         }
+        if (tableTarget) {
+            setTableObjects(prev => prev.map(t => t.id === tableTarget ? { ...t, zIndex: newZ } : t));
+        }
         saveToHistory();
-    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DIds, selectedGraphId, saveToHistory]);
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, tableObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DIds, selectedGraphId, selectedTableId, setTableObjects, saveToHistory]);
 
     const handleBringForward = useCallback((targetId = null) => {
         const shapeTargets = targetId ? (shapeObjects.some(s => s.id === targetId) ? [targetId] : []) : selectedShapeIds;
@@ -4185,6 +4326,7 @@ export default function Whiteboard({
         const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
         const threeDTargets = targetId ? (threeDObjects.some(o => o.id === targetId) ? [targetId] : []) : selected3DIds;
         const graphTarget = targetId ? (graphObjects.some(g => g.id === targetId) ? targetId : null) : selectedGraphId;
+        const tableTarget = targetId ? (tableObjects.some(t => t.id === targetId) ? targetId : null) : selectedTableId;
 
         if (shapeTargets.length > 0) {
             setShapeObjects(prev => prev.map(s => shapeTargets.includes(s.id) ? { ...s, zIndex: (s.zIndex || 30) + 1 } : s));
@@ -4201,8 +4343,11 @@ export default function Whiteboard({
         if (graphTarget) {
             setGraphObjects(prev => prev.map(g => g.id === graphTarget ? { ...g, zIndex: (g.zIndex || 25) + 1 } : g));
         }
+        if (tableTarget) {
+            setTableObjects(prev => prev.map(t => t.id === tableTarget ? { ...t, zIndex: (t.zIndex || 35) + 1 } : t));
+        }
         saveToHistory();
-    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DIds, selectedGraphId, saveToHistory]);
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, tableObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DIds, selectedGraphId, selectedTableId, setTableObjects, saveToHistory]);
 
     const handleSendBackward = useCallback((targetId = null) => {
         const shapeTargets = targetId ? (shapeObjects.some(s => s.id === targetId) ? [targetId] : []) : selectedShapeIds;
@@ -4210,6 +4355,7 @@ export default function Whiteboard({
         const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
         const threeDTargets = targetId ? (threeDObjects.some(o => o.id === targetId) ? [targetId] : []) : selected3DIds;
         const graphTarget = targetId ? (graphObjects.some(g => g.id === targetId) ? targetId : null) : selectedGraphId;
+        const tableTarget = targetId ? (tableObjects.some(t => t.id === targetId) ? targetId : null) : selectedTableId;
 
         if (shapeTargets.length > 0) {
             setShapeObjects(prev => prev.map(s => shapeTargets.includes(s.id) ? { ...s, zIndex: Math.max(1, (s.zIndex || 30) - 1) } : s));
@@ -4226,8 +4372,11 @@ export default function Whiteboard({
         if (graphTarget) {
             setGraphObjects(prev => prev.map(g => g.id === graphTarget ? { ...g, zIndex: Math.max(1, (g.zIndex || 25) - 1) } : g));
         }
+        if (tableTarget) {
+            setTableObjects(prev => prev.map(t => t.id === tableTarget ? { ...t, zIndex: Math.max(1, (t.zIndex || 35) - 1) } : t));
+        }
         saveToHistory();
-    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DIds, selectedGraphId, saveToHistory]);
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, tableObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DIds, selectedGraphId, selectedTableId, setTableObjects, saveToHistory]);
 
     const handleSendToBack = useCallback((targetId = null) => {
         const shapeTargets = targetId ? (shapeObjects.some(s => s.id === targetId) ? [targetId] : []) : selectedShapeIds;
@@ -4235,13 +4384,15 @@ export default function Whiteboard({
         const imgTarget = targetId ? (imageObjects.some(i => i.id === targetId) ? targetId : null) : selectedImageId;
         const threeDTargets = targetId ? (threeDObjects.some(o => o.id === targetId) ? [targetId] : []) : selected3DIds;
         const graphTarget = targetId ? (graphObjects.some(g => g.id === targetId) ? targetId : null) : selectedGraphId;
+        const tableTarget = targetId ? (tableObjects.some(t => t.id === targetId) ? targetId : null) : selectedTableId;
 
         const allObjects = [
             ...shapeObjects.map(o => o.zIndex || 30),
             ...textObjects.map(o => o.zIndex || 20),
             ...imageObjects.map(o => o.zIndex || 10),
             ...threeDObjects.map(o => o.zIndex || 15),
-            ...graphObjects.map(o => o.zIndex || 25)
+            ...graphObjects.map(o => o.zIndex || 25),
+            ...tableObjects.map(o => o.zIndex || 35)
         ];
         const minZ = allObjects.length > 0 ? Math.min(...allObjects) : 10;
         const newZ = Math.max(1, minZ - 1);
@@ -4261,8 +4412,11 @@ export default function Whiteboard({
         if (graphTarget) {
             setGraphObjects(prev => prev.map(g => g.id === graphTarget ? { ...g, zIndex: newZ } : g));
         }
+        if (tableTarget) {
+            setTableObjects(prev => prev.map(t => t.id === tableTarget ? { ...t, zIndex: newZ } : t));
+        }
         saveToHistory();
-    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DIds, selectedGraphId, saveToHistory]);
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, graphObjects, tableObjects, selectedShapeIds, selectedTextIds, selectedImageId, selected3DIds, selectedGraphId, selectedTableId, setTableObjects, saveToHistory]);
 
     // Alignment tools
     const handleAlign = useCallback((alignment = 'horizontal', targetIds = null) => {
@@ -5129,9 +5283,10 @@ export default function Whiteboard({
             // Single key tool hotkeys (only when not typing in text/input)
             if (!isInput && !modKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
                 const k = e.key.toLowerCase();
-                if (k === 'v') { setTool('select'); toast('Select tool (V)', { id: 'tool-hint' }); }
-                else if (k === 'p') { setTool('pencil'); toast('Pen tool (P)', { id: 'tool-hint' }); }
-                else if (k === 'h') { setTool('highlighter'); toast('Highlighter tool (H)', { id: 'tool-hint' }); }
+                if (k === 'h') { setTool('grab'); toast('Pan / Hand tool (H or Space)', { id: 'tool-hint' }); }
+                else if (k === 'g') { setTool('fill'); setShowFillPicker(true); toast('Fill tool (G)', { id: 'tool-hint' }); }
+                else if (k === 'v') { setTool('select'); toast('Select tool (V)', { id: 'tool-hint' }); }
+                else if (k === 'p') { setTool('pen'); toast('Pen tool (P)', { id: 'tool-hint' }); }
                 else if (k === 'e') { setTool('eraser'); toast('Eraser tool (E)', { id: 'tool-hint' }); }
                 else if (k === 't') { setTool('text'); toast('Text tool (T)', { id: 'tool-hint' }); }
                 else if (k === 'r') { setTool('shape'); setShapeType('rectangle'); toast('Rectangle shape (R)', { id: 'tool-hint' }); }
@@ -6464,6 +6619,7 @@ export default function Whiteboard({
         setSelected3DId(null);
         setSelectedMediaId(null);
         setSelectedPdfId(null);
+        setSelectedTableId(null);
     }, []);
 
     // Get position from event (works for pointer, touch, and mouse)
@@ -7435,10 +7591,17 @@ export default function Whiteboard({
             const canvas = canvasRef.current;
             if (canvas) {
                 const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                floodFill(ctx, Math.round(pos.x), Math.round(pos.y), color, 32);
+                floodFill(ctx, Math.round(pos.x), Math.round(pos.y), {
+                    type: fillMode,
+                    color: color,
+                    patternId: fillPatternId,
+                    gradientId: fillGradientId,
+                    patternFg: '#ffffff',
+                    patternBg: '#1e293b'
+                }, 32);
                 saveToHistory();
-                emitDrawEvent({ type: 'fill', x: pos.x, y: pos.y, color });
-                toast.success('Area filled!', { icon: '🎨' });
+                emitDrawEvent({ type: 'fill', x: pos.x, y: pos.y, color, fillMode, fillPatternId, fillGradientId });
+                toast.success(`Area filled with ${fillMode}!`, { icon: '🎨' });
             }
             return;
         }
@@ -8981,6 +9144,33 @@ export default function Whiteboard({
             e.preventDefault();
         }
 
+        // ─── Grab / Pan Tool or Middle-Click / Spacebar Panning ───
+        if (tool === 'grab' || tool === 'pan' || e.button === 1 || isSpacePressedRef.current) {
+            stopInertiaAnimation();
+            isGrabbingRef.current = true;
+            setIsGrabbing(true);
+            const startX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+            const startY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+            grabStartRef.current = {
+                x: startX,
+                y: startY,
+                panX: panOffset.x,
+                panY: panOffset.y,
+                time: performance.now()
+            };
+            grabVelocityRef.current = {
+                vx: 0,
+                vy: 0,
+                lastX: startX,
+                lastY: startY,
+                lastTime: performance.now()
+            };
+            try {
+                e.currentTarget?.setPointerCapture?.(e.pointerId);
+            } catch (_) {}
+            return;
+        }
+
         // ─── Barrel Button / Stylus Long-Press → Open Radial Toolbar ───
         // Apple Pencil barrel button or right-click
         if (e.button === 5 || (e.pointerType === 'pen' && e.button === 2)) {
@@ -9051,11 +9241,35 @@ export default function Whiteboard({
         }
 
         startDrawing(e);
-    }, [canUserDraw, startDrawing, showRadialMenu, pressureSensitivity]);
+    }, [canUserDraw, startDrawing, showRadialMenu, pressureSensitivity, tool, panOffset, stopInertiaAnimation]);
 
     const handlePointerMove = useCallback((e) => {
         if (e.cancelable) {
             e.preventDefault();
+        }
+
+        if (isGrabbingRef.current) {
+            const curX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+            const curY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+            const now = performance.now();
+            const dt = Math.max(1, now - grabVelocityRef.current.lastTime);
+
+            const dx = (curX - grabStartRef.current.x) / currentZoom;
+            const dy = (curY - grabStartRef.current.y) / currentZoom;
+
+            setPanOffset({
+                x: Math.round(grabStartRef.current.panX + dx),
+                y: Math.round(grabStartRef.current.panY + dy)
+            });
+
+            const instVx = (curX - grabVelocityRef.current.lastX) / dt;
+            const instVy = (curY - grabVelocityRef.current.lastY) / dt;
+            grabVelocityRef.current.vx = grabVelocityRef.current.vx * 0.35 + instVx * 0.65;
+            grabVelocityRef.current.vy = grabVelocityRef.current.vy * 0.35 + instVy * 0.65;
+            grabVelocityRef.current.lastX = curX;
+            grabVelocityRef.current.lastY = curY;
+            grabVelocityRef.current.lastTime = now;
+            return;
         }
 
         // Cancel long-press timer if pen moved too far
@@ -9100,12 +9314,31 @@ export default function Whiteboard({
         }
 
         draw(e);
-    }, [isDrawing, draw, pressureSensitivity, socket, sessionId, getPosition, isInstructor, user, userName, userIdentifier, tool]);
+    }, [isDrawing, draw, pressureSensitivity, socket, sessionId, getPosition, isInstructor, user, userName, userIdentifier, tool, currentZoom]);
 
     const handlePointerUp = useCallback((e) => {
         if (e.cancelable) {
             e.preventDefault();
         }
+
+        if (isGrabbingRef.current) {
+            isGrabbingRef.current = false;
+            setIsGrabbing(false);
+            try {
+                e.currentTarget?.releasePointerCapture?.(e.pointerId);
+            } catch (_) {}
+
+            const speed = Math.hypot(grabVelocityRef.current.vx, grabVelocityRef.current.vy);
+            const timeSinceLastMove = performance.now() - grabVelocityRef.current.lastTime;
+            if (speed > 0.12 && timeSinceLastMove < 90) {
+                startInertiaGlide(
+                    (grabVelocityRef.current.vx * 16) / currentZoom,
+                    (grabVelocityRef.current.vy * 16) / currentZoom
+                );
+            }
+            return;
+        }
+
         if (activePointerIdRef.current !== null && e.pointerId === activePointerIdRef.current) {
             try {
                 e.currentTarget?.releasePointerCapture?.(e.pointerId);
@@ -9121,12 +9354,22 @@ export default function Whiteboard({
             activePointerTypeRef.current = null;
             lastPointRef.current = null;
         }
-    }, [stopDrawing]);
+    }, [stopDrawing, currentZoom, startInertiaGlide]);
 
     const handlePointerCancel = useCallback((e) => {
         if (e.cancelable) {
             e.preventDefault();
         }
+
+        if (isGrabbingRef.current) {
+            isGrabbingRef.current = false;
+            setIsGrabbing(false);
+            try {
+                e.currentTarget?.releasePointerCapture?.(e.pointerId);
+            } catch (_) {}
+            return;
+        }
+
         if (activePointerIdRef.current !== null && e.pointerId === activePointerIdRef.current) {
             try {
                 e.currentTarget?.releasePointerCapture?.(e.pointerId);
@@ -10851,7 +11094,9 @@ export default function Whiteboard({
 
     // Get cursor based on tool
     const getCursor = () => {
+        if (tool === 'grab' || tool === 'pan' || isSpacePressedRef.current) return isGrabbing ? 'grabbing' : 'grab';
         if (tool === 'select') return 'default';
+        if (tool === 'fill') return 'crosshair';
         if (tool === 'eraser') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${eraserSize}" height="${eraserSize}" viewBox="0 0 ${eraserSize} ${eraserSize}"><rect width="${eraserSize}" height="${eraserSize}" fill="white" stroke="black" stroke-width="1"/></svg>') ${eraserSize / 2} ${eraserSize / 2}, auto`;
         if (tool === 'text') return 'text';
         if (tool === 'laser') return 'none';
@@ -10947,6 +11192,59 @@ export default function Whiteboard({
         saveToHistory();
         toast.success('Inserted Graph Plotter to whiteboard!', { icon: '📊' });
     }, [currentPage, panOffset, zoomLevel, saveToHistory]);
+
+    // Insert Interactive Classroom Table
+    const handleCreateTable = useCallback(({ rows = 3, cols = 3, hasHeaderRow = true, theme }) => {
+        const wrapper = canvasWrapperRef.current;
+        const currentZoomVal = zoomLevel || 1;
+        const panX = panOffset.x || 0;
+        const panY = panOffset.y || 0;
+        const viewW = wrapper?.clientWidth || 1200;
+        const viewH = wrapper?.clientHeight || 800;
+
+        const colW = Math.max(90, Math.min(180, Math.round(540 / cols)));
+        const rowH = Math.max(45, Math.min(75, Math.round(270 / rows)));
+        const totalW = colW * cols;
+        const totalH = rowH * rows;
+
+        // Viewport center in canvas coords
+        const cx = Math.round((-panX + viewW / 2) / currentZoomVal);
+        const cy = Math.round((-panY + viewH / 2) / currentZoomVal);
+
+        const newTable = {
+            id: `table_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+            type: 'table',
+            x: Math.max(30, cx - totalW / 2),
+            y: Math.max(30, cy - totalH / 2),
+            rows,
+            cols,
+            rowHeights: Array(rows).fill(rowH),
+            colWidths: Array(cols).fill(colW),
+            hasHeaderRow,
+            headerBg: theme?.headerBg || '#1e293b',
+            headerText: theme?.headerText || '#f8fafc',
+            cellBg: theme?.cellBg || '#0f172a',
+            cellText: theme?.cellText || '#e2e8f0',
+            borderColor: theme?.borderColor || '#334155',
+            borderWidth: 2,
+            isLocked: false,
+            zIndex: 35,
+            cells: {}
+        };
+
+        setTableObjects(prev => [...prev, newTable]);
+        setSelectedTableId(newTable.id);
+        setSelectedGraphId(null);
+        setSelected3DId(null);
+        setSelectedPdfId(null);
+        setSelectedShapeIds([]);
+        setSelectedTextIds([]);
+        setSelectedImageId(null);
+        setSelectedImageIds([]);
+        setTool('select');
+        saveToHistory();
+        toast.success(`Inserted ${rows}×${cols} Table!`, { icon: '📊' });
+    }, [panOffset, zoomLevel, setTableObjects, saveToHistory]);
 
     // Page navigation functions
     const saveCurrentPage = useCallback(() => {
@@ -18764,11 +19062,14 @@ export default function Whiteboard({
 
                 const allTools = [
                     { id: 'select', icon: selectMode === 'lasso' ? Wand2 : MousePointer2, label: 'Select (V)', important: true },
+                    { id: 'grab', icon: Hand, label: 'Hand / Pan (H or hold Space)', important: true },
                     { id: 'pen', icon: penMode === 'sparkle' ? Sparkles : Pencil, label: penMode === 'sparkle' ? 'Sparkle Pen (P)' : 'Pen & Smart Draw (P)', important: true },
                     { id: 'highlighter', icon: Highlighter, label: 'Highlighter (H)', important: true },
                     { id: 'eraser', icon: Eraser, label: 'Eraser (E)', important: true },
+                    { id: 'fill', icon: PaintBucket, label: 'Fill Bucket (G) - Solid, Pattern, Gradient', important: true },
                     { id: 'line', icon: lineType.startsWith('connector') ? Waypoints : (lineType === 'arrow' ? MoveRight : Minus), label: 'Lines & Arrows', important: false },
                     { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : (shapeType === 'parallelogram' ? ParallelogramIcon : RectangleHorizontal))), label: 'Shapes', important: true },
+                    { id: 'table', icon: Table, label: 'Classroom Table & Grid', important: true },
                     { id: 'text', icon: Type, label: 'Text (T)', important: true },
                     { id: 'math_tablet', icon: Calculator, label: 'Math Input Tablet (Windows MIP)', important: true },
                     { id: 'math_solver', icon: Sparkles, label: 'Auto Math Solver (Timed Steps)', important: true },
@@ -18795,11 +19096,14 @@ export default function Whiteboard({
 
                 const coreTools = [
                     { id: 'select', icon: selectMode === 'lasso' ? Wand2 : MousePointer2, label: 'Select (V)' },
+                    { id: 'grab', icon: Hand, label: 'Hand / Pan (H)' },
                     { id: 'pen', icon: penMode === 'sparkle' ? Sparkles : Pencil, label: penMode === 'sparkle' ? 'Sparkle Pen (P)' : 'Pen & Smart Draw (P)' },
                     { id: 'highlighter', icon: Highlighter, label: 'Highlighter (H)' },
                     { id: 'eraser', icon: Eraser, label: 'Eraser (E)' },
+                    { id: 'fill', icon: PaintBucket, label: 'Fill Bucket (G)' },
                     { id: 'line', icon: lineType.startsWith('connector') ? Waypoints : (lineType === 'arrow' ? MoveRight : Minus), label: 'Lines & Arrows' },
                     { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : (shapeType === 'parallelogram' ? ParallelogramIcon : RectangleHorizontal))), label: 'Shapes' },
+                    { id: 'table', icon: Table, label: 'Table (Grid)' },
                     { id: 'text', icon: Type, label: 'Text (T)' },
                 ];
 
@@ -18957,6 +19261,19 @@ export default function Whiteboard({
                                             setShowGameSelector(true);
                                             return;
                                         }
+                                        if (t.id === 'table') {
+                                            setShowTableModal(true);
+                                            return;
+                                        }
+                                        if (t.id === 'fill') {
+                                            if (tool === 'fill') {
+                                                setShowFillPicker(prev => !prev);
+                                            } else {
+                                                setTool('fill');
+                                                setShowFillPicker(true);
+                                            }
+                                            return;
+                                        }
                                         if (t.id === 'permissions') {
                                             setShowPermissions(true);
                                             return;
@@ -18965,6 +19282,7 @@ export default function Whiteboard({
                                             // Re-click to open popup
                                             if (t.id === 'pen') setShowStrokePicker(!showStrokePicker);
                                             if (t.id === 'eraser') setShowEraserPicker(!showEraserPicker);
+                                            if (t.id === 'fill') setShowFillPicker(!showFillPicker);
                                             if (t.id === 'select') setShowSelectPicker(!showSelectPicker);
                                             if (t.id === 'shape') setShowShapePicker(!showShapePicker);
                                             if (t.id === 'highlighter') setShowHighlighterPicker(!showHighlighterPicker);
@@ -18974,6 +19292,7 @@ export default function Whiteboard({
                                             setTool(t.id);
                                             setShowStrokePicker(false);
                                             setShowEraserPicker(false);
+                                            setShowFillPicker(false);
                                             setShowSelectPicker(false);
                                             setShowShapePicker(false);
                                             setShowHighlighterPicker(false);
@@ -18992,7 +19311,9 @@ export default function Whiteboard({
                                         (t.id === 'timer' && showClassroomTimer) ||
                                         (t.id === 'spotlight' && isSpotlightActive) ||
                                         (t.id === 'curtain' && isCurtainActive) ||
-                                        (t.id === 'tasks' && showTasksPanel))
+                                        (t.id === 'tasks' && showTasksPanel) ||
+                                        (t.id === 'table' && showTableModal) ||
+                                        (t.id === 'fill' && showFillPicker))
                                             ? (TOOL_CLASSROOM_STYLES[t.id]?.bgActive || 'bg-primary-500 text-white shadow-md ring-2 ring-primary-300 scale-105')
                                             : (TOOL_CLASSROOM_STYLES[t.id]?.bgInactive || 'text-slate-300 hover:bg-slate-800 hover:text-white')
                                     }`}
@@ -19389,6 +19710,152 @@ export default function Whiteboard({
                                             onChange={(e) => setEraserSize(parseInt(e.target.value))}
                                             className="w-full accent-primary-500 cursor-pointer"
                                         />
+                                    </div>
+                                )}
+
+                                {/* Fill Bucket Tool Popover */}
+                                {tool === t.id && t.id === 'fill' && showFillPicker && (
+                                    <div className={`absolute ${popoverPos} p-3 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl z-50 flex flex-col gap-2.5 w-[280px] text-slate-200 backdrop-blur-md animate-in fade-in zoom-in-95`}>
+                                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                                            <div className="flex items-center gap-1.5">
+                                                <PaintBucket className="w-4 h-4 text-emerald-400" />
+                                                <span className="text-xs font-bold text-white uppercase tracking-wider">Fill Bucket</span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowFillPicker(false)}
+                                                className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
+                                            >
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+
+                                        <div className="flex items-center bg-slate-800/80 p-0.5 rounded-xl border border-slate-700/60 text-xs">
+                                            <button
+                                                type="button"
+                                                onClick={() => setFillMode('solid')}
+                                                className={`flex-1 py-1 px-2 rounded-lg font-medium transition ${
+                                                    fillMode === 'solid' ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                                                }`}
+                                            >
+                                                Solid
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setFillMode('pattern')}
+                                                className={`flex-1 py-1 px-2 rounded-lg font-medium transition ${
+                                                    fillMode === 'pattern' ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                                                }`}
+                                            >
+                                                Pattern
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setFillMode('gradient')}
+                                                className={`flex-1 py-1 px-2 rounded-lg font-medium transition ${
+                                                    fillMode === 'gradient' ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                                                }`}
+                                            >
+                                                Gradient
+                                            </button>
+                                        </div>
+
+                                        {fillMode === 'solid' && (
+                                            <div className="flex flex-col gap-2">
+                                                <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+                                                    Solid Fill Color
+                                                </div>
+                                                <div className="grid grid-cols-5 gap-1.5">
+                                                    {['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#ffffff', '#64748b', '#000000'].map(c => (
+                                                        <button
+                                                            key={c}
+                                                            type="button"
+                                                            onClick={() => setColor(c)}
+                                                            className={`w-7 h-7 rounded-lg border-2 transition hover:scale-110 flex items-center justify-center ${
+                                                                color === c ? 'border-white ring-2 ring-primary-500 scale-105' : 'border-slate-700'
+                                                            }`}
+                                                            style={{ backgroundColor: c }}
+                                                        >
+                                                            {color === c && <Check className={`w-3.5 h-3.5 ${c === '#ffffff' ? 'text-black' : 'text-white'}`} />}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <div className="flex items-center gap-2 mt-1 pt-1.5 border-t border-slate-800">
+                                                    <span className="text-[10px] text-slate-400">Custom:</span>
+                                                    <input
+                                                        type="color"
+                                                        value={color || '#3b82f6'}
+                                                        onChange={(e) => setColor(e.target.value)}
+                                                        className="w-6 h-6 rounded cursor-pointer bg-transparent border-0"
+                                                    />
+                                                    <span className="text-[11px] font-mono text-slate-300">{color}</span>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {fillMode === 'pattern' && (
+                                            <div className="flex flex-col gap-2">
+                                                <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+                                                    SVG Texture Patterns
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-1.5 max-h-[180px] overflow-y-auto pr-1">
+                                                    {PATTERN_PRESETS.map(p => (
+                                                        <button
+                                                            key={p.id}
+                                                            type="button"
+                                                            onClick={() => setFillPatternId(p.id)}
+                                                            className={`flex items-center gap-2 p-1.5 rounded-xl border text-left transition ${
+                                                                fillPatternId === p.id
+                                                                    ? 'border-primary-400 bg-primary-950/40 ring-1 ring-primary-400'
+                                                                    : 'border-slate-700/80 bg-slate-800/60 hover:bg-slate-800 hover:border-slate-600'
+                                                            }`}
+                                                        >
+                                                            <svg width="24" height="24" className="rounded-md border border-slate-600 shrink-0">
+                                                                <rect width="24" height="24" fill={`url(#${p.id})`} />
+                                                            </svg>
+                                                            <span className="text-[11px] font-medium text-slate-200 truncate">{p.name}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {fillMode === 'gradient' && (
+                                            <div className="flex flex-col gap-2">
+                                                <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+                                                    Gradients (Linear & Radial)
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-1.5 max-h-[180px] overflow-y-auto pr-1">
+                                                    {GRADIENT_PRESETS.map(g => (
+                                                        <button
+                                                            key={g.id}
+                                                            type="button"
+                                                            onClick={() => setFillGradientId(g.id)}
+                                                            className={`flex items-center gap-2 p-1.5 rounded-xl border text-left transition ${
+                                                                fillGradientId === g.id
+                                                                    ? 'border-primary-400 bg-primary-950/40 ring-1 ring-primary-400'
+                                                                    : 'border-slate-700/80 bg-slate-800/60 hover:bg-slate-800 hover:border-slate-600'
+                                                            }`}
+                                                        >
+                                                            <div
+                                                                className="w-6 h-6 rounded-md border border-slate-600 shrink-0 shadow-xs"
+                                                                style={{
+                                                                    background: g.type === 'radial'
+                                                                        ? `radial-gradient(circle at center, ${g.from}, ${g.to})`
+                                                                        : `linear-gradient(${g.angle || 45}deg, ${g.from}, ${g.to})`
+                                                                }}
+                                                            />
+                                                            <span className="text-[11px] font-medium text-slate-200 truncate">{g.name}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="pt-1.5 border-t border-slate-800 text-[10px] text-slate-400 flex items-center gap-1">
+                                            <span>💡</span>
+                                            <span>Click canvas to flood fill or click any shape to color it!</span>
+                                        </div>
                                     </div>
                                 )}
 
@@ -20066,25 +20533,6 @@ export default function Whiteboard({
                                                     <X className="w-3 h-3" />
                                                 </button>
                                             </div>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowEZWritePalette(prev => !prev);
-                                                    setShowToolsFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showEZWritePalette ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
-                                                    <Pencil className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span>Floating EZWrite Bar</span>
-                                                    <span className="text-[10px] text-slate-400 font-normal">BenQ / ViewSonic quick companion</span>
-                                                </div>
-                                            </button>
 
                                             <button
                                                 type="button"
@@ -21265,6 +21713,9 @@ export default function Whiteboard({
                     }}
                     onDrop={handleCanvasDrop}
                 >
+                    {/* SVG Definitions for Fill Patterns & Gradients */}
+                    <WhiteboardPatterns fgColor="#ffffff" bgColor="#1e293b" />
+
                     <canvas
                         ref={canvasRef}
                         id="main-whiteboard-canvas"
@@ -24992,7 +25443,7 @@ export default function Whiteboard({
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : 'crosshair',
                                     zIndex: shpObj.zIndex || ((shpObj.type === 'ruler' || shpObj.type === 'protractor') ? 60 : (isSelected ? 20 : 10)),
-                                    pointerEvents: (tool === 'select' || tool === 'line' || isSelected) ? 'auto' : 'none',
+                                    pointerEvents: (tool === 'select' || tool === 'line' || tool === 'fill' || isSelected) ? 'auto' : 'none',
                                 }}
                                 onMouseEnter={() => setHoveredShapeId(shpObj.id)}
                                 onMouseLeave={() => setHoveredShapeId(null)}
@@ -25011,6 +25462,19 @@ export default function Whiteboard({
                                 }}
                                 onPointerDown={(e) => {
                                     if (!canUserDraw) return;
+                                    if (tool === 'fill') {
+                                        e.stopPropagation();
+                                        let appliedFill = color || '#3b82f6';
+                                        if (fillMode === 'pattern') {
+                                            appliedFill = `url(#${fillPatternId || 'pattern-dots'})`;
+                                        } else if (fillMode === 'gradient') {
+                                            appliedFill = `url(#${fillGradientId || 'grad-sunset'})`;
+                                        }
+                                        setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fillColor: appliedFill } : s));
+                                        saveToHistory();
+                                        toast.success(`Shape filled with ${fillMode}!`, { icon: '🎨' });
+                                        return;
+                                    }
                                     let activeSelectionIds = selectedShapeIds;
                                     if (tool === 'select') {
                                         e.stopPropagation();
@@ -27446,6 +27910,50 @@ export default function Whiteboard({
                         />
                     ))}
 
+                    {/* Interactive Classroom Tables & Grids Layer */}
+                    {(pageTableObjects[currentPage] || []).filter(Boolean).map((tableObj) => (
+                        <WhiteboardTableObject
+                            key={tableObj.id}
+                            tableObj={tableObj}
+                            isSelected={selectedTableId === tableObj.id}
+                            scale={currentZoom}
+                            onSelect={(id) => {
+                                setSelectedTableId(id);
+                                setSelectedGraphId(null);
+                                setSelected3DId(null);
+                                setSelectedPdfId(null);
+                                setSelectedShapeIds([]);
+                                setSelectedTextIds([]);
+                                setSelectedImageId(null);
+                                setSelectedImageIds([]);
+                                setSelectedMediaId(null);
+                            }}
+                            onUpdate={(updates) => {
+                                setTableObjects(prev => prev.map(t => t.id === tableObj.id ? { ...t, ...updates } : t));
+                            }}
+                            onDelete={(id) => {
+                                setTableObjects(prev => prev.filter(t => t.id !== id));
+                                if (selectedTableId === id) setSelectedTableId(null);
+                                saveToHistory();
+                            }}
+                            onDuplicate={(id) => {
+                                const orig = (pageTableObjects[currentPage] || []).find(t => t.id === id);
+                                if (!orig) return;
+                                const clone = {
+                                    ...orig,
+                                    id: `table_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                    x: (orig.x || 0) + 30,
+                                    y: (orig.y || 0) + 30
+                                };
+                                setTableObjects(prev => [...prev, clone]);
+                                setSelectedTableId(clone.id);
+                                saveToHistory();
+                            }}
+                            onBringForward={() => handleBringForward(tableObj.id)}
+                            onSendBackward={() => handleSendBackward(tableObj.id)}
+                        />
+                    ))}
+
                     {/* Interactive Classroom Geometry Instruments (myViewBoard Inspired) */}
                     <GeometryInstrumentsOverlay
                         isOpen={showGeometryInstruments}
@@ -27461,27 +27969,6 @@ export default function Whiteboard({
                         onInstrumentBoundsChange={handleInstrumentBoundsChange}
                     />
                 </div>
-
-                {/* BenQ EZWrite & ViewSonic Floating Companion Palette */}
-                {showEZWritePalette && (
-                    <WhiteboardEZWritePalette
-                        tool={tool}
-                        setTool={setTool}
-                        color={color}
-                        setColor={setColor}
-                        onUndo={handleUndo}
-                        canUndo={(pageHistoryIndices[currentPage] !== undefined ? pageHistoryIndices[currentPage] : -1) > 0}
-                        showGeometryInstruments={showGeometryInstruments}
-                        setShowGeometryInstruments={setShowGeometryInstruments}
-                        isSpotlightActive={isSpotlightActive}
-                        setIsSpotlightActive={setIsSpotlightActive}
-                        isCurtainActive={isCurtainActive}
-                        setIsCurtainActive={setIsCurtainActive}
-                        onOpenAiAssistant={() => setShowAiAssistantModal(true)}
-                        isInstructor={isInstructor}
-                        onClose={() => setShowEZWritePalette(false)}
-                    />
-                )}
 
                 {/* Interactive 16:9 Canvas Minimap with Zoom & Viewport Navigation */}
                 {showMinimap && (
@@ -27723,6 +28210,13 @@ export default function Whiteboard({
                 onInsertShapeToCanvas={handleInsertParametricShape}
             />
 
+            {/* Interactive Classroom Table & Grid Creator Modal */}
+            <WhiteboardTableCreatorModal
+                isOpen={showTableModal}
+                onClose={() => setShowTableModal(false)}
+                onCreateTable={handleCreateTable}
+            />
+
             {/* Domain-Specific Shape Library Modal */}
             <DomainShapeLibraryModal
                 isOpen={showDomainLibrary}
@@ -27821,6 +28315,7 @@ export default function Whiteboard({
                     pagePdfObjects,
                     pageMediaObjects,
                     pageGraphObjects,
+                    pageTableObjects,
                     pages
                 }}
                 sessionId={sessionId}

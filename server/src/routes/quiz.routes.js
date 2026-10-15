@@ -404,6 +404,7 @@ function generateMcqDistractors(validOptions, questionText = '', correctOpt = 'A
 }
 
 function sanitizeSingleQuestion(q, idx, defaultDifficulty = 'medium') {
+    if (!q || typeof q !== 'object') q = {};
     const seqId = idx + 1;
     const rawType = (q.type || q.questionType || '').toLowerCase();
     const isFillIn = rawType === 'fill_in_the_blank' || rawType === 'nat' || rawType === 'fill_in' || rawType === 'fib';
@@ -867,6 +868,12 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
         });
     }
 
+    // If explicit type counts with non-MCQ types (Fill-in-the-blank or True/False) are requested,
+    // the bank cannot fulfill them because bank only stores MCQs. Clear bankQuestions so AI generates the full set.
+    if (hasExplicitTypeCounts && (fCount > 0 || tCount > 0)) {
+        bankQuestions = [];
+    }
+
     // 3. STRICT AUTHENTICITY GUARD (NO FICTIONAL QUESTIONS)
     // Check if requested year is a future/unheld year (> 2026) or non-existent past paper
     const currentYear = new Date().getFullYear();
@@ -903,7 +910,7 @@ router.post('/generate', authenticate, asyncHandler(async (req, res) => {
     }
 
     // 4. FETCH AUTHENTIC WEB SOURCES & GROUNDING
-    const remainingCount = count - bankQuestions.length;
+    const remainingCount = Math.max(1, count - bankQuestions.length);
     const searchTargetExam = selectedExams.join(' ') || '';
     const searchTargetYear = selectedYears.filter(y => y.toLowerCase() !== 'any').join(' ') || '';
 
@@ -1157,18 +1164,24 @@ Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
         // 2. If explicit type counts requested, deterministically enforce exact counts: mCount, fCount, tCount
         if (hasExplicitTypeCounts && (mCount + fCount + tCount > 0)) {
             const finalQuestions = [];
-            const mcqsAvailable = allocatedQuestions.filter(q => q.detectedType === 'mcq');
-            const fibsAvailable = allocatedQuestions.filter(q => q.detectedType === 'fill_in_the_blank');
-            const tfsAvailable = allocatedQuestions.filter(q => q.detectedType === 'true_false');
+            const pool = [...allocatedQuestions];
+
+            const takeFromPool = (predicate) => {
+                const idx = pool.findIndex(predicate);
+                if (idx !== -1) {
+                    return pool.splice(idx, 1)[0];
+                }
+                return pool.shift();
+            };
 
             // Collect exact requested MCQs
             for (let i = 0; i < mCount; i++) {
-                const q = mcqsAvailable.shift() || allocatedQuestions.shift();
+                const q = takeFromPool(item => item && item.detectedType === 'mcq');
                 if (q) finalQuestions.push({ ...q, type: 'mcq' });
             }
             // Collect exact requested Fill-in-the-blanks
             for (let i = 0; i < fCount; i++) {
-                const q = fibsAvailable.shift() || allocatedQuestions.shift();
+                const q = takeFromPool(item => item && item.detectedType === 'fill_in_the_blank');
                 if (q) {
                     let targetAnswer = q.correctOption;
                     if (Array.isArray(q.options) && q.options.length > 0) {
@@ -1187,13 +1200,14 @@ Escape backslashes in JSON strings (\\\\). Return ONLY valid JSON array.`;
             }
             // Collect exact requested True/False
             for (let i = 0; i < tCount; i++) {
-                const q = tfsAvailable.shift() || allocatedQuestions.shift();
+                const q = takeFromPool(item => item && item.detectedType === 'true_false');
                 if (q) finalQuestions.push({ ...q, type: 'true_false' });
             }
 
             // Fill remaining if needed
-            while (finalQuestions.length < remainingCount && allocatedQuestions.length > 0) {
-                finalQuestions.push(allocatedQuestions.shift());
+            while (finalQuestions.length < remainingCount && pool.length > 0) {
+                const extra = pool.shift();
+                if (extra) finalQuestions.push(extra);
             }
 
             allocatedQuestions = finalQuestions;

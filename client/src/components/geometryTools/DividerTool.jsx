@@ -6,10 +6,8 @@ import {
     X,
     Check,
     Lock,
-    Unlock,
-    Crosshair
+    Unlock
 } from 'lucide-react';
-import { ArgonNeedleIcon } from './CustomToolbarIcons';
 import {
     PX_PER_CM,
     pxToCm,
@@ -40,16 +38,16 @@ export default function DividerTool({
 
     const spanPx = spanCm * PX_PER_CM;
 
-    // Needle A drag ref (repositioning entire divider)
+    // Divider drag ref (repositioning entire divider via bender, handles, or needle A)
     const isDraggingPointARef = useRef(false);
     const dragStartRef = useRef({ canvasStartX: 0, canvasStartY: 0, initialAx: 0, initialAy: 0 });
 
     // Needle B drag ref (adjusting span / rotation)
     const isAdjustingPointBRef = useRef(false);
 
-    // ─── 1. Primary Needle A Drag (Reposition entire divider) ───
+    // ─── 1. Reposition entire divider (Bender / Handles / Needle A) ───
     const handlePointAPointerDown = (e) => {
-        if (e.target.closest('button') || e.target.closest('[data-handle="true"]')) return;
+        if (e.target.closest('button')) return;
         e.stopPropagation();
         e.preventDefault();
         isDraggingPointARef.current = true;
@@ -83,7 +81,7 @@ export default function DividerTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // ─── 2. Secondary Needle B Drag (Adjust span or rotate angle) ───
+    // ─── 2. Secondary Needle B Drag (Extend / Retract span or rotate angle) ───
     const handlePointBPointerDown = (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -122,14 +120,13 @@ export default function DividerTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // ─── 3. Mathematically Exact Distance Marking (Zero Offset) ───
+    // ─── 3. Distance Marking onto Whiteboard ───
     const handleMarkDistance = useCallback(() => {
         if (!onMarkDistance) return;
         const rad = degToRad(angle);
         const endX = pointA.x + spanPx * Math.cos(rad);
         const endY = pointA.y + spanPx * Math.sin(rad);
 
-        // Begins at Point A needle tip and ends at Point B needle tip precisely
         onMarkDistance({
             startX: Math.round(pointA.x),
             startY: Math.round(pointA.y),
@@ -151,7 +148,7 @@ export default function DividerTool({
     // Hinge apex with strictly constant arm lengths ARM_LENGTH
     const hinge = calculateHingePoint(pointA, pointB, ARM_LENGTH, false);
 
-    // Spindle top handle
+    // Spindle top handle (Bender)
     const bisectorDx = hinge.x - (pointA.x + pointB.x) / 2;
     const bisectorDy = hinge.y - (pointA.y + pointB.y) / 2;
     const bisectorLen = Math.hypot(bisectorDx, bisectorDy) || 1;
@@ -160,12 +157,16 @@ export default function DividerTool({
         y: hinge.y + (bisectorDy / bisectorLen) * 32
     };
 
+    // Vertical middle of height for length & angle readout badge
+    const midX = (hinge.x + (pointA.x + pointB.x) / 2) / 2;
+    const midY = (hinge.y + (pointA.y + pointB.y) / 2) / 2;
+
     return (
         <div className="absolute inset-0 pointer-events-none select-none z-[66]">
             {/* SVG Dual-Needle Steel Caliper Divider Render */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                 <defs>
-                    {/* Polished Chrome / Brass Metallic Gradients */}
+                    {/* Polished Chrome / Steel Metallic Gradients */}
                     <linearGradient id="dividerSteelGrad" x1="0%" y1="0%" x2="100%" y2="100%">
                         <stop offset="0%" stopColor="#94a3b8" />
                         <stop offset="35%" stopColor="#f1f5f9" />
@@ -173,7 +174,7 @@ export default function DividerTool({
                         <stop offset="100%" stopColor="#1e293b" />
                     </linearGradient>
 
-                    {/* Drop shadow */}
+                    {/* Drop shadow for 3D depth */}
                     <filter id="dividerDropShadow" x="-20%" y="-20%" width="140%" height="140%">
                         <feDropShadow dx="0" dy="4" stdDeviation="4" floodOpacity="0.45" />
                     </filter>
@@ -186,23 +187,41 @@ export default function DividerTool({
                     x2={pointB.x}
                     y2={pointB.y}
                     stroke="#38bdf8"
-                    strokeWidth="1.5"
+                    strokeWidth="1.2"
                     strokeDasharray="3 3"
-                    opacity="0.6"
+                    opacity="0.4"
                 />
 
-                {/* ─── Caliper Arm 1: Hinge to Needle Point A ─── */}
-                <line
-                    x1={hinge.x}
-                    y1={hinge.y}
-                    x2={pointA.x}
-                    y2={pointA.y}
-                    stroke="url(#dividerSteelGrad)"
-                    strokeWidth="5"
-                    strokeLinecap="round"
-                    filter="url(#dividerDropShadow)"
-                />
-                {/* Needle Tip A Taper */}
+                {/* ─── Caliper Arm 1 (Handle - Draggable to move divider) ─── */}
+                <g
+                    className="cursor-grab active:cursor-grabbing pointer-events-auto"
+                    onPointerDown={handlePointAPointerDown}
+                    title="Divider Handle (Drag to reposition divider)"
+                >
+                    {/* Wide transparent hit area */}
+                    <line
+                        x1={hinge.x}
+                        y1={hinge.y}
+                        x2={pointA.x}
+                        y2={pointA.y}
+                        stroke="transparent"
+                        strokeWidth="22"
+                        strokeLinecap="round"
+                    />
+                    {/* Visible Metallic Arm */}
+                    <line
+                        x1={hinge.x}
+                        y1={hinge.y}
+                        x2={pointA.x}
+                        y2={pointA.y}
+                        stroke="url(#dividerSteelGrad)"
+                        strokeWidth="5"
+                        strokeLinecap="round"
+                        filter="url(#dividerDropShadow)"
+                    />
+                </g>
+
+                {/* Needle Tip A Taper & Point */}
                 <line
                     x1={pointA.x + (hinge.x - pointA.x) * 0.15}
                     y1={pointA.y + (hinge.y - pointA.y) * 0.15}
@@ -212,19 +231,38 @@ export default function DividerTool({
                     strokeWidth="2.5"
                     strokeLinecap="round"
                 />
+                <circle cx={pointA.x} cy={pointA.y} r="1.5" fill="#0f172a" stroke="#cbd5e1" strokeWidth="0.8" />
 
-                {/* ─── Caliper Arm 2: Hinge to Needle Point B ─── */}
-                <line
-                    x1={hinge.x}
-                    y1={hinge.y}
-                    x2={pointB.x}
-                    y2={pointB.y}
-                    stroke="url(#dividerSteelGrad)"
-                    strokeWidth="5"
-                    strokeLinecap="round"
-                    filter="url(#dividerDropShadow)"
-                />
-                {/* Needle Tip B Taper */}
+                {/* ─── Caliper Arm 2 (Handle - Draggable to move divider) ─── */}
+                <g
+                    className="cursor-grab active:cursor-grabbing pointer-events-auto"
+                    onPointerDown={handlePointAPointerDown}
+                    title="Divider Handle (Drag to reposition divider)"
+                >
+                    {/* Wide transparent hit area along upper arm */}
+                    <line
+                        x1={hinge.x}
+                        y1={hinge.y}
+                        x2={pointB.x - (pointB.x - hinge.x) * 0.2}
+                        y2={pointB.y - (pointB.y - hinge.y) * 0.2}
+                        stroke="transparent"
+                        strokeWidth="22"
+                        strokeLinecap="round"
+                    />
+                    {/* Visible Metallic Arm */}
+                    <line
+                        x1={hinge.x}
+                        y1={hinge.y}
+                        x2={pointB.x}
+                        y2={pointB.y}
+                        stroke="url(#dividerSteelGrad)"
+                        strokeWidth="5"
+                        strokeLinecap="round"
+                        filter="url(#dividerDropShadow)"
+                    />
+                </g>
+
+                {/* Needle Tip B Taper & Point */}
                 <line
                     x1={pointB.x + (hinge.x - pointB.x) * 0.15}
                     y1={pointB.y + (hinge.y - pointB.y) * 0.15}
@@ -234,32 +272,53 @@ export default function DividerTool({
                     strokeWidth="2.5"
                     strokeLinecap="round"
                 />
+                <circle cx={pointB.x} cy={pointB.y} r="1.5" fill="#0f172a" stroke="#cbd5e1" strokeWidth="0.8" />
 
-                {/* ─── Friction Hinge Joint & Knurled Spindle ─── */}
-                <line
-                    x1={hinge.x}
-                    y1={hinge.y}
-                    x2={spindleTop.x}
-                    y2={spindleTop.y}
-                    stroke="url(#dividerSteelGrad)"
-                    strokeWidth="6"
-                    strokeLinecap="round"
-                    filter="url(#dividerDropShadow)"
-                />
-                <circle
-                    cx={hinge.x}
-                    cy={hinge.y}
-                    r="8.5"
-                    fill="#0f172a"
-                    stroke="#94a3b8"
-                    strokeWidth="2.5"
-                    filter="url(#dividerDropShadow)"
-                />
-                <circle cx={hinge.x} cy={hinge.y} r="3.5" fill="#e2e8f0" />
-                <circle cx={spindleTop.x} cy={spindleTop.y} r="5" fill="#334155" stroke="#cbd5e1" strokeWidth="1.5" />
+                {/* ─── Friction Hinge Joint & Knurled Spindle (Bender - Draggable) ─── */}
+                <g
+                    className="cursor-grab active:cursor-grabbing pointer-events-auto"
+                    onPointerDown={handlePointAPointerDown}
+                    title="Divider Spindle & Bender (Drag to reposition divider)"
+                >
+                    {/* Transparent hit circles for comfortable touch/mouse grip on bender */}
+                    <circle cx={hinge.x} cy={hinge.y} r="22" fill="transparent" />
+                    <line
+                        x1={hinge.x}
+                        y1={hinge.y}
+                        x2={spindleTop.x}
+                        y2={spindleTop.y}
+                        stroke="transparent"
+                        strokeWidth="22"
+                        strokeLinecap="round"
+                    />
+
+                    {/* Visible Spindle Stem */}
+                    <line
+                        x1={hinge.x}
+                        y1={hinge.y}
+                        x2={spindleTop.x}
+                        y2={spindleTop.y}
+                        stroke="url(#dividerSteelGrad)"
+                        strokeWidth="6"
+                        strokeLinecap="round"
+                        filter="url(#dividerDropShadow)"
+                    />
+                    {/* Hinge Joint Outer Ring & Friction Core */}
+                    <circle
+                        cx={hinge.x}
+                        cy={hinge.y}
+                        r="8.5"
+                        fill="#0f172a"
+                        stroke="#94a3b8"
+                        strokeWidth="2.5"
+                        filter="url(#dividerDropShadow)"
+                    />
+                    <circle cx={hinge.x} cy={hinge.y} r="3.5" fill="#e2e8f0" />
+                    <circle cx={spindleTop.x} cy={spindleTop.y} r="5" fill="#334155" stroke="#cbd5e1" strokeWidth="1.5" />
+                </g>
             </svg>
 
-            {/* ─── Control 1: Primary Needle A (Draggable to move divider) ─── */}
+            {/* ─── Control 1: Primary Needle A Tip Grip (Clean, no icons) ─── */}
             <div
                 style={{
                     position: 'absolute',
@@ -269,13 +328,13 @@ export default function DividerTool({
                     pointerEvents: 'auto'
                 }}
                 onPointerDown={handlePointAPointerDown}
-                className="w-8 h-8 rounded-full bg-slate-900/95 border-2 border-slate-300 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:border-purple-400 hover:scale-110 transition group"
-                title="Primary needle tip A (Drag to reposition divider)"
+                className="w-5 h-5 rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing group"
+                title="Needle Tip A (Drag to position divider needle)"
             >
-                <ArgonNeedleIcon className="w-5 h-5 text-purple-300 group-hover:text-purple-100 transition-colors drop-shadow" />
+                <div className="w-2.5 h-2.5 rounded-full bg-slate-300 border border-slate-900 shadow group-hover:scale-125 group-hover:bg-purple-300 transition-transform" />
             </div>
 
-            {/* ─── Control 2: Secondary Needle B (Draggable to adjust span / rotate) ─── */}
+            {/* ─── Control 2: Secondary Needle B Tip Grip (Hand tool cursor for span adjust) ─── */}
             <div
                 style={{
                     position: 'absolute',
@@ -285,30 +344,28 @@ export default function DividerTool({
                     pointerEvents: 'auto'
                 }}
                 onPointerDown={handlePointBPointerDown}
-                className="w-8 h-8 rounded-full bg-slate-900/95 border-2 border-slate-300 shadow-xl flex items-center justify-center cursor-ew-resize hover:border-cyan-400 hover:scale-110 transition group"
-                title="Secondary needle tip B (Drag with double-headed arrow to adjust span distance or angle)"
+                className="w-6 h-6 rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing group"
+                title="Needle Tip B (Drag to extend or retract divider legs)"
             >
-                <ArgonNeedleIcon className="w-5 h-5 text-cyan-300 group-hover:text-cyan-100 transition-colors drop-shadow" />
+                <div className="w-3 h-3 rounded-full bg-cyan-400 border border-slate-900 shadow group-hover:scale-125 group-hover:ring-2 group-hover:ring-cyan-300 transition-all" />
             </div>
 
-            {/* ─── Control 3: Distance Measurement Badge (Center of span) ─── */}
+            {/* ─── Control 3: Distance Measurement Display Badge (Mid-Height, Transparent, Readout Only) ─── */}
             <div
-                data-handle="true"
                 style={{
                     position: 'absolute',
-                    left: `${(pointA.x + pointB.x) / 2}px`,
-                    top: `${(pointA.y + pointB.y) / 2}px`,
+                    left: `${midX}px`,
+                    top: `${midY}px`,
                     transform: 'translate(-50%, -50%)',
-                    pointerEvents: 'auto'
+                    pointerEvents: 'none'
                 }}
-                className="px-2.5 py-0.5 rounded-full bg-slate-900/95 border border-purple-400/80 shadow-md flex items-center gap-1.5 cursor-ew-resize"
-                title="Current span distance between needle tips"
+                className="px-2.5 py-0.5 rounded-full bg-black/40 backdrop-blur-xs border border-white/20 shadow-md flex items-center gap-1.5 select-none text-white pointer-events-none"
             >
-                <span className="text-[10.5px] font-mono font-bold text-purple-300">
+                <span className="text-[11px] font-mono font-bold text-purple-200">
                     {spanCm.toFixed(1)} cm
                 </span>
-                <span className="text-[9px] text-slate-500">|</span>
-                <span className="text-[10px] font-mono text-cyan-300">
+                <span className="text-[9px] text-white/40">|</span>
+                <span className="text-[10px] font-mono text-cyan-200">
                     {angle.toFixed(0)}°
                 </span>
             </div>

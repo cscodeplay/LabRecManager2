@@ -8,7 +8,6 @@ import {
     Pencil as PencilIcon,
     Crosshair
 } from 'lucide-react';
-import { ArgonNeedleIcon } from './CustomToolbarIcons';
 import {
     PX_PER_CM,
     pxToCm,
@@ -262,6 +261,10 @@ export default function CompassTool({
         y: hinge.y + (bisectorDy / bisectorLen) * 32
     };
 
+    // Vertical middle of height for radius & angle readout badge
+    const midX = (hinge.x + (center.x + pencilTip.x) / 2) / 2;
+    const midY = (hinge.y + (center.y + pencilTip.y) / 2) / 2;
+
     return (
         <div className="absolute inset-0 pointer-events-none select-none z-[66]">
             {/* SVG Realistic Physical Compass Render */}
@@ -275,11 +278,23 @@ export default function CompassTool({
                         <stop offset="100%" stopColor="#334155" />
                     </linearGradient>
 
-                    {/* Wooden Pencil Body Gradient */}
-                    <linearGradient id="pencilWoodGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#f59e0b" />
-                        <stop offset="50%" stopColor="#fbbf24" />
-                        <stop offset="100%" stopColor="#d97706" />
+                    {/* Authentic Indian Classroom Pencil (Natraj 621 Red & Black Stripes) */}
+                    <linearGradient id="natrajPencilStripeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#b91c1c" />
+                        <stop offset="25%" stopColor="#b91c1c" />
+                        <stop offset="25%" stopColor="#09090b" />
+                        <stop offset="50%" stopColor="#09090b" />
+                        <stop offset="50%" stopColor="#dc2626" />
+                        <stop offset="75%" stopColor="#dc2626" />
+                        <stop offset="75%" stopColor="#09090b" />
+                        <stop offset="100%" stopColor="#09090b" />
+                    </linearGradient>
+
+                    {/* Sharpened Pine Wood Cone Gradient */}
+                    <linearGradient id="pencilPineConeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#fef08a" />
+                        <stop offset="60%" stopColor="#fde047" />
+                        <stop offset="100%" stopColor="#f59e0b" />
                     </linearGradient>
 
                     {/* Drop shadow for 3D realism */}
@@ -345,64 +360,115 @@ export default function CompassTool({
                     filter="url(#compassDropShadow)"
                 />
 
-                {/* Realistic Wooden Pencil clamped to Arm 2 */}
+                {/* Authentic Indian Classroom Pencil (Natraj 621 Red & Black) clamped to Arm 2 */}
                 {(() => {
                     const legDx = pencilTip.x - hinge.x;
                     const legDy = pencilTip.y - hinge.y;
                     const legLen = Math.hypot(legDx, legDy) || 1;
                     const ux = legDx / legLen;
                     const uy = legDy / legLen;
-                    const perpX = -uy * 5;
-                    const perpY = ux * 5;
+                    const perpX = -uy * 4.5;
+                    const perpY = ux * 4.5;
 
-                    // Pencil body starts 28px back from tip and extends 20px past collar
-                    const collarX = pencilTip.x - ux * 28;
-                    const collarY = pencilTip.y - uy * 28;
-                    const pencilTopX = pencilTip.x - ux * 52;
-                    const pencilTopY = pencilTip.y - uy * 52;
+                    // Pencil body starts 26px back from tip and extends 32px past collar
+                    const collarX = pencilTip.x - ux * 26;
+                    const collarY = pencilTip.y - uy * 26;
+                    const pencilTopX = pencilTip.x - ux * 58;
+                    const pencilTopY = pencilTip.y - uy * 58;
 
                     return (
                         <g filter="url(#compassDropShadow)">
-                            {/* Wooden Pencil Shaft */}
+                            {/* Hexagonal Pencil Shaft with Longitudinal Alternating Red & Black Stripes */}
+                            {/* Bottom Black Stripe */}
                             <line
-                                x1={pencilTopX + perpX}
-                                y1={pencilTopY + perpY}
-                                x2={collarX + perpX}
-                                y2={collarY + perpY}
-                                stroke="url(#pencilWoodGrad)"
-                                strokeWidth="5"
+                                x1={pencilTopX + perpX * 0.9}
+                                y1={pencilTopY + perpY * 0.9}
+                                x2={collarX + perpX * 0.9}
+                                y2={collarY + perpY * 0.9}
+                                stroke="#09090b"
+                                strokeWidth="2.5"
                                 strokeLinecap="square"
                             />
-                            {/* Sharpened Lead Cone & Tip */}
+                            {/* Middle Bold Natraj Red Stripe */}
+                            <line
+                                x1={pencilTopX}
+                                y1={pencilTopY}
+                                x2={collarX}
+                                y2={collarY}
+                                stroke="#dc2626"
+                                strokeWidth="3.2"
+                                strokeLinecap="square"
+                            />
+                            {/* Top Black Stripe */}
+                            <line
+                                x1={pencilTopX - perpX * 0.9}
+                                y1={pencilTopY - perpY * 0.9}
+                                x2={collarX - perpX * 0.9}
+                                y2={collarY - perpY * 0.9}
+                                stroke="#09090b"
+                                strokeWidth="2.5"
+                                strokeLinecap="square"
+                            />
+                            {/* Pencil Flat End Cap */}
+                            <line
+                                x1={pencilTopX - perpX * 1.1}
+                                y1={pencilTopY - perpY * 1.1}
+                                x2={pencilTopX + perpX * 1.1}
+                                y2={pencilTopY + perpY * 1.1}
+                                stroke="#7f1d1d"
+                                strokeWidth="1.5"
+                            />
+
+                            {/* Sharpened Pine Wood Cone */}
                             <polygon
                                 points={`
-                                    ${collarX + perpX - ux * 2},${collarY + perpY - uy * 2} 
-                                    ${collarX - perpX - ux * 2},${collarY - perpY - uy * 2} 
+                                    ${collarX + perpX * 1.1},${collarY + perpY * 1.1} 
+                                    ${collarX - perpX * 1.1},${collarY - perpY * 1.1} 
                                     ${pencilTip.x},${pencilTip.y}
                                 `}
-                                fill="#fed7aa"
+                                fill="url(#pencilPineConeGrad)"
                                 stroke="#d97706"
-                                strokeWidth="0.5"
+                                strokeWidth="0.4"
                             />
-                            {/* Graphite Lead Tip */}
+
+                            {/* Subtle Woodgrain / Scalloped Sharpener Blade Cut */}
+                            <path
+                                d={`M ${collarX - perpX * 0.8} ${collarY - perpY * 0.8} Q ${collarX - ux * 3} ${collarY - uy * 3} ${collarX} ${collarY} Q ${collarX - ux * 3} ${collarY - uy * 3} ${collarX + perpX * 0.8} ${collarY + perpY * 0.8}`}
+                                fill="none"
+                                stroke="#b45309"
+                                strokeWidth="0.6"
+                                opacity="0.6"
+                            />
+
+                            {/* 2B Dark Graphite Lead Tip */}
                             <polygon
                                 points={`
-                                    ${pencilTip.x - ux * 6 + perpX * 0.4},${pencilTip.y - uy * 6 + perpY * 0.4} 
-                                    ${pencilTip.x - ux * 6 - perpX * 0.4},${pencilTip.y - uy * 6 - perpY * 0.4} 
+                                    ${pencilTip.x - ux * 7 + perpX * 0.35},${pencilTip.y - uy * 7 + perpY * 0.35} 
+                                    ${pencilTip.x - ux * 7 - perpX * 0.35},${pencilTip.y - uy * 7 - perpY * 0.35} 
                                     ${pencilTip.x},${pencilTip.y}
                                 `}
                                 fill="#0f172a"
                             />
+
                             {/* Metal Clamp Collar with Thumbscrew */}
                             <rect
-                                x={collarX - 5}
-                                y={collarY - 5}
-                                width="10"
-                                height="10"
+                                x={collarX - 5.5}
+                                y={collarY - 5.5}
+                                width="11"
+                                height="11"
                                 rx="2"
                                 fill="#475569"
                                 stroke="#cbd5e1"
                                 strokeWidth="1"
+                            />
+                            {/* Thumbscrew knurled knob */}
+                            <circle
+                                cx={collarX - perpX * 1.2}
+                                cy={collarY - perpY * 1.2}
+                                r="2.5"
+                                fill="#94a3b8"
+                                stroke="#334155"
+                                strokeWidth="0.75"
                             />
                         </g>
                     );
@@ -503,17 +569,17 @@ export default function CompassTool({
                 </div>
             </div>
 
-            {/* ─── Control 4: Radius Adjustment Handle (0.1 cm Step Buttons) ─── */}
+            {/* ─── Control 4: Radius & Angle Readout Badge (Mid-Height, Transparent) ─── */}
             <div
                 data-handle="true"
                 style={{
                     position: 'absolute',
-                    left: `${(center.x + pencilTip.x) / 2}px`,
-                    top: `${(center.y + pencilTip.y) / 2}px`,
+                    left: `${midX}px`,
+                    top: `${midY}px`,
                     transform: 'translate(-50%, -50%)',
                     pointerEvents: 'auto'
                 }}
-                className="px-2 py-0.5 rounded-full bg-slate-900/95 border border-cyan-400/80 shadow-md flex items-center gap-1.5 transition select-none"
+                className="px-2.5 py-0.5 rounded-full bg-black/40 backdrop-blur-xs border border-white/20 shadow-md flex items-center gap-1.5 transition select-none text-white text-[11px] font-mono"
             >
                 <button
                     type="button"
@@ -521,14 +587,14 @@ export default function CompassTool({
                         e.stopPropagation();
                         setRadiusCm(r => +(Math.max(1.0, r - 0.1)).toFixed(1));
                     }}
-                    className="w-4 h-4 rounded-full bg-slate-800 hover:bg-cyan-600 text-slate-300 hover:text-white flex items-center justify-center text-[10px] font-bold"
+                    className="w-4 h-4 rounded-full bg-white/10 hover:bg-cyan-500 text-white flex items-center justify-center text-[10px] font-bold"
                     title="Decrease radius by 0.1 cm"
                 >
                     -
                 </button>
                 <span
                     onPointerDown={handleRadiusPointerDown}
-                    className="text-[10px] font-mono font-bold text-cyan-300 cursor-ew-resize select-none"
+                    className="text-[10.5px] font-mono font-bold text-cyan-200 cursor-ew-resize select-none"
                     title="Drag or click +/- to adjust radius (0.1 cm)"
                 >
                     r = {radiusCm.toFixed(1)} cm
@@ -539,11 +605,15 @@ export default function CompassTool({
                         e.stopPropagation();
                         setRadiusCm(r => +(Math.min(15.0, r + 0.1)).toFixed(1));
                     }}
-                    className="w-4 h-4 rounded-full bg-slate-800 hover:bg-cyan-600 text-slate-300 hover:text-white flex items-center justify-center text-[10px] font-bold"
+                    className="w-4 h-4 rounded-full bg-white/10 hover:bg-cyan-500 text-white flex items-center justify-center text-[10px] font-bold"
                     title="Increase radius by 0.1 cm"
                 >
                     +
                 </button>
+                <span className="text-[9px] text-white/40">|</span>
+                <span className="text-[10px] font-mono text-purple-200">
+                    {angle.toFixed(0)}°
+                </span>
             </div>
 
             {/* ─── Floating Top Control HUD: Icon-Only Draw Circle & Dismiss ─── */}

@@ -310,7 +310,108 @@ export function renderFountainPen(ctx, points, options = {}) {
 
 // ─── Flood Fill (Fill Bucket) ───────────────────────────────────────────────
 
-export function floodFill(ctx, startX, startY, fillColor, tolerance = 32) {
+// ─── Flood Fill (Fill Bucket with Solid, Pattern, & Gradient Support) ────────
+
+export function createPatternTile(patternId, fgColor = '#ffffff', bgColor = '#1e293b') {
+    const tile = document.createElement('canvas');
+    const tCtx = tile.getContext('2d');
+    if (!tCtx) return tile;
+
+    if (patternId === 'pattern-dots') {
+        tile.width = 16;
+        tile.height = 16;
+        tCtx.fillStyle = bgColor;
+        tCtx.fillRect(0, 0, 16, 16);
+        tCtx.fillStyle = fgColor;
+        tCtx.beginPath();
+        tCtx.arc(8, 8, 2.5, 0, Math.PI * 2);
+        tCtx.fill();
+    } else if (patternId === 'pattern-stripes-diag') {
+        tile.width = 16;
+        tile.height = 16;
+        tCtx.fillStyle = bgColor;
+        tCtx.fillRect(0, 0, 16, 16);
+        tCtx.strokeStyle = fgColor;
+        tCtx.lineWidth = 3;
+        tCtx.beginPath();
+        tCtx.moveTo(0, 0); tCtx.lineTo(16, 16);
+        tCtx.moveTo(-8, 8); tCtx.lineTo(8, 24);
+        tCtx.moveTo(8, -8); tCtx.lineTo(24, 8);
+        tCtx.stroke();
+    } else if (patternId === 'pattern-stripes-horizontal') {
+        tile.width = 16;
+        tile.height = 16;
+        tCtx.fillStyle = bgColor;
+        tCtx.fillRect(0, 0, 16, 16);
+        tCtx.strokeStyle = fgColor;
+        tCtx.lineWidth = 3;
+        tCtx.beginPath();
+        tCtx.moveTo(0, 8); tCtx.lineTo(16, 8);
+        tCtx.stroke();
+    } else if (patternId === 'pattern-crosshatch') {
+        tile.width = 16;
+        tile.height = 16;
+        tCtx.fillStyle = bgColor;
+        tCtx.fillRect(0, 0, 16, 16);
+        tCtx.strokeStyle = fgColor;
+        tCtx.lineWidth = 2;
+        tCtx.beginPath();
+        tCtx.moveTo(0, 0); tCtx.lineTo(16, 16);
+        tCtx.moveTo(16, 0); tCtx.lineTo(0, 16);
+        tCtx.stroke();
+    } else if (patternId === 'pattern-grid') {
+        tile.width = 20;
+        tile.height = 20;
+        tCtx.fillStyle = bgColor;
+        tCtx.fillRect(0, 0, 20, 20);
+        tCtx.strokeStyle = fgColor;
+        tCtx.lineWidth = 1.5;
+        tCtx.strokeRect(0, 0, 20, 20);
+    } else if (patternId === 'pattern-brick') {
+        tile.width = 32;
+        tile.height = 16;
+        tCtx.fillStyle = bgColor;
+        tCtx.fillRect(0, 0, 32, 16);
+        tCtx.strokeStyle = fgColor;
+        tCtx.lineWidth = 1.5;
+        tCtx.beginPath();
+        tCtx.moveTo(0, 8); tCtx.lineTo(32, 8);
+        tCtx.moveTo(16, 0); tCtx.lineTo(16, 8);
+        tCtx.moveTo(0, 8); tCtx.lineTo(0, 16);
+        tCtx.moveTo(32, 8); tCtx.lineTo(32, 16);
+        tCtx.stroke();
+    } else {
+        // Fallback / Zigzag
+        tile.width = 24;
+        tile.height = 12;
+        tCtx.fillStyle = bgColor;
+        tCtx.fillRect(0, 0, 24, 12);
+        tCtx.strokeStyle = fgColor;
+        tCtx.lineWidth = 2;
+        tCtx.beginPath();
+        tCtx.moveTo(0, 6); tCtx.lineTo(6, 0); tCtx.lineTo(12, 6); tCtx.lineTo(18, 0); tCtx.lineTo(24, 6);
+        tCtx.stroke();
+    }
+
+    return tile;
+}
+
+const GRADIENT_PALETTE = {
+    'grad-sunset': { from: '#ff512f', to: '#dd2476', type: 'linear', angle: 45 },
+    'grad-ocean': { from: '#00c6ff', to: '#0072ff', type: 'linear', angle: 90 },
+    'grad-emerald': { from: '#11998e', to: '#38ef7d', type: 'linear', angle: 45 },
+    'grad-neon': { from: '#f857a6', to: '#ff5858', type: 'linear', angle: 135 },
+    'grad-cyberpunk': { from: '#7f00ff', to: '#e100ff', type: 'linear', angle: 90 },
+    'grad-amber': { from: '#f59e0b', to: '#b45309', type: 'linear', angle: 45 },
+    'grad-aurora': { from: '#a8ff78', to: '#78ffd6', type: 'linear', angle: 90 },
+    'grad-fire': { from: '#f12711', to: '#f5af19', type: 'linear', angle: 45 },
+    'grad-radial-glow': { from: '#60a5fa', to: '#1e3a8a', type: 'radial' },
+    'grad-radial-warm': { from: '#fde047', to: '#ea580c', type: 'radial' },
+    'grad-radial-iris': { from: '#c084fc', to: '#581c87', type: 'radial' },
+    'grad-radial-mint': { from: '#6ee7b7', to: '#047857', type: 'radial' }
+};
+
+export function floodFill(ctx, startX, startY, fillConfig, tolerance = 32) {
     const canvas = ctx.canvas;
     const width = canvas.width;
     const height = canvas.height;
@@ -328,16 +429,23 @@ export function floodFill(ctx, startX, startY, fillColor, tolerance = 32) {
     const startB = data[startIdx + 2];
     const startA = data[startIdx + 3];
 
+    // Determine fill mode (solid, pattern, gradient)
+    const isConfigObj = fillConfig && typeof fillConfig === 'object';
+    const fillType = isConfigObj ? (fillConfig.type || 'solid') : 'solid';
+    const solidColor = isConfigObj ? (fillConfig.color || '#3b82f6') : (fillConfig || '#3b82f6');
+
+    // Parse solid color RGBA
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = 1;
     tempCanvas.height = 1;
     const tempCtx = tempCanvas.getContext('2d');
-    tempCtx.fillStyle = fillColor;
+    tempCtx.fillStyle = solidColor;
     tempCtx.fillRect(0, 0, 1, 1);
     const fillPixel = tempCtx.getImageData(0, 0, 1, 1).data;
     const [fillR, fillG, fillB, fillA] = fillPixel;
 
     if (
+        fillType === 'solid' &&
         Math.abs(startR - fillR) <= tolerance &&
         Math.abs(startG - fillG) <= tolerance &&
         Math.abs(startB - fillB) <= tolerance &&
@@ -362,6 +470,7 @@ export function floodFill(ctx, startX, startY, fillColor, tolerance = 32) {
 
     const stack = [[sx, sy]];
     const visited = new Uint8Array(width * height);
+    let minX = sx, maxX = sx, minY = sy, maxY = sy;
 
     while (stack.length > 0) {
         const [x, y] = stack.pop();
@@ -377,8 +486,15 @@ export function floodFill(ctx, startX, startY, fillColor, tolerance = 32) {
         while (rx < width && colorMatch((y * width + rx) * 4) && !visited[y * width + rx]) rx++;
         rx--;
 
+        if (lx < minX) minX = lx;
+        if (rx > maxX) maxX = rx;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+
         for (let px = lx; px <= rx; px++) {
-            setPixel((y * width + px) * 4);
+            if (fillType === 'solid') {
+                setPixel((y * width + px) * 4);
+            }
             visited[y * width + px] = 1;
 
             if (y > 0 && !visited[(y - 1) * width + px] && colorMatch(((y - 1) * width + px) * 4)) {
@@ -390,7 +506,87 @@ export function floodFill(ctx, startX, startY, fillColor, tolerance = 32) {
         }
     }
 
-    ctx.putImageData(imageData, 0, 0);
+    if (fillType === 'solid') {
+        ctx.putImageData(imageData, 0, 0);
+        return;
+    }
+
+    // Pattern or Gradient fill using bounding-box offscreen buffer and alpha mask
+    const bboxW = Math.max(1, maxX - minX + 1);
+    const bboxH = Math.max(1, maxY - minY + 1);
+
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = bboxW;
+    offCanvas.height = bboxH;
+    const offCtx = offCanvas.getContext('2d');
+    if (!offCtx) return;
+
+    if (fillType === 'pattern') {
+        const patId = fillConfig.patternId || 'pattern-dots';
+        const patTile = createPatternTile(patId, fillConfig.patternFg || '#ffffff', fillConfig.patternBg || '#1e293b');
+        const pattern = offCtx.createPattern(patTile, 'repeat');
+        if (pattern) {
+            offCtx.fillStyle = pattern;
+            offCtx.fillRect(0, 0, bboxW, bboxH);
+        }
+    } else if (fillType === 'gradient') {
+        const gradId = fillConfig.gradientId || 'grad-sunset';
+        const preset = GRADIENT_PALETTE[gradId] || { from: '#ff512f', to: '#dd2476', type: 'linear', angle: 45 };
+
+        if (preset.type === 'radial') {
+            const radGrad = offCtx.createRadialGradient(
+                bboxW / 2, bboxH / 2, 0,
+                bboxW / 2, bboxH / 2, Math.max(bboxW, bboxH) / 2
+            );
+            radGrad.addColorStop(0, preset.from);
+            radGrad.addColorStop(1, preset.to);
+            offCtx.fillStyle = radGrad;
+        } else {
+            const radAngle = ((preset.angle || 45) * Math.PI) / 180;
+            const x1 = bboxW / 2 - Math.cos(radAngle) * (bboxW / 2);
+            const y1 = bboxH / 2 - Math.sin(radAngle) * (bboxH / 2);
+            const x2 = bboxW / 2 + Math.cos(radAngle) * (bboxW / 2);
+            const y2 = bboxH / 2 + Math.sin(radAngle) * (bboxH / 2);
+            const linGrad = offCtx.createLinearGradient(x1, y1, x2, y2);
+            linGrad.addColorStop(0, preset.from);
+            linGrad.addColorStop(1, preset.to);
+            offCtx.fillStyle = linGrad;
+        }
+        offCtx.fillRect(0, 0, bboxW, bboxH);
+    }
+
+    // Generate alpha mask from visited pixels
+    const maskImgData = offCtx.createImageData(bboxW, bboxH);
+    const maskData = maskImgData.data;
+
+    for (let by = 0; by < bboxH; by++) {
+        for (let bx = 0; bx < bboxW; bx++) {
+            const globalX = minX + bx;
+            const globalY = minY + by;
+            const maskIdx = (by * bboxW + bx) * 4;
+            if (visited[globalY * width + globalX]) {
+                maskData[maskIdx] = 255;
+                maskData[maskIdx + 1] = 255;
+                maskData[maskIdx + 2] = 255;
+                maskData[maskIdx + 3] = 255;
+            } else {
+                maskData[maskIdx + 3] = 0;
+            }
+        }
+    }
+
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = bboxW;
+    maskCanvas.height = bboxH;
+    const maskCtx = maskCanvas.getContext('2d');
+    if (maskCtx) {
+        maskCtx.putImageData(maskImgData, 0, 0);
+        offCtx.globalCompositeOperation = 'destination-in';
+        offCtx.drawImage(maskCanvas, 0, 0);
+        offCtx.globalCompositeOperation = 'source-over';
+    }
+
+    ctx.drawImage(offCanvas, minX, minY);
 }
 
 
