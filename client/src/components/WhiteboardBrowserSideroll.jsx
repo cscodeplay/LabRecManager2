@@ -73,10 +73,12 @@ export default function WhiteboardBrowserSideroll({
     // Initial search triggers when panel is opened
     useEffect(() => {
         if (mode !== 'closed') {
-            if (imagesList.length === 0) {
+            if (imagesList.length === 0 && !imageQuery) {
+                setImageQuery('Photosynthesis diagram');
                 handleSearchImages('Photosynthesis diagram');
             }
-            if (videosList.length === 0) {
+            if (videosList.length === 0 && !youtubeQuery) {
+                setYoutubeQuery('Newton laws of motion');
                 handleSearchYouTube('Newton laws of motion');
             }
         }
@@ -101,17 +103,25 @@ export default function WhiteboardBrowserSideroll({
                 });
                 setBrowserHistoryIdx(prev => prev + 1);
             }
+            if (e.data?.type === 'BROWSER_NAVIGATE' && e.data.url) {
+                const newUrl = e.data.url;
+                setBrowserUrlInput(newUrl);
+                setIsLoadingPage(true);
+            }
             if (e.data?.type === 'BROWSER_ADD_TEXT' && e.data.text) {
                 if (onAddTextToBoard) {
                     onAddTextToBoard(e.data.text);
                     toast.success('Text added to whiteboard!');
                 }
             }
+            if (e.data?.type === 'BROWSER_ADD_IMAGE' && e.data.url) {
+                handleInsertImageToBoard(e.data.url);
+            }
         };
 
         window.addEventListener('message', handleMessage);
         return () => window.removeEventListener('message', handleMessage);
-    }, [browserHistoryIdx, onAddTextToBoard]);
+    }, [browserHistoryIdx, onAddTextToBoard, onAddImageToBoard]);
 
     // --- Web Browser Handlers ---
     const handleNavigateBrowser = (target) => {
@@ -212,6 +222,7 @@ export default function WhiteboardBrowserSideroll({
 
         try {
             setIsLoadingImages(true);
+            setImagesList([]); // Clear previous images immediately
             const res = await browserAPI.searchImages({ q });
             if (res.data?.success && Array.isArray(res.data.data?.images)) {
                 setImagesList(res.data.data.images);
@@ -624,14 +635,18 @@ export default function WhiteboardBrowserSideroll({
                                             className="w-full h-36 bg-black/60 flex items-center justify-center p-2 cursor-pointer"
                                         >
                                             <img
-                                                src={img.url || img.thumbnail}
+                                                src={img.thumbnail || img.url}
                                                 alt={img.title}
                                                 className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                                                 loading="lazy"
                                                 crossOrigin="anonymous"
                                                 onError={(e) => {
-                                                    e.currentTarget.onerror = null;
-                                                    e.currentTarget.src = 'https://placehold.co/400x300/0f172a/38bdf8?text=Image+Unavailable';
+                                                    if (e.currentTarget.src !== img.url && img.url) {
+                                                        e.currentTarget.src = img.url;
+                                                    } else {
+                                                        e.currentTarget.onerror = null;
+                                                        e.currentTarget.src = 'https://placehold.co/400x300/0f172a/38bdf8?text=Image+Unavailable';
+                                                    }
                                                 }}
                                             />
                                         </div>
@@ -645,7 +660,7 @@ export default function WhiteboardBrowserSideroll({
                                                 <span className="truncate max-w-[100px]">{img.source || 'Google Images'}</span>
                                                 <button
                                                     type="button"
-                                                    onClick={() => handleInsertImageToBoard(img.url)}
+                                                    onClick={() => handleInsertImageToBoard(img.url || img.thumbnail)}
                                                     className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-[10px] font-bold transition flex items-center gap-1 shadow"
                                                     title="Insert image onto active whiteboard page"
                                                 >
