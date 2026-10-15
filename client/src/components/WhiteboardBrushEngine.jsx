@@ -471,6 +471,8 @@ export function floodFill(ctx, startX, startY, fillConfig, tolerance = 32) {
     const stack = [[sx, sy]];
     const visited = new Uint8Array(width * height);
     let minX = sx, maxX = sx, minY = sy, maxY = sy;
+    let touchedBorder = false;
+    let filledCount = 0;
 
     while (stack.length > 0) {
         const [x, y] = stack.pop();
@@ -486,16 +488,18 @@ export function floodFill(ctx, startX, startY, fillConfig, tolerance = 32) {
         while (rx < width && colorMatch((y * width + rx) * 4) && !visited[y * width + rx]) rx++;
         rx--;
 
+        if (lx <= 0 || rx >= width - 1 || y <= 0 || y >= height - 1) {
+            touchedBorder = true;
+        }
+
         if (lx < minX) minX = lx;
         if (rx > maxX) maxX = rx;
         if (y < minY) minY = y;
         if (y > maxY) maxY = y;
 
         for (let px = lx; px <= rx; px++) {
-            if (fillType === 'solid') {
-                setPixel((y * width + px) * 4);
-            }
             visited[y * width + px] = 1;
+            filledCount++;
 
             if (y > 0 && !visited[(y - 1) * width + px] && colorMatch(((y - 1) * width + px) * 4)) {
                 stack.push([px, y - 1]);
@@ -506,9 +510,23 @@ export function floodFill(ctx, startX, startY, fillConfig, tolerance = 32) {
         }
     }
 
+    // Boundary leakage detection: If the flood reached the canvas edges or exceeds 45% of total canvas,
+    // the shape is open/unbounded. Abort without ruining the canvas.
+    const isInsideCanvas = sx > 15 && sy > 15 && sx < width - 15 && sy < height - 15;
+    if (touchedBorder && isInsideCanvas && filledCount > (width * height * 0.15)) {
+        return { success: false, reason: 'leaked' };
+    }
+
     if (fillType === 'solid') {
+        for (let y = minY; y <= maxY; y++) {
+            for (let x = minX; x <= maxX; x++) {
+                if (visited[y * width + x]) {
+                    setPixel((y * width + x) * 4);
+                }
+            }
+        }
         ctx.putImageData(imageData, 0, 0);
-        return;
+        return { success: true };
     }
 
     // Pattern or Gradient fill using bounding-box offscreen buffer and alpha mask
@@ -587,6 +605,7 @@ export function floodFill(ctx, startX, startY, fillConfig, tolerance = 32) {
     }
 
     ctx.drawImage(offCanvas, minX, minY);
+    return { success: true };
 }
 
 

@@ -5,7 +5,8 @@ import {
     Globe, Search, ArrowLeft, ArrowRight, RotateCw, Home,
     ExternalLink, Plus, Image as ImageIcon,
     X, Maximize2, Minimize2, Bookmark, Layout,
-    Play, Film, Eye, Sparkles, CheckCircle2
+    Play, Film, Eye, Sparkles, CheckCircle2,
+    Copy, Check
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { browserAPI } from '@/lib/api';
@@ -43,6 +44,7 @@ export default function WhiteboardBrowserSideroll({
     onModeChange,
     onAddTextToBoard,
     onAddImageToBoard,
+    onCopyImageToBoard,
     onAddAIPanelToBoard,
     onAddMediaToBoard
 }) {
@@ -63,6 +65,7 @@ export default function WhiteboardBrowserSideroll({
     const [imagesList, setImagesList] = useState([]);
     const [isLoadingImages, setIsLoadingImages] = useState(false);
     const [previewImage, setPreviewImage] = useState(null);
+    const [copiedImgIdx, setCopiedImgIdx] = useState(null);
 
     // --- Tab 3: YouTube Search State ---
     const [youtubeQuery, setYoutubeQuery] = useState('');
@@ -239,8 +242,30 @@ export default function WhiteboardBrowserSideroll({
         if (!imageUrl) return;
         if (onAddImageToBoard) {
             onAddImageToBoard(imageUrl);
-            toast.success('Image placed onto whiteboard canvas!', { icon: '🖼️' });
         }
+    };
+
+    const handleCopyImage = async (img, idx) => {
+        if (!img) return;
+        const targetUrl = img.url || img.thumbnail;
+        if (!targetUrl) return;
+
+        try {
+            await navigator.clipboard.writeText(targetUrl);
+        } catch (_) {}
+
+        if (onCopyImageToBoard) {
+            onCopyImageToBoard({
+                type: 'image',
+                src: targetUrl,
+                title: img.title || 'Copied Web Image',
+                width: 400,
+                height: 300
+            });
+        }
+        setCopiedImgIdx(idx);
+        setTimeout(() => setCopiedImgIdx(null), 2000);
+        toast.success('Image copied to clipboard! Paste on whiteboard or press Ctrl+V', { icon: '📋' });
     };
 
     // --- YouTube Search Handlers ---
@@ -656,17 +681,28 @@ export default function WhiteboardBrowserSideroll({
                                             <p className="text-[11px] font-semibold text-slate-200 truncate" title={img.title}>
                                                 {img.title}
                                             </p>
-                                            <div className="flex items-center justify-between text-[10px] text-slate-400">
-                                                <span className="truncate max-w-[100px]">{img.source || 'Google Images'}</span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleInsertImageToBoard(img.url || img.thumbnail)}
-                                                    className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-[10px] font-bold transition flex items-center gap-1 shadow"
-                                                    title="Insert image onto active whiteboard page"
-                                                >
-                                                    <Plus className="w-3 h-3" />
-                                                    <span>Insert</span>
-                                                </button>
+                                            <div className="flex items-center justify-between text-[10px] text-slate-400 gap-1.5">
+                                                <span className="truncate max-w-[80px]">{img.source || 'Google Images'}</span>
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleCopyImage(img, idx)}
+                                                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-cyan-300 rounded-lg text-[10px] font-bold transition flex items-center gap-1 border border-slate-700 shadow cursor-pointer"
+                                                        title="Copy image to clipboard / whiteboard paste"
+                                                    >
+                                                        {copiedImgIdx === idx ? <Check className="w-3 h-3 text-cyan-400" /> : <Copy className="w-3 h-3" />}
+                                                        <span>{copiedImgIdx === idx ? 'Copied' : 'Copy'}</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleInsertImageToBoard(img.url || img.thumbnail)}
+                                                        className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-[10px] font-bold transition flex items-center gap-1 shadow cursor-pointer"
+                                                        title="Insert image onto active whiteboard page"
+                                                    >
+                                                        <Plus className="w-3 h-3" />
+                                                        <span>Insert</span>
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

@@ -213,8 +213,16 @@ export function calculateHingePoint(p1, p2, armLength = 180, invertSide = false)
 export function clampPointToInstrumentOuterEdge(p, instrument) {
     if (!instrument || !p) return p;
 
+    if (Array.isArray(instrument)) {
+        let currentP = p;
+        for (const inst of instrument) {
+            currentP = clampPointToInstrumentOuterEdge(currentP, inst);
+        }
+        return currentP;
+    }
+
     if (instrument.type === 'ruler') {
-        const { x, y, angle, lengthPx, heightPx } = instrument;
+        const { x, y, angle = 0, lengthPx = 400, heightPx = 60 } = instrument;
         const rad = degToRad(angle);
         const cos = Math.cos(-rad);
         const sin = Math.sin(-rad);
@@ -224,15 +232,15 @@ export function clampPointToInstrumentOuterEdge(p, instrument) {
         const localX = dx * cos - dy * sin;
         const localY = dx * sin + dy * cos;
 
-        // Bounding check with outer snap margin
-        const margin = 14;
-        const isInsideX = localX >= -margin && localX <= lengthPx + margin;
-        const isInsideY = localY >= -margin && localY <= heightPx + margin;
+        // Barrier & Snap Margin
+        const snapMargin = 28;
+        const isNearLength = localX >= -snapMargin && localX <= lengthPx + snapMargin;
+        const isNearHeight = localY >= -snapMargin && localY <= heightPx + snapMargin;
 
-        if (isInsideX && isInsideY) {
-            // Constrain localX along ruler length
+        if (isNearLength && isNearHeight) {
+            // Constrain localX strictly along ruler length
             const clampedX = Math.max(0, Math.min(lengthPx, localX));
-            // User is most often drawing along the top measuring edge (y = 0)
+            // Physical barrier: If inside or near plastic body, clamp strictly to top edge (0) or bottom edge (heightPx)
             const clampedY = localY < heightPx / 2 ? 0 : heightPx;
 
             // Transform back to canvas space
@@ -247,7 +255,7 @@ export function clampPointToInstrumentOuterEdge(p, instrument) {
     }
 
     if (instrument.type === 'protractor') {
-        const { centerX, centerY, radiusPx, baseRotation } = instrument;
+        const { centerX, centerY, radiusPx = 160, baseRotation = 0 } = instrument;
         const rad = degToRad(baseRotation);
         const cos = Math.cos(-rad);
         const sin = Math.sin(-rad);
@@ -258,23 +266,23 @@ export function clampPointToInstrumentOuterEdge(p, instrument) {
         const localY = dx * sin + dy * cos;
 
         const dist = Math.hypot(localX, localY);
-        const margin = 14;
+        const snapMargin = 28;
 
         // Protractor is a semi-circle: localY <= 0 (upper semi-circle) and dist <= radiusPx
-        if (localY <= margin && dist <= radiusPx + margin) {
+        if (localY <= snapMargin && dist <= radiusPx + snapMargin) {
             let clampedLocalX = localX;
             let clampedLocalY = localY;
 
-            // If closer to outer circular arc than base line:
+            // Distance to outer circular arc vs distance to straight base line:
             const distToArc = Math.abs(dist - radiusPx);
             const distToBase = Math.abs(localY);
 
-            if (distToArc < distToBase && dist > 1) {
-                // Snap along outer circular arc
+            if (distToArc <= distToBase + 16 && dist > 2) {
+                // Physical barrier: Snap along outer circular arc
                 clampedLocalX = (localX / dist) * radiusPx;
                 clampedLocalY = Math.min(0, (localY / dist) * radiusPx);
             } else {
-                // Snap along straight base diameter
+                // Physical barrier: Snap along straight base diameter
                 clampedLocalX = Math.max(-radiusPx, Math.min(radiusPx, localX));
                 clampedLocalY = 0;
             }

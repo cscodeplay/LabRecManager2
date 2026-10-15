@@ -1168,6 +1168,9 @@ export default function Whiteboard({
     const [showTextBgPicker, setShowTextBgPicker] = useState(false);
     const [activeTextBorderPopoverId, setActiveTextBorderPopoverId] = useState(null);
     
+    // Floating Selection & Canvas Context Menu (Cut, Copy, Paste, Duplicate, Delete, Z-Order)
+    const [contextMenuPos, setContextMenuPos] = useState(null);
+
     // Shape objects for manipulation
     const [pageShapeObjects, setPageShapeObjects] = useState({ 0: [] });
     const [shapeDragState, setShapeDragState] = useState(null);
@@ -1231,6 +1234,7 @@ export default function Whiteboard({
     const [aiChatHistory, setAiChatHistory] = useState([]);
     const [activeSolutionStep, setActiveSolutionStep] = useState(null);
     const [externalGraphEquations, setExternalGraphEquations] = useState([]);
+    const [showGraphPanel, setShowGraphPanel] = useState(false);
     const [showAiAssistantModal, setShowAiAssistantModal] = useState(false);
     const [whiteboardAiProvider, setWhiteboardAiProvider] = useState('auto');
     const [showPhysicsSpace, setShowPhysicsSpace] = useState(false);
@@ -7577,7 +7581,7 @@ export default function Whiteboard({
         if (tool === 'pen' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
             const currentSw = tool === 'highlighter' ? strokeWidth * 4 : strokeWidth;
             pos = snapToGuides(pos, shapeObjects, currentSw);
-            if (activeInstrumentBoundsRef.current && activeInstrumentBoundsRef.current.length > 0) {
+            if (activeInstrumentBoundsRef.current) {
                 pos = clampPointToInstrumentOuterEdge(pos, activeInstrumentBoundsRef.current);
             }
         }
@@ -7590,10 +7594,82 @@ export default function Whiteboard({
 
         // Handle fill bucket tool
         if (tool === 'fill') {
+            const isPointInsideVectorShape = (p, s) => {
+                if (!s || s.type === 'connector' || s.type === 'line' || s.type === 'arrow') return false;
+                const w = s.width || 100;
+                const h = s.height || 100;
+                const cx = (s.x || 0) + w / 2;
+                const cy = (s.y || 0) + h / 2;
+                const rad = -((s.rotation || 0) * Math.PI) / 180;
+                const cos = Math.cos(rad);
+                const sin = Math.sin(rad);
+
+                const dx = p.x - cx;
+                const dy = p.y - cy;
+                const lx = dx * cos - dy * sin + w / 2;
+                const ly = dx * sin + dy * cos + h / 2;
+
+                if (lx < 0 || lx > w || ly < 0 || ly > h) return false;
+
+                if (s.type === 'circle' || s.type === 'ellipse') {
+                    const rx = w / 2;
+                    const ry = h / 2;
+                    if (rx <= 0 || ry <= 0) return false;
+                    const normX = (lx - rx) / rx;
+                    const normY = (ly - ry) / ry;
+                    return (normX * normX + normY * normY) <= 1.05;
+                }
+
+                if (s.type === 'triangle') {
+                    const p1 = { x: w / 2, y: 0 };
+                    const p2 = { x: 0, y: h };
+                    const p3 = { x: w, y: h };
+                    const sign = (pa, pb, pc) => (pa.x - pc.x) * (pb.y - pc.y) - (pb.x - pc.x) * (pa.y - pc.y);
+                    const d1 = sign({ x: lx, y: ly }, p1, p2);
+                    const d2 = sign({ x: lx, y: ly }, p2, p3);
+                    const d3 = sign({ x: lx, y: ly }, p3, p1);
+                    const hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+                    const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+                    return !(hasNeg && hasPos);
+                }
+
+                if (s.type === 'diamond') {
+                    const cxNorm = Math.abs(lx - w / 2) / (w / 2);
+                    const cyNorm = Math.abs(ly - h / 2) / (h / 2);
+                    return (cxNorm + cyNorm) <= 1.05;
+                }
+
+                return true;
+            };
+
+            // 1. Check if user clicked inside any vector shape on the whiteboard
+            const hitShape = [...shapeObjects].reverse().find(s => isPointInsideVectorShape(pos, s));
+            if (hitShape) {
+                let resolvedFill = color;
+                if (fillMode === 'pattern') {
+                    resolvedFill = `url(#${fillPatternId || 'pattern-dots'})`;
+                } else if (fillMode === 'gradient') {
+                    resolvedFill = `url(#${fillGradientId || 'grad-sunset'})`;
+                }
+
+                setShapeObjects(prev => prev.map(s => s.id === hitShape.id ? {
+                    ...s,
+                    fillColor: resolvedFill,
+                    fillType: fillMode,
+                    fillPatternId: fillMode === 'pattern' ? fillPatternId : undefined,
+                    fillGradientId: fillMode === 'gradient' ? fillGradientId : undefined
+                } : s));
+                saveToHistory();
+                emitDrawEvent({ type: 'shape_fill', shapeId: hitShape.id, fillColor: resolvedFill, fillMode });
+                toast.success(`Shape filled with ${fillMode}!`, { icon: '🎨' });
+                return;
+            }
+
+            // 2. Otherwise perform flood fill on the 2D canvas for freehand drawings
             const canvas = canvasRef.current;
             if (canvas) {
                 const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                floodFill(ctx, Math.round(pos.x), Math.round(pos.y), {
+                const res = floodFill(ctx, Math.round(pos.x), Math.round(pos.y), {
                     type: fillMode,
                     color: color,
                     patternId: fillPatternId,
@@ -7601,6 +7677,12 @@ export default function Whiteboard({
                     patternFg: '#ffffff',
                     patternBg: '#1e293b'
                 }, 32);
+
+                if (res && res.success === false && res.reason === 'leaked') {
+                    toast.error('Cannot fill: Shape boundary is open. Please close all gaps before filling.', { icon: '⚠️' });
+                    return;
+                }
+
                 saveToHistory();
                 emitDrawEvent({ type: 'fill', x: pos.x, y: pos.y, color, fillMode, fillPatternId, fillGradientId });
                 toast.success(`Area filled with ${fillMode}!`, { icon: '🎨' });
@@ -7766,7 +7848,7 @@ export default function Whiteboard({
         let pos = getPosition(e);
         if (tool === 'pen' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
             pos = snapToGuides(pos, shapeObjects);
-            if (activeInstrumentBoundsRef.current && activeInstrumentBoundsRef.current.length > 0) {
+            if (activeInstrumentBoundsRef.current) {
                 pos = clampPointToInstrumentOuterEdge(pos, activeInstrumentBoundsRef.current);
             }
         }
@@ -9122,6 +9204,11 @@ export default function Whiteboard({
     const handlePointerDown = useCallback((e) => {
         if (!canUserDraw) return;
         
+        // Dismiss floating context menu if open
+        if (contextMenuPos) {
+            setContextMenuPos(null);
+        }
+
         // Ignore events on interactive canvas elements, controls, tools, overlays, media, 3D, and handles
         if (
             e.target?.closest?.(
@@ -9135,7 +9222,7 @@ export default function Whiteboard({
                 '.shape-magnetic-hook, .whiteboard-shape-item, ' +
                 '.whiteboard-text-item, .whiteboard-image-item, ' +
                 '.sticky-note-card, .shape-format-bar, .text-format-bar, ' +
-                '.image-format-bar, .connector-hover-popover'
+                '.image-format-bar, .connector-hover-popover, .whiteboard-context-menu'
             )
         ) {
             return;
@@ -9243,7 +9330,7 @@ export default function Whiteboard({
         }
 
         startDrawing(e);
-    }, [canUserDraw, startDrawing, showRadialMenu, pressureSensitivity, tool, panOffset, stopInertiaAnimation]);
+    }, [canUserDraw, startDrawing, showRadialMenu, pressureSensitivity, tool, panOffset, stopInertiaAnimation, contextMenuPos]);
 
     const handlePointerMove = useCallback((e) => {
         if (e.cancelable) {
@@ -11537,15 +11624,26 @@ export default function Whiteboard({
         if (currentPage < totalPages - 1) loadPage(currentPage + 1);
     }, [currentPage, totalPages, loadPage]);
 
-    // Generic image inserter from Data URL or remote URL
+    // Generic image inserter from Data URL or remote URL with resilient CORS fallback
     const insertImageFromSrc = useCallback((srcUrl) => {
         if (!srcUrl) return;
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
+
+        const isLocalOrData = srcUrl.startsWith('data:') || srcUrl.startsWith('blob:');
+
+        const tryLoadImage = (url, crossOriginVal, onFail, onSuccess) => {
+            const img = new Image();
+            if (crossOriginVal) {
+                img.crossOrigin = crossOriginVal;
+            }
+            img.onload = () => onSuccess(img, url);
+            img.onerror = () => onFail();
+            img.src = url;
+        };
+
+        const placeImageOnBoard = (img, finalSrc) => {
             const canvas = canvasRef.current;
-            let imgWidth = img.width || 400;
-            let imgHeight = img.height || 300;
+            let imgWidth = img.naturalWidth || img.width || 400;
+            let imgHeight = img.naturalHeight || img.height || 300;
             const maxWidth = (canvas?.width || 800) * 0.6;
             const maxHeight = (canvas?.height || 600) * 0.6;
 
@@ -11563,30 +11661,60 @@ export default function Whiteboard({
             const imageObj = {
                 id: Date.now(),
                 type: 'image',
-                src: srcUrl,
-                x: canvas ? (canvas.width - imgWidth) / 2 : 100,
-                y: canvas ? (canvas.height - imgHeight) / 2 : 100,
-                width: imgWidth,
-                height: imgHeight,
+                src: finalSrc,
+                x: canvas ? Math.max(20, Math.round((canvas.width - imgWidth) / 2)) : 100,
+                y: canvas ? Math.max(20, Math.round((canvas.height - imgHeight) / 2)) : 100,
+                width: Math.round(imgWidth),
+                height: Math.round(imgHeight),
                 rotation: 0,
                 imageElement: img
             };
 
             setImageObjects(prev => [...prev, imageObj]);
             setSelectedImageId(imageObj.id);
+            setSelectedImageIds([imageObj.id]);
+            saveToHistory();
 
             // Emit image event
             emitDrawEvent({
                 type: 'image',
-                imageData: srcUrl,
+                imageData: finalSrc,
                 x: imageObj.x,
                 y: imageObj.y,
-                width: imgWidth,
-                height: imgHeight
+                width: imageObj.width,
+                height: imageObj.height
             });
+
+            toast.success('Image placed onto whiteboard canvas!', { icon: '🖼️' });
         };
-        img.src = srcUrl;
-    }, [emitDrawEvent]);
+
+        if (isLocalOrData) {
+            tryLoadImage(srcUrl, null, () => {
+                toast.error('Failed to load image data');
+            }, (img) => {
+                placeImageOnBoard(img, srcUrl);
+            });
+            return;
+        }
+
+        // Stage 1: Try with crossOrigin = 'anonymous' (preserves canvas export capability)
+        tryLoadImage(srcUrl, 'anonymous', () => {
+            // Stage 2: Fallback without crossOrigin
+            tryLoadImage(srcUrl, null, () => {
+                // Stage 3: Fallback via backend proxy
+                const proxiedUrl = `/api/browser/proxy-image?url=${encodeURIComponent(srcUrl)}`;
+                tryLoadImage(proxiedUrl, 'anonymous', () => {
+                    toast.error('Unable to place image due to external host restrictions', { icon: '⚠️' });
+                }, (img) => {
+                    placeImageOnBoard(img, proxiedUrl);
+                });
+            }, (img) => {
+                placeImageOnBoard(img, srcUrl);
+            });
+        }, (img) => {
+            placeImageOnBoard(img, srcUrl);
+        });
+    }, [emitDrawEvent, saveToHistory]);
 
     // Image insert handler - creates selectable image objects
     const handleImageInsert = useCallback((e) => {
@@ -11638,6 +11766,28 @@ export default function Whiteboard({
         if (!imageUrl) return;
         insertImageFromSrc(imageUrl);
     }, [insertImageFromSrc]);
+
+    const handleCopyImageToBoard = useCallback((item) => {
+        if (!item) return;
+        const src = typeof item === 'string' ? item : (item.src || item.link);
+        if (!src) return;
+        const clipItem = {
+            id: Date.now(),
+            type: 'image',
+            data: {
+                id: Date.now(),
+                type: 'image',
+                src: src,
+                width: item.width || 400,
+                height: item.height || 300,
+                rotation: 0
+            },
+            dataURL: src,
+            title: item.title || 'Web Image'
+        };
+        setClipboardHistory(prev => [clipItem, ...prev].slice(0, 15));
+        toast.success('Image copied to whiteboard clipboard!');
+    }, []);
 
     const handleAddMediaFromBrowser = useCallback((mediaData) => {
         if (!mediaData) return;
@@ -15872,7 +16022,11 @@ export default function Whiteboard({
 
                         if (data?.physicsAction) {
                             setPhysicsSpaceConfig(data.physicsAction);
-                            setShowPhysicsSpace(true);
+                            // Only auto-open Physics Space if the user explicitly asks for simulation/interactive lab
+                            const isExplicitSimRequest = /\b(simulate|simulation|experiment|interactive\s+lab|physics\s+space|demonstrate\s+in\s+lab|run\s+sim)\b/i.test(effectiveText || rawText);
+                            if (isExplicitSimRequest) {
+                                setShowPhysicsSpace(true);
+                            }
                         }
                     }
 
@@ -18954,6 +19108,18 @@ export default function Whiteboard({
         };
     }, []);
 
+    const hasSelection = Boolean(
+        selection ||
+        selectedShapeIds.length > 0 ||
+        selectedImageIds.length > 0 ||
+        selectedTextIds.length > 0 ||
+        selectedMediaId ||
+        (selected3DIds && selected3DIds.length > 0) ||
+        selectedGraphId ||
+        selectedTableId
+    );
+    const hasClipboard = Boolean(clipboardHistory && clipboardHistory.length > 0);
+
     return (
         <div
             ref={containerRef}
@@ -21714,6 +21880,10 @@ export default function Whiteboard({
                     onPointerCancel={handlePointerCancel}
                     onPointerLeave={handlePointerLeave}
                     onClick={handleCanvasClick}
+                    onContextMenu={(e) => {
+                        e.preventDefault();
+                        setContextMenuPos({ x: e.clientX, y: e.clientY });
+                    }}
                     onDragOver={(e) => {
                         e.preventDefault();
                         e.dataTransfer.dropEffect = 'copy';
@@ -28495,7 +28665,9 @@ export default function Whiteboard({
                 aiSolution={aiSolutionData}
                 activeSolutionStep={activeSolutionStep}
                 externalEquations={externalGraphEquations}
-                isOpenByDefault={Boolean(aiSolutionData?.graphEquations?.length || externalGraphEquations?.length)}
+                isOpenByDefault={Boolean(externalGraphEquations?.length)}
+                isOpen={showGraphPanel}
+                onClose={() => setShowGraphPanel(false)}
                 leftSiderollMode={leftSiderollMode}
             />
 
@@ -28530,6 +28702,7 @@ export default function Whiteboard({
                 onInsertToBoard={(sol) => handleInsertAiSolutionToBoard(sol || aiSolutionData)}
                 onOpenAiSolution={() => setShowAiAssistantModal(true)}
                 onOpenPhysicsSpace={() => setShowPhysicsSpace(true)}
+                onOpenGraphPlotter={() => setShowGraphPanel(true)}
                 onStopSpeaking={stopAiSpeech}
                 onPauseSpeaking={pauseAiSpeech}
                 onResumeSpeaking={resumeAiSpeech}
@@ -28549,7 +28722,11 @@ export default function Whiteboard({
                     const next = !aiSpeechEnabled;
                     setAiSpeechEnabled(next);
                     setStoreAutoRead?.(next);
-                    if (!next) stopAiSpeech();
+                    if (!next) {
+                        pauseAiSpeech();
+                    } else {
+                        resumeAiSpeech();
+                    }
                 }}
                 preferredProvider={whiteboardAiProvider}
                 onClose={() => {
@@ -29341,12 +29518,190 @@ export default function Whiteboard({
 
             </div>
 
+            {/* Floating Selection Action Bar for Select Tool */}
+            {tool === 'select' && hasSelection && !contextMenuPos && (
+                <div
+                    className="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-3 py-1.5 text-slate-200 animate-in fade-in slide-in-from-top-2 duration-150 select-none"
+                    onClick={e => e.stopPropagation()}
+                    onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+                >
+                    <span className="text-[11px] font-semibold text-slate-400 px-1 border-r border-slate-700 mr-0.5">Select</span>
+                    <button
+                        type="button"
+                        onClick={handleCut}
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                        title="Cut (Ctrl+X)"
+                    >
+                        <Scissors className="w-3.5 h-3.5" />
+                        <span>Cut</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleCopy}
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                        title="Copy (Ctrl+C)"
+                    >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handlePaste}
+                        disabled={!hasClipboard}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition ${
+                            hasClipboard ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 cursor-not-allowed'
+                        }`}
+                        title="Paste (Ctrl+V)"
+                    >
+                        <ClipboardPaste className="w-3.5 h-3.5" />
+                        <span>Paste</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleDuplicate}
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                        title="Duplicate (Ctrl+D)"
+                    >
+                        <Files className="w-3.5 h-3.5" />
+                        <span>Duplicate</span>
+                    </button>
+                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
+                    <button
+                        type="button"
+                        onClick={() => handleBringToFront()}
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                        title="Bring to Front"
+                    >
+                        <BringToFront className="w-3.5 h-3.5" />
+                        <span>Front</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => handleSendToBack()}
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                        title="Send to Back"
+                    >
+                        <SendToBack className="w-3.5 h-3.5" />
+                        <span>Back</span>
+                    </button>
+                    <div className="w-px h-4 bg-slate-700 mx-0.5" />
+                    <button
+                        type="button"
+                        onClick={handleDelete}
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-red-400 hover:text-red-300 hover:bg-red-500/20 transition"
+                        title="Delete (Del / Backspace)"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                    </button>
+                </div>
+            )}
+
+            {/* Floating Right-Click / Canvas Context Menu */}
+            {contextMenuPos && (
+                <div
+                    className="whiteboard-context-menu fixed z-50 min-w-[190px] bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-xl shadow-2xl py-1.5 text-slate-200 text-xs animate-in fade-in zoom-in-95 duration-100 select-none"
+                    style={{
+                        left: Math.min(contextMenuPos.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 210),
+                        top: Math.min(contextMenuPos.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 270)
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+                    onContextMenu={e => { e.preventDefault(); e.stopPropagation(); }}
+                >
+                    <button
+                        type="button"
+                        disabled={!hasSelection}
+                        onClick={() => { handleCut(); setContextMenuPos(null); }}
+                        className={`w-full flex items-center justify-between px-3 py-1.5 text-left transition ${
+                            hasSelection ? 'hover:bg-slate-800 text-slate-200' : 'text-slate-600 cursor-not-allowed'
+                        }`}
+                    >
+                        <span className="flex items-center gap-2"><Scissors className="w-3.5 h-3.5 text-slate-400" /> Cut</span>
+                        <span className="text-[10px] text-slate-500 font-mono">Ctrl+X</span>
+                    </button>
+                    <button
+                        type="button"
+                        disabled={!hasSelection}
+                        onClick={() => { handleCopy(); setContextMenuPos(null); }}
+                        className={`w-full flex items-center justify-between px-3 py-1.5 text-left transition ${
+                            hasSelection ? 'hover:bg-slate-800 text-slate-200' : 'text-slate-600 cursor-not-allowed'
+                        }`}
+                    >
+                        <span className="flex items-center gap-2"><Copy className="w-3.5 h-3.5 text-slate-400" /> Copy</span>
+                        <span className="text-[10px] text-slate-500 font-mono">Ctrl+C</span>
+                    </button>
+                    <button
+                        type="button"
+                        disabled={!hasClipboard}
+                        onClick={() => { handlePaste(); setContextMenuPos(null); }}
+                        className={`w-full flex items-center justify-between px-3 py-1.5 text-left transition ${
+                            hasClipboard ? 'hover:bg-slate-800 text-slate-200' : 'text-slate-600 cursor-not-allowed'
+                        }`}
+                    >
+                        <span className="flex items-center gap-2"><ClipboardPaste className="w-3.5 h-3.5 text-slate-400" /> Paste</span>
+                        <span className="text-[10px] text-slate-500 font-mono">Ctrl+V</span>
+                    </button>
+                    <button
+                        type="button"
+                        disabled={!hasSelection}
+                        onClick={() => { handleDuplicate(); setContextMenuPos(null); }}
+                        className={`w-full flex items-center justify-between px-3 py-1.5 text-left transition ${
+                            hasSelection ? 'hover:bg-slate-800 text-slate-200' : 'text-slate-600 cursor-not-allowed'
+                        }`}
+                    >
+                        <span className="flex items-center gap-2"><Files className="w-3.5 h-3.5 text-slate-400" /> Duplicate</span>
+                        <span className="text-[10px] text-slate-500 font-mono">Ctrl+D</span>
+                    </button>
+
+                    <div className="h-px bg-slate-700/80 my-1 mx-2" />
+
+                    <button
+                        type="button"
+                        disabled={!hasSelection}
+                        onClick={() => { handleBringToFront(); setContextMenuPos(null); }}
+                        className={`w-full flex items-center justify-between px-3 py-1.5 text-left transition ${
+                            hasSelection ? 'hover:bg-slate-800 text-slate-200' : 'text-slate-600 cursor-not-allowed'
+                        }`}
+                    >
+                        <span className="flex items-center gap-2"><BringToFront className="w-3.5 h-3.5 text-slate-400" /> Bring to Front</span>
+                        <span className="text-[10px] text-slate-500 font-mono">Ctrl+]</span>
+                    </button>
+                    <button
+                        type="button"
+                        disabled={!hasSelection}
+                        onClick={() => { handleSendToBack(); setContextMenuPos(null); }}
+                        className={`w-full flex items-center justify-between px-3 py-1.5 text-left transition ${
+                            hasSelection ? 'hover:bg-slate-800 text-slate-200' : 'text-slate-600 cursor-not-allowed'
+                        }`}
+                    >
+                        <span className="flex items-center gap-2"><SendToBack className="w-3.5 h-3.5 text-slate-400" /> Send to Back</span>
+                        <span className="text-[10px] text-slate-500 font-mono">Ctrl+[</span>
+                    </button>
+
+                    <div className="h-px bg-slate-700/80 my-1 mx-2" />
+
+                    <button
+                        type="button"
+                        disabled={!hasSelection}
+                        onClick={() => { handleDelete(); setContextMenuPos(null); }}
+                        className={`w-full flex items-center justify-between px-3 py-1.5 text-left transition ${
+                            hasSelection ? 'hover:bg-red-500/20 text-red-400 hover:text-red-300' : 'text-slate-600 cursor-not-allowed'
+                        }`}
+                    >
+                        <span className="flex items-center gap-2"><Trash2 className="w-3.5 h-3.5" /> Delete</span>
+                        <span className="text-[10px] text-slate-500 font-mono">Del</span>
+                    </button>
+                </div>
+            )}
+
             {/* Right Sideroll: Research Browser & Asset Clipper (Closed / Partial / Full) */}
             <WhiteboardBrowserSideroll
                 mode={rightSiderollMode}
                 onModeChange={setRightSiderollMode}
                 onAddTextToBoard={handleAddTextFromBrowser}
                 onAddImageToBoard={handleAddImageFromBrowser}
+                onCopyImageToBoard={handleCopyImageToBoard}
                 onAddAIPanelToBoard={handleAddAIPanelToBoard}
                 onAddMediaToBoard={handleAddMediaFromBrowser}
             />

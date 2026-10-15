@@ -379,6 +379,7 @@ export default function WhiteboardClosedCaptions({
     onClose = () => {},
     onExecuteCommand = () => {},
     onOpenPhysicsSpace = null,
+    onOpenGraphPlotter = null,
     audioLevel = 0
 }) {
     const [isMinimized, setIsMinimized] = useState(false);
@@ -752,14 +753,24 @@ export default function WhiteboardClosedCaptions({
                                                 Summary
                                             </button>
                                         )}
-                                        {onOpenPhysicsSpace && (
+                                        {onOpenPhysicsSpace && aiSolution?.physicsAction && (
                                             <button
                                                 type="button"
                                                 onClick={onOpenPhysicsSpace}
                                                 className="px-2 py-0.5 rounded text-[11px] font-semibold transition bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 border border-indigo-500/40 flex items-center gap-1 cursor-pointer"
-                                                title="Open interactive physics simulation laboratory"
+                                                title="Open interactive physics simulation laboratory for this question"
                                             >
-                                                <span>⚛️ Lab</span>
+                                                <span>⚛️ Simulate</span>
+                                            </button>
+                                        )}
+                                        {onOpenGraphPlotter && (aiSolution?.graphEquations?.length > 0 || aiSolution?.canvasAction?.curves?.length > 0) && (
+                                            <button
+                                                type="button"
+                                                onClick={onOpenGraphPlotter}
+                                                className="px-2 py-0.5 rounded text-[11px] font-semibold transition bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-300 border border-cyan-500/40 flex items-center gap-1 cursor-pointer"
+                                                title="Open interactive graph plotter"
+                                            >
+                                                <span>📈 Plot</span>
                                             </button>
                                         )}
                                     </div>
@@ -873,30 +884,42 @@ export default function WhiteboardClosedCaptions({
                                     ))}
                                 </div>
 
-                                {/* Stop / Read Aloud Voice Toggle */}
+                                {/* Mute / Resume / Read Aloud Voice Toggle */}
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        if (isAiSpeaking || isAiPaused) {
-                                            setClickedBlockIdx(null);
-                                            onStopSpeaking();
+                                        if (isAiSpeaking && !isAiPaused) {
+                                            if (typeof onPauseSpeaking === 'function') {
+                                                onPauseSpeaking();
+                                            } else {
+                                                onStopSpeaking();
+                                            }
+                                        } else if (isAiPaused) {
+                                            if (typeof onResumeSpeaking === 'function') {
+                                                onResumeSpeaking();
+                                            } else if (typeof onSpeakSteps === 'function' && blocks.length > 0) {
+                                                const resumeIdx = activeBlockIndex >= 0 ? activeBlockIndex : 0;
+                                                onSpeakSteps(blocks, { rate: speechRate, startIndex: resumeIdx, autoPlay: true });
+                                            }
                                         } else if (typeof onSpeakSteps === 'function' && blocks.length > 0) {
                                             setClickedBlockIdx(null);
-                                            const firstContentIdx = Math.max(0, blocks.findIndex(b => b.type !== 'heading'));
-                                            onSpeakSteps(blocks, { rate: speechRate, startIndex: firstContentIdx, autoPlay: true });
+                                            const startIdx = activeBlockIndex >= 0 ? activeBlockIndex : Math.max(0, blocks.findIndex(b => b.type !== 'heading'));
+                                            onSpeakSteps(blocks, { rate: speechRate, startIndex: startIdx, autoPlay: true });
                                         } else {
                                             setClickedBlockIdx(null);
                                             onSpeak(displayText, { rate: speechRate });
                                         }
                                     }}
                                     className={`p-1 rounded transition ${
-                                        isAiSpeaking
-                                            ? 'bg-yellow-400 text-slate-950 hover:bg-rose-500 hover:text-white'
-                                            : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                                        isAiSpeaking && !isAiPaused
+                                            ? 'bg-yellow-400 text-slate-950 hover:bg-yellow-300'
+                                            : isAiPaused
+                                                ? 'bg-amber-600 text-white hover:bg-amber-500'
+                                                : 'text-slate-300 hover:text-white hover:bg-slate-800'
                                     }`}
-                                    title={isAiSpeaking ? 'Stop speaking' : 'Read steps aloud'}
+                                    title={isAiSpeaking && !isAiPaused ? 'Pause/Mute step narration' : (isAiPaused ? 'Resume step narration' : 'Read steps aloud')}
                                 >
-                                    {isAiSpeaking ? <Volume2 className="w-3.5 h-3.5 animate-pulse" /> : <VolumeX className="w-3.5 h-3.5" />}
+                                    {isAiSpeaking && !isAiPaused ? <Volume2 className="w-3.5 h-3.5 animate-pulse" /> : <VolumeX className="w-3.5 h-3.5" />}
                                 </button>
 
                                 {/* Copy */}
@@ -975,6 +998,19 @@ export default function WhiteboardClosedCaptions({
                                     style={{ backgroundColor: '#0f172a' }}
                                     className="p-3 text-xs text-slate-100 space-y-1.5 max-h-[52vh] overflow-y-auto custom-scrollbar select-text bg-slate-950"
                                 >
+                                    {/* Unified Initial AI Response Banner */}
+                                    {aiSolution?.speechResponse && (
+                                        <div className="mb-2 p-2.5 rounded-xl bg-gradient-to-r from-emerald-950/80 via-slate-900 to-indigo-950/80 border border-emerald-500/40 text-emerald-100 text-xs shadow-md">
+                                            <div className="flex items-center gap-1.5 font-bold text-[11px] text-emerald-400 uppercase tracking-wider mb-1">
+                                                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                                                <span>Initial Answer & Summary</span>
+                                            </div>
+                                            <p className="leading-relaxed font-medium text-slate-100">
+                                                {aiSolution.speechResponse}
+                                            </p>
+                                        </div>
+                                    )}
+
                                     {blocks.length > 0 ? (
                                         blocks.map((block, idx) => {
                                             const isActive = (idx === activeBlockIndex) && (isAiSpeaking || isAiPaused || isStepMode || clickedBlockIdx !== null);
@@ -1436,7 +1472,7 @@ export default function WhiteboardClosedCaptions({
                                         </div>
                                         <Pencil className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition shrink-0 ml-1.5" />
                                     </div>
-                                ) : feedback ? (
+                                ) : (feedback && !aiSolution?.solutionMarkdown && !aiSolution?.speechResponse) ? (
                                     <div className="text-xs sm:text-sm font-medium text-emerald-300 flex items-center gap-2">
                                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                                         <span>{feedback}</span>
@@ -1452,8 +1488,8 @@ export default function WhiteboardClosedCaptions({
                                     </div>
                                 )}
 
-                                {/* Recent Feedback Pill (if different from speech) */}
-                                {feedback && (transcript || interimTranscript || isAiSpeaking) && (
+                                {/* Recent Feedback Pill (if different from speech and not already in solution pane) */}
+                                {feedback && (transcript || interimTranscript || isAiSpeaking) && !aiSolution?.solutionMarkdown && !aiSolution?.speechResponse && (
                                     <div className="mt-1.5 pt-1 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-emerald-400 font-medium">
                                         <span className="flex items-center gap-1.5">
                                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />

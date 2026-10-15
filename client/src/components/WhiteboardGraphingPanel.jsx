@@ -598,11 +598,20 @@ export default function WhiteboardGraphingPanel({
     activeSolutionStep = null, // { index, text, equations, points }
     externalEquations = [], // equations added via voice commands or external triggers
     isOpenByDefault = false,
+    isOpen = null,
     leftSiderollMode = 'closed',
     onClose = null
 }) {
     const [isCollapsed, setIsCollapsed] = useState(false);
-    const [isVisible, setIsVisible] = useState(isOpenByDefault);
+    const [isVisible, setIsVisible] = useState(isOpen !== null ? isOpen : isOpenByDefault);
+
+    useEffect(() => {
+        if (isOpen !== null) {
+            setIsVisible(isOpen);
+            if (isOpen) setIsCollapsed(false);
+        }
+    }, [isOpen]);
+
     const [graphMode, setGraphMode] = useState('2d'); // '2d' | '3d'
     const [manualModeOverride, setManualModeOverride] = useState(false);
 
@@ -710,8 +719,15 @@ export default function WhiteboardGraphingPanel({
                 setSelectedEqId(builtEquations[0].id);
             }
             setKeyPoints(extractedPts);
-            setIsVisible(true);
-            setIsCollapsed(false);
+            
+            // Strictly gate auto-open: Do NOT auto-open for general physics/theoretical math questions
+            // Only auto-open if explicitly requested or isOpenByDefault is true
+            const questionText = `${aiSolution.question || ''} ${aiSolution.prompt || ''} ${aiSolution.speechResponse || ''}`.toLowerCase();
+            const isExplicitGraphRequest = /\b(graph|plot|plotter|curve|graphing|coordinate|function\s+plot|parabola|hyperbola|ellipse|sinusoid)\b/i.test(questionText);
+            if (isExplicitGraphRequest || isOpenByDefault) {
+                setIsVisible(true);
+                setIsCollapsed(false);
+            }
             setInputError('');
 
             // Auto-detect 2D vs 3D mode

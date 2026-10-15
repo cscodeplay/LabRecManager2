@@ -1535,6 +1535,39 @@ function renderSmartSecurePortal(targetUrl, appOrigin = '', reason = '') {
 }
 
 /**
+ * @route   GET /api/browser/proxy-image
+ * @desc    CORS-busting image proxy for whiteboard canvas stamping
+ * @access  Public
+ */
+router.get('/proxy-image', asyncHandler(async (req, res) => {
+    const rawUrl = (req.query.url || '').trim();
+    if (!rawUrl) {
+        return res.status(400).send('Missing url parameter');
+    }
+
+    try {
+        const response = await axios.get(rawUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+            },
+            responseType: 'arraybuffer',
+            timeout: 10000,
+            maxRedirects: 5
+        });
+
+        const contentType = response.headers['content-type'] || 'image/jpeg';
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.send(Buffer.from(response.data));
+    } catch (err) {
+        console.error('[Browser Proxy-Image] Failed to fetch image:', err.message);
+        return res.status(502).send('Failed to fetch image');
+    }
+}));
+
+/**
  * @route   GET /api/browser/proxy
  * @desc    Direct in-panel web browser proxy allowing live navigation of Google Search and educational sites
  * @access  Public
