@@ -886,6 +886,259 @@ Ensure each slide is conceptually progressive from introduction to deep dive to 
     }
 }));
 
+function renderGoogleHomePage() {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Google</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #202124; color: #e8eaed; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+        .logo { font-size: 52px; font-weight: 700; letter-spacing: -1px; margin-bottom: 28px; user-select: none; }
+        .g-blue { color: #8ab4f8; }
+        .g-red { color: #f28b82; }
+        .g-yellow { color: #fdd663; }
+        .g-green { color: #81c995; }
+        .search-box { width: 100%; max-width: 580px; position: relative; margin-bottom: 24px; }
+        .search-form { display: flex; align-items: center; background: #303134; border: 1px solid #5f6368; border-radius: 24px; padding: 10px 18px; box-shadow: 0 1px 6px rgba(0,0,0,0.28); }
+        .search-form:focus-within { background: #303134; border-color: #8ab4f8; box-shadow: 0 1px 8px rgba(138,180,248,0.3); }
+        .search-icon { width: 18px; height: 18px; fill: #9aa0a6; margin-right: 12px; flex-shrink: 0; }
+        .search-input { width: 100%; background: transparent; border: none; outline: none; font-size: 15px; color: #fff; }
+        .buttons { display: flex; gap: 12px; margin-bottom: 32px; }
+        .btn { background: #303134; border: 1px solid transparent; color: #e8eaed; padding: 9px 18px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+        .btn:hover { background: #3c4043; border-color: #5f6368; color: #fff; }
+        .shortcuts-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #9aa0a6; margin-bottom: 12px; font-weight: 600; }
+        .shortcuts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 560px; }
+        .chip { background: #292a2d; border: 1px solid #3c4043; color: #8ab4f8; padding: 6px 14px; border-radius: 16px; font-size: 12px; text-decoration: none; cursor: pointer; transition: all 0.15s; }
+        .chip:hover { background: #3c4043; border-color: #8ab4f8; }
+        .footer-note { margin-top: 40px; font-size: 11px; color: #9aa0a6; }
+    </style>
+</head>
+<body>
+    <div class="logo">
+        <span class="g-blue">G</span><span class="g-red">o</span><span class="g-yellow">o</span><span class="g-blue">g</span><span class="g-green">l</span><span class="g-red">e</span>
+    </div>
+    <div class="search-box">
+        <form class="search-form" onsubmit="handleSearch(event)">
+            <svg class="search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            <input class="search-input" id="search-input" type="text" placeholder="Search Google or type a URL" autofocus autocomplete="off" />
+        </form>
+    </div>
+    <div class="buttons">
+        <button class="btn" onclick="document.querySelector('.search-form').dispatchEvent(new Event('submit', { cancelable: true }))">Google Search</button>
+        <button class="btn" onclick="feelingLucky()">I'm Feeling Lucky</button>
+    </div>
+    <div class="shortcuts-title">Academic & Lab Topics</div>
+    <div class="shortcuts">
+        <a class="chip" onclick="searchTopic('Photosynthesis in plants')">🌿 Photosynthesis</a>
+        <a class="chip" onclick="searchTopic('Newton laws of motion')">🍎 Newton's Laws</a>
+        <a class="chip" onclick="searchTopic('Periodic table of elements')">🧪 Periodic Table</a>
+        <a class="chip" onclick="searchTopic('Human heart anatomy')">❤️ Heart Anatomy</a>
+        <a class="chip" onclick="searchTopic('Wave optics interference')">🌊 Wave Optics</a>
+        <a class="chip" onclick="searchTopic('Circle equation standard form')">⭕ Circle Conics</a>
+        <a class="chip" onclick="searchTopic('Quadratic formula derivation')">📐 Quadratic Roots</a>
+    </div>
+    <div class="footer-note">⚡ In-Whiteboard Live Web Search & Reference Engine</div>
+    <script>
+        try {
+            window.parent.postMessage({ type: 'BROWSER_URL_CHANGED', url: 'https://www.google.com', title: 'Google' }, '*');
+        } catch(e) {}
+        function handleSearch(e) {
+            e.preventDefault();
+            var val = document.getElementById('search-input').value.trim();
+            if (!val) return;
+            window.location.href = '/api/browser/proxy?url=' + encodeURIComponent('https://www.google.com/search?q=' + encodeURIComponent(val));
+        }
+        function searchTopic(t) {
+            window.location.href = '/api/browser/proxy?url=' + encodeURIComponent('https://www.google.com/search?q=' + encodeURIComponent(t));
+        }
+        function feelingLucky() {
+            var topics = ['Photosynthesis', 'Newton laws of motion', 'Quantum mechanics', 'DNA replication', 'Euler formula'];
+            var pick = topics[Math.floor(Math.random() * topics.length)];
+            searchTopic(pick);
+        }
+    </script>
+</body>
+</html>`;
+}
+
+function renderGoogleSearchPage(query, webResults, aiOverview, rawTargetUrl) {
+    const escapedQuery = String(query).replace(/"/g, '&quot;');
+    const resultsHtml = (webResults || []).map((r) => {
+        const proxyUrl = `/api/browser/proxy?url=${encodeURIComponent(r.url)}`;
+        return `
+        <div class="result-card" draggable="true" ondragstart="handleDrag(event, '${encodeURIComponent(r.title)}', '${encodeURIComponent(r.url)}')">
+            <div class="result-meta">
+                <span class="result-domain">${r.domain || 'web'}</span>
+                <span class="meta-sep">&bull;</span>
+                <span class="result-raw-url">${r.url.slice(0, 50)}...</span>
+            </div>
+            <h3 class="result-title">
+                <a href="${proxyUrl}">${r.title}</a>
+            </h3>
+            <p class="result-snippet">${r.snippet || 'No description preview available.'}</p>
+            <div class="result-actions">
+                <button class="action-btn" onclick="addToWhiteboard('${encodeURIComponent(r.title)}', '${encodeURIComponent(r.url)}', '${encodeURIComponent(r.snippet)}')">
+                    <span>➕ Add to Board</span>
+                </button>
+                <a class="action-link" href="${proxyUrl}">Live View &rarr;</a>
+                <a class="action-link" href="${r.url}" target="_blank" rel="noopener noreferrer">Open Tab &nearr;</a>
+            </div>
+        </div>
+        `;
+    }).join('');
+
+    const aiBoxHtml = aiOverview ? `
+    <div class="ai-overview">
+        <div class="ai-header">
+            <span class="ai-sparkle">✨</span>
+            <span class="ai-title">AI Overview</span>
+            <button class="ai-add-btn" onclick="addAiToWhiteboard('${encodeURIComponent(aiOverview.title || query)}', '${encodeURIComponent(aiOverview.summary || '')}', '${encodeURIComponent((aiOverview.keyPoints || []).join(' • '))}')">➕ Add to Board</button>
+        </div>
+        <p class="ai-summary">${aiOverview.summary || ''}</p>
+        ${(aiOverview.keyPoints && aiOverview.keyPoints.length > 0) ? `
+            <ul class="ai-points">
+                ${aiOverview.keyPoints.map(p => `<li>${p}</li>`).join('')}
+            </ul>
+        ` : ''}
+        ${aiOverview.formulaOrEquation ? `
+            <div class="ai-formula">📐 <code>${aiOverview.formulaOrEquation}</code></div>
+        ` : ''}
+    </div>
+    ` : '';
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapedQuery} - Google Search</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #202124; color: #e8eaed; padding: 0; margin: 0; }
+        .top-bar { position: sticky; top: 0; background: #202124; border-bottom: 1px solid #3c4043; padding: 12px 20px; display: flex; align-items: center; gap: 16px; z-index: 100; }
+        .logo { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; text-decoration: none; user-select: none; flex-shrink: 0; }
+        .g-blue { color: #8ab4f8; } .g-red { color: #f28b82; } .g-yellow { color: #fdd663; } .g-green { color: #81c995; }
+        .search-form { flex: 1; max-width: 620px; display: flex; align-items: center; background: #303134; border: 1px solid #5f6368; border-radius: 24px; padding: 6px 16px; }
+        .search-form:focus-within { border-color: #8ab4f8; }
+        .search-input { width: 100%; background: transparent; border: none; outline: none; font-size: 14px; color: #fff; }
+        .container { max-width: 760px; padding: 16px 20px; margin: 0; }
+        .ai-overview { background: #17181a; border: 1px solid #3c4043; border-radius: 16px; padding: 16px 18px; margin-bottom: 24px; }
+        .ai-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+        .ai-sparkle { font-size: 16px; }
+        .ai-title { font-weight: 700; font-size: 13px; color: #8ab4f8; text-transform: uppercase; letter-spacing: 0.5px; }
+        .ai-add-btn { margin-left: auto; background: #29303d; border: 1px solid #3b82f6; color: #93c5fd; border-radius: 12px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+        .ai-add-btn:hover { background: #1d4ed8; color: #fff; }
+        .ai-summary { font-size: 14px; line-height: 1.55; color: #e8eaed; margin-bottom: 10px; }
+        .ai-points { margin-left: 20px; font-size: 13px; line-height: 1.5; color: #bdc1c6; }
+        .ai-points li { margin-bottom: 6px; }
+        .ai-formula { background: #202124; border: 1px solid #3c4043; padding: 8px 12px; border-radius: 8px; font-size: 13px; color: #93c5fd; margin-top: 10px; }
+        .result-card { margin-bottom: 24px; padding-bottom: 18px; border-bottom: 1px solid #303134; }
+        .result-meta { font-size: 11px; color: #bdc1c6; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+        .result-domain { font-weight: 600; color: #dadce0; }
+        .result-title { font-size: 17px; font-weight: 500; margin-bottom: 6px; line-height: 1.35; }
+        .result-title a { color: #8ab4f8; text-decoration: none; }
+        .result-title a:hover { text-decoration: underline; }
+        .result-snippet { font-size: 13px; line-height: 1.5; color: #bdc1c6; margin-bottom: 8px; }
+        .result-actions { display: flex; align-items: center; gap: 10px; }
+        .action-btn { background: #303134; border: 1px solid #5f6368; color: #e8eaed; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; }
+        .action-btn:hover { background: #3c4043; border-color: #8ab4f8; }
+        .action-link { font-size: 11px; color: #8ab4f8; text-decoration: none; }
+        .action-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <a class="logo" href="/api/browser/proxy?url=https://www.google.com">
+            <span class="g-blue">G</span><span class="g-red">o</span><span class="g-yellow">o</span><span class="g-blue">g</span><span class="g-green">l</span><span class="g-red">e</span>
+        </a>
+        <form class="search-form" onsubmit="handleSearch(event)">
+            <input class="search-input" id="search-input" type="text" value="${escapedQuery}" />
+        </form>
+    </div>
+    <div class="container">
+        ${aiBoxHtml}
+        ${resultsHtml || '<p style="color:#9aa0a6; padding: 20px 0;">No web results found for this query. Try a different search term.</p>'}
+    </div>
+    <script>
+        try {
+            window.parent.postMessage({ type: 'BROWSER_URL_CHANGED', url: ${JSON.stringify(rawTargetUrl)}, title: ${JSON.stringify(`${query} - Google Search`)} }, '*');
+        } catch(e) {}
+        function handleSearch(e) {
+            e.preventDefault();
+            var val = document.getElementById('search-input').value.trim();
+            if (!val) return;
+            window.location.href = '/api/browser/proxy?url=' + encodeURIComponent('https://www.google.com/search?q=' + encodeURIComponent(val));
+        }
+        function addToWhiteboard(title, url, snippet) {
+            try {
+                window.parent.postMessage({
+                    type: 'BROWSER_ADD_TEXT',
+                    text: decodeURIComponent(title) + '\\n' + decodeURIComponent(url) + '\\n' + decodeURIComponent(snippet)
+                }, '*');
+            } catch(e) {}
+        }
+        function addAiToWhiteboard(title, summary, points) {
+            try {
+                window.parent.postMessage({
+                    type: 'BROWSER_ADD_TEXT',
+                    text: '📌 ' + decodeURIComponent(title) + '\\n\\n' + decodeURIComponent(summary) + '\\n\\n' + decodeURIComponent(points).split(' • ').map(function(p){ return '• ' + p; }).join('\\n')
+                }, '*');
+            } catch(e) {}
+        }
+        function handleDrag(e, title, url) {
+            var decodedUrl = decodeURIComponent(url);
+            e.dataTransfer.setData('text/plain', decodedUrl);
+            e.dataTransfer.setData('text/uri-list', decodedUrl);
+            e.dataTransfer.setData('application/x-whiteboard-text', JSON.stringify({
+                text: decodeURIComponent(title) + '\\n' + decodedUrl
+            }));
+        }
+    </script>
+</body>
+</html>`;
+}
+
+function renderBlockedPage(targetUrl, reason) {
+    let domain = 'Destination website';
+    try { domain = new URL(targetUrl).hostname; } catch (e) {}
+    return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Unable to load in panel</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; background: #090d16; color: #f8fafc; padding: 32px 16px; margin: 0; display: flex; align-items: center; justify-content: center; min-height: 80vh; }
+        .card { max-width: 460px; width: 100%; background: #131c2e; border: 1px solid #1e293b; border-radius: 20px; padding: 28px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
+        .icon { width: 48px; height: 48px; background: rgba(244, 63, 94, 0.15); color: #f43f5e; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; font-size: 24px; }
+        h2 { font-size: 17px; font-weight: 700; margin: 0 0 8px; color: #f8fafc; }
+        p { color: #94a3b8; font-size: 13px; line-height: 1.5; margin: 0 0 16px; }
+        .url-box { background: #090d16; border: 1px solid #334155; padding: 8px 12px; border-radius: 8px; font-family: monospace; font-size: 11px; color: #38bdf8; word-break: break-all; margin-bottom: 20px; text-align: left; }
+        .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+        .btn-primary { background: #0284c7; color: white; border: none; padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+        .btn-primary:hover { background: #0369a1; }
+        .btn-secondary { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; }
+        .btn-secondary:hover { background: #334155; color: white; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">&#9888;</div>
+        <h2>Site Framing Blocked</h2>
+        <p>${domain} has security headers preventing in-frame embedding, or the connection timed out.</p>
+        <div class="url-box">${targetUrl}</div>
+        <div class="actions">
+            <a class="btn-primary" href="${targetUrl}" target="_blank" rel="noopener noreferrer">Open in New Tab &nearr;</a>
+            <a class="btn-secondary" href="/api/browser/proxy?url=https://www.google.com">Google Home</a>
+            <button class="btn-secondary" onclick="window.location.reload()">Retry</button>
+        </div>
+    </div>
+</body>
+</html>`;
+}
+
 /**
  * @route   GET /api/browser/proxy
  * @desc    Direct in-panel web browser proxy allowing live navigation of Google Search and educational sites
@@ -907,6 +1160,38 @@ router.get('/proxy', asyncHandler(async (req, res) => {
         targetUrl = `https://${targetUrl}`;
     }
 
+    // 1. Intercept Google requests to provide an unblockable, native Google Search & Home experience
+    const isGoogle = /^(https?:\/\/)?(www\.)?google\.[a-z.]+(\/search)?/i.test(targetUrl) || targetUrl.includes('google.com');
+    if (isGoogle) {
+        let searchQ = '';
+        try {
+            const parsed = new URL(targetUrl.startsWith('http') ? targetUrl : `https://${targetUrl}`);
+            searchQ = parsed.searchParams.get('q') || '';
+        } catch (e) {
+            const qMatch = targetUrl.match(/[?&]q=([^&]+)/);
+            if (qMatch) searchQ = decodeURIComponent(qMatch[1]);
+        }
+
+        res.removeHeader('X-Frame-Options');
+        res.removeHeader('Content-Security-Policy');
+        res.removeHeader('Content-Security-Policy-Report-Only');
+        res.setHeader('X-Frame-Options', 'ALLOWALL');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+
+        if (searchQ && searchQ.trim()) {
+            const queryClean = searchQ.trim();
+            const [webResults, aiOverview] = await Promise.all([
+                fetchWebSearchResults(queryClean),
+                generateAiSearchOverview(queryClean).catch(() => null)
+            ]);
+            return res.send(renderGoogleSearchPage(queryClean, webResults, aiOverview, targetUrl));
+        } else {
+            return res.send(renderGoogleHomePage());
+        }
+    }
+
+    // 2. Proxy non-Google web pages with security headers stripped & anti-frame-busting shim injected
     try {
         const response = await axios.get(targetUrl, {
             headers: {
@@ -930,6 +1215,10 @@ router.get('/proxy', asyncHandler(async (req, res) => {
         res.setHeader('X-Frame-Options', 'ALLOWALL');
         res.setHeader('Access-Control-Allow-Origin', '*');
 
+        if (response.status >= 400) {
+            return res.status(response.status).send(renderBlockedPage(targetUrl, `Destination website returned HTTP status ${response.status}.`));
+        }
+
         const contentType = response.headers['content-type'] || 'text/html; charset=utf-8';
         res.setHeader('Content-Type', contentType);
 
@@ -937,7 +1226,23 @@ router.get('/proxy', asyncHandler(async (req, res) => {
             let html = response.data;
             const finalUrl = response.request?.res?.responseUrl || targetUrl;
 
+            // Remove meta CSP, XFO, origin-trial tags
+            html = html.replace(/<meta[^>]*http-equiv\s*=\s*["']?(?:Content-Security-Policy|X-Frame-Options|origin-trial)["']?[^>]*>/gi, '');
+
+            // Neutralize frame-busting scripts
+            html = html.replace(/\b(window\.)?(top|parent)\.location\b/g, 'window.location');
+            html = html.replace(/\b(window\.)?(top|parent)\s*!==?\s*(window\.)?self\b/g, 'false');
+            html = html.replace(/\b(window\.)?(top|parent)\s*===?\s*(window\.)?self\b/g, 'true');
+
             const baseTag = `<base href="${finalUrl}">`;
+            const antiFrameBustScript = `
+<script>
+try {
+    Object.defineProperty(window, 'top', { get: function() { return window.self; }, set: function() {} });
+    Object.defineProperty(window, 'parent', { get: function() { return window.self; }, set: function() {} });
+} catch(e) {}
+</script>
+`;
             const proxyScript = `
 <script>
 (function() {
@@ -992,12 +1297,13 @@ router.get('/proxy', asyncHandler(async (req, res) => {
 </script>
 `;
 
+            const injection = `${baseTag}${antiFrameBustScript}${proxyScript}`;
             if (html.includes('<head>')) {
-                html = html.replace('<head>', `<head>${baseTag}${proxyScript}`);
+                html = html.replace('<head>', `<head>${injection}`);
             } else if (html.includes('<html>')) {
-                html = html.replace('<html>', `<html><head>${baseTag}${proxyScript}</head>`);
+                html = html.replace('<html>', `<html><head>${injection}</head>`);
             } else {
-                html = `${baseTag}${proxyScript}${html}`;
+                html = `${injection}${html}`;
             }
 
             return res.send(html);
@@ -1006,40 +1312,7 @@ router.get('/proxy', asyncHandler(async (req, res) => {
         return res.send(response.data);
     } catch (err) {
         console.error('[BrowserProxy] Error loading URL:', targetUrl, err.message);
-        return res.status(500).send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="utf-8">
-                <title>Unable to load in browser</title>
-                <style>
-                    body { font-family: system-ui, -apple-system, sans-serif; background: #090d16; color: #f8fafc; padding: 32px 16px; margin: 0; display: flex; align-items: center; justify-content: center; min-height: 80vh; }
-                    .card { max-width: 440px; width: 100%; background: #131c2e; border: 1px solid #1e293b; border-radius: 20px; padding: 28px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
-                    .icon { width: 48px; height: 48px; background: rgba(244, 63, 94, 0.15); color: #f43f5e; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; font-size: 24px; }
-                    h2 { font-size: 17px; font-weight: 700; margin: 0 0 8px; color: #f8fafc; }
-                    p { color: #94a3b8; font-size: 13px; line-height: 1.5; margin: 0 0 20px; }
-                    .url-box { background: #090d16; border: 1px solid #334155; padding: 8px 12px; border-radius: 8px; font-family: monospace; font-size: 11px; color: #38bdf8; word-break: break-all; margin-bottom: 20px; text-align: left; }
-                    .actions { display: flex; gap: 10px; justify-content: center; }
-                    .btn-primary { background: #0284c7; color: white; border: none; padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
-                    .btn-primary:hover { background: #0369a1; }
-                    .btn-secondary { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; }
-                    .btn-secondary:hover { background: #334155; color: white; }
-                </style>
-            </head>
-            <body>
-                <div class="card">
-                    <div class="icon">&#9888;</div>
-                    <h2>Web Page Framing Protected</h2>
-                    <p>This destination website blocks direct embedding inside frames, or the connection timed out.</p>
-                    <div class="url-box">${targetUrl}</div>
-                    <div class="actions">
-                        <a class="btn-primary" href="${targetUrl}" target="_blank" rel="noopener noreferrer">Open in New Tab &nearr;</a>
-                        <button class="btn-secondary" onclick="window.location.reload()">Retry</button>
-                    </div>
-                </div>
-            </body>
-            </html>
-        `);
+        return res.status(500).send(renderBlockedPage(targetUrl, err.message));
     }
 }));
 

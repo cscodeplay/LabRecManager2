@@ -487,7 +487,8 @@ export default function WhiteboardBrowserSideroll({
                             title={browserTitle || 'Web Browser'}
                             className="flex-1 w-full h-full border-0 bg-white"
                             onLoad={() => setIsLoadingPage(false)}
-                            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                            onError={() => setIsLoadingPage(false)}
+                            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
                         />
                     </div>
                 </div>

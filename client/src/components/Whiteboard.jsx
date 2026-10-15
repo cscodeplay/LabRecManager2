@@ -5122,7 +5122,7 @@ export default function Whiteboard({
             const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
             const modKey = isMac ? e.metaKey : e.ctrlKey;
             const activeTag = document.activeElement?.tagName?.toLowerCase() || '';
-            const isInput = activeTag === 'input' || activeTag === 'textarea' || Boolean(document.activeElement?.isContentEditable) || Boolean(document.activeElement?.closest?.('input, textarea, [contenteditable="true"], [data-interactive="true"]'));
+            const isInput = activeTag === 'input' || activeTag === 'textarea' || Boolean(document.activeElement?.isContentEditable) || Boolean(document.activeElement?.closest?.('input, textarea, [contenteditable="true"]'));
 
             if (isInput) return; // let default inputs work
 
@@ -5339,11 +5339,13 @@ export default function Whiteboard({
                 handleSendToBack();
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
                 if (!canUserDraw) return;
-                if (!isInput && (selectedImageIds.length > 0 || selection || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedMediaId || selected3DId || selectedGraphId || selectedPdfId)) {
+                if (!isInput && (selectedImageIds.length > 0 || selection || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedMediaId || selected3DIds.length > 0 || selectedGraphId || selectedPdfId || selectedTableId)) {
                     e.preventDefault();
                     handleDelete();
                 }
             } else if (e.key === 'Escape') {
+                if (isSpotlightActive) { setIsSpotlightActive(false); return; }
+                if (isCurtainActive) { setIsCurtainActive(false); return; }
                 if (showShortcutsModal) { setShowShortcutsModal(false); return; }
                 if (showTasksPanel) { setShowTasksPanel(false); return; }
                 if (showMediaModal) { setShowMediaModal(false); return; }
@@ -11642,10 +11644,12 @@ export default function Whiteboard({
         const canvas = canvasRef.current;
         const cx = canvas ? Math.max(50, Math.round(canvas.width / 2 - 240)) : 120;
         const cy = canvas ? Math.max(50, Math.round(canvas.height / 2 - 135)) : 120;
+        const mediaUrl = mediaData.url || mediaData.src;
         const newMedia = {
             id: `media_${Date.now()}`,
             mediaType: mediaData.mediaType || 'youtube',
-            url: mediaData.url,
+            url: mediaUrl,
+            src: mediaUrl,
             title: mediaData.title || 'YouTube Video',
             x: cx,
             y: cy,
@@ -11697,11 +11701,13 @@ export default function Whiteboard({
         if (mediaPayload) {
             try {
                 const data = JSON.parse(mediaPayload);
-                if (data.type === 'youtube' && data.url) {
+                const videoUrl = data.url || data.src;
+                if (data.type === 'youtube' && videoUrl) {
                     const newMedia = {
                         id: `media_${Date.now()}`,
                         mediaType: 'youtube',
-                        url: data.url,
+                        url: videoUrl,
+                        src: videoUrl,
                         title: data.title || 'YouTube Video',
                         x: Math.max(20, dropX - 240),
                         y: Math.max(20, dropY - 135),
@@ -11733,6 +11739,7 @@ export default function Whiteboard({
                     id: `media_${Date.now()}`,
                     mediaType: 'youtube',
                     url: rawUri,
+                    src: rawUri,
                     title: 'YouTube Video',
                     x: Math.max(20, dropX - 240),
                     y: Math.max(20, dropY - 135),
@@ -27476,128 +27483,6 @@ export default function Whiteboard({
                     {/* 360-Degree Rotation Protractor & Angle Dial Overlay */}
                     {activeRotatingObject && <RotationDial obj={activeRotatingObject} />}
 
-                    {/* Spotlight Focus Tool (BenQ EZWrite & ViewSonic myViewBoard) */}
-                    {isSpotlightActive && (
-                        <div
-                            ref={spotlightOverlayRef}
-                            className="whiteboard-spotlight-overlay absolute inset-0 z-40 pointer-events-auto cursor-crosshair overflow-hidden"
-                            onPointerDown={(e) => {
-                                if (e.target.closest('button')) e.stopPropagation();
-                            }}
-                            onMouseMove={(e) => {
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                if (!rect.width || !rect.height) return;
-                                const scaleX = canvasWidth / rect.width;
-                                const scaleY = canvasHeight / rect.height;
-                                setSpotlightPos({
-                                    x: (e.clientX - rect.left) * scaleX,
-                                    y: (e.clientY - rect.top) * scaleY
-                                });
-                            }}
-                            onTouchMove={(e) => {
-                                if (e.touches[0]) {
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    if (!rect.width || !rect.height) return;
-                                    const scaleX = canvasWidth / rect.width;
-                                    const scaleY = canvasHeight / rect.height;
-                                    setSpotlightPos({
-                                        x: (e.touches[0].clientX - rect.left) * scaleX,
-                                        y: (e.touches[0].clientY - rect.top) * scaleY
-                                    });
-                                }
-                            }}
-                        >
-                            <svg className="w-full h-full" viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}>
-                                <defs>
-                                    <mask id="whiteboard-spotlight-mask">
-                                        <rect width="100%" height="100%" fill="white" />
-                                        <circle
-                                            cx={spotlightPos.x}
-                                            cy={spotlightPos.y}
-                                            r={spotlightRadius}
-                                            fill="black"
-                                        />
-                                    </mask>
-                                </defs>
-                                <rect
-                                    width="100%"
-                                    height="100%"
-                                    fill="rgba(15, 23, 42, 0.84)"
-                                    mask="url(#whiteboard-spotlight-mask)"
-                                />
-                                <circle
-                                    cx={spotlightPos.x}
-                                    cy={spotlightPos.y}
-                                    r={spotlightRadius}
-                                    fill="none"
-                                    stroke="rgba(255, 255, 255, 0.6)"
-                                    strokeWidth="2.5"
-                                    strokeDasharray="6 4"
-                                    className="pointer-events-none"
-                                />
-                            </svg>
-
-                            {/* Floating Spotlight Controls */}
-                            <div 
-                                className="absolute top-4 right-4 bg-slate-900/90 text-white backdrop-blur-md px-3 py-1.5 rounded-full shadow-2xl flex items-center gap-3 border border-slate-700 text-xs font-medium z-50 pointer-events-auto"
-                                onPointerDown={(e) => e.stopPropagation()}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onTouchStart={(e) => e.stopPropagation()}
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                <span className="flex items-center gap-1.5 text-amber-300 font-semibold select-none">
-                                    <TorchIcon className="w-3.5 h-3.5 animate-pulse text-amber-400" />
-                                    Spotlight
-                                </span>
-                                <div className="flex items-center gap-1 bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700" onPointerDown={(e) => e.stopPropagation()}>
-                                    <button
-                                        type="button"
-                                        onPointerDown={(e) => e.stopPropagation()}
-                                        onMouseDown={(e) => e.stopPropagation()}
-                                        onTouchStart={(e) => e.stopPropagation()}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSpotlightRadius(r => Math.max(50, r - 30));
-                                        }}
-                                        className="w-5 h-5 flex items-center justify-center hover:bg-slate-700 rounded text-slate-300 hover:text-white font-bold cursor-pointer"
-                                        title="Decrease Radius"
-                                    >
-                                        -
-                                    </button>
-                                    <span className="text-[11px] text-slate-300 px-1 font-mono select-none">Scroll to zoom</span>
-                                    <button
-                                        type="button"
-                                        onPointerDown={(e) => e.stopPropagation()}
-                                        onMouseDown={(e) => e.stopPropagation()}
-                                        onTouchStart={(e) => e.stopPropagation()}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSpotlightRadius(r => Math.min(600, r + 30));
-                                        }}
-                                        className="w-5 h-5 flex items-center justify-center hover:bg-slate-700 rounded text-slate-300 hover:text-white font-bold cursor-pointer"
-                                        title="Increase Radius"
-                                    >
-                                        +
-                                    </button>
-                                </div>
-                                <button
-                                    type="button"
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onMouseDown={(e) => e.stopPropagation()}
-                                    onTouchStart={(e) => e.stopPropagation()}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setIsSpotlightActive(false);
-                                    }}
-                                    className="p-1 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-full transition-colors cursor-pointer pointer-events-auto"
-                                    title="Exit Spotlight"
-                                >
-                                    <X className="w-3.5 h-3.5" />
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
                     {/* Screen Shade / AI Slide Show Curtain Tool */}
                     {isCurtainActive && (
                         <WhiteboardAISlideShow
@@ -27969,6 +27854,144 @@ export default function Whiteboard({
                         onInstrumentBoundsChange={handleInstrumentBoundsChange}
                     />
                 </div>
+
+                {/* Full-Screen Spotlight Focus Tool with Inline Context Controls (BenQ EZWrite & ViewSonic myViewBoard) */}
+                {isSpotlightActive && (
+                    <div
+                        ref={spotlightOverlayRef}
+                        className="whiteboard-spotlight-overlay fixed inset-0 w-screen h-screen z-[95] pointer-events-auto cursor-crosshair overflow-hidden select-none"
+                        onPointerDown={(e) => {
+                            if (e.target.closest('button')) e.stopPropagation();
+                        }}
+                        onMouseMove={(e) => {
+                            setSpotlightPos({
+                                x: e.clientX,
+                                y: e.clientY
+                            });
+                        }}
+                        onTouchMove={(e) => {
+                            if (e.touches[0]) {
+                                setSpotlightPos({
+                                    x: e.touches[0].clientX,
+                                    y: e.touches[0].clientY
+                                });
+                            }
+                        }}
+                    >
+                        <svg className="w-full h-full pointer-events-none select-none" style={{ width: '100vw', height: '100vh' }}>
+                            <defs>
+                                <mask id="whiteboard-spotlight-mask">
+                                    <rect width="100%" height="100%" fill="white" />
+                                    <circle
+                                        cx={spotlightPos.x}
+                                        cy={spotlightPos.y}
+                                        r={spotlightRadius}
+                                        fill="black"
+                                    />
+                                </mask>
+                            </defs>
+                            <rect
+                                width="100%"
+                                height="100%"
+                                fill="rgba(15, 23, 42, 0.84)"
+                                mask="url(#whiteboard-spotlight-mask)"
+                            />
+                            <circle
+                                cx={spotlightPos.x}
+                                cy={spotlightPos.y}
+                                r={spotlightRadius}
+                                fill="none"
+                                stroke="rgba(255, 255, 255, 0.75)"
+                                strokeWidth="2.5"
+                                strokeDasharray="6 4"
+                                className="pointer-events-none"
+                            />
+                        </svg>
+
+                        {/* Inline Spotlight Context Controls docked directly to Spotlight ring */}
+                        {(() => {
+                            const winWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
+                            const winHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+                            const menuHeight = 44;
+                            const padding = 18;
+                            const isNearBottom = (spotlightPos.y + spotlightRadius + menuHeight + padding) > winHeight;
+                            const topPos = isNearBottom
+                                ? Math.max(16, spotlightPos.y - spotlightRadius - menuHeight - padding)
+                                : Math.min(winHeight - menuHeight - 16, spotlightPos.y + spotlightRadius + padding);
+                            const leftPos = Math.max(170, Math.min(winWidth - 170, spotlightPos.x));
+
+                            return (
+                                <div 
+                                    className="fixed bg-slate-900/95 text-white backdrop-blur-md px-3.5 py-1.5 rounded-full shadow-2xl flex items-center gap-2.5 border border-slate-700/80 text-xs font-medium z-[100] pointer-events-auto transition-all duration-75 ease-out select-none"
+                                    style={{
+                                        left: `${leftPos}px`,
+                                        top: `${topPos}px`,
+                                        transform: 'translate(-50%, 0)'
+                                    }}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onTouchStart={(e) => e.stopPropagation()}
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <span className="flex items-center gap-1.5 text-amber-300 font-semibold select-none">
+                                        <TorchIcon className="w-3.5 h-3.5 animate-pulse text-amber-400" />
+                                        Spotlight
+                                    </span>
+                                    <div className="flex items-center gap-1 bg-slate-800/90 px-2 py-0.5 rounded-full border border-slate-700/70" onPointerDown={(e) => e.stopPropagation()}>
+                                        <button
+                                            type="button"
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                            onTouchStart={(e) => e.stopPropagation()}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSpotlightRadius(r => Math.max(50, r - 30));
+                                            }}
+                                            className="w-5 h-5 flex items-center justify-center hover:bg-slate-700 rounded text-slate-300 hover:text-white font-bold cursor-pointer"
+                                            title="Decrease Radius"
+                                        >
+                                            -
+                                        </button>
+                                        <span className="text-[11px] text-slate-300 px-1 font-mono select-none">
+                                            {spotlightRadius}px
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                            onTouchStart={(e) => e.stopPropagation()}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSpotlightRadius(r => Math.min(600, r + 30));
+                                            }}
+                                            className="w-5 h-5 flex items-center justify-center hover:bg-slate-700 rounded text-slate-300 hover:text-white font-bold cursor-pointer"
+                                            title="Increase Radius"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400 hidden sm:inline select-none">
+                                        Scroll to resize
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onPointerDown={(e) => e.stopPropagation()}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onTouchStart={(e) => e.stopPropagation()}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsSpotlightActive(false);
+                                        }}
+                                        className="p-1 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-full transition-colors cursor-pointer pointer-events-auto"
+                                        title="Exit Spotlight (Esc)"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                )}
 
                 {/* Interactive 16:9 Canvas Minimap with Zoom & Viewport Navigation */}
                 {showMinimap && (
@@ -29057,6 +29080,7 @@ export default function Whiteboard({
                                             id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
                                             mediaType: mediaInputTab,
                                             src: mediaInputUrl,
+                                            url: mediaInputUrl,
                                             title: mediaInputTitle.trim() || (mediaInputTab === 'youtube' ? 'YouTube Video' : mediaInputTab === 'embed' ? 'Web Embed' : 'Media Player'),
                                             x: Math.max(20, cx),
                                             y: Math.max(20, cy),

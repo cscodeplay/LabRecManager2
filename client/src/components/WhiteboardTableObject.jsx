@@ -5,7 +5,8 @@ import {
     Move, Lock, Unlock, Trash2, Copy, Plus, Minus, 
     Type, Calculator, Image as ImageIcon, Edit3, Palette, 
     X, Check, ChevronsUp, ChevronsDown, Maximize2, Sparkles,
-    Undo2, RefreshCw
+    Undo2, RefreshCw, Bold, Italic, Underline, Strikethrough,
+    AlignLeft, AlignCenter, AlignRight, WrapText, ChevronDown
 } from 'lucide-react';
 import MathRenderer from './MathRenderer';
 
@@ -17,9 +18,10 @@ import MathRenderer from './MathRenderer';
  * - Image (file upload or URL)
  * - Freehand Doodle / Ink Drawing
  * - Background shading / color
+ * - Rich typography: bold, italic, underline, strikethrough, fontSize, fontFamily, color, align
  * 
- * Supports dynamic column and row resizing by dragging borders,
- * adding/deleting rows and columns, whole-table movement, and lock/unlock.
+ * Supports Excel-like single-click cell selection, inline cell editing,
+ * floating formatting toolbar, dynamic column/row resizing, and keyboard navigation.
  */
 export default function WhiteboardTableObject({
     tableObj,
@@ -62,10 +64,22 @@ export default function WhiteboardTableObject({
     const cellBg = table.cellBg || '#0f172a';
     const cellText = table.cellText || '#e2e8f0';
 
-    // Cell data map: { 'r-c': { text, math, image, inkData, bg } }
+    // Cell data map: { 'r-c': { text, math, image, inkData, bg, bold, italic, underline, strikethrough, fontSize, fontFamily, color, align, wrap } }
     const cells = table.cells || {};
 
-    // Active cell being edited
+    // Excel-Style Selected Cell & Inline Editing State
+    const [selectedCellKey, setSelectedCellKey] = useState(null); // 'r-c'
+    const [isInlineEditing, setIsInlineEditing] = useState(false);
+    const [inlineText, setInlineText] = useState('');
+    const inlineInputRef = useRef(null);
+
+    // Format Ribbon Dropdowns State
+    const [showFontMenu, setShowFontMenu] = useState(false);
+    const [showColorMenu, setShowColorMenu] = useState(false);
+    const [showBgMenu, setShowBgMenu] = useState(false);
+    const [showSizeMenu, setShowSizeMenu] = useState(false);
+
+    // Modal Cell Editor (for advanced Doodle / Image / KaTeX formulas)
     const [activeCellKey, setActiveCellKey] = useState(null);
     const [editorTab, setEditorTab] = useState('text'); // 'text' | 'math' | 'image' | 'doodle' | 'color'
     const [editText, setEditText] = useState('');
@@ -86,7 +100,95 @@ export default function WhiteboardTableObject({
     // Drag-to-resize column or row divider
     const resizeRef = useRef(null); // { type: 'col' | 'row', index, startPos, startDim }
 
-    // Open cell editor
+    // Helpers for font styling
+    const getFontFamilyCss = (ff) => {
+        switch (ff) {
+            case 'serif': return 'Georgia, "Times New Roman", serif';
+            case 'mono': return '"Fira Code", Menlo, monospace';
+            case 'handwriting': return 'Caveat, "Comic Sans MS", cursive';
+            case 'sans':
+            default:
+                return 'Inter, system-ui, -apple-system, sans-serif';
+        }
+    };
+
+    // Helper: update property of selected cell
+    const updateSelectedCell = (propertyUpdates) => {
+        if (!selectedCellKey) return;
+        const currentCell = cells[selectedCellKey] || {};
+        const updatedCells = {
+            ...cells,
+            [selectedCellKey]: {
+                ...currentCell,
+                ...propertyUpdates
+            }
+        };
+        onUpdate({
+            ...table,
+            cells: updatedCells
+        });
+    };
+
+    // Single-click cell selection
+    const handleSelectCell = (r, c) => {
+        const key = `${r}-${c}`;
+        setSelectedCellKey(key);
+        setIsInlineEditing(false);
+        setInlineText(cells[key]?.text || '');
+    };
+
+    // Start inline editing
+    const startInlineEdit = (r, c, initialChar = null) => {
+        if (isLocked) return;
+        const key = `${r}-${c}`;
+        setSelectedCellKey(key);
+        setIsInlineEditing(true);
+        const existingText = cells[key]?.text || '';
+        setInlineText(initialChar !== null ? initialChar : existingText);
+        setTimeout(() => {
+            if (inlineInputRef.current) {
+                inlineInputRef.current.focus();
+                if (initialChar === null) {
+                    inlineInputRef.current.select();
+                }
+            }
+        }, 10);
+    };
+
+    // Commit inline edit
+    const commitInlineEdit = () => {
+        if (!selectedCellKey) return;
+        const currentCell = cells[selectedCellKey] || {};
+        const updatedCells = {
+            ...cells,
+            [selectedCellKey]: {
+                ...currentCell,
+                text: inlineText
+            }
+        };
+        setIsInlineEditing(false);
+        onUpdate({
+            ...table,
+            cells: updatedCells
+        });
+    };
+
+    // Cancel inline edit
+    const cancelInlineEdit = () => {
+        setIsInlineEditing(false);
+        if (selectedCellKey) {
+            setInlineText(cells[selectedCellKey]?.text || '');
+        }
+    };
+
+    // Navigate to next or previous cell (Excel Tab / Shift-Tab / Arrow keys)
+    const moveToCell = (r, c) => {
+        const targetR = Math.max(0, Math.min(rows - 1, r));
+        const targetC = Math.max(0, Math.min(cols - 1, c));
+        handleSelectCell(targetR, targetC);
+    };
+
+    // Open rich modal cell editor (for doodle, image, LaTeX)
     const handleOpenCellEditor = (r, c) => {
         if (isLocked) return;
         const key = `${r}-${c}`;
@@ -99,19 +201,20 @@ export default function WhiteboardTableObject({
         setEditorTab(cell.math ? 'math' : (cell.image ? 'image' : (cell.inkData ? 'doodle' : 'text')));
     };
 
-    // Save cell changes
+    // Save modal cell changes
     const handleSaveCell = () => {
         if (!activeCellKey) return;
         let finalInk = cells[activeCellKey]?.inkData || null;
 
-        // If doodle canvas was used
         if (doodleCanvasRef.current) {
             finalInk = doodleCanvasRef.current.toDataURL('image/png');
         }
 
+        const currentCell = cells[activeCellKey] || {};
         const updatedCells = {
             ...cells,
             [activeCellKey]: {
+                ...currentCell,
                 text: editText,
                 math: editMath,
                 image: editImage,
@@ -354,9 +457,15 @@ export default function WhiteboardTableObject({
         });
     };
 
+    // Extract active selected cell data & label
+    const selectedCell = selectedCellKey ? (cells[selectedCellKey] || {}) : null;
+    const [selR, selC] = selectedCellKey ? selectedCellKey.split('-').map(Number) : [null, null];
+    const cellColLetter = selC !== null && selC !== undefined ? String.fromCharCode(65 + selC) : '';
+    const cellRefLabel = selR !== null && selR !== undefined ? `${cellColLetter}${selR + 1}` : '';
+
     return (
         <div
-            className={`whiteboard-table-item absolute select-none transition-shadow ${
+            className={`whiteboard-table-item absolute select-none transition-shadow outline-none ${
                 isSelected ? 'ring-2 ring-indigo-500 shadow-2xl' : ''
             }`}
             style={{
@@ -367,12 +476,352 @@ export default function WhiteboardTableObject({
                 zIndex: zIndex,
                 pointerEvents: 'auto'
             }}
+            tabIndex={0}
             onClick={(e) => {
                 e.stopPropagation();
                 onSelect?.(tableId);
             }}
+            onKeyDown={(e) => {
+                if (isInlineEditing) return; // Handled by inline textarea
+                if (!selectedCellKey) return;
+                const [r, c] = selectedCellKey.split('-').map(Number);
+                if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    moveToCell(r, c + 1);
+                } else if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    moveToCell(r, c - 1);
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    moveToCell(r + 1, c);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    moveToCell(r - 1, c);
+                } else if (e.key === 'Tab') {
+                    e.preventDefault();
+                    moveToCell(r, c + (e.shiftKey ? -1 : 1));
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    startInlineEdit(r, c);
+                } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                    e.preventDefault();
+                    updateSelectedCell({ text: '', math: '' });
+                } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                    // Start inline edit on direct typing
+                    startInlineEdit(r, c, e.key);
+                }
+            }}
         >
-            {/* Control Bar (shown when selected) */}
+            {/* 1. Excel-Like Cell Formatting Toolbar (Shown when Table & Cell are Selected) */}
+            {isSelected && selectedCellKey && (
+                <div 
+                    className="absolute -top-22 left-0 min-w-max flex items-center gap-1.5 bg-slate-900/95 border border-slate-700/80 rounded-xl px-2 py-1 shadow-2xl backdrop-blur-md text-slate-300 text-xs z-50 pointer-events-auto"
+                    onClick={e => e.stopPropagation()}
+                    onPointerDown={e => e.stopPropagation()}
+                >
+                    {/* Active Cell Reference Indicator (e.g. A1, B2) */}
+                    <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg font-mono font-bold text-[11px] shadow-xs">
+                        <span>{cellRefLabel || 'Cell'}</span>
+                    </div>
+
+                    <div className="h-4 w-px bg-slate-700 mx-0.5" />
+
+                    {/* Font Family Selector */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowFontMenu(v => !v);
+                                setShowSizeMenu(false);
+                                setShowColorMenu(false);
+                                setShowBgMenu(false);
+                            }}
+                            className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[11px] transition"
+                            title="Font Family"
+                        >
+                            <span className="capitalize">{selectedCell?.fontFamily || 'Sans'}</span>
+                            <ChevronDown className="w-3 h-3 text-slate-400" />
+                        </button>
+                        {showFontMenu && (
+                            <div className="absolute top-full left-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1 z-50 flex flex-col min-w-[110px]">
+                                {[
+                                    { id: 'sans', label: 'Sans (Inter)' },
+                                    { id: 'serif', label: 'Serif (Times)' },
+                                    { id: 'mono', label: 'Mono (Code)' },
+                                    { id: 'handwriting', label: 'Script (Hand)' }
+                                ].map(f => (
+                                    <button
+                                        key={f.id}
+                                        type="button"
+                                        onClick={() => {
+                                            updateSelectedCell({ fontFamily: f.id });
+                                            setShowFontMenu(false);
+                                        }}
+                                        className={`px-2.5 py-1 text-left text-xs hover:bg-slate-800 transition ${
+                                            (selectedCell?.fontFamily || 'sans') === f.id ? 'text-indigo-400 font-bold bg-slate-800/60' : 'text-slate-300'
+                                        }`}
+                                    >
+                                        {f.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Font Size Selector */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowSizeMenu(v => !v);
+                                setShowFontMenu(false);
+                                setShowColorMenu(false);
+                                setShowBgMenu(false);
+                            }}
+                            className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[11px] font-mono transition"
+                            title="Font Size"
+                        >
+                            <span>{selectedCell?.fontSize || 12}px</span>
+                            <ChevronDown className="w-3 h-3 text-slate-400" />
+                        </button>
+                        {showSizeMenu && (
+                            <div className="absolute top-full left-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1 z-50 flex flex-col min-w-[70px]">
+                                {[10, 11, 12, 14, 16, 18, 20, 24].map(sz => (
+                                    <button
+                                        key={sz}
+                                        type="button"
+                                        onClick={() => {
+                                            updateSelectedCell({ fontSize: sz });
+                                            setShowSizeMenu(false);
+                                        }}
+                                        className={`px-2.5 py-1 text-left text-xs font-mono hover:bg-slate-800 transition ${
+                                            (selectedCell?.fontSize || 12) === sz ? 'text-indigo-400 font-bold bg-slate-800/60' : 'text-slate-300'
+                                        }`}
+                                    >
+                                        {sz}px
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="h-4 w-px bg-slate-700 mx-0.5" />
+
+                    {/* Bold Toggle */}
+                    <button
+                        type="button"
+                        onClick={() => updateSelectedCell({ bold: !selectedCell?.bold })}
+                        className={`p-1 rounded-lg transition ${
+                            selectedCell?.bold ? 'bg-indigo-600 text-white shadow-xs' : 'hover:bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        title="Bold (Ctrl+B)"
+                    >
+                        <Bold className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Italic Toggle */}
+                    <button
+                        type="button"
+                        onClick={() => updateSelectedCell({ italic: !selectedCell?.italic })}
+                        className={`p-1 rounded-lg transition ${
+                            selectedCell?.italic ? 'bg-indigo-600 text-white shadow-xs' : 'hover:bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        title="Italic (Ctrl+I)"
+                    >
+                        <Italic className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Underline Toggle */}
+                    <button
+                        type="button"
+                        onClick={() => updateSelectedCell({ underline: !selectedCell?.underline })}
+                        className={`p-1 rounded-lg transition ${
+                            selectedCell?.underline ? 'bg-indigo-600 text-white shadow-xs' : 'hover:bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        title="Underline (Ctrl+U)"
+                    >
+                        <Underline className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Strikethrough Toggle */}
+                    <button
+                        type="button"
+                        onClick={() => updateSelectedCell({ strikethrough: !selectedCell?.strikethrough })}
+                        className={`p-1 rounded-lg transition ${
+                            selectedCell?.strikethrough ? 'bg-indigo-600 text-white shadow-xs' : 'hover:bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        title="Strikethrough"
+                    >
+                        <Strikethrough className="w-3.5 h-3.5" />
+                    </button>
+
+                    <div className="h-4 w-px bg-slate-700 mx-0.5" />
+
+                    {/* Horizontal Alignment Toggles */}
+                    <button
+                        type="button"
+                        onClick={() => updateSelectedCell({ align: 'left' })}
+                        className={`p-1 rounded-lg transition ${
+                            (selectedCell?.align || 'left') === 'left' ? 'bg-slate-700 text-white' : 'hover:bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        title="Align Left"
+                    >
+                        <AlignLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => updateSelectedCell({ align: 'center' })}
+                        className={`p-1 rounded-lg transition ${
+                            selectedCell?.align === 'center' ? 'bg-slate-700 text-white' : 'hover:bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        title="Align Center"
+                    >
+                        <AlignCenter className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => updateSelectedCell({ align: 'right' })}
+                        className={`p-1 rounded-lg transition ${
+                            selectedCell?.align === 'right' ? 'bg-slate-700 text-white' : 'hover:bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        title="Align Right"
+                    >
+                        <AlignRight className="w-3.5 h-3.5" />
+                    </button>
+
+                    <div className="h-4 w-px bg-slate-700 mx-0.5" />
+
+                    {/* Text Color Picker */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowColorMenu(v => !v);
+                                setShowBgMenu(false);
+                                setShowFontMenu(false);
+                                setShowSizeMenu(false);
+                            }}
+                            className="flex items-center gap-1 p-1 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition"
+                            title="Text Color"
+                        >
+                            <span className="font-bold text-xs underline" style={{ color: selectedCell?.color || '#ffffff' }}>A</span>
+                            <div className="w-2 h-2 rounded-full border border-slate-600" style={{ backgroundColor: selectedCell?.color || '#ffffff' }} />
+                        </button>
+                        {showColorMenu && (
+                            <div className="absolute top-full left-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 z-50 grid grid-cols-6 gap-1 min-w-[140px]">
+                                {['#ffffff', '#f8fafc', '#94a3b8', '#f87171', '#fb923c', '#fbbf24', '#4ade80', '#22d3ee', '#818cf8', '#c084fc', '#f472b6', '#000000'].map(c => (
+                                    <button
+                                        key={c}
+                                        type="button"
+                                        onClick={() => {
+                                            updateSelectedCell({ color: c });
+                                            setShowColorMenu(false);
+                                        }}
+                                        className="w-5 h-5 rounded-md border border-slate-700 hover:scale-110 transition"
+                                        style={{ backgroundColor: c }}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Cell Fill Background Tint Picker */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowBgMenu(v => !v);
+                                setShowColorMenu(false);
+                                setShowFontMenu(false);
+                                setShowSizeMenu(false);
+                            }}
+                            className="flex items-center gap-1 p-1 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition"
+                            title="Cell Background Fill"
+                        >
+                            <Palette className="w-3.5 h-3.5" style={{ color: selectedCell?.bg || '#38bdf8' }} />
+                        </button>
+                        {showBgMenu && (
+                            <div className="absolute top-full left-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 z-50 grid grid-cols-5 gap-1.5 min-w-[140px]">
+                                {[
+                                    { color: '', label: 'None' },
+                                    { color: '#0f172a', label: 'Dark' },
+                                    { color: '#1e293b', label: 'Slate' },
+                                    { color: '#1e1b4b', label: 'Indigo' },
+                                    { color: '#064e3b', label: 'Emerald' },
+                                    { color: '#451a03', label: 'Amber' },
+                                    { color: '#4c0519', label: 'Rose' },
+                                    { color: '#172554', label: 'Blue' },
+                                    { color: '#581c87', label: 'Purple' },
+                                    { color: '#134e4a', label: 'Teal' }
+                                ].map(item => (
+                                    <button
+                                        key={item.color || 'none'}
+                                        type="button"
+                                        onClick={() => {
+                                            updateSelectedCell({ bg: item.color });
+                                            setShowBgMenu(false);
+                                        }}
+                                        className={`w-5 h-5 rounded-md border border-slate-700 hover:scale-110 transition flex items-center justify-center text-[8px] ${
+                                            !item.color ? 'bg-transparent text-slate-400' : ''
+                                        }`}
+                                        style={item.color ? { backgroundColor: item.color } : {}}
+                                        title={item.label}
+                                    >
+                                        {!item.color && '∅'}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="h-4 w-px bg-slate-700 mx-0.5" />
+
+                    {/* Text Wrap Toggle */}
+                    <button
+                        type="button"
+                        onClick={() => updateSelectedCell({ wrap: selectedCell?.wrap === false ? true : false })}
+                        className={`p-1 rounded-lg transition ${
+                            selectedCell?.wrap !== false ? 'bg-slate-700 text-white' : 'hover:bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        title="Toggle Text Wrap"
+                    >
+                        <WrapText className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Formula / Math Mode Toggle */}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (selectedCell?.math) {
+                                updateSelectedCell({ math: '' });
+                            } else {
+                                updateSelectedCell({ math: selectedCell?.text || 'x^2 + y^2 = r^2' });
+                            }
+                        }}
+                        className={`px-1.5 py-0.5 rounded-lg text-[10px] font-mono font-bold transition ${
+                            selectedCell?.math ? 'bg-indigo-600 text-white shadow-xs' : 'hover:bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        title="Toggle KaTeX Formula Mode"
+                    >
+                        f(x)
+                    </button>
+
+                    {/* Advanced Modal Editor Trigger (for image/doodle) */}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const [r, c] = selectedCellKey.split('-').map(Number);
+                            handleOpenCellEditor(r, c);
+                        }}
+                        className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
+                        title="Open Advanced Rich Cell Editor (Doodle, Image, Formulas)"
+                    >
+                        <Edit3 className="w-3.5 h-3.5 text-indigo-400" />
+                    </button>
+                </div>
+            )}
+
+            {/* 2. Control Bar (shown when selected) */}
             {isSelected && (
                 <div 
                     className="absolute -top-11 left-0 right-0 flex items-center justify-between bg-slate-900/95 border border-slate-700/80 rounded-xl px-2.5 py-1 shadow-xl backdrop-blur-xs text-slate-300 text-xs z-50 pointer-events-auto"
@@ -477,70 +926,140 @@ export default function WhiteboardTableObject({
                                     const cWidth = colWidths[cIdx] || 100;
                                     const cellKey = `${rIdx}-${cIdx}`;
                                     const cell = cells[cellKey] || {};
+                                    const isCellSelected = selectedCellKey === cellKey;
+                                    const isEditingThisCell = isInlineEditing && isCellSelected;
+
+                                    const cellFontSize = cell.fontSize || (isHeader ? 12 : 11);
+                                    const cellFontFamily = cell.fontFamily || 'sans';
+                                    const cellBold = cell.bold !== undefined ? cell.bold : isHeader;
+                                    const cellItalic = Boolean(cell.italic);
+                                    const cellUnderline = Boolean(cell.underline);
+                                    const cellStrikethrough = Boolean(cell.strikethrough);
+                                    const cellAlign = cell.align || (isHeader ? 'center' : 'left');
+                                    const cellColor = cell.color || (isHeader ? headerText : cellText);
                                     const cellCustomBg = cell.bg;
+                                    const cellWrap = cell.wrap !== false;
 
                                     return (
                                         <div
                                             key={`cell-${cellKey}`}
-                                            onDoubleClick={() => handleOpenCellEditor(rIdx, cIdx)}
-                                            className={`relative flex flex-col justify-center p-2 text-xs overflow-hidden transition-colors border-r border-b ${
-                                                isHeader ? 'font-bold' : 'font-normal'
-                                            } hover:outline-dashed hover:outline-1 hover:outline-indigo-400 cursor-pointer`}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onSelect?.(tableId);
+                                                handleSelectCell(rIdx, cIdx);
+                                            }}
+                                            onDoubleClick={(e) => {
+                                                e.stopPropagation();
+                                                onSelect?.(tableId);
+                                                startInlineEdit(rIdx, cIdx);
+                                            }}
+                                            className={`relative flex flex-col justify-center p-2 text-xs overflow-hidden transition-all border-r border-b ${
+                                                isCellSelected 
+                                                    ? 'ring-2 ring-indigo-400 ring-inset bg-indigo-500/15 shadow-inner' 
+                                                    : 'hover:outline-dashed hover:outline-1 hover:outline-indigo-400 cursor-pointer'
+                                            }`}
                                             style={{
                                                 width: cWidth,
                                                 height: rHeight,
                                                 borderColor: borderColor,
                                                 backgroundColor: cellCustomBg || (isHeader ? headerBg : cellBg),
-                                                color: isHeader ? headerText : cellText
+                                                color: cellColor
                                             }}
-                                            title="Double click to edit cell content (Text, Math, Image, Doodle)"
+                                            title="Click to select & format; Double click or Enter to edit inline"
                                         >
-                                            {/* Cell Content: Image */}
-                                            {cell.image && (
-                                                <div className="w-full flex-1 min-h-0 flex items-center justify-center overflow-hidden mb-1">
-                                                    <img 
-                                                        src={cell.image} 
-                                                        alt="Cell media" 
-                                                        className="max-w-full max-h-full object-contain rounded-sm"
-                                                    />
-                                                </div>
-                                            )}
+                                            {/* Inline Text Area Editor */}
+                                            {isEditingThisCell ? (
+                                                <textarea
+                                                    ref={inlineInputRef}
+                                                    value={inlineText}
+                                                    onChange={(e) => setInlineText(e.target.value)}
+                                                    onBlur={commitInlineEdit}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                                            e.preventDefault();
+                                                            commitInlineEdit();
+                                                        } else if (e.key === 'Escape') {
+                                                            e.preventDefault();
+                                                            cancelInlineEdit();
+                                                        } else if (e.key === 'Tab') {
+                                                            e.preventDefault();
+                                                            commitInlineEdit();
+                                                            moveToCell(rIdx, cIdx + (e.shiftKey ? -1 : 1));
+                                                        }
+                                                    }}
+                                                    className="w-full h-full bg-slate-900 text-white p-1 resize-none border-2 border-indigo-400 rounded-sm focus:outline-none overflow-hidden leading-tight"
+                                                    style={{
+                                                        fontSize: `${cellFontSize}px`,
+                                                        fontFamily: getFontFamilyCss(cellFontFamily),
+                                                        fontWeight: cellBold ? 'bold' : 'normal',
+                                                        fontStyle: cellItalic ? 'italic' : 'normal',
+                                                        textDecoration: [cellUnderline ? 'underline' : '', cellStrikethrough ? 'line-through' : ''].filter(Boolean).join(' ') || 'none',
+                                                        textAlign: cellAlign,
+                                                        color: cellColor
+                                                    }}
+                                                    autoFocus
+                                                />
+                                            ) : (
+                                                <>
+                                                    {/* Cell Content: Image */}
+                                                    {cell.image && (
+                                                        <div className="w-full flex-1 min-h-0 flex items-center justify-center overflow-hidden mb-1">
+                                                            <img 
+                                                                src={cell.image} 
+                                                                alt="Cell media" 
+                                                                className="max-w-full max-h-full object-contain rounded-sm"
+                                                            />
+                                                        </div>
+                                                    )}
 
-                                            {/* Cell Content: In-Cell Ink / Doodle */}
-                                            {cell.inkData && (
-                                                <div className="w-full flex-1 min-h-0 flex items-center justify-center overflow-hidden mb-1">
-                                                    <img 
-                                                        src={cell.inkData} 
-                                                        alt="Cell doodle" 
-                                                        className="max-w-full max-h-full object-contain"
-                                                    />
-                                                </div>
-                                            )}
+                                                    {/* Cell Content: In-Cell Ink / Doodle */}
+                                                    {cell.inkData && (
+                                                        <div className="w-full flex-1 min-h-0 flex items-center justify-center overflow-hidden mb-1">
+                                                            <img 
+                                                                src={cell.inkData} 
+                                                                alt="Cell doodle" 
+                                                                className="max-w-full max-h-full object-contain"
+                                                            />
+                                                        </div>
+                                                    )}
 
-                                            {/* Cell Content: Math Formula (KaTeX) */}
-                                            {cell.math && (
-                                                <div className="w-full overflow-x-auto overflow-y-hidden py-0.5 text-center leading-snug">
-                                                    <MathRenderer 
-                                                        content={`$$${cell.math}$$`} 
-                                                        inline={false}
-                                                        textClassName="text-indigo-200"
-                                                        size="sm"
-                                                    />
-                                                </div>
-                                            )}
+                                                    {/* Cell Content: Math Formula (KaTeX) */}
+                                                    {cell.math && (
+                                                        <div className="w-full overflow-x-auto overflow-y-hidden py-0.5 text-center leading-snug">
+                                                            <MathRenderer 
+                                                                content={`$$${cell.math}$$`} 
+                                                                inline={false}
+                                                                textClassName="text-indigo-200"
+                                                                size="sm"
+                                                            />
+                                                        </div>
+                                                    )}
 
-                                            {/* Cell Content: Text */}
-                                            {cell.text && (
-                                                <div className="w-full break-words whitespace-pre-wrap leading-tight">
-                                                    {cell.text}
-                                                </div>
-                                            )}
+                                                    {/* Cell Content: Text with Rich Formatting */}
+                                                    {cell.text && (
+                                                        <div 
+                                                            className={`w-full leading-tight ${cellWrap ? 'break-words whitespace-pre-wrap' : 'truncate whitespace-nowrap'}`}
+                                                            style={{
+                                                                fontSize: `${cellFontSize}px`,
+                                                                fontFamily: getFontFamilyCss(cellFontFamily),
+                                                                fontWeight: cellBold ? 'bold' : 'normal',
+                                                                fontStyle: cellItalic ? 'italic' : 'normal',
+                                                                textDecoration: [cellUnderline ? 'underline' : '', cellStrikethrough ? 'line-through' : ''].filter(Boolean).join(' ') || 'none',
+                                                                textAlign: cellAlign,
+                                                                color: cellColor
+                                                            }}
+                                                        >
+                                                            {cell.text}
+                                                        </div>
+                                                    )}
 
-                                            {/* Empty Placeholder Hint */}
-                                            {!cell.text && !cell.math && !cell.image && !cell.inkData && (
-                                                <span className="text-[10px] text-slate-600 italic select-none">
-                                                    {isHeader ? `Header ${cIdx + 1}` : 'Empty'}
-                                                </span>
+                                                    {/* Empty Placeholder Hint */}
+                                                    {!cell.text && !cell.math && !cell.image && !cell.inkData && (
+                                                        <span className="text-[10px] text-slate-600 italic select-none">
+                                                            {isHeader ? `Header ${cIdx + 1}` : 'Empty'}
+                                                        </span>
+                                                    )}
+                                                </>
                                             )}
 
                                             {/* Column Divider Resizer (on right edge of each cell except last) */}

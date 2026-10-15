@@ -3222,7 +3222,7 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
   "speechResponse": "<A natural, engaging spoken summary (2 to 3 sentences) to read aloud via TTS. Clean conversational text without raw LaTeX backslashes.>",
   "solutionMarkdown": "<REQUIRED for all questions, problems, formulas, derivations, and explanations: Well-structured Markdown with clear section headings (### 📌 Given & Concept, ### 📐 Formula, ### 🔢 Step-by-Step Solution, ### ✅ Final Answer) and ALL formulas/equations/variables/units written in proper LaTeX/KaTeX scientific notation ($$...$$ for display equations, $...$ for inline math). NEVER write formulas in plain English words!>",
   "graphEquations": [
-    "<Optional array of clean 2D or 3D mathematical equations in x, y, z to plot on the interactive graphing panel when the problem involves functions, curves, circles, conics, or 3D surfaces, e.g. '(x - 2)^2 + (y + 3)^2 = 25', 'y = x^2 - 4', 'z = sin(x)*cos(y)'. CRITICAL: For systems of equations or multi-step algebra, output ONLY the original given problem equations (e.g. ['2*x + y = 7', 'x - y = 2']). NEVER output intermediate algebraic or simplification steps.>"
+    "<Optional array of clean 2D or 3D mathematical equations in x, y, z to plot on the interactive graphing panel when the problem involves functions, curves, circles, conics, or 3D surfaces, e.g. '(x - 2)^2 + (y + 3)^2 = 25', 'y = 2*x + 1'. STRICT RULE: Output ONLY the primary original curves given in the problem statement. NEVER output intermediate substitution quadratics (e.g. '10*x^2 + 24*x - 13 = 0' or 'y = 10*x^2 + 24*x - 13') or intermediate coordinate lines (e.g. 'x = 1.83', 'y = 4.66'). All solution coordinates must be placed ONLY in 'plottedPoints'.>"
   ],
   "plottedPoints": [
     { "x": 0, "y": 0, "label": "<Optional key points such as Center, Vertex, Root, Intersection (e.g. 'Intersection (3, 1)'), Local Max/Min with numeric x and y coordinates>" }
@@ -3616,13 +3616,12 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
    ### ✅ Final Answer
    $$\\boxed{<final answer with scientific units>}$$
 3. GRAPHING RULES FOR 'graphEquations' AND 'plottedPoints':
-   - In 'graphEquations', write clean plot-ready ASCII math expressions using only x, y, z, or theta (with all constants substituted numerically, no LaTeX backslashes, no integrals/limits symbols). For example:
-     * Single-variable equation \`x^2 - 4 = 0\` -> \`"y = x^2 - 4"\`
-     * Circle/conic \`x^2 + y^2 + 2x = 6\` -> \`"x^2 + y^2 + 2*x = 6"\`
-     * Derivative/integral of \`f(x) = x^3 - 3x\` -> \`["y = x^3 - 3*x", "y = 3*x^2 - 3"]\`
-     * 3D surface or quadric -> \`"z = x^2 - y^2"\` or \`"x^2 + y^2 + z^2 = 25"\`
-   - CRITICAL: For systems of equations or multi-step derivations, include ONLY the original given equations in 'graphEquations'. Do NOT include intermediate simplification steps.
-   - In 'plottedPoints', include key numeric 2D coordinates (especially the final intersection / solution point e.g. \`{ "x": 3, "y": 1, "label": "Intersection (3, 1)" }\`, roots, center, vertices, extrema) with descriptive labels.
+   - In 'graphEquations', output ONLY the original given mathematical curves and lines stated in the question (e.g. the given circle \`(x - 1)^2 + (y + 2)^2 = 16\` and the given line \`2*x - y = 3\`).
+   - ABSOLUTE PROHIBITION FOR 'graphEquations':
+     * NEVER include intermediate substitution algebra (e.g. if substituting a line into a circle yields \`10*x^2 + 24*x - 13 = 0\`, DO NOT include that 1D quadratic or any converted form \`y = 10*x^2 + 24*x - 13\`).
+     * NEVER include intermediate coordinate root lines (e.g. \`x = 1.83\` or \`y = 4.66\`) in 'graphEquations'.
+     * NEVER output intermediate simplification or partial derivation steps. Only given problem curves belong in 'graphEquations'.
+   - In 'plottedPoints', include ONLY final output coordinates (intersections, roots, center, vertices, extrema) as discrete labeled points \`{ "x": 3, "y": 1, "label": "Intersection (3, 1)" }\`.
 4. RIGOROUS PHYSICS CONVENTIONS & SIMULATION LAB (CBSE/NCERT Class XI & XII):
    - Vectors: Write all vectors with LaTeX arrows: \\vec{F}, \\vec{v}, \\vec{a}, \\vec{p}, \\vec{E}, \\vec{B}, \\vec{\\tau}, \\vec{r}, \\vec{s}, \\vec{L}.
    - Unit vectors: Write Cartesian unit vectors strictly as \\hat{i}, \\hat{j}, \\hat{k} (e.g. \\vec{r} = x\\hat{i} + y\\hat{j} + z\\hat{k}).

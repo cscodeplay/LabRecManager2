@@ -5,7 +5,7 @@ import {
     Play, Pause, Volume2, VolumeX, Maximize2, Minimize2,
     Lock, Unlock, Trash2, Video, Music, Globe,
     ChevronDown, ChevronUp, GripHorizontal, RotateCcw,
-    ExternalLink, Copy
+    ExternalLink, Copy, Film
 } from 'lucide-react';
 
 export default function WhiteboardMediaPlayer({
@@ -18,6 +18,7 @@ export default function WhiteboardMediaPlayer({
     scale = 1
 }) {
     const [isPlaying, setIsPlaying] = useState(false);
+    const [isPlayerActive, setIsPlayerActive] = useState(Boolean(media.isPlaying));
     const [isMuted, setIsMuted] = useState(media.isMuted ?? true);
     const [isCollapsed, setIsCollapsed] = useState(media.isCollapsed ?? false);
     const [isLocked, setIsLocked] = useState(media.isLocked ?? false);
@@ -214,32 +215,48 @@ export default function WhiteboardMediaPlayer({
         window.addEventListener('pointerup', onUp);
     };
 
-    // Helper to extract clean YouTube embed URL
-    const getYouTubeEmbedUrl = (url) => {
+    const mediaSource = media.src || media.url || '';
+
+    // Extract 11-char YouTube Video ID across watch, shorts, youtu.be, embed, mobile
+    const extractYouTubeId = (url) => {
+        if (!url) return null;
+        const idMatch = String(url).match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|shorts\/|live\/|watch\?.+&v=)|(?:^))([a-zA-Z0-9_-]{11})/);
+        return idMatch ? idMatch[1] : null;
+    };
+
+    const youtubeId = extractYouTubeId(mediaSource);
+    const isYouTube = media.mediaType === 'youtube' || Boolean(youtubeId) || (mediaSource && /youtube\.com|youtu\.be/i.test(mediaSource));
+    const isAudio = media.mediaType === 'audio' || (mediaSource && /\.(mp3|wav|ogg|aac)(\?.*)?$/i.test(mediaSource));
+    const isEmbed = media.mediaType === 'embed' && !isYouTube;
+
+    const youtubeThumbnail = media.thumbnail || (youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : null);
+
+    // Universal clean YouTube embed URL without restrictive origins or cookies
+    const getYouTubeEmbedUrl = (url, autoplay = true) => {
         if (!url) return '';
-        // Extract 11-char YouTube Video ID across watch, shorts, youtu.be, embed, mobile
-        const idMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|shorts\/|live\/|watch\?.+&v=)|(?:^))([a-zA-Z0-9_-]{11})/);
-        const id = idMatch ? idMatch[1] : null;
+        const id = extractYouTubeId(url);
         if (id) {
-            const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : '';
-            return `https://www.youtube-nocookie.com/embed/${id}?autoplay=0&enablejsapi=1&origin=${encodeURIComponent(origin)}&mute=${isMuted ? 1 : 0}`;
+            return `https://www.youtube.com/embed/${id}?autoplay=${autoplay ? 1 : 0}&rel=0&modestbranding=1&playsinline=1&mute=${isMuted ? 1 : 0}`;
         }
         if (url.includes('youtube.com/embed/')) {
-            const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : '';
-            return `${url}${url.includes('?') ? '&' : '?'}enablejsapi=1&origin=${encodeURIComponent(origin)}`;
+            return `${url}${url.includes('?') ? '&' : '?'}autoplay=${autoplay ? 1 : 0}&rel=0&modestbranding=1&playsinline=1&mute=${isMuted ? 1 : 0}`;
         }
         return url;
     };
 
-    const isYouTube = media.mediaType === 'youtube' || (media.src && /youtube\.com|youtu\.be/i.test(media.src));
-    const isAudio = media.mediaType === 'audio' || (media.src && /\.(mp3|wav|ogg|aac)(\?.*)?$/i.test(media.src));
-    const isEmbed = media.mediaType === 'embed' && !isYouTube;
-
     return (
         <div
+            tabIndex={0}
             onClick={(e) => {
                 e.stopPropagation();
                 onSelect && onSelect(media.id);
+            }}
+            onKeyDown={(e) => {
+                if ((e.key === 'Delete' || e.key === 'Backspace') && isSelected) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onDelete && onDelete(media.id);
+                }
             }}
             style={{
                 left: `${media.x || 0}px`,
@@ -250,8 +267,8 @@ export default function WhiteboardMediaPlayer({
                 transformOrigin: 'center center',
                 zIndex: media.zIndex || 20
             }}
-            data-interactive="true"
-            className={`whiteboard-media-player absolute select-none transition-shadow ${
+            data-media-player="true"
+            className={`whiteboard-media-player absolute select-none transition-shadow outline-none ${
                 isSelected ? 'ring-2 ring-indigo-500 shadow-2xl' : 'shadow-lg hover:shadow-xl'
             }`}
         >
@@ -324,6 +341,23 @@ export default function WhiteboardMediaPlayer({
                     >
                         4:3
                     </button>
+
+                    {/* Return to Poster mode for YouTube */}
+                    {isYouTube && isPlayerActive && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsPlayerActive(false);
+                                setIsPlaying(false);
+                            }}
+                            className="px-1.5 h-6 rounded text-[10px] font-semibold text-slate-300 hover:text-white hover:bg-slate-800/80 flex items-center gap-1 transition-colors"
+                            title="Show Preview Poster"
+                        >
+                            <Film className="w-3 h-3 text-red-400" />
+                            <span>Poster</span>
+                        </button>
+                    )}
 
                     <div className="h-4 w-[1px] bg-slate-700/60 mx-0.5" />
 
@@ -492,17 +526,55 @@ export default function WhiteboardMediaPlayer({
                     {/* Viewport Content */}
                     <div className="flex-1 w-full bg-black relative flex items-center justify-center overflow-hidden">
                         {isYouTube ? (
-                            <iframe
-                                src={getYouTubeEmbedUrl(media.src)}
-                                title={media.title || 'YouTube Player'}
-                                className="w-full h-full border-0 pointer-events-auto"
-                                referrerPolicy="strict-origin-when-cross-origin"
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
-                                allowFullScreen
-                            />
+                            isPlayerActive ? (
+                                <iframe
+                                    src={getYouTubeEmbedUrl(mediaSource, true)}
+                                    title={media.title || 'YouTube Player'}
+                                    className="w-full h-full border-0 pointer-events-auto"
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+                                    allowFullScreen
+                                />
+                            ) : (
+                                /* Interactive YouTube Preview Poster with Centered Play Button */
+                                <div 
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onSelect && onSelect(media.id);
+                                        setIsPlayerActive(true);
+                                        setIsPlaying(true);
+                                    }}
+                                    className="w-full h-full relative cursor-pointer group/poster flex items-center justify-center bg-slate-950 overflow-hidden"
+                                >
+                                    {/* Video Poster Thumbnail */}
+                                    {youtubeThumbnail ? (
+                                        <img 
+                                            src={youtubeThumbnail} 
+                                            alt={media.title || 'YouTube Video Preview'}
+                                            className="w-full h-full object-cover opacity-85 group-hover/poster:opacity-100 group-hover/poster:scale-105 transition-all duration-300"
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full bg-gradient-to-br from-slate-900 via-red-950/30 to-slate-900 flex items-center justify-center" />
+                                    )}
+
+                                    {/* Dark Gradient Overlay */}
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/60 pointer-events-none" />
+
+                                    {/* Large Centered YouTube Red Play Button */}
+                                    <div className="relative z-10 w-16 h-12 rounded-2xl bg-red-600 group-hover/poster:bg-red-500 shadow-2xl shadow-red-600/50 flex items-center justify-center transition-all duration-200 group-hover/poster:scale-110 active:scale-95">
+                                        <Play className="w-7 h-7 text-white fill-white ml-0.5" />
+                                    </div>
+
+                                    {/* Play Video Hint Badge */}
+                                    <div className="absolute bottom-3 left-0 right-0 text-center pointer-events-none">
+                                        <span className="text-[11px] text-white/95 bg-black/70 backdrop-blur-xs px-3 py-1 rounded-full border border-white/20 font-semibold shadow-lg">
+                                            ▶ Click to Play Video
+                                        </span>
+                                    </div>
+                                </div>
+                            )
                         ) : isEmbed ? (
                             <iframe
-                                src={media.src}
+                                src={mediaSource}
                                 title={media.title || 'Web Embed'}
                                 className="w-full h-full border-0 bg-white pointer-events-auto"
                                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
@@ -512,7 +584,7 @@ export default function WhiteboardMediaPlayer({
                                 <Music className="w-12 h-12 text-indigo-400 animate-pulse" />
                                 <audio
                                     ref={videoRef}
-                                    src={media.src}
+                                    src={mediaSource}
                                     controls
                                     playsInline
                                     muted={isMuted}
@@ -523,7 +595,7 @@ export default function WhiteboardMediaPlayer({
                         ) : (
                             <video
                                 ref={videoRef}
-                                src={media.src}
+                                src={mediaSource}
                                 controls
                                 playsInline
                                 webkit-playsinline="true"

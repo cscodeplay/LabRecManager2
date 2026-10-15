@@ -261,10 +261,11 @@ export function normalizeCandidateEquation(rawCandidate = '', allowParameters = 
         }
 
         // Track if this is a trivial single-coordinate assignment like `x = 2` or `y = -3`
-        const isTrivialAssignment = /^[xy]\s*=\s*[-+]?\d+(?:\.\d+)?$/i.test(expr);
+        const isTrivialAssignment = /^[xy]\s*=\s*[-+]?\d+(?:\.\d+)?(?:\/\d+)?$/i.test(expr.trim());
+        const isSingleVariable1D = (hasX && !hasY && !hasZ && !hasTheta) || (hasY && !hasX && !hasZ && !hasTheta);
 
         // If it's a single-variable nonlinear equation in x only (e.g. `x^2 - 5x + 6 = 0`),
-        // convert to `y = ...` so its curve and roots are plotted on the 2D plane
+        // convert to `y = ...` so its curve and roots can optionally be plotted
         let plotExpr = expr;
         if (hasX && !hasY && !hasZ && !hasTheta && !isTrivialAssignment && expr.includes('=') && !/[<>]=/.test(expr)) {
             const [lhs, rhs] = expr.split('=').map(s => s.trim());
@@ -337,6 +338,7 @@ export function normalizeCandidateEquation(rawCandidate = '', allowParameters = 
             compiledY,
             is3D,
             isTrivialAssignment,
+            isSingleVariable1D,
             circleMeta
         });
     }
@@ -381,8 +383,8 @@ export function extractGraphDataFromAiSolution(aiSolution, activeTabText = '') {
         const candidates = normalizeCandidateEquation(rawStr, false);
         if (!candidates) return;
         for (const item of candidates) {
-            // Skip trivial `x = 2` or `y = -3` coordinate lines extracted from intermediate solution steps
-            if (source === 'solution' && item.isTrivialAssignment) continue;
+            // Strictly skip trivial `x = c` or `y = c` coordinate lines (they belong in keyPoints!)
+            if (item.isTrivialAssignment) continue;
             const key = canonicalize(item.expr);
             if (seenNormalized.has(key)) continue;
             seenNormalized.add(key);
@@ -394,7 +396,7 @@ export function extractGraphDataFromAiSolution(aiSolution, activeTabText = '') {
     };
 
     // 1. Explicit graphEquations array from AI response (if present)
-    if (Array.isArray(aiSolution?.graphEquations)) {
+    if (Array.isArray(aiSolution?.graphEquations) && aiSolution.graphEquations.length > 0) {
         aiSolution.graphEquations.forEach(eq => addCandidate(String(eq), 'ai'));
     }
 
@@ -413,31 +415,39 @@ export function extractGraphDataFromAiSolution(aiSolution, activeTabText = '') {
         });
     }
 
-    // 2. Question text
-    const qText = aiSolution?.question || '';
-    if (qText) {
-        const qLatex = [...qText.matchAll(/\$\$([\s\S]*?)\$\$|\$([^$\n]+?)\$/g)];
-        qLatex.forEach(m => addCandidate(m[1] || m[2], 'question'));
-        // Also scan plain-text equations in the question (e.g. "x^2 + y^2 - 4x + 6y - 12 = 0" or "y = x^2 - 4")
-        const plainEqMatches = qText.match(/(?:[xyz]\s*=|[xyz]\s*\^\s*\d|[xyz][²³]|\([xyz]\s*[-+])[^,.;?!]+=\s*[-+0-9a-zA-Z^²³().\s*/]+/gi) || [];
-        plainEqMatches.forEach(m => addCandidate(m, 'question'));
+    // 2. Question text: ONLY parse if no primary equations were provided
+    if (equations.length === 0) {
+        const qText = aiSolution?.question || '';
+        if (qText) {
+            const qLatex = [...qText.matchAll(/\$\$([\s\S]*?)\$\$|\$([^$\n]+?)\$/g)];
+            qLatex.forEach(m => addCandidate(m[1] || m[2], 'question'));
+            const plainEqMatches = qText.match(/(?:[xyz]\s*=|[xyz]\s*\^\s*\d|[xyz][²³]|\([xyz]\s*[-+])[^,.;?!]+=\s*[-+0-9a-zA-Z^²³().\s*/]+/gi) || [];
+            plainEqMatches.forEach(m => addCandidate(m, 'question'));
+        }
     }
 
-    // 3. Solution markdown math blocks: ONLY parse if no primary equations were provided via graphEquations!
-    // This strictly prevents intermediate algebraic simplification lines (e.g. 3x = 9, 2x = 6) from polluting the graph.
-    const hasPrimaryEquations = Array.isArray(aiSolution?.graphEquations) && aiSolution.graphEquations.length > 0;
-    const fullText = aiSolution?.solutionMarkdown || activeTabText || '';
-    if (!hasPrimaryEquations && fullText) {
-        const blockMatches = [...fullText.matchAll(/\$\$([\s\S]*?)\$\$/g)];
-        blockMatches.forEach(m => addCandidate(m[1], 'solution'));
-        const stripped = fullText.replace(/\$\$[\s\S]*?\$\$/g, ' ');
-        const inlineMatches = [...stripped.matchAll(/\$([^$\n]+?)\$/g)];
-        inlineMatches.forEach(m => addCandidate(m[1], 'solution'));
+    // 3. Solution markdown math blocks: ONLY parse if STILL no equations were found
+    if (equations.length === 0) {
+        const fullText = aiSolution?.solutionMarkdown || activeTabText || '';
+        if (fullText) {
+            const blockMatches = [...fullText.matchAll(/\$\$([\s\S]*?)\$\$/g)];
+            blockMatches.forEach(m => addCandidate(m[1], 'solution'));
+            const stripped = fullText.replace(/\$\$[\s\S]*?\$\$/g, ' ');
+            const inlineMatches = [...stripped.matchAll(/\$([^$\n]+?)\$/g)];
+            inlineMatches.forEach(m => addCandidate(m[1], 'solution'));
+        }
     }
+
+    // Filter out intermediate 1D single-variable equations (e.g. substitution quadratics like 10x^2 + 24x - 13 = 0)
+    // when true 2D curves/relations (having both x and y, or 3D) are present
+    const hasTrue2DCurves = equations.some(eq => !eq.isSingleVariable1D && !eq.is3D);
+    const candidateEquations = hasTrue2DCurves
+        ? equations.filter(eq => !eq.isSingleVariable1D)
+        : equations;
 
     // Deduplicate algebraically equivalent equations (e.g. `x^2 + y^2 - 4x + 6y - 12 = 0` and `(x - 2)^2 + (y + 3)^2 = 25`)
     const deduplicated = [];
-    for (const eq of equations) {
+    for (const eq of candidateEquations) {
         if (eq.compiled && !eq.is3D) {
             const p1 = eq.compiled({ x: 1.2, y: -0.7, z: 0 }, {});
             const p2 = eq.compiled({ x: -2.3, y: 1.9, z: 0 }, {});
@@ -536,36 +546,45 @@ export function extractGraphDataFromAiSolution(aiSolution, activeTabText = '') {
     }
 
     // 5. Add explicit points from AI response (`plottedPoints` and `intersectionPoints`)
-    if (Array.isArray(aiSolution?.plottedPoints)) {
+    let hasExplicitPoints = false;
+    if (Array.isArray(aiSolution?.plottedPoints) && aiSolution.plottedPoints.length > 0) {
         aiSolution.plottedPoints.forEach(pt => {
             if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
                 addPoint(pt.x, pt.y, pt.label || '', '#38bdf8');
+                hasExplicitPoints = true;
             }
         });
     }
-    if (Array.isArray(aiSolution?.intersectionPoints)) {
+    if (Array.isArray(aiSolution?.intersectionPoints) && aiSolution.intersectionPoints.length > 0) {
         aiSolution.intersectionPoints.forEach(pt => {
             if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
                 addPoint(pt.x, pt.y, pt.label || '', '#f43f5e');
+                hasExplicitPoints = true;
             }
         });
     }
 
-    // 6. Extract key coordinate points (e.g. Center (2, -3), Vertex, intersections) from solution text
-    const cleanPtText = `${qText}\n${fullText}`.replace(/\\left|\\right/g, '');
-    const ptRegex = /\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g;
-    let pm;
-    while ((pm = ptRegex.exec(cleanPtText)) !== null) {
-        const x = parseFloat(pm[1]);
-        const y = parseFloat(pm[2]);
-        const prefixSlice = cleanPtText.slice(Math.max(0, pm.index - 35), pm.index);
-        let labelPrefix = '';
-        if (/center/i.test(prefixSlice)) labelPrefix = 'Center ';
-        else if (/vertex/i.test(prefixSlice)) labelPrefix = 'Vertex ';
-        else if (/focus/i.test(prefixSlice)) labelPrefix = 'Focus ';
+    // 6. Extract key coordinate points ONLY if no explicit points were provided by AI
+    if (!hasExplicitPoints) {
+        const qText = aiSolution?.question || '';
+        const fullText = aiSolution?.solutionMarkdown || activeTabText || '';
+        const cleanPtText = `${qText}\n${fullText}`.replace(/\\left|\\right/g, '');
+        const ptRegex = /\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g;
+        let pm;
+        while ((pm = ptRegex.exec(cleanPtText)) !== null) {
+            const x = parseFloat(pm[1]);
+            const y = parseFloat(pm[2]);
+            const prefixSlice = cleanPtText.slice(Math.max(0, pm.index - 35), pm.index);
+            let labelPrefix = '';
+            if (/center/i.test(prefixSlice)) labelPrefix = 'Center ';
+            else if (/vertex/i.test(prefixSlice)) labelPrefix = 'Vertex ';
+            else if (/focus/i.test(prefixSlice)) labelPrefix = 'Focus ';
+            else if (/intersection/i.test(prefixSlice)) labelPrefix = 'Intersection ';
+            else continue;
 
-        const fmt = (v) => Number.isInteger(Number(v.toFixed(2))) ? String(Math.round(v)) : v.toFixed(2);
-        addPoint(x, y, `${labelPrefix}(${fmt(x)}, ${fmt(y)})`, labelPrefix ? '#38bdf8' : '#a855f7');
+            const fmt = (v) => Number.isInteger(Number(v.toFixed(2))) ? String(Math.round(v)) : v.toFixed(2);
+            addPoint(x, y, `${labelPrefix}(${fmt(x)}, ${fmt(y)})`, labelPrefix.includes('Intersection') ? '#f43f5e' : '#38bdf8');
+        }
     }
 
     return {
