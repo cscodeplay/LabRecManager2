@@ -488,9 +488,9 @@ router.post('/whiteboard-tasks', authenticate, asyncHandler(async (req, res) => 
 /**
  * @route   POST /api/ai/recognize-math
  * @desc    Recognize handwritten math equation from canvas drawing image (Windows Math Input Panel style)
- * @access  Private (Authenticated users)
+ * @access  Public / Authenticated
  */
-router.post('/recognize-math', authenticate, asyncHandler(async (req, res) => {
+router.post('/recognize-math', optionalAuth, asyncHandler(async (req, res) => {
     const { image, provider = 'gemini' } = req.body;
 
     if (!image) {
@@ -515,9 +515,9 @@ router.post('/recognize-math', authenticate, asyncHandler(async (req, res) => {
 /**
  * @route   POST /api/ai/recognize-image-text
  * @desc    Recognize and transcribe text and LaTeX math formulas from an uploaded or selected image
- * @access  Private (Authenticated users)
+ * @access  Public / Authenticated
  */
-router.post('/recognize-image-text', authenticate, asyncHandler(async (req, res) => {
+router.post('/recognize-image-text', optionalAuth, asyncHandler(async (req, res) => {
     const { image, provider = 'gemini' } = req.body;
 
     if (!image) {
@@ -709,20 +709,29 @@ router.post('/test-provider', authenticate, authorize('admin', 'principal'), asy
  * @desc    Scan an uploaded/dragged/pasted image and extract the question/problem text for the Whiteboard AI request box
  * @access  Private (Authenticated users)
  */
-router.post('/scan-question-image', optionalAuth, upload.single('image'), asyncHandler(async (req, res) => {
+const safeImageUpload = (req, res, next) => {
+    upload.single('image')(req, res, (err) => {
+        if (err) {
+            console.warn('[AI Route] Image upload warning (proceeding to fallback):', err.message);
+        }
+        next();
+    });
+};
+
+router.post('/scan-question-image', optionalAuth, safeImageUpload, asyncHandler(async (req, res) => {
     const { provider = 'auto' } = req.body;
 
     let buffer = req.file?.buffer;
     let mimeType = req.file?.mimetype || 'image/png';
 
     // Support either multipart file upload OR base64 image in req.body.image
-    if (!buffer && req.body.image) {
+    if (!buffer && req.body && req.body.image) {
         const imgStr = req.body.image;
-        const match = imgStr.match(/^data:([^;]+);base64,(.+)$/);
+        const match = typeof imgStr === 'string' ? imgStr.match(/^data:([^;]+);base64,(.+)$/s) : null;
         if (match) {
             mimeType = match[1];
             buffer = Buffer.from(match[2], 'base64');
-        } else {
+        } else if (typeof imgStr === 'string' && !imgStr.startsWith('http') && !imgStr.startsWith('blob:')) {
             buffer = Buffer.from(imgStr, 'base64');
         }
     }

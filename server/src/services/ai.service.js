@@ -972,13 +972,24 @@ RULES:
             base64Data = buffer.toString('base64');
         } else if (typeof buffer === 'string') {
             if (buffer.startsWith('data:')) {
-                const matches = buffer.match(/^data:([^;]+);base64,(.+)$/);
+                const matches = buffer.match(/^data:([^;]+);base64,(.+)$/s);
                 if (matches) {
                     mimeType = matches[1] || mimeType;
                     base64Data = matches[2];
                 } else {
                     base64Data = buffer.replace(/^data:[^;]+;base64,/, '');
                 }
+            } else if (buffer.startsWith('http://') || buffer.startsWith('https://')) {
+                try {
+                    const axios = require('axios');
+                    const imgResp = await axios.get(buffer, { responseType: 'arraybuffer', timeout: 10000 });
+                    mimeType = imgResp.headers['content-type'] || mimeType;
+                    base64Data = Buffer.from(imgResp.data, 'binary').toString('base64');
+                } catch (fetchErr) {
+                    console.warn('[AIService] Failed to download remote image for extractQuestionFromImage:', fetchErr.message);
+                }
+            } else if (buffer.startsWith('blob:')) {
+                console.warn('[AIService] Received client-side blob URL which cannot be read on the server:', buffer);
             } else {
                 base64Data = buffer;
             }
@@ -986,7 +997,7 @@ RULES:
             base64Data = Buffer.isBuffer(buffer.data) ? buffer.data.toString('base64') : String(buffer.data);
         }
 
-        if (!base64Data) {
+        if (!base64Data || base64Data.startsWith('blob:')) {
             throw new Error('Valid image data or buffer is required to extract question.');
         }
 
@@ -3203,6 +3214,78 @@ Output MUST be ONLY valid JSON matching this schema:
                 }
             }
 
+            // Deterministic Composite Geometry Solver (Square with Inscribed Circle, Annulus, Shaded Regions)
+            const compositeGeoParsed = geometrySolver.parseCompositeGeometryFromText(text);
+            if (compositeGeoParsed) {
+                try {
+                    const sol = geometrySolver.solveCompositeGeometry(compositeGeoParsed);
+                    if (sol) {
+                        return {
+                            recognized: true,
+                            success: true,
+                            speechResponse: sol.speechResponse,
+                            solutionMarkdown: sol.solutionMarkdown,
+                            graphEquations: [],
+                            plottedPoints: [],
+                            suggestedFollowUps: sol.suggestedFollowUps,
+                            canvasAction: {
+                                type: 'draw_problem_with_diagram',
+                                diagramType: 'composite_geometry',
+                                question: text,
+                                solutionMarkdown: sol.solutionMarkdown,
+                                speechResponse: sol.speechResponse,
+                                diagramProps: sol.diagramProps
+                            },
+                            actions: [
+                                {
+                                    type: 'CREATE_OBJECT',
+                                    objectType: 'composite_geometry',
+                                    ...sol.diagramProps
+                                }
+                            ]
+                        };
+                    }
+                } catch (e) {
+                    console.warn('[AIService] Deterministic composite geometry solver failed, falling back to LLM:', e.message);
+                }
+            }
+
+            // Deterministic 3D Wireframe Solver & Renderer (Cone, Cylinder, Cuboid, Cube, Sphere, Pyramid, Frustum)
+            const wireframe3DParsed = geometrySolver.parse3DWireframeFromText(text);
+            if (wireframe3DParsed) {
+                try {
+                    const sol = geometrySolver.solve3DWireframe(wireframe3DParsed);
+                    if (sol) {
+                        return {
+                            recognized: true,
+                            success: true,
+                            speechResponse: sol.speechResponse,
+                            solutionMarkdown: sol.solutionMarkdown,
+                            graphEquations: [],
+                            plottedPoints: [],
+                            suggestedFollowUps: sol.suggestedFollowUps,
+                            canvasAction: {
+                                type: 'draw_problem_with_diagram',
+                                diagramType: 'wireframe_3d',
+                                question: text,
+                                solutionMarkdown: sol.solutionMarkdown,
+                                speechResponse: sol.speechResponse,
+                                diagramProps: sol.diagramProps
+                            },
+                            actions: [
+                                {
+                                    type: 'CREATE_OBJECT',
+                                    objectType: 'wireframe_3d',
+                                    ...sol.diagramProps
+                                }
+                            ]
+                        };
+                    }
+                } catch (e) {
+                    console.warn('[AIService] Deterministic 3D wireframe solver failed, falling back to LLM:', e.message);
+                }
+            }
+
             const whiteboardSystemPrompt = `You are an advanced Spatial & Generative AI reasoning engine for an interactive Whiteboard.
 You receive the user's spoken command along with a JSON representation of the current whiteboard state (objects, sizes, spatial coordinates, pages).
 Your goal is to parse the user's intent, perform any required knowledge-base reasoning (like deriving formulas, writing code, or generating scientific explanations), and return a sequence of autonomous actions to modify the canvas.
@@ -3253,7 +3336,10 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
     },
     {
       "type": "CREATE_OBJECT",
-      "objectType": "right_triangle | triangle | circle | concentric_circles | square | rectangle | coordinate_system | cartesian_plane | sector | segment | parabolic_arch | line | arrow | star | diamond | pentagon | hexagon | sticky_note | text | 3d_model | lesson_board | drawing",
+      "objectType": "right_triangle | triangle | circle | concentric_circles | square | rectangle | composite_geometry | wireframe_3d | coordinate_system | cartesian_plane | sector | segment | parabolic_arch | line | arrow | star | diamond | pentagon | hexagon | sticky_note | text | 3d_model | lesson_board | drawing",
+      "subtype": "square_circle_inscribed | circle_square_inscribed | concentric_circles",
+      "sideValue": "<number for square side in composite_geometry, e.g. 14>",
+      "radiusValue": "<number for circle radius in composite_geometry, e.g. 7>",
       "title": "<name or subject of drawing, e.g. 'cat', 'dog', 'car', 'tree', 'house', 'apple', 'flower', 'fish', 'rocket', 'robot'>",
       "svg": "<optional custom SVG string or omit to use builtin illustration library>",
       "width": "<number or omit>",
@@ -3367,6 +3453,12 @@ CRITICAL RULES:
      - Output individual circle objects sharing the exact same center (center O) with sequential radii (e.g. radii: [45, 85, 125] or user-provided radii e.g. [40, 80]), OR use objectType: "concentric_circles", rings: 3, width: 240, height: 240, showCenter: true, centerLabel: "O", showRadii: true, radiiLabels: ["r₁", "r₂", "r₃"].
   6. RECTANGLE / SQUARE / AREA / PERIMETER:
      - Use objectType: "rectangle", width: <specified width e.g. 50 or 200>, height: <specified height e.g. 30 or 100>, vertexLabels: ["A", "B", "C", "D"], edgeLabels: ["length", "length", "width", "width"], showRightAngle: true.
+  6b. COMPOSITE GEOMETRY & SHADED AREA PROBLEMS (Inscribed/Circumscribed Shapes, Remaining Portion, Annulus, Rings):
+     - When asked for remaining area, shaded area, or combinations of shapes (e.g. "find area of remaining part for square with inscribed circle of diameter equal to side", "circle inscribed in square", "square inscribed in circle", "concentric circles area of ring"):
+       * Use objectType: "composite_geometry", subtype: "square_circle_inscribed" | "circle_square_inscribed" | "concentric_circles".
+       * Set sideValue: <sVal>, radiusValue: <rVal>, unit: "cm" (or user unit).
+       * Output complete LaTeX steps: A_{\text{square}} = s^2, r = s/2, A_{\text{circle}} = \pi r^2, A_{\text{remaining}} = s^2 - \pi r^2 = s^2(1 - \pi/4).
+       * The diagram renders both shapes positioned accurately with shaded/diagonal-hatched remaining area and two-way dimension arrows.
   7. SOLID GEOMETRY (SPHERE, CYLINDER, CONE, FRUSTUM, HEMISPHERE, CAPSULE):
      - When asked for volume, surface area, or solid geometry formulas (e.g. "what is the volume and surface area of cylinder with radius 4 and height 10", "surface area of sphere", "volume of cone", "frustum volume"):
        * YOU MUST compute the exact numerical answers and display step-by-step LaTeX formulas in 'speechResponse' and 'solutionMarkdown':
@@ -3377,6 +3469,11 @@ CRITICAL RULES:
          - Hemisphere: V = \\frac{2}{3}\\pi r^3, S_{\text{curved}} = 2\\pi r^2, S_{\text{total}} = 3\\pi r^2
          - Capsule: V = \\pi r^2 h + \\frac{4}{3}\\pi r^3, S = 2\\pi r h + 4\\pi r^2
        * ALWAYS accompany the answer with a cleanly constructed interactive '3d_model' on canvas matching the solid (modelType: 'cylinder' | 'sphere' | 'cone' | 'frustum' | 'hemisphere' | 'capsule') with 'dimensions' set to the given values!
+  7b. 3D WIREFRAME PROJECTIONS WITH DIMENSIONS (Cuboid, Cube, Cylinder, Cone, Sphere, Pyramid, Frustum):
+     - When the user asks to draw 3D wireframes, or requests wireframe drawings with dimensions from a geometry problem (e.g. "draw wireframe of cone with radius 5 cm and height 12 cm", "cuboid wireframe length 8 width 5 height 4"):
+       * ALWAYS output objectType: "wireframe_3d" with modelType: "cuboid" | "cube" | "cylinder" | "cone" | "sphere" | "pyramid" | "frustum".
+       * Populate dimensions: { length, width, height, radius, slant, r1, r2 } matching the problem.
+       * This draws the textbook 2D/3D wireframe projection on the whiteboard with solid visible lines, dashed rear hidden lines, dashed altitude axes with right-angle indicators, and labeled dimension arrows!
   8. 3D VECTOR SPACE & 3D COORDINATE GEOMETRY (CBSE Class 12 / College Math):
      - When asked to plot vectors or vector operations (e.g. "plot vectors a = [1,0,0] and b = [0,1,0]", "cross product of vectors", "dot product", "3D coordinate frame"):
        * Output objectType: "3d_model" with modelType: "vector_space_3d", vectors: [[a_x, a_y, a_z], [b_x, b_y, b_z]], and showCrossProduct: true.
@@ -10097,10 +10194,12 @@ OUTPUT RULES:
 
         if (typeof imageInput === 'string') {
             if (imageInput.startsWith('data:')) {
-                const matches = imageInput.match(/^data:([^;]+);base64,(.+)$/);
+                const matches = imageInput.match(/^data:([^;]+);base64,(.+)$/s);
                 if (matches) {
                     mimeType = matches[1];
                     rawBase64 = matches[2];
+                } else {
+                    rawBase64 = imageInput.replace(/^data:[^;]+;base64,/, '');
                 }
             } else if (imageInput.startsWith('http://') || imageInput.startsWith('https://')) {
                 try {
@@ -10111,12 +10210,14 @@ OUTPUT RULES:
                 } catch (fetchErr) {
                     console.warn('[AIService] Failed to download remote image for OCR:', fetchErr.message);
                 }
+            } else if (imageInput.startsWith('blob:')) {
+                console.warn('[AIService] Received client-side blob URL in recognizeImageTextAndMath:', imageInput);
             } else {
                 rawBase64 = imageInput;
             }
         }
 
-        if (!rawBase64) {
+        if (!rawBase64 || rawBase64.startsWith('blob:')) {
             throw new Error('Valid image data or URL is required for text and math recognition.');
         }
 

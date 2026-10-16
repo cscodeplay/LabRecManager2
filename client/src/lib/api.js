@@ -710,12 +710,12 @@ export const trainingAPI = {
 // AI Generator API
 export const aiAPI = {
     parseAssignments: (formData) => api.post('/ai/parse-assignments', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': undefined },
     }),
     scanQuestionImage: (payload, preferredProvider = 'auto') => {
         if (payload instanceof FormData) {
             return api.post('/ai/scan-question-image', payload, {
-                headers: { 'Content-Type': 'multipart/form-data' },
+                headers: { 'Content-Type': undefined },
             });
         }
         if (typeof window !== 'undefined' && (payload instanceof File || payload instanceof Blob)) {
@@ -723,7 +723,7 @@ export const aiAPI = {
             fd.append('image', payload);
             if (preferredProvider) fd.append('preferredProvider', preferredProvider);
             return api.post('/ai/scan-question-image', fd, {
-                headers: { 'Content-Type': 'multipart/form-data' },
+                headers: { 'Content-Type': undefined },
             });
         }
         const body = (typeof payload === 'string')

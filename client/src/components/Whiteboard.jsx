@@ -3673,18 +3673,20 @@ export default function Whiteboard({
             if (imageData && !imageData.startsWith('data:')) {
                 try {
                     const canvas = document.createElement('canvas');
-                    const img = new Image();
-                    img.crossOrigin = 'anonymous';
-                    await new Promise((resolve) => {
-                        img.onload = resolve;
-                        img.onerror = () => resolve(); // fallback to original string if canvas load fails
-                        img.src = imageData;
-                    });
-                    if (img.naturalWidth && img.naturalHeight) {
-                        canvas.width = img.naturalWidth;
-                        canvas.height = img.naturalHeight;
+                    const sourceImg = (imgObj.imageElement && imgObj.imageElement.naturalWidth) ? imgObj.imageElement : new Image();
+                    if (!imgObj.imageElement || !imgObj.imageElement.naturalWidth) {
+                        sourceImg.crossOrigin = 'anonymous';
+                        await new Promise((resolve) => {
+                            sourceImg.onload = resolve;
+                            sourceImg.onerror = () => resolve();
+                            sourceImg.src = imageData;
+                        });
+                    }
+                    if (sourceImg.naturalWidth && sourceImg.naturalHeight) {
+                        canvas.width = sourceImg.naturalWidth;
+                        canvas.height = sourceImg.naturalHeight;
                         const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0);
+                        ctx.drawImage(sourceImg, 0, 0);
                         imageData = canvas.toDataURL('image/png');
                     }
                 } catch (convErr) {
@@ -3694,11 +3696,11 @@ export default function Whiteboard({
 
             const res = await api.post('/ai/recognize-image-text', {
                 image: imageData,
-                provider: 'gemini'
+                provider: whiteboardAiProvider !== 'auto' ? whiteboardAiProvider : 'gemini'
             });
 
-            if (res.data?.success && res.data?.data?.text) {
-                const extractedText = res.data.data.text.trim();
+            const extractedText = (res.data?.data?.text || res.data?.text || '').trim();
+            if (res.data?.success && extractedText) {
                 if (!extractedText) {
                     toast.error('No readable text or math formulas detected in this image.', { id: toastId });
                     return;
@@ -10471,7 +10473,242 @@ export default function Whiteboard({
                 ctx.lineTo(cx, sy + h);
                 ctx.closePath();
                 if (fill && fill !== 'transparent') ctx.fill();
+            } else if (shpObj.type === 'composite_geometry') {
+                const w = shpObj.width || 300, h = shpObj.height || 300, sx = shpObj.x, sy = shpObj.y;
+                const pad = 24;
+                const sidePx = Math.min(w, h) - 2 * pad;
+                const sqX = sx + (w - sidePx) / 2;
+                const sqY = sy + (h - sidePx) / 2;
+                const cx = sqX + sidePx / 2;
+                const cy = sqY + sidePx / 2;
+                const r = sidePx / 2;
+
+                ctx.save();
+                ctx.strokeStyle = shpObj.color || '#6366f1';
+                ctx.lineWidth = shpObj.strokeWidth || 2.5;
+
+                // 1. Shaded corners with evenodd fill
+                ctx.beginPath();
+                ctx.rect(sqX, sqY, sidePx, sidePx);
+                ctx.arc(cx, cy, r, 0, Math.PI * 2, true);
+                ctx.fillStyle = shpObj.fillColor && shpObj.fillColor !== 'transparent' ? shpObj.fillColor : 'rgba(99, 102, 241, 0.28)';
+                ctx.fill('evenodd');
+
+                // 2. Square outline
+                ctx.strokeRect(sqX, sqY, sidePx, sidePx);
+
+                // 3. Circle outline
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, 0, Math.PI * 2);
                 ctx.stroke();
+
+                // 4. Center & radius line
+                ctx.fillStyle = '#0f172a';
+                ctx.beginPath();
+                ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.save();
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.lineTo(cx + r, cy);
+                ctx.stroke();
+                ctx.restore();
+
+                // 5. Labels
+                ctx.font = 'bold 12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(shpObj.sideLabel || `s = ${shpObj.sideValue || 14} ${shpObj.unit || 'cm'}`, cx, sqY - 8);
+                ctx.fillText(shpObj.radiusLabel || `r = ${shpObj.radiusValue || 7} ${shpObj.unit || 'cm'}`, cx + r / 2, cy - 6);
+                if (shpObj.areaFormulaLabel) {
+                    ctx.font = '11px sans-serif';
+                    ctx.fillText(shpObj.areaFormulaLabel, cx, sqY + sidePx + 18);
+                }
+                ctx.restore();
+            } else if (shpObj.type === 'wireframe_3d') {
+                const w = shpObj.width || 300, h = shpObj.height || 300, sx = shpObj.x, sy = shpObj.y;
+                const modelType = shpObj.modelType || 'cuboid';
+                const mainColor = shpObj.color || '#3b82f6';
+                const dashColor = shpObj.dashColor || '#64748b';
+                const sW = shpObj.strokeWidth || 2.2;
+                const dims = shpObj.dimensions || {};
+                const unit = shpObj.unit || ' cm';
+
+                ctx.save();
+                ctx.strokeStyle = mainColor;
+                ctx.lineWidth = sW;
+
+                if (modelType === 'cuboid' || modelType === 'cube' || modelType === 'box') {
+                    const padX = 35, padY = 35;
+                    const fw = (w - 2 * padX) * 0.72;
+                    const fh = (h - 2 * padY) * 0.72;
+                    const depthX = (w - 2 * padX) * 0.28;
+                    const depthY = (h - 2 * padY) * 0.28;
+                    const fx = sx + padX;
+                    const fy = sy + h - padY - fh;
+
+                    // Visible front rect
+                    ctx.strokeRect(fx, fy, fw, fh);
+
+                    // Top face lines
+                    ctx.beginPath();
+                    ctx.moveTo(fx, fy);
+                    ctx.lineTo(fx + depthX, fy - depthY);
+                    ctx.lineTo(fx + fw + depthX, fy - depthY);
+                    ctx.lineTo(fx + fw, fy);
+                    ctx.stroke();
+
+                    // Right face lines
+                    ctx.beginPath();
+                    ctx.moveTo(fx + fw + depthX, fy - depthY);
+                    ctx.lineTo(fx + fw + depthX, fy + fh - depthY);
+                    ctx.lineTo(fx + fw, fy + fh);
+                    ctx.stroke();
+
+                    // Hidden rear dashed lines
+                    ctx.save();
+                    ctx.strokeStyle = dashColor;
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.moveTo(fx, fy + fh);
+                    ctx.lineTo(fx + depthX, fy + fh - depthY);
+                    ctx.lineTo(fx + fw + depthX, fy + fh - depthY);
+                    ctx.moveTo(fx + depthX, fy + fh - depthY);
+                    ctx.lineTo(fx + depthX, fy - depthY);
+                    ctx.stroke();
+                    ctx.restore();
+
+                    // Dimension labels
+                    ctx.fillStyle = '#1e293b';
+                    ctx.font = 'bold 11px sans-serif';
+                    ctx.textAlign = 'center';
+                    const lenVal = dims.length !== undefined ? `${dims.length}${unit}` : (shpObj.lengthLabel || 'l');
+                    const widVal = dims.width !== undefined ? `${dims.width}${unit}` : (shpObj.widthLabel || 'w');
+                    const hgtVal = dims.height !== undefined ? `${dims.height}${unit}` : (shpObj.heightLabel || 'h');
+                    ctx.fillText(`Length = ${lenVal}`, fx + fw / 2, fy + fh + 16);
+                    ctx.fillText(`Height = ${hgtVal}`, fx - 16, fy + fh / 2);
+                    ctx.fillText(`Width = ${widVal}`, fx + fw + depthX / 2 + 10, fy + fh - depthY / 2);
+                } else if (modelType === 'cylinder') {
+                    const padX = 40, padY = 30;
+                    const cylW = w - 2 * padX;
+                    const rx = cylW / 2;
+                    const ry = Math.min(26, cylW * 0.22);
+                    const topY = sy + padY + ry;
+                    const botY = sy + h - padY - ry;
+                    const cx = sx + padX + rx;
+
+                    // Top ellipse
+                    ctx.beginPath();
+                    ctx.ellipse(cx, topY, rx, ry, 0, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    // Side lines
+                    ctx.beginPath();
+                    ctx.moveTo(cx - rx, topY);
+                    ctx.lineTo(cx - rx, botY);
+                    ctx.moveTo(cx + rx, topY);
+                    ctx.lineTo(cx + rx, botY);
+                    ctx.stroke();
+
+                    // Bottom front arc
+                    ctx.beginPath();
+                    ctx.ellipse(cx, botY, rx, ry, 0, 0, Math.PI);
+                    ctx.stroke();
+
+                    // Bottom rear dashed arc
+                    ctx.save();
+                    ctx.strokeStyle = dashColor;
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.ellipse(cx, botY, rx, ry, 0, Math.PI, Math.PI * 2);
+                    ctx.stroke();
+
+                    // Dashed altitude axis
+                    ctx.beginPath();
+                    ctx.moveTo(cx, topY);
+                    ctx.lineTo(cx, botY);
+                    ctx.stroke();
+                    ctx.restore();
+
+                    // Labels
+                    ctx.fillStyle = '#1e293b';
+                    ctx.font = 'bold 11px sans-serif';
+                    ctx.textAlign = 'center';
+                    const radVal = dims.radius !== undefined ? `${dims.radius}${unit}` : (shpObj.radiusLabel || 'r');
+                    const hgtVal = dims.height !== undefined ? `${dims.height}${unit}` : (shpObj.heightLabel || 'h');
+                    ctx.fillText(`r = ${radVal}`, cx + rx / 2, topY - 8);
+                    ctx.fillText(`h = ${hgtVal}`, cx - rx - 16, (topY + botY) / 2);
+                } else if (modelType === 'cone') {
+                    const padX = 40, padY = 24;
+                    const coneW = w - 2 * padX;
+                    const rx = coneW / 2;
+                    const ry = Math.min(26, coneW * 0.22);
+                    const apexX = sx + padX + rx;
+                    const apexY = sy + padY;
+                    const botY = sy + h - padY - ry;
+
+                    // Slant edges
+                    ctx.beginPath();
+                    ctx.moveTo(apexX, apexY);
+                    ctx.lineTo(apexX - rx, botY);
+                    ctx.moveTo(apexX, apexY);
+                    ctx.lineTo(apexX + rx, botY);
+                    ctx.stroke();
+
+                    // Front base arc
+                    ctx.beginPath();
+                    ctx.ellipse(apexX, botY, rx, ry, 0, 0, Math.PI);
+                    ctx.stroke();
+
+                    // Rear base dashed arc & altitude
+                    ctx.save();
+                    ctx.strokeStyle = dashColor;
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.ellipse(apexX, botY, rx, ry, 0, Math.PI, Math.PI * 2);
+                    ctx.moveTo(apexX, apexY);
+                    ctx.lineTo(apexX, botY);
+                    ctx.stroke();
+                    ctx.restore();
+
+                    // Labels
+                    ctx.fillStyle = '#1e293b';
+                    ctx.font = 'bold 11px sans-serif';
+                    ctx.textAlign = 'center';
+                    const radVal = dims.radius !== undefined ? `${dims.radius}${unit}` : (shpObj.radiusLabel || 'r');
+                    const hgtVal = dims.height !== undefined ? `${dims.height}${unit}` : (shpObj.heightLabel || 'h');
+                    const slantVal = dims.slant !== undefined ? `${dims.slant}${unit}` : (shpObj.slantLabel || 'l');
+                    ctx.fillText('V', apexX, apexY - 6);
+                    ctx.fillText(`r = ${radVal}`, apexX + rx / 2, botY + 14);
+                    ctx.fillText(`h = ${hgtVal}`, apexX - 14, (apexY + botY) / 2);
+                    ctx.fillText(`l = ${slantVal}`, apexX + rx / 2 + 14, (apexY + botY) / 2);
+                } else {
+                    // Default circle/sphere wireframe
+                    const cx = sx + w / 2, cy = sy + h / 2, r = Math.min(w, h) * 0.4;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.ellipse(cx, cy, r, r * 0.35, 0, 0, Math.PI);
+                    ctx.stroke();
+
+                    ctx.save();
+                    ctx.strokeStyle = dashColor;
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.ellipse(cx, cy, r, r * 0.35, 0, Math.PI, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+
+                    ctx.fillStyle = '#1e293b';
+                    ctx.font = 'bold 11px sans-serif';
+                    ctx.textAlign = 'center';
+                    const radVal = dims.radius !== undefined ? `${dims.radius}${unit}` : 'r';
+                    ctx.fillText(`r = ${radVal}`, cx + r / 2, cy - 6);
+                }
+                ctx.restore();
             } else if (shpObj.type === 'sparkle_path') {
                 if (shpObj.points && shpObj.points.length > 0) {
                     const pts = shpObj.points;
@@ -13301,7 +13538,9 @@ export default function Whiteboard({
         // Determine diagram shape needed
         let dType = data.diagramType;
         if (!dType) {
-            if (combined.includes('cone') || combined.includes('conical')) dType = 'cone';
+            if (combined.includes('wireframe') || (combined.includes('3d') && (combined.includes('wireframe') || combined.includes('dimension') || combined.includes('projection')))) dType = 'wireframe_3d';
+            else if (combined.includes('inscribed') || combined.includes('circumscribed') || combined.includes('remaining') || combined.includes('shaded') || (combined.includes('square') && combined.includes('circle'))) dType = 'composite_geometry';
+            else if (combined.includes('cone') || combined.includes('conical')) dType = 'cone';
             else if (combined.includes('cylinder') || combined.includes('cylindrical')) dType = 'cylinder';
             else if (combined.includes('incline') || combined.includes('ramp') || combined.includes('wedge') || combined.includes('friction')) dType = 'incline_plane';
             else if (combined.includes('right triangle') || combined.includes('hypotenuse') || combined.includes('pythagor') || combined.includes('right-angled')) dType = 'right_triangle';
@@ -13327,7 +13566,7 @@ export default function Whiteboard({
         const startX = Math.max(40, Math.round(baseCx - diagW - 40));
         const startY = Math.max(40, Math.round(baseCy - diagH / 2));
 
-        const is3DModel = ['vector_space_3d', 'sphere', 'frustum', 'hemisphere', 'capsule'].includes(dType);
+        const is3DModel = ['vector_space_3d', 'sphere', 'frustum', 'hemisphere', 'capsule'].includes(dType) && !combined.includes('wireframe') && dType !== 'wireframe_3d';
         let diagShapeProps = {};
 
         if (is3DModel) {
@@ -13470,6 +13709,32 @@ export default function Whiteboard({
                 type: 'graph',
                 showGrid: true
             };
+        } else if (dType === 'composite_geometry') {
+            diagShapeProps = {
+                type: 'composite_geometry',
+                subtype: data.subtype || data.diagramProps?.subtype || 'square_circle_inscribed',
+                sideValue: data.sideValue || data.diagramProps?.sideValue || 14,
+                radiusValue: data.radiusValue || data.diagramProps?.radiusValue || 7,
+                diameterValue: data.diameterValue || data.diagramProps?.diameterValue || 14,
+                unit: data.unit || data.diagramProps?.unit || 'cm',
+                sideLabel: data.sideLabel || data.diagramProps?.sideLabel || `s = ${data.sideValue || data.diagramProps?.sideValue || 14} ${data.unit || data.diagramProps?.unit || 'cm'}`,
+                radiusLabel: data.radiusLabel || data.diagramProps?.radiusLabel || `r = ${data.radiusValue || data.diagramProps?.radiusValue || 7} ${data.unit || data.diagramProps?.unit || 'cm'}`,
+                areaFormulaLabel: data.areaFormulaLabel || data.diagramProps?.areaFormulaLabel || null,
+                color: '#6366f1',
+                fillColor: 'rgba(99, 102, 241, 0.28)',
+                ...(data.diagramProps || {})
+            };
+        } else if (dType === 'wireframe_3d') {
+            const detectedModel = combined.includes('cone') ? 'cone' : combined.includes('cylinder') ? 'cylinder' : combined.includes('sphere') ? 'sphere' : combined.includes('cube') ? 'cube' : combined.includes('pyramid') ? 'pyramid' : combined.includes('frustum') ? 'frustum' : 'cuboid';
+            diagShapeProps = {
+                type: 'wireframe_3d',
+                modelType: data.modelType || data.diagramProps?.modelType || detectedModel,
+                dimensions: data.dimensions || data.diagramProps?.dimensions || { length: 10, width: 6, height: 5 },
+                unit: data.unit || data.diagramProps?.unit || 'cm',
+                color: '#3b82f6',
+                dashColor: '#64748b',
+                ...(data.diagramProps || {})
+            };
         }
 
         const diagramObj = is3DModel ? null : {
@@ -13553,6 +13818,128 @@ export default function Whiteboard({
         // Problem with diagram side-by-side layout
         if (canvasAction.type === 'draw_problem_with_diagram') {
             return executeProblemWithDiagramLayout(canvasAction);
+        }
+
+        // Draw Composite Geometry (Inscribed shapes, remaining shaded area, concentric circles)
+        if (canvasAction.type === 'draw_composite_geometry') {
+            const subtype = canvasAction.subtype || canvasAction.diagramProps?.subtype || 'square_circle_inscribed';
+            const reqW = canvasAction.width ? Number(canvasAction.width) : 340;
+            const reqH = canvasAction.height ? Number(canvasAction.height) : 340;
+
+            const activeCount = (pageShapeObjects[currentPageRef.current]?.length || 0) + (page3DObjects[currentPageRef.current]?.length || 0);
+            const spaceCheck = findAvailableCanvasSpace(reqW, reqH);
+            if (activeCount >= 3 && !spaceCheck.hasSpace) {
+                addNewPage();
+                toast.info('📄 Board was crowded — opened a fresh board for this diagram', { icon: '✨' });
+            }
+
+            const activeTargetPage = currentPageRef.current;
+            const defaultLeftX = spaceCheck.hasSpace ? spaceCheck.x : Math.max(40, Math.round(baseCx - reqW - 40));
+            const defaultLeftY = spaceCheck.hasSpace ? spaceCheck.y : Math.max(40, Math.round(baseCy - reqH / 2));
+            const posX = canvasAction.x !== undefined ? Number(canvasAction.x) : defaultLeftX;
+            const posY = canvasAction.y !== undefined ? Number(canvasAction.y) : defaultLeftY;
+
+            const compShape = {
+                id: `comp_geo_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                type: 'composite_geometry',
+                subtype,
+                x: posX,
+                y: posY,
+                width: reqW,
+                height: reqH,
+                color: canvasAction.color || '#6366f1',
+                strokeWidth: canvasAction.strokeWidth || 2.5,
+                fillColor: canvasAction.fillColor || 'rgba(99, 102, 241, 0.28)',
+                sideValue: canvasAction.sideValue || canvasAction.diagramProps?.sideValue || 14,
+                radiusValue: canvasAction.radiusValue || canvasAction.diagramProps?.radiusValue || 7,
+                diameterValue: canvasAction.diameterValue || canvasAction.diagramProps?.diameterValue || 14,
+                unit: canvasAction.unit || canvasAction.diagramProps?.unit || 'cm',
+                sideLabel: canvasAction.sideLabel || canvasAction.diagramProps?.sideLabel || `s = ${canvasAction.sideValue || 14} ${canvasAction.unit || 'cm'}`,
+                radiusLabel: canvasAction.radiusLabel || canvasAction.diagramProps?.radiusLabel || `r = ${canvasAction.radiusValue || 7} ${canvasAction.unit || 'cm'}`,
+                areaFormulaLabel: canvasAction.areaFormulaLabel || canvasAction.diagramProps?.areaFormulaLabel || null,
+                ...(canvasAction.diagramProps || {})
+            };
+
+            setPageShapeObjects(prev => ({
+                ...prev,
+                [activeTargetPage]: [...(prev[activeTargetPage] || []), compShape]
+            }));
+            setSelectedShapeIds([compShape.id]);
+            setTool('select');
+            saveToHistory();
+            toast.success('Drawn composite geometry with shaded area!', { icon: '📐' });
+
+            const waypoints = [
+                { x: posX + 24, y: posY + 24, label: 'AI Teacher', action: 'Square Perimeter' },
+                { x: posX + reqW - 24, y: posY + 24, label: 'AI Teacher', action: 'Side Length s' },
+                { x: posX + reqW / 2, y: posY + reqH / 2, label: 'AI Teacher', action: 'Inscribed Circle (Diameter d = s)' },
+                { x: posX + 28, y: posY + 28, label: 'AI Teacher', action: 'Shaded Remaining Corner Area' }
+            ];
+            setTimeout(() => {
+                animateTeacherLaserPath(waypoints, 1200, null, () => {
+                    setTimeout(() => setTeacherLaser(null), 600);
+                });
+            }, 300);
+
+            return true;
+        }
+
+        // Draw 3D Wireframe Diagram (Cuboid, Cube, Cylinder, Cone, Sphere, Pyramid, Frustum)
+        if (canvasAction.type === 'draw_3d_wireframe') {
+            const modelType = canvasAction.modelType || canvasAction.diagramProps?.modelType || 'cuboid';
+            const reqW = canvasAction.width ? Number(canvasAction.width) : 340;
+            const reqH = canvasAction.height ? Number(canvasAction.height) : 340;
+
+            const activeCount = (pageShapeObjects[currentPageRef.current]?.length || 0) + (page3DObjects[currentPageRef.current]?.length || 0);
+            const spaceCheck = findAvailableCanvasSpace(reqW, reqH);
+            if (activeCount >= 3 && !spaceCheck.hasSpace) {
+                addNewPage();
+                toast.info('📄 Board was crowded — opened a fresh board for this diagram', { icon: '✨' });
+            }
+
+            const activeTargetPage = currentPageRef.current;
+            const defaultLeftX = spaceCheck.hasSpace ? spaceCheck.x : Math.max(40, Math.round(baseCx - reqW - 40));
+            const defaultLeftY = spaceCheck.hasSpace ? spaceCheck.y : Math.max(40, Math.round(baseCy - reqH / 2));
+            const posX = canvasAction.x !== undefined ? Number(canvasAction.x) : defaultLeftX;
+            const posY = canvasAction.y !== undefined ? Number(canvasAction.y) : defaultLeftY;
+
+            const wireShape = {
+                id: `wire3d_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                type: 'wireframe_3d',
+                modelType,
+                x: posX,
+                y: posY,
+                width: reqW,
+                height: reqH,
+                color: canvasAction.color || '#3b82f6',
+                dashColor: canvasAction.dashColor || '#64748b',
+                strokeWidth: canvasAction.strokeWidth || 2.2,
+                dimensions: canvasAction.dimensions || canvasAction.diagramProps?.dimensions || { length: 10, width: 6, height: 5 },
+                unit: canvasAction.unit || canvasAction.diagramProps?.unit || 'cm',
+                ...(canvasAction.diagramProps || {})
+            };
+
+            setPageShapeObjects(prev => ({
+                ...prev,
+                [activeTargetPage]: [...(prev[activeTargetPage] || []), wireShape]
+            }));
+            setSelectedShapeIds([wireShape.id]);
+            setTool('select');
+            saveToHistory();
+            toast.success(`Drawn 3D ${modelType} wireframe diagram!`, { icon: '📐' });
+
+            const waypoints = [
+                { x: posX + 35, y: posY + 35, label: 'AI Teacher', action: 'Visible Edges' },
+                { x: posX + reqW - 40, y: posY + reqH - 40, label: 'AI Teacher', action: 'Dimensions & Projection' },
+                { x: posX + reqW / 2, y: posY + reqH / 2, label: 'AI Teacher', action: 'Hidden Rear Edges' }
+            ];
+            setTimeout(() => {
+                animateTeacherLaserPath(waypoints, 1100, null, () => {
+                    setTimeout(() => setTeacherLaser(null), 600);
+                });
+            }, 300);
+
+            return true;
         }
 
         // 0. Draw Native Math Diagram with Geometry Markings (Right Triangle, Triangle, Circle, Coordinate System, Rectangle, Cone, Incline Plane)
@@ -14323,7 +14710,7 @@ export default function Whiteboard({
         if (!solution) return;
 
         // 0. Problem + Diagram Side-by-Side Layout (Diagram Left • Problem Right • Free Space Below)
-        if (mode === 'problem_diagram_layout' || (mode === 'auto' && solution.question && /\b(cone|conical|cylinder|cylindrical|triangle|right triangle|pyramid|incline|ramp|wedge|pythagor|radius|slant|hypotenuse|friction|surface area|volume|free body|circle|intersect|intersection|equation|cartesian)\b/i.test(solution.question))) {
+        if (mode === 'problem_diagram_layout' || (mode === 'auto' && solution.question && /\b(inscribed|circumscribed|remaining|shaded|wireframe|cone|conical|cylinder|cylindrical|cuboid|cube|frustum|annulus|triangle|right triangle|pyramid|incline|ramp|wedge|pythagor|radius|slant|hypotenuse|friction|surface area|volume|free body|circle|intersect|intersection|equation|cartesian)\b/i.test(solution.question))) {
             const executed = executeProblemWithDiagramLayout(solution.canvasAction || solution);
             if (executed) return;
         }
@@ -25946,6 +26333,418 @@ export default function Whiteboard({
                                         )}
                                     </g>
                                 );
+                            } else if (shpObj.type === 'composite_geometry') {
+                                const w = shpObj.width || 320;
+                                const h = shpObj.height || 320;
+                                const subtype = shpObj.subtype || 'square_circle_inscribed';
+                                const mainColor = shpObj.color || '#6366f1';
+                                const shadeColor = shpObj.fillColor && shpObj.fillColor !== 'transparent' ? shpObj.fillColor : 'rgba(99, 102, 241, 0.28)';
+                                const hatchId = `hatch_cg_${shpObj.id || 'def'}`;
+                                const sW = shpObj.strokeWidth || 2.5;
+
+                                const renderDimArrow = (x1, y1, x2, y2, labelText, orient = 'top', col = '#475569') => {
+                                    const dx = x2 - x1;
+                                    const dy = y2 - y1;
+                                    const len = Math.hypot(dx, dy) || 1;
+                                    const ux = dx / len;
+                                    const uy = dy / len;
+                                    const arrS = 6;
+                                    const midX = (x1 + x2) / 2;
+                                    const midY = (y1 + y2) / 2;
+                                    const textOff = orient === 'top' || orient === 'left' ? -10 : 14;
+                                    const tx = orient === 'left' || orient === 'right' ? midX + textOff : midX;
+                                    const ty = orient === 'top' || orient === 'bottom' ? midY + textOff : midY + 4;
+                                    const anch = orient === 'left' ? 'end' : orient === 'right' ? 'start' : 'middle';
+
+                                    return (
+                                        <g key={`dim_${labelText}_${x1}_${y1}`}>
+                                            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={col} strokeWidth={1.5} />
+                                            <polygon
+                                                points={`${x1},${y1} ${x1 + ux * arrS + uy * arrS * 0.5},${y1 + uy * arrS - ux * arrS * 0.5} ${x1 + ux * arrS - uy * arrS * 0.5},${y1 + uy * arrS + ux * arrS * 0.5}`}
+                                                fill={col}
+                                            />
+                                            <polygon
+                                                points={`${x2},${y2} ${x2 - ux * arrS + uy * arrS * 0.5},${y2 - uy * arrS - ux * arrS * 0.5} ${x2 - ux * arrS - uy * arrS * 0.5},${y2 - uy * arrS + ux * arrS * 0.5}`}
+                                                fill={col}
+                                            />
+                                            {renderSvgLabel(tx, ty, labelText, anch, 11, col)}
+                                        </g>
+                                    );
+                                };
+
+                                if (subtype === 'square_circle_inscribed' || subtype === 'square_with_inscribed_circle') {
+                                    const pad = 24;
+                                    const sidePx = Math.min(w, h) - 2 * pad;
+                                    const sqX = (w - sidePx) / 2;
+                                    const sqY = (h - sidePx) / 2;
+                                    const cx = sqX + sidePx / 2;
+                                    const cy = sqY + sidePx / 2;
+                                    const r = sidePx / 2;
+
+                                    const shadedCutoutD = `M ${sqX} ${sqY} L ${sqX + sidePx} ${sqY} L ${sqX + sidePx} ${sqY + sidePx} L ${sqX} ${sqY + sidePx} Z M ${cx} ${cy - r} A ${r} ${r} 0 1 0 ${cx} ${cy + r} A ${r} ${r} 0 1 0 ${cx} ${cy - r} Z`;
+
+                                    const sideLabel = shpObj.sideLabel || `s = ${shpObj.sideValue || 14} ${shpObj.unit || 'cm'}`;
+                                    const radLabel = shpObj.radiusLabel || `r = ${shpObj.radiusValue || 7} ${shpObj.unit || 'cm'}`;
+
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <defs>
+                                                <pattern id={hatchId} width="8" height="8" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+                                                    <line x1="0" y1="0" x2="0" y2="8" stroke={mainColor} strokeWidth="1.2" opacity="0.45" />
+                                                </pattern>
+                                            </defs>
+
+                                            {/* Shaded remaining corners with evenodd fill and hatch pattern */}
+                                            <path d={shadedCutoutD} fill={shadeColor} fillRule="evenodd" stroke="none" />
+                                            <path d={shadedCutoutD} fill={`url(#${hatchId})`} fillRule="evenodd" stroke="none" />
+
+                                            {/* Outer Square */}
+                                            <rect x={sqX} y={sqY} width={sidePx} height={sidePx} fill="none" stroke={mainColor} strokeWidth={sW} />
+
+                                            {/* Inscribed Circle */}
+                                            <circle cx={cx} cy={cy} r={r} fill="rgba(255, 255, 255, 0.45)" stroke={mainColor} strokeWidth={sW} />
+
+                                            {/* Center dot O and Radius arrow line */}
+                                            <circle cx={cx} cy={cy} r={3} fill="#0f172a" />
+                                            {renderSvgLabel(cx - 8, cy + 12, 'O', 'end', 11, '#0f172a')}
+                                            <line x1={cx} y1={cy} x2={cx + r} y2={cy} stroke="#0f172a" strokeWidth={1.5} strokeDasharray="3,3" />
+                                            <polygon points={`${cx + r},${cy} ${cx + r - 6},${cy - 3} ${cx + r - 6},${cy + 3}`} fill="#0f172a" />
+                                            {renderSvgLabel(cx + r / 2, cy - 6, radLabel, 'middle', 11, '#0f172a')}
+
+                                            {/* Top dimension arrow for square side */}
+                                            {renderDimArrow(sqX, sqY - 10, sqX + sidePx, sqY - 10, sideLabel, 'top', mainColor)}
+
+                                            {/* Corner Labels A, B, C, D */}
+                                            {renderSvgLabel(sqX - 8, sqY - 6, 'A', 'end', 11, mainColor)}
+                                            {renderSvgLabel(sqX + sidePx + 8, sqY - 6, 'B', 'start', 11, mainColor)}
+                                            {renderSvgLabel(sqX + sidePx + 8, sqY + sidePx + 14, 'C', 'start', 11, mainColor)}
+                                            {renderSvgLabel(sqX - 8, sqY + sidePx + 14, 'D', 'end', 11, mainColor)}
+
+                                            {/* Shaded Area Tag at Bottom */}
+                                            {shpObj.areaFormulaLabel && (
+                                                renderSvgLabel(w / 2, sqY + sidePx + 24, shpObj.areaFormulaLabel, 'middle', 11, mainColor)
+                                            )}
+                                        </g>
+                                    );
+                                } else if (subtype === 'concentric_circles') {
+                                    const pad = 20;
+                                    const maxR = (Math.min(w, h) - 2 * pad) / 2;
+                                    const cx = w / 2, cy = h / 2;
+                                    const r2 = maxR;
+                                    const r1 = maxR * (shpObj.ratio || 0.5);
+                                    const ringD = `M ${cx} ${cy - r2} A ${r2} ${r2} 0 1 0 ${cx} ${cy + r2} A ${r2} ${r2} 0 1 0 ${cx} ${cy - r2} Z M ${cx} ${cy - r1} A ${r1} ${r1} 0 1 0 ${cx} ${cy + r1} A ${r1} ${r1} 0 1 0 ${cx} ${cy - r1} Z`;
+
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <defs>
+                                                <pattern id={hatchId} width="8" height="8" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+                                                    <line x1="0" y1="0" x2="0" y2="8" stroke={mainColor} strokeWidth="1.2" opacity="0.45" />
+                                                </pattern>
+                                            </defs>
+                                            <path d={ringD} fill={shadeColor} fillRule="evenodd" stroke="none" />
+                                            <path d={ringD} fill={`url(#${hatchId})`} fillRule="evenodd" stroke="none" />
+                                            <circle cx={cx} cy={cy} r={r2} fill="none" stroke={mainColor} strokeWidth={sW} />
+                                            <circle cx={cx} cy={cy} r={r1} fill="rgba(255, 255, 255, 0.5)" stroke={mainColor} strokeWidth={sW} />
+                                            <circle cx={cx} cy={cy} r={3} fill="#0f172a" />
+                                            {renderSvgLabel(cx - 8, cy + 12, 'O', 'end', 11, '#0f172a')}
+                                            <line x1={cx} y1={cy} x2={cx + r1} y2={cy} stroke="#0f172a" strokeWidth={1.5} strokeDasharray="3,3" />
+                                            {renderSvgLabel(cx + r1 / 2, cy - 6, shpObj.innerRadiusLabel || `r₁ = ${shpObj.r1 || 7}`, 'middle', 11, '#0f172a')}
+                                            <line x1={cx} y1={cy} x2={cx} y2={cy - r2} stroke="#0f172a" strokeWidth={1.5} strokeDasharray="3,3" />
+                                            {renderSvgLabel(cx + 8, cy - r2 / 2, shpObj.outerRadiusLabel || `r₂ = ${shpObj.r2 || 14}`, 'start', 11, '#0f172a')}
+                                        </g>
+                                    );
+                                } else {
+                                    // Default circle with inscribed square
+                                    const pad = 24;
+                                    const r = (Math.min(w, h) - 2 * pad) / 2;
+                                    const cx = w / 2, cy = h / 2;
+                                    const halfSq = r / Math.SQRT2;
+                                    const sqX = cx - halfSq;
+                                    const sqY = cy - halfSq;
+                                    const sqSide = 2 * halfSq;
+                                    const cutD = `M ${cx} ${cy - r} A ${r} ${r} 0 1 0 ${cx} ${cy + r} A ${r} ${r} 0 1 0 ${cx} ${cy - r} Z M ${sqX} ${sqY} L ${sqX + sqSide} ${sqY} L ${sqX + sqSide} ${sqY + sqSide} L ${sqX} ${sqY + sqSide} Z`;
+
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <defs>
+                                                <pattern id={hatchId} width="8" height="8" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+                                                    <line x1="0" y1="0" x2="0" y2="8" stroke={mainColor} strokeWidth="1.2" opacity="0.45" />
+                                                </pattern>
+                                            </defs>
+                                            <path d={cutD} fill={shadeColor} fillRule="evenodd" stroke="none" />
+                                            <path d={cutD} fill={`url(#${hatchId})`} fillRule="evenodd" stroke="none" />
+                                            <circle cx={cx} cy={cy} r={r} fill="none" stroke={mainColor} strokeWidth={sW} />
+                                            <rect x={sqX} y={sqY} width={sqSide} height={sqSide} fill="rgba(255, 255, 255, 0.45)" stroke={mainColor} strokeWidth={sW} />
+                                            <circle cx={cx} cy={cy} r={3} fill="#0f172a" />
+                                            <line x1={cx} y1={cy} x2={cx + r} y2={cy} stroke="#0f172a" strokeWidth={1.5} strokeDasharray="3,3" />
+                                            {renderSvgLabel(cx + r / 2, cy - 6, `r = ${shpObj.radius || 10}`, 'middle', 11, '#0f172a')}
+                                        </g>
+                                    );
+                                }
+                            } else if (shpObj.type === 'wireframe_3d') {
+                                const w = shpObj.width || 320;
+                                const h = shpObj.height || 320;
+                                const modelType = shpObj.modelType || 'cuboid';
+                                const mainColor = shpObj.color || '#3b82f6';
+                                const dashColor = shpObj.dashColor || '#64748b';
+                                const sW = shpObj.strokeWidth || 2.2;
+                                const dims = shpObj.dimensions || {};
+                                const unit = shpObj.unit || ' cm';
+
+                                const renderDimArrow = (x1, y1, x2, y2, labelText, orient = 'top', col = '#475569') => {
+                                    const dx = x2 - x1;
+                                    const dy = y2 - y1;
+                                    const len = Math.hypot(dx, dy) || 1;
+                                    const ux = dx / len;
+                                    const uy = dy / len;
+                                    const arrS = 6;
+                                    const midX = (x1 + x2) / 2;
+                                    const midY = (y1 + y2) / 2;
+                                    const textOff = orient === 'top' || orient === 'left' ? -10 : 14;
+                                    const tx = orient === 'left' || orient === 'right' ? midX + textOff : midX;
+                                    const ty = orient === 'top' || orient === 'bottom' ? midY + textOff : midY + 4;
+                                    const anch = orient === 'left' ? 'end' : orient === 'right' ? 'start' : 'middle';
+
+                                    return (
+                                        <g key={`dim_${labelText}_${x1}_${y1}`}>
+                                            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={col} strokeWidth={1.5} />
+                                            <polygon
+                                                points={`${x1},${y1} ${x1 + ux * arrS + uy * arrS * 0.5},${y1 + uy * arrS - ux * arrS * 0.5} ${x1 + ux * arrS - uy * arrS * 0.5},${y1 + uy * arrS + ux * arrS * 0.5}`}
+                                                fill={col}
+                                            />
+                                            <polygon
+                                                points={`${x2},${y2} ${x2 - ux * arrS + uy * arrS * 0.5},${y2 - uy * arrS - ux * arrS * 0.5} ${x2 - ux * arrS - uy * arrS * 0.5},${y2 - uy * arrS + ux * arrS * 0.5}`}
+                                                fill={col}
+                                            />
+                                            {renderSvgLabel(tx, ty, labelText, anch, 11, col)}
+                                        </g>
+                                    );
+                                };
+
+                                const renderRightAngle = (ox, oy, dx1, dy1, dx2, dy2, size = 9, col = mainColor) => (
+                                    <path
+                                        d={`M ${ox + dx1 * size} ${oy + dy1 * size} L ${ox + dx1 * size + dx2 * size} ${oy + dy1 * size + dy2 * size} L ${ox + dx2 * size} ${oy + dy2 * size}`}
+                                        fill="none"
+                                        stroke={col}
+                                        strokeWidth={1.5}
+                                    />
+                                );
+
+                                if (modelType === 'cuboid' || modelType === 'cube' || modelType === 'box') {
+                                    const padX = 35, padY = 35;
+                                    const fw = (w - 2 * padX) * 0.72;
+                                    const fh = (h - 2 * padY) * 0.72;
+                                    const depthX = (w - 2 * padX) * 0.28;
+                                    const depthY = (h - 2 * padY) * 0.28;
+                                    const fx = padX;
+                                    const fy = h - padY - fh;
+
+                                    const A = [fx, fy], B = [fx + fw, fy], C = [fx + fw, fy + fh], D = [fx, fy + fh];
+                                    const Ap = [fx + depthX, fy - depthY], Bp = [fx + fw + depthX, fy - depthY], Cp = [fx + fw + depthX, fy + fh - depthY], Dp = [fx + depthX, fy + fh - depthY];
+
+                                    const lenVal = dims.length !== undefined ? `${dims.length}${unit}` : (shpObj.lengthLabel || 'l');
+                                    const widVal = dims.width !== undefined ? `${dims.width}${unit}` : (shpObj.widthLabel || 'w');
+                                    const hgtVal = dims.height !== undefined ? `${dims.height}${unit}` : (shpObj.heightLabel || 'h');
+
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <polygon points={`${A[0]},${A[1]} ${B[0]},${B[1]} ${Bp[0]},${Bp[1]} ${Ap[0]},${Ap[1]}`} fill="rgba(59, 130, 246, 0.08)" />
+                                            <polygon points={`${B[0]},${B[1]} ${C[0]},${C[1]} ${Cp[0]},${Cp[1]} ${Bp[0]},${Bp[1]}`} fill="rgba(59, 130, 246, 0.14)" />
+                                            <polygon points={`${A[0]},${A[1]} ${B[0]},${B[1]} ${C[0]},${C[1]} ${D[0]},${D[1]}`} fill="rgba(59, 130, 246, 0.04)" />
+
+                                            {/* Hidden rear dashed edges */}
+                                            <line x1={D[0]} y1={D[1]} x2={Dp[0]} y2={Dp[1]} stroke={dashColor} strokeWidth={sW * 0.8} strokeDasharray="4,4" />
+                                            <line x1={Ap[0]} y1={Ap[1]} x2={Dp[0]} y2={Dp[1]} stroke={dashColor} strokeWidth={sW * 0.8} strokeDasharray="4,4" />
+                                            <line x1={Dp[0]} y1={Dp[1]} x2={Cp[0]} y2={Cp[1]} stroke={dashColor} strokeWidth={sW * 0.8} strokeDasharray="4,4" />
+
+                                            {/* Visible solid edges */}
+                                            <polygon points={`${A[0]},${A[1]} ${B[0]},${B[1]} ${C[0]},${C[1]} ${D[0]},${D[1]}`} fill="none" stroke={mainColor} strokeWidth={sW} strokeLinejoin="round" />
+                                            <polyline points={`${A[0]},${A[1]} ${Ap[0]},${Ap[1]} ${Bp[0]},${Bp[1]} ${B[0]},${B[1]}`} fill="none" stroke={mainColor} strokeWidth={sW} strokeLinejoin="round" />
+                                            <polyline points={`${Bp[0]},${Bp[1]} ${Cp[0]},${Cp[1]} ${C[0]},${C[1]}`} fill="none" stroke={mainColor} strokeWidth={sW} strokeLinejoin="round" />
+
+                                            {/* Dimension arrows with values */}
+                                            {renderDimArrow(D[0], D[1] + 16, C[0], C[1] + 16, `Length = ${lenVal}`, 'bottom', mainColor)}
+                                            {renderDimArrow(D[0] - 14, D[1], A[0] - 14, A[1], `Height = ${hgtVal}`, 'left', mainColor)}
+                                            {renderDimArrow(C[0] + 10, C[1] + 6, Cp[0] + 10, Cp[1] + 6, `Width = ${widVal}`, 'right', mainColor)}
+
+                                            {/* Vertex dots */}
+                                            <circle cx={A[0]} cy={A[1]} r={2.5} fill={mainColor} />
+                                            <circle cx={B[0]} cy={B[1]} r={2.5} fill={mainColor} />
+                                            <circle cx={C[0]} cy={C[1]} r={2.5} fill={mainColor} />
+                                            <circle cx={D[0]} cy={D[1]} r={2.5} fill={mainColor} />
+                                        </g>
+                                    );
+                                } else if (modelType === 'cylinder') {
+                                    const padX = 40, padY = 30;
+                                    const cylW = w - 2 * padX;
+                                    const rx = cylW / 2;
+                                    const ry = Math.min(26, cylW * 0.22);
+                                    const topY = padY + ry;
+                                    const botY = h - padY - ry;
+                                    const cx = padX + rx;
+
+                                    const radVal = dims.radius !== undefined ? `${dims.radius}${unit}` : (shpObj.radiusLabel || 'r');
+                                    const hgtVal = dims.height !== undefined ? `${dims.height}${unit}` : (shpObj.heightLabel || 'h');
+
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <path d={`M ${cx - rx} ${topY} L ${cx - rx} ${botY} A ${rx} ${ry} 0 0 0 ${cx + rx} ${botY} L ${cx + rx} ${topY} Z`} fill="rgba(59, 130, 246, 0.06)" />
+                                            <path d={`M ${cx - rx} ${botY} A ${rx} ${ry} 0 0 1 ${cx + rx} ${botY}`} fill="none" stroke={dashColor} strokeWidth={sW * 0.85} strokeDasharray="4,4" />
+                                            <path d={`M ${cx - rx} ${botY} A ${rx} ${ry} 0 0 0 ${cx + rx} ${botY}`} fill="none" stroke={mainColor} strokeWidth={sW} />
+                                            <line x1={cx - rx} y1={topY} x2={cx - rx} y2={botY} stroke={mainColor} strokeWidth={sW} />
+                                            <line x1={cx + rx} y1={topY} x2={cx + rx} y2={botY} stroke={mainColor} strokeWidth={sW} />
+                                            <ellipse cx={cx} cy={topY} rx={rx} ry={ry} fill="rgba(59, 130, 246, 0.12)" stroke={mainColor} strokeWidth={sW} />
+
+                                            {/* Dashed altitude and right angle */}
+                                            <line x1={cx} y1={topY} x2={cx} y2={botY} stroke={dashColor} strokeWidth={1.5} strokeDasharray="4,4" />
+                                            <circle cx={cx} cy={topY} r={3} fill="#0f172a" />
+                                            <circle cx={cx} cy={botY} r={3} fill="#0f172a" />
+                                            {renderRightAngle(cx, botY, 1, 0, 0, -1, 9, mainColor)}
+
+                                            {/* Top radius line with arrow */}
+                                            <line x1={cx} y1={topY} x2={cx + rx} y2={topY} stroke="#0f172a" strokeWidth={1.5} strokeDasharray="3,3" />
+                                            <polygon points={`${cx + rx},${topY} ${cx + rx - 5},${topY - 3} ${cx + rx - 5},${topY + 3}`} fill="#0f172a" />
+                                            {renderSvgLabel(cx + rx / 2, topY - 8, `r = ${radVal}`, 'middle', 11, '#0f172a')}
+
+                                            {/* Height dimension arrow on the left */}
+                                            {renderDimArrow(cx - rx - 18, topY, cx - rx - 18, botY, `h = ${hgtVal}`, 'left', mainColor)}
+                                        </g>
+                                    );
+                                } else if (modelType === 'cone') {
+                                    const padX = 40, padY = 24;
+                                    const coneW = w - 2 * padX;
+                                    const rx = coneW / 2;
+                                    const ry = Math.min(26, coneW * 0.22);
+                                    const apexX = padX + rx;
+                                    const apexY = padY;
+                                    const botY = h - padY - ry;
+
+                                    const radVal = dims.radius !== undefined ? `${dims.radius}${unit}` : (shpObj.radiusLabel || 'r');
+                                    const hgtVal = dims.height !== undefined ? `${dims.height}${unit}` : (shpObj.heightLabel || 'h');
+                                    const slantVal = dims.slant !== undefined ? `${dims.slant}${unit}` : (shpObj.slantLabel || 'l');
+
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <path d={`M ${apexX} ${apexY} L ${apexX - rx} ${botY} A ${rx} ${ry} 0 0 0 ${apexX + rx} ${botY} Z`} fill="rgba(59, 130, 246, 0.08)" />
+                                            <path d={`M ${apexX - rx} ${botY} A ${rx} ${ry} 0 0 1 ${apexX + rx} ${botY}`} fill="none" stroke={dashColor} strokeWidth={sW * 0.85} strokeDasharray="4,4" />
+                                            <path d={`M ${apexX - rx} ${botY} A ${rx} ${ry} 0 0 0 ${apexX + rx} ${botY}`} fill="none" stroke={mainColor} strokeWidth={sW} />
+                                            <line x1={apexX} y1={apexY} x2={apexX - rx} y2={botY} stroke={mainColor} strokeWidth={sW} />
+                                            <line x1={apexX} y1={apexY} x2={apexX + rx} y2={botY} stroke={mainColor} strokeWidth={sW} />
+
+                                            {/* Apex dot and label V */}
+                                            <circle cx={apexX} cy={apexY} r={3.5} fill={mainColor} />
+                                            {renderSvgLabel(apexX, apexY - 8, 'V', 'middle', 12, mainColor)}
+
+                                            {/* Dashed altitude axis */}
+                                            <line x1={apexX} y1={apexY} x2={apexX} y2={botY} stroke={dashColor} strokeWidth={1.5} strokeDasharray="4,4" />
+                                            <circle cx={apexX} cy={botY} r={3} fill="#0f172a" />
+                                            {renderRightAngle(apexX, botY, 1, 0, 0, -1, 9, mainColor)}
+                                            {renderSvgLabel(apexX - 10, (apexY + botY) / 2, `h = ${hgtVal}`, 'end', 11, '#0f172a')}
+
+                                            {/* Base radius line */}
+                                            <line x1={apexX} y1={botY} x2={apexX + rx} y2={botY} stroke="#0f172a" strokeWidth={1.5} strokeDasharray="3,3" />
+                                            <polygon points={`${apexX + rx},${botY} ${apexX + rx - 5},${botY - 3} ${apexX + rx - 5},${botY + 3}`} fill="#0f172a" />
+                                            {renderSvgLabel(apexX + rx / 2, botY + 14, `r = ${radVal}`, 'middle', 11, '#0f172a')}
+
+                                            {/* Slant height label */}
+                                            {renderSvgLabel((apexX + apexX + rx) / 2 + 16, (apexY + botY) / 2, `l = ${slantVal}`, 'start', 11, mainColor)}
+                                        </g>
+                                    );
+                                } else if (modelType === 'sphere') {
+                                    const pad = 28;
+                                    const r = (Math.min(w, h) - 2 * pad) / 2;
+                                    const cx = w / 2, cy = h / 2;
+                                    const ry = r * 0.35;
+                                    const radVal = dims.radius !== undefined ? `${dims.radius}${unit}` : (shpObj.radiusLabel || 'r');
+
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <circle cx={cx} cy={cy} r={r} fill="rgba(59, 130, 246, 0.08)" stroke={mainColor} strokeWidth={sW} />
+                                            <path d={`M ${cx - r} ${cy} A ${r} ${ry} 0 0 1 ${cx + r} ${cy}`} fill="none" stroke={dashColor} strokeWidth={sW * 0.85} strokeDasharray="4,4" />
+                                            <path d={`M ${cx - r} ${cy} A ${r} ${ry} 0 0 0 ${cx + r} ${cy}`} fill="none" stroke={mainColor} strokeWidth={sW * 0.9} />
+                                            <path d={`M ${cx} ${cy - r} A ${ry} ${r} 0 0 1 ${cx} ${cy + r}`} fill="none" stroke={dashColor} strokeWidth={sW * 0.8} strokeDasharray="4,4" opacity="0.6" />
+                                            <path d={`M ${cx} ${cy - r} A ${ry} ${r} 0 0 0 ${cx} ${cy + r}`} fill="none" stroke={mainColor} strokeWidth={sW * 0.85} opacity="0.8" />
+                                            <circle cx={cx} cy={cy} r={3.5} fill="#0f172a" />
+                                            {renderSvgLabel(cx - 8, cy + 12, 'O', 'end', 11, '#0f172a')}
+                                            <line x1={cx} y1={cy} x2={cx + r} y2={cy} stroke="#0f172a" strokeWidth={1.5} strokeDasharray="3,3" />
+                                            <polygon points={`${cx + r},${cy} ${cx + r - 5},${cy - 3} ${cx + r - 5},${cy + 3}`} fill="#0f172a" />
+                                            {renderSvgLabel(cx + r / 2, cy - 8, `r = ${radVal}`, 'middle', 11, '#0f172a')}
+                                        </g>
+                                    );
+                                } else if (modelType === 'pyramid') {
+                                    const padX = 35, padY = 28;
+                                    const pyrW = w - 2 * padX;
+                                    const pyrH = h - 2 * padY;
+                                    const apexX = padX + pyrW / 2;
+                                    const apexY = padY;
+                                    const botY = padY + pyrH;
+                                    const baseDx = pyrW * 0.28;
+                                    const baseDy = pyrH * 0.22;
+                                    const A = [padX, botY];
+                                    const B = [padX + pyrW - baseDx, botY];
+                                    const C = [padX + pyrW, botY - baseDy];
+                                    const D = [padX + baseDx, botY - baseDy];
+                                    const baseCenter = [(A[0] + B[0] + C[0] + D[0]) / 4, (A[1] + B[1] + C[1] + D[1]) / 4];
+                                    const lenVal = dims.length !== undefined ? `${dims.length}${unit}` : (shpObj.lengthLabel || 'l');
+                                    const hgtVal = dims.height !== undefined ? `${dims.height}${unit}` : (shpObj.heightLabel || 'h');
+
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <polygon points={`${apexX},${apexY} ${A[0]},${A[1]} ${B[0]},${B[1]}`} fill="rgba(59, 130, 246, 0.08)" />
+                                            <polygon points={`${apexX},${apexY} ${B[0]},${B[1]} ${C[0]},${C[1]}`} fill="rgba(59, 130, 246, 0.14)" />
+                                            <line x1={A[0]} y1={A[1]} x2={D[0]} y2={D[1]} stroke={dashColor} strokeWidth={sW * 0.85} strokeDasharray="4,4" />
+                                            <line x1={D[0]} y1={D[1]} x2={C[0]} y2={C[1]} stroke={dashColor} strokeWidth={sW * 0.85} strokeDasharray="4,4" />
+                                            <line x1={apexX} y1={apexY} x2={D[0]} y2={D[1]} stroke={dashColor} strokeWidth={sW * 0.85} strokeDasharray="4,4" />
+                                            <line x1={A[0]} y1={A[1]} x2={B[0]} y2={B[1]} stroke={mainColor} strokeWidth={sW} />
+                                            <line x1={B[0]} y1={B[1]} x2={C[0]} y2={C[1]} stroke={mainColor} strokeWidth={sW} />
+                                            <line x1={apexX} y1={apexY} x2={A[0]} y2={A[1]} stroke={mainColor} strokeWidth={sW} />
+                                            <line x1={apexX} y1={apexY} x2={B[0]} y2={B[1]} stroke={mainColor} strokeWidth={sW} />
+                                            <line x1={apexX} y1={apexY} x2={C[0]} y2={C[1]} stroke={mainColor} strokeWidth={sW} />
+                                            <circle cx={apexX} cy={apexY} r={3.5} fill={mainColor} />
+                                            {renderSvgLabel(apexX, apexY - 8, 'V', 'middle', 12, mainColor)}
+                                            <line x1={apexX} y1={apexY} x2={baseCenter[0]} y2={baseCenter[1]} stroke={dashColor} strokeWidth={1.5} strokeDasharray="4,4" />
+                                            <circle cx={baseCenter[0]} cy={baseCenter[1]} r={2.5} fill="#0f172a" />
+                                            {renderSvgLabel(apexX - 10, (apexY + baseCenter[1]) / 2, `h = ${hgtVal}`, 'end', 11, '#0f172a')}
+                                            {renderDimArrow(A[0], A[1] + 14, B[0], B[1] + 14, `Base = ${lenVal}`, 'bottom', mainColor)}
+                                        </g>
+                                    );
+                                } else {
+                                    // Frustum of cone
+                                    const padX = 35, padY = 24;
+                                    const topW = (w - 2 * padX) * 0.55;
+                                    const botW = w - 2 * padX;
+                                    const topRx = topW / 2;
+                                    const topRy = Math.min(18, topW * 0.2);
+                                    const botRx = botW / 2;
+                                    const botRy = Math.min(24, botW * 0.2);
+                                    const topY = padY + topRy;
+                                    const botY = h - padY - botRy;
+                                    const cx = w / 2;
+
+                                    const r1Val = dims.r1 !== undefined ? `${dims.r1}${unit}` : (shpObj.r1Label || 'r₁');
+                                    const r2Val = dims.r2 !== undefined ? `${dims.r2}${unit}` : (shpObj.r2Label || 'r₂');
+                                    const hgtVal = dims.height !== undefined ? `${dims.height}${unit}` : (shpObj.heightLabel || 'h');
+
+                                    return (
+                                        <g style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}>
+                                            <path d={`M ${cx - topRx} ${topY} L ${cx - botRx} ${botY} A ${botRx} ${botRy} 0 0 0 ${cx + botRx} ${botY} L ${cx + topRx} ${topY} Z`} fill="rgba(59, 130, 246, 0.08)" />
+                                            <path d={`M ${cx - botRx} ${botY} A ${botRx} ${botRy} 0 0 1 ${cx + botRx} ${botY}`} fill="none" stroke={dashColor} strokeWidth={sW * 0.85} strokeDasharray="4,4" />
+                                            <path d={`M ${cx - botRx} ${botY} A ${botRx} ${botRy} 0 0 0 ${cx + botRx} ${botY}`} fill="none" stroke={mainColor} strokeWidth={sW} />
+                                            <line x1={cx - topRx} y1={topY} x2={cx - botRx} y2={botY} stroke={mainColor} strokeWidth={sW} />
+                                            <line x1={cx + topRx} y1={topY} x2={cx + botRx} y2={botY} stroke={mainColor} strokeWidth={sW} />
+                                            <ellipse cx={cx} cy={topY} rx={topRx} ry={topRy} fill="rgba(59, 130, 246, 0.12)" stroke={mainColor} strokeWidth={sW} />
+                                            <line x1={cx} y1={topY} x2={cx} y2={botY} stroke={dashColor} strokeWidth={1.5} strokeDasharray="4,4" />
+                                            <circle cx={cx} cy={topY} r={3} fill="#0f172a" />
+                                            <circle cx={cx} cy={botY} r={3} fill="#0f172a" />
+                                            {renderRightAngle(cx, botY, 1, 0, 0, -1, 9, mainColor)}
+                                            <line x1={cx} y1={topY} x2={cx + topRx} y2={topY} stroke="#0f172a" strokeWidth={1.5} strokeDasharray="3,3" />
+                                            {renderSvgLabel(cx + topRx / 2, topY - 6, `r₁ = ${r1Val}`, 'middle', 11, '#0f172a')}
+                                            <line x1={cx} y1={botY} x2={cx + botRx} y2={botY} stroke="#0f172a" strokeWidth={1.5} strokeDasharray="3,3" />
+                                            {renderSvgLabel(cx + botRx / 2, botY + 14, `r₂ = ${r2Val}`, 'middle', 11, '#0f172a')}
+                                            {renderDimArrow(cx - botRx - 16, topY, cx - botRx - 16, botY, `h = ${hgtVal}`, 'left', mainColor)}
+                                        </g>
+                                    );
+                                }
                             }
                             if (shpObj.type === 'drawing' || shpObj.type === 'svg' || shpObj.type === 'sketch' || shpObj.svg) {
                                 let svgContent = shpObj.svg;

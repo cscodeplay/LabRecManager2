@@ -25,14 +25,75 @@ const getColLabel = (index) => {
     return label;
 };
 
+// Comprehensive color families for cell backgrounds (soft pastels to deep tones)
+const COLOR_FAMILIES = [
+    {
+        name: 'Monochrome',
+        colors: ['#ffffff', '#f8fafc', '#f1f5f9', '#e2e8f0', '#cbd5e1', '#94a3b8', '#64748b', '#334155', '#1e293b', '#0f172a', '#000000']
+    },
+    {
+        name: 'Rose & Red',
+        colors: ['#fff1f2', '#ffe4e6', '#fecdd3', '#fda4af', '#fb7185', '#f43f5e', '#e11d48', '#be123c', '#9f1239', '#881337', '#4c0519']
+    },
+    {
+        name: 'Amber & Orange',
+        colors: ['#fffbeb', '#fef3c7', '#fde68a', '#fcd34d', '#fbbf24', '#f59e0b', '#d97706', '#b45309', '#92400e', '#78350f', '#451a03']
+    },
+    {
+        name: 'Yellow & Lime',
+        colors: ['#fefce8', '#fef9c3', '#fef08a', '#facc15', '#eab308', '#ca8a04', '#a16207', '#84cc16', '#65a30d', '#4d7c0f', '#365314']
+    },
+    {
+        name: 'Emerald & Green',
+        colors: ['#ecfdf5', '#d1fae5', '#a7f3d0', '#6ee7b7', '#34d399', '#10b981', '#059669', '#047857', '#065f46', '#064e3b', '#022c22']
+    },
+    {
+        name: 'Teal & Cyan',
+        colors: ['#f0fdfa', '#ccfbf1', '#99f6e4', '#5eead4', '#2dd4bf', '#14b8a6', '#0d9488', '#0f766e', '#115e59', '#134e4a', '#042f2e']
+    },
+    {
+        name: 'Sky & Blue',
+        colors: ['#f0f9ff', '#e0f2fe', '#bae6fd', '#7dd3fc', '#38bdf8', '#0ea5e9', '#0284c7', '#0369a1', '#075985', '#0c4a6e', '#172554']
+    },
+    {
+        name: 'Indigo & Violet',
+        colors: ['#eef2ff', '#e0e7ff', '#c7d2fe', '#a5b4fc', '#818cf8', '#6366f1', '#4f46e5', '#4338ca', '#3730a3', '#312e81', '#1e1b4b']
+    },
+    {
+        name: 'Purple & Fuchsia',
+        colors: ['#faf5ff', '#f3e8ff', '#e9d5ff', '#d8b4fe', '#c084fc', '#a855f7', '#9333ea', '#7e22ce', '#6b21a8', '#581c87', '#3b0764']
+    },
+    {
+        name: 'Pink & Magenta',
+        colors: ['#fdf2f8', '#fce7f3', '#fbcfe8', '#f472b6', '#ec4899', '#db2777', '#be185d', '#9d174d', '#831843', '#701a75', '#500724']
+    }
+];
+
+const hexToRgba = (hex, alpha = 1) => {
+    if (!hex) return '';
+    if (hex.startsWith('rgba') || hex.startsWith('rgb')) return hex;
+    let cleanHex = hex.replace('#', '');
+    if (cleanHex.length === 3) {
+        cleanHex = cleanHex.split('').map(c => c + c).join('');
+    }
+    if (cleanHex.length !== 6) return hex;
+    const r = parseInt(cleanHex.substring(0, 2), 16);
+    const g = parseInt(cleanHex.substring(2, 4), 16);
+    const b = parseInt(cleanHex.substring(4, 6), 16);
+    if (alpha >= 1) return `#${cleanHex}`;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
 /**
  * Rich Whiteboard Spreadsheet Table Object.
  * Features:
  * - Corner Box (34x26): click selects all cells, drag moves table across whiteboard
  * - Column Header labels (A, B, C...): click selects column, divider drag resizes column width
  * - Row Header numbers (1, 2, 3...): click selects row, divider drag resizes row height
- * - 8-point outer resize handles for proportional table resizing
- * - Inline cell editing directly on overlay: Enter moves down (auto-adds row), Tab moves right (auto-wraps)
+ * - 8-point outer resize handles for viewport resizing
+ * - Synchronized edge scrollbars (horizontal on bottom edge, vertical on right edge)
+ * - Single consolidated formatting bar safely positioned above table
+ * - Comprehensive cell background color palette (8 families, translucency, custom picker)
  * - Copy/Paste tabular data from/to Excel & Word tables via TSV/clipboard
  * - KaTeX math rendering, image attachments, and in-cell ink doodling
  */
@@ -71,6 +132,12 @@ export default function WhiteboardTableObject({
     const gridWidth = totalWidth + CORNER_WIDTH;
     const gridHeight = totalHeight + HEADER_HEIGHT;
 
+    // Viewport dimensions for scrollable table container
+    const containerWidth = table.width ? Math.max(160, table.width) : gridWidth;
+    const containerHeight = table.height ? Math.max(90, table.height) : gridHeight;
+    const hasHorizontalOverflow = gridWidth > containerWidth;
+    const hasVerticalOverflow = gridHeight > containerHeight;
+
     // Styling
     const borderColor = table.borderColor || '#334155';
     const borderWidth = table.borderWidth || 2;
@@ -99,6 +166,8 @@ export default function WhiteboardTableObject({
     const [showColorMenu, setShowColorMenu] = useState(false);
     const [showBgMenu, setShowBgMenu] = useState(false);
     const [showSizeMenu, setShowSizeMenu] = useState(false);
+    const [bgOpacity, setBgOpacity] = useState(1); // 0.15, 0.35, 0.65, 1
+    const [customHexInput, setCustomHexInput] = useState('');
 
     // Modal Cell Editor (for advanced Doodle / Image / KaTeX formulas)
     const [activeCellKey, setActiveCellKey] = useState(null);
@@ -629,7 +698,7 @@ export default function WhiteboardTableObject({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // 8-point outer resize handles
+    // 8-point outer resize handles (resizes viewport box; content scrolls if smaller than grid)
     const startOuterResize = (handle, e) => {
         if (isLocked) return;
         e.stopPropagation();
@@ -640,10 +709,8 @@ export default function WhiteboardTableObject({
 
         const startX = table.x || 100;
         const startY = table.y || 100;
-        const startW = totalWidth;
-        const startH = totalHeight;
-        const initialColWidths = [...colWidths];
-        const initialRowHeights = [...rowHeights];
+        const startW = containerWidth;
+        const startH = containerHeight;
 
         const onPointerMove = (ev) => {
             const curX = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
@@ -657,40 +724,28 @@ export default function WhiteboardTableObject({
             let newH = startH;
 
             if (handle.includes('e')) {
-                newW = Math.max(120, Math.round(startW + dx));
+                newW = Math.max(160, Math.round(startW + dx));
             }
             if (handle.includes('w')) {
-                const potentialW = Math.max(120, Math.round(startW - dx));
+                const potentialW = Math.max(160, Math.round(startW - dx));
                 newX = Math.round(startX + (startW - potentialW));
                 newW = potentialW;
             }
             if (handle.includes('s')) {
-                newH = Math.max(80, Math.round(startH + dy));
+                newH = Math.max(90, Math.round(startH + dy));
             }
             if (handle.includes('n')) {
-                const potentialH = Math.max(80, Math.round(startH - dy));
+                const potentialH = Math.max(90, Math.round(startH - dy));
                 newY = Math.round(startY + (startH - potentialH));
                 newH = potentialH;
             }
-
-            // Scale colWidths proportionally
-            const wRatio = newW / startW;
-            const scaledColWidths = initialColWidths.map(w => Math.max(40, Math.round(w * wRatio)));
-            const actualW = scaledColWidths.reduce((a, b) => a + b, 0);
-
-            // Scale rowHeights proportionally
-            const hRatio = newH / startH;
-            const scaledRowHeights = initialRowHeights.map(h => Math.max(25, Math.round(h * hRatio)));
-            const actualH = scaledRowHeights.reduce((a, b) => a + b, 0);
 
             onUpdate({
                 ...table,
                 x: newX,
                 y: newY,
-                width: actualW,
-                height: actualH,
-                colWidths: scaledColWidths,
-                rowHeights: scaledRowHeights
+                width: newW,
+                height: newH
             });
         };
 
@@ -886,8 +941,8 @@ export default function WhiteboardTableObject({
             style={{
                 left: table.x || 100,
                 top: table.y || 100,
-                width: gridWidth,
-                height: gridHeight,
+                width: containerWidth,
+                height: containerHeight,
                 zIndex: zIndex,
                 pointerEvents: 'auto'
             }}
@@ -899,19 +954,86 @@ export default function WhiteboardTableObject({
             onPaste={handlePaste}
             onKeyDown={handleContainerKeyDown}
         >
-            {/* 1. Excel-Like Cell Formatting Toolbar (Shown when Table & Cell are Selected) */}
-            {isSelected && selectedCellKey && (
+            {/* Unified Floating Table Format Bar (Safely positioned above table to NEVER obstruct column headers) */}
+            {isSelected && (
                 <div 
-                    className="absolute -top-22 left-0 min-w-max flex items-center gap-1.5 bg-slate-900/95 border border-slate-700/80 rounded-xl px-2 py-1 shadow-2xl backdrop-blur-md text-slate-300 text-xs z-50 pointer-events-auto"
+                    className="absolute left-0 min-w-max max-w-[95vw] flex items-center gap-1.5 bg-slate-900/95 border border-slate-700/80 rounded-xl px-2.5 py-1.5 shadow-2xl backdrop-blur-md text-slate-300 text-xs z-50 pointer-events-auto"
+                    style={{ bottom: 'calc(100% + 14px)' }}
                     onClick={e => e.stopPropagation()}
                     onPointerDown={e => e.stopPropagation()}
                 >
-                    {/* Active Cell Reference Indicator (e.g. A1, B2) */}
-                    <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg font-mono font-bold text-[11px] shadow-xs">
-                        <span>{cellRefLabel || 'Cell'}</span>
+                    {/* 1. Drag Move Handle */}
+                    <div 
+                        onPointerDown={handleMovePointerDown}
+                        className="flex items-center gap-1.5 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg cursor-grab active:cursor-grabbing font-semibold text-[11px] transition shadow-xs"
+                        title="Drag to move table across whiteboard"
+                    >
+                        <Move className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Move</span>
+                    </div>
+
+                    {/* Table Dimensions & Quick Add/Remove */}
+                    <div className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-800/80 border border-slate-700/60 rounded-lg">
+                        <span className="font-mono text-[11px] text-slate-300 font-bold" title="Rows × Columns">
+                            {rows}R × {cols}C
+                        </span>
+                        <div className="h-3 w-px bg-slate-700 mx-0.5" />
+                        <button
+                            type="button"
+                            onClick={handleAddRow}
+                            className="px-1 py-0.5 hover:bg-slate-700 text-slate-400 hover:text-emerald-300 rounded text-[10px] font-bold transition"
+                            title="Add Row to Bottom"
+                        >
+                            +R
+                        </button>
+                        {rows > 1 && (
+                            <button
+                                type="button"
+                                onClick={handleRemoveRow}
+                                className="px-1 py-0.5 hover:bg-slate-700 text-slate-400 hover:text-red-300 rounded text-[10px] font-bold transition"
+                                title="Remove Bottom Row"
+                            >
+                                -R
+                            </button>
+                        )}
+                        <div className="h-3 w-px bg-slate-700 mx-0.5" />
+                        <button
+                            type="button"
+                            onClick={handleAddColumn}
+                            className="px-1 py-0.5 hover:bg-slate-700 text-slate-400 hover:text-emerald-300 rounded text-[10px] font-bold transition"
+                            title="Add Column to Right"
+                        >
+                            +C
+                        </button>
+                        {cols > 1 && (
+                            <button
+                                type="button"
+                                onClick={handleRemoveColumn}
+                                className="px-1 py-0.5 hover:bg-slate-700 text-slate-400 hover:text-red-300 rounded text-[10px] font-bold transition"
+                                title="Remove Right Column"
+                            >
+                                -C
+                            </button>
+                        )}
                     </div>
 
                     <div className="h-4 w-px bg-slate-700 mx-0.5" />
+
+                    {/* Active Cell Reference Indicator */}
+                    <div 
+                        className="flex items-center gap-1 px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-lg font-mono font-bold text-[11px] shadow-xs"
+                        title="Selected Cell / Range"
+                    >
+                        <span>
+                            {selectionMode === 'ALL' 
+                                ? 'All Cells' 
+                                : selectionMode === 'COL' && selectedCol !== null 
+                                    ? `Col ${getColLabel(selectedCol)}`
+                                    : selectionMode === 'ROW' && selectedRow !== null
+                                        ? `Row ${selectedRow + 1}`
+                                        : cellRefLabel || 'A1'}
+                        </span>
+                    </div>
 
                     {/* Font Family Selector */}
                     <div className="relative">
@@ -930,7 +1052,7 @@ export default function WhiteboardTableObject({
                             <ChevronDown className="w-3 h-3 text-slate-400" />
                         </button>
                         {showFontMenu && (
-                            <div className="absolute top-full left-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1 z-50 flex flex-col min-w-[110px]">
+                            <div className="absolute bottom-full left-0 mb-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1 z-50 flex flex-col min-w-[110px]">
                                 {[
                                     { id: 'sans', label: 'Sans (Inter)' },
                                     { id: 'serif', label: 'Serif (Times)' },
@@ -972,7 +1094,7 @@ export default function WhiteboardTableObject({
                             <ChevronDown className="w-3 h-3 text-slate-400" />
                         </button>
                         {showSizeMenu && (
-                            <div className="absolute top-full left-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1 z-50 flex flex-col min-w-[70px]">
+                            <div className="absolute bottom-full left-0 mb-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1 z-50 flex flex-col min-w-[70px]">
                                 {[10, 11, 12, 14, 16, 18, 20, 24].map(sz => (
                                     <button
                                         key={sz}
@@ -1095,7 +1217,7 @@ export default function WhiteboardTableObject({
                             <div className="w-2 h-2 rounded-full border border-slate-600" style={{ backgroundColor: selectedCell?.color || '#ffffff' }} />
                         </button>
                         {showColorMenu && (
-                            <div className="absolute top-full left-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 z-50 grid grid-cols-6 gap-1 min-w-[140px]">
+                            <div className="absolute bottom-full left-0 mb-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 z-50 grid grid-cols-6 gap-1 min-w-[140px]">
                                 {['#ffffff', '#f8fafc', '#94a3b8', '#f87171', '#fb923c', '#fbbf24', '#4ade80', '#22d3ee', '#818cf8', '#c084fc', '#f472b6', '#000000'].map(c => (
                                     <button
                                         key={c}
@@ -1112,7 +1234,7 @@ export default function WhiteboardTableObject({
                         )}
                     </div>
 
-                    {/* Cell Fill Background Tint Picker */}
+                    {/* Comprehensive Cell Fill Background Color Palette */}
                     <div className="relative">
                         <button
                             type="button"
@@ -1123,55 +1245,141 @@ export default function WhiteboardTableObject({
                                 setShowSizeMenu(false);
                             }}
                             className="flex items-center gap-1 p-1 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition"
-                            title="Cell Background Fill"
+                            title="Cell Background Color Palette"
                         >
                             <Palette className="w-3.5 h-3.5" style={{ color: selectedCell?.bg || '#38bdf8' }} />
+                            <div 
+                                className="w-2 h-2 rounded-full border border-slate-600" 
+                                style={{ backgroundColor: selectedCell?.bg || 'transparent' }} 
+                            />
                         </button>
                         {showBgMenu && (
-                            <div className="absolute top-full left-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 z-50 grid grid-cols-5 gap-1.5 min-w-[140px]">
-                                {[
-                                    { color: '', label: 'None' },
-                                    { color: '#0f172a', label: 'Dark' },
-                                    { color: '#1e293b', label: 'Slate' },
-                                    { color: '#1e1b4b', label: 'Indigo' },
-                                    { color: '#064e3b', label: 'Emerald' },
-                                    { color: '#451a03', label: 'Amber' },
-                                    { color: '#4c0519', label: 'Rose' },
-                                    { color: '#172554', label: 'Blue' },
-                                    { color: '#581c87', label: 'Purple' },
-                                    { color: '#134e4a', label: 'Teal' }
-                                ].map(item => (
+                            <div 
+                                className="absolute bottom-full left-0 mb-1.5 bg-slate-950 border border-slate-700 rounded-2xl shadow-2xl p-3 z-50 w-72 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100"
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                                    <div className="flex items-center gap-1.5">
+                                        <Palette className="w-3.5 h-3.5 text-indigo-400" />
+                                        <span className="font-semibold text-xs text-slate-200">Cell Color Palette</span>
+                                    </div>
                                     <button
-                                        key={item.color || 'none'}
                                         type="button"
                                         onClick={() => {
-                                            updateSelectedCell({ bg: item.color });
+                                            updateSelectedCell({ bg: '' });
                                             setShowBgMenu(false);
                                         }}
-                                        className={`w-5 h-5 rounded-md border border-slate-700 hover:scale-110 transition flex items-center justify-center text-[8px] ${
-                                            !item.color ? 'bg-transparent text-slate-400' : ''
-                                        }`}
-                                        style={item.color ? { backgroundColor: item.color } : {}}
-                                        title={item.label}
+                                        className="px-2 py-0.5 text-[10px] font-bold bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-300 rounded border border-slate-700 transition"
+                                        title="Clear background fill"
                                     >
-                                        {!item.color && '∅'}
+                                        ∅ No Fill
                                     </button>
-                                ))}
+                                </div>
+
+                                {/* Opacity / Tint Presets */}
+                                <div className="flex items-center justify-between mb-2.5 px-1 py-1 bg-slate-900 rounded-lg border border-slate-800 text-[10px]">
+                                    <span className="text-slate-400 font-medium pl-1">Tint:</span>
+                                    <div className="flex items-center gap-1">
+                                        {[
+                                            { label: '15%', val: 0.15 },
+                                            { label: '35%', val: 0.35 },
+                                            { label: '65%', val: 0.65 },
+                                            { label: '100%', val: 1.0 }
+                                        ].map(op => (
+                                            <button
+                                                key={op.label}
+                                                type="button"
+                                                onClick={() => setBgOpacity(op.val)}
+                                                className={`px-1.5 py-0.5 rounded font-mono transition ${
+                                                    bgOpacity === op.val 
+                                                        ? 'bg-indigo-600 text-white font-bold shadow-xs' 
+                                                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                                }`}
+                                            >
+                                                {op.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Swatch Families */}
+                                <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-700">
+                                    {COLOR_FAMILIES.map(fam => (
+                                        <div key={fam.name} className="flex items-center gap-1">
+                                            <div className="grid grid-cols-11 gap-1 w-full">
+                                                {fam.colors.map(col => {
+                                                    const finalCol = hexToRgba(col, bgOpacity);
+                                                    const isCurrent = selectedCell?.bg === finalCol || selectedCell?.bg === col;
+                                                    return (
+                                                        <button
+                                                            key={col}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                updateSelectedCell({ bg: finalCol });
+                                                                setShowBgMenu(false);
+                                                            }}
+                                                            className={`w-5 h-5 rounded-md border border-slate-700/60 hover:scale-125 transition-transform relative ${
+                                                                isCurrent ? 'ring-2 ring-indigo-400 scale-110 z-10' : ''
+                                                            }`}
+                                                            style={{ backgroundColor: col }}
+                                                            title={`${fam.name} (${col})`}
+                                                        />
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Custom Hex / Color Input */}
+                                <div className="flex items-center gap-1.5 pt-2.5 mt-2 border-t border-slate-800">
+                                    <label className="relative cursor-pointer shrink-0">
+                                        <input
+                                            type="color"
+                                            value={customHexInput.startsWith('#') ? customHexInput : '#6366f1'}
+                                            onChange={e => {
+                                                setCustomHexInput(e.target.value);
+                                                updateSelectedCell({ bg: hexToRgba(e.target.value, bgOpacity) });
+                                            }}
+                                            className="sr-only"
+                                        />
+                                        <div 
+                                            className="w-6 h-6 rounded-lg border border-slate-700 shadow-xs hover:scale-105 transition"
+                                            style={{ backgroundColor: customHexInput || '#6366f1' }}
+                                            title="Pick custom color wheel"
+                                        />
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="#hex color"
+                                        value={customHexInput}
+                                        onChange={e => setCustomHexInput(e.target.value)}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter' && customHexInput) {
+                                                updateSelectedCell({ bg: hexToRgba(customHexInput, bgOpacity) });
+                                                setShowBgMenu(false);
+                                            }
+                                        }}
+                                        className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-[11px] font-mono outline-hidden focus:border-indigo-500"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (customHexInput) {
+                                                updateSelectedCell({ bg: hexToRgba(customHexInput, bgOpacity) });
+                                                setShowBgMenu(false);
+                                            }
+                                        }}
+                                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold shadow transition"
+                                    >
+                                        Apply
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>
 
                     <div className="h-4 w-px bg-slate-700 mx-0.5" />
-
-                    {/* Copy Table / Cells */}
-                    <button
-                        type="button"
-                        onClick={copyTableDataToClipboard}
-                        className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
-                        title="Copy to Clipboard (TSV / Excel / Word)"
-                    >
-                        <Clipboard className="w-3.5 h-3.5 text-emerald-400" />
-                    </button>
 
                     {/* Text Wrap Toggle */}
                     <button
@@ -1203,11 +1411,11 @@ export default function WhiteboardTableObject({
                         f(x)
                     </button>
 
-                    {/* Advanced Modal Editor Trigger (for image/doodle) */}
+                    {/* Advanced Modal Editor Trigger (doodle, image) */}
                     <button
                         type="button"
                         onClick={() => {
-                            const [r, c] = selectedCellKey.split('-').map(Number);
+                            const [r, c] = selectedCellKey ? selectedCellKey.split('-').map(Number) : [0, 0];
                             handleOpenCellEditor(r, c);
                         }}
                         className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
@@ -1215,206 +1423,210 @@ export default function WhiteboardTableObject({
                     >
                         <Edit3 className="w-3.5 h-3.5 text-indigo-400" />
                     </button>
-                </div>
-            )}
 
-            {/* 2. Control Bar (shown when selected) */}
-            {isSelected && (
-                <div 
-                    className="absolute -top-11 left-0 right-0 flex items-center justify-between bg-slate-900/95 border border-slate-700/80 rounded-xl px-2.5 py-1 shadow-xl backdrop-blur-xs text-slate-300 text-xs z-50 pointer-events-auto"
-                    onClick={e => e.stopPropagation()}
-                >
-                    {/* Drag Move Handle */}
-                    <div 
-                        onPointerDown={handleMovePointerDown}
-                        className="flex items-center gap-1.5 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg cursor-grab active:cursor-grabbing font-semibold text-[11px] transition"
-                        title="Drag to move table"
+                    <div className="h-4 w-px bg-slate-700 mx-0.5" />
+
+                    {/* Copy Table Data TSV */}
+                    <button
+                        type="button"
+                        onClick={copyTableDataToClipboard}
+                        className="p-1 hover:bg-slate-800 text-slate-400 hover:text-emerald-300 rounded-lg transition"
+                        title="Copy Table Data (TSV / Excel / Word)"
                     >
-                        <Move className="w-3.5 h-3.5 text-indigo-400" />
-                        <span>Move Table</span>
-                    </div>
+                        <Clipboard className="w-3.5 h-3.5" />
+                    </button>
 
-                    <div className="flex items-center gap-1">
-                        <span className="text-[11px] text-slate-400 font-mono">
-                            {rows}R × {cols}C
-                        </span>
+                    {/* Lock / Unlock */}
+                    <button
+                        type="button"
+                        onClick={() => onUpdate({ ...table, isLocked: !isLocked })}
+                        className={`p-1 rounded-lg transition ${
+                            isLocked ? 'bg-amber-500/20 text-amber-300' : 'hover:bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        title={isLocked ? "Unlock Table" : "Lock Table"}
+                    >
+                        {isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                    </button>
 
-                        <div className="h-4 w-px bg-slate-700 mx-1" />
+                    {/* Duplicate Table */}
+                    <button
+                        type="button"
+                        onClick={() => onDuplicate?.(tableId)}
+                        className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
+                        title="Duplicate Table"
+                    >
+                        <Copy className="w-3.5 h-3.5" />
+                    </button>
 
-                        {/* Copy Table Data */}
-                        <button
-                            type="button"
-                            onClick={copyTableDataToClipboard}
-                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-emerald-300 rounded-lg transition"
-                            title="Copy Table Data (Ctrl+C)"
-                        >
-                            <Clipboard className="w-3.5 h-3.5" />
-                        </button>
+                    {/* Layer Bring Forward */}
+                    <button
+                        type="button"
+                        onClick={() => onBringForward?.(tableId)}
+                        className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
+                        title="Bring to Front"
+                    >
+                        <ChevronsUp className="w-3.5 h-3.5" />
+                    </button>
 
-                        {/* Lock / Unlock */}
-                        <button
-                            type="button"
-                            onClick={() => onUpdate({ ...table, isLocked: !isLocked })}
-                            className={`p-1 rounded-lg transition ${
-                                isLocked ? 'bg-amber-500/20 text-amber-300' : 'hover:bg-slate-800 text-slate-400 hover:text-white'
-                            }`}
-                            title={isLocked ? "Unlock Table" : "Lock Table"}
-                        >
-                            {isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-                        </button>
+                    {/* Layer Send Backward */}
+                    <button
+                        type="button"
+                        onClick={() => onSendBackward?.(tableId)}
+                        className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
+                        title="Send to Back"
+                    >
+                        <ChevronsDown className="w-3.5 h-3.5" />
+                    </button>
 
-                        {/* Duplicate */}
-                        <button
-                            type="button"
-                            onClick={() => onDuplicate?.(tableId)}
-                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
-                            title="Duplicate Table"
-                        >
-                            <Copy className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* Layer Bring to Front */}
-                        <button
-                            type="button"
-                            onClick={() => onBringForward?.(tableId)}
-                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
-                            title="Bring to Front"
-                        >
-                            <ChevronsUp className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* Layer Send to Back */}
-                        <button
-                            type="button"
-                            onClick={() => onSendBackward?.(tableId)}
-                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
-                            title="Send to Back"
-                        >
-                            <ChevronsDown className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* Delete Table */}
-                        <button
-                            type="button"
-                            onClick={() => onDelete?.(tableId)}
-                            className="p-1 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-lg transition"
-                            title="Delete Table"
-                        >
-                            <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                    </div>
+                    {/* Delete Table */}
+                    <button
+                        type="button"
+                        onClick={() => onDelete?.(tableId)}
+                        className="p-1 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-lg transition"
+                        title="Delete Table"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                 </div>
             )}
 
-            {/* 3. Table Grid DOM Structure */}
+            {/* 2. Table Grid DOM Structure with Sticky Headers & High-Visibility Edge Scrollbars */}
             <div 
-                className="relative overflow-hidden rounded-xl shadow-lg border"
+                className="whiteboard-table-viewport relative overflow-auto rounded-xl shadow-lg border"
                 style={{
-                    width: gridWidth,
-                    height: gridHeight,
+                    width: containerWidth,
+                    height: containerHeight,
+                    maxWidth: containerWidth,
+                    maxHeight: containerHeight,
                     borderColor: borderColor,
                     borderWidth: borderWidth,
                     backgroundColor: cellBg
                 }}
             >
-                {/* Top Row: Corner Box + Column Headers */}
-                <div className="flex w-full" style={{ height: HEADER_HEIGHT }}>
-                    {/* Top-Left Corner Box (Selects All Cells / Drag to Move) */}
-                    <div
-                        className={`table-corner-box shrink-0 flex items-center justify-center border-r border-b cursor-grab active:cursor-grabbing select-none transition ${
-                            selectionMode === 'ALL'
-                                ? 'bg-indigo-600/40 text-indigo-200 border-indigo-500'
-                                : 'bg-slate-900/95 hover:bg-slate-800 text-slate-400 hover:text-white'
-                        }`}
-                        style={{
-                            width: CORNER_WIDTH,
-                            height: HEADER_HEIGHT,
-                            borderColor: borderColor
-                        }}
-                        onClick={handleSelectAll}
-                        onPointerDown={handleMovePointerDown}
-                        title="Click to select all cells / Drag to move table"
-                    >
-                        <Move className="w-3.5 h-3.5" />
-                    </div>
+                <style>{`
+                    .whiteboard-table-viewport::-webkit-scrollbar {
+                        width: 9px;
+                        height: 9px;
+                    }
+                    .whiteboard-table-viewport::-webkit-scrollbar-track {
+                        background: rgba(15, 23, 42, 0.85);
+                        border-radius: 4px;
+                    }
+                    .whiteboard-table-viewport::-webkit-scrollbar-thumb {
+                        background: rgba(100, 116, 139, 0.85);
+                        border-radius: 4px;
+                        border: 1px solid rgba(51, 65, 85, 0.6);
+                    }
+                    .whiteboard-table-viewport::-webkit-scrollbar-thumb:hover {
+                        background: rgba(99, 102, 241, 0.95);
+                    }
+                    .whiteboard-table-viewport::-webkit-scrollbar-corner {
+                        background: rgba(15, 23, 42, 0.95);
+                    }
+                `}</style>
 
-                    {/* Column Labels Strip (A, B, C...) */}
-                    <div className="flex flex-1 overflow-hidden" style={{ height: HEADER_HEIGHT }}>
-                        {Array.from({ length: cols }).map((_, cIdx) => {
-                            const cWidth = colWidths[cIdx] || 100;
-                            const isColSel = selectionMode === 'COL' && selectedCol === cIdx;
-                            const isAllSel = selectionMode === 'ALL';
-                            return (
-                                <div
-                                    key={`col-hdr-${cIdx}`}
-                                    onClick={(e) => handleSelectCol(cIdx, e)}
-                                    className={`table-header-col relative flex items-center justify-center text-[11px] font-bold border-r border-b select-none transition ${
-                                        isColSel || isAllSel
-                                            ? 'bg-indigo-600/40 text-indigo-100 font-extrabold border-indigo-500'
-                                            : 'bg-slate-900/90 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                                    }`}
-                                    style={{
-                                        width: cWidth,
-                                        height: HEADER_HEIGHT,
-                                        borderColor: borderColor
-                                    }}
-                                    title={`Select Column ${getColLabel(cIdx)}`}
-                                >
-                                    <span>{getColLabel(cIdx)}</span>
+                {/* Inner Content Sized to Full Grid Dimensions */}
+                <div style={{ width: gridWidth, minWidth: gridWidth, height: gridHeight, minHeight: gridHeight }}>
+                    {/* Top Row: Corner Box (sticky top-0 left-0) + Column Headers (sticky top-0) */}
+                    <div className="flex sticky top-0 z-30 bg-slate-900" style={{ height: HEADER_HEIGHT, width: gridWidth }}>
+                        {/* Top-Left Corner Box (Selects All Cells / Drag to Move) */}
+                        <div
+                            className={`table-corner-box shrink-0 sticky left-0 z-40 flex items-center justify-center border-r border-b cursor-grab active:cursor-grabbing select-none transition ${
+                                selectionMode === 'ALL'
+                                    ? 'bg-indigo-600/40 text-indigo-200 border-indigo-500'
+                                    : 'bg-slate-900/95 hover:bg-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                            style={{
+                                width: CORNER_WIDTH,
+                                height: HEADER_HEIGHT,
+                                borderColor: borderColor
+                            }}
+                            onClick={handleSelectAll}
+                            onPointerDown={handleMovePointerDown}
+                            title="Click to select all cells / Drag to move table"
+                        >
+                            <Move className="w-3.5 h-3.5" />
+                        </div>
 
-                                    {/* Column divider drag resize */}
+                        {/* Column Labels Strip (A, B, C...) */}
+                        <div className="flex flex-1 overflow-hidden" style={{ height: HEADER_HEIGHT }}>
+                            {Array.from({ length: cols }).map((_, cIdx) => {
+                                const cWidth = colWidths[cIdx] || 100;
+                                const isColSel = selectionMode === 'COL' && selectedCol === cIdx;
+                                const isAllSel = selectionMode === 'ALL';
+                                return (
                                     <div
-                                        onPointerDown={(e) => startColResize(cIdx, e)}
-                                        className="absolute top-0 right-0 w-2.5 h-full -mr-1.5 cursor-col-resize z-20 hover:bg-indigo-500/70 transition-colors"
-                                        title="Drag to resize column width"
-                                        onClick={(e) => e.stopPropagation()}
-                                    />
-                                </div>
-                            );
-                        })}
+                                        key={`col-hdr-${cIdx}`}
+                                        onClick={(e) => handleSelectCol(cIdx, e)}
+                                        className={`table-header-col relative flex items-center justify-center text-[11px] font-bold border-r border-b select-none transition ${
+                                            isColSel || isAllSel
+                                                ? 'bg-indigo-600/40 text-indigo-100 font-extrabold border-indigo-500'
+                                                : 'bg-slate-900/90 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                                        }`}
+                                        style={{
+                                            width: cWidth,
+                                            minWidth: cWidth,
+                                            height: HEADER_HEIGHT,
+                                            borderColor: borderColor
+                                        }}
+                                        title={`Select Column ${getColLabel(cIdx)}`}
+                                    >
+                                        <span>{getColLabel(cIdx)}</span>
+
+                                        {/* Column divider drag resize */}
+                                        <div
+                                            onPointerDown={(e) => startColResize(cIdx, e)}
+                                            className="absolute top-0 right-0 w-2.5 h-full -mr-1.5 cursor-col-resize z-20 hover:bg-indigo-500/70 transition-colors"
+                                            title="Drag to resize column width"
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
-                </div>
 
-                {/* Bottom Body: Row Headers + Cells Grid */}
-                <div className="flex w-full" style={{ height: totalHeight }}>
-                    {/* Row Headers Strip (1, 2, 3...) */}
-                    <div className="flex flex-col shrink-0" style={{ width: CORNER_WIDTH, height: totalHeight }}>
-                        {Array.from({ length: rows }).map((_, rIdx) => {
-                            const rHeight = rowHeights[rIdx] || 50;
-                            const isRowSel = selectionMode === 'ROW' && selectedRow === rIdx;
-                            const isAllSel = selectionMode === 'ALL';
-                            return (
-                                <div
-                                    key={`row-hdr-${rIdx}`}
-                                    onClick={(e) => handleSelectRow(rIdx, e)}
-                                    className={`table-header-row relative flex items-center justify-center text-[10px] font-mono font-bold border-r border-b select-none transition ${
-                                        isRowSel || isAllSel
-                                            ? 'bg-indigo-600/40 text-indigo-100 font-extrabold border-indigo-500'
-                                            : 'bg-slate-900/90 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                                    }`}
-                                    style={{
-                                        width: CORNER_WIDTH,
-                                        height: rHeight,
-                                        borderColor: borderColor
-                                    }}
-                                    title={`Select Row ${rIdx + 1}`}
-                                >
-                                    <span>{rIdx + 1}</span>
-
-                                    {/* Row divider drag resize */}
+                    {/* Bottom Body: Row Headers (sticky left-0) + Cells Grid */}
+                    <div className="flex" style={{ height: totalHeight, width: gridWidth }}>
+                        {/* Row Headers Strip (1, 2, 3...) */}
+                        <div className="flex flex-col shrink-0 sticky left-0 z-20 bg-slate-900" style={{ width: CORNER_WIDTH, height: totalHeight }}>
+                            {Array.from({ length: rows }).map((_, rIdx) => {
+                                const rHeight = rowHeights[rIdx] || 50;
+                                const isRowSel = selectionMode === 'ROW' && selectedRow === rIdx;
+                                const isAllSel = selectionMode === 'ALL';
+                                return (
                                     <div
-                                        onPointerDown={(e) => startRowResize(rIdx, e)}
-                                        className="absolute bottom-0 left-0 w-full h-2.5 -mb-1.5 cursor-row-resize z-20 hover:bg-indigo-500/70 transition-colors"
-                                        title="Drag to resize row height"
-                                        onClick={(e) => e.stopPropagation()}
-                                    />
-                                </div>
-                            );
-                        })}
-                    </div>
+                                        key={`row-hdr-${rIdx}`}
+                                        onClick={(e) => handleSelectRow(rIdx, e)}
+                                        className={`table-header-row relative flex items-center justify-center text-[10px] font-mono font-bold border-r border-b select-none transition ${
+                                            isRowSel || isAllSel
+                                                ? 'bg-indigo-600/40 text-indigo-100 font-extrabold border-indigo-500'
+                                                : 'bg-slate-900/90 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                                        }`}
+                                        style={{
+                                            width: CORNER_WIDTH,
+                                            height: rHeight,
+                                            minHeight: rHeight,
+                                            borderColor: borderColor
+                                        }}
+                                        title={`Select Row ${rIdx + 1}`}
+                                    >
+                                        <span>{rIdx + 1}</span>
 
-                    {/* Cells Grid */}
-                    <div className="flex flex-col flex-1" style={{ width: totalWidth, height: totalHeight }}>
+                                        {/* Row divider drag resize */}
+                                        <div
+                                            onPointerDown={(e) => startRowResize(rIdx, e)}
+                                            className="absolute bottom-0 left-0 w-full h-2.5 -mb-1.5 cursor-row-resize z-20 hover:bg-indigo-500/70 transition-colors"
+                                            title="Drag to resize row height"
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Cells Grid */}
+                        <div className="flex flex-col flex-1 z-10" style={{ width: totalWidth, height: totalHeight }}>
                         {Array.from({ length: rows }).map((_, rIdx) => {
                             const isHeader = hasHeaderRow && rIdx === 0;
                             const rHeight = rowHeights[rIdx] || 50;
@@ -1573,6 +1785,7 @@ export default function WhiteboardTableObject({
                     </div>
                 </div>
             </div>
+        </div>
 
             {/* 4. 8-Point Outer Resize Handles */}
             {isSelected && !isLocked && (

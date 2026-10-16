@@ -911,6 +911,437 @@ class GeometrySolverService {
             latexSteps: steps
         };
     }
+
+    /**
+     * Parses composite geometry problems from text (e.g. square with inscribed circle, finding remaining/shaded area).
+     */
+    parseCompositeGeometryFromText(text) {
+        if (!text || typeof text !== 'string') return null;
+        const low = text.toLowerCase();
+
+        const hasCompositeKeywords = /\b(inscribed|circumscribed|remaining\s*(?:part|area|portion)|shaded\s*(?:area|region|part)|cutout|cut\s*out|leftover|between\s*(?:the)?\s*(?:square|circle|shapes)|annulus|concentric|ring)\b/i.test(low);
+        const hasSquare = /\bsquare\b/i.test(low);
+        const hasCircle = /\bcircle\b/i.test(low);
+        const hasConcentric = /\bconcentric\b/i.test(low) || (/\bring\b/i.test(low) && hasCircle);
+
+        if (!hasCompositeKeywords && !(hasSquare && hasCircle)) return null;
+
+        const unitMatch = low.match(/\b(cm|m|mm|inches|inch|ft|feet|units)\b/i);
+        const unit = unitMatch ? unitMatch[1] : 'cm';
+
+        // 1. Concentric circles / Annulus ring
+        if (hasConcentric) {
+            const radiiMatches = [...low.matchAll(/(?:radius|radii|r\d?|r)\s*(?:of|=|is|:)?\s*(\d+(?:\.\d+)?)/gi)].map(m => Number(m[1]));
+            let r1 = 7, r2 = 14;
+            if (radiiMatches.length >= 2) {
+                r1 = Math.min(radiiMatches[0], radiiMatches[1]);
+                r2 = Math.max(radiiMatches[0], radiiMatches[1]);
+            } else if (radiiMatches.length === 1) {
+                r1 = radiiMatches[0];
+                r2 = r1 * 2;
+            }
+            return {
+                subtype: 'concentric_circles',
+                r1,
+                r2,
+                unit,
+                rawText: text
+            };
+        }
+
+        // 2. Square with Inscribed Circle (or Circle Inscribed in Square)
+        if (hasSquare && hasCircle) {
+            const isCircleInSquare = /\b(circle\s*inscribed\s*in\s*(?:a\s*)?square|square\s*(?:which\s*has\s*|with\s*(?:an?\s*)?)?circle\s*inscribed|diameter\s*equal\s*to\s*side|inscribed\s*in\s*it\s*with\s*diameter|remaining\s*part\s*for\s*square)\b/i.test(low) || !/\bsquare\s*inscribed\s*in\s*(?:a\s*)?circle\b/i.test(low);
+
+            if (isCircleInSquare) {
+                // Extract side length
+                let side = null;
+                const sideMatch = low.match(/(?:side\s*length|side\s*of|side)\s*(?:of|=|is|:)?\s*(\d+(?:\.\d+)?)/i);
+                if (sideMatch) side = Number(sideMatch[1]);
+
+                if (!side) {
+                    const diaMatch = low.match(/(?:diameter\s*of|diameter)\s*(?:of|=|is|:)?\s*(\d+(?:\.\d+)?)/i);
+                    if (diaMatch) side = Number(diaMatch[1]);
+                }
+                if (!side) {
+                    const radMatch = low.match(/(?:radius\s*of|radius)\s*(?:of|=|is|:)?\s*(\d+(?:\.\d+)?)/i);
+                    if (radMatch) side = Number(radMatch[1]) * 2;
+                }
+                if (!side) {
+                    const numMatch = low.match(/(\d+(?:\.\d+)?)\s*(?:cm|m|mm|units)?\s*square/i);
+                    if (numMatch) side = Number(numMatch[1]);
+                }
+
+                const isGeneral = !side;
+                const resolvedSide = side || 14; // Standard textbook default (s = 14 => r = 7 => integer area 154)
+
+                return {
+                    subtype: 'square_circle_inscribed',
+                    side: resolvedSide,
+                    radius: resolvedSide / 2,
+                    diameter: resolvedSide,
+                    isGeneral,
+                    unit,
+                    rawText: text
+                };
+            } else {
+                // Square inscribed in circle
+                let radius = null;
+                const radMatch = low.match(/(?:radius\s*of|radius)\s*(?:of|=|is|:)?\s*(\d+(?:\.\d+)?)/i);
+                if (radMatch) radius = Number(radMatch[1]);
+                const resolvedRad = radius || 10;
+                return {
+                    subtype: 'circle_square_inscribed',
+                    radius: resolvedRad,
+                    unit,
+                    rawText: text
+                };
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Solves composite geometry problems with exact step-by-step LaTeX and diagram specifications.
+     */
+    solveCompositeGeometry(parsed) {
+        if (!parsed) return null;
+        const { subtype, unit, rawText } = parsed;
+
+        if (subtype === 'square_circle_inscribed') {
+            const s = parsed.side;
+            const r = parsed.radius;
+            const pi = Math.PI;
+            const areaSquare = s * s;
+            const areaCircleExact = r * r;
+            const areaCircleDec = Math.round(pi * r * r * 100) / 100;
+            const areaCirclePi227 = Math.round((22 / 7) * r * r * 100) / 100;
+            const areaRemExactDec = Math.round((areaSquare - pi * r * r) * 100) / 100;
+            const areaRemPi227 = Math.round((areaSquare - (22 / 7) * r * r) * 100) / 100;
+
+            const formulaLatex = `A_{\\text{remaining}} = A_{\\text{square}} - A_{\\text{circle}} = s^2 - \\pi r^2 = s^2 - \\pi \\left(\\frac{s}{2}\\right)^2 = s^2\\left(1 - \\frac{\\pi}{4}\\right)`;
+
+            const isGen = parsed.isGeneral;
+            const speechResponse = isGen
+                ? `For a square of side s with an inscribed circle of diameter d = s (radius r = s/2), the area of the square is s² and the circle is π(s/2)². The area of the remaining shaded corner region is s²(1 - π/4), which is approximately 0.2146 s². For instance, with side s = 14 ${unit}, the square has area 196 ${unit}², the circle 154 ${unit}², leaving 42 ${unit}² in the four corners.`
+                : `For a square of side ${s} ${unit} with an inscribed circle of diameter ${s} ${unit} (radius ${r} ${unit}), the area of the square is ${areaSquare} ${unit}² and the circle's area is ${areaCircleExact}π ≈ ${areaCircleDec} ${unit}². Subtracting the circle gives the remaining shaded corner area as ${areaRemExactDec} ${unit}² (or ${areaRemPi227} ${unit}² using π ≈ 22/7).`;
+
+            const solutionMarkdown = `### 📌 Given & Concept\n` +
+                `- **Square Side Length:** $s = ${s}\\text{ ${unit}}$\n` +
+                `- **Inscribed Circle Diameter:** $d = s = ${s}\\text{ ${unit}}$\n` +
+                `- **Inscribed Circle Radius:** $r = \\frac{d}{2} = \\frac{s}{2} = ${r}\\text{ ${unit}}$\n` +
+                `- **Target Region:** Area of the remaining portion (the 4 shaded corner regions between the square and the inscribed circle).\n\n` +
+                `### 📐 Formula\n` +
+                `$$${formulaLatex}$$\n\n` +
+                `### 🔢 Step-by-Step Solution\n` +
+                `1. **Area of the Square ($A_{\\text{square}}$):**\n` +
+                `   $$A_{\\text{square}} = s^2 = (${s})^2 = ${areaSquare}\\text{ ${unit}}^2$$\n` +
+                `2. **Area of the Inscribed Circle ($A_{\\text{circle}}$):**\n` +
+                `   Since the circle touches all four sides of the square, its diameter equals the side length ($d = s = ${s}\\text{ ${unit}}$), so $r = ${r}\\text{ ${unit}}$:\n` +
+                `   $$A_{\\text{circle}} = \\pi r^2 = \\pi (${r})^2 = ${areaCircleExact}\\pi \\approx ${areaCircleDec}\\text{ ${unit}}^2$$\n` +
+                `   *(Using $\\pi \\approx \\frac{22}{7}$: $A_{\\text{circle}} = \\frac{22}{7} \\times ${r}^2 = ${areaCirclePi227}\\text{ ${unit}}^2$)*\n` +
+                `3. **Area of the Remaining (Shaded) Corner Part:**\n` +
+                `   Subtract the circle's area from the square's area:\n` +
+                `   $$A_{\\text{remaining}} = A_{\\text{square}} - A_{\\text{circle}} = ${areaSquare} - ${areaCircleExact}\\pi \\approx ${areaSquare} - ${areaCircleDec} = ${areaRemExactDec}\\text{ ${unit}}^2$$\n` +
+                `   *(With $\\pi \\approx \\frac{22}{7}$: $A_{\\text{remaining}} = ${areaSquare} - ${areaCirclePi227} = ${areaRemPi227}\\text{ ${unit}}^2$)*\n\n` +
+                `### ✅ Final Answer\n` +
+                `$$\\boxed{A_{\\text{remaining}} = ${areaSquare} - ${areaCircleExact}\\pi \\approx ${areaRemExactDec}\\text{ ${unit}}^2 \\quad \\left(\\text{or } ${areaRemPi227}\\text{ ${unit}}^2 \\text{ using } \\pi = \\frac{22}{7}\\right)}$$`;
+
+            const diagramProps = {
+                subtype: 'square_circle_inscribed',
+                sideValue: s,
+                radiusValue: r,
+                diameterValue: s,
+                unit,
+                sideLabel: `s = ${s} ${unit}`,
+                radiusLabel: `r = ${r} ${unit}`,
+                diameterLabel: `d = s = ${s} ${unit}`,
+                areaFormulaLabel: `Shaded Area = ${areaRemExactDec} ${unit}² (${areaSquare} - ${areaCircleExact}π)`,
+                color: '#6366f1'
+            };
+
+            return {
+                subtype,
+                speechResponse,
+                solutionMarkdown,
+                diagramProps,
+                suggestedFollowUps: [
+                    `🔢 Area with side 20 ${unit}`,
+                    `⭕ Perimeter of remaining boundary`,
+                    `📐 Circle circumscribing square`,
+                    `📄 Clean blank board`
+                ]
+            };
+        }
+
+        if (subtype === 'concentric_circles') {
+            const { r1, r2 } = parsed;
+            const pi = Math.PI;
+            const aOuter = Math.round(pi * r2 * r2 * 100) / 100;
+            const aInner = Math.round(pi * r1 * r1 * 100) / 100;
+            const aRing = Math.round(pi * (r2 * r2 - r1 * r1) * 100) / 100;
+            const aRingExact = r2 * r2 - r1 * r1;
+
+            const speechResponse = `For concentric circles with inner radius ${r1} ${unit} and outer radius ${r2} ${unit}, the area of the circular ring path is π(r₂² - r₁²) = ${aRingExact}π ≈ ${aRing} ${unit}².`;
+
+            const solutionMarkdown = `### 📌 Given & Concept\n` +
+                `- **Inner Radius:** $r_1 = ${r1}\\text{ ${unit}}$\n` +
+                `- **Outer Radius:** $r_2 = ${r2}\\text{ ${unit}}$\n` +
+                `- **Ring (Annulus) Area:** Area between the two concentric circles.\n\n` +
+                `### 📐 Formula\n` +
+                `$$A_{\\text{ring}} = \\pi (r_2^2 - r_1^2) = \\pi (r_2 - r_1)(r_2 + r_1)$$\n\n` +
+                `### 🔢 Step-by-Step Solution\n` +
+                `1. **Outer Circle Area:** $A_2 = \\pi r_2^2 = \\pi (${r2})^2 = ${r2 * r2}\\pi \\approx ${aOuter}\\text{ ${unit}}^2$\n` +
+                `2. **Inner Circle Area:** $A_1 = \\pi r_1^2 = \\pi (${r1})^2 = ${r1 * r1}\\pi \\approx ${aInner}\\text{ ${unit}}^2$\n` +
+                `3. **Shaded Ring Area:** $A_{\\text{ring}} = A_2 - A_1 = \\pi (${r2}^2 - ${r1}^2) = ${aRingExact}\\pi \\approx ${aRing}\\text{ ${unit}}^2$\n\n` +
+                `### ✅ Final Answer\n` +
+                `$$\\boxed{A_{\\text{ring}} = ${aRingExact}\\pi \\approx ${aRing}\\text{ ${unit}}^2}$$`;
+
+            const diagramProps = {
+                subtype: 'concentric_circles',
+                r1,
+                r2,
+                ratio: r1 / r2,
+                unit,
+                innerRadiusLabel: `r₁ = ${r1} ${unit}`,
+                outerRadiusLabel: `r₂ = ${r2} ${unit}`,
+                color: '#6366f1'
+            };
+
+            return {
+                subtype,
+                speechResponse,
+                solutionMarkdown,
+                diagramProps,
+                suggestedFollowUps: [
+                    `📏 Width of path = ${r2 - r1} ${unit}`,
+                    `⭕ Outer circumference`,
+                    `📄 Clean blank board`
+                ]
+            };
+        }
+
+        return null;
+    }
+
+    /**
+     * Parses 3D wireframe diagram requests from text (cone, cylinder, cuboid, cube, sphere, pyramid, frustum).
+     */
+    parse3DWireframeFromText(text) {
+        if (!text || typeof text !== 'string') return null;
+        const low = text.toLowerCase();
+
+        const hasWireframe = /\b(wireframe|wire\s*frame|wire-frame)\b/i.test(low);
+        const has3DKeyword = /\b(3d|solid|volume|surface\s*area|curved\s*surface|lateral\s*surface|cone|conical|cylinder|cylindrical|cuboid|cube|sphere|spherical|pyramid|frustum)\b/i.test(low);
+
+        if (!hasWireframe && !has3DKeyword) return null;
+
+        let modelType = null;
+        if (/\b(cone|conical)\b/i.test(low)) modelType = 'cone';
+        else if (/\b(cylinder|cylindrical)\b/i.test(low)) modelType = 'cylinder';
+        else if (/\b(cuboid|rectangular\s*prism|box)\b/i.test(low)) modelType = 'cuboid';
+        else if (/\bcube\b/i.test(low)) modelType = 'cube';
+        else if (/\b(sphere|spherical)\b/i.test(low)) modelType = 'sphere';
+        else if (/\bpyramid\b/i.test(low)) modelType = 'pyramid';
+        else if (/\bfrustum\b/i.test(low)) modelType = 'frustum';
+
+        if (!modelType && hasWireframe) {
+            modelType = 'cuboid'; // Default 3D wireframe solid
+        }
+        if (!modelType) return null;
+
+        const unitMatch = low.match(/\b(cm|m|mm|inches|inch|ft|feet|units)\b/i);
+        const unit = unitMatch ? unitMatch[1] : 'cm';
+
+        // Extract dimension parameters
+        const dims = {};
+        const rMatch = low.match(/\b(?:radius|rad|r)\b\s*(?:of|=|is|:)?\s*(\d+(?:\.\d+)?)/i);
+        if (rMatch) dims.radius = Number(rMatch[1]);
+
+        const hMatch = low.match(/\b(?:height|hgt|h)\b\s*(?:of|=|is|:)?\s*(\d+(?:\.\d+)?)/i);
+        if (hMatch) dims.height = Number(hMatch[1]);
+
+        const lMatch = low.match(/\b(?:length|len|l)\b\s*(?:of|=|is|:)?\s*(\d+(?:\.\d+)?)/i);
+        if (lMatch) dims.length = Number(lMatch[1]);
+
+        const wMatch = low.match(/\b(?:width|breadth|wid|w|b)\b\s*(?:of|=|is|:)?\s*(\d+(?:\.\d+)?)/i);
+        if (wMatch) dims.width = Number(wMatch[1]);
+
+        const sMatch = low.match(/\b(?:side|edge|s)\b\s*(?:of|=|is|:)?\s*(\d+(?:\.\d+)?)/i);
+        if (sMatch) dims.side = Number(sMatch[1]);
+
+        const slantMatch = low.match(/\b(?:slant|slant\s*height)\b\s*(?:of|=|is|:)?\s*(\d+(?:\.\d+)?)/i);
+        if (slantMatch) dims.slant = Number(slantMatch[1]);
+
+        const r1Match = low.match(/\b(?:r1|top\s*radius)\b\s*(?:of|=|is|:)?\s*(\d+(?:\.\d+)?)/i);
+        if (r1Match) dims.r1 = Number(r1Match[1]);
+
+        const r2Match = low.match(/\b(?:r2|bottom\s*radius)\b\s*(?:of|=|is|:)?\s*(\d+(?:\.\d+)?)/i);
+        if (r2Match) dims.r2 = Number(r2Match[1]);
+
+        // Default dimensions if missing
+        if (modelType === 'cone') {
+            if (dims.radius === undefined) dims.radius = 5;
+            if (dims.height === undefined) dims.height = 12;
+            dims.slant = Math.round(Math.hypot(dims.radius, dims.height) * 100) / 100;
+        } else if (modelType === 'cylinder') {
+            if (dims.radius === undefined) dims.radius = 4;
+            if (dims.height === undefined) dims.height = 10;
+        } else if (modelType === 'cuboid') {
+            if (dims.length === undefined) dims.length = 10;
+            if (dims.width === undefined) dims.width = 6;
+            if (dims.height === undefined) dims.height = 5;
+        } else if (modelType === 'cube') {
+            if (dims.side === undefined) dims.side = 6;
+            dims.length = dims.side;
+            dims.width = dims.side;
+            dims.height = dims.side;
+        } else if (modelType === 'sphere') {
+            if (dims.radius === undefined) dims.radius = 7;
+        } else if (modelType === 'pyramid') {
+            if (dims.length === undefined) dims.length = 8;
+            if (dims.width === undefined) dims.width = dims.length;
+            if (dims.height === undefined) dims.height = 12;
+        } else if (modelType === 'frustum') {
+            if (dims.r1 === undefined) dims.r1 = 3;
+            if (dims.r2 === undefined) dims.r2 = 6;
+            if (dims.height === undefined) dims.height = 4;
+            dims.slant = Math.round(Math.hypot(dims.height, dims.r2 - dims.r1) * 100) / 100;
+        }
+
+        return {
+            modelType,
+            dimensions: dims,
+            unit,
+            rawText: text
+        };
+    }
+
+    /**
+     * Solves 3D wireframe solid geometry problems with step-by-step LaTeX formulas and diagram specifications.
+     */
+    solve3DWireframe(parsed) {
+        if (!parsed) return null;
+        const { modelType, dimensions: dims, unit } = parsed;
+        const pi = Math.PI;
+
+        let volume = 0, surfaceArea = 0, curvedArea = 0;
+        let formulasLatex = '', stepsMarkdown = '', speechText = '';
+
+        if (modelType === 'cone') {
+            const { radius: r, height: h, slant: l } = dims;
+            volume = Math.round((1 / 3) * pi * r * r * h * 100) / 100;
+            curvedArea = Math.round(pi * r * l * 100) / 100;
+            surfaceArea = Math.round(pi * r * (r + l) * 100) / 100;
+
+            speechText = `For a cone with radius r = ${r} ${unit} and height h = ${h} ${unit}, the slant height is l = √(r² + h²) = ${l} ${unit}. Its volume is ${volume} ${unit}³ and total surface area is ${surfaceArea} ${unit}².`;
+            formulasLatex = `l = \\sqrt{r^2 + h^2}, \\quad V = \\frac{1}{3}\\pi r^2 h, \\quad S_{\\text{curved}} = \\pi r l, \\quad S_{\\text{total}} = \\pi r (r + l)`;
+            stepsMarkdown = `1. **Slant Height ($l$):**\n` +
+                `   $$l = \\sqrt{r^2 + h^2} = \\sqrt{(${r})^2 + (${h})^2} = \\sqrt{${r * r + h * h}} = ${l}\\text{ ${unit}}$$\n` +
+                `2. **Volume ($V$):**\n` +
+                `   $$V = \\frac{1}{3}\\pi r^2 h = \\frac{1}{3}\\pi (${r})^2 (${h}) = ${Math.round((1 / 3) * r * r * h)}\\pi \\approx ${volume}\\text{ ${unit}}^3$$\n` +
+                `3. **Curved & Total Surface Area:**\n` +
+                `   - Curved: $S_{\\text{curved}} = \\pi r l = \\pi (${r})(${l}) = ${r * l}\\pi \\approx ${curvedArea}\\text{ ${unit}}^2$\n` +
+                `   - Total: $S_{\\text{total}} = \\pi r (r + l) = \\pi (${r})(${r + l}) = ${r * (r + l)}\\pi \\approx ${surfaceArea}\\text{ ${unit}}^2$`;
+        } else if (modelType === 'cylinder') {
+            const { radius: r, height: h } = dims;
+            volume = Math.round(pi * r * r * h * 100) / 100;
+            curvedArea = Math.round(2 * pi * r * h * 100) / 100;
+            surfaceArea = Math.round(2 * pi * r * (h + r) * 100) / 100;
+
+            speechText = `For a cylinder with radius r = ${r} ${unit} and height h = ${h} ${unit}, the volume is ${volume} ${unit}³, curved surface area is ${curvedArea} ${unit}², and total surface area is ${surfaceArea} ${unit}².`;
+            formulasLatex = `V = \\pi r^2 h, \\quad S_{\\text{curved}} = 2\\pi r h, \\quad S_{\\text{total}} = 2\\pi r (h + r)`;
+            stepsMarkdown = `1. **Volume ($V$):**\n` +
+                `   $$V = \\pi r^2 h = \\pi (${r})^2 (${h}) = ${r * r * h}\\pi \\approx ${volume}\\text{ ${unit}}^3$$\n` +
+                `2. **Curved Surface Area ($S_{\\text{curved}}$):**\n` +
+                `   $$S_{\\text{curved}} = 2\\pi r h = 2\\pi (${r})(${h}) = ${2 * r * h}\\pi \\approx ${curvedArea}\\text{ ${unit}}^2$$\n` +
+                `3. **Total Surface Area ($S_{\\text{total}}$):**\n` +
+                `   $$S_{\\text{total}} = 2\\pi r (h + r) = 2\\pi (${r})(${h + r}) = ${2 * r * (h + r)}\\pi \\approx ${surfaceArea}\\text{ ${unit}}^2$`;
+        } else if (modelType === 'cuboid' || modelType === 'cube') {
+            const l = dims.length || dims.side;
+            const w = dims.width || dims.side;
+            const h = dims.height || dims.side;
+            volume = l * w * h;
+            surfaceArea = 2 * (l * w + l * h + w * h);
+            curvedArea = 2 * (l + w) * h; // Lateral surface area
+
+            speechText = `For a ${modelType} with length ${l} ${unit}, width ${w} ${unit}, and height ${h} ${unit}, the volume is ${volume} ${unit}³ and total surface area is ${surfaceArea} ${unit}².`;
+            formulasLatex = `V = l \\cdot w \\cdot h, \\quad S_{\\text{lateral}} = 2(l + w)h, \\quad S_{\\text{total}} = 2(lw + lh + wh)`;
+            stepsMarkdown = `1. **Volume ($V$):**\n` +
+                `   $$V = l \\cdot w \\cdot h = (${l})(${w})(${h}) = ${volume}\\text{ ${unit}}^3$$\n` +
+                `2. **Lateral Surface Area ($S_{\\text{lateral}}$):**\n` +
+                `   $$S_{\\text{lateral}} = 2(l + w)h = 2(${l} + ${w})(${h}) = ${curvedArea}\\text{ ${unit}}^2$$\n` +
+                `3. **Total Surface Area ($S_{\\text{total}}$):**\n` +
+                `   $$S_{\\text{total}} = 2(lw + lh + wh) = 2((${l}\\cdot${w}) + (${l}\\cdot${h}) + (${w}\\cdot${h})) = ${surfaceArea}\\text{ ${unit}}^2$$`;
+        } else if (modelType === 'sphere') {
+            const { radius: r } = dims;
+            volume = Math.round((4 / 3) * pi * Math.pow(r, 3) * 100) / 100;
+            surfaceArea = Math.round(4 * pi * r * r * 100) / 100;
+
+            speechText = `For a sphere with radius r = ${r} ${unit}, the volume is ${volume} ${unit}³ and surface area is ${surfaceArea} ${unit}².`;
+            formulasLatex = `V = \\frac{4}{3}\\pi r^3, \\quad S_{\\text{total}} = 4\\pi r^2`;
+            stepsMarkdown = `1. **Volume ($V$):**\n` +
+                `   $$V = \\frac{4}{3}\\pi r^3 = \\frac{4}{3}\\pi (${r})^3 = \\frac{${4 * Math.pow(r, 3)}}{3}\\pi \\approx ${volume}\\text{ ${unit}}^3$$\n` +
+                `2. **Surface Area ($S_{\\text{total}}$):**\n` +
+                `   $$S_{\\text{total}} = 4\\pi r^2 = 4\\pi (${r})^2 = ${4 * r * r}\\pi \\approx ${surfaceArea}\\text{ ${unit}}^2$$`;
+        } else if (modelType === 'pyramid') {
+            const { length: l, width: w, height: h } = dims;
+            volume = Math.round((1 / 3) * l * w * h * 100) / 100;
+            surfaceArea = Math.round((l * w + l * Math.hypot(h, w / 2) + w * Math.hypot(h, l / 2)) * 100) / 100;
+
+            speechText = `For a pyramid with rectangular base ${l} × ${w} ${unit} and altitude ${h} ${unit}, the volume is ${volume} ${unit}³.`;
+            formulasLatex = `V = \\frac{1}{3} l w h`;
+            stepsMarkdown = `1. **Volume ($V$):**\n` +
+                `   $$V = \\frac{1}{3} l w h = \\frac{1}{3}(${l})(${w})(${h}) = ${volume}\\text{ ${unit}}^3$$`;
+        } else if (modelType === 'frustum') {
+            const { r1, r2, height: h, slant: l } = dims;
+            volume = Math.round((1 / 3) * pi * h * (r1 * r1 + r2 * r2 + r1 * r2) * 100) / 100;
+            curvedArea = Math.round(pi * (r1 + r2) * l * 100) / 100;
+            surfaceArea = Math.round((curvedArea + pi * (r1 * r1 + r2 * r2)) * 100) / 100;
+
+            speechText = `For a frustum of a cone with radii r₁ = ${r1} ${unit}, r₂ = ${r2} ${unit}, and height ${h} ${unit}, the slant height is ${l} ${unit} and volume is ${volume} ${unit}³.`;
+            formulasLatex = `l = \\sqrt{h^2 + (r_2 - r_1)^2}, \\quad V = \\frac{1}{3}\\pi h (r_1^2 + r_2^2 + r_1 r_2), \\quad S_{\\text{curved}} = \\pi (r_1 + r_2) l`;
+            stepsMarkdown = `1. **Slant Height ($l$):**\n` +
+                `   $$l = \\sqrt{h^2 + (r_2 - r_1)^2} = \\sqrt{${h}^2 + (${r2} - ${r1})^2} = ${l}\\text{ ${unit}}$$\n` +
+                `2. **Volume ($V$):**\n` +
+                `   $$V = \\frac{1}{3}\\pi h (r_1^2 + r_2^2 + r_1 r_2) = \\frac{1}{3}\\pi (${h})(${r1 * r1} + ${r2 * r2} + ${r1 * r2}) \\approx ${volume}\\text{ ${unit}}^3$$\n` +
+                `3. **Curved Surface Area ($S_{\\text{curved}}$):**\n` +
+                `   $$S_{\\text{curved}} = \\pi (r_1 + r_2) l = \\pi (${r1} + ${r2})(${l}) \\approx ${curvedArea}\\text{ ${unit}}^2$$`;
+        }
+
+        const dimsText = Object.entries(dims).map(([k, v]) => `**${k.charAt(0).toUpperCase() + k.slice(1)}:** $${v}\\text{ ${unit}}$`).join(', ');
+        const solutionMarkdown = `### 📌 Given & Concept\n` +
+            `- **Shape:** 3D ${modelType.charAt(0).toUpperCase() + modelType.slice(1)} Wireframe\n` +
+            `- **Given Dimensions:** ${dimsText}\n\n` +
+            `### 📐 Formula\n` +
+            `$$${formulasLatex}$$\n\n` +
+            `### 🔢 Step-by-Step Solution\n` +
+            `${stepsMarkdown}\n\n` +
+            `### ✅ Final Answer\n` +
+            `$$\\boxed{\\text{Volume } V = ${volume}\\text{ ${unit}}^3, \\quad \\text{Surface Area } S = ${surfaceArea}\\text{ ${unit}}^2}$$`;
+
+        const diagramProps = {
+            modelType,
+            dimensions: dims,
+            unit,
+            color: '#3b82f6',
+            dashColor: '#64748b'
+        };
+
+        return {
+            modelType,
+            dimensions: dims,
+            speechResponse: speechText,
+            solutionMarkdown,
+            diagramProps,
+            suggestedFollowUps: [
+                `📐 Curved vs total area`,
+                `✨ Change dimensions`,
+                `📄 Clean blank board`
+            ]
+        };
+    }
 }
 
 module.exports = new GeometrySolverService();

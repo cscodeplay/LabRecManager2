@@ -521,11 +521,17 @@ export default function WhiteboardClosedCaptions({
         setIsScanningImage(true);
         setIsEditing(true);
 
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            setScannedDataUrl(ev.target?.result);
-        };
-        reader.readAsDataURL(file);
+        // Pre-convert to base64 DataURL immediately so it's always ready for solver submission
+        const dataUrlPromise = new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const result = ev.target?.result;
+                setScannedDataUrl(result);
+                resolve(result);
+            };
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(file);
+        });
 
         try {
             const res = await aiAPI.scanQuestionImage(file, preferredProvider);
@@ -537,6 +543,21 @@ export default function WhiteboardClosedCaptions({
                 editInputRef.current?.focus();
             }, 80);
         } catch (err) {
+            console.warn('[WhiteboardCaptions] FormData scan failed, retrying with base64...', err?.message);
+            // Fallback retry using base64 data URL
+            try {
+                const b64DataUrl = await dataUrlPromise;
+                if (b64DataUrl) {
+                    const fallbackRes = await aiAPI.scanQuestionImage({ image: b64DataUrl, preferredProvider });
+                    const extracted = fallbackRes?.data?.data?.questionText?.trim() || fallbackRes?.data?.data?.question?.trim();
+                    if (extracted) {
+                        setEditText(extracted);
+                        return;
+                    }
+                }
+            } catch (fbErr) {
+                console.error('[WhiteboardCaptions] Base64 fallback error:', fbErr);
+            }
             const errMsg = err?.response?.data?.message || err?.message || 'Failed to scan image';
             toast.error(`Image scan error: ${errMsg}`);
         } finally {
@@ -544,15 +565,27 @@ export default function WhiteboardClosedCaptions({
         }
     };
 
-    const handleFormSubmit = (e) => {
+    const handleFormSubmit = async (e) => {
         e?.preventDefault();
         const trimmed = editText.trim();
         const hasImg = Boolean(scannedPreviewUrl || scannedDataUrl || scannedFile);
         if (!trimmed && !hasImg) return;
 
+        let effectiveDataUrl = scannedDataUrl;
+        if ((!effectiveDataUrl || effectiveDataUrl.startsWith('blob:')) && scannedFile) {
+            try {
+                effectiveDataUrl = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => resolve(ev.target?.result);
+                    reader.onerror = () => resolve(null);
+                    reader.readAsDataURL(scannedFile);
+                });
+            } catch (convErr) {}
+        }
+
         const cmdText = trimmed || 'Solve the problem shown in this image';
         onExecuteCommand(cmdText, {
-            imageDataUrl: scannedDataUrl || scannedPreviewUrl,
+            imageDataUrl: effectiveDataUrl || scannedDataUrl || scannedPreviewUrl,
             imageFile: scannedFile
         });
         setIsEditing(false);
