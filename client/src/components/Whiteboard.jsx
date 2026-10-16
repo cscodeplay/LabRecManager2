@@ -2205,49 +2205,6 @@ export default function Whiteboard({
         };
     }, [zoomLevel, panOffset]);
 
-    // ─── Mouse Wheel Focal-Point Zooming (Direct wheel scrolling without Ctrl/Cmd) ───
-    useEffect(() => {
-        const container = canvasContainerRef.current;
-        if (!container) return;
-
-        const handleWheel = (e) => {
-            // Ignore wheel if inside interactive scrollable menus, dialogs, media player, or table cell editors
-            if (e.target?.closest?.(
-                '.whiteboard-table-item textarea, .whiteboard-table-item input, ' +
-                '.whiteboard-media-player, .whiteboard-clipboard-panel, ' +
-                '.whiteboard-context-menu, .whiteboard-tasks-panel, ' +
-                '.popover-scrollable, [data-no-wheel-zoom], select'
-            )) {
-                return;
-            }
-
-            e.preventDefault();
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-
-            const pos = getPosition(e);
-            if (!pos || isNaN(pos.x) || isNaN(pos.y)) return;
-
-            const currentZ = zoomLevel || 1;
-            const zoomFactor = e.deltaY < 0 ? 1.10 : (1 / 1.10);
-            const newZ = Math.max(0.2, Math.min(4.0, Math.round(currentZ * zoomFactor * 100) / 100));
-            if (newZ === currentZ) return;
-
-            const cx = canvas.width / 2;
-            const cy = canvas.height / 2;
-            const ratio = currentZ / newZ;
-
-            const newPanX = Math.round(cx - pos.x + ratio * (pos.x + panOffset.x - cx));
-            const newPanY = Math.round(cy - pos.y + ratio * (pos.y + panOffset.y - cy));
-
-            setZoomLevel(newZ);
-            setPanOffset({ x: newPanX, y: newPanY });
-        };
-
-        container.addEventListener('wheel', handleWheel, { passive: false });
-        return () => container.removeEventListener('wheel', handleWheel);
-    }, [zoomLevel, panOffset, getPosition]);
-
     // ─── Grab / Pan Tool Physics & Momentum Inertia Engine ───
     const [isGrabbing, setIsGrabbing] = useState(false);
     const isGrabbingRef = useRef(false);
@@ -6872,6 +6829,49 @@ export default function Whiteboard({
             y: (clientY - rect.top) * scaleY
         };
     }, []);
+
+    // ─── Mouse Wheel Focal-Point Zooming (Direct wheel scrolling without Ctrl/Cmd) ───
+    useEffect(() => {
+        const container = canvasContainerRef.current;
+        if (!container) return;
+
+        const handleWheel = (e) => {
+            // Ignore wheel if inside interactive scrollable menus, dialogs, media player, or table cell editors
+            if (e.target?.closest?.(
+                '.whiteboard-table-item textarea, .whiteboard-table-item input, ' +
+                '.whiteboard-media-player, .whiteboard-clipboard-panel, ' +
+                '.whiteboard-context-menu, .whiteboard-tasks-panel, ' +
+                '.popover-scrollable, [data-no-wheel-zoom], select'
+            )) {
+                return;
+            }
+
+            e.preventDefault();
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+
+            const pos = getPosition(e);
+            if (!pos || isNaN(pos.x) || isNaN(pos.y)) return;
+
+            const currentZ = zoomLevel || 1;
+            const zoomFactor = e.deltaY < 0 ? 1.10 : (1 / 1.10);
+            const newZ = Math.max(0.2, Math.min(4.0, Math.round(currentZ * zoomFactor * 100) / 100));
+            if (newZ === currentZ) return;
+
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const ratio = currentZ / newZ;
+
+            const newPanX = Math.round(cx - pos.x + ratio * (pos.x + panOffset.x - cx));
+            const newPanY = Math.round(cy - pos.y + ratio * (pos.y + panOffset.y - cy));
+
+            setZoomLevel(newZ);
+            setPanOffset({ x: newPanX, y: newPanY });
+        };
+
+        container.addEventListener('wheel', handleWheel, { passive: false });
+        return () => container.removeEventListener('wheel', handleWheel);
+    }, [zoomLevel, panOffset, getPosition]);
 
     // Emit draw event via socket when sharing
     const emitDrawEvent = useCallback((eventData) => {
