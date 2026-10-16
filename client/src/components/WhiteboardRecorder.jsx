@@ -6,6 +6,7 @@ import fixWebmDuration from 'fix-webm-duration';
 import { formatDate } from '@/lib/dateUtils';
 import { get3DModelMesh, shadeColor } from './Whiteboard3DObject';
 import { getConnectorArrowAngle } from './ConnectorLine';
+import { resolveCanvasFillStyle } from './WhiteboardBrushEngine';
 
 const WhiteboardRecorder = ({
     canvasRef,
@@ -16,6 +17,12 @@ const WhiteboardRecorder = ({
     imageObjects = [],
     threeDObjects = [],
     mediaObjects = [],
+    patternFgColor = '#ffffff',
+    patternBgColor = '#1e293b',
+    gradientFrom = '#ff512f',
+    gradientTo = '#dd2476',
+    gradientAngle = 45,
+    gradientType = 'linear',
     onRecordingComplete,
     isVisible = false
 }) => {
@@ -546,7 +553,20 @@ const WhiteboardRecorder = ({
                     }
                     compositeCtx.strokeStyle = shpObj.color;
                     compositeCtx.lineWidth = shpObj.strokeWidth || 2;
-                    compositeCtx.fillStyle = shpObj.fillColor || 'transparent';
+                    const resolvedFill = resolveCanvasFillStyle(compositeCtx, shpObj.fillColor, {
+                        x: 0,
+                        y: 0,
+                        width: shpObj.width || 100,
+                        height: shpObj.height || 100
+                    }, {
+                        patternFgColor,
+                        patternBgColor,
+                        gradientFrom,
+                        gradientTo,
+                        gradientAngle,
+                        gradientType
+                    });
+                    compositeCtx.fillStyle = resolvedFill || 'transparent';
 
                     // Apply Border Styles: solid, dashed, dotted
                     const bStyle = shpObj.borderStyle || 'solid';

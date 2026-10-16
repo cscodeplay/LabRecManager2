@@ -34,8 +34,17 @@ export const GRADIENT_PRESETS = [
  */
 export default function WhiteboardPatterns({
     fgColor = '#ffffff',
-    bgColor = '#1e293b'
+    bgColor = '#1e293b',
+    gradientFrom = '#ff512f',
+    gradientTo = '#dd2476',
+    gradientAngle = 45
 }) {
+    const angleRad = ((gradientAngle ?? 45) * Math.PI) / 180;
+    const gx1 = Math.round(50 - Math.cos(angleRad) * 50);
+    const gy1 = Math.round(50 - Math.sin(angleRad) * 50);
+    const gx2 = Math.round(50 + Math.cos(angleRad) * 50);
+    const gy2 = Math.round(50 + Math.sin(angleRad) * 50);
+
     return (
         <svg
             aria-hidden="true"
@@ -43,6 +52,16 @@ export default function WhiteboardPatterns({
             style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}
         >
             <defs>
+                {/* Custom User Configured Gradients */}
+                <linearGradient id="grad-custom-linear" x1={`${gx1}%`} y1={`${gy1}%`} x2={`${gx2}%`} y2={`${gy2}%`}>
+                    <stop offset="0%" stopColor={gradientFrom} />
+                    <stop offset="100%" stopColor={gradientTo} />
+                </linearGradient>
+
+                <radialGradient id="grad-custom-radial" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor={gradientFrom} />
+                    <stop offset="100%" stopColor={gradientTo} />
+                </radialGradient>
                 {/* 1. Dots Pattern */}
                 <pattern
                     id="pattern-dots"

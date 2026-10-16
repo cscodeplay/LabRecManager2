@@ -6,22 +6,35 @@ import {
     Type, Calculator, Image as ImageIcon, Edit3, Palette, 
     X, Check, ChevronsUp, ChevronsDown, Maximize2, Sparkles,
     Undo2, RefreshCw, Bold, Italic, Underline, Strikethrough,
-    AlignLeft, AlignCenter, AlignRight, WrapText, ChevronDown
+    AlignLeft, AlignCenter, AlignRight, WrapText, ChevronDown,
+    Clipboard, ClipboardCheck
 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import MathRenderer from './MathRenderer';
 
+const CORNER_WIDTH = 34;
+const HEADER_HEIGHT = 26;
+
+const getColLabel = (index) => {
+    let label = '';
+    let num = index;
+    while (num >= 0) {
+        label = String.fromCharCode((num % 26) + 65) + label;
+        num = Math.floor(num / 26) - 1;
+    }
+    return label;
+};
+
 /**
- * Rich Whiteboard Table Object.
- * Each cell can contain:
- * - Text (multi-line, auto-wrap)
- * - KaTeX Math formula (crisp LaTeX rendering)
- * - Image (file upload or URL)
- * - Freehand Doodle / Ink Drawing
- * - Background shading / color
- * - Rich typography: bold, italic, underline, strikethrough, fontSize, fontFamily, color, align
- * 
- * Supports Excel-like single-click cell selection, inline cell editing,
- * floating formatting toolbar, dynamic column/row resizing, and keyboard navigation.
+ * Rich Whiteboard Spreadsheet Table Object.
+ * Features:
+ * - Corner Box (34x26): click selects all cells, drag moves table across whiteboard
+ * - Column Header labels (A, B, C...): click selects column, divider drag resizes column width
+ * - Row Header numbers (1, 2, 3...): click selects row, divider drag resizes row height
+ * - 8-point outer resize handles for proportional table resizing
+ * - Inline cell editing directly on overlay: Enter moves down (auto-adds row), Tab moves right (auto-wraps)
+ * - Copy/Paste tabular data from/to Excel & Word tables via TSV/clipboard
+ * - KaTeX math rendering, image attachments, and in-cell ink doodling
  */
 export default function WhiteboardTableObject({
     tableObj,
@@ -47,14 +60,16 @@ export default function WhiteboardTableObject({
     // Normalized column widths and row heights
     const colWidths = (table.colWidths && table.colWidths.length === cols)
         ? table.colWidths
-        : Array(cols).fill(Math.max(100, Math.round((table.width || 480) / cols)));
+        : Array(cols).fill(Math.max(80, Math.round((table.width || 480) / cols)));
 
     const rowHeights = (table.rowHeights && table.rowHeights.length === rows)
         ? table.rowHeights
-        : Array(rows).fill(Math.max(50, Math.round((table.height || 240) / rows)));
+        : Array(rows).fill(Math.max(40, Math.round((table.height || 240) / rows)));
 
     const totalWidth = colWidths.reduce((a, b) => a + b, 0);
     const totalHeight = rowHeights.reduce((a, b) => a + b, 0);
+    const gridWidth = totalWidth + CORNER_WIDTH;
+    const gridHeight = totalHeight + HEADER_HEIGHT;
 
     // Styling
     const borderColor = table.borderColor || '#334155';
@@ -67,8 +82,14 @@ export default function WhiteboardTableObject({
     // Cell data map: { 'r-c': { text, math, image, inkData, bg, bold, italic, underline, strikethrough, fontSize, fontFamily, color, align, wrap } }
     const cells = table.cells || {};
 
-    // Excel-Style Selected Cell & Inline Editing State
-    const [selectedCellKey, setSelectedCellKey] = useState(null); // 'r-c'
+    // Selection State
+    // selectionMode: 'CELL' | 'ROW' | 'COL' | 'ALL' | null
+    const [selectionMode, setSelectionMode] = useState('CELL');
+    const [selectedCellKey, setSelectedCellKey] = useState('0-0'); // 'r-c'
+    const [selectedRow, setSelectedRow] = useState(null);
+    const [selectedCol, setSelectedCol] = useState(null);
+
+    // Inline Editing State
     const [isInlineEditing, setIsInlineEditing] = useState(false);
     const [inlineText, setInlineText] = useState('');
     const inlineInputRef = useRef(null);
@@ -97,9 +118,6 @@ export default function WhiteboardTableObject({
     const [isDraggingTable, setIsDraggingTable] = useState(false);
     const dragStartRef = useRef({ startX: 0, startY: 0, tableX: 0, tableY: 0 });
 
-    // Drag-to-resize column or row divider
-    const resizeRef = useRef(null); // { type: 'col' | 'row', index, startPos, startDim }
-
     // Helpers for font styling
     const getFontFamilyCss = (ff) => {
         switch (ff) {
@@ -112,36 +130,102 @@ export default function WhiteboardTableObject({
         }
     };
 
-    // Helper: update property of selected cell
+    // Helper: update property of selected cell(s)
     const updateSelectedCell = (propertyUpdates) => {
-        if (!selectedCellKey) return;
-        const currentCell = cells[selectedCellKey] || {};
-        const updatedCells = {
-            ...cells,
-            [selectedCellKey]: {
+        const updatedCells = { ...cells };
+        if (selectionMode === 'ALL') {
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const key = `${r}-${c}`;
+                    updatedCells[key] = { ...(updatedCells[key] || {}), ...propertyUpdates };
+                }
+            }
+        } else if (selectionMode === 'COL' && selectedCol !== null) {
+            for (let r = 0; r < rows; r++) {
+                const key = `${r}-${selectedCol}`;
+                updatedCells[key] = { ...(updatedCells[key] || {}), ...propertyUpdates };
+            }
+        } else if (selectionMode === 'ROW' && selectedRow !== null) {
+            for (let c = 0; c < cols; c++) {
+                const key = `${selectedRow}-${c}`;
+                updatedCells[key] = { ...(updatedCells[key] || {}), ...propertyUpdates };
+            }
+        } else if (selectedCellKey) {
+            const currentCell = cells[selectedCellKey] || {};
+            updatedCells[selectedCellKey] = {
                 ...currentCell,
                 ...propertyUpdates
-            }
-        };
+            };
+        } else {
+            return;
+        }
+
         onUpdate({
             ...table,
             cells: updatedCells
         });
     };
 
-    // Single-click cell selection
-    const handleSelectCell = (r, c) => {
-        const key = `${r}-${c}`;
-        setSelectedCellKey(key);
+    // Cell selection checker
+    const isCellSelected = (r, c) => {
+        if (!isSelected) return false;
+        if (selectionMode === 'ALL') return true;
+        if (selectionMode === 'COL' && selectedCol === c) return true;
+        if (selectionMode === 'ROW' && selectedRow === r) return true;
+        if (selectedCellKey === `${r}-${c}`) return true;
+        return false;
+    };
+
+    // Selection Handlers
+    const handleSelectAll = (e) => {
+        e?.stopPropagation();
+        onSelect?.(tableId);
+        setSelectionMode('ALL');
+        setSelectedCellKey('0-0');
+        setSelectedRow(null);
+        setSelectedCol(null);
         setIsInlineEditing(false);
-        setInlineText(cells[key]?.text || '');
+    };
+
+    const handleSelectCol = (c, e) => {
+        e?.stopPropagation();
+        onSelect?.(tableId);
+        setSelectionMode('COL');
+        setSelectedCol(c);
+        setSelectedRow(null);
+        setSelectedCellKey(`0-${c}`);
+        setIsInlineEditing(false);
+    };
+
+    const handleSelectRow = (r, e) => {
+        e?.stopPropagation();
+        onSelect?.(tableId);
+        setSelectionMode('ROW');
+        setSelectedRow(r);
+        setSelectedCol(null);
+        setSelectedCellKey(`${r}-0`);
+        setIsInlineEditing(false);
+    };
+
+    const handleSelectCell = (r, c, e) => {
+        e?.stopPropagation();
+        onSelect?.(tableId);
+        setSelectionMode('CELL');
+        setSelectedCellKey(`${r}-${c}`);
+        setSelectedRow(null);
+        setSelectedCol(null);
+        setIsInlineEditing(false);
+        setInlineText(cells[`${r}-${c}`]?.text || '');
     };
 
     // Start inline editing
     const startInlineEdit = (r, c, initialChar = null) => {
         if (isLocked) return;
         const key = `${r}-${c}`;
+        setSelectionMode('CELL');
         setSelectedCellKey(key);
+        setSelectedRow(null);
+        setSelectedCol(null);
         setIsInlineEditing(true);
         const existingText = cells[key]?.text || '';
         setInlineText(initialChar !== null ? initialChar : existingText);
@@ -156,14 +240,15 @@ export default function WhiteboardTableObject({
     };
 
     // Commit inline edit
-    const commitInlineEdit = () => {
+    const commitInlineEdit = (newText = null) => {
         if (!selectedCellKey) return;
+        const textToCommit = newText !== null ? newText : inlineText;
         const currentCell = cells[selectedCellKey] || {};
         const updatedCells = {
             ...cells,
             [selectedCellKey]: {
                 ...currentCell,
-                text: inlineText
+                text: textToCommit
             }
         };
         setIsInlineEditing(false);
@@ -181,11 +266,497 @@ export default function WhiteboardTableObject({
         }
     };
 
-    // Navigate to next or previous cell (Excel Tab / Shift-Tab / Arrow keys)
+    // Commit and move (Excel-style navigation with auto row expansion)
+    const commitAndNavigate = (direction) => {
+        if (!selectedCellKey) return;
+        const [r, c] = selectedCellKey.split('-').map(Number);
+        const currentCell = cells[selectedCellKey] || {};
+        const updatedCells = {
+            ...cells,
+            [selectedCellKey]: {
+                ...currentCell,
+                text: inlineText
+            }
+        };
+        setIsInlineEditing(false);
+
+        if (direction === 'down') {
+            if (r < rows - 1) {
+                onUpdate({ ...table, cells: updatedCells });
+                handleSelectCell(r + 1, c);
+                setTimeout(() => startInlineEdit(r + 1, c), 25);
+            } else {
+                // Auto append row on last row Enter
+                const newRows = rows + 1;
+                const newRowHeights = [...rowHeights, 50];
+                onUpdate({
+                    ...table,
+                    rows: newRows,
+                    rowHeights: newRowHeights,
+                    height: newRowHeights.reduce((a, b) => a + b, 0),
+                    cells: updatedCells
+                });
+                setTimeout(() => {
+                    handleSelectCell(r + 1, c);
+                    startInlineEdit(r + 1, c);
+                }, 35);
+            }
+        } else if (direction === 'right') {
+            if (c < cols - 1) {
+                onUpdate({ ...table, cells: updatedCells });
+                handleSelectCell(r, c + 1);
+                setTimeout(() => startInlineEdit(r, c + 1), 25);
+            } else if (r < rows - 1) {
+                onUpdate({ ...table, cells: updatedCells });
+                handleSelectCell(r + 1, 0);
+                setTimeout(() => startInlineEdit(r + 1, 0), 25);
+            } else {
+                // Auto append row on bottom-right cell Tab
+                const newRows = rows + 1;
+                const newRowHeights = [...rowHeights, 50];
+                onUpdate({
+                    ...table,
+                    rows: newRows,
+                    rowHeights: newRowHeights,
+                    height: newRowHeights.reduce((a, b) => a + b, 0),
+                    cells: updatedCells
+                });
+                setTimeout(() => {
+                    handleSelectCell(r + 1, 0);
+                    startInlineEdit(r + 1, 0);
+                }, 35);
+            }
+        } else if (direction === 'left') {
+            onUpdate({ ...table, cells: updatedCells });
+            if (c > 0) {
+                handleSelectCell(r, c - 1);
+                setTimeout(() => startInlineEdit(r, c - 1), 25);
+            } else if (r > 0) {
+                handleSelectCell(r - 1, cols - 1);
+                setTimeout(() => startInlineEdit(r - 1, cols - 1), 25);
+            }
+        } else if (direction === 'up') {
+            onUpdate({ ...table, cells: updatedCells });
+            if (r > 0) {
+                handleSelectCell(r - 1, c);
+                setTimeout(() => startInlineEdit(r - 1, c), 25);
+            }
+        }
+    };
+
+    // Navigate without editing
     const moveToCell = (r, c) => {
         const targetR = Math.max(0, Math.min(rows - 1, r));
         const targetC = Math.max(0, Math.min(cols - 1, c));
         handleSelectCell(targetR, targetC);
+    };
+
+    // Copy tabular data to clipboard as TSV
+    const copyTableDataToClipboard = () => {
+        let tsv = '';
+        if (selectionMode === 'ALL') {
+            const lines = [];
+            for (let r = 0; r < rows; r++) {
+                const rowVals = [];
+                for (let c = 0; c < cols; c++) {
+                    const cell = cells[`${r}-${c}`];
+                    rowVals.push(cell?.text || cell?.math || '');
+                }
+                lines.push(rowVals.join('\t'));
+            }
+            tsv = lines.join('\n');
+        } else if (selectionMode === 'COL' && selectedCol !== null) {
+            const colVals = [];
+            for (let r = 0; r < rows; r++) {
+                const cell = cells[`${r}-${selectedCol}`];
+                colVals.push(cell?.text || cell?.math || '');
+            }
+            tsv = colVals.join('\n');
+        } else if (selectionMode === 'ROW' && selectedRow !== null) {
+            const rowVals = [];
+            for (let c = 0; c < cols; c++) {
+                const cell = cells[`${selectedRow}-${c}`];
+                rowVals.push(cell?.text || cell?.math || '');
+            }
+            tsv = rowVals.join('\t');
+        } else if (selectedCellKey) {
+            const cell = cells[selectedCellKey];
+            tsv = cell?.text || cell?.math || '';
+        } else {
+            // Default copy all
+            const lines = [];
+            for (let r = 0; r < rows; r++) {
+                const rowVals = [];
+                for (let c = 0; c < cols; c++) {
+                    const cell = cells[`${r}-${c}`];
+                    rowVals.push(cell?.text || cell?.math || '');
+                }
+                lines.push(rowVals.join('\t'));
+            }
+            tsv = lines.join('\n');
+        }
+
+        if (tsv) {
+            if (navigator.clipboard?.writeText) {
+                navigator.clipboard.writeText(tsv).then(() => {
+                    toast.success('Copied table data to clipboard!', { icon: '📋' });
+                }).catch(() => {
+                    fallbackCopy(tsv);
+                });
+            } else {
+                fallbackCopy(tsv);
+            }
+        }
+    };
+
+    const fallbackCopy = (text) => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        toast.success('Copied table data to clipboard!', { icon: '📋' });
+    };
+
+    // Paste tabular data into cells (auto-expands rows and columns)
+    const pasteTableData = (pastedText) => {
+        if (!pastedText || !pastedText.trim()) return;
+
+        const rawLines = pastedText.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+        const grid = rawLines.map(line => line.split('\t'));
+
+        const [currR, currC] = selectedCellKey ? selectedCellKey.split('-').map(Number) : [0, 0];
+        const startR = currR !== null && currR !== undefined ? currR : 0;
+        const startC = currC !== null && currC !== undefined ? currC : 0;
+
+        const neededRows = Math.max(rows, startR + grid.length);
+        let maxPastedCols = 0;
+        grid.forEach(row => {
+            if (row.length > maxPastedCols) maxPastedCols = row.length;
+        });
+        const neededCols = Math.max(cols, startC + maxPastedCols);
+
+        // Expand colWidths and rowHeights if needed
+        const newColWidths = [...colWidths];
+        while (newColWidths.length < neededCols) {
+            newColWidths.push(120);
+        }
+        const newRowHeights = [...rowHeights];
+        while (newRowHeights.length < neededRows) {
+            newRowHeights.push(50);
+        }
+
+        const updatedCells = { ...cells };
+        grid.forEach((rowVals, rOffset) => {
+            rowVals.forEach((val, cOffset) => {
+                const targetR = startR + rOffset;
+                const targetC = startC + cOffset;
+                const key = `${targetR}-${targetC}`;
+                updatedCells[key] = {
+                    ...(updatedCells[key] || {}),
+                    text: val.trim()
+                };
+            });
+        });
+
+        onUpdate({
+            ...table,
+            rows: neededRows,
+            cols: neededCols,
+            colWidths: newColWidths,
+            rowHeights: newRowHeights,
+            width: newColWidths.reduce((a, b) => a + b, 0),
+            height: newRowHeights.reduce((a, b) => a + b, 0),
+            cells: updatedCells
+        });
+
+        toast.success(`Pasted ${grid.length}×${maxPastedCols} cells!`, { icon: '📋' });
+    };
+
+    // Container paste listener
+    const handlePaste = (e) => {
+        if (isInlineEditing) return; // Allow normal paste inside textarea
+        e.preventDefault();
+        const clipboardData = e.clipboardData || window.clipboardData;
+        const pastedText = clipboardData?.getData('text/plain') || '';
+        if (pastedText) {
+            pasteTableData(pastedText);
+        }
+    };
+
+    // Keyboard navigation when not inline editing
+    const handleContainerKeyDown = (e) => {
+        if (isInlineEditing) return;
+
+        // Clipboard Copy
+        if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+            e.preventDefault();
+            copyTableDataToClipboard();
+            return;
+        }
+
+        // Arrow navigation
+        if (!selectedCellKey) return;
+        const [r, c] = selectedCellKey.split('-').map(Number);
+
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            moveToCell(r, c + 1);
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            moveToCell(r, c - 1);
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            moveToCell(r + 1, c);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            moveToCell(r - 1, c);
+        } else if (e.key === 'Tab') {
+            e.preventDefault();
+            moveToCell(r, c + (e.shiftKey ? -1 : 1));
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            startInlineEdit(r, c);
+        } else if (e.key === 'Delete' || e.key === 'Backspace') {
+            e.preventDefault();
+            updateSelectedCell({ text: '', math: '' });
+        } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            // Typing directly enters edit mode with pressed key
+            startInlineEdit(r, c, e.key);
+        }
+    };
+
+    // Table movement via Corner Box or Drag Handle
+    const handleMovePointerDown = (e) => {
+        if (isLocked) return;
+        e.stopPropagation();
+        onSelect?.(tableId);
+
+        const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+        const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+
+        dragStartRef.current = {
+            startX: clientX,
+            startY: clientY,
+            tableX: table.x || 100,
+            tableY: table.y || 100
+        };
+        setIsDraggingTable(true);
+
+        const handlePointerMove = (moveEvent) => {
+            const mx = moveEvent.clientX ?? moveEvent.touches?.[0]?.clientX ?? 0;
+            const my = moveEvent.clientY ?? moveEvent.touches?.[0]?.clientY ?? 0;
+            const dx = (mx - dragStartRef.current.startX) / (scale || 1);
+            const dy = (my - dragStartRef.current.startY) / (scale || 1);
+
+            onUpdate({
+                ...table,
+                x: Math.round(dragStartRef.current.tableX + dx),
+                y: Math.round(dragStartRef.current.tableY + dy)
+            });
+        };
+
+        const handlePointerUp = () => {
+            setIsDraggingTable(false);
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+        };
+
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+    };
+
+    // Column divider resize
+    const startColResize = (colIndex, e) => {
+        if (isLocked) return;
+        e.stopPropagation();
+        e.preventDefault();
+
+        const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+        const initialWidth = colWidths[colIndex];
+
+        const onPointerMove = (ev) => {
+            const curX = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
+            const delta = (curX - clientX) / (scale || 1);
+            const newW = Math.max(50, Math.round(initialWidth + delta));
+            const newColWidths = [...colWidths];
+            newColWidths[colIndex] = newW;
+            onUpdate({
+                ...table,
+                colWidths: newColWidths,
+                width: newColWidths.reduce((a, b) => a + b, 0)
+            });
+        };
+
+        const onPointerUp = () => {
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+    };
+
+    // Row divider resize
+    const startRowResize = (rowIndex, e) => {
+        if (isLocked) return;
+        e.stopPropagation();
+        e.preventDefault();
+
+        const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+        const initialHeight = rowHeights[rowIndex];
+
+        const onPointerMove = (ev) => {
+            const curY = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
+            const delta = (curY - clientY) / (scale || 1);
+            const newH = Math.max(30, Math.round(initialHeight + delta));
+            const newRowHeights = [...rowHeights];
+            newRowHeights[rowIndex] = newH;
+            onUpdate({
+                ...table,
+                rowHeights: newRowHeights,
+                height: newRowHeights.reduce((a, b) => a + b, 0)
+            });
+        };
+
+        const onPointerUp = () => {
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+    };
+
+    // 8-point outer resize handles
+    const startOuterResize = (handle, e) => {
+        if (isLocked) return;
+        e.stopPropagation();
+        e.preventDefault();
+
+        const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+        const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+
+        const startX = table.x || 100;
+        const startY = table.y || 100;
+        const startW = totalWidth;
+        const startH = totalHeight;
+        const initialColWidths = [...colWidths];
+        const initialRowHeights = [...rowHeights];
+
+        const onPointerMove = (ev) => {
+            const curX = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
+            const curY = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
+            const dx = (curX - clientX) / (scale || 1);
+            const dy = (curY - clientY) / (scale || 1);
+
+            let newX = startX;
+            let newY = startY;
+            let newW = startW;
+            let newH = startH;
+
+            if (handle.includes('e')) {
+                newW = Math.max(120, Math.round(startW + dx));
+            }
+            if (handle.includes('w')) {
+                const potentialW = Math.max(120, Math.round(startW - dx));
+                newX = Math.round(startX + (startW - potentialW));
+                newW = potentialW;
+            }
+            if (handle.includes('s')) {
+                newH = Math.max(80, Math.round(startH + dy));
+            }
+            if (handle.includes('n')) {
+                const potentialH = Math.max(80, Math.round(startH - dy));
+                newY = Math.round(startY + (startH - potentialH));
+                newH = potentialH;
+            }
+
+            // Scale colWidths proportionally
+            const wRatio = newW / startW;
+            const scaledColWidths = initialColWidths.map(w => Math.max(40, Math.round(w * wRatio)));
+            const actualW = scaledColWidths.reduce((a, b) => a + b, 0);
+
+            // Scale rowHeights proportionally
+            const hRatio = newH / startH;
+            const scaledRowHeights = initialRowHeights.map(h => Math.max(25, Math.round(h * hRatio)));
+            const actualH = scaledRowHeights.reduce((a, b) => a + b, 0);
+
+            onUpdate({
+                ...table,
+                x: newX,
+                y: newY,
+                width: actualW,
+                height: actualH,
+                colWidths: scaledColWidths,
+                rowHeights: scaledRowHeights
+            });
+        };
+
+        const onPointerUp = () => {
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+    };
+
+    // Add Column
+    const handleAddColumn = (e) => {
+        e.stopPropagation();
+        if (cols >= 20) return;
+        const newCols = cols + 1;
+        const newColWidths = [...colWidths, 120];
+        onUpdate({
+            ...table,
+            cols: newCols,
+            colWidths: newColWidths,
+            width: newColWidths.reduce((a, b) => a + b, 0)
+        });
+    };
+
+    // Remove Column
+    const handleRemoveColumn = (e) => {
+        e.stopPropagation();
+        if (cols <= 1) return;
+        const newCols = cols - 1;
+        const newColWidths = colWidths.slice(0, -1);
+        onUpdate({
+            ...table,
+            cols: newCols,
+            colWidths: newColWidths,
+            width: newColWidths.reduce((a, b) => a + b, 0)
+        });
+    };
+
+    // Add Row
+    const handleAddRow = (e) => {
+        e.stopPropagation();
+        if (rows >= 50) return;
+        const newRows = rows + 1;
+        const newRowHeights = [...rowHeights, 50];
+        onUpdate({
+            ...table,
+            rows: newRows,
+            rowHeights: newRowHeights,
+            height: newRowHeights.reduce((a, b) => a + b, 0)
+        });
+    };
+
+    // Remove Row
+    const handleRemoveRow = (e) => {
+        e.stopPropagation();
+        if (rows <= 1) return;
+        const newRows = rows - 1;
+        const newRowHeights = rowHeights.slice(0, -1);
+        onUpdate({
+            ...table,
+            rows: newRows,
+            rowHeights: newRowHeights,
+            height: newRowHeights.reduce((a, b) => a + b, 0)
+        });
     };
 
     // Open rich modal cell editor (for doodle, image, LaTeX)
@@ -299,180 +870,24 @@ export default function WhiteboardTableObject({
         setIsDoodling(false);
     };
 
-    // Table movement
-    const handleMovePointerDown = (e) => {
-        if (isLocked) return;
-        e.stopPropagation();
-        onSelect?.(tableId);
-
-        const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
-        const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
-
-        dragStartRef.current = {
-            startX: clientX,
-            startY: clientY,
-            tableX: table.x || 100,
-            tableY: table.y || 100
-        };
-        setIsDraggingTable(true);
-
-        const handlePointerMove = (moveEvent) => {
-            const mx = moveEvent.clientX ?? moveEvent.touches?.[0]?.clientX ?? 0;
-            const my = moveEvent.clientY ?? moveEvent.touches?.[0]?.clientY ?? 0;
-            const dx = (mx - dragStartRef.current.startX) / (scale || 1);
-            const dy = (my - dragStartRef.current.startY) / (scale || 1);
-
-            onUpdate({
-                ...table,
-                x: Math.round(dragStartRef.current.tableX + dx),
-                y: Math.round(dragStartRef.current.tableY + dy)
-            });
-        };
-
-        const handlePointerUp = () => {
-            setIsDraggingTable(false);
-            window.removeEventListener('pointermove', handlePointerMove);
-            window.removeEventListener('pointerup', handlePointerUp);
-        };
-
-        window.addEventListener('pointermove', handlePointerMove);
-        window.addEventListener('pointerup', handlePointerUp);
-    };
-
-    // Column divider resize
-    const startColResize = (colIndex, e) => {
-        if (isLocked) return;
-        e.stopPropagation();
-        e.preventDefault();
-
-        const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
-        const initialWidth = colWidths[colIndex];
-
-        const onPointerMove = (ev) => {
-            const curX = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
-            const delta = (curX - clientX) / (scale || 1);
-            const newW = Math.max(60, Math.round(initialWidth + delta));
-            const newColWidths = [...colWidths];
-            newColWidths[colIndex] = newW;
-            onUpdate({
-                ...table,
-                colWidths: newColWidths,
-                width: newColWidths.reduce((a, b) => a + b, 0)
-            });
-        };
-
-        const onPointerUp = () => {
-            window.removeEventListener('pointermove', onPointerMove);
-            window.removeEventListener('pointerup', onPointerUp);
-        };
-
-        window.addEventListener('pointermove', onPointerMove);
-        window.addEventListener('pointerup', onPointerUp);
-    };
-
-    // Row divider resize
-    const startRowResize = (rowIndex, e) => {
-        if (isLocked) return;
-        e.stopPropagation();
-        e.preventDefault();
-
-        const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
-        const initialHeight = rowHeights[rowIndex];
-
-        const onPointerMove = (ev) => {
-            const curY = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
-            const delta = (curY - clientY) / (scale || 1);
-            const newH = Math.max(35, Math.round(initialHeight + delta));
-            const newRowHeights = [...rowHeights];
-            newRowHeights[rowIndex] = newH;
-            onUpdate({
-                ...table,
-                rowHeights: newRowHeights,
-                height: newRowHeights.reduce((a, b) => a + b, 0)
-            });
-        };
-
-        const onPointerUp = () => {
-            window.removeEventListener('pointermove', onPointerMove);
-            window.removeEventListener('pointerup', onPointerUp);
-        };
-
-        window.addEventListener('pointermove', onPointerMove);
-        window.addEventListener('pointerup', onPointerUp);
-    };
-
-    // Add Column
-    const handleAddColumn = (e) => {
-        e.stopPropagation();
-        if (cols >= 12) return;
-        const newCols = cols + 1;
-        const newColWidths = [...colWidths, 140];
-        onUpdate({
-            ...table,
-            cols: newCols,
-            colWidths: newColWidths,
-            width: newColWidths.reduce((a, b) => a + b, 0)
-        });
-    };
-
-    // Remove Column
-    const handleRemoveColumn = (e) => {
-        e.stopPropagation();
-        if (cols <= 1) return;
-        const newCols = cols - 1;
-        const newColWidths = colWidths.slice(0, -1);
-        onUpdate({
-            ...table,
-            cols: newCols,
-            colWidths: newColWidths,
-            width: newColWidths.reduce((a, b) => a + b, 0)
-        });
-    };
-
-    // Add Row
-    const handleAddRow = (e) => {
-        e.stopPropagation();
-        if (rows >= 25) return;
-        const newRows = rows + 1;
-        const newRowHeights = [...rowHeights, 55];
-        onUpdate({
-            ...table,
-            rows: newRows,
-            rowHeights: newRowHeights,
-            height: newRowHeights.reduce((a, b) => a + b, 0)
-        });
-    };
-
-    // Remove Row
-    const handleRemoveRow = (e) => {
-        e.stopPropagation();
-        if (rows <= 1) return;
-        const newRows = rows - 1;
-        const newRowHeights = rowHeights.slice(0, -1);
-        onUpdate({
-            ...table,
-            rows: newRows,
-            rowHeights: newRowHeights,
-            height: newRowHeights.reduce((a, b) => a + b, 0)
-        });
-    };
-
     // Extract active selected cell data & label
     const selectedCell = selectedCellKey ? (cells[selectedCellKey] || {}) : null;
     const [selR, selC] = selectedCellKey ? selectedCellKey.split('-').map(Number) : [null, null];
-    const cellColLetter = selC !== null && selC !== undefined ? String.fromCharCode(65 + selC) : '';
+    const cellColLetter = selC !== null && selC !== undefined ? getColLabel(selC) : '';
     const cellRefLabel = selR !== null && selR !== undefined ? `${cellColLetter}${selR + 1}` : '';
 
     return (
         <div
+            data-table-id={tableId}
+            data-table-object="true"
             className={`whiteboard-table-item absolute select-none transition-shadow outline-none ${
                 isSelected ? 'ring-2 ring-indigo-500 shadow-2xl' : ''
             }`}
             style={{
                 left: table.x || 100,
                 top: table.y || 100,
-                width: totalWidth,
-                height: totalHeight,
+                width: gridWidth,
+                height: gridHeight,
                 zIndex: zIndex,
                 pointerEvents: 'auto'
             }}
@@ -481,36 +896,8 @@ export default function WhiteboardTableObject({
                 e.stopPropagation();
                 onSelect?.(tableId);
             }}
-            onKeyDown={(e) => {
-                if (isInlineEditing) return; // Handled by inline textarea
-                if (!selectedCellKey) return;
-                const [r, c] = selectedCellKey.split('-').map(Number);
-                if (e.key === 'ArrowRight') {
-                    e.preventDefault();
-                    moveToCell(r, c + 1);
-                } else if (e.key === 'ArrowLeft') {
-                    e.preventDefault();
-                    moveToCell(r, c - 1);
-                } else if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    moveToCell(r + 1, c);
-                } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    moveToCell(r - 1, c);
-                } else if (e.key === 'Tab') {
-                    e.preventDefault();
-                    moveToCell(r, c + (e.shiftKey ? -1 : 1));
-                } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    startInlineEdit(r, c);
-                } else if (e.key === 'Delete' || e.key === 'Backspace') {
-                    e.preventDefault();
-                    updateSelectedCell({ text: '', math: '' });
-                } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                    // Start inline edit on direct typing
-                    startInlineEdit(r, c, e.key);
-                }
-            }}
+            onPaste={handlePaste}
+            onKeyDown={handleContainerKeyDown}
         >
             {/* 1. Excel-Like Cell Formatting Toolbar (Shown when Table & Cell are Selected) */}
             {isSelected && selectedCellKey && (
@@ -776,6 +1163,16 @@ export default function WhiteboardTableObject({
 
                     <div className="h-4 w-px bg-slate-700 mx-0.5" />
 
+                    {/* Copy Table / Cells */}
+                    <button
+                        type="button"
+                        onClick={copyTableDataToClipboard}
+                        className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
+                        title="Copy to Clipboard (TSV / Excel / Word)"
+                    >
+                        <Clipboard className="w-3.5 h-3.5 text-emerald-400" />
+                    </button>
+
                     {/* Text Wrap Toggle */}
                     <button
                         type="button"
@@ -844,6 +1241,16 @@ export default function WhiteboardTableObject({
 
                         <div className="h-4 w-px bg-slate-700 mx-1" />
 
+                        {/* Copy Table Data */}
+                        <button
+                            type="button"
+                            onClick={copyTableDataToClipboard}
+                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-emerald-300 rounded-lg transition"
+                            title="Copy Table Data (Ctrl+C)"
+                        >
+                            <Clipboard className="w-3.5 h-3.5" />
+                        </button>
+
                         {/* Lock / Unlock */}
                         <button
                             type="button"
@@ -859,7 +1266,7 @@ export default function WhiteboardTableObject({
                         {/* Duplicate */}
                         <button
                             type="button"
-                            onClick={() => onDuplicate?.(table)}
+                            onClick={() => onDuplicate?.(tableId)}
                             className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
                             title="Duplicate Table"
                         >
@@ -899,196 +1306,329 @@ export default function WhiteboardTableObject({
                 </div>
             )}
 
-            {/* Table Grid DOM Structure */}
+            {/* 3. Table Grid DOM Structure */}
             <div 
                 className="relative overflow-hidden rounded-xl shadow-lg border"
                 style={{
-                    width: totalWidth,
-                    height: totalHeight,
+                    width: gridWidth,
+                    height: gridHeight,
                     borderColor: borderColor,
                     borderWidth: borderWidth,
                     backgroundColor: cellBg
                 }}
             >
-                {/* Rows & Cells */}
-                <div className="flex flex-col w-full h-full">
-                    {Array.from({ length: rows }).map((_, rIdx) => {
-                        const isHeader = hasHeaderRow && rIdx === 0;
-                        const rHeight = rowHeights[rIdx] || 50;
+                {/* Top Row: Corner Box + Column Headers */}
+                <div className="flex w-full" style={{ height: HEADER_HEIGHT }}>
+                    {/* Top-Left Corner Box (Selects All Cells / Drag to Move) */}
+                    <div
+                        className={`table-corner-box shrink-0 flex items-center justify-center border-r border-b cursor-grab active:cursor-grabbing select-none transition ${
+                            selectionMode === 'ALL'
+                                ? 'bg-indigo-600/40 text-indigo-200 border-indigo-500'
+                                : 'bg-slate-900/95 hover:bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        style={{
+                            width: CORNER_WIDTH,
+                            height: HEADER_HEIGHT,
+                            borderColor: borderColor
+                        }}
+                        onClick={handleSelectAll}
+                        onPointerDown={handleMovePointerDown}
+                        title="Click to select all cells / Drag to move table"
+                    >
+                        <Move className="w-3.5 h-3.5" />
+                    </div>
 
-                        return (
-                            <div 
-                                key={`row-${rIdx}`} 
-                                className="flex relative w-full"
-                                style={{ height: rHeight }}
-                            >
-                                {Array.from({ length: cols }).map((_, cIdx) => {
-                                    const cWidth = colWidths[cIdx] || 100;
-                                    const cellKey = `${rIdx}-${cIdx}`;
-                                    const cell = cells[cellKey] || {};
-                                    const isCellSelected = selectedCellKey === cellKey;
-                                    const isEditingThisCell = isInlineEditing && isCellSelected;
+                    {/* Column Labels Strip (A, B, C...) */}
+                    <div className="flex flex-1 overflow-hidden" style={{ height: HEADER_HEIGHT }}>
+                        {Array.from({ length: cols }).map((_, cIdx) => {
+                            const cWidth = colWidths[cIdx] || 100;
+                            const isColSel = selectionMode === 'COL' && selectedCol === cIdx;
+                            const isAllSel = selectionMode === 'ALL';
+                            return (
+                                <div
+                                    key={`col-hdr-${cIdx}`}
+                                    onClick={(e) => handleSelectCol(cIdx, e)}
+                                    className={`table-header-col relative flex items-center justify-center text-[11px] font-bold border-r border-b select-none transition ${
+                                        isColSel || isAllSel
+                                            ? 'bg-indigo-600/40 text-indigo-100 font-extrabold border-indigo-500'
+                                            : 'bg-slate-900/90 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                                    }`}
+                                    style={{
+                                        width: cWidth,
+                                        height: HEADER_HEIGHT,
+                                        borderColor: borderColor
+                                    }}
+                                    title={`Select Column ${getColLabel(cIdx)}`}
+                                >
+                                    <span>{getColLabel(cIdx)}</span>
 
-                                    const cellFontSize = cell.fontSize || (isHeader ? 12 : 11);
-                                    const cellFontFamily = cell.fontFamily || 'sans';
-                                    const cellBold = cell.bold !== undefined ? cell.bold : isHeader;
-                                    const cellItalic = Boolean(cell.italic);
-                                    const cellUnderline = Boolean(cell.underline);
-                                    const cellStrikethrough = Boolean(cell.strikethrough);
-                                    const cellAlign = cell.align || (isHeader ? 'center' : 'left');
-                                    const cellColor = cell.color || (isHeader ? headerText : cellText);
-                                    const cellCustomBg = cell.bg;
-                                    const cellWrap = cell.wrap !== false;
+                                    {/* Column divider drag resize */}
+                                    <div
+                                        onPointerDown={(e) => startColResize(cIdx, e)}
+                                        className="absolute top-0 right-0 w-2.5 h-full -mr-1.5 cursor-col-resize z-20 hover:bg-indigo-500/70 transition-colors"
+                                        title="Drag to resize column width"
+                                        onClick={(e) => e.stopPropagation()}
+                                    />
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
 
-                                    return (
-                                        <div
-                                            key={`cell-${cellKey}`}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onSelect?.(tableId);
-                                                handleSelectCell(rIdx, cIdx);
-                                            }}
-                                            onDoubleClick={(e) => {
-                                                e.stopPropagation();
-                                                onSelect?.(tableId);
-                                                startInlineEdit(rIdx, cIdx);
-                                            }}
-                                            className={`relative flex flex-col justify-center p-2 text-xs overflow-hidden transition-all border-r border-b ${
-                                                isCellSelected 
-                                                    ? 'ring-2 ring-indigo-400 ring-inset bg-indigo-500/15 shadow-inner' 
-                                                    : 'hover:outline-dashed hover:outline-1 hover:outline-indigo-400 cursor-pointer'
-                                            }`}
-                                            style={{
-                                                width: cWidth,
-                                                height: rHeight,
-                                                borderColor: borderColor,
-                                                backgroundColor: cellCustomBg || (isHeader ? headerBg : cellBg),
-                                                color: cellColor
-                                            }}
-                                            title="Click to select & format; Double click or Enter to edit inline"
-                                        >
-                                            {/* Inline Text Area Editor */}
-                                            {isEditingThisCell ? (
-                                                <textarea
-                                                    ref={inlineInputRef}
-                                                    value={inlineText}
-                                                    onChange={(e) => setInlineText(e.target.value)}
-                                                    onBlur={commitInlineEdit}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter' && !e.shiftKey) {
-                                                            e.preventDefault();
-                                                            commitInlineEdit();
-                                                        } else if (e.key === 'Escape') {
-                                                            e.preventDefault();
-                                                            cancelInlineEdit();
-                                                        } else if (e.key === 'Tab') {
-                                                            e.preventDefault();
-                                                            commitInlineEdit();
-                                                            moveToCell(rIdx, cIdx + (e.shiftKey ? -1 : 1));
-                                                        }
-                                                    }}
-                                                    className="w-full h-full bg-slate-900 text-white p-1 resize-none border-2 border-indigo-400 rounded-sm focus:outline-none overflow-hidden leading-tight"
-                                                    style={{
-                                                        fontSize: `${cellFontSize}px`,
-                                                        fontFamily: getFontFamilyCss(cellFontFamily),
-                                                        fontWeight: cellBold ? 'bold' : 'normal',
-                                                        fontStyle: cellItalic ? 'italic' : 'normal',
-                                                        textDecoration: [cellUnderline ? 'underline' : '', cellStrikethrough ? 'line-through' : ''].filter(Boolean).join(' ') || 'none',
-                                                        textAlign: cellAlign,
-                                                        color: cellColor
-                                                    }}
-                                                    autoFocus
-                                                />
-                                            ) : (
-                                                <>
-                                                    {/* Cell Content: Image */}
-                                                    {cell.image && (
-                                                        <div className="w-full flex-1 min-h-0 flex items-center justify-center overflow-hidden mb-1">
-                                                            <img 
-                                                                src={cell.image} 
-                                                                alt="Cell media" 
-                                                                className="max-w-full max-h-full object-contain rounded-sm"
-                                                            />
-                                                        </div>
-                                                    )}
+                {/* Bottom Body: Row Headers + Cells Grid */}
+                <div className="flex w-full" style={{ height: totalHeight }}>
+                    {/* Row Headers Strip (1, 2, 3...) */}
+                    <div className="flex flex-col shrink-0" style={{ width: CORNER_WIDTH, height: totalHeight }}>
+                        {Array.from({ length: rows }).map((_, rIdx) => {
+                            const rHeight = rowHeights[rIdx] || 50;
+                            const isRowSel = selectionMode === 'ROW' && selectedRow === rIdx;
+                            const isAllSel = selectionMode === 'ALL';
+                            return (
+                                <div
+                                    key={`row-hdr-${rIdx}`}
+                                    onClick={(e) => handleSelectRow(rIdx, e)}
+                                    className={`table-header-row relative flex items-center justify-center text-[10px] font-mono font-bold border-r border-b select-none transition ${
+                                        isRowSel || isAllSel
+                                            ? 'bg-indigo-600/40 text-indigo-100 font-extrabold border-indigo-500'
+                                            : 'bg-slate-900/90 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                                    }`}
+                                    style={{
+                                        width: CORNER_WIDTH,
+                                        height: rHeight,
+                                        borderColor: borderColor
+                                    }}
+                                    title={`Select Row ${rIdx + 1}`}
+                                >
+                                    <span>{rIdx + 1}</span>
 
-                                                    {/* Cell Content: In-Cell Ink / Doodle */}
-                                                    {cell.inkData && (
-                                                        <div className="w-full flex-1 min-h-0 flex items-center justify-center overflow-hidden mb-1">
-                                                            <img 
-                                                                src={cell.inkData} 
-                                                                alt="Cell doodle" 
-                                                                className="max-w-full max-h-full object-contain"
-                                                            />
-                                                        </div>
-                                                    )}
-
-                                                    {/* Cell Content: Math Formula (KaTeX) */}
-                                                    {cell.math && (
-                                                        <div className="w-full overflow-x-auto overflow-y-hidden py-0.5 text-center leading-snug">
-                                                            <MathRenderer 
-                                                                content={`$$${cell.math}$$`} 
-                                                                inline={false}
-                                                                textClassName="text-indigo-200"
-                                                                size="sm"
-                                                            />
-                                                        </div>
-                                                    )}
-
-                                                    {/* Cell Content: Text with Rich Formatting */}
-                                                    {cell.text && (
-                                                        <div 
-                                                            className={`w-full leading-tight ${cellWrap ? 'break-words whitespace-pre-wrap' : 'truncate whitespace-nowrap'}`}
-                                                            style={{
-                                                                fontSize: `${cellFontSize}px`,
-                                                                fontFamily: getFontFamilyCss(cellFontFamily),
-                                                                fontWeight: cellBold ? 'bold' : 'normal',
-                                                                fontStyle: cellItalic ? 'italic' : 'normal',
-                                                                textDecoration: [cellUnderline ? 'underline' : '', cellStrikethrough ? 'line-through' : ''].filter(Boolean).join(' ') || 'none',
-                                                                textAlign: cellAlign,
-                                                                color: cellColor
-                                                            }}
-                                                        >
-                                                            {cell.text}
-                                                        </div>
-                                                    )}
-
-                                                    {/* Empty Placeholder Hint */}
-                                                    {!cell.text && !cell.math && !cell.image && !cell.inkData && (
-                                                        <span className="text-[10px] text-slate-600 italic select-none">
-                                                            {isHeader ? `Header ${cIdx + 1}` : 'Empty'}
-                                                        </span>
-                                                    )}
-                                                </>
-                                            )}
-
-                                            {/* Column Divider Resizer (on right edge of each cell except last) */}
-                                            {cIdx < cols - 1 && (
-                                                <div
-                                                    onPointerDown={(e) => startColResize(cIdx, e)}
-                                                    className="absolute top-0 right-0 w-2 h-full -mr-1 cursor-col-resize z-20 hover:bg-indigo-500/50 transition-colors"
-                                                    title="Drag to resize column width"
-                                                />
-                                            )}
-                                        </div>
-                                    );
-                                })}
-
-                                {/* Row Divider Resizer (on bottom edge of each row except last) */}
-                                {rIdx < rows - 1 && (
+                                    {/* Row divider drag resize */}
                                     <div
                                         onPointerDown={(e) => startRowResize(rIdx, e)}
-                                        className="absolute bottom-0 left-0 w-full h-2 -mb-1 cursor-row-resize z-20 hover:bg-indigo-500/50 transition-colors"
+                                        className="absolute bottom-0 left-0 w-full h-2.5 -mb-1.5 cursor-row-resize z-20 hover:bg-indigo-500/70 transition-colors"
                                         title="Drag to resize row height"
+                                        onClick={(e) => e.stopPropagation()}
                                     />
-                                )}
-                            </div>
-                        );
-                    })}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Cells Grid */}
+                    <div className="flex flex-col flex-1" style={{ width: totalWidth, height: totalHeight }}>
+                        {Array.from({ length: rows }).map((_, rIdx) => {
+                            const isHeader = hasHeaderRow && rIdx === 0;
+                            const rHeight = rowHeights[rIdx] || 50;
+
+                            return (
+                                <div 
+                                    key={`row-${rIdx}`} 
+                                    className="flex relative w-full"
+                                    style={{ height: rHeight }}
+                                >
+                                    {Array.from({ length: cols }).map((_, cIdx) => {
+                                        const cWidth = colWidths[cIdx] || 100;
+                                        const cellKey = `${rIdx}-${cIdx}`;
+                                        const cell = cells[cellKey] || {};
+                                        const inSelection = isCellSelected(rIdx, cIdx);
+                                        const isCurrentActiveCell = isSelected && selectedCellKey === cellKey;
+                                        const isEditingThisCell = isInlineEditing && isCurrentActiveCell;
+
+                                        const cellFontSize = cell.fontSize || (isHeader ? 12 : 11);
+                                        const cellFontFamily = cell.fontFamily || 'sans';
+                                        const cellBold = cell.bold !== undefined ? cell.bold : isHeader;
+                                        const cellItalic = Boolean(cell.italic);
+                                        const cellUnderline = Boolean(cell.underline);
+                                        const cellStrikethrough = Boolean(cell.strikethrough);
+                                        const cellAlign = cell.align || (isHeader ? 'center' : 'left');
+                                        const cellColor = cell.color || (isHeader ? headerText : cellText);
+                                        const cellCustomBg = cell.bg;
+                                        const cellWrap = cell.wrap !== false;
+
+                                        return (
+                                            <div
+                                                key={`cell-${cellKey}`}
+                                                className={`table-cell relative flex flex-col justify-center p-2 text-xs overflow-hidden transition-all border-r border-b ${
+                                                    inSelection
+                                                        ? 'bg-indigo-500/20'
+                                                        : 'hover:outline-dashed hover:outline-1 hover:outline-indigo-400 cursor-pointer'
+                                                }`}
+                                                style={{
+                                                    width: cWidth,
+                                                    height: rHeight,
+                                                    borderColor: borderColor,
+                                                    backgroundColor: inSelection
+                                                        ? 'rgba(99, 102, 241, 0.22)'
+                                                        : (cellCustomBg || (isHeader ? headerBg : cellBg)),
+                                                    color: cellColor,
+                                                    outline: isCurrentActiveCell ? '2px solid #818cf8' : 'none',
+                                                    outlineOffset: '-2px'
+                                                }}
+                                                onClick={(e) => handleSelectCell(rIdx, cIdx, e)}
+                                                onDoubleClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onSelect?.(tableId);
+                                                    startInlineEdit(rIdx, cIdx);
+                                                }}
+                                                title="Click to select; Double-click or type to edit inline"
+                                            >
+                                                {/* Inline Text Area Editor */}
+                                                {isEditingThisCell ? (
+                                                    <textarea
+                                                        ref={inlineInputRef}
+                                                        value={inlineText}
+                                                        onChange={(e) => setInlineText(e.target.value)}
+                                                        onBlur={() => commitInlineEdit()}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                                e.preventDefault();
+                                                                commitAndNavigate('down');
+                                                            } else if (e.key === 'Tab') {
+                                                                e.preventDefault();
+                                                                commitAndNavigate(e.shiftKey ? 'left' : 'right');
+                                                            } else if (e.key === 'Escape') {
+                                                                e.preventDefault();
+                                                                cancelInlineEdit();
+                                                            }
+                                                        }}
+                                                        className="w-full h-full bg-slate-900 text-white p-1 resize-none border-2 border-indigo-400 rounded-sm focus:outline-none overflow-hidden leading-tight"
+                                                        style={{
+                                                            fontSize: `${cellFontSize}px`,
+                                                            fontFamily: getFontFamilyCss(cellFontFamily),
+                                                            fontWeight: cellBold ? 'bold' : 'normal',
+                                                            fontStyle: cellItalic ? 'italic' : 'normal',
+                                                            textDecoration: [cellUnderline ? 'underline' : '', cellStrikethrough ? 'line-through' : ''].filter(Boolean).join(' ') || 'none',
+                                                            textAlign: cellAlign,
+                                                            color: cellColor
+                                                        }}
+                                                        autoFocus
+                                                    />
+                                                ) : (
+                                                    <>
+                                                        {/* Cell Content: Image */}
+                                                        {cell.image && (
+                                                            <div className="w-full flex-1 min-h-0 flex items-center justify-center overflow-hidden mb-1">
+                                                                <img 
+                                                                    src={cell.image} 
+                                                                    alt="Cell media" 
+                                                                    className="max-w-full max-h-full object-contain rounded-sm"
+                                                                />
+                                                            </div>
+                                                        )}
+
+                                                        {/* Cell Content: In-Cell Ink / Doodle */}
+                                                        {cell.inkData && (
+                                                            <div className="w-full flex-1 min-h-0 flex items-center justify-center overflow-hidden mb-1">
+                                                                <img 
+                                                                    src={cell.inkData} 
+                                                                    alt="Cell doodle" 
+                                                                    className="max-w-full max-h-full object-contain"
+                                                                />
+                                                            </div>
+                                                        )}
+
+                                                        {/* Cell Content: Math Formula (KaTeX) */}
+                                                        {cell.math && (
+                                                            <div className="w-full overflow-x-auto overflow-y-hidden py-0.5 text-center leading-snug">
+                                                                <MathRenderer 
+                                                                    content={`$$${cell.math}$$`} 
+                                                                    inline={false}
+                                                                    textClassName="text-indigo-200"
+                                                                    size="sm"
+                                                                />
+                                                            </div>
+                                                        )}
+
+                                                        {/* Cell Content: Text with Rich Formatting */}
+                                                        {cell.text && (
+                                                            <div 
+                                                                className={`w-full leading-tight ${cellWrap ? 'break-words whitespace-pre-wrap' : 'truncate whitespace-nowrap'}`}
+                                                                style={{
+                                                                    fontSize: `${cellFontSize}px`,
+                                                                    fontFamily: getFontFamilyCss(cellFontFamily),
+                                                                    fontWeight: cellBold ? 'bold' : 'normal',
+                                                                    fontStyle: cellItalic ? 'italic' : 'normal',
+                                                                    textDecoration: [cellUnderline ? 'underline' : '', cellStrikethrough ? 'line-through' : ''].filter(Boolean).join(' ') || 'none',
+                                                                    textAlign: cellAlign,
+                                                                    color: cellColor
+                                                                }}
+                                                            >
+                                                                {cell.text}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Empty Placeholder Hint */}
+                                                        {!cell.text && !cell.math && !cell.image && !cell.inkData && (
+                                                            <span className="text-[10px] text-slate-600 italic select-none">
+                                                                {isHeader ? `Header ${cIdx + 1}` : 'Empty'}
+                                                            </span>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
             </div>
 
-            {/* Right-Side Add / Remove Column Controls */}
+            {/* 4. 8-Point Outer Resize Handles */}
+            {isSelected && !isLocked && (
+                <>
+                    {/* NW */}
+                    <div
+                        onPointerDown={(e) => startOuterResize('nw', e)}
+                        className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-indigo-600 rounded-[2px] cursor-nwse-resize z-50 hover:scale-125 transition-transform shadow-xs"
+                        title="Resize Table"
+                    />
+                    {/* N */}
+                    <div
+                        onPointerDown={(e) => startOuterResize('n', e)}
+                        className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-indigo-600 rounded-[2px] cursor-ns-resize z-50 hover:scale-125 transition-transform shadow-xs"
+                        title="Resize Table Height"
+                    />
+                    {/* NE */}
+                    <div
+                        onPointerDown={(e) => startOuterResize('ne', e)}
+                        className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-indigo-600 rounded-[2px] cursor-nesw-resize z-50 hover:scale-125 transition-transform shadow-xs"
+                        title="Resize Table"
+                    />
+                    {/* E */}
+                    <div
+                        onPointerDown={(e) => startOuterResize('e', e)}
+                        className="absolute top-1/2 -translate-y-1/2 -right-1.5 w-3 h-3 bg-white border-2 border-indigo-600 rounded-[2px] cursor-ew-resize z-50 hover:scale-125 transition-transform shadow-xs"
+                        title="Resize Table Width"
+                    />
+                    {/* SE */}
+                    <div
+                        onPointerDown={(e) => startOuterResize('se', e)}
+                        className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-indigo-600 rounded-[2px] cursor-nwse-resize z-50 hover:scale-125 transition-transform shadow-xs"
+                        title="Resize Table"
+                    />
+                    {/* S */}
+                    <div
+                        onPointerDown={(e) => startOuterResize('s', e)}
+                        className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-indigo-600 rounded-[2px] cursor-ns-resize z-50 hover:scale-125 transition-transform shadow-xs"
+                        title="Resize Table Height"
+                    />
+                    {/* SW */}
+                    <div
+                        onPointerDown={(e) => startOuterResize('sw', e)}
+                        className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-indigo-600 rounded-[2px] cursor-nesw-resize z-50 hover:scale-125 transition-transform shadow-xs"
+                        title="Resize Table"
+                    />
+                    {/* W */}
+                    <div
+                        onPointerDown={(e) => startOuterResize('w', e)}
+                        className="absolute top-1/2 -translate-y-1/2 -left-1.5 w-3 h-3 bg-white border-2 border-indigo-600 rounded-[2px] cursor-ew-resize z-50 hover:scale-125 transition-transform shadow-xs"
+                        title="Resize Table Width"
+                    />
+                </>
+            )}
+
+            {/* 5. Right-Side Add / Remove Column Controls */}
             {isSelected && (
                 <div 
                     className="absolute -right-7 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-30 pointer-events-auto"
@@ -1115,7 +1655,7 @@ export default function WhiteboardTableObject({
                 </div>
             )}
 
-            {/* Bottom Add / Remove Row Controls */}
+            {/* 6. Bottom Add / Remove Row Controls */}
             {isSelected && (
                 <div 
                     className="absolute -bottom-7 left-1/2 -translate-x-1/2 flex items-center gap-1 z-30 pointer-events-auto"
@@ -1142,7 +1682,7 @@ export default function WhiteboardTableObject({
                 </div>
             )}
 
-            {/* Rich Cell Editor Modal */}
+            {/* 7. Rich Cell Editor Modal (for Doodle, Image, LaTeX) */}
             {activeCellKey && (
                 <div 
                     className="fixed inset-0 z-110 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 pointer-events-auto"

@@ -65,7 +65,7 @@ import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
 import AdminPermissionsPanel from './AdminPermissionsPanel';
 import RadialToolbar from './RadialToolbar';
-import { BRUSH_TYPES, renderCalligraphy, renderCrayon, renderWatercolor, renderFountainPen, floodFill, sampleColor } from './WhiteboardBrushEngine';
+import { BRUSH_TYPES, renderCalligraphy, renderCrayon, renderWatercolor, renderFountainPen, floodFill, sampleColor, resolveCanvasFillStyle } from './WhiteboardBrushEngine';
 import StickyNoteRenderer, { createStickyNoteObject, STICKY_COLORS } from './StickyNote';
 import ConnectorLine, { findNearestShape, getAnchorPoint, getConnectorPath, renderArrowhead, calculateAngle, getConnectorArrowAngle, getCurvedControlPoints, getConnectorMidpoint, NORM_ANCHOR_MAP } from './ConnectorLine';
 import TemplateGallery from './TemplateGallery';
@@ -838,6 +838,13 @@ export default function Whiteboard({
     const [fillMode, setFillMode] = useState('solid'); // 'solid' | 'pattern' | 'gradient'
     const [fillPatternId, setFillPatternId] = useState('pattern-dots');
     const [fillGradientId, setFillGradientId] = useState('grad-sunset');
+    const [patternFgColor, setPatternFgColor] = useState('#ffffff');
+    const [patternBgColor, setPatternBgColor] = useState('#1e293b');
+    const [gradientFrom, setGradientFrom] = useState('#ff512f');
+    const [gradientTo, setGradientTo] = useState('#dd2476');
+    const [gradientAngle, setGradientAngle] = useState(45);
+    const [gradientType, setGradientType] = useState('linear');
+    const lastPointerCanvasPosRef = useRef({ x: 960, y: 540 });
     const [showTableModal, setShowTableModal] = useState(false);
     const [showAlignMenu, setShowAlignMenu] = useState(false);
     const [showRecorder, setShowRecorder] = useState(false);
@@ -2197,6 +2204,49 @@ export default function Whiteboard({
             wrapper.removeEventListener('touchend', handleTouchEnd);
         };
     }, [zoomLevel, panOffset]);
+
+    // ─── Mouse Wheel Focal-Point Zooming (Direct wheel scrolling without Ctrl/Cmd) ───
+    useEffect(() => {
+        const container = canvasContainerRef.current;
+        if (!container) return;
+
+        const handleWheel = (e) => {
+            // Ignore wheel if inside interactive scrollable menus, dialogs, media player, or table cell editors
+            if (e.target?.closest?.(
+                '.whiteboard-table-item textarea, .whiteboard-table-item input, ' +
+                '.whiteboard-media-player, .whiteboard-clipboard-panel, ' +
+                '.whiteboard-context-menu, .whiteboard-tasks-panel, ' +
+                '.popover-scrollable, [data-no-wheel-zoom], select'
+            )) {
+                return;
+            }
+
+            e.preventDefault();
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+
+            const pos = getPosition(e);
+            if (!pos || isNaN(pos.x) || isNaN(pos.y)) return;
+
+            const currentZ = zoomLevel || 1;
+            const zoomFactor = e.deltaY < 0 ? 1.10 : (1 / 1.10);
+            const newZ = Math.max(0.2, Math.min(4.0, Math.round(currentZ * zoomFactor * 100) / 100));
+            if (newZ === currentZ) return;
+
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const ratio = currentZ / newZ;
+
+            const newPanX = Math.round(cx - pos.x + ratio * (pos.x + panOffset.x - cx));
+            const newPanY = Math.round(cy - pos.y + ratio * (pos.y + panOffset.y - cy));
+
+            setZoomLevel(newZ);
+            setPanOffset({ x: newPanX, y: newPanY });
+        };
+
+        container.addEventListener('wheel', handleWheel, { passive: false });
+        return () => container.removeEventListener('wheel', handleWheel);
+    }, [zoomLevel, panOffset, getPosition]);
 
     // ─── Grab / Pan Tool Physics & Momentum Inertia Engine ───
     const [isGrabbing, setIsGrabbing] = useState(false);
@@ -3791,17 +3841,20 @@ export default function Whiteboard({
         }
     }, [currentPage, saveToHistory]);
 
-    // Paste from clipboard
+    // Paste from clipboard (centered at mouse cursor position)
     const handlePasteItem = useCallback((item) => {
         if (!item) return;
+
+        const canvas = canvasRef.current;
+        const targetX = lastPointerCanvasPosRef.current ? lastPointerCanvasPosRef.current.x : (canvas ? canvas.width / 2 : 960);
+        const targetY = lastPointerCanvasPosRef.current ? lastPointerCanvasPosRef.current.y : (canvas ? canvas.height / 2 : 540);
         
         if (item.type === 'drawing') {
-            const canvas = canvasRef.current;
             if (!canvas) return;
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             
-            const x = (canvas.width - item.width) / 2;
-            const y = (canvas.height - item.height) / 2;
+            const x = Math.round(targetX - item.width / 2);
+            const y = Math.round(targetY - item.height / 2);
             
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = item.width;
@@ -3812,13 +3865,14 @@ export default function Whiteboard({
             saveToHistory();
         } else if (item.type === 'image') {
             pasteCountRef.current += 1;
-            const stackOffset = ((pasteCountRef.current - 1) % 12 + 1) * 25;
             const newId = Date.now().toString();
+            const w = item.data?.width || 200;
+            const h = item.data?.height || 200;
             const newImage = {
                 ...item.data,
                 id: newId,
-                x: (item.data.x || 100) + stackOffset,
-                y: (item.data.y || 100) + stackOffset
+                x: Math.round(targetX - w / 2),
+                y: Math.round(targetY - h / 2)
             };
             setImageObjects(prev => [...prev, newImage]);
             setSelectedImageIds([newId]);
@@ -3827,13 +3881,27 @@ export default function Whiteboard({
             saveToHistory();
         } else if (item.type === 'images') {
             pasteCountRef.current += 1;
-            const stackOffset = ((pasteCountRef.current - 1) % 12 + 1) * 25;
             const timestamp = Date.now();
-            const newImages = (item.data || []).map((img, idx) => ({
+            const imgs = item.data || [];
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            imgs.forEach(img => {
+                const ix = img.x || 0, iy = img.y || 0;
+                const iw = img.width || 150, ih = img.height || 150;
+                if (ix < minX) minX = ix;
+                if (iy < minY) minY = iy;
+                if (ix + iw > maxX) maxX = ix + iw;
+                if (iy + ih > maxY) maxY = iy + ih;
+            });
+            const grpCenterX = (minX + maxX) / 2 || 0;
+            const grpCenterY = (minY + maxY) / 2 || 0;
+            const dx = targetX - grpCenterX;
+            const dy = targetY - grpCenterY;
+
+            const newImages = imgs.map((img, idx) => ({
                 ...img,
                 id: (timestamp + idx).toString(),
-                x: (img.x || 100) + stackOffset,
-                y: (img.y || 100) + stackOffset
+                x: Math.round((img.x || 0) + dx),
+                y: Math.round((img.y || 0) + dy)
             }));
             setImageObjects(prev => [...prev, ...newImages]);
             const newIds = newImages.map(img => img.id);
@@ -3842,32 +3910,51 @@ export default function Whiteboard({
             setSelectedTextIds([]);
             saveToHistory();
         } else if (item.type === 'text') {
+            const w = item.data?.width || 160;
+            const h = item.data?.height || 40;
             setTextObjects(prev => [
                 ...prev,
                 {
                     ...item.data,
                     id: Date.now(),
-                    x: item.data.x + 20,
-                    y: item.data.y + 20
+                    x: Math.round(targetX - w / 2),
+                    y: Math.round(targetY - h / 2)
                 }
             ]);
         } else if (item.type === 'shape') {
+            const w = item.data?.width || 120;
+            const h = item.data?.height || 120;
             setShapeObjects(prev => [
                 ...prev,
                 {
                     ...item.data,
                     id: Date.now(),
-                    x: item.data.x + 20,
-                    y: item.data.y + 20
+                    x: Math.round(targetX - w / 2),
+                    y: Math.round(targetY - h / 2)
                 }
             ]);
         } else if (item.type === 'texts') {
             const timestamp = Date.now();
-            const newTexts = item.data.map((t, idx) => ({
+            const txts = item.data || [];
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            txts.forEach(t => {
+                const tx = t.x || 0, ty = t.y || 0;
+                const tw = t.width || 120, th = t.height || 40;
+                if (tx < minX) minX = tx;
+                if (ty < minY) minY = ty;
+                if (tx + tw > maxX) maxX = tx + tw;
+                if (ty + th > maxY) maxY = ty + th;
+            });
+            const grpCenterX = (minX + maxX) / 2 || 0;
+            const grpCenterY = (minY + maxY) / 2 || 0;
+            const dx = targetX - grpCenterX;
+            const dy = targetY - grpCenterY;
+
+            const newTexts = txts.map((t, idx) => ({
                 ...t,
                 id: timestamp + idx,
-                x: t.x + 20,
-                y: t.y + 20
+                x: Math.round((t.x || 0) + dx),
+                y: Math.round((t.y || 0) + dy)
             }));
             setTextObjects(prev => [...prev, ...newTexts]);
             setTimeout(() => setSelectedTextIds(newTexts.map(t => t.id)), 0);
@@ -3875,14 +3962,29 @@ export default function Whiteboard({
             const idMap = {};
             const newIds = [];
             const timestamp = Date.now();
+            const shps = item.data || [];
 
-            item.data.forEach((shape, index) => {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            shps.forEach(s => {
+                const sx = s.x || 0, sy = s.y || 0;
+                const sw = s.width || 100, sh = s.height || 100;
+                if (sx < minX) minX = sx;
+                if (sy < minY) minY = sy;
+                if (sx + sw > maxX) maxX = sx + sw;
+                if (sy + sh > maxY) maxY = sy + sh;
+            });
+            const grpCenterX = (minX + maxX) / 2 || 0;
+            const grpCenterY = (minY + maxY) / 2 || 0;
+            const dx = targetX - grpCenterX;
+            const dy = targetY - grpCenterY;
+
+            shps.forEach((shape, index) => {
                 const newId = (timestamp + index).toString();
                 idMap[shape.id] = newId;
                 newIds.push(newId);
             });
 
-            const newShapes = item.data.map((shape) => {
+            const newShapes = shps.map((shape) => {
                 const newId = idMap[shape.id];
                 if (shape.type === 'connector') {
                     return {
@@ -3890,16 +3992,16 @@ export default function Whiteboard({
                         id: newId,
                         sourceId: idMap[shape.sourceId] || shape.sourceId,
                         targetId: idMap[shape.targetId] || shape.targetId,
-                        sourcePoint: shape.sourcePoint ? { x: shape.sourcePoint.x + 20, y: shape.sourcePoint.y + 20 } : shape.sourcePoint,
-                        targetPoint: shape.targetPoint ? { x: shape.targetPoint.x + 20, y: shape.targetPoint.y + 20 } : shape.targetPoint,
-                        waypoint: shape.waypoint ? { x: shape.waypoint.x + 20, y: shape.waypoint.y + 20 } : null
+                        sourcePoint: shape.sourcePoint ? { x: Math.round(shape.sourcePoint.x + dx), y: Math.round(shape.sourcePoint.y + dy) } : shape.sourcePoint,
+                        targetPoint: shape.targetPoint ? { x: Math.round(shape.targetPoint.x + dx), y: Math.round(shape.targetPoint.y + dy) } : shape.targetPoint,
+                        waypoint: shape.waypoint ? { x: Math.round(shape.waypoint.x + dx), y: Math.round(shape.waypoint.y + dy) } : null
                     };
                 }
                 return {
                     ...shape,
                     id: newId,
-                    x: (shape.x || 0) + 20,
-                    y: (shape.y || 0) + 20
+                    x: Math.round((shape.x || 0) + dx),
+                    y: Math.round((shape.y || 0) + dy)
                 };
             });
 
@@ -3907,13 +4009,14 @@ export default function Whiteboard({
             setTimeout(() => setSelectedShapeIds(newIds), 0);
         } else if (item.type === 'media' && item.data) {
             pasteCountRef.current += 1;
-            const stackOffset = ((pasteCountRef.current - 1) % 12 + 1) * 25;
             const newId = `media_${Date.now()}`;
+            const w = item.data.width || 480;
+            const h = item.data.height || 300;
             const newMedia = {
                 ...item.data,
                 id: newId,
-                x: (item.data.x || 100) + stackOffset,
-                y: (item.data.y || 100) + stackOffset
+                x: Math.round(targetX - w / 2),
+                y: Math.round(targetY - h / 2)
             };
             setPageMediaObjects(prev => ({
                 ...prev,
@@ -3927,13 +4030,14 @@ export default function Whiteboard({
             saveToHistory();
         } else if (item.type === '3d_object' && item.data) {
             pasteCountRef.current += 1;
-            const stackOffset = ((pasteCountRef.current - 1) % 12 + 1) * 25;
             const newId = `3d_${Date.now()}`;
+            const w = item.data.width || 200;
+            const h = item.data.height || 200;
             const new3D = {
                 ...item.data,
                 id: newId,
-                x: (item.data.x || 100) + stackOffset,
-                y: (item.data.y || 100) + stackOffset
+                x: Math.round(targetX - w / 2),
+                y: Math.round(targetY - h / 2)
             };
             setPage3DObjects(prev => ({
                 ...prev,
@@ -3947,13 +4051,14 @@ export default function Whiteboard({
             saveToHistory();
         } else if (item.type === 'graph_object' && item.data) {
             pasteCountRef.current += 1;
-            const stackOffset = ((pasteCountRef.current - 1) % 12 + 1) * 25;
             const newId = `graph_${Date.now()}`;
+            const w = item.data.width || 400;
+            const h = item.data.height || 300;
             const newGraph = {
                 ...item.data,
                 id: newId,
-                x: (item.data.x || 100) + stackOffset,
-                y: (item.data.y || 100) + stackOffset
+                x: Math.round(targetX - w / 2),
+                y: Math.round(targetY - h / 2)
             };
             setPageGraphObjects(prev => ({
                 ...prev,
@@ -3967,11 +4072,41 @@ export default function Whiteboard({
             setSelected3DId(null);
             setSelectedPdfId(null);
             saveToHistory();
+        } else if (item.type === 'table' && item.data) {
+            pasteCountRef.current += 1;
+            const newId = `table_${Date.now()}`;
+            const w = (item.data.colWidths || []).reduce((a, b) => a + b, 0) || (item.data.width || 400);
+            const h = (item.data.rowHeights || []).reduce((a, b) => a + b, 0) || (item.data.height || 200);
+            const newTable = {
+                ...item.data,
+                id: newId,
+                x: Math.round(targetX - w / 2),
+                y: Math.round(targetY - h / 2)
+            };
+            setTableObjects(prev => [...prev, newTable]);
+            setSelectedTableId(newId);
+            setSelectedShapeIds([]);
+            setSelectedTextIds([]);
+            setSelectedImageIds([]);
+            saveToHistory();
         } else if (item.type === 'group' && item.data) {
             pasteCountRef.current += 1;
-            const stackOffset = ((pasteCountRef.current - 1) % 12 + 1) * 25;
             const timestamp = Date.now();
             const { shapes = [], texts = [], images = [], media = [], threeD = [] } = item.data;
+
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            [...shapes, ...texts, ...images, ...media, ...threeD].forEach(obj => {
+                const ox = obj.x || 0, oy = obj.y || 0;
+                const ow = obj.width || 100, oh = obj.height || 100;
+                if (ox < minX) minX = ox;
+                if (oy < minY) minY = oy;
+                if (ox + ow > maxX) maxX = ox + ow;
+                if (oy + oh > maxY) maxY = oy + oh;
+            });
+            const grpCenterX = (minX + maxX) / 2 || 0;
+            const grpCenterY = (minY + maxY) / 2 || 0;
+            const dx = targetX - grpCenterX;
+            const dy = targetY - grpCenterY;
 
             const shapeIdMap = {};
             const newShapeIds = [];
@@ -3988,18 +4123,18 @@ export default function Whiteboard({
                         id: nid,
                         sourceId: shapeIdMap[s.sourceId] || s.sourceId,
                         targetId: shapeIdMap[s.targetId] || s.targetId,
-                        sourcePoint: s.sourcePoint ? { x: s.sourcePoint.x + stackOffset, y: s.sourcePoint.y + stackOffset } : s.sourcePoint,
-                        targetPoint: s.targetPoint ? { x: s.targetPoint.x + stackOffset, y: s.targetPoint.y + stackOffset } : s.targetPoint,
-                        waypoint: s.waypoint ? { x: s.waypoint.x + stackOffset, y: s.waypoint.y + stackOffset } : null
+                        sourcePoint: s.sourcePoint ? { x: Math.round(s.sourcePoint.x + dx), y: Math.round(s.sourcePoint.y + dy) } : s.sourcePoint,
+                        targetPoint: s.targetPoint ? { x: Math.round(s.targetPoint.x + dx), y: Math.round(s.targetPoint.y + dy) } : s.targetPoint,
+                        waypoint: s.waypoint ? { x: Math.round(s.waypoint.x + dx), y: Math.round(s.waypoint.y + dy) } : null
                     };
                 }
-                return { ...s, id: nid, x: (s.x || 0) + stackOffset, y: (s.y || 0) + stackOffset };
+                return { ...s, id: nid, x: Math.round((s.x || 0) + dx), y: Math.round((s.y || 0) + dy) };
             });
 
-            const newTexts = texts.map((t, idx) => ({ ...t, id: `txt_${timestamp}_${idx}`, x: (t.x || 0) + stackOffset, y: (t.y || 0) + stackOffset }));
-            const newImages = images.map((img, idx) => ({ ...img, id: `img_${timestamp}_${idx}`, x: (img.x || 0) + stackOffset, y: (img.y || 0) + stackOffset }));
-            const newMedias = media.map((m, idx) => ({ ...m, id: `media_${timestamp}_${idx}`, x: (m.x || 0) + stackOffset, y: (m.y || 0) + stackOffset }));
-            const new3Ds = threeD.map((o, idx) => ({ ...o, id: `3d_${timestamp}_${idx}`, x: (o.x || 0) + stackOffset, y: (o.y || 0) + stackOffset }));
+            const newTexts = texts.map((t, idx) => ({ ...t, id: `txt_${timestamp}_${idx}`, x: Math.round((t.x || 0) + dx), y: Math.round((t.y || 0) + dy) }));
+            const newImages = images.map((img, idx) => ({ ...img, id: `img_${timestamp}_${idx}`, x: Math.round((img.x || 0) + dx), y: Math.round((img.y || 0) + dy) }));
+            const newMedias = media.map((m, idx) => ({ ...m, id: `media_${timestamp}_${idx}`, x: Math.round((m.x || 0) + dx), y: Math.round((m.y || 0) + dy) }));
+            const new3Ds = threeD.map((o, idx) => ({ ...o, id: `3d_${timestamp}_${idx}`, x: Math.round((o.x || 0) + dx), y: Math.round((o.y || 0) + dy) }));
 
             if (newShapes.length > 0) setShapeObjects(prev => [...prev, ...newShapes]);
             if (newTexts.length > 0) setTextObjects(prev => [...prev, ...newTexts]);
@@ -5590,12 +5725,96 @@ export default function Whiteboard({
                     toast.success('Pasted math equation onto canvas', { icon: '🧮' });
                     return;
                 }
+
+                // 5. Excel / Google Sheets / Word Tabular Data pasting (creates table if no table selected)
+                const isHtmlTable = htmlData && htmlData.includes('<table') && htmlData.includes('</tr');
+                const isTsv = trimmed.includes('\t') && (trimmed.includes('\n') || trimmed.includes('\r'));
+
+                if (isHtmlTable || isTsv) {
+                    if (selectedTableId) {
+                        return;
+                    }
+
+                    let grid = [];
+                    if (isHtmlTable) {
+                        try {
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(htmlData, 'text/html');
+                            const trs = doc.querySelectorAll('tr');
+                            trs.forEach(tr => {
+                                const row = [];
+                                tr.querySelectorAll('td, th').forEach(cell => {
+                                    row.push(cell.innerText.trim());
+                                });
+                                if (row.length > 0) grid.push(row);
+                            });
+                        } catch (_) {}
+                    }
+                    if (grid.length === 0 && isTsv) {
+                        const lines = trimmed.split(/\r?\n/).filter(line => line.length > 0);
+                        grid = lines.map(line => line.split('\t').map(c => c.trim()));
+                    }
+
+                    if (grid.length > 0 && (grid.length > 1 || (grid[0] && grid[0].length > 1))) {
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        const numRows = grid.length;
+                        const numCols = Math.max(...grid.map(r => r.length));
+                        const colW = Math.max(100, Math.min(220, Math.round(720 / numCols)));
+                        const rowH = 45;
+                        const totalW = colW * numCols;
+                        const totalH = rowH * numRows;
+
+                        const targetX = lastPointerCanvasPosRef.current ? lastPointerCanvasPosRef.current.x : 960;
+                        const targetY = lastPointerCanvasPosRef.current ? lastPointerCanvasPosRef.current.y : 540;
+
+                        const newCells = {};
+                        for (let r = 0; r < numRows; r++) {
+                            for (let c = 0; c < numCols; c++) {
+                                const val = grid[r]?.[c] || '';
+                                newCells[`${r}-${c}`] = {
+                                    text: val,
+                                    bold: r === 0,
+                                    align: r === 0 ? 'center' : 'left'
+                                };
+                            }
+                        }
+
+                        const newTable = {
+                            id: `table_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                            type: 'table',
+                            x: Math.max(20, Math.round(targetX - totalW / 2)),
+                            y: Math.max(20, Math.round(targetY - totalH / 2)),
+                            rows: numRows,
+                            cols: numCols,
+                            rowHeights: Array(numRows).fill(rowH),
+                            colWidths: Array(numCols).fill(colW),
+                            hasHeaderRow: true,
+                            headerBg: '#1e293b',
+                            headerText: '#f8fafc',
+                            cellBg: '#0f172a',
+                            cellText: '#e2e8f0',
+                            borderColor: '#334155',
+                            borderWidth: 2,
+                            isLocked: false,
+                            zIndex: 35,
+                            cells: newCells
+                        };
+
+                        setTableObjects(prev => [...prev, newTable]);
+                        setSelectedTableId(newTable.id);
+                        saveToHistory();
+                        toast.success(`Created ${numRows}×${numCols} table from clipboard!`, { icon: '📊' });
+                        return;
+                    }
+                }
             }
         };
 
         window.addEventListener('paste', handleGlobalPaste);
         return () => window.removeEventListener('paste', handleGlobalPaste);
-    }, [saveToHistory, setImageObjects, setSelectedImageIds, setSelectedImageId, setSelectedShapeIds, setSelectedTextIds, currentPage]);
+    }, [saveToHistory, setImageObjects, setSelectedImageIds, setSelectedImageId, setSelectedShapeIds, setSelectedTextIds, setTableObjects, setSelectedTableId, selectedTableId, currentPage]);
 
     // Math virtual keyboard symbol insertion handler
     const handleInsertMathSymbol = useCallback((symbolLatex) => {
@@ -7674,8 +7893,12 @@ export default function Whiteboard({
                     color: color,
                     patternId: fillPatternId,
                     gradientId: fillGradientId,
-                    patternFg: '#ffffff',
-                    patternBg: '#1e293b'
+                    patternFg: patternFgColor,
+                    patternBg: patternBgColor,
+                    gradientFrom,
+                    gradientTo,
+                    gradientAngle,
+                    gradientType
                 }, 32);
 
                 if (res && res.success === false && res.reason === 'leaked') {
@@ -9222,10 +9445,16 @@ export default function Whiteboard({
                 '.shape-magnetic-hook, .whiteboard-shape-item, ' +
                 '.whiteboard-text-item, .whiteboard-image-item, ' +
                 '.sticky-note-card, .shape-format-bar, .text-format-bar, ' +
-                '.image-format-bar, .connector-hover-popover, .whiteboard-context-menu'
+                '.image-format-bar, .connector-hover-popover, .whiteboard-context-menu, ' +
+                '.whiteboard-table-item, .table-cell, .table-header-col, .table-header-row, .table-corner-box, [data-table-object]'
             )
         ) {
             return;
+        }
+
+        const downPos = getPosition(e);
+        if (downPos && !isNaN(downPos.x) && !isNaN(downPos.y)) {
+            lastPointerCanvasPosRef.current = downPos;
         }
 
         // Prevent default touch scrolling / gesture recognition ONLY when drawing on canvas surface
@@ -9376,10 +9605,15 @@ export default function Whiteboard({
             currentPressureRef.current = e.pressure || 0.5;
         }
 
+        const movePos = getPosition(e);
+        if (movePos && !isNaN(movePos.x) && !isNaN(movePos.y)) {
+            lastPointerCanvasPosRef.current = movePos;
+        }
+
         if (!isDrawing) {
             if (socket && sessionId && Date.now() - cursorLastEmitRef.current > 60) {
                 cursorLastEmitRef.current = Date.now();
-                const pos = getPosition(e);
+                const pos = movePos;
                 const effectiveUserName = (isInstructor || !user?.role || user.role !== 'student') ? 'Admin' : (userName || 'Student');
                 socket.emit('whiteboard:cursor-update', {
                     sessionId,
@@ -9790,9 +10024,21 @@ export default function Whiteboard({
             ctx.translate(-centerX, -centerY);
 
             ctx.strokeStyle = shpObj.color;
-            ctx.lineWidth = shpObj.strokeWidth || 2;
             const fill = shpObj.fillColor || 'transparent';
-            ctx.fillStyle = fill;
+            const resolvedFill = resolveCanvasFillStyle(ctx, fill, {
+                x: shpObj.x || 0,
+                y: shpObj.y || 0,
+                width: shpObj.width || 100,
+                height: shpObj.height || 100
+            }, {
+                patternFgColor,
+                patternBgColor,
+                gradientFrom,
+                gradientTo,
+                gradientAngle,
+                gradientType
+            });
+            ctx.fillStyle = resolvedFill || 'transparent';
 
             // Border style: dashed, dotted, solid
             const bStyle = shpObj.borderStyle || shpObj.strokeStyle || 'solid';
@@ -11082,6 +11328,27 @@ export default function Whiteboard({
             ctx.restore();
         }
 
+        // 7. Draw Table objects to screenshot
+        const currentTableObjects = pageTableObjects[currentPage] || [];
+        for (const tbl of currentTableObjects) {
+            const domTbl = document.querySelector(`[data-table-id="${tbl.id}"]`);
+            if (domTbl) {
+                try {
+                    const tblCanvas = await html2canvas(domTbl, {
+                        backgroundColor: null,
+                        scale: 2,
+                        logging: false,
+                        useCORS: true
+                    });
+                    if (tblCanvas) {
+                        ctx.drawImage(tblCanvas, tbl.x || 0, tbl.y || 0);
+                    }
+                } catch (tErr) {
+                    console.warn("Failed html2canvas for table in screenshot:", tErr);
+                }
+            }
+        }
+
         let finalCanvas = exportCanvas;
 
         // If there's a selection, crop to it
@@ -11185,7 +11452,14 @@ export default function Whiteboard({
     const getCursor = () => {
         if (tool === 'grab' || tool === 'pan' || isSpacePressedRef.current) return isGrabbing ? 'grabbing' : 'grab';
         if (tool === 'select') return 'default';
-        if (tool === 'fill') return 'crosshair';
+        if (tool === 'fill') {
+            const activeFill = encodeURIComponent(
+                fillMode === 'solid'
+                    ? (color || '#3b82f6')
+                    : (fillMode === 'pattern' ? (patternFgColor || '#ffffff') : (gradientFrom || '#ff512f'))
+            );
+            return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="%23ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z" fill="${activeFill}"/><path d="m5 2 5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z" fill="${activeFill}"/></svg>') 4 20, crosshair`;
+        }
         if (tool === 'eraser') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${eraserSize}" height="${eraserSize}" viewBox="0 0 ${eraserSize} ${eraserSize}"><rect width="${eraserSize}" height="${eraserSize}" fill="white" stroke="black" stroke-width="1"/></svg>') ${eraserSize / 2} ${eraserSize / 2}, auto`;
         if (tool === 'text') return 'text';
         if (tool === 'laser') return 'none';
@@ -19888,7 +20162,7 @@ export default function Whiteboard({
 
                                 {/* Fill Bucket Tool Popover */}
                                 {tool === t.id && t.id === 'fill' && showFillPicker && (
-                                    <div className={`absolute ${popoverPos} p-3 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl z-50 flex flex-col gap-2.5 w-[280px] text-slate-200 backdrop-blur-md animate-in fade-in zoom-in-95`}>
+                                    <div className={`absolute ${popoverPos} p-3 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl z-50 flex flex-col gap-2.5 w-[310px] text-slate-200 backdrop-blur-md animate-in fade-in zoom-in-95`}>
                                         <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                                             <div className="flex items-center gap-1.5">
                                                 <PaintBucket className="w-4 h-4 text-emerald-400" />
@@ -19971,7 +20245,7 @@ export default function Whiteboard({
                                                 <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
                                                     SVG Texture Patterns
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-1.5 max-h-[180px] overflow-y-auto pr-1">
+                                                <div className="grid grid-cols-2 gap-1.5 max-h-[140px] overflow-y-auto pr-1">
                                                     {PATTERN_PRESETS.map(p => (
                                                         <button
                                                             key={p.id}
@@ -19990,6 +20264,53 @@ export default function Whiteboard({
                                                         </button>
                                                     ))}
                                                 </div>
+
+                                                {/* Customizable Texture Colors */}
+                                                <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-800 text-[10px]">
+                                                    <div className="text-slate-400 font-semibold uppercase tracking-wider">Texture Colors</div>
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-slate-300">Foreground:</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            {['#ffffff', '#000000', '#3b82f6', '#10b981', '#f59e0b', '#ef4444'].map(c => (
+                                                                <button
+                                                                    key={c}
+                                                                    type="button"
+                                                                    onClick={() => setPatternFgColor(c)}
+                                                                    className={`w-4 h-4 rounded-full border transition ${patternFgColor === c ? 'ring-2 ring-primary-400 border-white scale-110' : 'border-slate-600 hover:scale-105'}`}
+                                                                    style={{ backgroundColor: c }}
+                                                                />
+                                                            ))}
+                                                            <input
+                                                                type="color"
+                                                                value={patternFgColor}
+                                                                onChange={(e) => setPatternFgColor(e.target.value)}
+                                                                className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
+                                                                title="Custom Foreground Color"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-slate-300">Background:</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            {['#1e293b', '#0f172a', '#000000', '#ffffff', '#1e3a8a', '#14532d'].map(c => (
+                                                                <button
+                                                                    key={c}
+                                                                    type="button"
+                                                                    onClick={() => setPatternBgColor(c)}
+                                                                    className={`w-4 h-4 rounded-full border transition ${patternBgColor === c ? 'ring-2 ring-primary-400 border-white scale-110' : 'border-slate-600 hover:scale-105'}`}
+                                                                    style={{ backgroundColor: c }}
+                                                                />
+                                                            ))}
+                                                            <input
+                                                                type="color"
+                                                                value={patternBgColor === 'transparent' ? '#000000' : patternBgColor}
+                                                                onChange={(e) => setPatternBgColor(e.target.value)}
+                                                                className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
+                                                                title="Custom Background Color"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
 
@@ -19998,12 +20319,18 @@ export default function Whiteboard({
                                                 <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
                                                     Gradients (Linear & Radial)
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-1.5 max-h-[180px] overflow-y-auto pr-1">
+                                                <div className="grid grid-cols-2 gap-1.5 max-h-[130px] overflow-y-auto pr-1">
                                                     {GRADIENT_PRESETS.map(g => (
                                                         <button
                                                             key={g.id}
                                                             type="button"
-                                                            onClick={() => setFillGradientId(g.id)}
+                                                            onClick={() => {
+                                                                setFillGradientId(g.id);
+                                                                if (g.from) setGradientFrom(g.from);
+                                                                if (g.to) setGradientTo(g.to);
+                                                                if (g.angle !== undefined) setGradientAngle(g.angle);
+                                                                if (g.type) setGradientType(g.type);
+                                                            }}
                                                             className={`flex items-center gap-2 p-1.5 rounded-xl border text-left transition ${
                                                                 fillGradientId === g.id
                                                                     ? 'border-primary-400 bg-primary-950/40 ring-1 ring-primary-400'
@@ -20021,6 +20348,103 @@ export default function Whiteboard({
                                                             <span className="text-[11px] font-medium text-slate-200 truncate">{g.name}</span>
                                                         </button>
                                                     ))}
+                                                </div>
+
+                                                {/* Customizable Gradient Controls */}
+                                                <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-800 text-[10px]">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-slate-400 font-semibold uppercase tracking-wider">Custom Gradient</span>
+                                                        <div className="flex items-center gap-1 bg-slate-800 rounded px-1 py-0.5 border border-slate-700">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setGradientType('linear');
+                                                                    setFillGradientId('grad-custom-linear');
+                                                                }}
+                                                                className={`px-1.5 py-0.5 rounded text-[9px] transition ${gradientType === 'linear' ? 'bg-primary-500 text-white font-medium' : 'text-slate-400 hover:text-white'}`}
+                                                            >
+                                                                Linear
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setGradientType('radial');
+                                                                    setFillGradientId('grad-custom-radial');
+                                                                }}
+                                                                className={`px-1.5 py-0.5 rounded text-[9px] transition ${gradientType === 'radial' ? 'bg-primary-500 text-white font-medium' : 'text-slate-400 hover:text-white'}`}
+                                                            >
+                                                                Radial
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-slate-300">From / To:</span>
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="flex items-center gap-1">
+                                                                <input
+                                                                    type="color"
+                                                                    value={gradientFrom}
+                                                                    onChange={(e) => {
+                                                                        setGradientFrom(e.target.value);
+                                                                        setFillGradientId(gradientType === 'radial' ? 'grad-custom-radial' : 'grad-custom-linear');
+                                                                    }}
+                                                                    className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
+                                                                    title="Start Color"
+                                                                />
+                                                                <span className="font-mono text-[9px] text-slate-400">{gradientFrom}</span>
+                                                            </div>
+                                                            <span className="text-slate-500">→</span>
+                                                            <div className="flex items-center gap-1">
+                                                                <input
+                                                                    type="color"
+                                                                    value={gradientTo}
+                                                                    onChange={(e) => {
+                                                                        setGradientTo(e.target.value);
+                                                                        setFillGradientId(gradientType === 'radial' ? 'grad-custom-radial' : 'grad-custom-linear');
+                                                                    }}
+                                                                    className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
+                                                                    title="End Color"
+                                                                />
+                                                                <span className="font-mono text-[9px] text-slate-400">{gradientTo}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {gradientType === 'linear' && (
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-slate-300">Angle:</span>
+                                                            <div className="flex items-center gap-1">
+                                                                {[0, 45, 90, 135, 180].map(deg => (
+                                                                    <button
+                                                                        key={deg}
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setGradientAngle(deg);
+                                                                            setFillGradientId('grad-custom-linear');
+                                                                        }}
+                                                                        className={`px-1.5 py-0.5 rounded border text-[9px] transition ${
+                                                                            gradientAngle === deg
+                                                                                ? 'bg-primary-500/30 border-primary-400 text-primary-200'
+                                                                                : 'border-slate-700 bg-slate-800 text-slate-400 hover:text-white'
+                                                                        }`}
+                                                                    >
+                                                                        {deg}°
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Live Preview Swatch */}
+                                                    <div
+                                                        className="w-full h-5 rounded-md border border-slate-700 shadow-inner mt-0.5"
+                                                        style={{
+                                                            background: gradientType === 'radial'
+                                                                ? `radial-gradient(circle at center, ${gradientFrom}, ${gradientTo})`
+                                                                : `linear-gradient(${gradientAngle}deg, ${gradientFrom}, ${gradientTo})`
+                                                        }}
+                                                    />
                                                 </div>
                                             </div>
                                         )}
@@ -21891,7 +22315,13 @@ export default function Whiteboard({
                     onDrop={handleCanvasDrop}
                 >
                     {/* SVG Definitions for Fill Patterns & Gradients */}
-                    <WhiteboardPatterns fgColor="#ffffff" bgColor="#1e293b" />
+                    <WhiteboardPatterns
+                        fgColor={patternFgColor}
+                        bgColor={patternBgColor}
+                        gradientFrom={gradientFrom}
+                        gradientTo={gradientTo}
+                        gradientAngle={gradientAngle}
+                    />
 
                     <canvas
                         ref={canvasRef}
@@ -28562,6 +28992,12 @@ export default function Whiteboard({
                     imageObjects={imageObjects}
                     threeDObjects={threeDObjects}
                     mediaObjects={mediaObjects}
+                    patternFgColor={patternFgColor}
+                    patternBgColor={patternBgColor}
+                    gradientFrom={gradientFrom}
+                    gradientTo={gradientTo}
+                    gradientAngle={gradientAngle}
+                    gradientType={gradientType}
                     onRecordingComplete={(data) => {
                         console.log('Recording complete:', data);
                     }}
