@@ -245,6 +245,19 @@ class MCPManagerService {
         const detection = this.canHandle(text);
         if (!detection || detection.server !== 'schemdraw-mcp') return null;
 
+        const low = text.toLowerCase();
+
+        // If the query asks to calculate, solve, compute, or contains specific numerical problem values,
+        // defer strictly to the Generative AI STEM solver so all math, arithmetic (e.g. q1, q2, C_total),
+        // and full derivations are reasoned out accurately.
+        const isCalculativeOrWordProblem =
+            /\b(calculate|find|compute|determine|solve|what\s+is|what\s+are|how\s+much|charge\s*q\d?|energy|potential\s+difference|voltage\s+across|current\s+through)\b/i.test(low) ||
+            /\b\d+\s*(?:micro|nano|pico|μ|u)?(?:f|farad|ohm|ω|h|henry|c|coulomb)\b/i.test(low);
+
+        if (isCalculativeOrWordProblem) {
+            return null;
+        }
+
         try {
             const spec = this.parseCircuitSpecFromText(text);
             const renderResult = await this.executeSchemDrawRunner({ circuit: spec });
@@ -253,14 +266,74 @@ class MCPManagerService {
                 return null;
             }
 
-            const { topology, source, count, compName } = spec;
+            const { topology, source, count, compName, components } = spec;
+            const compType = components[0]?.type || 'lamp';
             const isParallel = topology === 'parallel';
             const title = `${count} ${compName}s in ${isParallel ? 'Parallel' : 'Series'} (${source} ${spec.sourceType.toUpperCase()})`;
 
-            // Generate rigorous step-by-step KaTeX derivation matching dynamic topology
+            // Generate rigorous step-by-step KaTeX derivation matching component type & topology
             let derivation = '';
-            if (isParallel) {
-                derivation = `### 📌 Circuit Configuration (SchemDraw MCP - MIT)
+            if (compType === 'capacitor') {
+                if (isParallel) {
+                    derivation = `### 📌 Circuit Configuration (SchemDraw MCP - MIT)
+- **Source Voltage**: $V = ${source}$ (${spec.sourceType.toUpperCase()})
+- **Topology**: Parallel connection with $N = ${count}$ capacitors across identical potential rails.
+
+### 📐 Electrical Equations & Laws
+1. **Branch Voltage Invariance**:
+   $$V_1 = V_2 = \\dots = V_N = V_{\\text{source}} = ${source}$$
+   - Every capacitor in parallel experiences the full source potential difference.
+
+2. **Equivalent Capacitance ($C_{\\text{eq}}$)**:
+   $$C_{\\text{eq}} = \\sum_{k=1}^{${count}} C_k = C_1 + C_2${count > 2 ? ' + \\dots' : ''}$$
+   - Parallel plate areas effectively add together, increasing total charge storage capacity.
+
+3. **Charge Distribution ($q = C \\cdot V$)**:
+   $$q_k = C_k \\cdot V_{\\text{source}}$$
+   $$Q_{\\text{total}} = \\sum_{k=1}^{${count}} q_k = C_{\\text{eq}} \\cdot V_{\\text{source}}$$
+   - Total charge supplied by the battery equals the sum of charges stored on each capacitor.`;
+                } else {
+                    derivation = `### 📌 Circuit Configuration (SchemDraw MCP - MIT)
+- **Source Voltage**: $V = ${source}$ (${spec.sourceType.toUpperCase()})
+- **Topology**: Series connection with $N = ${count}$ capacitors in a single line.
+
+### 📐 Electrical Equations & Laws
+1. **Charge Invariance**:
+   $$q_1 = q_2 = \\dots = q_N = Q_{\\text{total}}$$
+   - Because the inner plates are isolated, equal and opposite charge $+Q$ and $-Q$ appear on every capacitor.
+
+2. **Kirchhoff's Voltage Law (KVL)**:
+   $$V_{\\text{total}} = \\sum_{k=1}^{${count}} V_k = V_1 + V_2${count > 2 ? ' + \\dots' : ''}$$
+   - The total battery potential divides across each capacitor inversely proportional to its capacitance: $V_k = \\frac{Q}{C_k}$.
+
+3. **Equivalent Capacitance ($C_{\\text{eq}}$)**:
+   $$\\frac{1}{C_{\\text{eq}}} = \\sum_{k=1}^{${count}} \\frac{1}{C_k} = \\frac{1}{C_1} + \\frac{1}{C_2}${count > 2 ? ' + \\dots' : ''}$$
+   - Series connection decreases effective capacitance below the smallest individual capacitor.`;
+                }
+            } else if (compType === 'inductor') {
+                if (isParallel) {
+                    derivation = `### 📌 Circuit Configuration (SchemDraw MCP - MIT)
+- **Source Voltage**: $V = ${source}$ (${spec.sourceType.toUpperCase()})
+- **Topology**: Parallel connection with $N = ${count}$ inductors.
+
+### 📐 Electrical Equations & Laws
+1. **Branch Voltage Invariance**: $V_1 = V_2 = V_{\\text{source}}$
+2. **Equivalent Inductance ($L_{\\text{eq}}$)**:
+   $$\\frac{1}{L_{\\text{eq}}} = \\sum_{k=1}^{${count}} \\frac{1}{L_k}$$`;
+                } else {
+                    derivation = `### 📌 Circuit Configuration (SchemDraw MCP - MIT)
+- **Source Voltage**: $V = ${source}$ (${spec.sourceType.toUpperCase()})
+- **Topology**: Series connection with $N = ${count}$ inductors.
+
+### 📐 Electrical Equations & Laws
+1. **Current Invariance**: $I_1 = I_2 = I_{\\text{total}}$
+2. **Equivalent Inductance ($L_{\\text{eq}}$)**:
+   $$L_{\\text{eq}} = \\sum_{k=1}^{${count}} L_k$$`;
+                }
+            } else {
+                // Resistors / Bulbs
+                if (isParallel) {
+                    derivation = `### 📌 Circuit Configuration (SchemDraw MCP - MIT)
 - **Source Voltage**: $V = ${source}$ (${spec.sourceType.toUpperCase()})
 - **Topology**: Parallel connection with $N = ${count}$ ${compName.toLowerCase()}${count > 1 ? 's' : ''} connected across identical potential rails.
 
@@ -278,8 +351,8 @@ class MCPManagerService {
    - For $N$ identical bulbs of resistance $R$:
      $$R_{\\text{eq}} = \\frac{R}{${count}}$$
    - Adding more bulbs in parallel decreases the overall equivalent resistance and draws more total current from the supply.`;
-            } else {
-                derivation = `### 📌 Circuit Configuration (SchemDraw MCP - MIT)
+                } else {
+                    derivation = `### 📌 Circuit Configuration (SchemDraw MCP - MIT)
 - **Source Voltage**: $V = ${source}$ (${spec.sourceType.toUpperCase()})
 - **Topology**: Series connection with $N = ${count}$ ${compName.toLowerCase()}${count > 1 ? 's' : ''} connected end-to-end in a single continuous loop.
 
@@ -297,6 +370,7 @@ class MCPManagerService {
    - For $N$ identical bulbs of resistance $R$:
      $$R_{\\text{eq}} = ${count} \\cdot R$$
    - Total resistance increases directly with each additional component added in series.`;
+                }
             }
 
             const speechResponse = `Here is the standardized IEEE schematic diagram showing ${count} ${compName.toLowerCase()}${count > 1 ? 's' : ''} connected in ${topology} with a ${source} source, rendered via SchemDraw MCP.`;

@@ -58,7 +58,9 @@ def render_from_spec(spec):
     if source_type == 'ac':
         d.add(elm.SourceSin().up().label(source_val))
     else:
-        d.add(elm.Battery().up().label(source_val))
+        b = d.add(elm.Battery().up().label(source_val, loc='left'))
+        d.add(elm.Label().at((b.end[0] + 0.25, b.end[1] - 0.2)).label('+', color='#ef4444', fontsize=14))
+        d.add(elm.Label().at((b.start[0] + 0.25, b.start[1] + 0.2)).label('−', color='#3b82f6', fontsize=14))
     
     if topology == 'series':
         # Top rail
