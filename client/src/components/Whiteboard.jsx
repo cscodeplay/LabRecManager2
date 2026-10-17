@@ -15177,6 +15177,7 @@ export default function Whiteboard({
                     id: `diag_${Date.now()}`,
                     type: 'svg',
                     svg: diagramSvg,
+                    code: solution.diagram?.code || solution.schemdrawCode || solution.canvasAction?.code || null,
                     title: solution.diagram?.title || 'Mathematical Diagram',
                     x: leftColX,
                     y: pageStartY,
@@ -17349,6 +17350,10 @@ export default function Whiteboard({
                                 // Interactive Graphing Panel renders the coordinate system and equations on the left; skip duplicate static plane
                                 continue;
                             }
+                            if (hasProblemDiagramLayout && (action.objectType === 'svg' || action.objectType === 'drawing' || action.objectType === 'sketch' || Boolean(action.svg) || (data.canvasAction?.diagramType && action.objectType === data.canvasAction.diagramType))) {
+                                // Diagram already placed on canvas via executeProblemWithDiagramLayout; skip duplicate second object
+                                continue;
+                            }
                             // Calculate bounding box for incoming object to scan available contiguous spaces
                             let objW = 240;
                             let objH = 200;
@@ -17860,7 +17865,8 @@ export default function Whiteboard({
                                             height: objH,
                                             color: actColor,
                                             strokeWidth: actStroke,
-                                            fillColor: actFill
+                                            fillColor: actFill,
+                                            code: action.code || null
                                         });
                                     }
                                 } else if (action.objectType === 'text') {
@@ -20086,7 +20092,7 @@ export default function Whiteboard({
         toast.success('Created sticky note from AI response!', { icon: '📝' });
     }, [panOffset, zoomLevel, currentPage, pageShapeObjects, saveToHistory]);
 
-    // Insert AI response as Clean Text Object on Canvas
+    // Insert AI response as Clean Text Object on Canvas (Font size: 12px)
     const handleInsertAiTextObject = useCallback((content) => {
         if (!content) return;
         const cWidth = canvasRef.current?.width || 1200;
@@ -20098,14 +20104,53 @@ export default function Whiteboard({
             text: content,
             x: cx - 140,
             y: cy - 40,
-            fontSize: 22,
+            fontSize: 12,
             fontFamily: 'sans-serif',
             color: color || '#1e293b'
         };
         setTextObjects(prev => [...prev, newText]);
         saveToHistory();
-        toast.success('Inserted AI response as text!', { icon: '🔤' });
+        toast.success('Inserted AI response as text (12px)!', { icon: '🔤' });
     }, [panOffset, zoomLevel, color, saveToHistory]);
+
+    // Insert Diagram SVG Object directly onto Canvas from Solution Pane
+    const handleInsertDiagramToCanvas = useCallback((svg, meta = {}) => {
+        if (!svg) return;
+        const cWidth = canvasRef.current?.width || 1200;
+        const cHeight = canvasRef.current?.height || 800;
+        const cx = Math.round((cWidth / 2 - panOffset.x) / zoomLevel);
+        const cy = Math.round((cHeight / 2 - panOffset.y) / zoomLevel);
+        const diagW = meta.width || 380;
+        const diagH = meta.height || 380;
+
+        const slot = findAvailableCanvasSpace(diagW, diagH);
+        const targetX = slot.hasSpace ? slot.x : Math.max(40, Math.round(cx - diagW / 2));
+        const targetY = slot.hasSpace ? slot.y : Math.max(40, Math.round(cy - diagH / 2));
+
+        const newObj = {
+            id: `svg_${Date.now()}`,
+            type: 'svg',
+            svg: svg,
+            code: meta.code || aiSolutionData?.diagram?.code || aiSolutionData?.schemdrawCode || aiSolutionData?.canvasAction?.code || null,
+            title: meta.title || aiSolutionData?.diagram?.title || 'Schematic Diagram',
+            x: targetX,
+            y: targetY,
+            width: diagW,
+            height: diagH,
+            color: '#000000',
+            strokeWidth: 2,
+            fillColor: 'transparent',
+            rotation: 0
+        };
+
+        const targetPage = currentPageRef.current !== undefined ? currentPageRef.current : currentPage;
+        setPageShapeObjects(prev => ({
+            ...prev,
+            [targetPage]: [...(prev[targetPage] || []), newObj]
+        }));
+        saveToHistory();
+        toast.success('Inserted diagram onto Whiteboard!', { icon: '📐' });
+    }, [panOffset, zoomLevel, currentPage, findAvailableCanvasSpace, saveToHistory, aiSolutionData]);
 
     // Stamp Physics Simulation Snapshot onto Whiteboard Canvas
     const handleStampPhysicsToCanvas = useCallback(({ dataUrl, width = 640, height = 360, title = 'Physics Simulation' }) => {
@@ -30494,6 +30539,7 @@ export default function Whiteboard({
                 suggestedFollowUps={aiSolutionData?.suggestedFollowUps || []}
                 onCreateStickyNote={handleInsertAiStickyNote}
                 onInsertAsText={handleInsertAiTextObject}
+                onInsertDiagram={handleInsertDiagramToCanvas}
                 onInsertToBoard={(sol) => handleInsertAiSolutionToBoard(sol || aiSolutionData)}
                 onOpenAiSolution={() => setShowAiAssistantModal(true)}
                 onOpenPhysicsSpace={() => setShowPhysicsSpace(true)}

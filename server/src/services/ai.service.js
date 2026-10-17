@@ -1026,7 +1026,11 @@ RULES:
 1. Return ONLY the clean, plain-text question or problem statement so the user can review and submit it to the AI solver.
 2. Convert mathematical symbols and equations into clean, readable inline notation (e.g. "Solve x^2 + y^2 + 3x + 4y - 18 = 0 and y = 3x + 1", "Find the volume of a cone with radius 7 cm and height 12 cm").
 3. If the image shows a geometric figure or diagram with labeled sides/angles, include those given values in the extracted question text.
-4. Do NOT solve the problem yet, and do NOT wrap the output in quotes or markdown code blocks. Output only the extracted question text.`;
+4. If NO explicit question text is written in the image (e.g. only a schematic circuit diagram, free-body diagram, ray optics setup, or geometric diagram with components/values is shown):
+   Synthesize a comprehensive, unambiguous STEM problem statement based on the diagram:
+   - Identify all components, connections/topologies (e.g. series, parallel, bridge), given numerical values, and source conditions.
+   - Formulate the standard target quantities to be solved (e.g. for a circuit: equivalent resistance/capacitance/inductance, total current/charge, and individual branch voltages/currents/charges; for mechanics: resultant force, acceleration, tension, or normal force; for optics: image position, nature, and magnification).
+5. Do NOT solve the problem yet, and do NOT wrap the output in quotes or markdown code blocks. Output only the extracted question text.`;
 
         const attemptErrors = [];
 

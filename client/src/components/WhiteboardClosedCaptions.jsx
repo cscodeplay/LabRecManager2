@@ -360,6 +360,7 @@ export default function WhiteboardClosedCaptions({
     suggestedFollowUps = [],
     onCreateStickyNote = () => {},
     onInsertAsText = () => {},
+    onInsertDiagram = null,
     onInsertToBoard = null,
     onOpenAiSolution = () => {},
     onStopSpeaking = () => {},
@@ -1203,6 +1204,47 @@ export default function WhiteboardClosedCaptions({
                                             dangerouslySetInnerHTML={{ __html: renderFormattedText(displayText) }}
                                         />
                                     )}
+
+                                    {/* Interactive Diagram Preview inside Solution Pane with One-Click Insert to Board */}
+                                    {Boolean(aiSolution?.diagram?.svg || aiSolution?.canvasAction?.svg || aiSolution?.diagramProps?.svg) && (() => {
+                                        const diagSvg = aiSolution?.diagram?.svg || aiSolution?.canvasAction?.svg || aiSolution?.diagramProps?.svg;
+                                        const diagTitle = aiSolution?.diagram?.title || aiSolution?.canvasAction?.title || 'Circuit / Schematic Diagram';
+                                        const diagCode = aiSolution?.diagram?.code || aiSolution?.schemdrawCode || aiSolution?.canvasAction?.code || null;
+                                        return (
+                                            <div className="mt-2.5 rounded-xl border border-slate-700/80 bg-slate-900/90 overflow-hidden shadow-md">
+                                                <div className="flex items-center justify-between px-3 py-1.5 bg-slate-950/90 border-b border-slate-800">
+                                                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-200">
+                                                        <span>📊</span>
+                                                        <span>{diagTitle}</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (typeof onInsertDiagram === 'function') {
+                                                                onInsertDiagram(diagSvg, {
+                                                                    title: diagTitle,
+                                                                    code: diagCode,
+                                                                    width: 380,
+                                                                    height: 380
+                                                                });
+                                                            } else if (typeof onInsertToBoard === 'function') {
+                                                                onInsertToBoard(aiSolution);
+                                                            }
+                                                        }}
+                                                        className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-[10px] font-bold transition cursor-pointer shadow-xs"
+                                                        title="Insert this diagram onto the whiteboard canvas"
+                                                    >
+                                                        <span>➕</span>
+                                                        <span>Insert Diagram to Board</span>
+                                                    </button>
+                                                </div>
+                                                <div 
+                                                    className="w-full flex items-center justify-center bg-white p-3 overflow-auto max-h-64 [&_svg]:max-w-full [&_svg]:max-h-56 [&_svg]:h-auto shadow-inner"
+                                                    dangerouslySetInnerHTML={{ __html: diagSvg }}
+                                                />
+                                            </div>
+                                        );
+                                    })()}
 
                                     {/* Collapsible SchemDraw Python Code in 10px font under diagram / solution */}
                                     {(aiSolution?.diagram?.code || aiSolution?.schemdrawCode || aiSolution?.canvasAction?.code) && (
