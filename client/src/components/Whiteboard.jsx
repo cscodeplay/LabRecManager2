@@ -267,10 +267,19 @@ export function renderRichMathText(text) {
     const escapeHtml = (str) =>
         str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-    // Helper to format plain text chunks: preserves consecutive spaces (&nbsp;) and line breaks (<br />)
+    // Helper to format plain text chunks: preserves markdown headings, bold, bullets, spaces, and line breaks
     const formatPlainTextChunk = (str) => {
         if (!str) return '';
-        return escapeHtml(str)
+        let res = escapeHtml(str);
+        // Markdown Section Headings: ### Title or ## Title
+        res = res.replace(/^(?:#{1,3}\s+)(.+)$/gm, '<div style="font-weight:700;font-size:13px;color:#1e293b;margin-top:5px;margin-bottom:2px;border-bottom:1px solid rgba(99,102,241,0.25);padding-bottom:2px;">$1</div>');
+        // Markdown Bold: **text**
+        res = res.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        // Markdown Italic: *text*
+        res = res.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
+        // Clean bullet points
+        res = res.replace(/^(\s*)[-*•]\s+(.+)$/gm, '$1• $2');
+        return res
             .replace(/ {2,}/g, match => ' ' + '&nbsp;'.repeat(match.length - 1))
             .replace(/\n/g, '<br />');
     };
@@ -13537,9 +13546,14 @@ export default function Whiteboard({
 
         // Determine diagram shape needed
         let dType = data.diagramType;
-        if (!dType) {
+        const svgContent = data.svg || data.diagram?.svg || data.diagramProps?.svg;
+        if (svgContent || dType === 'svg') {
+            dType = 'svg';
+        } else if (!dType) {
             if (combined.includes('wireframe') || (combined.includes('3d') && (combined.includes('wireframe') || combined.includes('dimension') || combined.includes('projection')))) dType = 'wireframe_3d';
-            else if (combined.includes('inscribed') || combined.includes('circumscribed') || combined.includes('remaining') || combined.includes('shaded') || (combined.includes('square') && combined.includes('circle'))) dType = 'composite_geometry';
+            else if (combined.includes('triangle') && (combined.includes('circle') || combined.includes('inscribed') || combined.includes('circumscribed'))) dType = 'svg';
+            else if (combined.includes('hexagon') && (combined.includes('circle') || combined.includes('inscribed'))) dType = 'svg';
+            else if (combined.includes('square') && combined.includes('circle')) dType = 'composite_geometry';
             else if (combined.includes('cone') || combined.includes('conical')) dType = 'cone';
             else if (combined.includes('cylinder') || combined.includes('cylindrical')) dType = 'cylinder';
             else if (combined.includes('incline') || combined.includes('ramp') || combined.includes('wedge') || combined.includes('friction')) dType = 'incline_plane';
@@ -13733,6 +13747,13 @@ export default function Whiteboard({
                 unit: data.unit || data.diagramProps?.unit || 'cm',
                 color: '#3b82f6',
                 dashColor: '#64748b',
+                ...(data.diagramProps || {})
+            };
+        } else if (dType === 'svg' || svgContent) {
+            diagShapeProps = {
+                type: 'svg',
+                svg: svgContent || (data.diagram && data.diagram.svg),
+                title: data.title || 'Mathematical Diagram',
                 ...(data.diagramProps || {})
             };
         }
@@ -14705,24 +14726,363 @@ export default function Whiteboard({
         };
     }, []);
 
+    // Universal Mathematical Syllabus SVG Diagram Fallback Generator (CBSE 6-12, B.Tech, M.Sc)
+    const generateSyllabusSvgDiagram = (combined, rawQuestion = '', graphEquations = []) => {
+        // 1. Equilateral Triangle Inscribed in Circle
+        if (/\b(triangle|equilateral\s*triangle)\b/i.test(combined) && /\b(circle|inscribed|circumscribed)\b/i.test(combined)) {
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380" width="100%" height="100%">
+  <defs>
+    <linearGradient id="solTriBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#f8fafc"/></linearGradient>
+    <radialGradient id="solTriShade" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="rgba(99,102,241,0.04)"/><stop offset="100%" stop-color="rgba(99,102,241,0.16)"/></radialGradient>
+    <marker id="solDimArrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#2563eb"/></marker>
+  </defs>
+  <rect width="380" height="380" rx="14" fill="url(#solTriBg)" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="190" y="28" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#1e293b">Equilateral Triangle Inscribed in Circle</text>
+  <circle cx="190" cy="190" r="125" fill="url(#solTriShade)" stroke="#6366f1" stroke-width="2.5"/>
+  <polygon points="190,65 298.25,252.5 81.75,252.5" fill="rgba(255,255,255,0.94)" stroke="#2563eb" stroke-width="2.5" stroke-linejoin="round"/>
+  <circle cx="190" cy="190" r="3.5" fill="#0f172a"/>
+  <text x="176" y="194" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#0f172a">O</text>
+  <line x1="190" y1="190" x2="298.25" y2="252.5" stroke="#ef4444" stroke-width="1.8" stroke-dasharray="4,4"/>
+  <text x="250" y="215" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#ef4444">R</text>
+  <line x1="190" y1="190" x2="190" y2="252.5" stroke="#64748b" stroke-width="1.5" stroke-dasharray="3,3"/>
+  <text x="196" y="224" font-family="Inter, -apple-system, sans-serif" font-size="10" font-weight="600" fill="#64748b">r = R/2</text>
+  <text x="190" y="48" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#0f172a">A</text>
+  <text x="316" y="266" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#0f172a">B</text>
+  <text x="64" y="266" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#0f172a">C</text>
+  <line x1="81.75" y1="276" x2="298.25" y2="276" stroke="#2563eb" stroke-width="1.8" marker-start="url(#solDimArrow)" marker-end="url(#solDimArrow)"/>
+  <text x="190" y="294" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#2563eb">a = √3 R</text>
+  <rect x="30" y="342" width="320" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="190" y="359" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#1d4ed8">a = 2R sin(60°) = √3 R ≈ 1.732 R</text>
+</svg>`;
+        }
+
+        // 2. Square with Inscribed Circle (Composite Geometry)
+        if (/\bsquare\b/i.test(combined) && /\b(circle|inscribed|remaining|shaded)\b/i.test(combined)) {
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380" width="100%" height="100%">
+  <defs>
+    <linearGradient id="sqCirBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#f8fafc"/></linearGradient>
+    <pattern id="sqHatch" width="8" height="8" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="8" stroke="rgba(99,102,241,0.3)" stroke-width="2"/></pattern>
+    <marker id="sqDimArrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#2563eb"/></marker>
+  </defs>
+  <rect width="380" height="380" rx="14" fill="url(#sqCirBg)" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="190" y="28" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#1e293b">Square with Inscribed Circle &amp; Shaded Corners</text>
+  <rect x="70" y="65" width="240" height="240" rx="4" fill="url(#sqHatch)" stroke="#2563eb" stroke-width="2.5"/>
+  <circle cx="190" cy="185" r="120" fill="#ffffff" stroke="#6366f1" stroke-width="2.5"/>
+  <circle cx="190" cy="185" r="3.5" fill="#0f172a"/>
+  <text x="178" y="180" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#0f172a">O</text>
+  <line x1="190" y1="185" x2="310" y2="185" stroke="#ef4444" stroke-width="1.8" stroke-dasharray="4,4"/>
+  <text x="245" y="178" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#ef4444">r = s/2</text>
+  <line x1="70" y1="318" x2="310" y2="318" stroke="#2563eb" stroke-width="1.8" marker-start="url(#sqDimArrow)" marker-end="url(#sqDimArrow)"/>
+  <text x="190" y="334" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#2563eb">side s = 2r</text>
+  <rect x="30" y="342" width="320" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="190" y="359" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#1d4ed8">A_shaded = s² - πr² = s²(1 - π/4) ≈ 0.2146 s²</text>
+</svg>`;
+        }
+
+        // 3. Calculus: Area Bounded by Curves
+        if (/\b(area\s*(?:bounded|enclosed|between|under)|calculus|integral\s*of|definite\s*integral)\b/i.test(combined) || (/\barea\b/i.test(combined) && /y\s*=\s*x/i.test(combined))) {
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380" width="100%" height="100%">
+  <defs>
+    <linearGradient id="calcGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#f8fafc"/></linearGradient>
+    <pattern id="calcHatch" width="8" height="8" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="8" stroke="rgba(99,102,241,0.3)" stroke-width="2"/></pattern>
+    <marker id="calcArrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#64748b"/></marker>
+  </defs>
+  <rect width="380" height="380" rx="14" fill="url(#calcGrad)" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="190" y="28" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#1e293b">Area Bounded by Curves: y = x² &amp; y = 4</text>
+  <line x1="40" y1="240" x2="340" y2="240" stroke="#64748b" stroke-width="1.6" marker-end="url(#calcArrow)"/>
+  <line x1="190" y1="290" x2="190" y2="55" stroke="#64748b" stroke-width="1.6" marker-end="url(#calcArrow)"/>
+  <text x="345" y="244" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#64748b">X</text>
+  <text x="180" y="52" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#64748b">Y</text>
+  <text x="178" y="255" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#64748b">O</text>
+  <path d="M 110 120 L 270 120 Q 190 240 110 120 Z" fill="rgba(99,102,241,0.2)" stroke="#6366f1" stroke-width="1.5"/>
+  <path d="M 110 120 L 270 120 Q 190 240 110 120 Z" fill="url(#calcHatch)"/>
+  <line x1="70" y1="120" x2="310" y2="120" stroke="#ef4444" stroke-width="2.2"/>
+  <text x="314" y="116" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#ef4444">y = 4</text>
+  <path d="M 85 82.5 Q 190 282 295 82.5" fill="none" stroke="#2563eb" stroke-width="2.5"/>
+  <text x="290" y="78" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#2563eb">y = x²</text>
+  <rect x="226" y="120" width="8" height="88" fill="rgba(239,68,68,0.25)" stroke="#ef4444" stroke-width="1"/>
+  <text x="240" y="165" font-family="Inter, -apple-system, sans-serif" font-size="10" font-weight="600" fill="#dc2626">dA = (4 - x²)dx</text>
+  <circle cx="110" cy="120" r="3.5" fill="#0f172a"/>
+  <text x="60" y="112" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#0f172a">(-2, 4)</text>
+  <circle cx="270" cy="120" r="3.5" fill="#0f172a"/>
+  <text x="274" y="112" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#0f172a">(2, 4)</text>
+  <rect x="30" y="342" width="320" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="190" y="359" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#1d4ed8">A = ∫₋₂² (4 - x²) dx = [4x - x³/3]₋₂² = 32/3 ≈ 10.67 sq units</text>
+</svg>`;
+        }
+
+        // 4. Conic Section: Parabola
+        if (/\b(parabola|focus\s*and\s*directrix|y\^?2\s*=\s*4a|latus\s*rectum)\b/i.test(combined)) {
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380" width="100%" height="100%">
+  <defs>
+    <linearGradient id="paraBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#f8fafc"/></linearGradient>
+    <marker id="paraArrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#64748b"/></marker>
+  </defs>
+  <rect width="380" height="380" rx="14" fill="url(#paraBg)" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="190" y="28" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#1e293b">Parabola: y² = 4ax (Focus &amp; Directrix)</text>
+  <line x1="40" y1="190" x2="340" y2="190" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#paraArrow)"/>
+  <line x1="145" y1="320" x2="145" y2="55" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#paraArrow)"/>
+  <text x="345" y="194" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#64748b">Axis</text>
+  <line x1="95" y1="55" x2="95" y2="325" stroke="#ef4444" stroke-width="1.8" stroke-dasharray="4,4"/>
+  <text x="83" y="70" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#ef4444" text-anchor="end">Directrix: x = -a</text>
+  <path d="M 310 65 Q 105 190 310 315" fill="none" stroke="#2563eb" stroke-width="2.5"/>
+  <circle cx="145" cy="190" r="3.5" fill="#0f172a"/>
+  <text x="131" y="205" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#0f172a">V(0,0)</text>
+  <circle cx="195" cy="190" r="4" fill="#ef4444"/>
+  <text x="201" y="182" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#ef4444">Focus F(a, 0)</text>
+  <line x1="195" y1="95" x2="195" y2="285" stroke="#10b981" stroke-width="1.8" stroke-dasharray="3,3"/>
+  <text x="203" y="115" font-family="Inter, -apple-system, sans-serif" font-size="10" font-weight="600" fill="#059669">Latus Rectum = 4a</text>
+  <rect x="30" y="342" width="320" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="190" y="359" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#1d4ed8">Vertex: (0,0),  Focus: (a,0),  Directrix: x = -a,  LR = 4a</text>
+</svg>`;
+        }
+
+        // 5. Conic Section: Ellipse
+        if (/\b(ellipse|eccentricity\s*of\s*ellipse|foci\s*of\s*ellipse|major\s*axis|x\^?2\/a\^?2)\b/i.test(combined)) {
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380" width="100%" height="100%">
+  <defs>
+    <linearGradient id="conicBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#f8fafc"/></linearGradient>
+    <marker id="conicArrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#64748b"/></marker>
+  </defs>
+  <rect width="380" height="380" rx="14" fill="url(#conicBg)" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="190" y="28" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#1e293b">Standard Ellipse: x²/a² + y²/b² = 1</text>
+  <line x1="40" y1="190" x2="340" y2="190" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#conicArrow)"/>
+  <line x1="190" y1="320" x2="190" y2="55" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#conicArrow)"/>
+  <ellipse cx="190" cy="190" rx="120" ry="75" fill="rgba(99,102,241,0.08)" stroke="#2563eb" stroke-width="2.5"/>
+  <circle cx="96" cy="190" r="3.5" fill="#ef4444"/>
+  <text x="86" y="182" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#ef4444">F₁(-c, 0)</text>
+  <circle cx="284" cy="190" r="3.5" fill="#ef4444"/>
+  <text x="270" y="182" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#ef4444">F₂(c, 0)</text>
+  <circle cx="190" cy="190" r="3.5" fill="#0f172a"/>
+  <text x="178" y="205" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#0f172a">O</text>
+  <line x1="70" y1="190" x2="310" y2="190" stroke="#2563eb" stroke-width="1.8"/>
+  <text x="314" y="204" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#2563eb">A(a,0)</text>
+  <text x="196" y="110" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#2563eb">B(0,b)</text>
+  <rect x="30" y="342" width="320" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="190" y="359" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#1d4ed8">c = √(a² - b²),  e = c/a &lt; 1,  Area = πab</text>
+</svg>`;
+        }
+
+        // 6. Circle Tangents from External Point
+        if (/\b(tangent|tangents)\b/i.test(combined) && /\b(circle|point\s*p|external\s*point)\b/i.test(combined)) {
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380" width="100%" height="100%">
+  <defs>
+    <linearGradient id="tanBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#f8fafc"/></linearGradient>
+  </defs>
+  <rect width="380" height="380" rx="14" fill="url(#tanBg)" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="190" y="28" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#1e293b">Tangents to Circle from External Point P</text>
+  <circle cx="145" cy="190" r="65" fill="rgba(99,102,241,0.06)" stroke="#6366f1" stroke-width="2.5"/>
+  <circle cx="145" cy="190" r="3.5" fill="#0f172a"/>
+  <text x="130" y="194" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#0f172a">O</text>
+  <line x1="305" y1="190" x2="171" y2="131" stroke="#2563eb" stroke-width="2.2"/>
+  <line x1="305" y1="190" x2="171" y2="249" stroke="#2563eb" stroke-width="2.2"/>
+  <line x1="145" y1="190" x2="171" y2="131" stroke="#ef4444" stroke-width="1.8" stroke-dasharray="3,3"/>
+  <line x1="145" y1="190" x2="171" y2="249" stroke="#ef4444" stroke-width="1.8" stroke-dasharray="3,3"/>
+  <text x="142" y="155" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#ef4444">r</text>
+  <text x="142" y="230" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#ef4444">r</text>
+  <line x1="145" y1="190" x2="305" y2="190" stroke="#64748b" stroke-width="1.5" stroke-dasharray="4,4"/>
+  <circle cx="171" cy="131" r="3.5" fill="#2563eb"/>
+  <text x="167" y="123" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#2563eb">A</text>
+  <circle cx="171" cy="249" r="3.5" fill="#2563eb"/>
+  <text x="167" y="265" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#2563eb">B</text>
+  <circle cx="305" cy="190" r="4" fill="#0f172a"/>
+  <text x="313" y="194" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#0f172a">P</text>
+  <rect x="30" y="342" width="320" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="190" y="359" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#1d4ed8">PA = PB = √(OP² - r²),  ∠OAP = ∠OBP = 90°</text>
+</svg>`;
+        }
+
+        // 7. Complex Analysis: Contour Integration
+        if (/\b(contour\s*integral|cauchy\s*residue|residue\s*theorem|semicircular|complex\s*plane|poles?\s*at|bromwich)\b/i.test(combined)) {
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380" width="100%" height="100%">
+  <defs>
+    <linearGradient id="cpxBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#f8fafc"/></linearGradient>
+    <marker id="cpxArrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#64748b"/></marker>
+    <marker id="pathArrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#2563eb"/></marker>
+  </defs>
+  <rect width="380" height="380" rx="14" fill="url(#cpxBg)" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="190" y="28" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#1e293b">Complex Contour Integration (Upper Semicircle)</text>
+  <line x1="40" y1="230" x2="340" y2="230" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#cpxArrow)"/>
+  <line x1="190" y1="310" x2="190" y2="55" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#cpxArrow)"/>
+  <text x="345" y="234" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#64748b">Re(z)</text>
+  <text x="180" y="52" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#64748b">Im(z)</text>
+  <path d="M 70 230 L 310 230 A 120 120 0 0 0 70 230 Z" fill="rgba(99,102,241,0.12)" stroke="#2563eb" stroke-width="2.2"/>
+  <line x1="170" y1="230" x2="210" y2="230" stroke="#2563eb" stroke-width="2.2" marker-end="url(#pathArrow)"/>
+  <path d="M 275 145 A 120 120 0 0 0 190 110" fill="none" stroke="#2563eb" stroke-width="2.2" marker-end="url(#pathArrow)"/>
+  <text x="190" y="165" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="18" font-weight="900" fill="#ef4444">×</text>
+  <text x="202" y="162" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#ef4444">z = i (Pole)</text>
+  <text x="190" y="300" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="18" font-weight="900" fill="#94a3b8">×</text>
+  <text x="202" y="298" font-family="Inter, -apple-system, sans-serif" font-size="10" font-weight="600" fill="#94a3b8">z = -i</text>
+  <text x="70" y="246" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#2563eb">-R</text>
+  <text x="305" y="246" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#2563eb">+R</text>
+  <text x="235" y="115" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#2563eb">C_R</text>
+  <rect x="30" y="342" width="320" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="190" y="359" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#1d4ed8">∮_C f(z) dz = 2πi · Res(f, i) = 2πi · (1/2i) = π</text>
+</svg>`;
+        }
+
+        // 8. Linear Programming (LPP) Feasible Region
+        if (/\b(feasible\s*region|linear\s*programming|maximize\s*z|minimize\s*z|corner\s*point|lpp\b)/i.test(combined)) {
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380" width="100%" height="100%">
+  <defs>
+    <linearGradient id="lppBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#f8fafc"/></linearGradient>
+    <marker id="lppArrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#64748b"/></marker>
+  </defs>
+  <rect width="380" height="380" rx="14" fill="url(#lppBg)" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="190" y="28" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#1e293b">LPP Feasible Region (Corner Point Method)</text>
+  <line x1="60" y1="280" x2="330" y2="280" stroke="#64748b" stroke-width="1.8" marker-end="url(#lppArrow)"/>
+  <line x1="60" y1="280" x2="60" y2="55" stroke="#64748b" stroke-width="1.8" marker-end="url(#lppArrow)"/>
+  <text x="335" y="284" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#64748b">x</text>
+  <text x="56" y="50" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#64748b">y</text>
+  <polygon points="60,280 172.5,280 105,145 60,100" fill="rgba(34,197,94,0.22)" stroke="#16a34a" stroke-width="2.5"/>
+  <line x1="40" y1="315" x2="200" y2="245" stroke="#ef4444" stroke-width="1.5"/>
+  <line x1="40" y1="80" x2="240" y2="280" stroke="#3b82f6" stroke-width="1.5"/>
+  <circle cx="60" cy="280" r="4" fill="#0f172a"/>
+  <text x="44" y="296" font-family="Inter, -apple-system, sans-serif" font-size="10" font-weight="700" fill="#0f172a">(0,0)</text>
+  <circle cx="172.5" cy="280" r="4" fill="#0f172a"/>
+  <text x="160" y="296" font-family="Inter, -apple-system, sans-serif" font-size="10" font-weight="700" fill="#0f172a">(2.5, 0)</text>
+  <circle cx="60" cy="100" r="4" fill="#0f172a"/>
+  <text x="32" y="105" font-family="Inter, -apple-system, sans-serif" font-size="10" font-weight="700" fill="#0f172a">(0, 4)</text>
+  <circle cx="105" cy="145" r="5" fill="#f59e0b" stroke="#b45309" stroke-width="2"/>
+  <text x="115" y="140" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="800" fill="#b45309">Optimal (1, 3)</text>
+  <line x1="45" y1="185" x2="165" y2="105" stroke="#8b5cf6" stroke-width="1.8" stroke-dasharray="4,4"/>
+  <text x="170" y="112" font-family="Inter, -apple-system, sans-serif" font-size="10" font-weight="600" fill="#8b5cf6">Z = 3x + 2y</text>
+  <rect x="30" y="342" width="320" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="190" y="359" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#1d4ed8">Corner Points: (0,0)=0, (2.5,0)=7.5, (0,4)=8, (1,3)=9 (Optimal)</text>
+</svg>`;
+        }
+
+        // 9. Venn Diagram: A ∩ B
+        if (/\b(venn\s*diagram|a\s*union\s*b|a\s*intersect\s*b|set\s*theory)\b/i.test(combined)) {
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380" width="100%" height="100%">
+  <defs>
+    <linearGradient id="vennBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#f8fafc"/></linearGradient>
+    <clipPath id="vennClipA"><circle cx="150" cy="185" r="70"/></clipPath>
+  </defs>
+  <rect width="380" height="380" rx="14" fill="url(#vennBg)" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="190" y="28" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#1e293b">Venn Diagram: Sets A &amp; B</text>
+  <rect x="40" y="60" width="300" height="260" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.8"/>
+  <text x="55" y="85" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#64748b">U</text>
+  <circle cx="150" cy="185" r="70" fill="rgba(59,130,246,0.12)" stroke="#2563eb" stroke-width="2.2"/>
+  <circle cx="230" cy="185" r="70" fill="rgba(16,185,129,0.12)" stroke="#059669" stroke-width="2.2"/>
+  <circle cx="230" cy="185" r="70" fill="rgba(99,102,241,0.45)" clip-path="url(#vennClipA)"/>
+  <text x="120" y="150" font-family="Inter, -apple-system, sans-serif" font-size="14" font-weight="700" fill="#1d4ed8">A</text>
+  <text x="255" y="150" font-family="Inter, -apple-system, sans-serif" font-size="14" font-weight="700" fill="#047857">B</text>
+  <text x="190" y="190" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#312e81">A ∩ B</text>
+  <rect x="30" y="342" width="320" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="190" y="359" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#1d4ed8">n(A ∪ B) = n(A) + n(B) - n(A ∩ B)</text>
+</svg>`;
+        }
+
+        // 10. Vector Addition: Parallelogram Law
+        if (/\b(parallelogram\s*law|triangle\s*law|vector\s*addition|resultant\s*of.*vectors)\b/i.test(combined)) {
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380" width="100%" height="100%">
+  <defs>
+    <linearGradient id="vecBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#f8fafc"/></linearGradient>
+    <marker id="vecArrowA" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#2563eb"/></marker>
+    <marker id="vecArrowB" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#059669"/></marker>
+    <marker id="vecArrowR" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#dc2626"/></marker>
+  </defs>
+  <rect width="380" height="380" rx="14" fill="url(#vecBg)" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="190" y="28" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#1e293b">Vector Addition: Parallelogram Law</text>
+  <line x1="215" y1="265" x2="300" y2="180" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="4,4"/>
+  <line x1="160" y1="180" x2="300" y2="180" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="4,4"/>
+  <line x1="75" y1="265" x2="215" y2="265" stroke="#2563eb" stroke-width="2.5" marker-end="url(#vecArrowA)"/>
+  <text x="145" y="283" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="800" fill="#2563eb">a⃗</text>
+  <line x1="75" y1="265" x2="160" y2="180" stroke="#059669" stroke-width="2.5" marker-end="url(#vecArrowB)"/>
+  <text x="105" y="210" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="800" fill="#059669">b⃗</text>
+  <line x1="75" y1="265" x2="300" y2="180" stroke="#dc2626" stroke-width="2.8" marker-end="url(#vecArrowR)"/>
+  <text x="210" y="210" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="800" fill="#dc2626">R⃗ = a⃗ + b⃗</text>
+  <circle cx="75" cy="265" r="4" fill="#0f172a"/>
+  <text x="61" y="269" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="700" fill="#0f172a">O</text>
+  <rect x="30" y="342" width="320" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="190" y="359" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#1d4ed8">R = √(a² + b² + 2ab cos θ),  tan α = (b sin θ)/(a + b cos θ)</text>
+</svg>`;
+        }
+
+        // 11. Metric Spaces / Unit Balls (M.Sc)
+        if (/\b(metric\s*ball|unit\s*ball|l1\s*norm|l2\s*norm|taxicab|supremum\s*norm)\b/i.test(combined)) {
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380" width="100%" height="100%">
+  <defs>
+    <linearGradient id="metBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#f8fafc"/></linearGradient>
+    <marker id="metArrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#64748b"/></marker>
+  </defs>
+  <rect width="380" height="380" rx="14" fill="url(#metBg)" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="190" y="28" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#1e293b">Unit Balls in ℝ²: l₁, l₂, l_∞ Norms</text>
+  <line x1="40" y1="190" x2="340" y2="190" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#metArrow)"/>
+  <line x1="190" y1="320" x2="190" y2="55" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#metArrow)"/>
+  <rect x="105" y="105" width="170" height="170" fill="rgba(239,68,68,0.06)" stroke="#ef4444" stroke-width="2" stroke-dasharray="4,4"/>
+  <circle cx="190" cy="190" r="85" fill="rgba(99,102,241,0.12)" stroke="#4f46e5" stroke-width="2.2"/>
+  <polygon points="190,105 275,190 190,275 105,190" fill="rgba(16,185,129,0.22)" stroke="#059669" stroke-width="2.5"/>
+  <rect x="30" y="342" width="320" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="190" y="359" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#1d4ed8">B_{l₁} ⊂ B_{l₂} ⊂ B_{l_∞}  (|x|+|y| ≤ 1 ⊂ x²+y² ≤ 1 ⊂ max|x|,|y| ≤ 1)</text>
+</svg>`;
+        }
+
+        // 12. Topology Quotient Polygon (Torus, Möbius)
+        if (/\b(torus\s*quotient|mobius\s*strip|klein\s*bottle|quotient\s*space.*polygon)\b/i.test(combined)) {
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380" width="100%" height="100%">
+  <defs>
+    <linearGradient id="topBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#f8fafc"/></linearGradient>
+    <marker id="arrowA" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#2563eb"/></marker>
+    <marker id="arrowB" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#ef4444"/></marker>
+  </defs>
+  <rect width="380" height="380" rx="14" fill="url(#topBg)" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="190" y="28" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#1e293b">Topology Quotient: Torus T²</text>
+  <rect x="90" y="90" width="200" height="200" rx="4" fill="rgba(99,102,241,0.06)" stroke="#64748b" stroke-width="2"/>
+  <line x1="90" y1="90" x2="200" y2="90" stroke="#2563eb" stroke-width="3" marker-end="url(#arrowA)"/>
+  <line x1="200" y1="90" x2="290" y2="90" stroke="#2563eb" stroke-width="3"/>
+  <text x="190" y="80" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="800" fill="#2563eb">a →</text>
+  <line x1="90" y1="290" x2="200" y2="290" stroke="#2563eb" stroke-width="3" marker-end="url(#arrowA)"/>
+  <line x1="200" y1="290" x2="290" y2="290" stroke="#2563eb" stroke-width="3"/>
+  <text x="190" y="310" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="800" fill="#2563eb">a →</text>
+  <line x1="90" y1="290" x2="90" y2="180" stroke="#ef4444" stroke-width="3" marker-end="url(#arrowB)"/>
+  <line x1="90" y1="180" x2="90" y2="90" stroke="#ef4444" stroke-width="3"/>
+  <text x="75" y="195" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="800" fill="#ef4444">b ↑</text>
+  <line x1="290" y1="290" x2="290" y2="180" stroke="#ef4444" stroke-width="3" marker-end="url(#arrowB)"/>
+  <line x1="290" y1="180" x2="290" y2="90" stroke="#ef4444" stroke-width="3"/>
+  <text x="305" y="195" font-family="Inter, -apple-system, sans-serif" font-size="12" font-weight="800" fill="#ef4444">b ↑</text>
+  <circle cx="90" cy="90" r="4.5" fill="#0f172a"/>
+  <circle cx="290" cy="90" r="4.5" fill="#0f172a"/>
+  <circle cx="90" cy="290" r="4.5" fill="#0f172a"/>
+  <circle cx="290" cy="290" r="4.5" fill="#0f172a"/>
+  <text x="190" y="195" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#4338ca">T² = S¹ × S¹</text>
+  <rect x="30" y="342" width="320" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="190" y="359" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#1d4ed8">Word: a b a⁻¹ b⁻¹  ⟹  Euler Characteristic χ(T²) = 0</text>
+</svg>`;
+        }
+
+        // 13. General Mathematical Graph if graphEquations is present
+        if (Array.isArray(graphEquations) && graphEquations.length > 0) {
+            const eqStr = graphEquations[0];
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380" width="100%" height="100%">
+  <defs>
+    <linearGradient id="plotBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#f8fafc"/></linearGradient>
+    <marker id="plotArrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 2 L 10 5 L 0 8 z" fill="#64748b"/></marker>
+  </defs>
+  <rect width="380" height="380" rx="14" fill="url(#plotBg)" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="190" y="28" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#1e293b">Function Plot: ${eqStr.replace(/[*]/g, '')}</text>
+  <line x1="40" y1="190" x2="340" y2="190" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#plotArrow)"/>
+  <line x1="190" y1="320" x2="190" y2="55" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#plotArrow)"/>
+  <text x="345" y="194" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#64748b">X</text>
+  <text x="180" y="52" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#64748b">Y</text>
+  <path d="M 80 290 Q 190 90 300 290" fill="none" stroke="#2563eb" stroke-width="2.5"/>
+  <circle cx="190" cy="190" r="3.5" fill="#0f172a"/>
+  <text x="178" y="205" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#0f172a">O(0,0)</text>
+  <rect x="30" y="342" width="320" height="26" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="190" y="359" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11" font-weight="600" fill="#1d4ed8">${eqStr.replace(/[*]/g, '')}</text>
+</svg>`;
+        }
+
+        return null;
+    };
+
     // Handle inserting generated AI solution as a flowchart diagram, problem+diagram layout, or clean card onto whiteboard canvas
     const handleInsertAiSolutionToBoard = useCallback((solution, mode = 'auto') => {
         if (!solution) return;
 
-        // 0. Problem + Diagram Side-by-Side Layout (Diagram Left • Problem Right • Free Space Below)
-        if (mode === 'problem_diagram_layout' || (mode === 'auto' && solution.question && /\b(inscribed|circumscribed|remaining|shaded|wireframe|cone|conical|cylinder|cylindrical|cuboid|cube|frustum|annulus|triangle|right triangle|pyramid|incline|ramp|wedge|pythagor|radius|slant|hypotenuse|friction|surface area|volume|free body|circle|intersect|intersection|equation|cartesian)\b/i.test(solution.question))) {
-            const executed = executeProblemWithDiagramLayout(solution.canvasAction || solution);
-            if (executed) return;
-        }
-
-        // 1. If explicit visual canvas action exists (e.g. 3D model, pre-built flowchart, diagram), execute it directly!
-        if (solution.canvasAction && solution.canvasAction.type && solution.canvasAction.type !== 'insert_solution_card') {
-            const executed = executeAiCanvasAction(solution.canvasAction);
-            if (executed) return;
-        }
-
-        // 2. Build Flowchart from solution steps if requested or if structured steps exist
-        if (mode === 'flowchart' || mode === 'auto') {
+        // 1. If explicit flowchart requested and available:
+        if (mode === 'flowchart') {
             const fcAction = convertSolutionToFlowchart(solution);
             if (fcAction && fcAction.nodes.length >= 2) {
                 const executed = executeAiCanvasAction(fcAction);
@@ -14733,41 +15093,193 @@ export default function Whiteboard({
             }
         }
 
-        // 3. Otherwise insert as a clean, structured Solution Card (NEVER a messy overlapping sticky note!)
-        const baseCx = Math.round((-panOffset.x + (containerRef.current?.clientWidth || 1200) / 2) / zoomLevel);
-        const baseCy = Math.round((-panOffset.y + (containerRef.current?.clientHeight || 800) / 2) / zoomLevel);
+        const boardWidth = canvasWidth || 1200;
+        const boardHeight = canvasHeight || 800;
 
-        const cardTitle = solution.question ? `Q: ${solution.question}` : 'AI Solution';
-        const cardBody = cleanTextForSpeech(solution.speechResponse || solution.solutionMarkdown || '');
-        const cardFullText = `${cardTitle}\n\n${cardBody}`.slice(0, 500);
+        // Viewport-aware page origin (anchored to top-left of visible canvas viewport with padding)
+        const pageStartX = Math.max(40, Math.round(-panOffset.x / zoomLevel) + 40);
+        const pageStartY = Math.max(40, Math.round(-panOffset.y / zoomLevel) + 35);
+        const availWidth = Math.min(1160, Math.round(boardWidth / zoomLevel) - 80);
+        const availHeight = Math.min(740, Math.round(boardHeight / zoomLevel) - 70);
 
-        const cardShape = {
-            id: `sol_card_${Date.now()}`,
-            type: 'rounded_rect',
-            x: baseCx - 180,
-            y: baseCy - 110,
-            width: 360,
-            height: 220,
-            rotation: 0,
-            color: '#6366f1',
-            strokeWidth: 2,
-            fillColor: 'rgba(99, 102, 241, 0.08)',
-            strokeStyle: 'solid',
-            text: cardFullText,
-            textColor: '#1e293b',
-            fontSize: 13,
-            fontFamily: 'Inter, sans-serif'
-        };
+        // Extract raw question and solution markdown
+        const rawQuestion = (solution.question || solution.text || solution.problem || '').trim();
+        const rawMarkdown = (solution.solutionMarkdown || solution.speechResponse || '').trim();
+        const combined = `${rawQuestion} ${rawMarkdown}`.toLowerCase();
 
-        setPageShapeObjects(prev => ({
-            ...prev,
-            [currentPage]: [...(prev[currentPage] || []), cardShape]
-        }));
+        // Diagram detection (SVG string, 3D model, or deterministic geometric construction)
+        let diagramSvg = solution.diagram?.svg || solution.canvasAction?.svg || solution.diagramProps?.svg || solution.svg;
+        const is3DModel = Boolean(solution.is3D || solution.modelType || solution.canvasAction?.modelType || ['vector_space_3d', 'sphere', 'frustum', 'hemisphere', 'capsule'].includes(solution.canvasAction?.diagramType));
+
+        // If no diagram provided yet, detect from exhaustive syllabus (School to MSc)
+        if (!diagramSvg && !is3DModel) {
+            diagramSvg = generateSyllabusSvgDiagram(combined, rawQuestion, solution.graphEquations);
+        }
+
+        const hasDiagram = Boolean(diagramSvg || is3DModel);
+
+        // Split Markdown into Given/Concept vs Derivation/Solution
+        let givenText = '';
+        let derivationText = '';
+
+        if (rawMarkdown) {
+            const sections = rawMarkdown.split(/(?=###\s+)/);
+            sections.forEach(sec => {
+                const tr = sec.trim();
+                if (/###\s+(?:📌\s*)?(?:Given|Concept|Formula|Properties|📐)/i.test(tr)) {
+                    givenText += (givenText ? '\n\n' : '') + tr;
+                } else {
+                    derivationText += (derivationText ? '\n\n' : '') + tr;
+                }
+            });
+        }
+
+        if (!givenText && rawQuestion) {
+            givenText = `### 📌 Given Problem\n${rawQuestion}`;
+        }
+        if (!derivationText) {
+            derivationText = rawMarkdown || solution.speechResponse || '';
+        }
+
+        const targetPage = currentPageRef.current !== undefined ? currentPageRef.current : currentPage;
+        const shapesToAdd = [];
+
+        if (hasDiagram) {
+            // Balanced Full-Page Two-Column Layout (occupies ~1160 x 660 px)
+            const leftColW = 380;
+            const leftColX = pageStartX;
+
+            // 1. Vector SVG Diagram or 3D Model (Top Left: 380x380 px)
+            if (is3DModel) {
+                const dType = solution.modelType || solution.canvasAction?.modelType || 'vector_space_3d';
+                const dims = solution.dimensions || getDefaultDimensions(dType);
+                const new3D = {
+                    id: `3d_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                    modelType: dType,
+                    meshData: null,
+                    name: `3D ${dType.charAt(0).toUpperCase() + dType.slice(1)}`,
+                    x: leftColX,
+                    y: pageStartY,
+                    width: leftColW,
+                    height: 380,
+                    color: '#6366f1',
+                    rotX: -25,
+                    rotY: 45,
+                    rotZ: 0,
+                    rotation: 0,
+                    dimensions: dims,
+                    unit: 'cm',
+                    showDimensions: true,
+                    projectionMode: 'isometric',
+                    materialStyle: 'shaded'
+                };
+                setThreeDObjects(prev => [...prev, new3D]);
+            } else if (diagramSvg) {
+                shapesToAdd.push({
+                    id: `diag_${Date.now()}`,
+                    type: 'svg',
+                    svg: diagramSvg,
+                    title: solution.diagram?.title || 'Mathematical Diagram',
+                    x: leftColX,
+                    y: pageStartY,
+                    width: leftColW,
+                    height: 380,
+                    rotation: 0
+                });
+            }
+
+            // 2. Given & Formulas Card (Bottom Left: 380x245 px, Font 13px, Line-height 1.45)
+            shapesToAdd.push({
+                id: `sol_given_${Date.now()}`,
+                type: 'rounded_rect',
+                x: leftColX,
+                y: pageStartY + 395,
+                width: leftColW,
+                height: 245,
+                rotation: 0,
+                color: '#3b82f6',
+                strokeWidth: 1.5,
+                fillColor: 'rgba(239, 246, 255, 0.92)',
+                strokeStyle: 'solid',
+                text: givenText,
+                textColor: '#1e293b',
+                fontSize: 13,
+                fontFamily: 'Inter, -apple-system, sans-serif',
+                textAlign: 'left',
+                verticalAlign: 'top',
+                lineHeight: 1.45
+            });
+
+            // 3. Complete Step-by-Step Derivation Card (Right Column: 740x640 px, Font 13px, Line-height 1.45)
+            const rightColX = pageStartX + 400;
+            const rightColW = Math.max(480, Math.min(760, availWidth - 400));
+            const questionHeader = rawQuestion ? `**Problem:** ${rawQuestion}\n\n` : '';
+            const fullDerivationContent = `${questionHeader}${derivationText}`;
+
+            shapesToAdd.push({
+                id: `sol_deriv_${Date.now()}`,
+                type: 'rounded_rect',
+                x: rightColX,
+                y: pageStartY,
+                width: rightColW,
+                height: 640,
+                rotation: 0,
+                color: '#6366f1',
+                strokeWidth: 1.5,
+                fillColor: 'rgba(248, 250, 252, 0.96)',
+                strokeStyle: 'solid',
+                text: fullDerivationContent,
+                textColor: '#0f172a',
+                fontSize: 13,
+                fontFamily: 'Inter, -apple-system, sans-serif',
+                textAlign: 'left',
+                verticalAlign: 'top',
+                lineHeight: 1.45
+            });
+
+        } else {
+            // Full-Page Comprehensive Solution Card (occupies ~1120 x 640 px, Font 13px, Line-height 1.45)
+            const cardW = Math.min(1120, availWidth);
+            const questionHeader = rawQuestion ? `**Problem:** ${rawQuestion}\n\n` : '';
+            const fullContent = `${questionHeader}${rawMarkdown || solution.speechResponse || ''}`;
+
+            shapesToAdd.push({
+                id: `sol_full_${Date.now()}`,
+                type: 'rounded_rect',
+                x: pageStartX,
+                y: pageStartY,
+                width: cardW,
+                height: 640,
+                rotation: 0,
+                color: '#6366f1',
+                strokeWidth: 1.5,
+                fillColor: 'rgba(248, 250, 252, 0.96)',
+                strokeStyle: 'solid',
+                text: fullContent,
+                textColor: '#0f172a',
+                fontSize: 13,
+                fontFamily: 'Inter, -apple-system, sans-serif',
+                textAlign: 'left',
+                verticalAlign: 'top',
+                lineHeight: 1.45
+            });
+        }
+
+        // Filter previous solution cards on the current page to prevent messy stacking
+        setPageShapeObjects(prev => {
+            const existing = prev[targetPage] || [];
+            const filtered = existing.filter(s => !s.id?.startsWith('sol_') && !s.id?.startsWith('diag_'));
+            return {
+                ...prev,
+                [targetPage]: [...filtered, ...shapesToAdd]
+            };
+        });
+
+        setSelectedShapeIds(shapesToAdd.map(s => s.id));
         setTool('select');
-        setSelectedShapeIds([cardShape.id]);
         saveToHistory();
-        toast.success('Inserted AI Solution Card to board', { icon: '📋' });
-    }, [panOffset, zoomLevel, currentPage, saveToHistory, executeAiCanvasAction, convertSolutionToFlowchart, executeProblemWithDiagramLayout]);
+        toast.success('Inserted complete solution and diagram to board!', { icon: '✨' });
+    }, [canvasWidth, canvasHeight, panOffset, zoomLevel, currentPage, saveToHistory, convertSolutionToFlowchart, executeAiCanvasAction]);
 
     // ─── Voice Control Helpers (Color, Geometry & Compound Parser) ───────
     const normalizeSpokenNumbers = (str) => {
@@ -27153,7 +27665,11 @@ export default function Whiteboard({
                                         );
                                     })() : (
                                         <div 
-                                            className="absolute inset-0 flex items-center justify-center p-2"
+                                            className={`absolute inset-0 flex p-3 overflow-y-auto custom-scrollbar ${
+                                                shpObj.verticalAlign === 'top' || shpObj.id?.startsWith('sol_') || shpObj.id?.startsWith('prob_')
+                                                    ? 'items-start justify-start'
+                                                    : 'items-center justify-center'
+                                            }`}
                                             style={{
                                                 pointerEvents: editingShapeTextId === shpObj.id ? 'auto' : 'none'
                                             }}
@@ -27178,28 +27694,37 @@ export default function Whiteboard({
                                                     onMouseDown={e => e.stopPropagation()}
                                                     onPointerDown={e => e.stopPropagation()}
                                                     placeholder="Type text..."
-                                                    className="w-full text-center bg-white/60 dark:bg-black/60 backdrop-blur-xs border border-indigo-500 rounded outline-none resize-none overflow-hidden p-1 shadow-inner text-slate-800 dark:text-slate-100"
+                                                    className={`w-full bg-white/60 dark:bg-black/60 backdrop-blur-xs border border-indigo-500 rounded outline-none resize-none overflow-hidden p-1 shadow-inner text-slate-800 dark:text-slate-100 ${
+                                                        shpObj.textAlign === 'left' || shpObj.id?.startsWith('sol_') ? 'text-left' : 'text-center'
+                                                    }`}
                                                     style={{ 
                                                         color: shpObj.textColor || shpObj.color, 
-                                                        fontSize: shpObj.fontSize || 20,
-                                                        fontFamily: shpObj.fontFamily || 'sans-serif',
+                                                        fontSize: shpObj.fontSize || 13,
+                                                        fontFamily: shpObj.fontFamily || 'Inter, -apple-system, sans-serif',
                                                         fontWeight: shpObj.fontWeight || 'normal',
                                                         fontStyle: shpObj.fontStyle || 'normal',
+                                                        lineHeight: shpObj.lineHeight || 1.45,
                                                     }}
                                                 />
                                             ) : (
                                                 <div
-                                                    className="w-full text-center select-none whitespace-pre-wrap break-words pointer-events-none"
+                                                    className={`w-full select-none whitespace-pre-wrap break-words pointer-events-none ${
+                                                        shpObj.textAlign === 'left' || shpObj.id?.startsWith('sol_') || shpObj.id?.startsWith('prob_') ? 'text-left' : 'text-center'
+                                                    }`}
                                                     style={{ 
                                                         color: shpObj.textColor || shpObj.color, 
-                                                        fontSize: shpObj.fontSize || 20,
-                                                        fontFamily: shpObj.fontFamily || 'sans-serif',
+                                                        fontSize: shpObj.fontSize || 13,
+                                                        fontFamily: shpObj.fontFamily || 'Inter, -apple-system, sans-serif',
                                                         fontWeight: shpObj.fontWeight || 'normal',
                                                         fontStyle: shpObj.fontStyle || 'normal',
+                                                        lineHeight: shpObj.lineHeight || 1.45,
                                                     }}
-                                                >
-                                                    {shpObj.text || (isSelected ? <span className="text-slate-400 italic text-[11px] block select-none">Double-click to type</span> : '')}
-                                                </div>
+                                                    dangerouslySetInnerHTML={{
+                                                        __html: (shpObj.text && (shpObj.text.includes('$') || shpObj.text.includes('\\') || /[\^_{}#*•-]/.test(shpObj.text)))
+                                                            ? renderRichMathText(shpObj.text)
+                                                            : (shpObj.text || (isSelected ? '<span class="text-slate-400 italic text-[11px] block select-none">Double-click to type</span>' : ''))
+                                                    }}
+                                                />
                                             )}
                                         </div>
                                     )

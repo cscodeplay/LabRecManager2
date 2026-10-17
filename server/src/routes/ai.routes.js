@@ -7,6 +7,7 @@ const prisma = require('../config/database');
 const aiService = require('../services/ai.service');
 const chatbotService = require('../services/chatbot.service');
 const notificationService = require('../services/notificationService');
+const mcpManager = require('../services/mcpManager.service');
 const fs = require('fs');
 const path = require('path');
 
@@ -659,6 +660,32 @@ router.post('/generate-diagram', authenticate, asyncHandler(async (req, res) => 
             message: err.message || 'Diagram generation failed'
         });
     }
+}));
+
+/**
+ * @route   GET /api/ai/mcp-status
+ * @desc    Get live status of commercial-safe open source MCP servers and available tools
+ * @access  Public / Optional Auth
+ */
+router.get('/mcp-status', optionalAuth, asyncHandler(async (req, res) => {
+    res.json(mcpManager.getStatus());
+}));
+
+/**
+ * @route   POST /api/ai/mcp-execute
+ * @desc    Directly execute an MCP diagram tool for whiteboard
+ * @access  Public / Optional Auth
+ */
+router.post('/mcp-execute', optionalAuth, asyncHandler(async (req, res) => {
+    const { prompt } = req.body;
+    if (!prompt || !prompt.trim()) {
+        return res.status(400).json({ success: false, message: 'Prompt instruction is required' });
+    }
+    const result = mcpManager.handleWhiteboardDiagram(prompt);
+    if (!result) {
+        return res.status(404).json({ success: false, message: 'No suitable MCP tool found for this prompt' });
+    }
+    res.json({ success: true, data: result });
 }));
 
 /**

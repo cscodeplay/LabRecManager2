@@ -5,6 +5,7 @@ const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const geometrySolver = require('./geometrySolver.service');
 const stemSolver = require('./stemProblemSolver.service');
+const mcpManager = require('./mcpManager.service');
 
 // Paid & Production Models for Smooth, Uninterrupted Actions and Responses
 const ACTIVE_OPENAI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o1-mini', 'gpt-4-turbo'];
@@ -96,6 +97,11 @@ class AIService {
         if (this.openRouterKey) console.log('[AIService] OpenRouter (Paid Hub) initialized.');
         if (this.sambaNovaKey) console.log('[AIService] SambaNova initialized.');
         if (this.nvidiaKey) console.log('[AIService] NVIDIA NIM (Free 1,000 Credits) initialized.');
+        try {
+            mcpManager.initialize();
+        } catch (mcpInitErr) {
+            console.warn('[AIService] MCP Manager initialization warning:', mcpInitErr.message);
+        }
     }
 
     reload() {
@@ -3228,9 +3234,11 @@ Output MUST be ONLY valid JSON matching this schema:
                             graphEquations: [],
                             plottedPoints: [],
                             suggestedFollowUps: sol.suggestedFollowUps,
+                            diagram: sol.diagram,
                             canvasAction: {
                                 type: 'draw_problem_with_diagram',
-                                diagramType: 'composite_geometry',
+                                diagramType: sol.diagram?.svg ? 'svg' : 'composite_geometry',
+                                svg: sol.diagram?.svg,
                                 question: text,
                                 solutionMarkdown: sol.solutionMarkdown,
                                 speechResponse: sol.speechResponse,
@@ -3239,7 +3247,8 @@ Output MUST be ONLY valid JSON matching this schema:
                             actions: [
                                 {
                                     type: 'CREATE_OBJECT',
-                                    objectType: 'composite_geometry',
+                                    objectType: sol.diagram?.svg ? 'svg' : 'composite_geometry',
+                                    svg: sol.diagram?.svg,
                                     ...sol.diagramProps
                                 }
                             ]
@@ -3286,6 +3295,58 @@ Output MUST be ONLY valid JSON matching this schema:
                 }
             }
 
+            // Deterministic Syllabus Mathematical Diagram Solver (Calculus, Conics, Tangents, Complex Analysis, LPP, Venn, Vectors, Metric, Topology)
+            const syllabusDiagramParsed = geometrySolver.parseSyllabusDiagramFromText(text);
+            if (syllabusDiagramParsed) {
+                try {
+                    const sol = geometrySolver.solveSyllabusDiagram(syllabusDiagramParsed);
+                    if (sol) {
+                        return {
+                            recognized: true,
+                            success: true,
+                            speechResponse: sol.speechResponse,
+                            solutionMarkdown: sol.solutionMarkdown,
+                            graphEquations: [],
+                            plottedPoints: [],
+                            suggestedFollowUps: sol.suggestedFollowUps,
+                            diagram: sol.diagram,
+                            canvasAction: {
+                                type: 'draw_problem_with_diagram',
+                                diagramType: 'svg',
+                                svg: sol.diagram?.svg,
+                                question: text,
+                                solutionMarkdown: sol.solutionMarkdown,
+                                speechResponse: sol.speechResponse
+                            },
+                            actions: [
+                                {
+                                    type: 'CREATE_OBJECT',
+                                    objectType: 'svg',
+                                    svg: sol.diagram?.svg,
+                                    title: sol.diagram?.title || 'Mathematical Diagram',
+                                    width: 380,
+                                    height: 380
+                                }
+                            ]
+                        };
+                    }
+                } catch (e) {
+                    console.warn('[AIService] Deterministic syllabus diagram solver failed, falling back to LLM:', e.message);
+                }
+            }
+
+            // Model Context Protocol (MCP) Multi-Domain Diagram Dispatch (SchemDraw Circuits, RDKit Chemistry, UML Systems, SymPy Vector Fields)
+            if (mcpManager.canHandle(text)) {
+                try {
+                    const mcpSol = mcpManager.handleWhiteboardDiagram(text);
+                    if (mcpSol) {
+                        return mcpSol;
+                    }
+                } catch (mcpErr) {
+                    console.warn('[AIService] MCP diagram solver error, falling back to LLM:', mcpErr.message);
+                }
+            }
+
             const whiteboardSystemPrompt = `You are an advanced Spatial & Generative AI reasoning engine for an interactive Whiteboard.
 You receive the user's spoken command along with a JSON representation of the current whiteboard state (objects, sizes, spatial coordinates, pages).
 Your goal is to parse the user's intent, perform any required knowledge-base reasoning (like deriving formulas, writing code, or generating scientific explanations), and return a sequence of autonomous actions to modify the canvas.
@@ -3304,6 +3365,11 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
   "recognized": true,
   "speechResponse": "<A natural, engaging spoken summary (2 to 3 sentences) to read aloud via TTS. Clean conversational text without raw LaTeX backslashes.>",
   "solutionMarkdown": "<REQUIRED for all questions, problems, formulas, derivations, and explanations: Well-structured Markdown with clear section headings (### 📌 Given & Concept, ### 📐 Formula, ### 🔢 Step-by-Step Solution, ### ✅ Final Answer) and ALL formulas/equations/variables/units written in proper LaTeX/KaTeX scientific notation ($$...$$ for display equations, $...$ for inline math). NEVER write formulas in plain English words!>",
+  "diagram": {
+    "type": "svg",
+    "title": "<Concise descriptive title of the diagram>",
+    "svg": "<Optional high-precision vector SVG string with viewBox='0 0 380 380' when a mathematical figure, curve, coordinate axes, or composite geometry visualizes the problem>"
+  },
   "graphEquations": [
     "<Optional array of clean 2D or 3D mathematical equations in x, y, z to plot on the interactive graphing panel when the problem involves functions, curves, circles, conics, or 3D surfaces, e.g. '(x - 2)^2 + (y + 3)^2 = 25', 'y = 2*x + 1'. STRICT RULE: Output ONLY the primary original curves given in the problem statement. NEVER output intermediate substitution quadratics (e.g. '10*x^2 + 24*x - 13 = 0' or 'y = 10*x^2 + 24*x - 13') or intermediate coordinate lines (e.g. 'x = 1.83', 'y = 4.66'). All solution coordinates must be placed ONLY in 'plottedPoints'.>"
   ],
@@ -3519,9 +3585,8 @@ CRITICAL RULES:
   11. EXPLANATION:
      - Provide the step-by-step mathematical reasoning, formulas in LaTeX ($$...$$), and calculations inside speechResponse and solutionMarkdown.
      - The interactive diagram on canvas visually anchors the vertices, edges, and angles!
-- **STRICT PROHIBITION ON 'drawing' FOR GEOMETRIC SHAPES**:
-  NEVER output objectType: 'drawing' or 'sketch' for geometric shapes (circle, concentric_circles, rectangle, square, triangle, right_triangle, cone, cylinder, incline_plane, coordinate_system, box).
-  Geometric shapes MUST ALWAYS use their dedicated geometric objectType ('circle', 'rectangle', 'triangle', 'right_triangle', 'cone', 'cylinder', 'incline_plane', 'coordinate_system') with exact dimensions, vertices, and measurement labels! 'drawing' is reserved solely for non-geometric artwork illustrations (cat, dog, car, tree, house, etc.).
+- **VECTOR SVG & GEOMETRIC DIAGRAMS**:
+  For composite geometric figures (inscribed/circumscribed polygons, tangents, chords), calculus curve regions, or vector diagrams combining multiple elements, you may output objectType: 'svg' with a complete, publication-quality SVG string in 'svg' (viewBox="0 0 380 380"). Single standalone primitive shapes should use their dedicated geometric objectType ('circle', 'rectangle', 'triangle', 'right_triangle', 'cone', 'cylinder', 'incline_plane', 'coordinate_system') with exact dimensions, vertices, and measurement labels! 'drawing' is reserved solely for non-geometric artwork illustrations (cat, dog, car, tree, house, etc.).
 - **MANDATORY LATEX SCIENTIFIC NOTATION & STRUCTURED MARKDOWN IN 'solutionMarkdown'**:
   1. STRICT PROHIBITION ON PLAIN-ENGLISH FORMULAS:
      - NEVER write mathematical, physics, or chemistry formulas in plain English words in 'solutionMarkdown' (e.g., NEVER write "a plus n minus 1 times d", "a squared plus b squared equals c squared", "half base times height", "pi r squared", or "P times V equals n R T").
@@ -3670,6 +3735,11 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT:
   "recognized": true,
   "speechResponse": "<Concise, natural spoken explanation (2 to 3 sentences) to read aloud via TTS. Clean conversational text without raw LaTeX backslashes.>",
   "solutionMarkdown": "<Complete, well-structured Markdown solution with section headings and ALL formulas/equations/variables/units in LaTeX/KaTeX ($$...$$ for display block equations, $...$ for inline math). NEVER write formulas in plain English words!>",
+  "diagram": {
+    "type": "svg",
+    "title": "<Concise descriptive title of the diagram>",
+    "svg": "<MANDATORY FOR ANY VISUAL OR MATHEMATICAL PROBLEM: A complete, self-contained SVG string with viewBox='0 0 380 380' and width='100%' height='100%'. It must have a background rect (<rect width='380' height='380' rx='14' fill='#ffffff' stroke='#e2e8f0'/>), title text at y=28, coordinate axes / shapes / curves, key point markers, labels, and bottom badge (<rect x='30' y='342' width='320' height='26' rx='6' fill='#eff6ff'/>). Use SVG elements: <line>, <circle>, <path>, <polygon>, <text>.>"
+  },
   "graphEquations": [
     "<Array of 1 to 4 clean, plot-ready 2D/3D equations in standard ASCII math syntax using variables x, y, z, or theta whenever the problem involves functions, curves, algebra, conics, trigonometry, calculus (include both the function y = f(x) and its derivative/tangent/antiderivative if relevant), 3D surfaces (z = f(x,y) or x^2+y^2+z^2=R^2), or physics trajectories. Examples: 'x^2 + y^2 + 2*x = 6', 'y = x^2 - 5*x + 6', 'z = sin(x)*cos(y)', 'r = 2*cos(theta)'. CRITICAL: For systems of equations or multi-step algebra (e.g. 2x + y = 7 and x - y = 2), output ONLY the original given problem equations (e.g. ['2*x + y = 7', 'x - y = 2']). NEVER output intermediate algebraic or derivation steps as equations (e.g. do NOT output '3*x = 9' or intermediate lines). Use [] only if the topic has no coordinate graph.>"
   ],
@@ -3726,7 +3796,17 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
    - Magnitudes: |\\vec{A}| or \\sqrt{A_x^2 + A_y^2 + A_z^2}.
    - SI Units: Standard units in LaTeX (\\text{m/s}, \\text{m/s}^2, \\text{N}, \\text{J}, \\text{W}, \\text{kg}, \\text{C}, \\text{V}, \\Omega, \\text{T}, \\text{H}, \\text{F}, \\text{Hz}, \\text{eV}).
    - Whenever any physics problem is presented, ALWAYS populate 'physicsAction' with the corresponding chapter, simulationType, and extracted numeric parameters!
-5. In 'speechResponse', state the explanation and final answer naturally so it sounds clear when spoken aloud.`
+5. UNIVERSAL MATHEMATICAL DIAGRAM GENERATION FOR ALL TOPICS (CBSE 6-12, B.Tech, M.Sc):
+   Whenever the problem involves ANY visual, geometric, calculus, algebraic, complex, or topological concept:
+   - Calculus: Shaded area under/between curves, tangent lines, inflection points, Riemann sums.
+   - Coordinate Geometry & Conics: Parabola with focus & directrix, ellipse with foci, hyperbola with asymptotes, circle tangents.
+   - Trigonometry & Euclidean Geometry: Triangles with angles, circles with chords/subtended angles, regular polygons.
+   - Vectors: Vector addition parallelogram/triangle law with arrows and angle.
+   - Linear Programming: Feasible region shaded polygon with corner points and optimal point.
+   - Complex Analysis: Complex z-plane with contour path (e.g. semicircular contour) and poles marked.
+   - Abstract Algebra / Topology / Advanced: Unit balls in metric spaces (l1 diamond, l2 circle, l_infinity square), quotient identification polygons (torus, Mobius strip), Venn diagrams.
+   YOU MUST ALWAYS OUTPUT A COMPLETE, HIGH-PRECISION SVG STRING IN 'diagram.svg'!
+6. In 'speechResponse', state the explanation and final answer naturally so it sounds clear when spoken aloud.`
                 : whiteboardSystemPrompt;
 
             // Dispatch to Unified AI Completion (OpenAI Paid -> Anthropic -> DeepSeek -> OpenRouter -> Groq -> Gemini -> SambaNova)
@@ -3810,17 +3890,48 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                     } else if (parsed.speechResponse) {
                         parsed.solutionMarkdown = repairLatexAndStructure(parsed.speechResponse);
                     }
+
+                    // Package mathematical SVG diagram if produced by LLM
+                    const rawSvg = parsed.diagram?.svg || parsed.svg;
+                    if (rawSvg && typeof rawSvg === 'string' && rawSvg.includes('<svg')) {
+                        if (!parsed.canvasAction) {
+                            parsed.canvasAction = {
+                                type: 'draw_problem_with_diagram',
+                                diagramType: 'svg',
+                                svg: rawSvg,
+                                question: text,
+                                solutionMarkdown: parsed.solutionMarkdown,
+                                speechResponse: parsed.speechResponse
+                            };
+                        }
+                        if (!Array.isArray(parsed.actions)) parsed.actions = [];
+                        const hasSvgAct = parsed.actions.some(a => a.type === 'CREATE_OBJECT' && (a.objectType === 'svg' || a.svg));
+                        if (!hasSvgAct) {
+                            parsed.actions.push({
+                                type: 'CREATE_OBJECT',
+                                objectType: 'svg',
+                                svg: rawSvg,
+                                title: parsed.diagram?.title || 'Mathematical Diagram',
+                                width: 380,
+                                height: 380
+                            });
+                        }
+                    }
+
                     if (Array.isArray(parsed.actions)) {
                         parsed.actions = parsed.actions.flatMap(act => {
                             const combined = `${act.title || ''} ${act.text || ''} ${text}`.toLowerCase();
                             const actColor = act.color || parseColorFromText(combined, '#3b82f6');
 
                             if (act.type === 'CREATE_OBJECT') {
-                                // PRESERVE TEXT, STICKY NOTES, LESSON BOARDS, AND 3D MODELS - NEVER MUTATE INTO 2D SHAPES!
+                                // PRESERVE TEXT, STICKY NOTES, LESSON BOARDS, SVG, AND 3D MODELS - NEVER MUTATE INTO 2D SHAPES!
                                 if (act.objectType === 'text' || act.objectType === 'sticky_note' || act.objectType === 'lesson_board' || act.objectType === 'latex') {
                                     return [act];
                                 }
                                 if (act.objectType === '3d_model' || act.objectType === 'vector_space_3d') {
+                                    return [act];
+                                }
+                                if (act.objectType === 'svg' || act.svg || act.objectType === 'composite_geometry') {
                                     return [act];
                                 }
                                 if (act.objectType === 'cartesian_plane' || act.objectType === 'coordinate_system' || act.objectType === 'sector' || act.objectType === 'segment' || act.objectType === 'annulus_sector' || act.objectType === 'parabolic_arch') {
@@ -4211,6 +4322,8 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                     return {
                         ...parsed,
                         recognized: parsed.recognized !== false,
+                        diagram: parsed.diagram || (parsed.canvasAction?.svg ? { type: 'svg', svg: parsed.canvasAction.svg, title: parsed.diagram?.title || 'Mathematical Diagram' } : null),
+                        canvasAction: parsed.canvasAction || null,
                         physicsAction: parsed.physicsAction || null,
                         modelUsed: completionRes.model,
                         providerUsed: completionRes.provider

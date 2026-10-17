@@ -737,6 +737,8 @@ export const aiAPI = {
     getConfig: () => api.get('/ai/config'),
     saveConfig: (data) => api.post('/ai/config', data),
     testProvider: (data) => api.post('/ai/test-provider', data),
+    getMcpStatus: () => api.get('/ai/mcp-status'),
+    executeMcpTool: (data) => api.post('/ai/mcp-execute', data),
 };
 
 export const subjectsAPI = {

@@ -49,9 +49,9 @@ function normalizeScientificLatex(rawText) {
         .replace(/\x09(imes|ext|extbf|extit|extrm|heta|an|anh|au|riangle|o\b|herefore|ilde|op\b|frac)/g, '\\t$1')
         .replace(/\x08(eta|oxed|ar\b|f\b|inom|egin|ig|ullet|ot\b|ackslash|ecause)/g, '\\b$1')
         .replace(/\x0d(ightarrow|ight|ho\b|angle|isingdotseq|times)/g, '\\r$1')
-        // 2. Normalize \[ ... \] and \( ... \) to $$ ... $$ and $ ... $
-        .replace(/\\\[([\s\S]*?)\\\]/g, '$$$$$1$$$$')
-        .replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
+        // 2. Normalize \[ ... \] and \( ... \) to $$ ... $$ and $ ... $ using callbacks
+        .replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => `$$${math}$$`)
+        .replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => `$${math}$`);
 
     // 3. Collapse multi-line $$ ... $$ blocks onto a single line so line splitting keeps display equations intact
     s = s.replace(/\$\$([\s\S]*?)\$\$/g, (match, inner) => {
@@ -81,33 +81,33 @@ function normalizeScientificLatex(rawText) {
     // 5. Convert unicode superscripts outside math: ² -> ^2, ³ -> ^3
     s = transformOutsideMath(s, str => str.replace(/²/g, '^2').replace(/³/g, '^3').replace(/⁴/g, '^4'));
 
-    // 6. Convert plain-English math phrases into LaTeX if outside math
+    // 6. Convert plain-English math phrases into LaTeX if outside math using safe callbacks
     s = transformOutsideMath(s, str => str
-        .replace(/\b([a-zA-Z])\s+squared\b/gi, '$$$1^2$$')
-        .replace(/\b([a-zA-Z])\s+cubed\b/gi, '$$$1^3$$')
-        .replace(/\bsquare\s+root\s+of\s+([a-zA-Z0-9_()+-]+)\b/gi, '$$\\sqrt{$1}$$')
+        .replace(/\b([a-zA-Z])\s+squared\b/gi, (_, g1) => `$${g1}^2$`)
+        .replace(/\b([a-zA-Z])\s+cubed\b/gi, (_, g1) => `$${g1}^3$`)
+        .replace(/\bsquare\s+root\s+of\s+([a-zA-Z0-9_()+-]+)\b/gi, (_, g1) => `$\\sqrt{${g1}}$`)
     );
 
     // 7. Auto-wrap bare LaTeX commands with braces outside math: \frac{...}{...}, \sqrt{...}, \boxed{...}, \vec{...}, \hat{...}
     s = transformOutsideMath(s, str => {
         return str
-            .replace(/(\\frac\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}(?:\s*(?:\\[a-zA-Z]+|[a-zA-Z0-9^]+))?)/g, '$$$1$$')
-            .replace(/(\\sqrt(?:\s*\[[^{}]*\])?\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})/g, '$$$1$$')
-            .replace(/(\\boxed\s*\{[^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}[^{}]*)*\})/g, '$$$1$$')
-            .replace(/(\\vec\s*\{[^{}]*\})/g, '$$$1$$')
-            .replace(/(\\hat\s*\{[^{}]*\}|\\[ij]hat\b)/g, '$$$1$$')
-            .replace(/(\\(?:mathbf|mathbfit)\s*\{[^{}]*\})/g, '$$$1$$');
+            .replace(/(\\frac\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}(?:\s*(?:\\[a-zA-Z]+|[a-zA-Z0-9^]+))?)/g, (_, g1) => `$${g1}$`)
+            .replace(/(\\sqrt(?:\s*\[[^{}]*\])?\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})/g, (_, g1) => `$${g1}$`)
+            .replace(/(\\boxed\s*\{[^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}[^{}]*)*\})/g, (_, g1) => `$${g1}$`)
+            .replace(/(\\vec\s*\{[^{}]*\})/g, (_, g1) => `$${g1}$`)
+            .replace(/(\\hat\s*\{[^{}]*\}|\\[ij]hat\b)/g, (_, g1) => `$${g1}$`)
+            .replace(/(\\(?:mathbf|mathbfit)\s*\{[^{}]*\})/g, (_, g1) => `$${g1}$`);
     });
 
     // 8. Auto-wrap bare Greek letters or math symbols outside math
     s = transformOutsideMath(s, str => {
-        return str.replace(/(\\(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa|lambda|mu|nu|xi|pi|rho|sigma|tau|upsilon|phi|chi|psi|omega|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega|approx|neq|le|ge|leq|geq|pm|mp|times|div|cdot|in|notin|subset|subseteq|cup|cap|infty|partial|nabla|forall|exists|to|rightarrow|leftarrow|Rightarrow|Leftarrow|iff|implies)\b)/g, '$$$1$$');
+        return str.replace(/(\\(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa|lambda|mu|nu|xi|pi|rho|sigma|tau|upsilon|phi|chi|psi|omega|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega|approx|neq|le|ge|leq|geq|pm|mp|times|div|cdot|in|notin|subset|subseteq|cup|cap|infty|partial|nabla|forall|exists|to|rightarrow|leftarrow|Rightarrow|Leftarrow|iff|implies)\b)/g, (_, g1) => `$${g1}$`);
     });
 
     // 9. Auto-wrap isolated powers outside math: (x + 1)^2, x^2, y^2, r^2, cm^2, 10^5
     s = transformOutsideMath(s, str => {
-        let res = str.replace(/(\([a-zA-Z0-9_\s*+\-.]+\)\^[0-9a-zA-Z+-]+)/g, '$$$1$$');
-        res = res.replace(/\b([a-zA-Z0-9_]\^[0-9a-zA-Z+-]+)\b/g, '$$$1$$');
+        let res = str.replace(/(\([a-zA-Z0-9_\s*+\-.]+\)\^[0-9a-zA-Z+-]+)/g, (_, g1) => `$${g1}$`);
+        res = res.replace(/\b([a-zA-Z0-9_]\^[0-9a-zA-Z+-]+)\b/g, (_, g1) => `$${g1}$`);
         return res;
     });
 
@@ -401,6 +401,21 @@ export default function WhiteboardClosedCaptions({
     const [isDraggingImage, setIsDraggingImage] = useState(false);
     const fileInputRef = useRef(null);
     const editInputRef = useRef(null);
+    const [mcpStatus, setMcpStatus] = useState(null);
+
+    useEffect(() => {
+        let mounted = true;
+        if (typeof aiAPI?.getMcpStatus === 'function') {
+            aiAPI.getMcpStatus()
+                .then(res => {
+                    if (mounted && res?.data?.success) {
+                        setMcpStatus(res.data);
+                    }
+                })
+                .catch(() => {});
+        }
+        return () => { mounted = false; };
+    }, []);
 
     const lastResponseSeenRef = useRef('');
     const lastNarratedSolutionRef = useRef('');
@@ -642,7 +657,13 @@ export default function WhiteboardClosedCaptions({
                                 >
                                     <div className="flex items-center gap-1.5 font-bold text-yellow-400">
                                         <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
-                                        <span>AI Problem Solver & Co-Pilot</span>
+                                        <span>AI Problem Solver &amp; Co-Pilot</span>
+                                        <span
+                                            className="ml-1 text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono font-normal tracking-wide"
+                                            title="100% Free & Open Source MCP Servers Active: UML, SymPy, SchemDraw, RDKit, SQLite"
+                                        >
+                                            ⚡ MCP Active
+                                        </span>
                                     </div>
                                     <button
                                         type="button"
@@ -706,10 +727,12 @@ export default function WhiteboardClosedCaptions({
                                                 <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Examples:</span>
                                                 <div className="flex flex-col gap-1 text-[11px]">
                                                     {[
+                                                        'Draw a series RLC circuit schematic',
+                                                        'Render benzene molecular chemical structure',
+                                                        'Draw flowchart for finding maximum',
+                                                        'Plot vector field F(x, y) = (-y, x)',
                                                         'Solve 2x + 3y = 6 and x - y = 1',
-                                                        'Find intersection of y = x^2 and y = 2x + 3',
-                                                        'Plot y = sin(x) and y = cos(x)',
-                                                        'Explain conservation of energy'
+                                                        'Find intersection of y = x^2 and y = 2x + 3'
                                                     ].map((promptText, pIdx) => (
                                                         <button
                                                             key={pIdx}
@@ -805,6 +828,14 @@ export default function WhiteboardClosedCaptions({
                                             >
                                                 <span>📈 Plot</span>
                                             </button>
+                                        )}
+                                        {aiSolution?.modelUsed && (
+                                            <span
+                                                className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-mono tracking-wide"
+                                                title={`Generated using ${aiSolution.modelUsed}`}
+                                            >
+                                                ⚡ {aiSolution.modelUsed.replace(' (Open Source, MIT)', '').replace(' (Open Source, BSD-3-Clause)', '')}
+                                            </span>
                                         )}
                                     </div>
                                 )}
@@ -1038,9 +1069,10 @@ export default function WhiteboardClosedCaptions({
                                                 <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
                                                 <span>Initial Answer & Summary</span>
                                             </div>
-                                            <p className="leading-relaxed font-medium text-slate-100">
-                                                {aiSolution.speechResponse}
-                                            </p>
+                                            <div
+                                                className="leading-relaxed font-medium text-slate-100"
+                                                dangerouslySetInnerHTML={{ __html: renderFormattedText(aiSolution.speechResponse) }}
+                                            />
                                         </div>
                                     )}
 
