@@ -7,10 +7,11 @@ import {
     X, Check, ChevronsUp, ChevronsDown, Maximize2, Sparkles,
     Undo2, RefreshCw, Bold, Italic, Underline, Strikethrough,
     AlignLeft, AlignCenter, AlignRight, WrapText, ChevronDown,
-    Clipboard, ClipboardCheck, Droplet
+    Clipboard, ClipboardCheck, Droplet, Sun, Moon
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import MathRenderer from './MathRenderer';
+import { evaluateCellFormula, searchStemFunctions, STEM_FUNCTIONS_CATALOG } from '@/lib/tableFormulaEngine';
 
 const CORNER_WIDTH = 34;
 const HEADER_HEIGHT = 26;
@@ -82,6 +83,19 @@ const hexToRgba = (hex, alpha = 1) => {
     const b = parseInt(cleanHex.substring(4, 6), 16);
     if (alpha >= 1) return `#${cleanHex}`;
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const isDarkHex = (hex) => {
+    if (!hex || hex === 'transparent') return true;
+    let clean = hex.replace('#', '');
+    if (clean.length === 3) {
+        clean = clean.split('').map(c => c + c).join('');
+    }
+    if (clean.length < 6) return true;
+    const r = parseInt(clean.substring(0, 2), 16);
+    const g = parseInt(clean.substring(2, 4), 16);
+    const b = parseInt(clean.substring(4, 6), 16);
+    return (r * 0.299 + g * 0.587 + b * 0.114) < 140;
 };
 
 /**
@@ -161,6 +175,69 @@ export default function WhiteboardTableObject({
     const [isInlineEditing, setIsInlineEditing] = useState(false);
     const [inlineText, setInlineText] = useState('');
     const inlineInputRef = useRef(null);
+
+    // STEM Formula Autocomplete State
+    const [autocompleteSelectedIdx, setAutocompleteSelectedIdx] = useState(0);
+    const [isAutocompleteDismissed, setIsAutocompleteDismissed] = useState(false);
+
+    // Dark Mode Theme State & Handler
+    const isTableDark = table.theme === 'light' ? false : (table.theme === 'dark' || isDarkHex(cellBg));
+    const handleToggleTableTheme = () => {
+        if (isTableDark) {
+            onUpdate?.({
+                ...table,
+                theme: 'light',
+                headerBg: '#f1f5f9',
+                headerText: '#0f172a',
+                cellBg: '#ffffff',
+                cellText: '#0f172a',
+                borderColor: '#cbd5e1'
+            });
+            toast.success('Switched table to Light theme', { icon: '☀️' });
+        } else {
+            onUpdate?.({
+                ...table,
+                theme: 'dark',
+                headerBg: '#1e293b',
+                headerText: '#f8fafc',
+                cellBg: '#0f172a',
+                cellText: '#e2e8f0',
+                borderColor: '#334155'
+            });
+            toast.success('Switched table to Dark theme', { icon: '🌙' });
+        }
+    };
+
+    // Calculate active STEM formula autocomplete suggestions
+    const formulaSuggestions = (isInlineEditing && inlineText.startsWith('=') && !isAutocompleteDismissed)
+        ? searchStemFunctions(inlineText)
+        : [];
+
+    const applyAutocompleteSuggestion = (funcItem) => {
+        if (!funcItem) return;
+        const clean = inlineText.trim();
+        const lastTokenMatch = clean.match(/([A-Za-z_][A-Za-z0-9_]*)$/);
+        let newText = clean;
+        if (lastTokenMatch) {
+            const tokenStart = clean.lastIndexOf(lastTokenMatch[1]);
+            newText = clean.substring(0, tokenStart) + `${funcItem.name}(`;
+        } else if (clean.endsWith('(') || clean.endsWith(',') || clean.endsWith('+') || clean.endsWith('-') || clean.endsWith('*') || clean.endsWith('/')) {
+            newText = clean + `${funcItem.name}(`;
+        } else if (clean === '=') {
+            newText = `=${funcItem.name}(`;
+        } else {
+            newText = `${clean}${funcItem.name}(`;
+        }
+        setInlineText(newText);
+        setAutocompleteSelectedIdx(0);
+        setTimeout(() => {
+            if (inlineInputRef.current) {
+                inlineInputRef.current.focus();
+                const len = newText.length;
+                inlineInputRef.current.setSelectionRange(len, len);
+            }
+        }, 20);
+    };
 
     // Format Ribbon Dropdowns State
     const [showFontMenu, setShowFontMenu] = useState(false);
@@ -298,6 +375,8 @@ export default function WhiteboardTableObject({
         setSelectedRow(null);
         setSelectedCol(null);
         setIsInlineEditing(true);
+        setIsAutocompleteDismissed(false);
+        setAutocompleteSelectedIdx(0);
         const existingText = cells[key]?.text || '';
         setInlineText(initialChar !== null ? initialChar : existingText);
         setTimeout(() => {
@@ -323,6 +402,7 @@ export default function WhiteboardTableObject({
             }
         };
         setIsInlineEditing(false);
+        setIsAutocompleteDismissed(false);
         onUpdate({
             ...table,
             cells: updatedCells
@@ -332,6 +412,7 @@ export default function WhiteboardTableObject({
     // Cancel inline edit
     const cancelInlineEdit = () => {
         setIsInlineEditing(false);
+        setIsAutocompleteDismissed(false);
         if (selectedCellKey) {
             setInlineText(cells[selectedCellKey]?.text || '');
         }
@@ -959,81 +1040,57 @@ export default function WhiteboardTableObject({
             {/* Unified Floating Table Format Bar (Safely positioned above table to NEVER obstruct column headers) */}
             {isSelected && (
                 <div 
-                    className="absolute left-0 min-w-max max-w-[95vw] flex items-center gap-1.5 bg-slate-900/95 border border-slate-700/80 rounded-xl px-2.5 py-1.5 shadow-2xl backdrop-blur-md text-slate-300 text-xs z-50 pointer-events-auto"
-                    style={{ bottom: 'calc(100% + 14px)' }}
+                    className="absolute left-0 min-w-max max-w-[95vw] flex items-center gap-1 bg-slate-900/95 border border-slate-700/80 rounded-xl px-2 py-1 shadow-2xl backdrop-blur-md text-slate-300 text-xs z-50 pointer-events-auto h-8"
+                    style={{ bottom: 'calc(100% + 10px)' }}
                     onClick={e => e.stopPropagation()}
                     onPointerDown={e => e.stopPropagation()}
                 >
                     {/* 1. Drag Move Handle */}
                     <div 
                         onPointerDown={handleMovePointerDown}
-                        className="flex items-center gap-1.5 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg cursor-grab active:cursor-grabbing font-semibold text-[11px] transition shadow-xs"
+                        className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md cursor-grab active:cursor-grabbing font-semibold text-[10px] transition shadow-xs"
                         title="Drag to move table across whiteboard"
                     >
-                        <Move className="w-3.5 h-3.5 text-indigo-400" />
+                        <Move className="w-3 h-3 text-indigo-400" />
                         <span>Move</span>
                     </div>
 
-                    {/* Table Dimensions & Quick Add/Remove */}
-                    <div className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-800/80 border border-slate-700/60 rounded-lg">
-                        <span className="font-mono text-[11px] text-slate-300 font-bold" title="Rows × Columns">
+                    {/* Table Dimensions Badge (R+, R-, C+, C- removed as available inline) */}
+                    <div className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-800/80 border border-slate-700/60 rounded-md">
+                        <span className="font-mono text-[10px] text-slate-300 font-bold" title="Table dimensions: Rows × Columns">
                             {rows}R × {cols}C
                         </span>
-                        <div className="h-3 w-px bg-slate-700 mx-0.5" />
-                        <button
-                            type="button"
-                            onClick={handleAddRow}
-                            className="px-1 py-0.5 hover:bg-slate-700 text-slate-400 hover:text-emerald-300 rounded text-[10px] font-bold transition"
-                            title="Add Row to Bottom"
-                        >
-                            +R
-                        </button>
-                        {rows > 1 && (
-                            <button
-                                type="button"
-                                onClick={handleRemoveRow}
-                                className="px-1 py-0.5 hover:bg-slate-700 text-slate-400 hover:text-red-300 rounded text-[10px] font-bold transition"
-                                title="Remove Bottom Row"
-                            >
-                                -R
-                            </button>
-                        )}
-                        <div className="h-3 w-px bg-slate-700 mx-0.5" />
-                        <button
-                            type="button"
-                            onClick={handleAddColumn}
-                            className="px-1 py-0.5 hover:bg-slate-700 text-slate-400 hover:text-emerald-300 rounded text-[10px] font-bold transition"
-                            title="Add Column to Right"
-                        >
-                            +C
-                        </button>
-                        {cols > 1 && (
-                            <button
-                                type="button"
-                                onClick={handleRemoveColumn}
-                                className="px-1 py-0.5 hover:bg-slate-700 text-slate-400 hover:text-red-300 rounded text-[10px] font-bold transition"
-                                title="Remove Right Column"
-                            >
-                                -C
-                            </button>
-                        )}
                     </div>
 
-                    <div className="h-4 w-px bg-slate-700 mx-0.5" />
-
-                    {/* Active Cell Reference Indicator */}
-                    <div 
-                        className="flex items-center gap-1 px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-lg font-mono font-bold text-[11px] shadow-xs"
-                        title="Selected Cell / Range"
+                    {/* Dark / Light Theme Toggle Button */}
+                    <button
+                        type="button"
+                        onClick={handleToggleTableTheme}
+                        className={`p-1 rounded-md transition ${
+                            isTableDark
+                                ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-600/50'
+                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+                        }`}
+                        title={isTableDark ? "Dark Theme active (Click to switch to Light Theme)" : "Light Theme active (Click to switch to Dark Theme)"}
                     >
-                        <span>
+                        {isTableDark ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
+                    </button>
+
+                    <div className="h-3.5 w-px bg-slate-700 mx-0.5" />
+
+                    {/* Active Cell Reference Indicator with Formula preview */}
+                    <div 
+                        className="flex items-center gap-1 px-1.5 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-md font-mono font-bold text-[10px] shadow-xs max-w-[150px] truncate"
+                        title={selectedCell?.text?.startsWith('=') ? `${cellRefLabel}: ${selectedCell.text}` : 'Selected Cell'}
+                    >
+                        <span className="truncate">
                             {selectionMode === 'ALL' 
                                 ? 'All Cells' 
                                 : selectionMode === 'COL' && selectedCol !== null 
                                     ? `Col ${getColLabel(selectedCol)}`
                                     : selectionMode === 'ROW' && selectedRow !== null
                                         ? `Row ${selectedRow + 1}`
-                                        : cellRefLabel || 'A1'}
+                                        : `${cellRefLabel || 'A1'}${selectedCell?.text?.startsWith('=') ? `: ${selectedCell.text}` : ''}`}
                         </span>
                     </div>
 
@@ -1705,7 +1762,7 @@ export default function WhiteboardTableObject({
                             return (
                                 <div 
                                     key={`row-${rIdx}`} 
-                                    className="flex relative w-full"
+                                    className={`flex relative w-full ${isInlineEditing && selectedCellKey?.startsWith(`${rIdx}-`) ? 'z-40 overflow-visible' : ''}`}
                                     style={{ height: rHeight }}
                                 >
                                     {Array.from({ length: cols }).map((_, cIdx) => {
@@ -1730,7 +1787,9 @@ export default function WhiteboardTableObject({
                                         return (
                                             <div
                                                 key={`cell-${cellKey}`}
-                                                className={`table-cell relative flex flex-col justify-center p-2 text-xs overflow-hidden transition-all border-r border-b ${
+                                                className={`table-cell relative flex flex-col justify-center p-2 text-xs transition-all border-r border-b ${
+                                                    isEditingThisCell ? 'overflow-visible z-50' : 'overflow-hidden'
+                                                } ${
                                                     inSelection
                                                         ? 'bg-indigo-500/20'
                                                         : 'hover:outline-dashed hover:outline-1 hover:outline-indigo-400 cursor-pointer'
@@ -1754,37 +1813,120 @@ export default function WhiteboardTableObject({
                                                 }}
                                                 title="Click to select; Double-click or type to edit inline"
                                             >
-                                                {/* Inline Text Area Editor */}
+                                                {/* Inline Text Area Editor with STEM Autocomplete */}
                                                 {isEditingThisCell ? (
-                                                    <textarea
-                                                        ref={inlineInputRef}
-                                                        value={inlineText}
-                                                        onChange={(e) => setInlineText(e.target.value)}
-                                                        onBlur={() => commitInlineEdit()}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter' && !e.shiftKey) {
-                                                                e.preventDefault();
-                                                                commitAndNavigate('down');
-                                                            } else if (e.key === 'Tab') {
-                                                                e.preventDefault();
-                                                                commitAndNavigate(e.shiftKey ? 'left' : 'right');
-                                                            } else if (e.key === 'Escape') {
-                                                                e.preventDefault();
-                                                                cancelInlineEdit();
-                                                            }
-                                                        }}
-                                                        className="w-full h-full bg-slate-900 text-white p-1 resize-none border-2 border-indigo-400 rounded-sm focus:outline-none overflow-hidden leading-tight"
-                                                        style={{
-                                                            fontSize: `${cellFontSize}px`,
-                                                            fontFamily: getFontFamilyCss(cellFontFamily),
-                                                            fontWeight: cellBold ? 'bold' : 'normal',
-                                                            fontStyle: cellItalic ? 'italic' : 'normal',
-                                                            textDecoration: [cellUnderline ? 'underline' : '', cellStrikethrough ? 'line-through' : ''].filter(Boolean).join(' ') || 'none',
-                                                            textAlign: cellAlign,
-                                                            color: cellColor
-                                                        }}
-                                                        autoFocus
-                                                    />
+                                                    <div className="relative w-full h-full">
+                                                        <textarea
+                                                            ref={inlineInputRef}
+                                                            value={inlineText}
+                                                            onChange={(e) => {
+                                                                setInlineText(e.target.value);
+                                                                setIsAutocompleteDismissed(false);
+                                                                setAutocompleteSelectedIdx(0);
+                                                            }}
+                                                            onBlur={() => {
+                                                                setTimeout(() => {
+                                                                    commitInlineEdit();
+                                                                }, 160);
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (formulaSuggestions.length > 0) {
+                                                                    if (e.key === 'ArrowDown') {
+                                                                        e.preventDefault();
+                                                                        setAutocompleteSelectedIdx(prev => (prev + 1) % formulaSuggestions.length);
+                                                                        return;
+                                                                    } else if (e.key === 'ArrowUp') {
+                                                                        e.preventDefault();
+                                                                        setAutocompleteSelectedIdx(prev => (prev - 1 + formulaSuggestions.length) % formulaSuggestions.length);
+                                                                        return;
+                                                                    } else if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                                                                        if (formulaSuggestions[autocompleteSelectedIdx]) {
+                                                                            e.preventDefault();
+                                                                            applyAutocompleteSuggestion(formulaSuggestions[autocompleteSelectedIdx]);
+                                                                            return;
+                                                                        }
+                                                                    } else if (e.key === 'Escape') {
+                                                                        e.preventDefault();
+                                                                        setIsAutocompleteDismissed(true);
+                                                                        return;
+                                                                    }
+                                                                }
+
+                                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                                    e.preventDefault();
+                                                                    commitAndNavigate('down');
+                                                                } else if (e.key === 'Tab') {
+                                                                    e.preventDefault();
+                                                                    commitAndNavigate(e.shiftKey ? 'left' : 'right');
+                                                                } else if (e.key === 'Escape') {
+                                                                    e.preventDefault();
+                                                                    cancelInlineEdit();
+                                                                }
+                                                            }}
+                                                            className="w-full h-full bg-slate-900 text-white p-1 resize-none border-2 border-indigo-400 rounded-sm focus:outline-none overflow-hidden leading-tight font-mono"
+                                                            style={{
+                                                                fontSize: `${cellFontSize}px`,
+                                                                fontFamily: inlineText.startsWith('=') ? '"Fira Code", monospace' : getFontFamilyCss(cellFontFamily),
+                                                                fontWeight: cellBold ? 'bold' : 'normal',
+                                                                fontStyle: cellItalic ? 'italic' : 'normal',
+                                                                textDecoration: [cellUnderline ? 'underline' : '', cellStrikethrough ? 'line-through' : ''].filter(Boolean).join(' ') || 'none',
+                                                                textAlign: cellAlign,
+                                                                color: cellColor
+                                                            }}
+                                                            autoFocus
+                                                        />
+
+                                                        {/* STEM Formula Autocomplete Menu */}
+                                                        {formulaSuggestions.length > 0 && (
+                                                            <div
+                                                                className={`absolute left-0 ${rIdx >= rows - 2 && rIdx > 0 ? 'bottom-[calc(100%+6px)]' : 'top-[calc(100%+6px)]'} z-[9999] bg-slate-950/98 border border-slate-700/90 rounded-xl shadow-2xl p-1.5 w-72 max-w-[90vw] max-h-56 overflow-y-auto custom-scrollbar backdrop-blur-md animate-in fade-in zoom-in-95 duration-100 pointer-events-auto`}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                onMouseDown={(e) => e.preventDefault()}
+                                                            >
+                                                                <div className="flex items-center justify-between px-1.5 py-0.5 mb-1 text-[10px] font-semibold text-slate-400 border-b border-slate-800">
+                                                                    <span className="flex items-center gap-1">⚡ STEM Formulas</span>
+                                                                    <span className="text-[9px] text-slate-500 font-mono">Tab/Enter to apply</span>
+                                                                </div>
+                                                                <div className="space-y-0.5">
+                                                                    {formulaSuggestions.map((item, idx) => {
+                                                                        const isSelected = idx === autocompleteSelectedIdx;
+                                                                        return (
+                                                                            <div
+                                                                                key={item.name}
+                                                                                onMouseDown={(e) => {
+                                                                                    e.preventDefault();
+                                                                                    e.stopPropagation();
+                                                                                    applyAutocompleteSuggestion(item);
+                                                                                }}
+                                                                                onMouseEnter={() => setAutocompleteSelectedIdx(idx)}
+                                                                                className={`flex flex-col gap-0.5 px-2 py-1 rounded-lg cursor-pointer transition text-left ${
+                                                                                    isSelected ? 'bg-indigo-600 text-white shadow-xs' : 'hover:bg-slate-800/80 text-slate-300'
+                                                                                }`}
+                                                                            >
+                                                                                <div className="flex items-center justify-between gap-1">
+                                                                                    <div className="flex items-center gap-1 font-mono font-bold text-[11px] truncate">
+                                                                                        <span>{item.icon}</span>
+                                                                                        <span className={isSelected ? 'text-white' : 'text-indigo-300'}>{item.signature}</span>
+                                                                                    </div>
+                                                                                    <span className={`text-[8px] px-1 py-0.2 rounded font-sans uppercase font-bold tracking-wider shrink-0 ${
+                                                                                        item.category === 'Physics' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' :
+                                                                                        item.category === 'Chemistry' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                                                                                        item.category === 'Biology' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
+                                                                                        'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                                                                                    }`}>
+                                                                                        {item.category.slice(0, 4)}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className={`text-[10px] leading-tight truncate ${isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>
+                                                                                    {item.description}
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 ) : (
                                                     <>
                                                         {/* Cell Content: Image */}
@@ -1821,23 +1963,34 @@ export default function WhiteboardTableObject({
                                                             </div>
                                                         )}
 
-                                                        {/* Cell Content: Text with Rich Formatting */}
-                                                        {cell.text && (
-                                                            <div 
-                                                                className={`w-full leading-tight ${cellWrap ? 'break-words whitespace-pre-wrap' : 'truncate whitespace-nowrap'}`}
-                                                                style={{
-                                                                    fontSize: `${cellFontSize}px`,
-                                                                    fontFamily: getFontFamilyCss(cellFontFamily),
-                                                                    fontWeight: cellBold ? 'bold' : 'normal',
-                                                                    fontStyle: cellItalic ? 'italic' : 'normal',
-                                                                    textDecoration: [cellUnderline ? 'underline' : '', cellStrikethrough ? 'line-through' : ''].filter(Boolean).join(' ') || 'none',
-                                                                    textAlign: cellAlign,
-                                                                    color: cellColor
-                                                                }}
-                                                            >
-                                                                {cell.text}
-                                                            </div>
-                                                        )}
+                                                        {/* Cell Content: Text or Evaluated Formula */}
+                                                        {cell.text && (() => {
+                                                            const isFormula = String(cell.text).startsWith('=');
+                                                            const displayVal = isFormula
+                                                                ? evaluateCellFormula(cell.text, cells, rows, cols, cellKey)
+                                                                : cell.text;
+                                                            const isFormulaErr = isFormula && typeof displayVal === 'string' && displayVal.startsWith('#');
+
+                                                            return (
+                                                                <div 
+                                                                    className={`w-full leading-tight ${cellWrap ? 'break-words whitespace-pre-wrap' : 'truncate whitespace-nowrap'} ${
+                                                                        isFormulaErr ? 'text-rose-400 font-mono font-bold' : (isFormula ? 'font-mono' : '')
+                                                                    }`}
+                                                                    style={{
+                                                                        fontSize: `${cellFontSize}px`,
+                                                                        fontFamily: isFormula ? '"Fira Code", monospace' : getFontFamilyCss(cellFontFamily),
+                                                                        fontWeight: cellBold ? 'bold' : 'normal',
+                                                                        fontStyle: cellItalic ? 'italic' : 'normal',
+                                                                        textDecoration: [cellUnderline ? 'underline' : '', cellStrikethrough ? 'line-through' : ''].filter(Boolean).join(' ') || 'none',
+                                                                        textAlign: isFormula && !cell.align ? 'right' : cellAlign,
+                                                                        color: isFormulaErr ? '#fb7185' : cellColor
+                                                                    }}
+                                                                    title={isFormula ? `${cell.text} = ${displayVal}` : cell.text}
+                                                                >
+                                                                    {String(displayVal)}
+                                                                </div>
+                                                            );
+                                                        })()}
 
                                                         {/* Empty Placeholder Hint */}
                                                         {!cell.text && !cell.math && !cell.image && !cell.inkData && (

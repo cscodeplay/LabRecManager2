@@ -397,6 +397,7 @@ export default function WhiteboardClosedCaptions({
     const [lastSpoken, setLastSpoken] = useState('');
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState('');
+    const [isTextEditing, setIsTextEditing] = useState(false);
     const [isPaneCollapsed, setIsPaneCollapsed] = useState(false);
     const [isPaneDismissed, setIsPaneDismissed] = useState(false);
     const [isCcDismissed, setIsCcDismissed] = useState(false);
@@ -581,14 +582,13 @@ export default function WhiteboardClosedCaptions({
             const extractedQuestion = res?.data?.data?.questionText?.trim() || res?.data?.data?.question?.trim();
             if (extractedQuestion) {
                 setEditText(extractedQuestion);
+                setIsTextEditing(false);
                 toast.success('Question scanned from image!', { icon: '📸' });
             } else {
                 setEditText(prev => prev.trim() || 'Solve the problem shown in this image');
+                setIsTextEditing(false);
                 toast('Image attached! Click Solve to formulate solution.', { icon: '📎' });
             }
-            setTimeout(() => {
-                editInputRef.current?.focus();
-            }, 80);
         } catch (err) {
             console.warn('[WhiteboardCaptions] FormData scan failed, retrying with base64...', err?.message);
             // Fallback retry using base64 data URL
@@ -599,6 +599,7 @@ export default function WhiteboardClosedCaptions({
                     const extracted = fallbackRes?.data?.data?.questionText?.trim() || fallbackRes?.data?.data?.question?.trim();
                     if (extracted) {
                         setEditText(extracted);
+                        setIsTextEditing(false);
                         toast.success('Question scanned from image!', { icon: '📸' });
                         return;
                     }
@@ -608,6 +609,7 @@ export default function WhiteboardClosedCaptions({
             }
             // Even if OCR text extraction couldn't parse text, the image is successfully attached for the solver!
             setEditText(prev => prev.trim() || 'Solve the problem shown in this image');
+            setIsTextEditing(false);
             toast('Image attached! Click Solve to analyze the image.', { icon: '📎' });
         } finally {
             setIsScanningImage(false);
@@ -892,20 +894,50 @@ export default function WhiteboardClosedCaptions({
                                         </div>
                                     ) : (
                                         <form onSubmit={handleFormSubmit} className="space-y-2.5">
-                                            <textarea
-                                                ref={editInputRef}
-                                                rows={3}
-                                                value={editText}
-                                                onChange={(e) => setEditText(e.target.value)}
-                                                placeholder="Ask any math problem, line equation, science question, or whiteboard command..."
-                                                className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-yellow-400 resize-none leading-relaxed"
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                                        e.preventDefault();
-                                                        handleFormSubmit(e);
-                                                    }
-                                                }}
-                                            />
+                                            {(!isTextEditing && editText.trim()) ? (
+                                                <div
+                                                    onClick={() => {
+                                                        setIsTextEditing(true);
+                                                        setTimeout(() => {
+                                                            editInputRef.current?.focus();
+                                                        }, 40);
+                                                    }}
+                                                    className="w-full min-h-[78px] max-h-48 overflow-y-auto custom-scrollbar bg-slate-900 hover:bg-slate-900/90 border border-slate-700 hover:border-yellow-400/80 rounded-xl p-2.5 text-xs text-white leading-relaxed cursor-text relative group transition shadow-inner select-text flex flex-col justify-between"
+                                                    title="Click anywhere in this field to edit"
+                                                >
+                                                    <div
+                                                        className="text-xs text-slate-100 overflow-x-auto leading-relaxed pb-2"
+                                                        dangerouslySetInnerHTML={{ __html: renderFormattedText(editText) }}
+                                                    />
+                                                    <div className="flex items-center justify-end pt-1 border-t border-slate-800/80 mt-auto">
+                                                        <span className="text-[10px] text-slate-400 group-hover:text-yellow-400 flex items-center gap-1 opacity-70 group-hover:opacity-100 transition bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/60 pointer-events-none">
+                                                            <Pencil className="w-2.5 h-2.5" />
+                                                            <span>Click anywhere to edit</span>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <textarea
+                                                    ref={editInputRef}
+                                                    rows={3}
+                                                    value={editText}
+                                                    onChange={(e) => setEditText(e.target.value)}
+                                                    onBlur={() => {
+                                                        if (editText.trim()) {
+                                                            setIsTextEditing(false);
+                                                        }
+                                                    }}
+                                                    placeholder="Ask any math problem, line equation, science question, or whiteboard command..."
+                                                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-yellow-400 resize-none leading-relaxed"
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                                            e.preventDefault();
+                                                            handleFormSubmit(e);
+                                                        }
+                                                    }}
+                                                    autoFocus={isTextEditing}
+                                                />
+                                            )}
 
                                             {/* Scanned / Uploaded Image Preview Chip */}
                                             {scannedPreviewUrl && (
@@ -986,6 +1018,7 @@ export default function WhiteboardClosedCaptions({
                                                             type="button"
                                                             onClick={() => {
                                                                 setEditText(promptText);
+                                                                setIsTextEditing(false);
                                                                 onExecuteCommand(promptText);
                                                             }}
                                                             className="text-left px-2 py-1 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-yellow-300 border border-slate-800 hover:border-slate-700 truncate transition"
@@ -1380,11 +1413,14 @@ export default function WhiteboardClosedCaptions({
                                 style={{ backgroundColor: '#1e293b' }}
                                 className="px-3 py-1.5 bg-slate-900 border-b border-slate-700 text-[11px] text-slate-200 flex items-center justify-between gap-2 font-medium"
                             >
-                                <div className="truncate min-w-0">
+                                <div className="truncate min-w-0 flex items-center">
                                     {aiSolution?.question ? (
                                         <>
-                                            <span className="text-yellow-400 font-bold mr-1">Q:</span>
-                                            <span>{aiSolution.question}</span>
+                                            <span className="text-yellow-400 font-bold mr-1 shrink-0">Q:</span>
+                                            <span 
+                                                className="truncate" 
+                                                dangerouslySetInnerHTML={{ __html: renderFormattedText(aiSolution.question) }}
+                                            />
                                         </>
                                     ) : (
                                         <span className="text-slate-400">Step-by-Step Solution</span>
@@ -1886,22 +1922,49 @@ export default function WhiteboardClosedCaptions({
                                             </div>
                                         )}
 
-                                        <input
-                                            ref={editInputRef}
-                                            type="text"
-                                            value={editText}
-                                            onChange={(e) => setEditText(e.target.value)}
-                                            onPaste={handlePasteImage}
-                                            placeholder={
-                                                isScanningImage
-                                                    ? 'Scanning image for question...'
-                                                    : scannedPreviewUrl
-                                                        ? 'Enter optional instructions, or press Enter to solve image...'
-                                                        : 'Type question, or paste an image...'
-                                            }
-                                            autoFocus
-                                            className="flex-1 bg-slate-900 border border-indigo-500/80 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                                        />
+                                        {(!isTextEditing && editText.trim()) ? (
+                                            <div
+                                                onClick={() => {
+                                                    setIsTextEditing(true);
+                                                    setTimeout(() => {
+                                                        editInputRef.current?.focus();
+                                                    }, 40);
+                                                }}
+                                                className="flex-1 bg-slate-900 hover:bg-slate-900/90 border border-indigo-500/80 hover:border-indigo-400 rounded-lg px-2.5 py-1 text-xs text-white cursor-text flex items-center justify-between gap-2 overflow-x-auto select-text"
+                                                title="Click anywhere to edit"
+                                            >
+                                                <div
+                                                    className="truncate min-w-0"
+                                                    dangerouslySetInnerHTML={{ __html: renderFormattedText(editText) }}
+                                                />
+                                                <span className="text-[10px] text-slate-400 flex items-center gap-0.5 shrink-0 opacity-70 pointer-events-none">
+                                                    <Pencil className="w-2.5 h-2.5" />
+                                                    <span>Edit</span>
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <input
+                                                ref={editInputRef}
+                                                type="text"
+                                                value={editText}
+                                                onChange={(e) => setEditText(e.target.value)}
+                                                onPaste={handlePasteImage}
+                                                onBlur={() => {
+                                                    if (editText.trim()) {
+                                                        setIsTextEditing(false);
+                                                    }
+                                                }}
+                                                placeholder={
+                                                    isScanningImage
+                                                        ? 'Scanning image for question...'
+                                                        : scannedPreviewUrl
+                                                            ? 'Enter optional instructions, or press Enter to solve image...'
+                                                            : 'Type question, or paste an image...'
+                                                }
+                                                autoFocus
+                                                className="flex-1 bg-slate-900 border border-indigo-500/80 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                                            />
+                                        )}
 
                                         <button
                                             type="submit"
