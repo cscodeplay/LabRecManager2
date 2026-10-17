@@ -7,7 +7,7 @@ import {
     X, Check, ChevronsUp, ChevronsDown, Maximize2, Sparkles,
     Undo2, RefreshCw, Bold, Italic, Underline, Strikethrough,
     AlignLeft, AlignCenter, AlignRight, WrapText, ChevronDown,
-    Clipboard, ClipboardCheck
+    Clipboard, ClipboardCheck, Droplet
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import MathRenderer from './MathRenderer';
@@ -145,6 +145,7 @@ export default function WhiteboardTableObject({
     const headerText = table.headerText || '#f8fafc';
     const cellBg = table.cellBg || '#0f172a';
     const cellText = table.cellText || '#e2e8f0';
+    const tableOpacity = table.opacity !== undefined ? Number(table.opacity) : 1.0;
 
     // Cell data map: { 'r-c': { text, math, image, inkData, bg, bold, italic, underline, strikethrough, fontSize, fontFamily, color, align, wrap } }
     const cells = table.cells || {};
@@ -166,6 +167,7 @@ export default function WhiteboardTableObject({
     const [showColorMenu, setShowColorMenu] = useState(false);
     const [showBgMenu, setShowBgMenu] = useState(false);
     const [showSizeMenu, setShowSizeMenu] = useState(false);
+    const [showOpacityMenu, setShowOpacityMenu] = useState(false);
     const [bgOpacity, setBgOpacity] = useState(1); // 0.15, 0.35, 0.65, 1
     const [customHexInput, setCustomHexInput] = useState('');
 
@@ -1379,6 +1381,74 @@ export default function WhiteboardTableObject({
                         )}
                     </div>
 
+                    {/* Table Transparency / Opacity Control */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowOpacityMenu(v => !v);
+                                setShowBgMenu(false);
+                                setShowColorMenu(false);
+                                setShowFontMenu(false);
+                                setShowSizeMenu(false);
+                            }}
+                            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg transition ${
+                                showOpacityMenu ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800 text-slate-300 hover:text-white'
+                            }`}
+                            title="Table Opacity / Transparency (Default: 100% Opaque)"
+                        >
+                            <Droplet className="w-3.5 h-3.5 text-cyan-400" />
+                            <span className="font-mono text-[10px]">{Math.round(tableOpacity * 100)}%</span>
+                        </button>
+                        {showOpacityMenu && (
+                            <div
+                                className="absolute bottom-full left-0 mb-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2.5 z-50 flex flex-col gap-2 min-w-[150px] animate-in fade-in zoom-in-95 duration-100"
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-200">
+                                    <span>Table Opacity</span>
+                                    <span className="font-mono text-cyan-400">{Math.round(tableOpacity * 100)}%</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="10"
+                                    max="100"
+                                    step="5"
+                                    value={Math.round(tableOpacity * 100)}
+                                    onChange={(e) => {
+                                        const newOp = parseFloat(e.target.value) / 100;
+                                        onUpdate({ ...table, opacity: newOp });
+                                    }}
+                                    className="w-full accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+                                />
+                                <div className="grid grid-cols-4 gap-1 pt-1 border-t border-slate-800 text-[10px] font-mono">
+                                    {[
+                                        { label: '100%', val: 1.0 },
+                                        { label: '85%', val: 0.85 },
+                                        { label: '50%', val: 0.50 },
+                                        { label: '25%', val: 0.25 }
+                                    ].map(preset => (
+                                        <button
+                                            key={preset.label}
+                                            type="button"
+                                            onClick={() => {
+                                                onUpdate({ ...table, opacity: preset.val });
+                                                setShowOpacityMenu(false);
+                                            }}
+                                            className={`px-1 py-0.5 rounded text-center transition ${
+                                                Math.abs(tableOpacity - preset.val) < 0.05
+                                                    ? 'bg-indigo-600 text-white font-bold'
+                                                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                            }`}
+                                        >
+                                            {preset.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                     <div className="h-4 w-px bg-slate-700 mx-0.5" />
 
                     {/* Text Wrap Toggle */}
@@ -1500,7 +1570,8 @@ export default function WhiteboardTableObject({
                     maxHeight: containerHeight,
                     borderColor: borderColor,
                     borderWidth: borderWidth,
-                    backgroundColor: cellBg
+                    backgroundColor: cellBg,
+                    opacity: tableOpacity
                 }}
             >
                 <style>{`

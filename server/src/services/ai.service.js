@@ -3718,6 +3718,19 @@ Spoken input: "${text}"
                 }
             }
 
+            const verbosity = context.verbosity || 'normal';
+            let verbosityInstruction = '';
+            if (verbosity === 'brief') {
+                verbosityInstruction = `\n7. RESPONSE VERBOSITY: BRIEF & CONCISE.
+Provide a focused, high-yield solution with essential formula, key calculation steps, and boxed final answer. Keep spoken explanation and steps concise without unnecessary filler.`;
+            } else if (verbosity === 'detailed') {
+                verbosityInstruction = `\n7. RESPONSE VERBOSITY: DETAILED & THOROUGH EXPLANATION.
+Provide an exhaustive, in-depth pedagogical explanation with foundational intuition, step-by-step formula derivations, intermediate algebraic steps, underlying laws, and boxed final answer.`;
+            } else {
+                verbosityInstruction = `\n7. RESPONSE VERBOSITY: NORMAL BALANCED.
+Provide a standard, balanced step-by-step solution following clear curriculum guidelines.`;
+            }
+
             const systemPromptToUse = (isStemOrDiagramQuery || !hasExplicitCanvasUiAction)
                 ? `You are an expert STEM teacher and scientific reasoning assistant for an interactive Whiteboard with an integrated 2D/3D Graphing Engine and Physics Space simulation laboratory.
 Analyze the user's question, derive the step-by-step mathematical or scientific solution, and output valid JSON.
@@ -3799,7 +3812,7 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
    - Complex Analysis: Complex z-plane with contour path (e.g. semicircular contour) and poles marked.
    - Abstract Algebra / Topology / Advanced: Unit balls in metric spaces (l1 diamond, l2 circle, l_infinity square), quotient identification polygons (torus, Mobius strip), Venn diagrams.
    YOU MUST ALWAYS OUTPUT A COMPLETE, HIGH-PRECISION SVG STRING IN 'diagram.svg'!
-6. In 'speechResponse', state the explanation and final answer naturally so it sounds clear when spoken aloud.`
+6. In 'speechResponse', state the explanation and final answer naturally so it sounds clear when spoken aloud.${verbosityInstruction}`
                 : whiteboardSystemPrompt;
 
             // Dispatch to Unified AI Completion (OpenAI Paid -> Anthropic -> DeepSeek -> OpenRouter -> Groq -> Gemini -> SambaNova)

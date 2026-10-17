@@ -968,6 +968,14 @@ export default function Whiteboard({
     const [pages, setPages] = useState([null]); // Array of canvas data URLs
     const [currentPage, setCurrentPage] = useState(0);
     const [totalPages, setTotalPages] = useState(1);
+    const [pageToDeleteConfirm, setPageToDeleteConfirm] = useState(null); // page index to confirm delete
+    const [aiResponseVerbosity, setAiResponseVerbosity] = useState(() => {
+        try {
+            return localStorage.getItem('whiteboard_ai_verbosity') || 'normal';
+        } catch {
+            return 'normal';
+        }
+    });
 
     // Background options - per page
     const [pageBackgrounds, setPageBackgrounds] = useState({ 0: { pattern: 'plain', color: '#ffffff' } });
@@ -5294,8 +5302,8 @@ export default function Whiteboard({
                 }
             }
 
-            // AI Assistant Co-Pilot Shortcut (Cmd+Shift+A or Ctrl+Shift+A)
-            if (modKey && e.shiftKey && e.key.toLowerCase() === 'a') {
+            // AI Assistant Co-Pilot Shortcut (Cmd+J / Ctrl+J, Cmd+K / Ctrl+K, Cmd+Shift+A)
+            if (modKey && (e.key.toLowerCase() === 'j' || e.key.toLowerCase() === 'k' || (e.shiftKey && e.key.toLowerCase() === 'a'))) {
                 e.preventDefault();
                 setShowAiAssistantModal(prev => !prev);
                 return;
@@ -6872,23 +6880,34 @@ export default function Whiteboard({
             const canvas = canvasRef.current;
             if (!canvas) return;
 
-            const pos = getPosition(e);
-            if (!pos || isNaN(pos.x) || isNaN(pos.y)) return;
+            // Zoom only with Cmd/Ctrl + scroll (standard whiteboard & canvas behavior)
+            const isZoomGesture = e.ctrlKey || e.metaKey;
 
-            const currentZ = zoomLevel || 1;
-            const zoomFactor = e.deltaY < 0 ? 1.10 : (1 / 1.10);
-            const newZ = Math.max(0.2, Math.min(4.0, Math.round(currentZ * zoomFactor * 100) / 100));
-            if (newZ === currentZ) return;
+            if (isZoomGesture) {
+                const pos = getPosition(e);
+                if (!pos || isNaN(pos.x) || isNaN(pos.y)) return;
 
-            const cx = canvas.width / 2;
-            const cy = canvas.height / 2;
-            const ratio = currentZ / newZ;
+                const currentZ = zoomLevel || 1;
+                const zoomFactor = e.deltaY < 0 ? 1.10 : (1 / 1.10);
+                const newZ = Math.max(0.2, Math.min(4.0, Math.round(currentZ * zoomFactor * 100) / 100));
+                if (newZ === currentZ) return;
 
-            const newPanX = Math.round(cx - pos.x + ratio * (pos.x + panOffset.x - cx));
-            const newPanY = Math.round(cy - pos.y + ratio * (pos.y + panOffset.y - cy));
+                const cx = canvas.width / 2;
+                const cy = canvas.height / 2;
+                const ratio = currentZ / newZ;
 
-            setZoomLevel(newZ);
-            setPanOffset({ x: newPanX, y: newPanY });
+                const newPanX = Math.round(cx - pos.x + ratio * (pos.x + panOffset.x - cx));
+                const newPanY = Math.round(cy - pos.y + ratio * (pos.y + panOffset.y - cy));
+
+                setZoomLevel(newZ);
+                setPanOffset({ x: newPanX, y: newPanY });
+            } else {
+                // Without Ctrl/Cmd, mouse wheel / trackpad smoothly pans the canvas
+                setPanOffset(prev => ({
+                    x: Math.round(prev.x - e.deltaX),
+                    y: Math.round(prev.y - e.deltaY)
+                }));
+            }
         };
 
         container.addEventListener('wheel', handleWheel, { passive: false });
@@ -11847,6 +11866,7 @@ export default function Whiteboard({
             cellText: theme?.cellText || '#e2e8f0',
             borderColor: theme?.borderColor || '#334155',
             borderWidth: 2,
+            opacity: 1.0,
             isLocked: false,
             zIndex: 35,
             cells: {}
@@ -15651,6 +15671,34 @@ export default function Whiteboard({
         return refined.length > 0 ? refined : [trimmed];
     };
 
+    // Stop in-flight AI Generation
+    const handleStopAiGeneration = useCallback(() => {
+        setIsAiThinking(false);
+        setVoiceFeedback('⏹️ AI generation stopped');
+        toast('Generation stopped', { icon: '⏹️' });
+    }, []);
+
+    // Select and restore a previous AI conversation/solution from chat history
+    const handleSelectChatHistoryItem = useCallback((item) => {
+        if (!item) return;
+        if (item.solutionMarkdown || item.speechResponse || item.content) {
+            setAiSolutionData({
+                question: item.question || item.content?.slice(0, 80) || 'Previous Question',
+                speechResponse: item.speechResponse || item.content,
+                solutionMarkdown: item.solutionMarkdown || item.content,
+                canvasAction: item.canvasAction || null,
+                modelUsed: item.modelUsed,
+                providerUsed: item.providerUsed,
+                suggestedFollowUps: item.suggestedFollowUps || []
+            });
+            setShowAiAssistantModal(true);
+            setShowClosedCaptions(true);
+            if (item.speechResponse && aiSpeechEnabled) {
+                speakAiResponse(item.speechResponse);
+            }
+        }
+    }, [aiSpeechEnabled, speakAiResponse]);
+
     // ─── Voice Control & Speech Recognition Engine ──────────────────────
     const executeVoiceCommand = useCallback(async (rawText, isAiRetry = false, options = null) => {
         const hasImage = Boolean(options?.imageDataUrl || options?.image || options?.imageFile);
@@ -17113,6 +17161,7 @@ export default function Whiteboard({
                         currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard',
                         preferredProvider: whiteboardAiProvider !== 'auto' ? whiteboardAiProvider : undefined,
                         conversationHistory: conversationHistoryRef.current ? conversationHistoryRef.current.slice(-8) : [],
+                        verbosity: options?.verbosity || aiResponseVerbosity || 'normal',
                         ...(options?.imageDataUrl ? { imageDataUrl: options.imageDataUrl } : {}),
                         ...getWhiteboardSpatialContext()
                     }
@@ -22844,7 +22893,7 @@ export default function Whiteboard({
 
                     {/* Page Navigation & Interactive Switcher Popover */}
                     <div className="relative">
-                        <div className={`flex ${isVertical ? 'flex-col gap-0.5 p-1 rounded-xl' : 'items-center gap-0.5 px-1 py-0.5 rounded-full'} bg-slate-800/80`}>
+                        <div className={`flex ${isVertical ? 'flex-col gap-0.5 p-1 rounded-xl' : 'items-center gap-0.5 px-1 py-0.5 rounded-full'} bg-slate-900 border border-slate-700 shadow-md`}>
                             <button
                                 onClick={goToPrevPage}
                                 disabled={currentPage === 0}
@@ -22889,7 +22938,7 @@ export default function Whiteboard({
                             </button>
                             {totalPages > 1 && (
                                 <button
-                                    onClick={() => deletePage(currentPage)}
+                                    onClick={() => setPageToDeleteConfirm(currentPage)}
                                     className="p-1 hover:bg-rose-500/20 text-rose-400 rounded-full transition"
                                     title={`Delete Page ${currentPage + 1}`}
                                 >
@@ -22901,7 +22950,7 @@ export default function Whiteboard({
                         {/* Interactive Page Switcher & Manager Dropdown Menu */}
                         {showPageNavMenu && (
                             <div 
-                                className={`absolute z-60 w-64 bg-slate-900/98 backdrop-blur-md border border-slate-700/90 rounded-2xl shadow-2xl p-3 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-150 ${popoverPos}`}
+                                className={`absolute z-60 w-64 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-150 ${popoverPos}`}
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-700/80">
@@ -22988,7 +23037,7 @@ export default function Whiteboard({
                                                         type="button"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            deletePage(idx);
+                                                            setPageToDeleteConfirm(idx);
                                                         }}
                                                         className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition opacity-40 group-hover/page:opacity-100"
                                                         title={`Delete Page ${idx + 1}`}
@@ -23020,7 +23069,7 @@ export default function Whiteboard({
                                             duplicateCurrentPage();
                                             setShowPageNavMenu(false);
                                         }}
-                                        className="flex-1 py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-indigo-400 text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition"
+                                        className="flex-1 py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition"
                                     >
                                         <Copy className="w-3.5 h-3.5" />
                                         <span>Duplicate</span>
@@ -23029,6 +23078,53 @@ export default function Whiteboard({
                             </div>
                         )}
                     </div>
+
+                    {/* Warning Confirm Modal for Deleting Whiteboard Page */}
+                    {pageToDeleteConfirm !== null && (
+                        <div 
+                            className="fixed inset-0 z-100 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150 select-none"
+                            onClick={() => setPageToDeleteConfirm(null)}
+                        >
+                            <div 
+                                className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-5 max-w-sm w-full text-slate-100 flex flex-col gap-4 animate-in zoom-in-95 duration-150"
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/30">
+                                        <Trash2 className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-sm font-bold text-white">Delete Page {pageToDeleteConfirm + 1}?</h3>
+                                        <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                                            Are you sure you want to permanently delete Page {pageToDeleteConfirm + 1}? All drawings, formulas, and objects on this page will be removed.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPageToDeleteConfirm(null)}
+                                        className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition border border-slate-700/60"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const target = pageToDeleteConfirm;
+                                            setPageToDeleteConfirm(null);
+                                            setShowPageNavMenu(false);
+                                            deletePage(target);
+                                        }}
+                                        className="px-4 py-1.5 rounded-xl text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 transition shadow-lg shadow-rose-900/30 flex items-center gap-1.5"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <span>Delete Page</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Quick Canvas Zoom Controls */}
                     <div className={`flex ${isVertical ? 'flex-col gap-0.5 p-1 rounded-xl' : 'items-center gap-0.5 px-1 py-0.5 rounded-full'} bg-slate-800/80`}>
@@ -30542,9 +30638,24 @@ export default function Whiteboard({
                     }
                 }}
                 preferredProvider={whiteboardAiProvider}
+                chatHistory={aiChatHistory}
+                onClearChat={() => setAiChatHistory([])}
+                onSelectHistoryItem={handleSelectChatHistoryItem}
+                onStopGeneration={handleStopAiGeneration}
+                responseVerbosity={aiResponseVerbosity}
+                onChangeResponseVerbosity={(v) => {
+                    setAiResponseVerbosity(v);
+                    try { localStorage.setItem('whiteboard_ai_verbosity', v); } catch {}
+                }}
                 onClose={() => {
                     setShowAiAssistantModal(false);
                     setShowClosedCaptions(false);
+                    setVoiceTranscript('');
+                    setInterimVoiceTranscript('');
+                    setVoiceFeedback('');
+                    setAiSolutionData(null);
+                    setAiSpeakingText('');
+                    if (stopAiSpeech) stopAiSpeech();
                 }}
                 onExecuteCommand={(cmd, options) => executeVoiceCommand(cmd, false, options)}
                 audioLevel={audioInputLevel}
