@@ -6017,12 +6017,18 @@ export default function Whiteboard({
     }, [canvasWrapperRef, panOffset, zoomLevel, color, socket, sessionId, saveToHistory, setShapeObjects, setTextObjects]);
 
     // Insert Problem Diagram to Canvas
-    const handleInsertDiagramToCanvas = useCallback((svgString, title = 'Problem Diagram') => {
+    const handleInsertDiagramToCanvas = useCallback((svgString, titleOrMeta = 'Problem Diagram') => {
         if (!svgString) return;
 
+        const isMetaObj = typeof titleOrMeta === 'object' && titleOrMeta !== null;
+        const title = isMetaObj ? (titleOrMeta.title || 'Schematic Diagram') : (titleOrMeta || 'Problem Diagram');
+        const code = isMetaObj ? (titleOrMeta.code || aiSolutionData?.diagram?.code || aiSolutionData?.schemdrawCode || aiSolutionData?.canvasAction?.code || null) : null;
+        const diagW = (isMetaObj && titleOrMeta.width) ? Number(titleOrMeta.width) : 380;
+        const diagH = (isMetaObj && titleOrMeta.height) ? Number(titleOrMeta.height) : 380;
+
         const wrapper = canvasWrapperRef.current;
-        const cx = wrapper ? (wrapper.clientWidth / 2 - 160) : 250;
-        const cy = wrapper ? (wrapper.clientHeight / 2 - 120) : 250;
+        const cx = wrapper ? (wrapper.clientWidth / 2 - Math.round(diagW / 2)) : 250;
+        const cy = wrapper ? (wrapper.clientHeight / 2 - Math.round(diagH / 2)) : 250;
         const spawnX = Math.round(-panOffset.x + cx / zoomLevel);
         const spawnY = Math.round(-panOffset.y + cy / zoomLevel);
 
@@ -6031,10 +6037,14 @@ export default function Whiteboard({
             type: 'svg',
             svg: svgString,
             title,
+            code,
             x: spawnX,
             y: spawnY,
-            width: 320,
-            height: 240,
+            width: diagW,
+            height: diagH,
+            color: '#000000',
+            strokeWidth: 2,
+            fillColor: 'transparent',
             rotation: 0
         };
 
@@ -6042,7 +6052,8 @@ export default function Whiteboard({
         setSelectedShapeIds([newDiagram.id]);
         if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newDiagram });
         saveToHistory();
-    }, [canvasWrapperRef, panOffset, zoomLevel, socket, sessionId, saveToHistory, setShapeObjects, setSelectedShapeIds]);
+        toast.success('Inserted diagram onto Whiteboard!', { icon: '📐' });
+    }, [canvasWrapperRef, panOffset, zoomLevel, socket, sessionId, saveToHistory, setShapeObjects, setSelectedShapeIds, aiSolutionData]);
 
     // Insert Parametric Geometry Shape
     const handleInsertParametricShape = useCallback((shapeData) => {
@@ -20112,45 +20123,6 @@ export default function Whiteboard({
         saveToHistory();
         toast.success('Inserted AI response as text (12px)!', { icon: '🔤' });
     }, [panOffset, zoomLevel, color, saveToHistory]);
-
-    // Insert Diagram SVG Object directly onto Canvas from Solution Pane
-    const handleInsertDiagramToCanvas = useCallback((svg, meta = {}) => {
-        if (!svg) return;
-        const cWidth = canvasRef.current?.width || 1200;
-        const cHeight = canvasRef.current?.height || 800;
-        const cx = Math.round((cWidth / 2 - panOffset.x) / zoomLevel);
-        const cy = Math.round((cHeight / 2 - panOffset.y) / zoomLevel);
-        const diagW = meta.width || 380;
-        const diagH = meta.height || 380;
-
-        const slot = findAvailableCanvasSpace(diagW, diagH);
-        const targetX = slot.hasSpace ? slot.x : Math.max(40, Math.round(cx - diagW / 2));
-        const targetY = slot.hasSpace ? slot.y : Math.max(40, Math.round(cy - diagH / 2));
-
-        const newObj = {
-            id: `svg_${Date.now()}`,
-            type: 'svg',
-            svg: svg,
-            code: meta.code || aiSolutionData?.diagram?.code || aiSolutionData?.schemdrawCode || aiSolutionData?.canvasAction?.code || null,
-            title: meta.title || aiSolutionData?.diagram?.title || 'Schematic Diagram',
-            x: targetX,
-            y: targetY,
-            width: diagW,
-            height: diagH,
-            color: '#000000',
-            strokeWidth: 2,
-            fillColor: 'transparent',
-            rotation: 0
-        };
-
-        const targetPage = currentPageRef.current !== undefined ? currentPageRef.current : currentPage;
-        setPageShapeObjects(prev => ({
-            ...prev,
-            [targetPage]: [...(prev[targetPage] || []), newObj]
-        }));
-        saveToHistory();
-        toast.success('Inserted diagram onto Whiteboard!', { icon: '📐' });
-    }, [panOffset, zoomLevel, currentPage, findAvailableCanvasSpace, saveToHistory, aiSolutionData]);
 
     // Stamp Physics Simulation Snapshot onto Whiteboard Canvas
     const handleStampPhysicsToCanvas = useCallback(({ dataUrl, width = 640, height = 360, title = 'Physics Simulation' }) => {
