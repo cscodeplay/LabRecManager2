@@ -14,13 +14,12 @@ const ACTIVE_DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-reasoner'];
 const ACTIVE_OPENROUTER_MODELS = ['openai/gpt-4o', 'anthropic/claude-3.5-sonnet', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct'];
 const ACTIVE_GEMINI_MODELS = [
     'gemini-2.5-flash',
-    'gemini-2.0-flash',
     'gemini-flash-latest'
 ];
 const ACTIVE_GROQ_MODELS = [
-    'qwen/qwen3.8-27b',
     'openai/gpt-oss-120b',
-    'openai/gpt-oss-20b'
+    'openai/gpt-oss-20b',
+    'qwen/qwen3.8-27b'
 ];
 const ACTIVE_SAMBANOVA_MODELS = ['Meta-Llama-3.1-8B-Instruct'];
 const ACTIVE_NVIDIA_MODELS = [
@@ -392,7 +391,7 @@ class AIService {
                     }
                 }
                 lastErr = err;
-                const isQuota = status === 429 || (err.message && /rate limit|quota|tokens per minute/i.test(err.message));
+                const isQuota = status === 429 || (err.message && /rate limit|quota|tokens per minute/i.test(err.message) && status !== 413 && !/request too large/i.test(err.message));
                 console.warn(`[AIService] Groq ${m} failed (${status || 'error'}): ${err.message?.substring(0, 80)}`);
                 if (isQuota) {
                     err.isQuotaError = true;
@@ -428,7 +427,10 @@ class AIService {
                     systemInstruction: systemInstruction || undefined,
                     generationConfig
                 });
-                const result = await geminiModel.generateContent(contents);
+                const result = await Promise.race([
+                    geminiModel.generateContent(contents),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error(`Gemini SDK timed out after 45s for ${m}`)), 45000))
+                ]);
                 const text = (await result.response).text();
                 return { text, model: m, provider: 'gemini' };
             } catch (err) {
@@ -750,8 +752,16 @@ class AIService {
         if (this.openRouterKey && !candidateOrder.includes('openrouter')) candidateOrder.push('openrouter');
 
         // High-Speed Inference & Free Credit Models
-        if (this.groqKey && !candidateOrder.includes('groq')) candidateOrder.push('groq');
-        if (this.geminiKey && !candidateOrder.includes('gemini')) candidateOrder.push('gemini');
+        // When prompt is large (> 5,000 chars), Gemini has 1M context while Groq free tier has 6,000 TPM limit.
+        // Prioritize Gemini for rich multimodal/whiteboard prompts, and Groq for quick conversational queries.
+        const isLargePrompt = (systemPrompt && systemPrompt.length > 5000) || (JSON.stringify(messages || []).length > 5000);
+        if (isLargePrompt) {
+            if (this.geminiKey && !candidateOrder.includes('gemini')) candidateOrder.push('gemini');
+            if (this.groqKey && !candidateOrder.includes('groq')) candidateOrder.push('groq');
+        } else {
+            if (this.groqKey && !candidateOrder.includes('groq')) candidateOrder.push('groq');
+            if (this.geminiKey && !candidateOrder.includes('gemini')) candidateOrder.push('gemini');
+        }
         if (this.sambaNovaKey && !candidateOrder.includes('sambanova')) candidateOrder.push('sambanova');
         if (this.nvidiaKey && !candidateOrder.includes('nvidia')) candidateOrder.push('nvidia');
 
@@ -3295,58 +3305,6 @@ Output MUST be ONLY valid JSON matching this schema:
                 }
             }
 
-            // Deterministic Syllabus Mathematical Diagram Solver (Calculus, Conics, Tangents, Complex Analysis, LPP, Venn, Vectors, Metric, Topology)
-            const syllabusDiagramParsed = geometrySolver.parseSyllabusDiagramFromText(text);
-            if (syllabusDiagramParsed) {
-                try {
-                    const sol = geometrySolver.solveSyllabusDiagram(syllabusDiagramParsed);
-                    if (sol) {
-                        return {
-                            recognized: true,
-                            success: true,
-                            speechResponse: sol.speechResponse,
-                            solutionMarkdown: sol.solutionMarkdown,
-                            graphEquations: [],
-                            plottedPoints: [],
-                            suggestedFollowUps: sol.suggestedFollowUps,
-                            diagram: sol.diagram,
-                            canvasAction: {
-                                type: 'draw_problem_with_diagram',
-                                diagramType: 'svg',
-                                svg: sol.diagram?.svg,
-                                question: text,
-                                solutionMarkdown: sol.solutionMarkdown,
-                                speechResponse: sol.speechResponse
-                            },
-                            actions: [
-                                {
-                                    type: 'CREATE_OBJECT',
-                                    objectType: 'svg',
-                                    svg: sol.diagram?.svg,
-                                    title: sol.diagram?.title || 'Mathematical Diagram',
-                                    width: 380,
-                                    height: 380
-                                }
-                            ]
-                        };
-                    }
-                } catch (e) {
-                    console.warn('[AIService] Deterministic syllabus diagram solver failed, falling back to LLM:', e.message);
-                }
-            }
-
-            // Model Context Protocol (MCP) Multi-Domain Diagram Dispatch (SchemDraw Circuits, RDKit Chemistry, UML Systems, SymPy Vector Fields)
-            if (mcpManager.canHandle(text)) {
-                try {
-                    const mcpSol = mcpManager.handleWhiteboardDiagram(text);
-                    if (mcpSol) {
-                        return mcpSol;
-                    }
-                } catch (mcpErr) {
-                    console.warn('[AIService] MCP diagram solver error, falling back to LLM:', mcpErr.message);
-                }
-            }
-
             const whiteboardSystemPrompt = `You are an advanced Spatial & Generative AI reasoning engine for an interactive Whiteboard.
 You receive the user's spoken command along with a JSON representation of the current whiteboard state (objects, sizes, spatial coordinates, pages).
 Your goal is to parse the user's intent, perform any required knowledge-base reasoning (like deriving formulas, writing code, or generating scientific explanations), and return a sequence of autonomous actions to modify the canvas.
@@ -3367,8 +3325,8 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
   "solutionMarkdown": "<REQUIRED for all questions, problems, formulas, derivations, and explanations: Well-structured Markdown with clear section headings (### 📌 Given & Concept, ### 📐 Formula, ### 🔢 Step-by-Step Solution, ### ✅ Final Answer) and ALL formulas/equations/variables/units written in proper LaTeX/KaTeX scientific notation ($$...$$ for display equations, $...$ for inline math). NEVER write formulas in plain English words!>",
   "diagram": {
     "type": "svg",
-    "title": "<Concise descriptive title of the diagram>",
-    "svg": "<Optional high-precision vector SVG string with viewBox='0 0 380 380' when a mathematical figure, curve, coordinate axes, or composite geometry visualizes the problem>"
+    "title": "<Concise descriptive title of the diagram matching the user's exact requested problem or component>",
+    "svg": "<CRITICAL: When the user asks for ANY circuit diagram (e.g. bulbs in parallel/series, DC battery, resistor networks, switches, RLC), electronic schematic, chemical structure, biological cycle, mechanics free-body diagram, algorithm flowchart, curve, or geometry setup: YOU MUST generate a complete, valid vector SVG string inside <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 380 380' width='100%' height='100%'>...</svg>. STRICT RULE: Draw the EXACT components and topology requested by the user. For two bulbs connected in parallel to a DC source: draw DC voltage source / battery symbol (+/-), wire loop with split parallel branches, two light bulbs with filament symbols (circle with cross ⊗ or loop filament), and current flow arrows. NEVER output a default or unrelated diagram! If no diagram is required for the question, set this to null.>"
   },
   "graphEquations": [
     "<Optional array of clean 2D or 3D mathematical equations in x, y, z to plot on the interactive graphing panel when the problem involves functions, curves, circles, conics, or 3D surfaces, e.g. '(x - 2)^2 + (y + 3)^2 = 25', 'y = 2*x + 1'. STRICT RULE: Output ONLY the primary original curves given in the problem statement. NEVER output intermediate substitution quadratics (e.g. '10*x^2 + 24*x - 13 = 0' or 'y = 10*x^2 + 24*x - 13') or intermediate coordinate lines (e.g. 'x = 1.83', 'y = 4.66'). All solution coordinates must be placed ONLY in 'plottedPoints'.>"
@@ -3498,6 +3456,23 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT matching this schema:
 }
 
 CRITICAL RULES:
+- **STRICT PROHIBITION ON HARDCODED OR MADE-UP DEFAULT DIAGRAMS**:
+  NEVER return a pre-baked, made-up, or default diagram that does not match the user's specific request. Every diagram must be dynamically constructed according to the exact problem statement.
+- **DYNAMIC ELECTRIC CIRCUITS & SCHEMATICS (DC / AC, Bulbs, Resistors, Batteries, Switches)**:
+  When asked to draw or explain ANY electrical or electronic circuit (e.g. "Draw circuit diagram for two bulbs connected in parallel to DC source", "series circuit with three resistors", "bridge rectifier", "Wheatstone bridge", "RC filter"):
+  1. Generate a complete, high-contrast vector SVG in 'diagram.svg' (<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380"> ... </svg>) and in action '{ "type": "CREATE_OBJECT", "objectType": "svg", "svg": "...", "title": "...", "width": 380, "height": 380 }'.
+  2. The SVG MUST accurately show the EXACT circuit topology:
+     - DC Voltage Source / Battery: draw long thin line (+) and short thick line (-), or circle battery symbol with '+' and '-' labels.
+     - AC Source: circle with sine wave (~).
+     - Light Bulbs: draw circle with internal cross/filament (⊗) or coiled filament with glow.
+     - Resistors: zigzag line or clean rectangle.
+     - Parallel Branches: draw clean rectangular wire loops where the wire branches off at top and recombines at bottom, placing each bulb or component on its own distinct parallel rung.
+     - Current Flow Arrows: show current I leaving positive terminal, dividing into I1 and I2 through each parallel branch, and recombining.
+  3. In 'solutionMarkdown', formulate the complete physical derivation:
+     - Parallel rule: V_1 = V_2 = V_source
+     - Branch currents: I_1 = V / R_1, I_2 = V / R_2, total I = I_1 + I_2
+     - Equivalent resistance: 1/R_eq = 1/R_1 + 1/R_2  =>  R_eq = (R_1 * R_2) / (R_1 + R_2)
+     - Key physical insight: Bulbs in parallel operate independently at full source voltage and maximum brightness; if one bulb disconnects or burns out, the other remains fully lit!
 - **MATHEMATICAL & GEOMETRY PROBLEM SOLVING (Pythagoras, Trigonometry, Geometry Diagrams, Marking Corners & Edges)**:
   When the user asks for a step-by-step solution, proof, derivation, or explanation of a mathematical problem or theorem involving geometry (e.g. "step by step solution for pythagoras theorem", "solve triangle with sides 3 and 4", "trigonometry sin cos tan", "area of circle with radius 7", "perimeter of rectangle"):
   1. ALWAYS create an accurately constructed, cleanly labeled geometry diagram placed to the LEFT of the whiteboard center origin (since the Solution Pane is displayed to the right of the center origin):

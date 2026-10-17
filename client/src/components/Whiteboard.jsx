@@ -15111,11 +15111,7 @@ export default function Whiteboard({
         let diagramSvg = solution.diagram?.svg || solution.canvasAction?.svg || solution.diagramProps?.svg || solution.svg;
         const is3DModel = Boolean(solution.is3D || solution.modelType || solution.canvasAction?.modelType || ['vector_space_3d', 'sphere', 'frustum', 'hemisphere', 'capsule'].includes(solution.canvasAction?.diagramType));
 
-        // If no diagram provided yet, detect from exhaustive syllabus (School to MSc)
-        if (!diagramSvg && !is3DModel) {
-            diagramSvg = generateSyllabusSvgDiagram(combined, rawQuestion, solution.graphEquations);
-        }
-
+        // Only use diagrams dynamically generated for this problem (no made-up fallback diagrams)
         const hasDiagram = Boolean(diagramSvg || is3DModel);
 
         // Split Markdown into Given/Concept vs Derivation/Solution

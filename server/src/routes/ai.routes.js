@@ -681,10 +681,7 @@ router.post('/mcp-execute', optionalAuth, asyncHandler(async (req, res) => {
     if (!prompt || !prompt.trim()) {
         return res.status(400).json({ success: false, message: 'Prompt instruction is required' });
     }
-    const result = mcpManager.handleWhiteboardDiagram(prompt);
-    if (!result) {
-        return res.status(404).json({ success: false, message: 'No suitable MCP tool found for this prompt' });
-    }
+    const result = await aiService.executeVoiceCommand(prompt, { module: 'whiteboard' });
     res.json({ success: true, data: result });
 }));
 
