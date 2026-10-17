@@ -576,10 +576,15 @@ export default function WhiteboardClosedCaptions({
         });
 
         try {
+            // First try with native FormData
             const res = await aiAPI.scanQuestionImage(file, preferredProvider);
             const extractedQuestion = res?.data?.data?.questionText?.trim() || res?.data?.data?.question?.trim();
             if (extractedQuestion) {
                 setEditText(extractedQuestion);
+                toast.success('Question scanned from image!', { icon: '📸' });
+            } else {
+                setEditText(prev => prev.trim() || 'Solve the problem shown in this image');
+                toast('Image attached! Click Solve to formulate solution.', { icon: '📎' });
             }
             setTimeout(() => {
                 editInputRef.current?.focus();
@@ -594,14 +599,16 @@ export default function WhiteboardClosedCaptions({
                     const extracted = fallbackRes?.data?.data?.questionText?.trim() || fallbackRes?.data?.data?.question?.trim();
                     if (extracted) {
                         setEditText(extracted);
+                        toast.success('Question scanned from image!', { icon: '📸' });
                         return;
                     }
                 }
             } catch (fbErr) {
                 console.error('[WhiteboardCaptions] Base64 fallback error:', fbErr);
             }
-            const errMsg = err?.response?.data?.message || err?.message || 'Failed to scan image';
-            toast.error(`Image scan error: ${errMsg}`);
+            // Even if OCR text extraction couldn't parse text, the image is successfully attached for the solver!
+            setEditText(prev => prev.trim() || 'Solve the problem shown in this image');
+            toast('Image attached! Click Solve to analyze the image.', { icon: '📎' });
         } finally {
             setIsScanningImage(false);
         }
@@ -667,6 +674,19 @@ export default function WhiteboardClosedCaptions({
 
     return (
         <>
+            {/* Global hidden file input for scanning question images from anywhere */}
+            <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleScanQuestionImage(file);
+                    e.target.value = '';
+                }}
+            />
+
             {/* 1. MINIMAL SOLUTION PANE — Placed to the RIGHT of the Center of the Whiteboard */}
             {(activeAiResponse || isVisible || isOpen) && !isPaneDismissed && (
                 <div className="fixed top-1/2 left-[calc(50%+20px)] -translate-y-1/2 z-40 w-[350px] sm:w-[410px] max-w-[44vw] pointer-events-auto select-none transition-all duration-200 flex flex-col">
@@ -754,9 +774,23 @@ export default function WhiteboardClosedCaptions({
                     )}
 
                     <div
+                        onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setIsDraggingImage(true);
+                        }}
+                        onDragLeave={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setIsDraggingImage(false);
+                        }}
+                        onDrop={handleDropImage}
+                        onPaste={handlePasteImage}
                         style={{ backgroundColor: '#0f172a' }}
                         className={`bg-slate-950 border-2 rounded-2xl shadow-2xl overflow-hidden transition-all duration-200 ${
-                            aiSolution?.isError ? 'border-rose-500 shadow-rose-950/40' : 'border-slate-700'
+                            isDraggingImage
+                                ? 'border-indigo-400 ring-2 ring-indigo-500/40'
+                                : (aiSolution?.isError ? 'border-rose-500 shadow-rose-950/40' : 'border-slate-700')
                         }`}
                     >
                         {!activeAiResponse ? (
@@ -873,15 +907,56 @@ export default function WhiteboardClosedCaptions({
                                                 }}
                                             />
 
+                                            {/* Scanned / Uploaded Image Preview Chip */}
+                                            {scannedPreviewUrl && (
+                                                <div className="relative flex items-center gap-2 p-1.5 rounded-xl bg-slate-900 border border-indigo-500/60 shadow-xs max-w-full">
+                                                    <img
+                                                        src={scannedPreviewUrl}
+                                                        alt="Attached problem"
+                                                        className="h-9 w-9 object-cover rounded-lg border border-indigo-500/80 shrink-0"
+                                                    />
+                                                    <div className="flex-1 min-w-0 pr-4">
+                                                        <div className="text-[11px] font-semibold text-indigo-300 truncate">
+                                                            {scannedFile?.name || 'Attached Problem Image'}
+                                                        </div>
+                                                        <div className="text-[10px] text-slate-400">
+                                                            {isScanningImage ? 'Scanning text & diagrams...' : 'Image ready for solver'}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setScannedPreviewUrl(null);
+                                                            setScannedDataUrl(null);
+                                                            setScannedFile(null);
+                                                        }}
+                                                        className="absolute top-1.5 right-1.5 w-4 h-4 bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white rounded-full flex items-center justify-center text-[10px] transition cursor-pointer"
+                                                        title="Remove image"
+                                                    >
+                                                        <X className="w-2.5 h-2.5" />
+                                                    </button>
+                                                </div>
+                                            )}
+
                                             <div className="flex items-center justify-between gap-2">
                                                 <button
                                                     type="button"
                                                     onClick={() => fileInputRef.current?.click()}
-                                                    className="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+                                                    disabled={isScanningImage}
+                                                    className="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-60 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
                                                     title="Upload problem image / handwriting"
                                                 >
-                                                    <Upload className="w-3.5 h-3.5 text-cyan-400" />
-                                                    <span>Scan Image</span>
+                                                    {isScanningImage ? (
+                                                        <>
+                                                            <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                                                            <span>Scanning...</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Upload className="w-3.5 h-3.5 text-cyan-400" />
+                                                            <span>Scan Image</span>
+                                                        </>
+                                                    )}
                                                 </button>
 
                                                 <button
@@ -1649,18 +1724,6 @@ export default function WhiteboardClosedCaptions({
                     onPaste={handlePasteImage}
                     className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-xl w-[92%] sm:w-[540px] pointer-events-auto select-none transition-all duration-200 flex flex-col"
                 >
-                    {/* Hidden file input for scanning question images */}
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handleScanQuestionImage(file);
-                            e.target.value = '';
-                        }}
-                    />
 
                     {isMinimized ? (
                         /* Minimized floating pill */

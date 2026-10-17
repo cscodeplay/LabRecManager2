@@ -13,8 +13,13 @@ const ACTIVE_ANTHROPIC_MODELS = ['claude-3-7-sonnet-20250219', 'claude-3-5-sonne
 const ACTIVE_DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-reasoner'];
 const ACTIVE_OPENROUTER_MODELS = ['openai/gpt-4o', 'anthropic/claude-3.5-sonnet', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct'];
 const ACTIVE_GEMINI_MODELS = [
-    'gemini-2.5-flash',
-    'gemini-flash-latest'
+    'gemini-flash-lite-latest',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-flash-latest',
+    'gemini-3-flash-preview',
+    'gemini-2.5-flash'
 ];
 const ACTIVE_GROQ_MODELS = [
     'openai/gpt-oss-120b',
@@ -1071,7 +1076,7 @@ RULES:
 
         // 2. Try Gemini Vision
         if (this.genAI) {
-            for (const modelName of ACTIVE_GEMINI_MODELS.slice(0, 3)) {
+            for (const modelName of ACTIVE_GEMINI_MODELS) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
                     const result = await model.generateContent([

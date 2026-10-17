@@ -715,7 +715,7 @@ export const aiAPI = {
     scanQuestionImage: (payload, preferredProvider = 'auto') => {
         if (payload instanceof FormData) {
             return api.post('/ai/scan-question-image', payload, {
-                headers: { 'Content-Type': undefined },
+                headers: { 'Content-Type': 'multipart/form-data' },
             });
         }
         if (typeof window !== 'undefined' && (payload instanceof File || payload instanceof Blob)) {
@@ -723,7 +723,7 @@ export const aiAPI = {
             fd.append('image', payload);
             if (preferredProvider) fd.append('preferredProvider', preferredProvider);
             return api.post('/ai/scan-question-image', fd, {
-                headers: { 'Content-Type': undefined },
+                headers: { 'Content-Type': 'multipart/form-data' },
             });
         }
         const body = (typeof payload === 'string')
