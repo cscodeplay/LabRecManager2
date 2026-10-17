@@ -429,7 +429,7 @@ class AIService {
                 });
                 const result = await Promise.race([
                     geminiModel.generateContent(contents),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error(`Gemini SDK timed out after 45s for ${m}`)), 45000))
+                    new Promise((_, reject) => setTimeout(() => reject(new Error(`Gemini SDK timed out after 120s for ${m}`)), 120000))
                 ]);
                 const text = (await result.response).text();
                 return { text, model: m, provider: 'gemini' };
@@ -3697,11 +3697,15 @@ Spoken input: "${text}"
                 low.startsWith('write') ||
                 /\b(diagram|flowchart|3d model|structure of|cycle)\b/i.test(low);
 
-            const hasExplicitCanvasAction = /\b(draw|sketch|illustrate|spawn|move|drag|delete|remove|erase|clear|wipe|zoom|page|color|recolor|border|stroke|align|group|ungroup|connect|resize|rotate|3d\s+model)\b/i.test(low);
-            const hasShapeObjectDirective = !isMathOrScienceProblem && /\b(3d|model|circle|square|triangle|rectangle|line|arrow)\b/i.test(low);
-            const hasCanvasDirectives = hasExplicitCanvasAction || hasShapeObjectDirective;
+            const isStemOrDiagramQuery =
+                isMathOrScienceProblem ||
+                /\b(circuit|schematic|bulb|battery|resistor|capacitor|inductor|wheatstone|op-amp|diagram|flowchart|molecule|chemical|reaction|physics|mechanics|fbd|free body|optics|ray|lens|mirror|calculus|derivative|integral|matrix|trigonometry|geometry|theorem|proof|series|parallel)\b/i.test(low) ||
+                (isCognitiveQuery && !/\b(move|drag|delete|remove|erase|clear|wipe|zoom|page|recolor|border|stroke|align|group|ungroup|connect|resize|rotate)\b/i.test(low));
 
-            const systemPromptToUse = (isCognitiveQuery && !hasCanvasDirectives)
+            const hasExplicitCanvasUiAction = /\b(move|drag|delete|remove|erase|clear|wipe|zoom|page|recolor|border|stroke|align|group|ungroup|connect|resize|rotate)\b/i.test(low) ||
+                (!isStemOrDiagramQuery && /\b(3d\s+model|sphere|cube|pyramid|cylinder|cone|drawing|sketch\s+a\s+(?:cat|dog|car|tree|house|apple))\b/i.test(low));
+
+            const systemPromptToUse = (isStemOrDiagramQuery || !hasExplicitCanvasUiAction)
                 ? `You are an expert STEM teacher and scientific reasoning assistant for an interactive Whiteboard with an integrated 2D/3D Graphing Engine and Physics Space simulation laboratory.
 Analyze the user's question, derive the step-by-step mathematical or scientific solution, and output valid JSON.
 
@@ -3712,8 +3716,8 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT:
   "solutionMarkdown": "<Complete, well-structured Markdown solution with section headings and ALL formulas/equations/variables/units in LaTeX/KaTeX ($$...$$ for display block equations, $...$ for inline math). NEVER write formulas in plain English words!>",
   "diagram": {
     "type": "svg",
-    "title": "<Concise descriptive title of the diagram>",
-    "svg": "<MANDATORY FOR ANY VISUAL OR MATHEMATICAL PROBLEM: A complete, self-contained SVG string with viewBox='0 0 380 380' and width='100%' height='100%'. It must have a background rect (<rect width='380' height='380' rx='14' fill='#ffffff' stroke='#e2e8f0'/>), title text at y=28, coordinate axes / shapes / curves, key point markers, labels, and bottom badge (<rect x='30' y='342' width='320' height='26' rx='6' fill='#eff6ff'/>). Use SVG elements: <line>, <circle>, <path>, <polygon>, <text>.>"
+    "title": "<Concise descriptive title of the diagram matching the requested topic>",
+    "svg": "<MANDATORY FOR ANY CIRCUIT, VISUAL OR MATHEMATICAL PROBLEM: A complete, self-contained SVG string with viewBox='0 0 380 380' and width='100%' height='100%'. It must have a background rect (<rect width='380' height='380' rx='14' fill='#ffffff' stroke='#e2e8f0'/>), title text at y=28, coordinate axes / shapes / curves, key point markers, labels, and bottom badge (<rect x='30' y='342' width='320' height='26' rx='6' fill='#eff6ff'/>). Use SVG elements: <line>, <circle>, <path>, <polygon>, <text>. STRICT ZERO-HARDCODING RULE: For any electrical circuit, draw the exact requested components and topology. For bulbs in series with DC source: draw DC battery symbol (+/-), a single continuous wire loop with two light bulbs in series on the loop with filament symbols (circle with cross ⊗), and current flow arrow I. For bulbs in parallel: draw DC battery with parallel split branches, each with a light bulb with filament symbol ⊗, and current arrows I_1, I_2. For other circuits or physical setups, draw accurate vector components matching the user request. NEVER output a default or unrelated diagram! If no diagram is required for the question, set this to null.>"
   },
   "graphEquations": [
     "<Array of 1 to 4 clean, plot-ready 2D/3D equations in standard ASCII math syntax using variables x, y, z, or theta whenever the problem involves functions, curves, algebra, conics, trigonometry, calculus (include both the function y = f(x) and its derivative/tangent/antiderivative if relevant), 3D surfaces (z = f(x,y) or x^2+y^2+z^2=R^2), or physics trajectories. Examples: 'x^2 + y^2 + 2*x = 6', 'y = x^2 - 5*x + 6', 'z = sin(x)*cos(y)', 'r = 2*cos(theta)'. CRITICAL: For systems of equations or multi-step algebra (e.g. 2x + y = 7 and x - y = 2), output ONLY the original given problem equations (e.g. ['2*x + y = 7', 'x - y = 2']). NEVER output intermediate algebraic or derivation steps as equations (e.g. do NOT output '3*x = 9' or intermediate lines). Use [] only if the topic has no coordinate graph.>"
@@ -3810,7 +3814,12 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                 let parsed = this.parseJSONResponse(completionRes.text || '{}');
                 if (!parsed && completionRes.text && completionRes.text.trim().length > 15) {
                     const rawTxt = completionRes.text.trim();
-                    const cleanSpeech = rawTxt
+                    const rawSpeech = rawTxt.match(/"speechResponse"\s*:\s*"((?:[^"\\]|\\.)*)"/i)?.[1]?.replace(/\\n/g, '\n')?.replace(/\\"/g, '"');
+                    const rawSol = rawTxt.match(/"solutionMarkdown"\s*:\s*"((?:[^"\\]|\\.)*)"/i)?.[1]?.replace(/\\n/g, '\n')?.replace(/\\"/g, '"');
+                    const rawSvg = rawTxt.match(/<svg[\s\S]*?<\/svg>/i)?.[0];
+                    const rawTitle = rawTxt.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/i)?.[1];
+
+                    const cleanSpeech = rawSpeech || rawTxt
                         .replace(/```[\s\S]*?```/g, '')
                         .replace(/<[^>]*>/g, '')
                         .replace(/\$\$[\s\S]*?\$\$/g, '')
@@ -3818,13 +3827,14 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                         .replace(/[\*#_`]/g, '')
                         .split('\n')
                         .map(l => l.trim())
-                        .filter(l => l.length > 0)[0] || 'Here is the step-by-step solution.';
+                        .filter(l => l.length > 0 && !l.startsWith('{') && !l.startsWith('"'))[0] || 'Here is the step-by-step solution.';
 
                     parsed = {
                         recognized: true,
                         success: true,
                         speechResponse: cleanSpeech.substring(0, 250),
-                        solutionMarkdown: rawTxt,
+                        solutionMarkdown: rawSol || rawTxt,
+                        ...(rawSvg ? { diagram: { type: 'svg', title: rawTitle || 'Diagram', svg: rawSvg } } : {}),
                         suggestedFollowUps: [
                             '💡 Give a real-world example',
                             '📐 Show core formula',
@@ -3833,6 +3843,17 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                         ],
                         actions: []
                     };
+                }
+
+                if (parsed && typeof parsed.speechResponse === 'string' && parsed.speechResponse.trim().startsWith('{')) {
+                    try {
+                        const innerParsed = JSON.parse(parsed.speechResponse);
+                        if (innerParsed && innerParsed.speechResponse) {
+                            parsed.speechResponse = innerParsed.speechResponse;
+                            if (innerParsed.diagram && !parsed.diagram) parsed.diagram = innerParsed.diagram;
+                            if (innerParsed.solutionMarkdown && !parsed.solutionMarkdown) parsed.solutionMarkdown = innerParsed.solutionMarkdown;
+                        }
+                    } catch (_) {}
                 }
 
                 if (parsed && (parsed.translatedCommand || parsed.recognized || parsed.actions || parsed.type === 'solution' || parsed.type === 'canvas_generation' || parsed.solutionMarkdown || parsed.speechResponse)) {
@@ -9964,12 +9985,24 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
             return out;
         };
 
+        // Normalize unescaped quotes inside XML/SVG elements so they do not break JSON string boundaries
+        const fixSvgQuotes = (str) => {
+            if (!str || typeof str !== 'string') return str;
+            return str.replace(/(<svg[\s\S]*?<\/svg>)/gi, (svgContent) => {
+                return svgContent
+                    .replace(/\\"/g, '__ESCAPED_QUOTE__')
+                    .replace(/"/g, "'")
+                    .replace(/__ESCAPED_QUOTE__/g, "'");
+            });
+        };
+
         // Protect single-backslash LaTeX commands that collide with JSON escape chars (\f, \t, \b, \r, \n)
         const preserveLatexBackslashes = (jsonStr) => {
             return jsonStr
                 .replace(/(?<!\\)\\(frac|forall|flat|fbox|footnotesize|times|text|textbf|textit|textrm|texttt|theta|vartheta|tan|tanh|tau|triangle|triangleq|to\b|therefore|tilde|top\b|tfrac|tiny|beta|boxed|bar\b|mathbf|mathbb|mathcal|mathrm|mathsf|mathtt|binom|begin|big|Big|bigg|Bigg|bullet|bot\b|backslash|because|bowtie|breve|rightarrow|Rightarrow|right|rvert|rVert|rfloor|rceil|rangle|rho|varrho|risingdotseq|rtimes|neq|ne\b|nabla|nu\b|notin|ni\b|natural|neg\b|nless|ngtr|nleq|ngeq|nsubseteq|nsupseteq|nmid|nparallel|nwarrow|nearrow)/g, '\\\\$1');
         };
 
+        cleanText = fixSvgQuotes(cleanText);
         cleanText = preserveLatexBackslashes(cleanText);
 
         try {
@@ -9978,6 +10011,7 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
             // Attempt repairs: trailing commas, unescaped LaTeX backslashes (\frac, \partial, \alpha, etc.), control chars
             try {
                 let fixed = sanitizeControlCharsInStrings(cleanText);
+                fixed = fixSvgQuotes(fixed);
                 fixed = fixed.replace(/,\s*([\]}])/g, '$1');
                 // Escape single backslashes that are not valid JSON escape characters (without corrupting existing \\)
                 fixed = fixed.replace(/(?<!\\)\\([^"\\/bfnrtu]|u(?![\da-fA-F]{4}))/g, '\\\\$1');
@@ -9986,6 +10020,7 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
                 // If truncated, attempt to balance braces/brackets and fix cut-off strings/keys
                 try {
                     let repaired = sanitizeControlCharsInStrings(cleanText);
+                    repaired = fixSvgQuotes(repaired);
                     repaired = repaired.replace(/(?<!\\)\\([^"\\/bfnrtu]|u(?![\da-fA-F]{4}))/g, '\\\\$1');
                     // Check if truncated inside an open quote
                     const quoteMatches = repaired.match(/(^|[^\\])"/g);
