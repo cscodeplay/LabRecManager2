@@ -1,7 +1,7 @@
 const mcpManager = require('../src/services/mcpManager.service');
 const aiService = require('../src/services/ai.service');
 
-describe('Commercial-Safe MCP Integration & Zero Hardcoding Policy Test Suite', () => {
+describe('Commercial-Safe MCP Integration & Dynamic SchemDraw Engine Test Suite', () => {
     beforeAll(async () => {
         await mcpManager.initialize();
     });
@@ -32,27 +32,45 @@ describe('Commercial-Safe MCP Integration & Zero Hardcoding Policy Test Suite', 
         expect(res.domain).toBe('circuit');
     });
 
-    test('3. ZERO HARDCODING VERIFICATION: handleWhiteboardDiagram strictly returns null to prevent hardcoded templates', () => {
+    test('3. DYNAMIC SCHEMDRAW COMPILATION: handleWhiteboardDiagram renders dynamic parallel circuit and never returns hardcoded RLC', async () => {
+        const query = 'Draw circuit diagram for two bulbs connected in parallel to DC source';
+        const result = await mcpManager.handleWhiteboardDiagram(query);
+
+        expect(result).not.toBeNull();
+        expect(result.success).toBe(true);
+        expect(result.providerUsed).toBe('schemdraw-mcp');
+        expect(result.diagram.title).toContain('Parallel');
+        expect(result.diagram.title).toContain('Bulb');
+        expect(result.diagram.svg).toContain('<svg');
+        // Crucial: Must NEVER contain an inductor or RLC fallback
+        expect(result.diagram.title).not.toContain('RLC');
+        expect(result.solutionMarkdown).toContain('Parallel');
+    });
+
+    test('4. DYNAMIC SCHEMDRAW COMPILATION: handleWhiteboardDiagram renders series bulbs correctly', async () => {
+        const query = 'draw a circuit diagram with two bulbs in series.';
+        const result = await mcpManager.handleWhiteboardDiagram(query);
+
+        expect(result).not.toBeNull();
+        expect(result.success).toBe(true);
+        expect(result.providerUsed).toBe('schemdraw-mcp');
+        expect(result.diagram.title).toContain('Series');
+        expect(result.diagram.title).toContain('Bulb');
+        expect(result.diagram.svg).toContain('<svg');
+        expect(result.diagram.title).not.toContain('RLC');
+    });
+
+    test('5. Non-circuit domains safely return null for AI reasoning fallback', async () => {
         const testQueries = [
-            'Draw a series RLC circuit schematic',
-            'Draw circuit diagram for two bulbs connected in parallel to DC source',
             'Draw benzene molecular chemical structure',
             'Render caffeine molecule',
             'Draw flowchart for finding maximum',
             'Plot vector field F(x, y) = (-y, x)'
         ];
 
-        testQueries.forEach(query => {
-            // Must strictly return null so all diagram requests pass to dynamic AI reasoning
-            const result = mcpManager.handleWhiteboardDiagram(query);
+        for (const query of testQueries) {
+            const result = await mcpManager.handleWhiteboardDiagram(query);
             expect(result).toBeNull();
-        });
-    });
-
-    test('4. aiService.executeVoiceCommand does not intercept user queries with static templates', async () => {
-        // Mock or check that executeVoiceCommand does not short-circuit with a hardcoded RLC circuit
-        const prompt = 'Draw circuit diagram for two bulbs connected in parallel to DC source';
-        // Ensure mcpManager.handleWhiteboardDiagram returns null
-        expect(mcpManager.handleWhiteboardDiagram(prompt)).toBeNull();
+        }
     });
 });

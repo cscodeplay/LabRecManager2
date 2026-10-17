@@ -55,3 +55,6 @@ server/prisma/migrations/.DS_Store
 # Misc
 *.log
 *.tsbuildinfo
+.venv/
+venv/
+server/.venv/

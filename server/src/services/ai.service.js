@@ -3702,8 +3702,17 @@ Spoken input: "${text}"
                 /\b(circuit|schematic|bulb|battery|resistor|capacitor|inductor|wheatstone|op-amp|diagram|flowchart|molecule|chemical|reaction|physics|mechanics|fbd|free body|optics|ray|lens|mirror|calculus|derivative|integral|matrix|trigonometry|geometry|theorem|proof|series|parallel)\b/i.test(low) ||
                 (isCognitiveQuery && !/\b(move|drag|delete|remove|erase|clear|wipe|zoom|page|recolor|border|stroke|align|group|ungroup|connect|resize|rotate)\b/i.test(low));
 
-            const hasExplicitCanvasUiAction = /\b(move|drag|delete|remove|erase|clear|wipe|zoom|page|recolor|border|stroke|align|group|ungroup|connect|resize|rotate)\b/i.test(low) ||
-                (!isStemOrDiagramQuery && /\b(3d\s+model|sphere|cube|pyramid|cylinder|cone|drawing|sketch\s+a\s+(?:cat|dog|car|tree|house|apple))\b/i.test(low));
+            // Check if commercial-safe SchemDraw MCP can dynamically compile this circuit schematic
+            if (mcpManager && mcpManager.canHandle(text)?.server === 'schemdraw-mcp') {
+                try {
+                    const mcpResult = await mcpManager.handleWhiteboardDiagram(text);
+                    if (mcpResult && mcpResult.diagram?.svg) {
+                        return mcpResult;
+                    }
+                } catch (mcpErr) {
+                    console.warn('[AIService] SchemDraw MCP live compile failed, falling back to generative AI:', mcpErr.message);
+                }
+            }
 
             const systemPromptToUse = (isStemOrDiagramQuery || !hasExplicitCanvasUiAction)
                 ? `You are an expert STEM teacher and scientific reasoning assistant for an interactive Whiteboard with an integrated 2D/3D Graphing Engine and Physics Space simulation laboratory.
