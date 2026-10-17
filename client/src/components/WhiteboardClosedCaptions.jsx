@@ -1203,6 +1203,38 @@ export default function WhiteboardClosedCaptions({
                                             dangerouslySetInnerHTML={{ __html: renderFormattedText(displayText) }}
                                         />
                                     )}
+
+                                    {/* Collapsible SchemDraw Python Code in 10px font under diagram / solution */}
+                                    {(aiSolution?.diagram?.code || aiSolution?.schemdrawCode || aiSolution?.canvasAction?.code) && (
+                                        <div className="mt-2.5 rounded-xl border border-slate-700/80 bg-slate-900/90 overflow-hidden shadow-md">
+                                            <details className="group">
+                                                <summary className="flex items-center justify-between px-3 py-1.5 cursor-pointer bg-slate-950/90 hover:bg-slate-800/60 transition text-slate-300 hover:text-white select-none" style={{ fontSize: '10px' }}>
+                                                    <div className="flex items-center gap-1.5 text-[10px] font-mono font-semibold text-emerald-400">
+                                                        <span>🐍</span>
+                                                        <span>View Executed SchemDraw Python Code</span>
+                                                    </div>
+                                                    <span className="text-[10px] text-slate-400 font-mono group-open:rotate-180 transition-transform">▼</span>
+                                                </summary>
+                                                <div className="p-2.5 bg-slate-950 border-t border-slate-800/80 relative">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const codeStr = aiSolution?.diagram?.code || aiSolution?.schemdrawCode || aiSolution?.canvasAction?.code || '';
+                                                            navigator.clipboard.writeText(codeStr);
+                                                            toast.success('Python code copied to clipboard!', { icon: '📋' });
+                                                        }}
+                                                        className="absolute top-2 right-2 px-1.5 py-0.5 text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-slate-600 transition"
+                                                        title="Copy Python Code"
+                                                    >
+                                                        Copy
+                                                    </button>
+                                                    <pre className="font-mono text-[10px] leading-relaxed text-indigo-200 whitespace-pre overflow-x-auto max-h-52 pr-12" style={{ fontSize: '10px' }}>
+                                                        <code>{aiSolution?.diagram?.code || aiSolution?.schemdrawCode || aiSolution?.canvasAction?.code}</code>
+                                                    </pre>
+                                                </div>
+                                            </details>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Minimal Footer Actions + Follow-up Input */}

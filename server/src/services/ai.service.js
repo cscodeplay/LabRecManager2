@@ -3726,7 +3726,8 @@ OUTPUT EXACTLY ONE VALID JSON OBJECT:
   "diagram": {
     "type": "svg",
     "title": "<Concise descriptive title of the diagram matching the requested topic>",
-    "svg": "<MANDATORY FOR ANY CIRCUIT, VISUAL OR MATHEMATICAL PROBLEM: A complete, self-contained SVG string with viewBox='0 0 380 380' and width='100%' height='100%'. It must have a background rect (<rect width='380' height='380' rx='14' fill='#ffffff' stroke='#e2e8f0'/>), title text at y=28, coordinate axes / shapes / curves, key point markers, labels, and bottom badge (<rect x='30' y='342' width='320' height='26' rx='6' fill='#eff6ff'/>). Use SVG elements: <line>, <circle>, <path>, <polygon>, <text>. STRICT ZERO-HARDCODING & BATTERY POLARITY RULES: 1. MANDATORY BATTERY POLARITY: For every DC battery or source, you MUST explicitly draw a red '+' text (<text x='...' y='...' fill='#ef4444' font-weight='bold' font-size='14'>+</text>) next to the positive (longer) plate and a blue '−' text (<text x='...' y='...' fill='#3b82f6' font-weight='bold' font-size='14'>−</text>) next to the negative (shorter) plate. 2. EXACT COMPONENT VALUES: Label all components with their exact numerical values and units from the prompt (e.g. 'C₁ = 24 µF', 'C₂ = 36 µF', '40V', 'R = 10 Ω'). 3. CAPACITORS: Draw two parallel plates (<line> with small gap) for each capacitor, connect to battery in requested topology (series or parallel), and include charge labels (e.g. 'q₁ = 960 µC', 'q₂ = 1440 µC'). 4. BULBS & RESISTORS: Draw accurate symbols (filament ⊗ for bulb, zig-zag for resistor) with current flow arrow I. If no diagram is required for the question, set this to null.>"
+    "svg": "<MANDATORY FOR ANY CIRCUIT, VISUAL OR MATHEMATICAL PROBLEM: A complete, self-contained SVG string with viewBox='0 0 380 380' and width='100%' height='100%'. It must have a background rect (<rect width='380' height='380' rx='14' fill='#ffffff' stroke='#e2e8f0'/>), title text at y=28, coordinate axes / shapes / curves, key point markers, labels, and bottom badge (<rect x='30' y='342' width='320' height='26' rx='6' fill='#eff6ff'/>). Use SVG elements: <line>, <circle>, <path>, <polygon>, <text>. STRICT ZERO-HARDCODING & BATTERY POLARITY RULES: 1. MANDATORY BATTERY POLARITY: For every DC battery or source, you MUST explicitly draw a red '+' text (<text x='...' y='...' fill='#ef4444' font-weight='bold' font-size='14'>+</text>) next to the positive (longer) plate and a blue '−' text (<text x='...' y='...' fill='#3b82f6' font-weight='bold' font-size='14'>−</text>) next to the negative (shorter) plate. 2. EXACT COMPONENT VALUES: Label all components with their exact numerical values and units from the prompt (e.g. 'C₁ = 24 µF', 'C₂ = 36 µF', '40V', 'R = 10 Ω'). 3. CAPACITORS: Draw two parallel plates (<line> with small gap) for each capacitor, connect to battery in requested topology (series or parallel), and include charge labels (e.g. 'q₁ = 960 µC', 'q₂ = 1440 µC'). 4. BULBS & RESISTORS: Draw accurate symbols (filament ⊗ for bulb, zig-zag for resistor) with current flow arrow I. If no diagram is required for the question, set this to null.>",
+    "code": "<FOR ALL ELECTRICAL CIRCUITS & SCHEMATICS: Pure Python SchemDraw code string (e.g. import schemdraw\\nimport schemdraw.elements as elm\\n...) creating this exact circuit with polarity markers and values. If not a circuit diagram, set to null.>"
   },
   "graphEquations": [
     "<Array of 1 to 4 clean, plot-ready 2D/3D equations in standard ASCII math syntax using variables x, y, z, or theta whenever the problem involves functions, curves, algebra, conics, trigonometry, calculus (include both the function y = f(x) and its derivative/tangent/antiderivative if relevant), 3D surfaces (z = f(x,y) or x^2+y^2+z^2=R^2), or physics trajectories. Examples: 'x^2 + y^2 + 2*x = 6', 'y = x^2 - 5*x + 6', 'z = sin(x)*cos(y)', 'r = 2*cos(theta)'. CRITICAL: For systems of equations or multi-step algebra (e.g. 2x + y = 7 and x - y = 2), output ONLY the original given problem equations (e.g. ['2*x + y = 7', 'x - y = 2']). NEVER output intermediate algebraic or derivation steps as equations (e.g. do NOT output '3*x = 9' or intermediate lines). Use [] only if the topic has no coordinate graph.>"
@@ -3896,18 +3897,31 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                         parsed.solutionMarkdown = repairLatexAndStructure(parsed.speechResponse);
                     }
 
-                    // Package mathematical SVG diagram if produced by LLM
+                    // Ensure SchemDraw Python code is compiled and attached for electrical circuits
+                    if (mcpManager && typeof mcpManager.ensureSchemDrawCode === 'function') {
+                        try {
+                            await mcpManager.ensureSchemDrawCode(text, parsed);
+                        } catch (mcpCodeErr) {
+                            console.warn('[AIService] Failed in ensureSchemDrawCode:', mcpCodeErr.message);
+                        }
+                    }
+
+                    // Package mathematical SVG diagram if produced by LLM or SchemDraw MCP
                     const rawSvg = parsed.diagram?.svg || parsed.svg;
+                    const diagramCode = parsed.diagram?.code || parsed.schemdrawCode || null;
                     if (rawSvg && typeof rawSvg === 'string' && rawSvg.includes('<svg')) {
                         if (!parsed.canvasAction) {
                             parsed.canvasAction = {
                                 type: 'draw_problem_with_diagram',
                                 diagramType: 'svg',
                                 svg: rawSvg,
+                                code: diagramCode,
                                 question: text,
                                 solutionMarkdown: parsed.solutionMarkdown,
                                 speechResponse: parsed.speechResponse
                             };
+                        } else {
+                            parsed.canvasAction.code = diagramCode || parsed.canvasAction.code;
                         }
                         if (!Array.isArray(parsed.actions)) parsed.actions = [];
                         const hasSvgAct = parsed.actions.some(a => a.type === 'CREATE_OBJECT' && (a.objectType === 'svg' || a.svg));
@@ -3916,9 +3930,16 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                                 type: 'CREATE_OBJECT',
                                 objectType: 'svg',
                                 svg: rawSvg,
+                                code: diagramCode,
                                 title: parsed.diagram?.title || 'Mathematical Diagram',
                                 width: 380,
                                 height: 380
+                            });
+                        } else {
+                            parsed.actions.forEach(a => {
+                                if (a.type === 'CREATE_OBJECT' && (a.objectType === 'svg' || a.svg)) {
+                                    a.code = diagramCode || a.code;
+                                }
                             });
                         }
                     }

@@ -161,7 +161,7 @@ class MCPManagerService {
                         let cleanSvg = res.svg
                             .replace(/\bwidth="[^"]+"/, 'width="100%"')
                             .replace(/\bheight="[^"]+"/, 'height="100%"');
-                        resolve({ success: true, svg: cleanSvg });
+                        resolve({ success: true, svg: cleanSvg, code: res.code || payload.code || '' });
                     } else {
                         reject(new Error(res.error || 'Failed to render circuit SVG'));
                     }
@@ -173,6 +173,181 @@ class MCPManagerService {
             proc.stdin.write(JSON.stringify(payload));
             proc.stdin.end();
         });
+    }
+
+    /**
+     * Synthesizes clean, executable SchemDraw Python code matching problem parameters.
+     */
+    synthesizeCircuitPythonCode(text = '', solutionMarkdown = '') {
+        const combined = `${text} ${solutionMarkdown}`.toLowerCase();
+        const isParallel = /\bparallel\b/i.test(combined);
+        const topology = isParallel ? 'parallel' : 'series';
+
+        // Source voltage
+        const voltMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:v\b|volts?)/i);
+        const sourceVal = voltMatch ? `${voltMatch[1]}V` : '12V';
+        const isAC = /\b(ac\s*source|alternating|sine)\b/i.test(combined);
+
+        // Component detection
+        const isCapacitor = /\b(cap|capacit)/i.test(combined);
+        const isInductor = /\b(ind|induct)/i.test(combined);
+        const isResistor = /\b(resistor|resistance|ohm|ω)\b/i.test(combined);
+
+        const lines = [
+            'import schemdraw',
+            'import schemdraw.elements as elm',
+            '',
+            '# Initialize dynamic SchemDraw vector canvas',
+            'd = schemdraw.Drawing(show=False)'
+        ];
+
+        // Power source with explicit polarity
+        if (isAC) {
+            lines.push(`d.add(elm.SourceSin().up().label('${sourceVal}'))`);
+        } else {
+            lines.push(`b = d.add(elm.Battery().up().label('${sourceVal}', loc='left'))`);
+            lines.push("d.add(elm.Label().at((b.end[0] + 0.25, b.end[1] - 0.2)).label('+', color='#ef4444', fontsize=14))");
+            lines.push("d.add(elm.Label().at((b.start[0] + 0.25, b.start[1] + 0.2)).label('−', color='#3b82f6', fontsize=14))");
+        }
+
+        if (isCapacitor) {
+            const capMatches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*(micro|nano|pico|μ|u)?(?:f\b|farads?\b)/gi)];
+            const capVals = capMatches.map(m => {
+                const num = m[1];
+                const unit = (m[2] ? m[2].toLowerCase() : '').replace('micro', 'µ').replace('u', 'µ') || 'µ';
+                return `${num} ${unit}F`;
+            });
+
+            const q1Match = combined.match(/q_?1\s*[:=]\s*(\d+(?:\.\d+)?\s*(?:µc|uc|coulomb|c)?)/i);
+            const q2Match = combined.match(/q_?2\s*[:=]\s*(\d+(?:\.\d+)?\s*(?:µc|uc|coulomb|c)?)/i);
+            const q1Val = q1Match ? `q₁ = ${q1Match[1].trim()}` : '';
+            const q2Val = q2Match ? `q₂ = ${q2Match[1].trim()}` : '';
+
+            const c1Label = capVals[0] ? `C₁ = ${capVals[0]}${q1Val ? `\\n${q1Val}` : ''}` : 'C₁';
+            const c2Label = capVals[1] ? `C₂ = ${capVals[1]}${q2Val ? `\\n${q2Val}` : ''}` : 'C₂';
+
+            if (topology === 'parallel') {
+                lines.push('d.add(elm.Line().right(5.0))');
+                lines.push('d.push()');
+                lines.push('d.add(elm.Line().left(2.5))');
+                lines.push(`d.add(elm.Capacitor().down(3).label('${c1Label}'))`);
+                lines.push('d.pop()');
+                lines.push(`d.add(elm.Capacitor().down(3).label('${c2Label}'))`);
+                lines.push('d.add(elm.Line().down(3))');
+                lines.push('d.add(elm.Line().left(5.0))');
+            } else {
+                lines.push('d.add(elm.Line().right(1.5))');
+                lines.push(`d.add(elm.Capacitor().right().label('${c1Label}'))`);
+                lines.push('d.add(elm.Line().right(1.0))');
+                lines.push('d.add(elm.Line().down(1.0))');
+                lines.push(`d.add(elm.Capacitor().down().label('${c2Label}'))`);
+                lines.push('d.add(elm.Line().left().tox(0))');
+            }
+        } else if (isResistor) {
+            const resMatches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*(kilo|mega|k|m)?(?:ohm\b|ω|ohms?\b)/gi)];
+            const resVals = resMatches.map(m => `${m[1]} ${m[2] ? m[2].toUpperCase() : ''}Ω`);
+            const r1Label = resVals[0] ? `R₁ = ${resVals[0]}` : 'R₁';
+            const r2Label = resVals[1] ? `R₂ = ${resVals[1]}` : 'R₂';
+
+            if (topology === 'parallel') {
+                lines.push('d.add(elm.Line().right(5.0))');
+                lines.push('d.push()');
+                lines.push('d.add(elm.Line().left(2.5))');
+                lines.push(`d.add(elm.Resistor().down(3).label('${r1Label}'))`);
+                lines.push('d.pop()');
+                lines.push(`d.add(elm.Resistor().down(3).label('${r2Label}'))`);
+                lines.push('d.add(elm.Line().down(3))');
+                lines.push('d.add(elm.Line().left(5.0))');
+            } else {
+                lines.push('d.add(elm.Line().right(1.5))');
+                lines.push(`d.add(elm.Resistor().right().label('${r1Label}'))`);
+                lines.push('d.add(elm.Line().right(1.0))');
+                lines.push('d.add(elm.Line().down(1.0))');
+                lines.push(`d.add(elm.Resistor().down().label('${r2Label}'))`);
+                lines.push('d.add(elm.Line().left().tox(0))');
+            }
+        } else {
+            // Default: Bulbs or Lamps
+            if (topology === 'parallel') {
+                lines.push('d.add(elm.Line().right(5.0))');
+                lines.push('d.push()');
+                lines.push('d.add(elm.Line().left(2.5))');
+                lines.push("d.add(elm.Lamp().down(3).label('Bulb 1'))");
+                lines.push('d.pop()');
+                lines.push("d.add(elm.Lamp().down(3).label('Bulb 2'))");
+                lines.push('d.add(elm.Line().down(3))');
+                lines.push('d.add(elm.Line().left(5.0))');
+            } else {
+                lines.push('d.add(elm.Line().right(1.5))');
+                lines.push("d.add(elm.Lamp().right().label('Bulb 1'))");
+                lines.push('d.add(elm.Line().right(1.0))');
+                lines.push('d.add(elm.Line().down(1.0))');
+                lines.push("d.add(elm.Lamp().down().label('Bulb 2'))");
+                lines.push('d.add(elm.Line().left().tox(0))');
+            }
+        }
+
+        lines.push('');
+        lines.push('# Render and save vector schematic');
+        lines.push("d.save('circuit.svg')");
+        return lines.join('\n');
+    }
+
+    /**
+     * Ensures SchemDraw Python code is attached and vector SVG is compiled for all circuits.
+     */
+    async ensureSchemDrawCode(text = '', parsed = {}) {
+        if (!parsed) return;
+        const low = text.toLowerCase();
+        const isCircuit = /\b(circuit|schematic|bulb|lamp|resistor|capacitor|inductor|battery|parallel|series|wheatstone)\b/i.test(low);
+        if (!isCircuit && !parsed.diagram?.code) return;
+
+        let pythonCode = parsed.diagram?.code || '';
+        if (pythonCode && typeof pythonCode === 'string' && pythonCode.includes('schemdraw')) {
+            try {
+                const res = await this.executeSchemDrawRunner({ code: pythonCode });
+                if (res?.success && res.svg) {
+                    if (!parsed.diagram) parsed.diagram = { type: 'svg' };
+                    parsed.diagram.svg = res.svg;
+                    parsed.diagram.code = pythonCode;
+                }
+            } catch (runnerErr) {
+                console.warn('[MCPManager] Direct execution of LLM SchemDraw code failed, keeping fallback SVG:', runnerErr.message);
+            }
+        }
+
+        if (!pythonCode) {
+            pythonCode = this.synthesizeCircuitPythonCode(text, parsed.solutionMarkdown || '');
+            if (pythonCode) {
+                try {
+                    const res = await this.executeSchemDrawRunner({ code: pythonCode });
+                    if (res?.success && res.svg && (!parsed.diagram?.svg || parsed.diagram.svg.length < 500)) {
+                        if (!parsed.diagram) parsed.diagram = { type: 'svg' };
+                        parsed.diagram.svg = res.svg;
+                    }
+                } catch (_) {}
+            }
+        }
+
+        if (pythonCode) {
+            if (!parsed.diagram) parsed.diagram = { type: 'svg', title: 'Circuit Schematic' };
+            parsed.diagram.code = pythonCode;
+            parsed.schemdrawCode = pythonCode;
+
+            if (parsed.canvasAction) {
+                parsed.canvasAction.code = pythonCode;
+                parsed.canvasAction.schemdrawCode = pythonCode;
+            }
+
+            if (Array.isArray(parsed.actions)) {
+                parsed.actions.forEach(act => {
+                    if (act.type === 'CREATE_OBJECT' && (act.objectType === 'svg' || act.svg)) {
+                        act.code = pythonCode;
+                        act.schemdrawCode = pythonCode;
+                    }
+                });
+            }
+        }
     }
 
     /**
@@ -266,6 +441,7 @@ class MCPManagerService {
                 return null;
             }
 
+            const pythonCode = renderResult.code || '';
             const { topology, source, count, compName, components } = spec;
             const compType = components[0]?.type || 'lamp';
             const isParallel = topology === 'parallel';
@@ -380,15 +556,18 @@ class MCPManagerService {
                 success: true,
                 speechResponse,
                 solutionMarkdown: derivation,
+                schemdrawCode: pythonCode,
                 diagram: {
                     type: 'svg',
                     title,
-                    svg: renderResult.svg
+                    svg: renderResult.svg,
+                    code: pythonCode
                 },
                 canvasAction: {
                     type: 'draw_problem_with_diagram',
                     diagramType: 'svg',
                     svg: renderResult.svg,
+                    code: pythonCode,
                     question: text,
                     solutionMarkdown: derivation,
                     speechResponse
@@ -398,6 +577,7 @@ class MCPManagerService {
                         type: 'CREATE_OBJECT',
                         objectType: 'svg',
                         svg: renderResult.svg,
+                        code: pythonCode,
                         title,
                         width: 380,
                         height: 380

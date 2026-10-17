@@ -13753,6 +13753,7 @@ export default function Whiteboard({
             diagShapeProps = {
                 type: 'svg',
                 svg: svgContent || (data.diagram && data.diagram.svg),
+                code: data.code || data.diagram?.code || data.schemdrawCode || (data.diagramProps && data.diagramProps.code) || null,
                 title: data.title || 'Mathematical Diagram',
                 ...(data.diagramProps || {})
             };
@@ -13769,6 +13770,7 @@ export default function Whiteboard({
             fillColor: 'transparent',
             strokeStyle: 'solid',
             rotation: 0,
+            code: data.code || data.diagram?.code || data.schemdrawCode || (data.diagramProps && data.diagramProps.code) || null,
             ...diagShapeProps,
             ...(data.diagramProps || {})
         };
@@ -27823,6 +27825,43 @@ export default function Whiteboard({
                                                 <span>↕ {Math.round(shapeH)}px ({(shapeH / 37.795).toFixed(1)}cm)</span>
                                             </>
                                         )}
+                                    </div>
+                                )}
+
+                                {/* Collapsible SchemDraw Python Code in 10px font under the diagram */}
+                                {(shpObj.code || shpObj.schemdrawCode) && (
+                                    <div
+                                        className="absolute left-0 right-0 top-full mt-2 z-40 pointer-events-auto"
+                                        onClick={e => e.stopPropagation()}
+                                        onMouseDown={e => e.stopPropagation()}
+                                        onPointerDown={e => e.stopPropagation()}
+                                    >
+                                        <details className="group bg-slate-950/95 border border-slate-700/80 rounded-lg shadow-xl overflow-hidden backdrop-blur-md transition-all">
+                                            <summary className="px-2.5 py-1 text-[10px] font-mono font-semibold text-emerald-400 hover:text-emerald-300 cursor-pointer flex items-center justify-between select-none bg-slate-900/90 border-b border-slate-800/60" style={{ fontSize: '10px' }}>
+                                                <span className="flex items-center gap-1.5">
+                                                    <span>🐍</span>
+                                                    <span>SchemDraw Python Code</span>
+                                                </span>
+                                                <span className="text-[10px] text-slate-400 font-mono group-open:rotate-180 transition-transform">▼</span>
+                                            </summary>
+                                            <div className="p-2 bg-slate-950/95 border-t border-slate-800/80 relative">
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        navigator.clipboard.writeText(shpObj.code || shpObj.schemdrawCode || '');
+                                                        toast.success('Python code copied to clipboard!', { icon: '📋' });
+                                                    }}
+                                                    className="absolute top-2 right-2 px-1.5 py-0.5 text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-slate-600 transition"
+                                                    title="Copy Python Code"
+                                                >
+                                                    Copy
+                                                </button>
+                                                <pre className="text-[10px] font-mono leading-relaxed text-indigo-200 whitespace-pre overflow-x-auto max-h-48 pr-12" style={{ fontSize: '10px' }}>
+                                                    <code>{shpObj.code || shpObj.schemdrawCode}</code>
+                                                </pre>
+                                            </div>
+                                        </details>
                                     </div>
                                 )}
 
