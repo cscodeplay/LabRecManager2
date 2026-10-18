@@ -3898,27 +3898,37 @@ export default function Whiteboard({
         } else if (item.type === 'text') {
             const w = item.data?.width || 160;
             const h = item.data?.height || 40;
+            const newId = `txt_${Date.now()}`;
             setTextObjects(prev => [
                 ...prev,
                 {
                     ...item.data,
-                    id: Date.now(),
+                    id: newId,
                     x: Math.round(targetX - w / 2),
                     y: Math.round(targetY - h / 2)
                 }
             ]);
+            setSelectedTextIds([newId]);
+            setSelectedShapeIds([]);
+            setSelectedImageIds([]);
+            saveToHistory();
         } else if (item.type === 'shape') {
             const w = item.data?.width || 120;
             const h = item.data?.height || 120;
+            const newId = `shp_${Date.now()}`;
             setShapeObjects(prev => [
                 ...prev,
                 {
                     ...item.data,
-                    id: Date.now(),
+                    id: newId,
                     x: Math.round(targetX - w / 2),
                     y: Math.round(targetY - h / 2)
                 }
             ]);
+            setSelectedShapeIds([newId]);
+            setSelectedTextIds([]);
+            setSelectedImageIds([]);
+            saveToHistory();
         } else if (item.type === 'texts') {
             const timestamp = Date.now();
             const txts = item.data || [];
@@ -3938,12 +3948,16 @@ export default function Whiteboard({
 
             const newTexts = txts.map((t, idx) => ({
                 ...t,
-                id: timestamp + idx,
+                id: `txt_${timestamp}_${idx}`,
                 x: Math.round((t.x || 0) + dx),
                 y: Math.round((t.y || 0) + dy)
             }));
             setTextObjects(prev => [...prev, ...newTexts]);
-            setTimeout(() => setSelectedTextIds(newTexts.map(t => t.id)), 0);
+            const newIds = newTexts.map(t => t.id);
+            setSelectedTextIds(newIds);
+            setSelectedShapeIds([]);
+            setSelectedImageIds([]);
+            saveToHistory();
         } else if (item.type === 'shapes') {
             const idMap = {};
             const newIds = [];
@@ -13894,8 +13908,8 @@ export default function Whiteboard({
         setPageShapeObjects(prev => {
             const existing = prev[targetPage] || [];
             const filtered = dType === 'cartesian_plane'
-                ? existing.filter(s => s.type !== 'coordinate_system' && s.type !== 'cartesian_plane' && !s.id?.startsWith('prob_card_') && !s.id?.startsWith('guide_zone_'))
-                : existing.filter(s => !s.id?.startsWith('prob_card_') && !s.id?.startsWith('guide_zone_'));
+                ? existing.filter(s => s.type !== 'coordinate_system' && s.type !== 'cartesian_plane' && !String(s.id || '').startsWith('prob_card_') && !String(s.id || '').startsWith('guide_zone_'))
+                : existing.filter(s => !String(s.id || '').startsWith('prob_card_') && !String(s.id || '').startsWith('guide_zone_'));
             return {
                 ...prev,
                 [targetPage]: [...filtered, ...shapesToAdd]
@@ -15346,7 +15360,7 @@ export default function Whiteboard({
         // Filter previous solution cards on the current page to prevent messy stacking
         setPageShapeObjects(prev => {
             const existing = prev[targetPage] || [];
-            const filtered = existing.filter(s => !s.id?.startsWith('sol_') && !s.id?.startsWith('diag_'));
+            const filtered = existing.filter(s => !String(s.id || '').startsWith('sol_') && !String(s.id || '').startsWith('diag_'));
             return {
                 ...prev,
                 [targetPage]: [...filtered, ...shapesToAdd]
@@ -27778,7 +27792,7 @@ export default function Whiteboard({
                                     })() : (
                                         <div 
                                             className={`absolute inset-0 flex p-3 overflow-y-auto custom-scrollbar ${
-                                                shpObj.verticalAlign === 'top' || shpObj.id?.startsWith('sol_') || shpObj.id?.startsWith('prob_')
+                                                shpObj.verticalAlign === 'top' || String(shpObj.id || '').startsWith('sol_') || String(shpObj.id || '').startsWith('prob_')
                                                     ? 'items-start justify-start'
                                                     : 'items-center justify-center'
                                             }`}
@@ -27807,7 +27821,7 @@ export default function Whiteboard({
                                                     onPointerDown={e => e.stopPropagation()}
                                                     placeholder="Type text..."
                                                     className={`w-full bg-white/60 dark:bg-black/60 backdrop-blur-xs border border-indigo-500 rounded outline-none resize-none overflow-hidden p-1 shadow-inner text-slate-800 dark:text-slate-100 ${
-                                                        shpObj.textAlign === 'left' || shpObj.id?.startsWith('sol_') ? 'text-left' : 'text-center'
+                                                        shpObj.textAlign === 'left' || String(shpObj.id || '').startsWith('sol_') ? 'text-left' : 'text-center'
                                                     }`}
                                                     style={{ 
                                                         color: shpObj.textColor || shpObj.color, 
@@ -27821,7 +27835,7 @@ export default function Whiteboard({
                                             ) : (
                                                 <div
                                                     className={`w-full select-none whitespace-pre-wrap break-words pointer-events-none ${
-                                                        shpObj.textAlign === 'left' || shpObj.id?.startsWith('sol_') || shpObj.id?.startsWith('prob_') ? 'text-left' : 'text-center'
+                                                        shpObj.textAlign === 'left' || String(shpObj.id || '').startsWith('sol_') || String(shpObj.id || '').startsWith('prob_') ? 'text-left' : 'text-center'
                                                     }`}
                                                     style={{ 
                                                         color: shpObj.textColor || shpObj.color, 
