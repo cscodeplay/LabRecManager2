@@ -55,6 +55,15 @@ const RightTriangleIcon = (props) => (
     </svg>
 );
 
+const BroomIcon = (props) => (
+    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="m14 4 6 6" />
+        <path d="m18 8-8.5 8.5a2.12 2.12 0 1 1-3-3L15 5" />
+        <path d="m5 15-2 5a1 1 0 0 0 1.2 1.2l5-2" />
+        <path d="M7 17l4 4" />
+    </svg>
+);
+
 const YoutubeIcon = (props) => (
     <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
         <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z" />
@@ -863,6 +872,7 @@ export default function Whiteboard({
     const [showScienceFlyout, setShowScienceFlyout] = useState(false);
     const [showMediaFlyout, setShowMediaFlyout] = useState(false);
     const [showToolsFlyout, setShowToolsFlyout] = useState(false);
+    const [showClearBoardConfirm, setShowClearBoardConfirm] = useState(false);
 
     const [shapeType, setShapeType] = useState('rectangle'); // rectangle, circle, triangle, star
     const [shapePreview, setShapePreview] = useState(null);
@@ -5737,8 +5747,8 @@ export default function Whiteboard({
 
                         const numRows = grid.length;
                         const numCols = Math.max(...grid.map(r => r.length));
-                        const colW = Math.max(100, Math.min(220, Math.round(720 / numCols)));
-                        const rowH = 45;
+                        const colW = Math.max(64, Math.min(180, Math.round(540 / numCols)));
+                        const rowH = 24;
                         const totalW = colW * numCols;
                         const totalH = rowH * numRows;
 
@@ -11841,8 +11851,8 @@ export default function Whiteboard({
         const viewW = wrapper?.clientWidth || 1200;
         const viewH = wrapper?.clientHeight || 800;
 
-        const colW = Math.max(90, Math.min(180, Math.round(540 / cols)));
-        const rowH = Math.max(45, Math.min(75, Math.round(270 / rows)));
+        const colW = Math.max(64, Math.min(160, Math.round(360 / cols)));
+        const rowH = 24;
         const totalW = colW * cols;
         const totalH = rowH * rows;
 
@@ -12585,15 +12595,29 @@ export default function Whiteboard({
             strokeWidth: strokeWidth || 3,
             isLocked: false
         };
-        const arcRadius = Math.min(radiusPx * 0.45, 60);
+        // Calculate minor angle (always <= PI / 180°)
+        const a1 = Math.atan2(baseEndY - vertexY, baseEndX - vertexX);
+        const a2 = Math.atan2(armEndY - vertexY, armEndX - vertexX);
+        let diff = (a2 - a1) % (2 * Math.PI);
+        if (diff < -Math.PI) diff += 2 * Math.PI;
+        if (diff > Math.PI) diff -= 2 * Math.PI;
+
+        const minorAngleRad = Math.abs(diff);
+        const minorAngleDeg = minorAngleRad * (180 / Math.PI);
+
+        // Always orient clockwise along the minor angle path so all renderers trace the minor arc
+        const arcStartAngle = diff >= 0 ? a1 : a2;
+        const arcEndAngle = diff >= 0 ? a2 : a1;
+
+        const arcRadius = Math.min(radiusPx * 0.45, 50);
         const newArc = {
             id: `geom_arc_${timestamp}`,
             type: 'arc',
             cx: vertexX,
             cy: vertexY,
             radius: arcRadius,
-            startAngle: Math.atan2(baseEndY - vertexY, baseEndX - vertexX),
-            endAngle: Math.atan2(armEndY - vertexY, armEndX - vertexX),
+            startAngle: arcStartAngle,
+            endAngle: arcEndAngle,
             x: vertexX - arcRadius,
             y: vertexY - arcRadius,
             width: arcRadius * 2,
@@ -12602,10 +12626,34 @@ export default function Whiteboard({
             strokeWidth: 2,
             isLocked: false
         };
+
+        // Minor angle degree text marker
+        const midAngle = diff >= 0 ? (a1 + diff / 2) : (a2 + Math.abs(diff) / 2);
+        const labelDist = arcRadius + 18;
+        const labelX = vertexX + labelDist * Math.cos(midAngle);
+        const labelY = vertexY + labelDist * Math.sin(midAngle);
+        const minorDegStr = `${minorAngleDeg.toFixed(1).replace(/\.0$/, '')}°`;
+
+        const angleLabel = {
+            id: `geom_txt_${timestamp}`,
+            x: Math.round(labelX - 18),
+            y: Math.round(labelY - 10),
+            width: 36,
+            height: 20,
+            text: minorDegStr,
+            fontSize: 12,
+            fontFamily: 'mono',
+            bold: true,
+            color: '#f59e0b',
+            align: 'center',
+            isLocked: false
+        };
+
         setShapeObjects(prev => [...prev, baseRay, armRay, newArc]);
+        setTextObjects(prev => [...prev, angleLabel]);
         saveToHistory();
-        toast.success(`Drawn ${angleDeg.toFixed(1)}° angle rays`, { icon: '📐' });
-    }, [color, strokeWidth, setShapeObjects, saveToHistory]);
+        toast.success(`Drawn ${minorDegStr} angle rays & minor arc`, { icon: '📐' });
+    }, [color, strokeWidth, setShapeObjects, setTextObjects, saveToHistory]);
 
     const handleGeometryDrawPerpendicular = useCallback(({ corner, baseEnd, heightEnd }) => {
         const timestamp = Date.now();
@@ -22869,13 +22917,13 @@ export default function Whiteboard({
                         </button>
                     </div>
 
-                    {/* Actions */}
+                    {/* Clear Whiteboard Action */}
                     <button
-                        onClick={handleClear}
-                        className="p-1 hover:bg-red-500/20 text-red-400 rounded-full transition"
-                        title="Clear All"
+                        onClick={() => setShowClearBoardConfirm(true)}
+                        className="p-1 hover:bg-amber-500/20 text-amber-400 rounded-full transition"
+                        title="Clear Whiteboard"
                     >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <BroomIcon className="w-3.5 h-3.5" />
                     </button>
 
                     {clipboardHistory.length > 0 && (
@@ -23078,53 +23126,6 @@ export default function Whiteboard({
                             </div>
                         )}
                     </div>
-
-                    {/* Warning Confirm Modal for Deleting Whiteboard Page */}
-                    {pageToDeleteConfirm !== null && (
-                        <div 
-                            className="fixed inset-0 z-100 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150 select-none"
-                            onClick={() => setPageToDeleteConfirm(null)}
-                        >
-                            <div 
-                                className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-5 max-w-sm w-full text-slate-100 flex flex-col gap-4 animate-in zoom-in-95 duration-150"
-                                onClick={e => e.stopPropagation()}
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/30">
-                                        <Trash2 className="w-5 h-5" />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-sm font-bold text-white">Delete Page {pageToDeleteConfirm + 1}?</h3>
-                                        <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                                            Are you sure you want to permanently delete Page {pageToDeleteConfirm + 1}? All drawings, formulas, and objects on this page will be removed.
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
-                                    <button
-                                        type="button"
-                                        onClick={() => setPageToDeleteConfirm(null)}
-                                        className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition border border-slate-700/60"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            const target = pageToDeleteConfirm;
-                                            setPageToDeleteConfirm(null);
-                                            setShowPageNavMenu(false);
-                                            deletePage(target);
-                                        }}
-                                        className="px-4 py-1.5 rounded-xl text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 transition shadow-lg shadow-rose-900/30 flex items-center gap-1.5"
-                                    >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                        <span>Delete Page</span>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
 
                     {/* Quick Canvas Zoom Controls */}
                     <div className={`flex ${isVertical ? 'flex-col gap-0.5 p-1 rounded-xl' : 'items-center gap-0.5 px-1 py-0.5 rounded-full'} bg-slate-800/80`}>
@@ -30140,16 +30141,11 @@ export default function Whiteboard({
                         {/* Clear Page Canvas Button */}
                         <button
                             type="button"
-                            onClick={() => {
-                                if (window.confirm('Clear all drawings and shapes on this page?')) {
-                                    handleClear();
-                                    toast.success('Page cleared', { icon: '🧹' });
-                                }
-                            }}
-                            className="p-1.5 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/20 transition"
-                            title="Clear Page"
+                            onClick={() => setShowClearBoardConfirm(true)}
+                            className="p-1.5 rounded-xl text-amber-400 hover:text-amber-300 hover:bg-amber-500/20 transition"
+                            title="Clear Board"
                         >
-                            <Trash2 size={15} />
+                            <BroomIcon className="w-4 h-4" />
                         </button>
                     </div>
                 )}
@@ -31629,6 +31625,99 @@ export default function Whiteboard({
                 onAddAIPanelToBoard={handleAddAIPanelToBoard}
                 onAddMediaToBoard={handleAddMediaFromBrowser}
             />
+
+            {/* Centered Modal: Clear Whiteboard Confirmation */}
+            {showClearBoardConfirm && (
+                <div 
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150 select-none"
+                    onClick={() => setShowClearBoardConfirm(false)}
+                >
+                    <div 
+                        className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-5 max-w-sm w-full text-slate-100 flex flex-col gap-4 animate-in zoom-in-95 duration-150"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                                <BroomIcon className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-white">Clear Page {currentPage + 1}?</h3>
+                                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                                    Are you sure you want to clear this board? All drawings, equations, and objects on this page will be removed.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                            <button
+                                type="button"
+                                onClick={() => setShowClearBoardConfirm(false)}
+                                className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition border border-slate-700/60"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowClearBoardConfirm(false);
+                                    handleClear();
+                                    toast.success('Page cleared', { icon: '🧹' });
+                                }}
+                                className="px-4 py-1.5 rounded-xl text-xs font-semibold text-white bg-amber-600 hover:bg-amber-500 transition shadow-lg shadow-amber-900/30 flex items-center gap-1.5"
+                            >
+                                <BroomIcon className="w-3.5 h-3.5" />
+                                <span>Clear Board</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Centered Modal: Delete Whiteboard Page Confirmation */}
+            {pageToDeleteConfirm !== null && (
+                <div 
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150 select-none"
+                    onClick={() => setPageToDeleteConfirm(null)}
+                >
+                    <div 
+                        className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-5 max-w-sm w-full text-slate-100 flex flex-col gap-4 animate-in zoom-in-95 duration-150"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/30">
+                                <Trash2 className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-white">Delete Page {pageToDeleteConfirm + 1}?</h3>
+                                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                                    Are you sure you want to permanently delete Page {pageToDeleteConfirm + 1}? All drawings, formulas, and objects on this page will be removed.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                            <button
+                                type="button"
+                                onClick={() => setPageToDeleteConfirm(null)}
+                                className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition border border-slate-700/60"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const target = pageToDeleteConfirm;
+                                    setPageToDeleteConfirm(null);
+                                    setShowPageNavMenu(false);
+                                    deletePage(target);
+                                }}
+                                className="px-4 py-1.5 rounded-xl text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 transition shadow-lg shadow-rose-900/30 flex items-center gap-1.5"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete Page</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
         </div>
     );

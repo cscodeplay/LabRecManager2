@@ -13,8 +13,8 @@ import { toast } from 'react-hot-toast';
 import MathRenderer from './MathRenderer';
 import { evaluateCellFormula, searchStemFunctions, STEM_FUNCTIONS_CATALOG } from '@/lib/tableFormulaEngine';
 
-const CORNER_WIDTH = 34;
-const HEADER_HEIGHT = 26;
+const CORNER_WIDTH = 28;
+const HEADER_HEIGHT = 22;
 
 const getColLabel = (index) => {
     let label = '';
@@ -135,11 +135,11 @@ export default function WhiteboardTableObject({
     // Normalized column widths and row heights
     const colWidths = (table.colWidths && table.colWidths.length === cols)
         ? table.colWidths
-        : Array(cols).fill(Math.max(80, Math.round((table.width || 480) / cols)));
+        : Array(cols).fill(Math.max(60, Math.round((table.width || 360) / cols)));
 
     const rowHeights = (table.rowHeights && table.rowHeights.length === rows)
         ? table.rowHeights
-        : Array(rows).fill(Math.max(40, Math.round((table.height || 240) / rows)));
+        : Array(rows).fill(Math.max(24, Math.round((table.height || (rows * 24)) / rows)));
 
     const totalWidth = colWidths.reduce((a, b) => a + b, 0);
     const totalHeight = rowHeights.reduce((a, b) => a + b, 0);
@@ -781,6 +781,127 @@ export default function WhiteboardTableObject({
         window.addEventListener('pointerup', onPointerUp);
     };
 
+    // Auto-adjust column width to max length of data values (Excel style double-click divider)
+    const autoFitColWidth = (colIndex, e) => {
+        if (isLocked) return;
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+
+        let maxWidth = 48; // minimum comfortable width
+
+        // Check column header title length
+        const colHeaderTitle = getColLabel(colIndex);
+        maxWidth = Math.max(maxWidth, colHeaderTitle.length * 10 + 20);
+
+        for (let r = 0; r < rows; r++) {
+            const cell = cells[`${r}-${colIndex}`];
+            if (!cell) continue;
+
+            let strVal = '';
+            if (cell.text) {
+                if (String(cell.text).startsWith('=')) {
+                    strVal = String(evaluateCellFormula(cell.text, cells, rows, cols, `${r}-${colIndex}`));
+                } else {
+                    strVal = String(cell.text);
+                }
+            }
+            if (cell.math) {
+                strVal = cell.math;
+            }
+
+            if (strVal) {
+                let textLenPx = 0;
+                if (typeof document !== 'undefined') {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        const fSize = cell.fontSize || (hasHeaderRow && r === 0 ? 12 : 11);
+                        const isBold = cell.bold !== undefined ? cell.bold : (hasHeaderRow && r === 0);
+                        ctx.font = `${isBold ? 'bold ' : ''}${fSize}px sans-serif`;
+                        const lines = strVal.split('\n');
+                        for (const l of lines) {
+                            textLenPx = Math.max(textLenPx, ctx.measureText(l).width);
+                        }
+                    }
+                }
+                if (!textLenPx) {
+                    textLenPx = strVal.length * 7.5;
+                }
+                maxWidth = Math.max(maxWidth, Math.ceil(textLenPx + 24));
+            }
+
+            if (cell.image || cell.inkData) {
+                maxWidth = Math.max(maxWidth, 60);
+            }
+        }
+
+        maxWidth = Math.max(48, Math.min(600, maxWidth));
+
+        const nextColWidths = [...colWidths];
+        nextColWidths[colIndex] = maxWidth;
+        const newTotalWidth = nextColWidths.reduce((a, b) => a + b, 0);
+
+        onUpdate({
+            ...table,
+            colWidths: nextColWidths,
+            width: Math.max(containerWidth, newTotalWidth + CORNER_WIDTH)
+        });
+
+        toast.success(`Auto-fit Column ${getColLabel(colIndex)} (${maxWidth}px)`, { icon: '↔️', id: `autofit-col-${colIndex}` });
+    };
+
+    // Auto-adjust row height to fit cell contents (Excel style double-click divider)
+    const autoFitRowHeight = (rowIndex, e) => {
+        if (isLocked) return;
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+
+        let maxHeight = 24; // minimum compact row height
+
+        for (let c = 0; c < cols; c++) {
+            const cell = cells[`${rowIndex}-${c}`];
+            if (!cell) continue;
+
+            let strVal = '';
+            if (cell.text) {
+                if (String(cell.text).startsWith('=')) {
+                    strVal = String(evaluateCellFormula(cell.text, cells, rows, cols, `${rowIndex}-${c}`));
+                } else {
+                    strVal = String(cell.text);
+                }
+            }
+
+            if (strVal) {
+                const lines = strVal.split('\n').length;
+                const fSize = cell.fontSize || (hasHeaderRow && rowIndex === 0 ? 12 : 11);
+                const h = Math.ceil(lines * (fSize + 4) + 8);
+                maxHeight = Math.max(maxHeight, h);
+            }
+
+            if (cell.image || cell.inkData) {
+                maxHeight = Math.max(maxHeight, 48);
+            }
+        }
+
+        maxHeight = Math.max(24, Math.min(300, maxHeight));
+
+        const nextRowHeights = [...rowHeights];
+        nextRowHeights[rowIndex] = maxHeight;
+        const newTotalHeight = nextRowHeights.reduce((a, b) => a + b, 0);
+
+        onUpdate({
+            ...table,
+            rowHeights: nextRowHeights,
+            height: Math.max(containerHeight, newTotalHeight + HEADER_HEIGHT)
+        });
+
+        toast.success(`Auto-fit Row ${rowIndex + 1} (${maxHeight}px)`, { icon: '↕️', id: `autofit-row-${rowIndex}` });
+    };
+
     // 8-point outer resize handles (resizes viewport box; content scrolls if smaller than grid)
     const startOuterResize = (handle, e) => {
         if (isLocked) return;
@@ -1040,8 +1161,8 @@ export default function WhiteboardTableObject({
             {/* Unified Floating Table Format Bar (Safely positioned above table to NEVER obstruct column headers) */}
             {isSelected && (
                 <div 
-                    className="absolute left-0 min-w-max max-w-[95vw] flex items-center gap-1 bg-slate-900/95 border border-slate-700/80 rounded-xl px-2 py-1 shadow-2xl backdrop-blur-md text-slate-300 text-xs z-50 pointer-events-auto h-8"
-                    style={{ bottom: 'calc(100% + 10px)' }}
+                    className="absolute left-0 min-w-max max-w-[95vw] flex items-center gap-0.5 bg-slate-900/95 border border-slate-700/80 rounded-2xl px-1.5 py-0.5 shadow-2xl backdrop-blur-md text-slate-300 text-xs z-50 pointer-events-auto h-8"
+                    style={{ bottom: 'calc(100% + 8px)' }}
                     onClick={e => e.stopPropagation()}
                     onPointerDown={e => e.stopPropagation()}
                 >
@@ -1701,11 +1822,12 @@ export default function WhiteboardTableObject({
                                     >
                                         <span>{getColLabel(cIdx)}</span>
 
-                                        {/* Column divider drag resize */}
+                                        {/* Column divider drag resize & double-click auto-fit */}
                                         <div
                                             onPointerDown={(e) => startColResize(cIdx, e)}
+                                            onDoubleClick={(e) => autoFitColWidth(cIdx, e)}
                                             className="absolute top-0 right-0 w-2.5 h-full -mr-1.5 cursor-col-resize z-20 hover:bg-indigo-500/70 transition-colors"
-                                            title="Drag to resize column width"
+                                            title="Drag to resize column width; Double-click to auto-fit to content"
                                             onClick={(e) => e.stopPropagation()}
                                         />
                                     </div>
@@ -1719,7 +1841,7 @@ export default function WhiteboardTableObject({
                         {/* Row Headers Strip (1, 2, 3...) */}
                         <div className="flex flex-col shrink-0 sticky left-0 z-20 bg-slate-900" style={{ width: CORNER_WIDTH, height: totalHeight }}>
                             {Array.from({ length: rows }).map((_, rIdx) => {
-                                const rHeight = rowHeights[rIdx] || 50;
+                                const rHeight = rowHeights[rIdx] || 24;
                                 const isRowSel = selectionMode === 'ROW' && selectedRow === rIdx;
                                 const isAllSel = selectionMode === 'ALL';
                                 return (
@@ -1741,11 +1863,12 @@ export default function WhiteboardTableObject({
                                     >
                                         <span>{rIdx + 1}</span>
 
-                                        {/* Row divider drag resize */}
+                                        {/* Row divider drag resize & double-click auto-fit */}
                                         <div
                                             onPointerDown={(e) => startRowResize(rIdx, e)}
+                                            onDoubleClick={(e) => autoFitRowHeight(rIdx, e)}
                                             className="absolute bottom-0 left-0 w-full h-2.5 -mb-1.5 cursor-row-resize z-20 hover:bg-indigo-500/70 transition-colors"
-                                            title="Drag to resize row height"
+                                            title="Drag to resize row height; Double-click to auto-fit to content"
                                             onClick={(e) => e.stopPropagation()}
                                         />
                                     </div>
@@ -1757,7 +1880,7 @@ export default function WhiteboardTableObject({
                         <div className="flex flex-col flex-1 z-10" style={{ width: totalWidth, height: totalHeight }}>
                         {Array.from({ length: rows }).map((_, rIdx) => {
                             const isHeader = hasHeaderRow && rIdx === 0;
-                            const rHeight = rowHeights[rIdx] || 50;
+                            const rHeight = rowHeights[rIdx] || 24;
 
                             return (
                                 <div 
@@ -1787,7 +1910,7 @@ export default function WhiteboardTableObject({
                                         return (
                                             <div
                                                 key={`cell-${cellKey}`}
-                                                className={`table-cell relative flex flex-col justify-center p-2 text-xs transition-all border-r border-b ${
+                                                className={`table-cell relative flex flex-col justify-center px-1.5 py-0.5 text-xs transition-all border-r border-b ${
                                                     isEditingThisCell ? 'overflow-visible z-50' : 'overflow-hidden'
                                                 } ${
                                                     inSelection
@@ -1802,8 +1925,8 @@ export default function WhiteboardTableObject({
                                                         ? 'rgba(99, 102, 241, 0.22)'
                                                         : (cellCustomBg || (isHeader ? headerBg : cellBg)),
                                                     color: cellColor,
-                                                    outline: isCurrentActiveCell ? '2px solid #818cf8' : 'none',
-                                                    outlineOffset: '-2px'
+                                                    outline: isEditingThisCell ? '2px solid #2563eb' : (isCurrentActiveCell ? '2px solid #818cf8' : 'none'),
+                                                    outlineOffset: '-1px'
                                                 }}
                                                 onClick={(e) => handleSelectCell(rIdx, cIdx, e)}
                                                 onDoubleClick={(e) => {
@@ -1815,7 +1938,7 @@ export default function WhiteboardTableObject({
                                             >
                                                 {/* Inline Text Area Editor with STEM Autocomplete */}
                                                 {isEditingThisCell ? (
-                                                    <div className="relative w-full h-full">
+                                                    <div className="relative w-full h-full flex items-center">
                                                         <textarea
                                                             ref={inlineInputRef}
                                                             value={inlineText}
@@ -1863,8 +1986,9 @@ export default function WhiteboardTableObject({
                                                                     cancelInlineEdit();
                                                                 }
                                                             }}
-                                                            className="w-full h-full bg-slate-900 text-white p-1 resize-none border-2 border-indigo-400 rounded-sm focus:outline-none overflow-hidden leading-tight font-mono"
+                                                            className="w-full h-full bg-transparent text-inherit p-0 m-0 border-0 outline-none resize-none leading-tight overflow-hidden"
                                                             style={{
+                                                                backgroundColor: 'transparent',
                                                                 fontSize: `${cellFontSize}px`,
                                                                 fontFamily: inlineText.startsWith('=') ? '"Fira Code", monospace' : getFontFamilyCss(cellFontFamily),
                                                                 fontWeight: cellBold ? 'bold' : 'normal',

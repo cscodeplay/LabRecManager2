@@ -19,7 +19,7 @@ import {
 export default function ProtractorTool({
     initialX = 350,
     initialY = 320,
-    initialRadiusCm = 8.5,
+    initialRadiusCm = 5.95, // 30% reduced from 8.5cm
     initialAngle = 0, // Protractor base rotation
     initialMeasureAngle = 45, // Angle measured relative to base
     scale = 1,
@@ -312,19 +312,19 @@ export default function ProtractorTool({
                     const sin = Math.sin(rad);
 
                     // Outer Rim Graduations (Ticks extending inward from outer arc)
-                    const tickLen = isTen ? 14 : (isFive ? 9 : 5);
+                    const tickLen = isTen ? 10 : (isFive ? 6 : 3.5);
                     const x1 = (radiusPx - tickLen) * cos;
                     const y1 = -(radiusPx - tickLen) * sin;
                     const x2 = radiusPx * cos;
                     const y2 = -radiusPx * sin;
 
                     // Outer scale number position (0° on right to 180° on left)
-                    const outerLabelR = radiusPx - 21;
+                    const outerLabelR = radiusPx - 15;
                     const olx = outerLabelR * cos;
                     const oly = -outerLabelR * sin;
 
                     // Inner scale number position (180° on right to 0° on left)
-                    const innerLabelR = radiusPx - 34;
+                    const innerLabelR = radiusPx - 25;
                     const ilx = innerLabelR * cos;
                     const ily = -innerLabelR * sin;
 
@@ -341,9 +341,23 @@ export default function ProtractorTool({
                                 x2={x2}
                                 y2={y2}
                                 stroke="#0f172a"
-                                strokeWidth={isTen ? 1.4 : (isFive ? 1 : 0.65)}
+                                strokeWidth={isTen ? 1.2 : (isFive ? 0.9 : 0.55)}
                                 opacity={isTen ? 1 : 0.8}
                             />
+
+                            {/* Extended Major Ticks Lines Towards Protractor Center Origin */}
+                            {isTen && (
+                                <line
+                                    x1={(radiusPx * 0.28) * cos}
+                                    y1={-(radiusPx * 0.28) * sin}
+                                    x2={(radiusPx - 29) * cos}
+                                    y2={-(radiusPx - 29) * sin}
+                                    stroke="#0f172a"
+                                    strokeWidth={deg % 30 === 0 || deg === 45 || deg === 90 || deg === 135 ? 0.8 : 0.45}
+                                    opacity={deg === 90 ? 0.75 : 0.35}
+                                    strokeDasharray={deg % 30 === 0 || deg === 90 ? "none" : "2 2"}
+                                />
+                            )}
 
                             {/* Outer Scale Labels (0° to 180° counter-clockwise) */}
                             {isTen && (
@@ -351,7 +365,7 @@ export default function ProtractorTool({
                                     x={olx}
                                     y={oly}
                                     fill="#0f172a"
-                                    fontSize="8"
+                                    fontSize="6.8"
                                     fontFamily="sans-serif"
                                     fontWeight="700"
                                     textAnchor="middle"
@@ -368,7 +382,7 @@ export default function ProtractorTool({
                                     x={ilx}
                                     y={ily}
                                     fill="#334155"
-                                    fontSize="7"
+                                    fontSize="6"
                                     fontFamily="sans-serif"
                                     fontWeight="600"
                                     textAnchor="middle"
@@ -470,17 +484,17 @@ export default function ProtractorTool({
                 style={{
                     position: 'absolute',
                     left: `${vertex.x}px`,
-                    top: `${vertex.y + 24}px`,
+                    top: `${vertex.y + 20}px`,
                     transform: 'translate(-50%, 0)',
                     pointerEvents: 'auto'
                 }}
-                className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full px-3 py-1 shadow-2xl"
+                className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full px-2 py-0.5 shadow-2xl h-7"
             >
                 {/* Real-time Angle Readout */}
-                <div className="flex items-center gap-1 font-mono font-bold text-xs">
+                <div className="flex items-center gap-1 font-mono font-bold text-[10px]">
                     <span className="text-cyan-300">{measureAngle.toFixed(1)}°</span>
                     <span className="text-slate-500 font-normal">|</span>
-                    <span className="text-amber-300 font-normal">{baseRotation.toFixed(0)}° tilt</span>
+                    <span className="text-amber-300 font-normal">{baseRotation.toFixed(0)}°</span>
                 </div>
 
                 <div className="w-px h-3 bg-slate-700" />
@@ -489,7 +503,7 @@ export default function ProtractorTool({
                 <button
                     type="button"
                     onClick={handleDrawAngleToCanvas}
-                    className="flex items-center gap-1 px-2.5 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[10px] rounded-full shadow transition active:scale-95"
+                    className="flex items-center gap-1 px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[9.5px] rounded-full shadow transition active:scale-95"
                     title="Stamp measured rays and angle arc onto canvas"
                 >
                     <Check className="w-2.5 h-2.5 stroke-[3]" />
@@ -501,7 +515,7 @@ export default function ProtractorTool({
                     <button
                         type="button"
                         onClick={handleDrawBaseline}
-                        className="flex items-center gap-1 px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-white font-bold text-[10px] rounded-full border border-slate-700 shadow transition active:scale-95"
+                        className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-white font-bold text-[9.5px] rounded-full border border-slate-700 shadow transition active:scale-95"
                         title="Draw straight baseline along protractor edge"
                     >
                         <Pencil className="w-2.5 h-2.5" />
@@ -513,7 +527,7 @@ export default function ProtractorTool({
                 <button
                     type="button"
                     onClick={onClose}
-                    className="p-1 rounded-full bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white transition"
+                    className="p-0.5 rounded-full bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white transition"
                     title="Close Protractor"
                 >
                     <X className="w-3 h-3" />

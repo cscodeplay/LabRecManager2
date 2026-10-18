@@ -364,7 +364,7 @@ export default function SetSquareTool({
                     top: `${pos.y - 42}px`,
                     pointerEvents: 'auto'
                 }}
-                className="bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full px-3 py-1 shadow-2xl flex items-center gap-2"
+                className="bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full px-2 py-0.5 shadow-2xl flex items-center gap-1.5 h-7"
             >
                 {/* Type Switcher */}
                 <button
