@@ -623,15 +623,105 @@ class GeometrySolverService {
         if (!str || typeof str !== 'string') return null;
 
         const circle = this.parseCircleEquationFromText(str);
+        if (!circle) return null;
 
-        // Line match: y = mx + c or y = mx - c or y = mx
+        let norm = str
+            .replace(/²/g, '^2')
+            .replace(/[−–—]/g, '-')
+            .replace(/\$/g, ' ');
+
+        if (circle.raw) {
+            norm = norm.replace(circle.raw, ' ');
+        }
+
+        const clauses = norm.split(/\band\b|,|;|\n/i);
         let line = null;
-        const lineMatch = str.match(/y\s*=\s*([+-]?\s*\d*(?:\.\d+)?)\s*x(?:\s*([+-]\s*\d+(?:\.\d+)?))?/i);
-        if (lineMatch) {
-            let mStr = (lineMatch[1] || '').replace(/\s+/g, '');
-            let m = mStr === '' || mStr === '+' ? 1 : (mStr === '-' ? -1 : parseFloat(mStr));
-            let c = lineMatch[2] ? parseFloat(lineMatch[2].replace(/\s+/g, '')) : 0;
-            line = { m, k: c, raw: lineMatch[0].replace(/\s+/g, ' ') };
+
+        for (const clause of clauses) {
+            if (/[\^²³]/.test(clause)) continue;
+            if (!clause.includes('=')) continue;
+
+            const mMatch = clause.match(/([+-]?\s*\d*(?:\.\d+)?\s*\*?\s*[xy]\b[\s\S]*?=\s*[-+0-9xy.\s*/]+)/i);
+            if (!mMatch) continue;
+
+            const eqStr = mMatch[1].trim();
+            const parts = eqStr.split('=');
+            if (parts.length !== 2) continue;
+
+            let [lhs, rhs] = parts.map(p => p.trim());
+            rhs = rhs.replace(/\b(find|points?|intersections?|and|then|what|where|solve|evaluate|calculate|draw|plot)\b[\s\S]*/i, '').trim();
+            rhs = rhs.replace(/[?.!,;]+$/, '').trim();
+
+            if (!lhs || !rhs) continue;
+
+            function extractCoeffs(exprStr, sign = 1) {
+                let a = 0, b = 0, c = 0;
+                let matchedAny = false;
+                const cleaned = exprStr.replace(/\s+/g, '');
+                const termRegex = /([+-]?(?:\d+(?:\.\d+)?)?)\*?([xy])|([+-]?\d+(?:\.\d+)?)/gi;
+                let tm;
+                while ((tm = termRegex.exec(cleaned)) !== null) {
+                    if (tm[0] === '') break;
+                    matchedAny = true;
+                    if (tm[2]) {
+                        const varName = tm[2].toLowerCase();
+                        let coeffStr = tm[1];
+                        let coeff = 1;
+                        if (coeffStr === '+' || coeffStr === '') coeff = 1;
+                        else if (coeffStr === '-') coeff = -1;
+                        else coeff = parseFloat(coeffStr);
+
+                        if (varName === 'x') a += sign * coeff;
+                        else if (varName === 'y') b += sign * coeff;
+                    } else if (tm[3]) {
+                        const constVal = parseFloat(tm[3]);
+                        if (!isNaN(constVal)) c += sign * constVal;
+                    }
+                }
+                return { a, b, c, matchedAny };
+            }
+
+            const left = extractCoeffs(lhs, 1);
+            const right = extractCoeffs(rhs, -1);
+            if (!left.matchedAny) continue;
+
+            const A = left.a + right.a;
+            const B = left.b + right.b;
+            const C = -(left.c + right.c);
+
+            if (A === 0 && B === 0) continue;
+
+            let mSlope, kIntercept, isVertical = false, xVal = null;
+            if (Math.abs(B) > 1e-9) {
+                mSlope = -A / B;
+                kIntercept = C / B;
+            } else {
+                isVertical = true;
+                xVal = C / A;
+                mSlope = Infinity;
+                kIntercept = null;
+            }
+
+            const round4 = n => Math.round(n * 10000) / 10000;
+            line = {
+                A, B, C,
+                m: isVertical ? null : round4(mSlope),
+                k: isVertical ? null : round4(kIntercept),
+                isVertical,
+                xVal: isVertical ? round4(xVal) : null,
+                raw: `${lhs} = ${rhs}`.replace(/\s+/g, ' ')
+            };
+            break;
+        }
+
+        if (!line) {
+            const lineMatch = str.match(/y\s*=\s*([+-]?\s*\d*(?:\.\d+)?)\s*x(?:\s*([+-]\s*\d+(?:\.\d+)?))?/i);
+            if (lineMatch) {
+                let mStr = (lineMatch[1] || '').replace(/\s+/g, '');
+                let m = mStr === '' || mStr === '+' ? 1 : (mStr === '-' ? -1 : parseFloat(mStr));
+                let c = lineMatch[2] ? parseFloat(lineMatch[2].replace(/\s+/g, '')) : 0;
+                line = { m, k: c, raw: lineMatch[0].replace(/\s+/g, ' ') };
+            }
         }
 
         if (circle && line) {
@@ -678,6 +768,61 @@ class GeometrySolverService {
                 const fSign = Fval >= 0 ? `+ ${Fval}` : `- ${Math.abs(Fval)}`;
                 rawCircleEq = `x^2 + y^2 ${dSign}x ${eSign}y ${fSign} = 0`;
             }
+        }
+
+        if (line.isVertical) {
+            const xVal = Number(line.xVal);
+            const dx = xVal - cx;
+            const dSq = r * r - dx * dx;
+            const intersections = [];
+            let status = 'no_intersection';
+
+            if (dSq < -1e-9) {
+                status = 'no_intersection';
+            } else if (Math.abs(dSq) < 1e-9) {
+                status = 'tangent';
+                intersections.push({ x: Math.round(xVal * 100) / 100, y: Math.round(cy * 100) / 100 });
+            } else {
+                status = 'secant';
+                const sqrtD = Math.sqrt(dSq);
+                intersections.push({ x: Math.round(xVal * 100) / 100, y: Math.round((cy + sqrtD) * 100) / 100 });
+                intersections.push({ x: Math.round(xVal * 100) / 100, y: Math.round((cy - sqrtD) * 100) / 100 });
+            }
+
+            const formatTerm = (val, varName) => {
+                if (val === 0) return `${varName}^2`;
+                return val < 0 ? `(${varName} + ${Math.abs(val)})^2` : `(${varName} - ${val})^2`;
+            };
+            const standardCircleEq = `${formatTerm(cx, 'x')} + ${formatTerm(cy, 'y')} = ${(r * r).toFixed(2)}`;
+            const lineEq = line.raw || `x = ${Math.round(xVal * 100) / 100}`;
+            const roundNum = (n) => Math.round(n * 100) / 100;
+
+            return {
+                status,
+                circle: { cx: roundNum(cx), cy: roundNum(cy), r: roundNum(r) },
+                center: { x: roundNum(cx), y: roundNum(cy) },
+                radius: roundNum(r),
+                rSq: roundNum(r * r),
+                line: { m: null, k: null, isVertical: true, xVal },
+                discriminant: roundNum(dSq),
+                intersections,
+                intersectionPoints: intersections,
+                equations: {
+                    originalCircle: rawCircleEq || standardCircleEq,
+                    circle: standardCircleEq,
+                    line: lineEq,
+                    quadratic: `(y - (${roundNum(cy)}))^2 = ${roundNum(dSq)}`
+                },
+                latexSteps: [
+                    rawCircleEq ? `\text{Given Circle: } ${rawCircleEq} \iff ${standardCircleEq}` : `\text{Circle: } ${standardCircleEq}`,
+                    `\text{Given Vertical Line: } ${lineEq}`,
+                    `\text{Substitute } x = ${roundNum(xVal)}: (${roundNum(xVal)} - (${roundNum(cx)}))^2 + (y - (${roundNum(cy)}))^2 = ${roundNum(r * r)}`,
+                    `\implies (y - (${roundNum(cy)}))^2 = ${roundNum(dSq)}`,
+                    intersections.length === 2
+                        ? `\text{Roots: } y_1 = ${intersections[0].y}, \; y_2 = ${intersections[1].y} \implies P_1(${intersections[0].x}, ${intersections[0].y}) \text{ and } P_2(${intersections[1].x}, ${intersections[1].y})`
+                        : (intersections.length === 1 ? `\text{Point of tangency: } P(${intersections[0].x}, ${intersections[0].y})` : `\text{No real intersection points}`)
+                ]
+            };
         }
 
         const m = Number(line.m) !== undefined ? Number(line.m) : 1;
@@ -1190,6 +1335,11 @@ class GeometrySolverService {
     parseCompositeGeometryFromText(text) {
         if (!text || typeof text !== 'string') return null;
         const low = text.toLowerCase();
+
+        // Domain guard against physics / electrostatics / optics
+        if (/\b(electric|magnetic|field|fields|charge|potential|voltage|flux|gauss|conductor|hollow|cavity|shielding|faraday|dielectric|coulomb|capacitance|optics|lens|microscope|telescope)\b/i.test(low)) {
+            return null;
+        }
 
         const hasCompositeKeywords = /\b(inscribed|circumscribed|circumscribing|remaining\s*(?:part|area|portion)|shaded\s*(?:area|region|part)|cutout|cut\s*out|leftover|between\s*(?:the)?\s*(?:square|circle|triangle|shapes)|annulus|concentric|ring)\b/i.test(low);
         const hasSquare = /\bsquare\b/i.test(low);
@@ -1773,6 +1923,15 @@ class GeometrySolverService {
     parse3DWireframeFromText(text) {
         if (!text || typeof text !== 'string') return null;
         const low = text.toLowerCase();
+
+        // Guard against physics, electrostatics, conductors, circuits, optics, or conceptual reasoning:
+        // A question asking about electric fields, hollow conducting spheres, Faraday cages, lenses,
+        // or asking conceptual "explain why / prove" must NEVER be hijacked as a pure geometric solid wireframe calculating V = 4/3 pi r^3!
+        const isPhysicsOrNonGeometry = /\b(electric|magnetic|field|fields|charge|charges|potential|voltage|flux|gauss|conductor|conductors|conducting|hollow|cavity|shielding|faraday|dielectric|coulomb|lorentz|capacitance|capacitor|induction|optics|lens|lenses|microscope|telescope|refraction|reflection|diffraction|interference|polarization|quantum|current|resistance|resistor|ohm|ampere|velocity|acceleration|momentum|kinetic|friction|thermodynamics|entropy|orbital|nucleus|proton|electron)\b/i.test(low);
+        if (isPhysicsOrNonGeometry) return null;
+
+        const isConceptualQuestion = /\b(explain\s+why|why\s+is|why\s+does|how\s+does|prove\s+that|what\s+happens|state\s+and\s+explain|give\s+reason)\b/i.test(low);
+        if (isConceptualQuestion) return null;
 
         const hasWireframe = /\b(wireframe|wire\s*frame|wire-frame)\b/i.test(low);
         const has3DKeyword = /\b(3d|solid|volume|surface\s*area|curved\s*surface|lateral\s*surface|cone|conical|cylinder|cylindrical|cuboid|cube|sphere|spherical|pyramid|frustum)\b/i.test(low);

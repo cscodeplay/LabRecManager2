@@ -96,7 +96,7 @@ export default function DocxViewer({
                     const text = extractDocBinaryText(arrayBuf);
                     if (isMounted) {
                         setIsLegacyDoc(true);
-                        setLegacyText(text || 'This older Word 97-2003 (.doc) binary file does not contain readable plain text streams. Please download to view in Microsoft Word or LibreOffice.');
+                        setLegacyText(text || 'This older Word 97-2003 (.doc) binary file does not contain readable plain text streams. Please download to view in an external Word editor.');
                         setLoading(false);
                     }
                     return;
@@ -120,7 +120,7 @@ export default function DocxViewer({
                         const text = extractDocBinaryText(arrayBuf);
                         if (isMounted) {
                             setIsLegacyDoc(true);
-                            setLegacyText(text || 'Could not parse Word document package. Please download to open in Microsoft Word.');
+                            setLegacyText(text || 'Could not parse Word document package. Please download to open in an external Word editor.');
                             setLoading(false);
                         }
                     }

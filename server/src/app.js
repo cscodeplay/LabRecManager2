@@ -30,6 +30,10 @@ const academicYearRoutes = require('./routes/academicYear.routes');
 const pinRoutes = require('./routes/pin.routes');
 const labRoutes = require('./routes/lab.routes');
 const fileRoutes = require('./routes/file.routes');
+const documentConverterRoutes = require('./routes/documentConverter.routes');
+const officeDocumentRoutes = require('./routes/officeDocument.routes');
+const pdfStudioRoutes = require('./routes/pdfStudio.routes');
+const mediaStudioRoutes = require('./routes/mediaStudio.routes');
 const documentRoutes = require('./routes/document.routes');
 const whiteboardRoutes = require('./routes/whiteboard.routes');
 const auditRoutes = require('./routes/audit.routes');
@@ -125,8 +129,8 @@ const pendingHostDisconnectTimeouts = new Map();
 app.set('trust proxy', 1); // Enable proxy header support (x-forwarded-proto, x-forwarded-for) for Render / Heroku
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 app.use(requestLogger);
 
 // Static files for uploads & RAG documents
@@ -172,6 +176,10 @@ app.use('/api/academic-years', academicYearRoutes);
 app.use('/api/pin', pinRoutes);
 app.use('/api/labs', labRoutes);
 app.use('/api/files', fileRoutes);
+app.use('/api/documents/convert', documentConverterRoutes);
+app.use('/api/office/documents', officeDocumentRoutes);
+app.use('/api/office/pdf', pdfStudioRoutes);
+app.use('/api/office/media', mediaStudioRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/whiteboard', whiteboardRoutes);
 app.use('/api/audit', auditRoutes);

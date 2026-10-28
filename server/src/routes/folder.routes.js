@@ -19,7 +19,13 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 
     const isAdmin = ['admin', 'principal'].includes(req.user.role);
     if (!isAdmin) {
-        conditions.push({ createdById: req.user.id });
+        conditions.push({
+            OR: [
+                { createdById: req.user.id },
+                { name: 'Office Media Files' },
+                { parent: { name: 'Office Media Files' } }
+            ]
+        });
     }
 
     if (search) {

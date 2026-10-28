@@ -4,13 +4,13 @@ import React, { useState, useRef, useCallback } from 'react';
 import {
     RotateCw,
     X,
-    Check,
-    Pencil
+    Pencil,
+    Minus,
+    Plus
 } from 'lucide-react';
 import {
     PX_PER_CM,
     PX_PER_MM,
-    pxToCm,
     snapAngleDeg,
     degToRad,
     screenToCanvasCoords
@@ -27,7 +27,8 @@ export default function RulerTool({
     onStateChange
 }) {
     const [pos, setPos] = useState({ x: initialX, y: initialY });
-    const [lengthCm, setLengthCm] = useState(Math.min(20, Math.max(10, initialLengthCm)));
+    // Strict lower (8.0 cm) and upper (30.0 cm) bounds
+    const [lengthCm, setLengthCm] = useState(Math.min(30, Math.max(8, initialLengthCm)));
     const [angle, setAngle] = useState(initialAngle);
     const [customDrawLengthCm, setCustomDrawLengthCm] = useState(5);
 
@@ -35,7 +36,7 @@ export default function RulerTool({
     const [activeEdgeDrawing, setActiveEdgeDrawing] = useState(null);
 
     const lengthPx = lengthCm * PX_PER_CM;
-    const heightPx = 48; // Slimmer, realistic physical ruler width (48px ~ 1.25 cm visual)
+    const heightPx = 48; // Physical acrylic ruler visual height
 
     // Notify parent of physical bounds for outer edge pen barrier
     React.useEffect(() => {
@@ -61,12 +62,12 @@ export default function RulerTool({
 
     // Length resizing drag ref
     const isResizingRef = useRef(false);
-    const resizeStartRef = useRef({ canvasStartX: 0, initialLengthCm: 20 });
+    const resizeStartRef = useRef({ canvasStartX: 0, canvasStartY: 0, initialLengthCm: 20 });
 
     // Edge drawing drag ref
     const isDrawingEdgeRef = useRef(false);
 
-    // ─── 1. Reposition Ruler (Draggable from anywhere on surface) ───
+    // ─── 1. Reposition Ruler ───
     const handleBodyPointerDown = (e) => {
         if (e.target.closest('button') || e.target.closest('input') || e.target.closest('[data-handle="true"]')) return;
         e.stopPropagation();
@@ -102,19 +103,17 @@ export default function RulerTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // ─── 2. Inner Rotation Handle (Only inner handle used for rotation) ───
+    // ─── 2. Inner Rotation Handle ───
     const handleInnerRotatePointerDown = (e) => {
         e.stopPropagation();
         e.preventDefault();
         isRotatingRef.current = true;
 
         const coords = screenToCanvasCoords(e.clientX, e.clientY);
-        // Angle from ruler origin to mouse
         const currentAngleRad = Math.atan2(coords.y - pos.y, coords.x - pos.x);
         let currentAngleDeg = (currentAngleRad * 180) / Math.PI;
         if (currentAngleDeg < 0) currentAngleDeg += 360;
 
-        // Offset between cursor angle and ruler angle
         let offset = currentAngleDeg - angle;
         if (offset < 0) offset += 360;
         rotateOffsetRef.current = offset;
@@ -143,7 +142,7 @@ export default function RulerTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // ─── 3. Length Resizing Drag (Up to 20 cm) ───
+    // ─── 3. Length Resizing Drag (Strictly Bounded 8.0 cm to 30.0 cm) ───
     const handleResizePointerDown = (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -162,12 +161,11 @@ export default function RulerTool({
             const dy = current.y - resizeStartRef.current.canvasStartY;
 
             const rad = degToRad(angle);
-            // Project delta along ruler axis
             const projDeltaPx = dx * Math.cos(rad) + dy * Math.sin(rad);
             const deltaCm = projDeltaPx / PX_PER_CM;
 
-            // Restrict maximum length strictly to 20 cm, minimum 6 cm
-            const newCm = Math.max(6, Math.min(20, Math.round((resizeStartRef.current.initialLengthCm + deltaCm) * 2) / 2));
+            // Enforce bounds: min 8.0 cm, max 30.0 cm
+            const newCm = Math.max(8.0, Math.min(30.0, Math.round((resizeStartRef.current.initialLengthCm + deltaCm) * 2) / 2));
             setLengthCm(newCm);
         };
 
@@ -181,7 +179,7 @@ export default function RulerTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // ─── 4. Interactive Edge Drawing (Click & drag along ruler's edge) ───
+    // ─── 4. Interactive Edge Drawing ───
     const handleEdgePointerDown = (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -220,7 +218,7 @@ export default function RulerTool({
 
             setActiveEdgeDrawing(null);
 
-            if (drawnLengthPx > 6 && onDrawLine) {
+            if (drawnLengthPx > 4 && onDrawLine) {
                 const forwardRad = degToRad(angle);
                 const startX = pos.x + minT * Math.cos(forwardRad);
                 const startY = pos.y + minT * Math.sin(forwardRad);
@@ -247,7 +245,7 @@ export default function RulerTool({
     // ─── 5. Stamping Line Along Edge with Custom Length ───
     const handleDrawLineSegment = useCallback(() => {
         if (!onDrawLine) return;
-        const drawCm = Math.min(lengthCm, Math.max(0.2, Number(customDrawLengthCm) || lengthCm));
+        const drawCm = Math.min(lengthCm, Math.max(0.5, Number(customDrawLengthCm) || lengthCm));
         const segmentPx = drawCm * PX_PER_CM;
         const rad = degToRad(angle);
         const startX = pos.x;
@@ -278,15 +276,19 @@ export default function RulerTool({
                 height: `${heightPx}px`,
                 transform: `rotate(${angle}deg)`,
                 transformOrigin: '0 0',
-                zIndex: 65,
+                zIndex: 75,
                 touchAction: 'none'
             }}
+            data-geometry-tool="true"
+            data-instrument="true"
             onPointerDown={handleBodyPointerDown}
-            className="group select-none"
+            className="geometry-instrument group select-none pointer-events-auto z-[75]"
         >
-            {/* Realistic Semi-Transparent Acrylic Physical Ruler Body */}
+            {/* Realistic Semi-Transparent Acrylic Physical Ruler Body (Draggable from anywhere on surface) */}
             <div
-                className="relative w-full h-full rounded-xs border border-slate-400/50 shadow-xl backdrop-blur-[2px] transition-all duration-75 cursor-grab active:cursor-grabbing bg-white/25 hover:bg-white/30"
+                data-handle="ruler-body"
+                data-geometry-tool="true"
+                className="relative w-full h-full rounded-xs border border-slate-400/50 shadow-xl backdrop-blur-[2px] transition-all duration-75 cursor-grab active:cursor-grabbing bg-white/25 hover:bg-white/30 pointer-events-auto"
                 style={{
                     boxShadow: '0 8px 24px 0 rgba(0, 0, 0, 0.18), inset 0 1px 0 0 rgba(255, 255, 255, 0.7), inset 0 -1px 0 0 rgba(0, 0, 0, 0.12)'
                 }}
@@ -312,7 +314,7 @@ export default function RulerTool({
                     />
                 )}
 
-                {/* SVG Clear Black Measurement Markings (0 to 20 cm) */}
+                {/* SVG Clear Measurement Markings */}
                 <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                     {Array.from({ length: totalMm + 1 }).map((_, mm) => {
                         const x = mm * PX_PER_MM;
@@ -350,9 +352,8 @@ export default function RulerTool({
                         );
                     })}
 
-                    {/* Centimeter Metric Label */}
                     <text
-                        x={lengthPx - 26}
+                        x={lengthPx - 24}
                         y={heightPx - 8}
                         fill="#1e293b"
                         fontSize="8.5"
@@ -363,54 +364,81 @@ export default function RulerTool({
                     </text>
                 </svg>
 
-                {/* Center / Inner Controls Overlay */}
-                <div className="absolute inset-0 flex items-center justify-between px-3 pointer-events-none">
-                    {/* Dynamic Real-Time Measurement & Angle Display */}
-                    <div className="flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-full px-2.5 py-0.5 pointer-events-auto shadow-md">
-                        <span className="text-[10.5px] font-mono font-bold text-cyan-300">
+                {/* Center / Inner Controls Overlay — All Icon-Only HUD with Tooltips */}
+                <div className="absolute inset-0 flex items-center justify-between px-2.5 pointer-events-none">
+                    {/* Measurement Readout & Bounded Resizing Steppers */}
+                    <div className="flex items-center gap-1 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-full px-2 py-0.5 pointer-events-auto shadow-md">
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setLengthCm(len => Math.max(8.0, +(len - 1.0).toFixed(1)));
+                            }}
+                            className="w-4 h-4 rounded-full bg-slate-800 hover:bg-cyan-500 text-slate-300 hover:text-slate-950 flex items-center justify-center transition"
+                            title="Shorten ruler (-1 cm, min 8 cm)"
+                        >
+                            <Minus className="w-2.5 h-2.5" />
+                        </button>
+
+                        <span className="text-[10px] font-mono font-bold text-cyan-300 select-none">
                             {lengthCm.toFixed(1)} cm
                         </span>
-                        <span className="text-[9px] text-slate-500">|</span>
-                        <span className="text-[10.5px] font-mono font-bold text-amber-300">
+
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setLengthCm(len => Math.min(30.0, +(len + 1.0).toFixed(1)));
+                            }}
+                            className="w-4 h-4 rounded-full bg-slate-800 hover:bg-cyan-500 text-slate-300 hover:text-slate-950 flex items-center justify-center transition"
+                            title="Lengthen ruler (+1 cm, max 30 cm)"
+                        >
+                            <Plus className="w-2.5 h-2.5" />
+                        </button>
+                    </div>
+
+                    {/* Angle Readout & Inner Rotation Handle */}
+                    <div className="flex items-center gap-1.5 pointer-events-auto">
+                        <div className="px-2 py-0.5 rounded-full bg-slate-900/90 border border-slate-700/80 text-[10px] font-mono font-bold text-amber-300 shadow-md">
                             {angle.toFixed(1)}°
-                        </span>
+                        </div>
+
+                        <div
+                            data-handle="true"
+                            onPointerDown={handleInnerRotatePointerDown}
+                            className="w-6 h-6 rounded-full bg-slate-900/90 border-2 border-cyan-400 shadow-md flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-cyan-500 hover:text-slate-950 text-cyan-300 transition"
+                            title="Drag inner handle to rotate ruler (Hold Shift for 15° snap)"
+                        >
+                            <RotateCw className="w-3 h-3" />
+                        </div>
                     </div>
 
-                    {/* Inner Rotation Handle (Rotates ruler smoothly without outer handle) */}
-                    <div
-                        data-handle="true"
-                        onPointerDown={handleInnerRotatePointerDown}
-                        className="w-7 h-7 rounded-full bg-slate-900/90 border-2 border-cyan-400 shadow-md flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-cyan-500 hover:text-slate-950 text-cyan-300 transition pointer-events-auto"
-                        title="Drag inner handle to rotate ruler (Hold Shift for 15° snap)"
-                    >
-                        <RotateCw className="w-3.5 h-3.5" />
-                    </div>
-
-                    {/* Custom Draw Length Input */}
-                    <div className="flex items-center bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-full px-2 py-0.5 pointer-events-auto shadow-md gap-0.5" title="Length of line to draw along ruler edge">
-                        <span className="text-[9px] text-slate-400 font-medium">Draw:</span>
-                        <input
-                            type="number"
-                            min="0.5"
-                            max={lengthCm}
-                            step="0.1"
-                            value={customDrawLengthCm}
-                            onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                setCustomDrawLengthCm(isNaN(val) ? '' : val);
-                            }}
-                            onBlur={() => {
-                                const val = parseFloat(customDrawLengthCm);
-                                if (isNaN(val) || val <= 0) setCustomDrawLengthCm(5);
-                                else setCustomDrawLengthCm(Math.min(lengthCm, Math.max(0.5, val)));
-                            }}
-                            className="w-10 bg-transparent text-[10.5px] font-mono font-bold text-cyan-300 text-center outline-none focus:ring-1 focus:ring-cyan-400 rounded"
-                        />
-                        <span className="text-[9px] text-slate-400 pr-0.5">cm</span>
-                    </div>
-
-                    {/* Action Buttons: Icon-Only Draw Line & Close */}
+                    {/* Custom Draw Length & Actions (Icon Only with Tooltips) */}
                     <div className="flex items-center gap-1 pointer-events-auto">
+                        <div
+                            className="flex items-center bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-full px-1.5 py-0.5 shadow-md"
+                            title="Custom draw length in cm along ruler edge"
+                        >
+                            <input
+                                type="number"
+                                min="0.5"
+                                max={lengthCm}
+                                step="0.5"
+                                value={customDrawLengthCm}
+                                onChange={(e) => {
+                                    const val = parseFloat(e.target.value);
+                                    setCustomDrawLengthCm(isNaN(val) ? '' : val);
+                                }}
+                                onBlur={() => {
+                                    const val = parseFloat(customDrawLengthCm);
+                                    if (isNaN(val) || val <= 0) setCustomDrawLengthCm(5);
+                                    else setCustomDrawLengthCm(Math.min(lengthCm, Math.max(0.5, val)));
+                                }}
+                                className="w-8 bg-transparent text-[10px] font-mono font-bold text-cyan-300 text-center outline-none focus:ring-1 focus:ring-cyan-400 rounded"
+                            />
+                        </div>
+
+                        {/* Draw Line Button (Icon Only) */}
                         <button
                             type="button"
                             onClick={handleDrawLineSegment}
@@ -420,6 +448,7 @@ export default function RulerTool({
                             <Pencil className="w-3 h-3" />
                         </button>
 
+                        {/* Close Ruler Button (Icon Only) */}
                         <button
                             type="button"
                             onClick={onClose}
@@ -431,12 +460,12 @@ export default function RulerTool({
                     </div>
                 </div>
 
-                {/* Right Edge: Length Resizing Handle (Max 20 cm) */}
+                {/* Right Edge: Length Resizing Handle (Bounded 8.0 cm to 30.0 cm) */}
                 <div
                     data-handle="true"
                     onPointerDown={handleResizePointerDown}
                     className="absolute right-0 top-0 bottom-0 w-3 hover:w-3.5 bg-slate-700/30 hover:bg-cyan-500/50 border-l border-slate-400/60 cursor-ew-resize flex items-center justify-center transition"
-                    title="Drag to adjust ruler length (up to 20 cm)"
+                    title="Drag to resize ruler length (bounded 8.0 cm to 30.0 cm)"
                 >
                     <div className="w-0.5 h-4 bg-slate-800 rounded-full" />
                 </div>

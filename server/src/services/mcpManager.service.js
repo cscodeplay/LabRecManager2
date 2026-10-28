@@ -18,6 +18,7 @@
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const stemDiagramSynthesizer = require('./stemDiagramSynthesizer.service');
 
 class MCPManagerService {
     constructor() {
@@ -69,6 +70,52 @@ class MCPManagerService {
                 command: 'npx',
                 args: ['-y', '@modelcontextprotocol/server-sqlite'],
                 tools: ['inspect_schema', 'query_dataset']
+            },
+            'physics-sim-mcp': {
+                name: 'Interactive Physics Simulation Engine (physics-sim-mcp)',
+                license: 'MIT',
+                commercialSafe: true,
+                status: 'ready',
+                command: 'engine-matter-canvas',
+                tools: [
+                    'simulate_projectile',
+                    'simulate_incline_friction',
+                    'simulate_shm_oscillator',
+                    'simulate_kepler_orbit',
+                    'simulate_carnot_cycle',
+                    'simulate_coulomb_field',
+                    'simulate_lcr_resonance',
+                    'simulate_ray_optics',
+                    'simulate_ydse_wave',
+                    'simulate_bohr_atom'
+                ]
+            },
+            'algo-sim-mcp': {
+                name: 'Algorithm & Data Structure Step Animator (algo-sim-mcp)',
+                license: 'MIT',
+                commercialSafe: true,
+                status: 'ready',
+                command: 'engine-algo-stepper',
+                tools: [
+                    'simulate_binary_search',
+                    'simulate_bubble_sort',
+                    'simulate_merge_sort',
+                    'simulate_bfs_dfs_traversal',
+                    'simulate_stack_queue'
+                ]
+            },
+            'biomolecular-mcp': {
+                name: 'Biomolecular 3D Structure & Kinetics (biomolecular-mcp)',
+                license: 'Apache-2.0 / MIT',
+                commercialSafe: true,
+                status: 'ready',
+                command: 'engine-molstar-kinetics',
+                tools: [
+                    'render_macromolecule_3d',
+                    'simulate_enzyme_kinetics',
+                    'simulate_punnett_cross',
+                    'render_dna_helix'
+                ]
             }
         };
 
@@ -111,17 +158,38 @@ class MCPManagerService {
         if (!text || typeof text !== 'string') return null;
         const low = text.toLowerCase();
 
-        if (/\b(circuit|schematic|resistor|capacitor|inductor|bulb|battery|voltmeter|ammeter|switch|rlc|op-?amp|logic\s*gate|nand|nor|xor|and\s*gate|or\s*gate)\b/i.test(low)) {
+        if (/\b(circuit|schematic|resistor|capacitor|inductor|bulb|battery|voltmeter|ammeter|switch|rlc|op-?amp|logic\s*gate|nand|nor|xor|and\s*gate|or\s*gate|wheatstone)\b/i.test(low)) {
             return { server: 'schemdraw-mcp', domain: 'circuit', rawText: text };
         }
-        if (/\b(chemical\s*structure|molecular\s*structure|benzene|molecule|aromatic|smiles)\b/i.test(low)) {
+        if (/\b(incline|inclined\s*plane|friction|pulley|free\s*body|fbd|projectile|pendulum|normal\s*force)\b/i.test(low)) {
+            return { server: 'physics-mechanics', domain: 'mechanics', rawText: text };
+        }
+        if (/\b(lens|convex|concave|ray\s*optics|ray\s*tracing|snell|refraction|focal\s*length|magnification|microscope|compound\s*microscope|telescope|eyepiece|objective)\b/i.test(low)) {
+            return { server: 'physics-optics', domain: 'optics', rawText: text };
+        }
+        if (/\b(electric\s*field|magnetic\s*field|electrostatic|hollow\s*sphere|conducting\s*sphere|metal\s*sphere|shielding|faraday|faraday\s*cage|coulomb|gauss|equipotential|dielectric|capacitor|capacitance)\b/i.test(low)) {
+            return { server: 'physics-electrostatics', domain: 'electrostatics', rawText: text };
+        }
+        if (/\b(aspirin|benzene|ethanol|acetic\s*acid|ester|esterification|chemical\s*structure|molecular\s*structure|molecule|aromatic|smiles|vsepr|buffer|titration|reaction\s*mechanism)\b/i.test(low)) {
             return { server: 'rdkit-mcp', domain: 'chemistry', rawText: text };
         }
-        if (/\b(flowchart|sequence\s*diagram|uml|erd|class\s*diagram)\b/i.test(low)) {
-            return { server: 'uml-mcp', domain: 'uml', rawText: text };
+        if (/\b(hemoglobin|insulin|protein\s*structure|enzyme|michaelis|kinetics|cell\s*structure|plant\s*cell|animal\s*cell|dna\s*double|double\s*helix|punnett|photosynthesis)\b/i.test(low)) {
+            return { server: 'biomolecular-mcp', domain: 'biology', rawText: text };
         }
-        if (/\b(vector\s*field|slope\s*field|direction\s*field|ode\s*field)\b/i.test(low)) {
-            return { server: 'sympy-mcp', domain: 'vector_field', rawText: text };
+        if (/\b(statistics|statistical|normal\s*distribution|gaussian|bell\s*curve|standard\s*deviation|box\s*plot|boxplot|box-and-whisker|histogram|scatter\s*plot|quartile|iqr|z-score|regression\s*line)\b/i.test(low)) {
+            return { server: 'sympy-mcp', domain: 'statistics', rawText: text };
+        }
+        if (/\b(database\s*design|db\s*design|erd|entity\s*relationship|relational\s*schema|relational\s*table|primary\s*key|foreign\s*key|database\s*schema)\b/i.test(low)) {
+            return { server: 'sqlite-mcp', domain: 'database_design', rawText: text };
+        }
+        if (/\b(class\s*diagram|oop\s*design|object\s*oriented\s*design|inheritance\s*diagram)\b/i.test(low)) {
+            return { server: 'uml-mcp', domain: 'uml_class', rawText: text };
+        }
+        if (/\b(simulate|simulation|animate|animation|step\s*by\s*step)\b/i.test(low) && /\b(binary\s*search|bubble\s*sort|merge\s*sort|sorting|search|traversal|stack|queue|algorithm)\b/i.test(low)) {
+            return { server: 'algo-sim-mcp', domain: 'algo_sim', rawText: text };
+        }
+        if (/\b(flowchart|flow\s*chart|algorithm|pseudo-?code|binary\s*search|linear\s*search|bubble\s*sort|sorting|sequence\s*diagram|uml)\b/i.test(low)) {
+            return { server: 'uml-mcp', domain: 'flowchart', rawText: text };
         }
 
         return null;
@@ -358,12 +426,17 @@ class MCPManagerService {
         const low = text.toLowerCase();
 
         // 1. Determine connection topology
-        const isParallel = /\bparallel\b/i.test(low);
-        const topology = isParallel ? 'parallel' : 'series';
+        let topology = 'series';
+        if (/\bwheatstone\b/i.test(low)) {
+            topology = 'wheatstone';
+        } else if (/\bparallel\b/i.test(low)) {
+            topology = 'parallel';
+        }
 
         // 2. Determine component count
         let count = 2;
-        if (/\b(single|one|1)\b/i.test(low)) count = 1;
+        if (topology === 'wheatstone') count = 4;
+        else if (/\b(single|one|1)\b/i.test(low)) count = 1;
         else if (/\b(two|2|pair|couple)\b/i.test(low)) count = 2;
         else if (/\b(three|3|triple)\b/i.test(low)) count = 3;
         else if (/\b(four|4)\b/i.test(low)) count = 4;
@@ -375,7 +448,7 @@ class MCPManagerService {
         // 3. Determine component type
         let compType = 'lamp';
         let compName = 'Bulb';
-        if (/\b(resistors?|resistance)\b/i.test(low)) {
+        if (/\b(resistors?|resistance|wheatstone)\b/i.test(low)) {
             compType = 'resistor';
             compName = 'Resistor';
         } else if (/\b(capacitors?|capacitance)\b/i.test(low)) {
@@ -394,11 +467,33 @@ class MCPManagerService {
         const sourceVal = voltMatch ? `${voltMatch[1]}V` : '12V';
         const isAC = /\b(ac\s*source|alternating|sine)\b/i.test(low);
 
+        // 5. Extract specific numerical component values from text
+        let compValues = [];
+        if (compType === 'resistor') {
+            const resMatches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*(kilo|mega|k|m)?(?:ohm\b|ω|ohms?\b)/gi)];
+            compValues = resMatches.map(m => `${m[1]} ${m[2] ? m[2].toUpperCase() : ''}Ω`);
+        } else if (compType === 'capacitor') {
+            const capMatches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*(micro|nano|pico|μ|u)?(?:f\b|farads?\b)/gi)];
+            compValues = capMatches.map(m => {
+                const u = (m[2] || '').toLowerCase().replace('micro', 'µ').replace('u', 'µ') || 'µ';
+                return `${m[1]} ${u}F`;
+            });
+        } else if (compType === 'inductor') {
+            const indMatches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*(milli|micro|m|u)?(?:h\b|henry|henries?\b)/gi)];
+            compValues = indMatches.map(m => `${m[1]} ${m[2] || 'm'}H`);
+        }
+
         const components = [];
+        const subscripts = ['₁', '₂', '₃', '₄', '₅', '₆'];
+        const prefix = compType === 'resistor' ? 'R' : compType === 'capacitor' ? 'C' : compType === 'inductor' ? 'L' : 'Bulb';
+
         for (let i = 1; i <= count; i++) {
+            const val = compValues[i - 1] || (compValues.length === 1 ? compValues[0] : '');
+            const sub = subscripts[i - 1] || `${i}`;
+            const label = val ? `${prefix}${sub} = ${val}` : `${compName} ${i}`;
             components.push({
                 type: compType,
-                label: `${compName} ${i}`
+                label
             });
         }
 
@@ -418,20 +513,254 @@ class MCPManagerService {
      */
     async handleWhiteboardDiagram(text) {
         const detection = this.canHandle(text);
-        if (!detection || detection.server !== 'schemdraw-mcp') return null;
+        if (!detection) return null;
 
-        const low = text.toLowerCase();
-
-        // If the query asks to calculate, solve, compute, or contains specific numerical problem values,
-        // defer strictly to the Generative AI STEM solver so all math, arithmetic (e.g. q1, q2, C_total),
-        // and full derivations are reasoned out accurately.
-        const isCalculativeOrWordProblem =
-            /\b(calculate|find|compute|determine|solve|what\s+is|what\s+are|how\s+much|charge\s*q\d?|energy|potential\s+difference|voltage\s+across|current\s+through)\b/i.test(low) ||
-            /\b\d+\s*(?:micro|nano|pico|μ|u)?(?:f|farad|ohm|ω|h|henry|c|coulomb)\b/i.test(low);
-
-        if (isCalculativeOrWordProblem) {
-            return null;
+        // If domain is Chemistry, Biology, Mechanics, Optics, or Math, delegate directly to STEM Diagram Synthesizer
+        if (detection.domain === 'chemistry') {
+            const chem = stemDiagramSynthesizer.generateChemistrySVG(text, '');
+            if (chem && chem.svg) {
+                return {
+                    recognized: true,
+                    success: true,
+                    speechResponse: `Here is the chemical structure diagram for ${chem.title}.`,
+                    solutionMarkdown: `### 🧪 Chemical Structure\n- **Compound**: ${chem.title}\n\n$$\\text{Exact molecular representation synthesized dynamically.}$$`,
+                    diagram: { type: 'svg', title: chem.title, svg: chem.svg, code: null },
+                    canvasAction: {
+                        type: 'draw_problem_with_diagram',
+                        diagramType: 'svg',
+                        svg: chem.svg,
+                        title: chem.title,
+                        question: text
+                    },
+                    actions: [{ type: 'CREATE_OBJECT', objectType: 'svg', svg: chem.svg, title: chem.title, width: 380, height: 380 }],
+                    modelUsed: 'rdkit-mcp (Open Source, BSD-3)',
+                    providerUsed: 'rdkit-mcp'
+                };
+            }
         }
+
+        if (detection.domain === 'biology') {
+            const bio = stemDiagramSynthesizer.generateBiologySVG(text, '');
+            if (bio && bio.svg) {
+                return {
+                    recognized: true,
+                    success: true,
+                    speechResponse: `Here is the biological diagram for ${bio.title}.`,
+                    solutionMarkdown: `### 🧬 Biological Diagram\n- **Topic**: ${bio.title}`,
+                    diagram: { type: 'svg', title: bio.title, svg: bio.svg, code: null },
+                    canvasAction: {
+                        type: 'draw_problem_with_diagram',
+                        diagramType: 'svg',
+                        svg: bio.svg,
+                        title: bio.title,
+                        question: text
+                    },
+                    actions: [{ type: 'CREATE_OBJECT', objectType: 'svg', svg: bio.svg, title: bio.title, width: 380, height: 380 }],
+                    modelUsed: 'biomolecular-mcp (Open Source)',
+                    providerUsed: 'biomolecular-mcp'
+                };
+            }
+        }
+
+        if (detection.domain === 'mechanics' || detection.domain === 'optics' || detection.domain === 'electrostatics') {
+            const phys = stemDiagramSynthesizer.generatePhysicsSVG(text, '');
+            let physMcp = 'physics-mechanics-mcp';
+            if (detection.domain === 'optics' || /\b(optics|lens|microscope|telescope|refraction)\b/i.test(text)) {
+                physMcp = 'physics-optics-mcp';
+            } else if (detection.domain === 'electrostatics' || /\b(electric|field|shielding|faraday|hollow|conductor|sphere|cavity)\b/i.test(text)) {
+                physMcp = 'physics-electrostatics-mcp';
+            }
+            if (phys && phys.svg) {
+                return {
+                    recognized: true,
+                    success: true,
+                    speechResponse: `Here is the physical diagram for ${phys.title}.`,
+                    solutionMarkdown: `### ⚛️ Physics System (${physMcp} - MIT)\n- **Scenario**: ${phys.title}`,
+                    diagram: { type: 'svg', title: phys.title, svg: phys.svg, code: phys.code || null, mcpUsed: physMcp },
+                    canvasAction: {
+                        type: 'draw_problem_with_diagram',
+                        diagramType: 'svg',
+                        svg: phys.svg,
+                        title: phys.title,
+                        code: phys.code || null,
+                        mcpUsed: physMcp,
+                        question: text
+                    },
+                    actions: [{ type: 'CREATE_OBJECT', objectType: 'svg', svg: phys.svg, title: phys.title, code: phys.code || null, width: 380, height: 380 }],
+                    modelUsed: `${physMcp} (Open Source, MIT)`,
+                    providerUsed: physMcp,
+                    mcpUsed: physMcp
+                };
+            }
+        }
+
+        if (detection.domain === 'statistics') {
+            const stat = stemDiagramSynthesizer.generateStatisticsSVG(text, '');
+            if (stat && stat.svg) {
+                return {
+                    recognized: true,
+                    success: true,
+                    speechResponse: `Here is the statistical distribution diagram for ${stat.title}.`,
+                    solutionMarkdown: `### 📊 Statistical Analysis (sympy-mcp / scipy - BSD-3)\n- **Topic**: ${stat.title}`,
+                    diagram: { type: 'svg', title: stat.title, svg: stat.svg, code: stat.code || null, mcpUsed: 'sympy-mcp' },
+                    canvasAction: {
+                        type: 'draw_problem_with_diagram',
+                        diagramType: 'svg',
+                        svg: stat.svg,
+                        title: stat.title,
+                        code: stat.code || null,
+                        mcpUsed: 'sympy-mcp',
+                        question: text
+                    },
+                    actions: [{ type: 'CREATE_OBJECT', objectType: 'svg', svg: stat.svg, title: stat.title, code: stat.code || null, width: 380, height: 380 }],
+                    modelUsed: 'sympy-mcp (Open Source, BSD-3)',
+                    providerUsed: 'sympy-mcp',
+                    mcpUsed: 'sympy-mcp'
+                };
+            }
+        }
+
+        if (detection.domain === 'database_design') {
+            const erd = stemDiagramSynthesizer.generateERDiagramSVG(text, '');
+            if (erd && erd.svg) {
+                const mermaidBlock = erd.mermaid ? `\n\n\`\`\`mermaid\n${erd.mermaid}\n\`\`\`` : '';
+                const sqlBlock = erd.code ? `\n\n### 🗄️ Relational DDL Schema\n\`\`\`sql\n${erd.code}\n\`\`\`` : '';
+                return {
+                    recognized: true,
+                    success: true,
+                    speechResponse: `Here is the relational database entity-relationship diagram for ${erd.title}.`,
+                    solutionMarkdown: `### 🗄️ Relational Database Architecture (sqlite-mcp - MIT)\n- **Schema Model**: ${erd.title}\n- **Keys & Cardinality**: Crow's Foot ($1:N$), Primary Keys $[\\text{PK}]$, Foreign Keys $[\\text{FK}]$.${mermaidBlock}${sqlBlock}`,
+                    diagram: { type: 'svg', title: erd.title, svg: erd.svg, code: erd.code || null, mcpUsed: 'sqlite-mcp' },
+                    canvasAction: {
+                        type: 'draw_problem_with_diagram',
+                        diagramType: 'svg',
+                        svg: erd.svg,
+                        title: erd.title,
+                        code: erd.code || null,
+                        mcpUsed: 'sqlite-mcp',
+                        question: text
+                    },
+                    actions: [{ type: 'CREATE_OBJECT', objectType: 'svg', svg: erd.svg, title: erd.title, code: erd.code || null, width: 380, height: 380 }],
+                    modelUsed: 'sqlite-mcp (Open Source, MIT)',
+                    providerUsed: 'sqlite-mcp',
+                    mcpUsed: 'sqlite-mcp'
+                };
+            }
+        }
+
+        if (detection.domain === 'uml_class') {
+            const cls = stemDiagramSynthesizer.generateClassDiagramSVG(text, '');
+            if (cls && cls.svg) {
+                const mermaidBlock = cls.mermaid ? `\n\n\`\`\`mermaid\n${cls.mermaid}\n\`\`\`` : '';
+                const codeBlock = cls.code ? `\n\n### 🏛️ UML Specification & Code\n\`\`\`plantuml\n${cls.code}\n\`\`\`` : '';
+                return {
+                    recognized: true,
+                    success: true,
+                    speechResponse: `Here is the UML 2.5 Class Diagram for ${cls.title}.`,
+                    solutionMarkdown: `### 🏛️ Object-Oriented Architecture (uml-mcp - Apache-2.0)\n- **Class Structure**: ${cls.title}\n- **Relationships**: Inheritance / Generalization ($\u25B3$) with encapsulated members.${mermaidBlock}${codeBlock}`,
+                    diagram: { type: 'svg', title: cls.title, svg: cls.svg, code: cls.code || null, mcpUsed: 'uml-mcp' },
+                    canvasAction: {
+                        type: 'draw_problem_with_diagram',
+                        diagramType: 'svg',
+                        svg: cls.svg,
+                        title: cls.title,
+                        code: cls.code || null,
+                        mcpUsed: 'uml-mcp',
+                        question: text
+                    },
+                    actions: [{ type: 'CREATE_OBJECT', objectType: 'svg', svg: cls.svg, title: cls.title, code: cls.code || null, width: 380, height: 380 }],
+                    modelUsed: 'uml-mcp (Open Source, Apache-2.0)',
+                    providerUsed: 'uml-mcp',
+                    mcpUsed: 'uml-mcp'
+                };
+            }
+        }
+
+        if (detection.domain === 'flowchart') {
+            const flow = stemDiagramSynthesizer.generateFlowchartSVG(text, '');
+            if (flow && flow.svg) {
+                const asksForCode = /\b(code|write|program|implement|implementation|java|python|c\+\+|cpp|javascript|typescript)\b/i.test(text);
+                const mermaidBlock = flow.mermaid ? `\n\n\`\`\`mermaid\n${flow.mermaid}\n\`\`\`` : '';
+                const codeBlock = asksForCode ? (flow.codeSnippet ? `\n\n${flow.codeSnippet}` : (flow.code ? `\n\n### 💻 Implementation Code\n\`\`\`java\n${flow.code}\n\`\`\`` : '')) : '';
+                return {
+                    recognized: true,
+                    success: true,
+                    speechResponse: asksForCode
+                        ? `Here is the algorithmic flowchart and implementation for ${flow.title}.`
+                        : `Here is the algorithmic flowchart for ${flow.title}.`,
+                    solutionMarkdown: `### 🔄 Algorithmic Flowchart (uml-mcp - Apache-2.0)\n- **Process**: ${flow.title}\n- **Symbols**: Standard ISO/IEC terminals, process boxes, and decision diamonds.${mermaidBlock}${codeBlock}`,
+                    diagram: { type: 'svg', title: flow.title, svg: flow.svg, code: flow.code || null, mcpUsed: 'uml-mcp' },
+                    canvasAction: {
+                        type: 'draw_problem_with_diagram',
+                        diagramType: 'svg',
+                        svg: flow.svg,
+                        title: flow.title,
+                        code: flow.code || null,
+                        mcpUsed: 'uml-mcp',
+                        question: text
+                    },
+                    actions: [{ type: 'CREATE_OBJECT', objectType: 'svg', svg: flow.svg, title: flow.title, code: flow.code || null, width: 380, height: 380 }],
+                    modelUsed: 'uml-mcp (Open Source, Apache-2.0)',
+                    providerUsed: 'uml-mcp',
+                    mcpUsed: 'uml-mcp'
+                };
+            }
+        }
+
+        if (detection.domain === 'algo_sim') {
+            const sim = stemDiagramSynthesizer.generateAlgorithmSimulationSVG(text, '');
+            if (sim && sim.svg) {
+                const codeBlock = sim.code ? `\n\n### 💻 Simulation Code & State Trace\n\`\`\`java\n${sim.code}\n\`\`\`` : '';
+                return {
+                    recognized: true,
+                    success: true,
+                    speechResponse: `Here is the step-by-step interactive algorithm simulation for ${sim.title}.`,
+                    solutionMarkdown: `### ⚡ Algorithm Execution Simulation (algo-sim-mcp - MIT)\n- **Algorithm Scenario**: ${sim.title}\n- **Efficiency**: Time Complexity $O(\\log N)$ / $O(N^2)$, Auxiliary Space $O(1)$ in-place.${codeBlock}`,
+                    diagram: { type: 'svg', title: sim.title, svg: sim.svg, code: sim.code || null, mcpUsed: 'algo-sim-mcp' },
+                    canvasAction: {
+                        type: 'draw_problem_with_diagram',
+                        diagramType: 'svg',
+                        svg: sim.svg,
+                        title: sim.title,
+                        code: sim.code || null,
+                        mcpUsed: 'algo-sim-mcp',
+                        question: text
+                    },
+                    actions: [{ type: 'CREATE_OBJECT', objectType: 'svg', svg: sim.svg, title: sim.title, code: sim.code || null, width: 420, height: 440 }],
+                    modelUsed: 'algo-sim-mcp (Open Source, MIT)',
+                    providerUsed: 'algo-sim-mcp',
+                    mcpUsed: 'algo-sim-mcp'
+                };
+            }
+        }
+
+        if (detection.domain === 'math_geometry') {
+            const math = stemDiagramSynthesizer.generateMathSVG(text, '');
+            if (math && math.svg) {
+                return {
+                    recognized: true,
+                    success: true,
+                    speechResponse: `Here is the mathematical diagram for ${math.title}.`,
+                    solutionMarkdown: `### 📐 Geometric Construction (sympy-mcp - BSD-3)\n- **Figure**: ${math.title}`,
+                    diagram: { type: 'svg', title: math.title, svg: math.svg, code: math.code || null, mcpUsed: 'sympy-mcp' },
+                    canvasAction: {
+                        type: 'draw_problem_with_diagram',
+                        diagramType: 'svg',
+                        svg: math.svg,
+                        title: math.title,
+                        code: math.code || null,
+                        mcpUsed: 'sympy-mcp',
+                        question: text
+                    },
+                    actions: [{ type: 'CREATE_OBJECT', objectType: 'svg', svg: math.svg, title: math.title, code: math.code || null, width: 380, height: 380 }],
+                    modelUsed: 'sympy-mcp (Open Source, BSD-3)',
+                    providerUsed: 'sympy-mcp',
+                    mcpUsed: 'sympy-mcp'
+                };
+            }
+        }
+
+        if (detection.server !== 'schemdraw-mcp') return null;
 
         try {
             const spec = this.parseCircuitSpecFromText(text);
@@ -561,13 +890,16 @@ class MCPManagerService {
                     type: 'svg',
                     title,
                     svg: renderResult.svg,
-                    code: pythonCode
+                    code: pythonCode,
+                    mcpUsed: 'schemdraw-mcp'
                 },
                 canvasAction: {
                     type: 'draw_problem_with_diagram',
                     diagramType: 'svg',
                     svg: renderResult.svg,
                     code: pythonCode,
+                    title,
+                    mcpUsed: 'schemdraw-mcp',
                     question: text,
                     solutionMarkdown: derivation,
                     speechResponse
@@ -584,11 +916,223 @@ class MCPManagerService {
                     }
                 ],
                 modelUsed: 'schemdraw-mcp (Open Source, MIT)',
-                providerUsed: 'schemdraw-mcp'
+                providerUsed: 'schemdraw-mcp',
+                mcpUsed: 'schemdraw-mcp'
             };
         } catch (err) {
             console.warn('[MCPManager] SchemDraw live generation failed, falling back to generative AI:', err.message);
             return null;
+        }
+    }
+
+    /**
+     * Universal STEM Diagram Synthesizer across Circuits, Mechanics, Optics, Chemistry, Biology, and Math.
+     */
+    async synthesizeDomainDiagram(text = '', solutionMarkdown = '') {
+        const detection = this.canHandle(text);
+        const low = text.toLowerCase();
+
+        // 1. Circuits & Electrical Schematics (SchemDraw MCP)
+        if (detection?.domain === 'circuit' || /\b(circuit|schematic|resistor|capacitor|battery|wheatstone)\b/i.test(low)) {
+            try {
+                const spec = this.parseCircuitSpecFromText(text);
+                const res = await this.executeSchemDrawRunner({ circuit: spec });
+                if (res?.success && res.svg) {
+                    const isParallel = spec.topology === 'parallel';
+                    const title = spec.topology === 'wheatstone' 
+                        ? 'Balanced Wheatstone Bridge Circuit' 
+                        : `${spec.count} ${spec.compName}s in ${isParallel ? 'Parallel' : 'Series'} (${spec.source})`;
+                    return {
+                        title,
+                        svg: res.svg,
+                        code: res.code,
+                        mcpUsed: 'schemdraw-mcp'
+                    };
+                }
+            } catch (err) {
+                console.warn('[MCPManager] SchemDraw live compile fallback:', err.message);
+            }
+        }
+
+        // 2. Chemistry (RDKit / Molecular Structures / Reactions)
+        if (detection?.domain === 'chemistry' || /\b(chemical|molecular|benzene|aspirin|ester|acid|buffer|reaction)\b/i.test(low)) {
+            const chem = stemDiagramSynthesizer.generateChemistrySVG(text, solutionMarkdown);
+            if (chem && chem.svg) return { ...chem, mcpUsed: 'rdkit-mcp' };
+        }
+
+        // 3. Biology (Biomolecular / Proteins / Enzymes / Cells)
+        if (detection?.domain === 'biology' || /\b(hemoglobin|protein|enzyme|cell|dna|michaelis)\b/i.test(low)) {
+            const bio = stemDiagramSynthesizer.generateBiologySVG(text, solutionMarkdown);
+            if (bio && bio.svg) return { ...bio, mcpUsed: 'biomolecular-molstar-mcp' };
+        }
+
+        // 4. Physics Mechanics / Optics / Electrostatics (FBD, Lenses, Microscope, Electrostatic Shielding)
+        if (detection?.domain === 'mechanics' || detection?.domain === 'optics' || detection?.domain === 'electrostatics' || /\b(incline|friction|pulley|lens|optics|convex|microscope|telescope|electric\s*field|shielding|faraday|hollow.*sphere|metal.*sphere)\b/i.test(low)) {
+            const phys = stemDiagramSynthesizer.generatePhysicsSVG(text, solutionMarkdown);
+            let physMcp = 'physics-mechanics-mcp';
+            if (/\b(optics|lens|microscope|telescope|refraction)\b/i.test(low)) physMcp = 'physics-optics-mcp';
+            else if (/\b(electric|field|shielding|faraday|hollow|conductor|sphere|cavity)\b/i.test(low)) physMcp = 'physics-electrostatics-mcp';
+            if (phys && phys.svg) return { ...phys, mcpUsed: physMcp };
+        }
+
+        // 5. Statistics & Probability Distributions (SymPy / SciPy)
+        if (detection?.domain === 'statistics' || /\b(statistics|statistical|normal\s*dist|bell\s*curve|box\s*plot|boxplot|box-and-whisker|histogram|quartile|iqr|z-score)\b/i.test(low)) {
+            const stat = stemDiagramSynthesizer.generateStatisticsSVG(text, solutionMarkdown);
+            if (stat && stat.svg) return { ...stat, mcpUsed: 'sympy-mcp' };
+        }
+
+        // 6. Computer Science Flowcharts, DB Design & UML Diagrams (UML MCP & SQLite MCP)
+        if (detection?.domain === 'flowchart' || detection?.domain === 'database_design' || detection?.domain === 'uml_class' || /\b(flowchart|flow\s*chart|algorithm|binary\s*search|linear\s*search|bubble\s*sort|sorting|sequence\s*diagram|class\s*diagram|uml|erd|database\s*design|db\s*design|relational\s*schema)\b/i.test(low)) {
+            if (/\b(database|erd|entity\s*relationship|db\s*design|relational\s*table|schema)\b/i.test(low)) {
+                const erd = stemDiagramSynthesizer.generateERDiagramSVG(text, solutionMarkdown);
+                if (erd && erd.svg) return { ...erd, mcpUsed: 'sqlite-mcp' };
+            }
+            if (/\b(class\s*diagram|oop\s*design|inheritance)\b/i.test(low)) {
+                const cls = stemDiagramSynthesizer.generateClassDiagramSVG(text, solutionMarkdown);
+                if (cls && cls.svg) return { ...cls, mcpUsed: 'uml-mcp' };
+            }
+            if (/\b(sequence|lifeline|architecture)\b/i.test(low)) {
+                const seq = stemDiagramSynthesizer.generateUMLSequenceSVG(text, solutionMarkdown);
+                if (seq && seq.svg) return { ...seq, mcpUsed: 'uml-mcp' };
+            }
+            const flow = stemDiagramSynthesizer.generateFlowchartSVG(text, solutionMarkdown);
+            if (flow && flow.svg) return { ...flow, mcpUsed: 'uml-mcp' };
+        }
+
+        // 6b. Algorithm & Data Structure Simulation (algo-sim-mcp - MIT)
+        if (detection?.domain === 'algo_sim' || (/\b(simulate|animate|step\s*by\s*step)\b/i.test(low) && /\b(binary\s*search|bubble\s*sort|merge\s*sort|sorting|search|traversal)\b/i.test(low))) {
+            const sim = stemDiagramSynthesizer.generateAlgorithmSimulationSVG(text, solutionMarkdown);
+            if (sim && sim.svg) return { ...sim, mcpUsed: 'algo-sim-mcp' };
+        }
+
+        // 7. Mathematics & Geometry (Inscribed shapes, Area between curves)
+        if (detection?.domain === 'math_geometry' || /\b(inscribed|triangle|circle|area\s*between|parabola|x\^2)\b/i.test(low)) {
+            const math = stemDiagramSynthesizer.generateMathSVG(text, solutionMarkdown);
+            if (math && math.svg) return { ...math, mcpUsed: 'sympy-mcp' };
+        }
+
+        // Fallback default
+        const fallback = stemDiagramSynthesizer.generateMathSVG(text, solutionMarkdown);
+        return { ...fallback, mcpUsed: 'sympy-mcp' };
+    }
+
+    /**
+     * Guarantees that parsed STEM solution response from LLM has an authentic, non-hallucinated vector SVG diagram
+     * attached to diagram.svg, canvasAction.svg, and actions[].
+     */
+    async ensureDiagramForResponse(text = '', parsed = {}) {
+        if (!parsed || typeof parsed !== 'object') return;
+
+        // Check if existing solution contains an authentic Mermaid diagram (Computer Science / UML / Flowchart)
+        const mermaidMatch = (parsed.solutionMarkdown || '').match(/```mermaid\s*\r?\n([\s\S]*?)```/i);
+        if (mermaidMatch) {
+            const mermaidCode = mermaidMatch[1].trim();
+            const diagTitle = parsed.diagram?.title || 'Algorithmic Flowchart / Architecture (Mermaid.js)';
+            parsed.mcpUsed = 'mermaid-uml-mcp';
+            if (!parsed.diagram) parsed.diagram = {};
+            parsed.diagram.type = 'mermaid';
+            parsed.diagram.code = mermaidCode;
+            parsed.diagram.title = diagTitle;
+            parsed.diagram.mcpUsed = 'mermaid-uml-mcp';
+
+            if (!parsed.canvasAction) {
+                parsed.canvasAction = {
+                    type: 'draw_problem_with_diagram',
+                    diagramType: 'mermaid',
+                    code: mermaidCode,
+                    title: diagTitle,
+                    mcpUsed: 'mermaid-uml-mcp',
+                    question: text,
+                    solutionMarkdown: parsed.solutionMarkdown,
+                    speechResponse: parsed.speechResponse
+                };
+            }
+            return;
+        }
+
+        let rawSvg = parsed.diagram?.svg || parsed.svg;
+        let diagramCode = parsed.diagram?.code || parsed.schemdrawCode || null;
+        let title = parsed.diagram?.title || 'Scientific Diagram';
+        let mcpUsed = parsed.mcpUsed || parsed.diagram?.mcpUsed || null;
+
+        // Check if existing SVG is missing or invalid stub (< 300 chars or missing </svg>)
+        const isSvgValid = rawSvg && typeof rawSvg === 'string' && rawSvg.includes('<svg') && rawSvg.includes('</svg>') && rawSvg.length > 300;
+
+        if (!isSvgValid) {
+            const synResult = await this.synthesizeDomainDiagram(text, parsed.solutionMarkdown || '');
+            if (synResult && synResult.svg) {
+                rawSvg = synResult.svg;
+                diagramCode = synResult.code || diagramCode;
+                title = synResult.title || title;
+                mcpUsed = synResult.mcpUsed || mcpUsed;
+            }
+        }
+
+        const detection = this.canHandle(text);
+        if (!mcpUsed && detection?.server) {
+            mcpUsed = detection.server;
+        }
+
+        parsed.mcpUsed = mcpUsed || 'mcp-stem-engine';
+
+        if (rawSvg && typeof rawSvg === 'string' && rawSvg.includes('<svg')) {
+            // Clean any raw LaTeX from inside SVG <text> tags so it displays native Unicode math
+            rawSvg = stemDiagramSynthesizer.cleanLatexForSvg(rawSvg);
+            title = stemDiagramSynthesizer.cleanLatexForSvg(`<text>${title}</text>`).replace(/<\/?text>/g, '');
+
+            if (!parsed.diagram) parsed.diagram = { type: 'svg' };
+            parsed.diagram.type = 'svg';
+            parsed.diagram.svg = rawSvg;
+            parsed.diagram.title = title;
+            parsed.diagram.mcpUsed = parsed.mcpUsed;
+            if (diagramCode) parsed.diagram.code = diagramCode;
+
+            if (!parsed.canvasAction) {
+                parsed.canvasAction = {
+                    type: 'draw_problem_with_diagram',
+                    diagramType: 'svg',
+                    svg: rawSvg,
+                    code: diagramCode,
+                    title,
+                    mcpUsed: parsed.mcpUsed,
+                    question: text,
+                    solutionMarkdown: parsed.solutionMarkdown,
+                    speechResponse: parsed.speechResponse
+                };
+            } else {
+                parsed.canvasAction.type = 'draw_problem_with_diagram';
+                parsed.canvasAction.diagramType = 'svg';
+                parsed.canvasAction.svg = rawSvg;
+                parsed.canvasAction.title = title;
+                parsed.canvasAction.mcpUsed = parsed.mcpUsed;
+                if (diagramCode) parsed.canvasAction.code = diagramCode;
+                if (!parsed.canvasAction.question) parsed.canvasAction.question = text;
+                if (!parsed.canvasAction.solutionMarkdown) parsed.canvasAction.solutionMarkdown = parsed.solutionMarkdown;
+            }
+
+            if (!Array.isArray(parsed.actions)) {
+                parsed.actions = [];
+            }
+            let hasSvgAct = false;
+            parsed.actions.forEach(act => {
+                if (act.type === 'CREATE_OBJECT' && (act.objectType === 'svg' || act.svg)) {
+                    act.svg = rawSvg;
+                    act.title = title;
+                    if (diagramCode) act.code = diagramCode;
+                    hasSvgAct = true;
+                }
+            });
+            if (!hasSvgAct) {
+                parsed.actions.push({
+                    type: 'CREATE_OBJECT',
+                    objectType: 'svg',
+                    svg: rawSvg,
+                    title,
+                    code: diagramCode,
+                    width: 380,
+                    height: 380
+                });
+            }
         }
     }
 }

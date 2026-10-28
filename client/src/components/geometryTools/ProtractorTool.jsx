@@ -5,7 +5,9 @@ import {
     RotateCw,
     X,
     Check,
-    Pencil
+    Pencil,
+    Minus,
+    Plus
 } from 'lucide-react';
 import {
     PX_PER_CM,
@@ -30,7 +32,7 @@ export default function ProtractorTool({
 }) {
     // Vertex position (center origin of protractor) in pure Canvas Coordinates
     const [vertex, setVertex] = useState({ x: initialX, y: initialY });
-    const [radiusCm, setRadiusCm] = useState(initialRadiusCm);
+    const [radiusCm, setRadiusCm] = useState(Math.min(9.0, Math.max(3.8, initialRadiusCm)));
     const [baseRotation, setBaseRotation] = useState(initialAngle);
     const [measureAngle, setMeasureAngle] = useState(initialMeasureAngle);
 
@@ -230,7 +232,7 @@ export default function ProtractorTool({
     const armLocalY = -radiusPx * Math.sin(armRad); // Upwards
 
     return (
-        <div className="absolute inset-0 pointer-events-none select-none z-[66]">
+        <div className="geometry-instrument absolute inset-0 pointer-events-none select-none z-[75]" data-geometry-tool="true">
             {/* SVG Transparent Acrylic Semicircular Protractor */}
             <svg
                 style={{
@@ -479,7 +481,7 @@ export default function ProtractorTool({
                 );
             })()}
 
-            {/* ─── Floating Top Control HUD: Readout, Draw Angle, Close ─── */}
+            {/* ─── Floating Top Control HUD: Readout, Resizing, Draw Angle, Baseline, Close ─── */}
             <div
                 style={{
                     position: 'absolute',
@@ -490,44 +492,68 @@ export default function ProtractorTool({
                 }}
                 className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full px-2 py-0.5 shadow-2xl h-7"
             >
+                {/* Resizing Stepper Minus */}
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setRadiusCm(r => +(Math.max(3.8, r - 0.5)).toFixed(1));
+                    }}
+                    className="w-4 h-4 rounded-full bg-slate-800 hover:bg-emerald-500 text-slate-300 hover:text-slate-950 flex items-center justify-center transition"
+                    title="Shrink protractor (-0.5 cm, min 3.8 cm)"
+                >
+                    <Minus className="w-2.5 h-2.5" />
+                </button>
+
                 {/* Real-time Angle Readout */}
-                <div className="flex items-center gap-1 font-mono font-bold text-[10px]">
+                <div className="flex items-center gap-1 font-mono font-bold text-[10px] px-0.5">
                     <span className="text-cyan-300">{measureAngle.toFixed(1)}°</span>
                     <span className="text-slate-500 font-normal">|</span>
                     <span className="text-amber-300 font-normal">{baseRotation.toFixed(0)}°</span>
                 </div>
 
+                {/* Resizing Stepper Plus */}
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setRadiusCm(r => +(Math.min(9.0, r + 0.5)).toFixed(1));
+                    }}
+                    className="w-4 h-4 rounded-full bg-slate-800 hover:bg-emerald-500 text-slate-300 hover:text-slate-950 flex items-center justify-center transition"
+                    title="Enlarge protractor (+0.5 cm, max 9.0 cm)"
+                >
+                    <Plus className="w-2.5 h-2.5" />
+                </button>
+
                 <div className="w-px h-3 bg-slate-700" />
 
-                {/* Draw Angle onto Canvas */}
+                {/* Draw Angle onto Canvas (Icon Only with Tooltip) */}
                 <button
                     type="button"
                     onClick={handleDrawAngleToCanvas}
-                    className="flex items-center gap-1 px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[9.5px] rounded-full shadow transition active:scale-95"
+                    className="w-5 h-5 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white flex items-center justify-center shadow transition active:scale-95"
                     title="Stamp measured rays and angle arc onto canvas"
                 >
-                    <Check className="w-2.5 h-2.5 stroke-[3]" />
-                    <span>Draw Angle</span>
+                    <Check className="w-3 h-3 stroke-[3]" />
                 </button>
 
-                {/* Draw Baseline Straight Line */}
+                {/* Draw Baseline Straight Line (Icon Only with Tooltip) */}
                 {onDrawLine && (
                     <button
                         type="button"
                         onClick={handleDrawBaseline}
-                        className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-white font-bold text-[9.5px] rounded-full border border-slate-700 shadow transition active:scale-95"
+                        className="w-5 h-5 rounded-full bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-white border border-slate-700 flex items-center justify-center shadow transition active:scale-95"
                         title="Draw straight baseline along protractor edge"
                     >
                         <Pencil className="w-2.5 h-2.5" />
-                        <span>Baseline</span>
                     </button>
                 )}
 
-                {/* Close Protractor */}
+                {/* Close Protractor (Icon Only with Tooltip) */}
                 <button
                     type="button"
                     onClick={onClose}
-                    className="p-0.5 rounded-full bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white transition"
+                    className="w-5 h-5 rounded-full bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white flex items-center justify-center transition"
                     title="Close Protractor"
                 >
                     <X className="w-3 h-3" />

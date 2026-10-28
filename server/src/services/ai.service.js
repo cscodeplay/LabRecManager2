@@ -3,8 +3,6 @@ const fs = require('fs');
 const path = require('path');
 const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const geometrySolver = require('./geometrySolver.service');
-const stemSolver = require('./stemProblemSolver.service');
 const mcpManager = require('./mcpManager.service');
 
 // Paid & Production Models for Smooth, Uninterrupted Actions and Responses
@@ -409,7 +407,7 @@ class AIService {
         throw error;
     }
 
-    async callGemini({ contents, systemInstruction, model, temperature = 0.1, jsonMode = false, apiKey }) {
+    async callGemini({ contents, systemInstruction, model, temperature = 0.1, jsonMode = false, apiKey, maxTokens }) {
         let client = this.genAI;
         if (apiKey && typeof apiKey === 'string' && apiKey.trim()) {
             client = new GoogleGenerativeAI(apiKey.trim());
@@ -418,7 +416,11 @@ class AIService {
         const modelsToTry = model ? [model] : ACTIVE_GEMINI_MODELS;
         let lastErr = null;
 
-        const generationConfig = { temperature };
+        const effectiveMaxTokens = maxTokens || 8192;
+        const generationConfig = {
+            temperature,
+            maxOutputTokens: effectiveMaxTokens
+        };
         if (jsonMode) {
             generationConfig.responseMimeType = 'application/json';
         }
@@ -443,10 +445,21 @@ class AIService {
                 if (keyToUse) {
                     try {
                         console.log(`[AIService] Retrying Gemini (${m}) via direct REST API...`);
+                        let restContents = [];
+                        if (Array.isArray(contents)) {
+                            restContents = contents.map(c => {
+                                if (c && c.parts && c.role) return c;
+                                if (typeof c === 'string') return { role: 'user', parts: [{ text: c }] };
+                                return { role: 'user', parts: [{ text: JSON.stringify(c) }] };
+                            });
+                        } else {
+                            restContents = [{ role: 'user', parts: [{ text: typeof contents === 'string' ? contents : JSON.stringify(contents) }] }];
+                        }
                         const restPayload = {
-                            contents: [{ parts: [{ text: typeof contents === 'string' ? contents : JSON.stringify(contents) }] }],
+                            contents: restContents,
                             generationConfig: {
                                 temperature,
+                                maxOutputTokens: effectiveMaxTokens,
                                 ...(jsonMode ? { responseMimeType: 'application/json' } : {})
                             }
                         };
@@ -827,16 +840,35 @@ class AIService {
                         }
                     }
                 } else if (prov === 'gemini') {
-                    // Convert messages to Gemini format
-                    const userParts = [];
+                    // Convert messages to Gemini format with structured multi-turn conversation
+                    const geminiContents = [];
                     for (const m of fullMessages) {
-                        if (m.role === 'user') userParts.push(m.content);
-                        else if (m.role === 'assistant') userParts.push(`Assistant: ${m.content}`);
+                        if (m.role === 'system') continue;
+                        const role = m.role === 'assistant' ? 'model' : 'user';
+                        const textContent = (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)) || '';
+                        if (!textContent.trim()) continue;
+
+                        if (geminiContents.length === 0 && role !== 'user') {
+                            continue;
+                        }
+
+                        if (geminiContents.length > 0 && geminiContents[geminiContents.length - 1].role === role) {
+                            geminiContents[geminiContents.length - 1].parts[0].text += `\n\n${textContent}`;
+                        } else {
+                            geminiContents.push({
+                                role,
+                                parts: [{ text: textContent }]
+                            });
+                        }
                     }
-                    const prompt = userParts.join('\n\n') || 'Proceed';
+
+                    if (geminiContents.length === 0) {
+                        geminiContents.push({ role: 'user', parts: [{ text: 'Proceed' }] });
+                    }
+
                     for (const m of ACTIVE_GEMINI_MODELS.slice(0, 3)) {
                         try {
-                            return await this.callGemini({ contents: prompt, systemInstruction: systemPrompt, model: m, temperature, jsonMode });
+                            return await this.callGemini({ contents: geminiContents, systemInstruction: systemPrompt, model: m, temperature, jsonMode, maxTokens: maxTokens || 8192 });
                         } catch (mErr) {
                             attemptErrors.push({ provider: 'gemini', model: m, error: mErr.message, isQuota: mErr.isQuotaError });
                             if (mErr.isQuotaError) break;
@@ -2414,6 +2446,10 @@ Output MUST be ONLY valid JSON matching this schema:
      */
     async executeVoiceCommand(speechText, context = {}) {
         let text = (speechText || '').trim();
+        // Normalize speech-to-text slips (e.g. "asl for binary search" -> "ask for binary search")
+        text = text
+            .replace(/^asl\s+(for\b|to\b)?/i, 'ask $1')
+            .replace(/^asl\b/i, 'ask');
         const imageInput = context.image || context.imageDataUrl;
         let extractedImageQuestion = null;
 
@@ -3028,293 +3064,14 @@ Output MUST be ONLY valid JSON matching this schema:
                 return { w, h, edgeLabels, altitudeLabel, speechResponse: speech };
             };
 
-            // Deterministic Circle & Line Intersection Geometry Solver
-            const circleLineParsed = geometrySolver.parseCircleAndLineFromText(text);
-            if (circleLineParsed) {
-                try {
-                    const sol = geometrySolver.solveCircleLineIntersection(circleLineParsed);
-                    const origCircleEq = sol.equations.originalCircle;
-                    const stdCircleEq = sol.equations.circle;
-                    const lineEq = sol.equations.line;
-                    const quadEq = sol.equations.quadratic;
-                    const pts = sol.intersections;
-
-                    const ptsSpeech = pts.length === 2
-                        ? `The line intersects the circle at two points: P1(${pts[0].x}, ${pts[0].y}) and P2(${pts[1].x}, ${pts[1].y}).`
-                        : (pts.length === 1 ? `The line is tangent to the circle at point P(${pts[0].x}, ${pts[0].y}).` : `The line does not intersect the circle in real coordinates.`);
-
-                    const ptsMarkdown = pts.length === 2
-                        ? `**Points of Intersection:**\n- $P_1(${pts[0].x}, ${pts[0].y})$\n- $P_2(${pts[1].x}, ${pts[1].y})$`
-                        : (pts.length === 1 ? `**Point of Tangency:**\n- $P(${pts[0].x}, ${pts[0].y})$` : `**No Real Intersections** (Discriminant $\\Delta < 0$)`);
-
-                    const speechResponse = `Here is the step-by-step solution for the circle ${origCircleEq} and line ${lineEq}: Completing the square gives center C(${sol.center.x}, ${sol.center.y}) and radius r ≈ ${sol.radius}. Substituting y = ${lineEq.replace('y = ', '')} into the circle gives the quadratic ${quadEq}. With discriminant Δ = ${sol.discriminant}, the roots are ${pts.map((p, i) => `x${i + 1} = ${p.x}`).join(' and ')}. ${ptsSpeech}`;
-
-                    const solutionMarkdown = `### Intersection of Circle and Line\n\n` +
-                        `**Given Circle:**\n$$${origCircleEq} \\iff ${stdCircleEq}$$\n` +
-                        `- **Center:** $C(${sol.center.x}, ${sol.center.y})$\n` +
-                        `- **Radius:** $r = \\sqrt{${sol.rSq || 24.25}} \\approx ${sol.radius}$\n\n` +
-                        `**Given Line:**\n$$${lineEq}$$\n\n` +
-                        `**Step 1: Algebraic Substitution**\n` +
-                        `Substitute $y = ${lineEq.replace('y = ', '')}$ into the circle equation:\n` +
-                        `$$${quadEq}$$\n\n` +
-                        `**Step 2: Discriminant & Roots**\n` +
-                        `- $\\Delta = b^2 - 4ac = ${sol.discriminant} > 0$ (${pts.length} real points of intersection)\n` +
-                        `- $x = \\frac{-b \\pm \\sqrt{\\Delta}}{2a} \\implies ${pts.map((p, i) => `x_${i + 1} = ${p.x}`).join(', \\;')}$\n\n` +
-                        `**Step 3: Coordinates of Intersection Points**\n` +
-                        pts.map((p, i) => `- For $x_{${i+1}} = ${p.x}$: $y_{${i+1}} = ${sol.line.m}(${p.x}) ${sol.line.k >= 0 ? `+ ${sol.line.k}` : `- ${Math.abs(sol.line.k)}`} = ${p.y} \\implies P_{${i+1}}(${p.x}, ${p.y})$`).join('\n') +
-                        `\n\n${ptsMarkdown}`;
-
-                    const diagramCurves = [
-                        {
-                            type: 'circle',
-                            cx: sol.center.x,
-                            cy: sol.center.y,
-                            r: sol.radius,
-                            color: '#000000',
-                            label: origCircleEq,
-                            centerLabel: `C(${sol.center.x}, ${sol.center.y})`
-                        },
-                        {
-                            type: 'line',
-                            slope: sol.line.m,
-                            intercept: sol.line.k,
-                            color: '#000000',
-                            label: lineEq
-                        }
-                    ];
-
-                    const diagramIntersections = pts.map((p, idx) => ({
-                        x: p.x,
-                        y: p.y,
-                        label: `P${idx + 1}(${p.x}, ${p.y})`
-                    }));
-
-                    const diagramPlottedPoints = [
-                        { x: sol.center.x, y: sol.center.y, label: `C(${sol.center.x}, ${sol.center.y})` }
-                    ];
-
-                    return {
-                        recognized: true,
-                        success: true,
-                        speechResponse,
-                        solutionMarkdown,
-                        graphEquations: [origCircleEq, lineEq].filter(Boolean),
-                        suggestedFollowUps: [
-                            `📐 Tangent at P₁(${pts[0]?.x}, ${pts[0]?.y})`,
-                            `📏 Distance between P₁ & P₂`,
-                            `⭕ Circle Center & Radius`,
-                            `📄 New clean board`
-                        ],
-                        canvasAction: {
-                            type: 'draw_problem_with_diagram',
-                            diagramType: 'cartesian_plane',
-                            question: text,
-                            solutionMarkdown,
-                            speechResponse,
-                            curves: diagramCurves,
-                            intersectionPoints: diagramIntersections,
-                            plottedPoints: diagramPlottedPoints,
-                            unitScale: 20
-                        },
-                        actions: [
-                            {
-                                type: 'CREATE_OBJECT',
-                                objectType: 'coordinate_system',
-                                title: 'Circle & Line Intersection',
-                                equation: origCircleEq,
-                                curves: diagramCurves,
-                                intersectionPoints: diagramIntersections,
-                                plottedPoints: diagramPlottedPoints,
-                                unitScale: 20
-                            }
-                        ]
-                    };
-                } catch (e) {
-                    console.warn('[AIService] Deterministic circle-line solver failed, falling back to LLM:', e.message);
-                }
-            }
-
-            // Deterministic Standalone Circle Equation Solver (Center, Radius, Area, Circumference, Standard Form)
-            if (!circleLineParsed && !/\b(tangent|normal|chord|secant|derivative|differentiate|integral|integrate|parabola|ellipse|hyperbola|sphere|cylinder|cone)\b/i.test(low)) {
-                const singleCircleParsed = geometrySolver.parseCircleEquationFromText(text);
-                if (singleCircleParsed) {
-                    try {
-                        const sol = geometrySolver.solveCircleEquation(singleCircleParsed);
-                        const origCircleEq = sol.equations.originalCircle;
-                        const stdCircleEq = sol.equations.standardCircle;
-                        const wantsArea = /\barea\b/i.test(low);
-                        const wantsCircumference = /\b(circumference|perimeter)\b/i.test(low);
-                        const wantsDiameter = /\bdiameter\b/i.test(low);
-
-                        let primarySpeechFocus = `Its center is C(${sol.center.x}, ${sol.center.y}), radius r ≈ ${sol.radius}, area A = ${sol.rSq}π ≈ ${sol.area} square units, and circumference C ≈ ${sol.circumference} units.`;
-                        let boxedFinalLatex = `\\text{Center } C(${sol.center.x}, ${sol.center.y}), \\quad r = ${sol.rLatex}, \\quad \\text{Area} = ${sol.areaExactLatex} \\approx ${sol.area}`;
-
-                        if (wantsArea && !wantsCircumference) {
-                            primarySpeechFocus = `Completing the square gives center C(${sol.center.x}, ${sol.center.y}) and radius squared r² = ${sol.rSq} (so r ≈ ${sol.radius}). Therefore, the area of the circle is A = πr² = ${sol.rSq}π ≈ ${sol.area} square units.`;
-                            boxedFinalLatex = `\\text{Area } A = \\pi r^2 = ${sol.areaExactLatex} \\approx ${sol.area}\\text{ sq. units}`;
-                        } else if (wantsCircumference && !wantsArea) {
-                            primarySpeechFocus = `Completing the square gives center C(${sol.center.x}, ${sol.center.y}) and radius r ≈ ${sol.radius}. Therefore, the circumference of the circle is C = 2πr ≈ ${sol.circumference} units.`;
-                            boxedFinalLatex = `\\text{Circumference } C = 2\\pi r = ${sol.circumExactLatex} \\approx ${sol.circumference}\\text{ units}`;
-                        } else if (wantsDiameter) {
-                            primarySpeechFocus = `Completing the square gives center C(${sol.center.x}, ${sol.center.y}) and radius r ≈ ${sol.radius}, so the diameter is d = 2r ≈ ${sol.diameter} units.`;
-                            boxedFinalLatex = `\\text{Diameter } d = 2r \\approx ${sol.diameter}\\text{ units}`;
-                        }
-
-                        const speechResponse = `For the circle ${origCircleEq}, converting to standard form gives ${stdCircleEq}. ${primarySpeechFocus}`;
-
-                        const solutionMarkdown = `### 📌 Given & Concept\n` +
-                            `- **Given Circle Equation:** $${origCircleEq}$\n` +
-                            `- **Standard Circle Equation:** $(x - h)^2 + (y - k)^2 = r^2$, with center $C(h, k)$ and radius $r$\n\n` +
-                            `### 📐 Formula\n` +
-                            `$$(x - h)^2 + (y - k)^2 = r^2, \\qquad \\text{Area } A = \\pi r^2, \\qquad \\text{Circumference } C = 2\\pi r$$\n\n` +
-                            `### 🔢 Step-by-Step Solution\n` +
-                            `1. **Step 1 (Complete the Square to Standard Form):**\n` +
-                            `   Rewrite the given equation by completing the square for the $x$ and $y$ terms:\n` +
-                            `   $$${origCircleEq} \\iff ${stdCircleEq}$$\n` +
-                            `2. **Step 2 (Identify Center and Radius):**\n` +
-                            `   Comparing with $(x - h)^2 + (y - k)^2 = r^2$:\n` +
-                            `   - **Center:** $C(h, k) = (${sol.center.x}, ${sol.center.y})$\n` +
-                            `   - **Radius Squared:** $r^2 = ${sol.rSq} \\implies r = ${sol.rLatex}$ (Diameter $d = 2r \\approx ${sol.diameter}$)\n` +
-                            `3. **Step 3 (Calculate Area and Circumference):**\n` +
-                            `   - **Area:** $A = \\pi r^2 = \\pi (${sol.rSq}) = ${sol.areaExactLatex} \\approx ${sol.area}\\text{ sq. units}$\n` +
-                            `   - **Circumference:** $C = 2\\pi r = ${sol.circumExactLatex} \\approx ${sol.circumference}\\text{ units}$\n\n` +
-                            `### ✅ Final Answer\n` +
-                            `$$\\boxed{${boxedFinalLatex}}$$`;
-
-                        const diagramCurves = [
-                            {
-                                type: 'circle',
-                                cx: sol.center.x,
-                                cy: sol.center.y,
-                                r: sol.radius,
-                                color: '#3b82f6',
-                                label: origCircleEq,
-                                centerLabel: `C(${sol.center.x}, ${sol.center.y})`
-                            }
-                        ];
-
-                        const diagramPlottedPoints = [
-                            { x: sol.center.x, y: sol.center.y, label: `Center (${sol.center.x}, ${sol.center.y})` }
-                        ];
-
-                        return {
-                            recognized: true,
-                            success: true,
-                            speechResponse,
-                            solutionMarkdown,
-                            graphEquations: [origCircleEq],
-                            plottedPoints: diagramPlottedPoints,
-                            curves: diagramCurves,
-                            suggestedFollowUps: [
-                                `⭕ Circumference of ${origCircleEq}`,
-                                `📐 Tangent to ${origCircleEq}`,
-                                `📏 Intersection with y = x + 1`,
-                                `📄 New clean board`
-                            ],
-                            canvasAction: {
-                                type: 'draw_problem_with_diagram',
-                                diagramType: 'cartesian_plane',
-                                question: text,
-                                solutionMarkdown,
-                                speechResponse,
-                                curves: diagramCurves,
-                                plottedPoints: diagramPlottedPoints,
-                                unitScale: 25
-                            },
-                            actions: [
-                                {
-                                    type: 'CREATE_OBJECT',
-                                    objectType: 'coordinate_system',
-                                    title: 'Circle Graph & Properties',
-                                    equation: origCircleEq,
-                                    curves: diagramCurves,
-                                    plottedPoints: diagramPlottedPoints,
-                                    unitScale: 25
-                                }
-                            ]
-                        };
-                    } catch (e) {
-                        console.warn('[AIService] Deterministic standalone circle solver failed, falling back to LLM:', e.message);
-                    }
-                }
-            }
-
-            // Deterministic Composite Geometry Solver (Square with Inscribed Circle, Annulus, Shaded Regions)
-            const compositeGeoParsed = geometrySolver.parseCompositeGeometryFromText(text);
-            if (compositeGeoParsed) {
-                try {
-                    const sol = geometrySolver.solveCompositeGeometry(compositeGeoParsed);
-                    if (sol) {
-                        return {
-                            recognized: true,
-                            success: true,
-                            speechResponse: sol.speechResponse,
-                            solutionMarkdown: sol.solutionMarkdown,
-                            graphEquations: [],
-                            plottedPoints: [],
-                            suggestedFollowUps: sol.suggestedFollowUps,
-                            diagram: sol.diagram,
-                            canvasAction: {
-                                type: 'draw_problem_with_diagram',
-                                diagramType: sol.diagram?.svg ? 'svg' : 'composite_geometry',
-                                svg: sol.diagram?.svg,
-                                question: text,
-                                solutionMarkdown: sol.solutionMarkdown,
-                                speechResponse: sol.speechResponse,
-                                diagramProps: sol.diagramProps
-                            },
-                            actions: [
-                                {
-                                    type: 'CREATE_OBJECT',
-                                    objectType: sol.diagram?.svg ? 'svg' : 'composite_geometry',
-                                    svg: sol.diagram?.svg,
-                                    ...sol.diagramProps
-                                }
-                            ]
-                        };
-                    }
-                } catch (e) {
-                    console.warn('[AIService] Deterministic composite geometry solver failed, falling back to LLM:', e.message);
-                }
-            }
-
-            // Deterministic 3D Wireframe Solver & Renderer (Cone, Cylinder, Cuboid, Cube, Sphere, Pyramid, Frustum)
-            const wireframe3DParsed = geometrySolver.parse3DWireframeFromText(text);
-            if (wireframe3DParsed) {
-                try {
-                    const sol = geometrySolver.solve3DWireframe(wireframe3DParsed);
-                    if (sol) {
-                        return {
-                            recognized: true,
-                            success: true,
-                            speechResponse: sol.speechResponse,
-                            solutionMarkdown: sol.solutionMarkdown,
-                            graphEquations: [],
-                            plottedPoints: [],
-                            suggestedFollowUps: sol.suggestedFollowUps,
-                            canvasAction: {
-                                type: 'draw_problem_with_diagram',
-                                diagramType: 'wireframe_3d',
-                                question: text,
-                                solutionMarkdown: sol.solutionMarkdown,
-                                speechResponse: sol.speechResponse,
-                                diagramProps: sol.diagramProps
-                            },
-                            actions: [
-                                {
-                                    type: 'CREATE_OBJECT',
-                                    objectType: 'wireframe_3d',
-                                    ...sol.diagramProps
-                                }
-                            ]
-                        };
-                    }
-                } catch (e) {
-                    console.warn('[AIService] Deterministic 3D wireframe solver failed, falling back to LLM:', e.message);
-                }
-            }
+            // USER DIRECTIVE: Local deterministic solvers removed. All mathematical, geometric, and scientific
+            // reasoning is handled exclusively by AI Models (Gemini, Groq, OpenAI) and commercial-safe MCPs.
+            // Quota exhaustion throws a true, explicit error without fake local fallbacks.
 
             const whiteboardSystemPrompt = `You are an advanced Spatial & Generative AI reasoning engine for an interactive Whiteboard.
+CRITICAL RULE ON QUESTION PROCESSING:
+You MUST read and analyze the ENTIRE user question prompt thoroughly from beginning to end before generating the answer. Pay complete attention to every single constraint, given value, variable, equation, condition, and specific question asked. Never skip, truncate, or assume any part of the question.
+
 You receive the user's spoken command along with a JSON representation of the current whiteboard state (objects, sizes, spatial coordinates, pages).
 Your goal is to parse the user's intent, perform any required knowledge-base reasoning (like deriving formulas, writing code, or generating scientific explanations), and return a sequence of autonomous actions to modify the canvas.
 
@@ -3569,6 +3326,19 @@ CRITICAL RULES:
   11. EXPLANATION:
      - Provide the step-by-step mathematical reasoning, formulas in LaTeX ($$...$$), and calculations inside speechResponse and solutionMarkdown.
      - The interactive diagram on canvas visually anchors the vertices, edges, and angles!
+  12. COMPUTER SCIENCE, ALGORITHMS, DATA STRUCTURES & SOFTWARE ARCHITECTURE:
+     - Whenever asked for ANY algorithm, data structure, flowchart, UML diagram, database design (ERD), or code:
+       * DYNAMIC ON-DEMAND GENERATION: You MUST handle ANY arbitrary algorithm dynamically (BFS, DFS, Dijkstra, A* Search, Bellman-Ford, Floyd-Warshall, Kruskal, Prim, Sorting, Dynamic Programming, Tree Traversals, Hash Tables, LRU Cache, K-Means, Raft Consensus, etc.).
+       * CODE GENERATION RULE: ONLY provide programming language source code (Java, Python, C++, C, JavaScript, etc.) inside a fenced code block (\`\`\`<language> ... \`\`\`) if the user EXPLICITLY asks for code, programming, implementation, or specifies a language (e.g. 'code', 'write code', 'implement', 'in java', 'in python'). If the user ONLY asks for a flowchart, diagram, UML, or ERD (e.g. 'flow chart', 'binary search flowchart', 'bfs diagram'), DO NOT output programming source code! Output only the Mermaid diagram, algorithmic intuition, and time/space complexity analysis.
+       * ALWAYS provide an authentic, tailor-made Mermaid.js diagram enclosed in a \`\`\`mermaid ... \`\`\` code block inside 'solutionMarkdown':
+         - Flowcharts: Use \`flowchart TD\` with clear decision diamonds, process rectangles, input/output data boxes, and loop arrows.
+         - Sequence Diagrams: Use \`sequenceDiagram\` with participants, lifelines, and numbered messages.
+         - Class Diagrams: Use \`classDiagram\` with classes, attributes, methods, and relationships (--|>, *--, o--).
+         - Database ERD: Use \`erDiagram\` with entities, primary/foreign keys, and relationships.
+         - State Machines: Use \`stateDiagram-v2\` with states and transitions.
+          - MERMAID SYNTAX SAFETY: ALWAYS enclose node labels in double quotes if they contain parentheses, brackets, colons, or punctuation (e.g. Node["Queue.enqueue(S)"], Node{"Check (x > 0)?"}, Node(["Start"]). NEVER insert '$' KaTeX delimiters inside Mermaid diagram nodes or links.
+        * Include detailed Time and Space Complexity analysis formatted in LaTeX in markdown (e.g. $\\mathcal{O}(V + E)$ or $O(N \\log N)$, $O(1)$). NEVER insert '$' inside programming code blocks (Java, Python, C++, etc.).
+        * In 'speechResponse', explain the algorithmic intuition and complexity concisely in spoken English.
 - **VECTOR SVG & GEOMETRIC DIAGRAMS**:
   For composite geometric figures (inscribed/circumscribed polygons, tangents, chords), calculus curve regions, or vector diagrams combining multiple elements, you may output objectType: 'svg' with a complete, publication-quality SVG string in 'svg' (viewBox="0 0 380 380"). Single standalone primitive shapes should use their dedicated geometric objectType ('circle', 'rectangle', 'triangle', 'right_triangle', 'cone', 'cylinder', 'incline_plane', 'coordinate_system') with exact dimensions, vertices, and measurement labels! 'drawing' is reserved solely for non-geometric artwork illustrations (cat, dog, car, tree, house, etc.).
 - **MANDATORY LATEX SCIENTIFIC NOTATION & STRUCTURED MARKDOWN IN 'solutionMarkdown'**:
@@ -3682,7 +3452,7 @@ CURRENT ACTIVE OBJECTS ON WHITEBOARD:
 ${context.shapes && context.shapes.length > 0 ? JSON.stringify(context.shapes.slice(0, 40)) : 'NONE (The whiteboard is currently completely empty — 0 objects on board!)'}
 ${context.viewport ? `BOARD VIEWPORT & BOUNDS: ${JSON.stringify(context.viewport)}\n` : ''}
 ${context.conversationHistory && context.conversationHistory.length > 0 ? `RECENT CONVERSATION TURNS:
-${JSON.stringify(context.conversationHistory.slice(-5))}
+${JSON.stringify(context.conversationHistory.slice(-20))}
 ` : ''}
 ${context.lastActionTarget ? `LAST TARGETED OBJECT: ${JSON.stringify(context.lastActionTarget)}\n` : ''}
 Spoken input: "${text}"
@@ -3693,7 +3463,8 @@ Spoken input: "${text}"
                 /^(explain|teach|solve|how\b|what\b|derive|prove|calculate|evaluate|simplify|expand|factor|integrate|differentiate|compute|determine|why\b|find\b)/i.test(low) ||
                 low.includes('?') ||
                 /[=^²³]/.test(low) ||
-                /\b(area|perimeter|circumference|radius|diameter|domain|range|asymptote|limit|maxima|minima|extrema|inflection|tangent|normal|parabola|ellipse|hyperbola|conic|roots|zeros|quadratic|polynomial|integral|derivative|calculus|differential|matrix|matrices|determinant|eigen|linear algebra|trigonometr|sin|cos|tan|logarithm|ln|log|probability|statistics|mean|median|variance|standard deviation|permutation|combination|binomial)\b/i.test(low) ||
+                /\b(intersect|intersection|intersects|meeting point|equation|equations|system|systems|curve|curves|line|lines|circle|circles|triangle|triangles|wireframe|conic|conics)\b/i.test(low) ||
+                /\b(area|perimeter|circumference|radius|diameter|domain|range|asymptote|limit|maxima|minima|extrema|inflection|tangent|normal|parabola|ellipse|hyperbola|roots|zeros|quadratic|polynomial|integral|derivative|calculus|differential|matrix|matrices|determinant|eigen|linear algebra|trigonometr|sin|cos|tan|logarithm|ln|log|probability|statistics|mean|median|variance|standard deviation|permutation|combination|binomial)\b/i.test(low) ||
                 /\b(ap|gp|hp|arithmetic progression|geometric progression|progression|sequence|series|common difference|first term|nth term)\b/i.test(low) ||
                 /\b(physics|vector|kinematic|projectile|trajectory|newton|law of motion|laws of motion|friction|incline|pulley|atwood|tension|momentum|collision|work|energy|power|rotational|torque|moment of inertia|gravit|kepler|orbit|satellite|escape velocity|shm|harmonic|oscillation|pendulum|spring|wave|sound|doppler|thermodynamic|carnot|heat engine|isothermal|adiabatic|electrostatic|coulomb|electric field|charge|potential|capacit|current|resistor|ohm|kirchhoff|circuit|magnetic|lorentz|biot|savart|faraday|lenz|induction|lcr|alternating current|impedance|resonance|optics|snell|refraction|lens|mirror|ydse|double slit|interference|diffraction|bohr|hydrogen atom|spectral|photoelectric|de broglie|semiconductor|logic gate|truth table|nand|nor|photosynthesis|pythagor|ideal gas|mole|pressure|temperature|volume|gas constant|stoichiometry|molarity|reaction|velocity|acceleration|kinetic)\b/i.test(low);
 
@@ -3704,24 +3475,26 @@ Spoken input: "${text}"
                 low.startsWith('list') ||
                 low.startsWith('give') ||
                 low.startsWith('write') ||
-                /\b(diagram|flowchart|3d model|structure of|cycle)\b/i.test(low);
+                low.startsWith('ask') ||
+                /\b(diagram|flowchart|flow\s*chart|3d model|wireframe|structure of|cycle|algorithm|binary\s*search|sorting|bfs|dfs|uml|erd|composite\s*geometry)\b/i.test(low);
+
+            const hasExplicitCanvasUiAction = /^(move|drag|delete|remove|erase|clear|wipe|zoom|page|recolor|border|stroke|align|group|ungroup|connect|resize|rotate|select|pen|pencil|laser|pan)\b/i.test(low);
 
             const isStemOrDiagramQuery =
                 isMathOrScienceProblem ||
-                /\b(circuit|schematic|bulb|battery|resistor|capacitor|inductor|wheatstone|op-amp|diagram|flowchart|molecule|chemical|reaction|physics|mechanics|fbd|free body|optics|ray|lens|mirror|calculus|derivative|integral|matrix|trigonometry|geometry|theorem|proof|series|parallel)\b/i.test(low) ||
-                (isCognitiveQuery && !/\b(move|drag|delete|remove|erase|clear|wipe|zoom|page|recolor|border|stroke|align|group|ungroup|connect|resize|rotate)\b/i.test(low));
+                /\b(circuit|schematic|bulb|battery|resistor|capacitor|inductor|wheatstone|op-amp|diagram|flowchart|flow\s*chart|molecule|chemical|reaction|physics|mechanics|fbd|free body|optics|ray|lens|mirror|calculus|derivative|integral|matrix|trigonometry|geometry|theorem|proof|series|parallel|algorithm|bfs|dfs|dijkstra|binary\s*search|sorting|kruskal|prim|bellman|floyd|a\*|uml|class\s*diagram|sequence\s*diagram|erd|database\s*design|db\s*design)\b/i.test(low) ||
+                (isCognitiveQuery && !hasExplicitCanvasUiAction);
 
-            // Check if commercial-safe SchemDraw MCP can dynamically compile this circuit schematic
-            if (mcpManager && mcpManager.canHandle(text)?.server === 'schemdraw-mcp') {
-                try {
-                    const mcpResult = await mcpManager.handleWhiteboardDiagram(text);
-                    if (mcpResult && mcpResult.diagram?.svg) {
-                        return mcpResult;
-                    }
-                } catch (mcpErr) {
-                    console.warn('[AIService] SchemDraw MCP live compile failed, falling back to generative AI:', mcpErr.message);
-                }
-            }
+            // Check if specialized commercial-safe MCP can directly compile this diagram (Circuit SchemDraw, DB SQLite, UML, Statistics, etc.)
+            const isExplicitDiagramRequest = /^(draw|render|display|show|create|generate|sketch|plot)\b/i.test(low) ||
+                /^(flowchart|erd|db design|database design|uml|circuit diagram|normal distribution|boxplot)\b/i.test(low);
+
+            // Crucial: If user also asks for code, programming, implementation, or deep explanation, DO NOT intercept early!
+            // Let the LLM write the full code & explanation, and let ensureDiagramForResponse attach the matching diagram.
+            const asksForCodeOrExplanation = /\b(code|write|program|implement|implementation|solve|solution|explain|why|how|java|python|c\+\+|cpp|javascript|typescript|c#|rust|go|swift|kotlin|pseudo-?code|complexity|step[- ]by[- ]step)\b/i.test(low) ||
+                /\b(and write|and code|with code|also code|write code)\b/i.test(low);
+
+            const isAlgorithmOrCsDiagram = /\b(algorithm|flowchart|flow\s*chart|pseudo-?code|bfs|dfs|dijkstra|binary\s*search|sorting|kruskal|prim|bellman|floyd|a\*|uml|class\s*diagram|sequence\s*diagram|erd|database\s*design|db\s*design)\b/i.test(low);
 
             const verbosity = context.verbosity || 'normal';
             let verbosityInstruction = '';
@@ -3817,29 +3590,193 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
    - Complex Analysis: Complex z-plane with contour path (e.g. semicircular contour) and poles marked.
    - Abstract Algebra / Topology / Advanced: Unit balls in metric spaces (l1 diamond, l2 circle, l_infinity square), quotient identification polygons (torus, Mobius strip), Venn diagrams.
    YOU MUST ALWAYS OUTPUT A COMPLETE, HIGH-PRECISION SVG STRING IN 'diagram.svg'!
-6. In 'speechResponse', state the explanation and final answer naturally so it sounds clear when spoken aloud.${verbosityInstruction}`
+6. COMPUTER SCIENCE, ALGORITHMS, UML, ERD & CODE ON-DEMAND GENERATION:
+   Whenever the user asks for ANY algorithm, data structure, flowchart, UML diagram, ER diagram, or programming task:
+   - YOU MUST dynamically handle ANY arbitrary algorithm (BFS, DFS, Dijkstra, A* Search, Bellman-Ford, Floyd-Warshall, Kruskal, Prim, Sorting, Dynamic Programming, Tree Traversals, Hash Tables, LRU Cache, K-Means, Raft Consensus, etc.).
+   - CODE & FLOWCHART COMPLETENESS RULES:
+     1. FLOWCHARTS REPRESENT INSTRUCTIONS & CONTROL FLOW (STRICTLY NOT DATA TRACES):
+        - A flowchart MUST ALWAYS represent the GENERALIZED ALGORITHMIC INSTRUCTIONS, loop conditions, and branching logic using symbolic variables (e.g. array A of size N, index i, target T, graph G=(V,E), minimum spanning tree MST).
+        - NEVER bake specific data instances, literals, or sample values into the flowchart's nodes or decision diamonds (e.g., if the user provides sample data like array [5, 2, 8, 12, 1] and target 8, DO NOT make nodes like "Check if 5 == 8" or unroll the loop into static numbers).
+        - The flowchart nodes must represent abstract, reusable control instructions:
+          * Input block: Read Array A, Target T, Size N
+          * Process block: Initialize index i = 0
+          * Decision diamond: Is i < N?
+          * Decision diamond: Is A[i] == T?
+          * Process block: i = i + 1 (with loop-back arrow to loop condition)
+          * Terminator block: Return index i (Found) or Return -1 (Not Found)
+        - SEPARATION OF DATA: If the user provides specific sample data, apply that sample data EXCLUSIVELY to:
+          a) A Step-by-Step Dry-Run / Trace Table in 'solutionMarkdown' (e.g., Iteration 0: i=0, A[0]=5 != 8; Iteration 1: i=1, A[1]=2 != 8; Iteration 2: i=2, A[2]=8 == 8 [Found!]).
+          b) The Driver / Main function in the code block demonstrating the algorithm with that sample data.
+        - Flowcharts output an authentic Mermaid.js diagram inside \`\`\`mermaid ... \`\`\` under \`### 📊 Flowchart / Architecture Diagram\`.
+     2. CODE GENERATION IN ANY REQUESTED LANGUAGE (ALL SCHOOL & COLLEGE LEVEL CURRICULUM):
+        The platform fully supports all programming languages taught at school, high school, college, and university level:
+        - C, C++, Java, Python, JavaScript, TypeScript, SQL, C#, Go, Rust, Kotlin, Swift, PHP, R, Assembly (8085/8086), and Pseudocode.
+        - If the user specifies any of these languages or clicks a language pill (e.g. "💻 C++ Implementation", "☕ Java Implementation", "🐍 Python Implementation", "📝 Pseudocode", "C Implementation", etc.):
+          * You MUST generate the COMPLETE, fully functional, compilable code in that EXACT language inside \`\`\`<lang> ... \`\`\` (or \`\`\`pseudocode ... \`\`\`) in 'solutionMarkdown'.
+          * NEVER confuse languages (e.g. NEVER generate Java when C++ is requested, never generate Python when Java is requested).
+          * Include clean class/method signatures, helpful inline comments, and an executable driver/main function demonstrating the algorithm on a sample input.
+          * NEVER truncate, omit, abbreviate with "... rest of code", or leave the code block incomplete!
+     3. BOTH FLOWCHART & CODE: When the user asks for BOTH (e.g. "flowchart and c++ code", "draw flowchart and write java code"):
+        - You MUST generate BOTH:
+          a) The complete Mermaid diagram under \`### 📊 Flowchart / Architecture Diagram\`
+          b) The complete source code implementation under \`### 💻 <Language> Code Implementation\`
+     4. CODE ONLY / FOLLOW-UP CODE: When the user asks for code only (e.g. "write java code for above", "implement in python", "pseudocode for binary search"):
+        - Focus directly on the complete source code implementation in that language. You do NOT need to regenerate a flowchart unless asked.
+     5. DRY-RUN TRACE TABLES & TEST DATA SUITE ON-DEMAND:
+        When the user explicitly asks for a dry run, trace table, step-by-step trace, test data, or test cases (e.g. "dry trace table", "test data", "trace table for linear search", or clicks '📊 Dry-Run Trace Table' or '🧪 Test Data Suite'):
+        a) STRUCTURED ITERATION TRACE TABLE:
+           Under \`### 📊 Dry-Run Execution Trace\`, output a clear, rigorous Markdown table detailing every iteration / step:
+           | Iteration / Step | Active Variables / Pointers ($i$, $\text{left}$, $\text{right}$, $\text{mid}$) | Condition / Comparison ($A[i] == T$) | Action Taken / Pointer Shift | Return / Output State |
+           Trace through the logic using concrete sample inputs to verify algorithm behavior step-by-step.
+        b) COMPREHENSIVE TEST DATA SUITE:
+           Under \`### 🧪 Test Data & Edge Cases\`, provide structured test scenarios:
+           - **Standard Case:** Typical input array/graph and expected output.
+           - **Boundary / Edge Cases:** Target at first index, target at last index, empty structure ($N=0$), single element ($N=1$).
+           - **Negative / Absent Cases:** Element not in array (smaller than minimum, larger than maximum).
+           - **Duplicate Values:** Array with repeated elements.
+   - MERMAID SYNTAX STRICT RULES:
+     1. In Mermaid diagram node labels, ALWAYS use single quotes inside brackets, e.g.:
+        id['Label text with (parentheses) or [brackets]']
+        id{'Is condition true?'}
+        id(['Start / End'])
+        DO NOT use unescaped double quotes inside Mermaid labels in JSON strings!
+     2. NEVER put bare square brackets [ ] or parentheses ( ) or ? or : inside node labels without enclosing quotes!
+     3. NEVER use $ inside Mermaid diagrams.
+     4. NEVER use reserved keyword 'end' as a bare node ID! Always name end nodes 'endNode' (e.g. id(['End'])) or 'finish'.
+     5. MERMAID UNIQUENESS RULE: Output exactly ONE Mermaid diagram per response. Place the diagram EARLY under \`### 📊 Flowchart / Architecture Diagram\` right after the concept overview so it is never truncated. Never duplicate diagrams.
+   - Detail time and space complexity ($O(V + E)$, $O(N \log N)$) and step-by-step logic.
+   - UNIVERSAL CONVERSATION CONTEXT & MULTI-TURN RESOLUTION RULES (ALL DOMAINS):
+     1. STUDY THE LAST 3 TO 4 CONVERSATION TURNS:
+        Always inspect the immediate recent conversation history (the last 3 to 4 exchanges) to maintain context and continuity across turns.
+     2. HANDLING INSUFFICIENT INFORMATION IN THE CURRENT REQUEST:
+        When the user's current request has insufficient information, is concise, elliptical, uses pronouns ('above', 'this', 'that', 'it', 'previous problem'), or specifies a target language, format, derivation, or calculation without repeating the subject (e.g. "💻 C++ Implementation", "write in Java", "draw flowchart for above", "what is the magnetic field?", "prove this step", "in python", "find its roots", "draw circuit diagram", "simulate in physics space"):
+        a) RESOLVE ACTIVE SUBJECT: Anchor the request to the primary subject, problem, equation, or algorithm established in the last 3 to 4 conversation turns.
+        b) REPLACEMENT & SUPERSEDING RULE: When the user requests an alternative representation, programming language, method, or coordinate system (e.g. requested C++ after Java, Python after C++, polar coordinates after Cartesian, step-by-step derivation after direct formula), the new request COMPLETELY SUPERSEDES the previous one. Generate the complete, self-contained response strictly for the NEW requested language/method. NEVER carry over or duplicate the superseded language or method!
+        c) SELF-CONTAINED COMPLETENESS: Always produce a complete, high-quality answer for the active topic as specified by the new request.
+     3. MISSING CONTEXT / AMBIGUOUS REQUESTS:
+        If the conversation history contains NO preceding subject (e.g. at the start of a session, or if previous turns are completely unrelated) and the request has insufficient information to determine what is being asked (e.g. user just asks 'solve it' or 'C++ Implementation' with no prior problem):
+        - Do NOT guess or hallucinate an unrelated problem.
+        - Politely inform the user in 'speechResponse' and 'solutionMarkdown' that you need to know which topic, equation, circuit, or algorithm they would like to explore, and offer 2-3 relevant domain examples to get started.
+     4. NEW TOPIC / SUBJECT SWITCHING (ZERO CONTEXT BLEEDING):
+        If the current user prompt specifies a completely new STEM scenario, physics problem, circuit, or algorithm (e.g., user asks for "free body diagram of block of mass m1 and mass m2 connected over a pulley..." after an LCR circuit, or asks for "Kruskal's algorithm" after "Linear search"):
+        - Treat the new topic as a FRESH, INDEPENDENT problem.
+        - Solve the new topic completely with its own governing equations, diagram, and physics simulation without carrying over any numbers, formulas, or concepts from the unrelated previous problem!
+7. In 'speechResponse', state the explanation and final answer naturally so it sounds clear when spoken aloud.${verbosityInstruction}`
                 : whiteboardSystemPrompt;
+
+            const generateDynamicFollowUps = (queryText, solutionMarkdown, existingFollowUps = []) => {
+                const combined = `${queryText} ${solutionMarkdown || ''}`.toLowerCase();
+                const isCsOrAlgorithm = /\b(algorithm|flowchart|binary search|linear search|search|sort|sorting|bfs|dfs|dijkstra|kruskal|prim|tree|graph|hash|queue|stack|heap|dynamic programming|dp\b|recursion|c\+\+|cpp|java|python|javascript|pseudocode|pseudo code|code|implement)\b/i.test(combined);
+
+                if (isCsOrAlgorithm) {
+                    const hasCpp = /```(?:cpp|c\+\+)\b/i.test(solutionMarkdown);
+                    const hasJava = /```java\b/i.test(solutionMarkdown);
+                    const hasPython = /```python\b/i.test(solutionMarkdown);
+                    const hasPseudocode = /```(?:pseudo|pseudocode|text)\b/i.test(solutionMarkdown);
+                    const hasTraceTable = /###.*(?:trace|dry[- ]run)/i.test(solutionMarkdown) || /\|.*iteration.*\|/i.test(solutionMarkdown);
+
+                    const pills = [];
+                    if (!hasCpp) pills.push('💻 C++ Implementation');
+                    if (!hasJava) pills.push('☕ Java Implementation');
+                    if (!hasPython) pills.push('🐍 Python Implementation');
+                    if (!hasTraceTable) pills.push('📊 Dry-Run Trace Table');
+                    if (!hasPseudocode) pills.push('📝 Pseudocode');
+                    pills.push('🧪 Test Data Suite');
+                    pills.push('⏱️ Time & Space Complexity');
+                    pills.push('🔍 Step-by-Step Trace');
+
+                    const relevantExisting = (existingFollowUps || []).filter(p => 
+                        !/give a real-world example|new clean board|new blank board|show core formula|formula/i.test(p)
+                    );
+                    const seenNames = new Set();
+                    const merged = [];
+                    for (const pill of [...pills.slice(0, 4), ...relevantExisting, ...pills.slice(4)]) {
+                        if (!pill || typeof pill !== 'string') continue;
+                        const key = pill.replace(/^[^\w]+/, '').trim().toLowerCase();
+                        if (!seenNames.has(key)) {
+                            seenNames.add(key);
+                            merged.push(pill);
+                        }
+                        if (merged.length >= 5) break;
+                    }
+                    return merged;
+                }
+
+                // For Math / Physics / STEM
+                const isMathOrPhysics = /\b(solve|equation|integral|derivative|calculus|triangle|circle|matrix|physics|force|velocity|acceleration|projectile|ohm|newton|snell|carnot)\b/i.test(combined);
+                if (isMathOrPhysics) {
+                    const cleanedExisting = (existingFollowUps || []).filter(p => !/new clean board|new blank board/i.test(p));
+                    if (cleanedExisting.length >= 3) return cleanedExisting.slice(0, 4);
+                    return [
+                        '🔢 Try with different numbers',
+                        '📐 Step-by-step derivation',
+                        '📈 Graph on coordinate axes',
+                        '💡 Physical intuition & examples'
+                    ];
+                }
+
+                // Default clean educational pills
+                const cleaned = (existingFollowUps || []).filter(p => !/new clean board|new blank board/i.test(p));
+                if (cleaned.length >= 3) return cleaned.slice(0, 4);
+                return [
+                    '💡 Practical example',
+                    '📐 Key formulas & rules',
+                    '📝 Summary & key takeaways',
+                    '🧪 Test my understanding'
+                ];
+            };
 
             // Dispatch to Unified AI Completion (OpenAI Paid -> Anthropic -> DeepSeek -> OpenRouter -> Groq -> Gemini -> SambaNova)
             try {
+                // Multi-turn Conversation Context Management
+                // Cleanly assemble messages from the last 3-4 conversation exchanges (up to 8 turns) without synthetic injections
                 const messagesToSend = [];
-                if (Array.isArray(context.conversationHistory) && context.conversationHistory.length > 0) {
-                    context.conversationHistory.slice(-8).forEach(turn => {
-                        if (turn && turn.content) {
+                const cleanText = (text || '').trim();
+                const convHistory = (Array.isArray(context.conversationHistory) && context.conversationHistory.length > 0)
+                    ? context.conversationHistory
+                    : [];
+
+                if (convHistory.length > 0) {
+                    // Filter out null or empty turns
+                    const validHistory = convHistory.filter(turn => turn && turn.content);
+
+                    // If the current user request was already pushed to history by the caller, don't duplicate it
+                    const lastTurn = validHistory[validHistory.length - 1];
+                    const isLastAlreadyCurrent = lastTurn &&
+                        lastTurn.role === 'user' &&
+                        typeof lastTurn.content === 'string' &&
+                        lastTurn.content.trim().toLowerCase() === cleanText.toLowerCase();
+
+                    const historyToInclude = isLastAlreadyCurrent ? validHistory.slice(0, -1) : validHistory;
+
+                    // Study the last 3 to 4 conversation exchanges (up to 8 turns)
+                    const recentTurns = historyToInclude.slice(-8);
+
+                    recentTurns.forEach(turn => {
+                        let contentStr = '';
+                        if (typeof turn.content === 'string') {
+                            contentStr = turn.content;
+                        } else if (turn.content && typeof turn.content === 'object') {
+                            contentStr = turn.content.solutionMarkdown || turn.content.speechResponse || JSON.stringify(turn.content);
+                        }
+                        if (contentStr.trim()) {
                             messagesToSend.push({
                                 role: turn.role === 'assistant' ? 'assistant' : 'user',
-                                content: typeof turn.content === 'string' ? turn.content : JSON.stringify(turn.content)
+                                content: contentStr.trim()
                             });
                         }
                     });
                 }
-                messagesToSend.push({ role: 'user', content: `Spoken input: "${text}"` });
+
+                // Append the clean, unadorned current user request without synthetic prompt injections
+                messagesToSend.push({ role: 'user', content: cleanText });
 
                 const completionRes = await this.executeChatCompletion({
                     systemPrompt: systemPromptToUse,
                     messages: messagesToSend,
                     preferredProvider: context.preferredProvider || this.preferredProvider || 'auto',
                     temperature: 0.1,
+                    maxTokens: 8192,
                     jsonMode: true
                 });
 
@@ -3847,7 +3784,13 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                 if (!parsed && completionRes.text && completionRes.text.trim().length > 15) {
                     const rawTxt = completionRes.text.trim();
                     const rawSpeech = rawTxt.match(/"speechResponse"\s*:\s*"((?:[^"\\]|\\.)*)"/i)?.[1]?.replace(/\\n/g, '\n')?.replace(/\\"/g, '"');
-                    const rawSol = rawTxt.match(/"solutionMarkdown"\s*:\s*"((?:[^"\\]|\\.)*)"/i)?.[1]?.replace(/\\n/g, '\n')?.replace(/\\"/g, '"');
+                    let rawSol = rawTxt.match(/"solutionMarkdown"\s*:\s*"([\s\S]*?)(?="\s*,\s*"(?:diagram|graphEquations|plottedPoints|physicsAction|suggestedFollowUps|actions|canvasAction|mcpUsed|modelUsed|providerUsed)"|\s*}\s*$)/i)?.[1];
+                    if (!rawSol) {
+                        rawSol = rawTxt.match(/"solutionMarkdown"\s*:\s*"((?:[^"\\]|\\.)*)"/i)?.[1];
+                    }
+                    if (rawSol) {
+                        rawSol = rawSol.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"');
+                    }
                     const rawSvg = rawTxt.match(/<svg[\s\S]*?<\/svg>/i)?.[0];
                     const rawTitle = rawTxt.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/i)?.[1];
 
@@ -3867,12 +3810,7 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                         speechResponse: cleanSpeech.substring(0, 250),
                         solutionMarkdown: rawSol || rawTxt,
                         ...(rawSvg ? { diagram: { type: 'svg', title: rawTitle || 'Diagram', svg: rawSvg } } : {}),
-                        suggestedFollowUps: [
-                            '💡 Give a real-world example',
-                            '📐 Show core formula',
-                            '📝 Step-by-step derivation',
-                            '📄 New clean board'
-                        ],
+                        suggestedFollowUps: generateDynamicFollowUps(text, rawSol || rawTxt, []),
                         actions: []
                     };
                 }
@@ -3889,11 +3827,279 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                 }
 
                 if (parsed && (parsed.translatedCommand || parsed.recognized || parsed.actions || parsed.type === 'solution' || parsed.type === 'canvas_generation' || parsed.solutionMarkdown || parsed.speechResponse)) {
-                    // Repair any control-char-corrupted LaTeX commands and ensure structured scientific markdown
+                    // Repair any control-char-corrupted LaTeX commands, isolate code blocks, and ensure structured scientific markdown
                     const repairLatexAndStructure = (str) => {
                         if (!str || typeof str !== 'string') return '';
-                        let s = str
-                            // Restore JSON control characters that collided with LaTeX commands (\f, \t, \b, \r)
+                        let s = str;
+
+                        // 1. Remove duplicate bare "mermaid" word preceding a mermaid block
+                        s = s.replace(/(?:^|\n)mermaid\s*\n\s*(```mermaid|flowchart|graph|sequenceDiagram|classDiagram|erDiagram|stateDiagram)/gi, '\n$1');
+
+                        // 2. Normalize code fences that contain Mermaid diagrams (e.g. ``` without lang or ```flowchart)
+                        s = s.replace(/```(?:flowchart|graph|sequenceDiagram|classDiagram|erDiagram|stateDiagram)?\s*\n\s*(flowchart\s+(?:TD|TB|BT|RL|LR)|graph\s+(?:TD|TB|BT|RL|LR)|sequenceDiagram|classDiagram|erDiagram|stateDiagram(?:-v2)?)/gi, '```mermaid\n$1');
+
+                        // 3. Ensure unclosed ```mermaid blocks are closed
+                        if (s.includes('```mermaid')) {
+                            const afterMermaid = s.slice(s.indexOf('```mermaid') + 10);
+                            if (!afterMermaid.includes('```')) {
+                                s = s.trimEnd() + '\n```\n';
+                            }
+                        }
+
+                        // 3b. Wrap bare Mermaid blocks that lack code fences into ```mermaid ... ```
+                        if (!s.includes('```mermaid')) {
+                            const bareMermaidRegex = /(?:^|\n)(flowchart\s+(?:TD|TB|BT|RL|LR)|graph\s+(?:TD|TB|BT|RL|LR)|sequenceDiagram|classDiagram|erDiagram|stateDiagram(?:-v2)?)([\s\S]*?)(?=(?:\n#{1,4}\s|\n\n[A-Z]|\n```|$))/;
+                            if (bareMermaidRegex.test(s)) {
+                                s = s.replace(bareMermaidRegex, (match, type, body) => {
+                                    return `\n\`\`\`mermaid\n${type}${body.trimEnd()}\n\`\`\`\n`;
+                                });
+                            }
+                        }
+
+                        // 4. Deduplicate multiple ```mermaid code blocks so only the first canonical block is kept
+                        let mermaidBlockCount = 0;
+                        s = s.replace(/(```mermaid[\s\S]*?```)/gi, (match) => {
+                            mermaidBlockCount++;
+                            if (mermaidBlockCount > 1) {
+                                return '';
+                            }
+                            return match;
+                        });
+
+                        // 5. Normalize bare programming / pseudocode blocks (e.g. "java\nimport ... " or "pseudocode\nAlgorithm ...") lacking code fences
+                        s = s.replace(/(?:^|\n)(java|python|cpp|c\+\+|javascript|typescript|c|go|rust|sql|pseudocode|pseudo)\s*\n\s*((?:import|public\s+class|class|def|from|#include|package|const|function|var|let|SELECT|CREATE|Algorithm|procedure|while|for|if)\b[\s\S]*?)(?=(?:\n#{1,4}\s|\n```|$))/gi, (match, lang, code) => {
+                            const l = lang.toLowerCase();
+                            const cleanLang = l === 'c++' ? 'cpp' : (l === 'pseudo' ? 'pseudocode' : l);
+                            return `\n\`\`\`${cleanLang}\n${code.trimEnd()}\n\`\`\`\n`;
+                        });
+
+                        // 6. CRITICAL: Stash all fenced code blocks so code lines NEVER have $ or math syntax injected
+                        const stashedCodeBlocks = [];
+                        s = s.replace(/(```[\s\S]*?```)/g, (match) => {
+                            const token = `@@SERVER_CODE_BLOCK_${stashedCodeBlocks.length}@@`;
+                            let processedCode = match;
+
+                            // Handle Mermaid vs Programming code blocks specifically
+                            if (/^```mermaid/i.test(match)) {
+                                processedCode = match.replace(/^```mermaid([\s\S]*?)```$/i, (_, body) => {
+                                    let b = body;
+                                    // Strip any $ inside Mermaid labels
+                                    b = b.replace(/\$([^$\n]+?)\$/g, '$1');
+
+                                    // Determine diagram type
+                                    const isNonFlowchart = /^\s*(?:sequenceDiagram|classDiagram|erDiagram|stateDiagram)/m.test(b);
+                                    if (isNonFlowchart) {
+                                        return `\`\`\`mermaid\n${b.trim()}\n\`\`\``;
+                                    }
+
+                                    const shapes = [
+                                        { open: '([', close: '])', isTwo: true },
+                                        { open: '((', close: '))', isTwo: true },
+                                        { open: '{{', close: '}}', isTwo: true },
+                                        { open: '[[', close: ']]', isTwo: true },
+                                        { open: '[(', close: ')]', isTwo: true },
+                                        { open: '{', close: '}', isTwo: false },
+                                        { open: '[', close: ']', isTwo: false },
+                                        { open: '(', close: ')', isTwo: false }
+                                    ];
+
+                                    const lines = b.split('\n');
+                                    let inSubgraph = 0;
+                                    let hasEndNodeUsage = false;
+                                    let hasEndNodeDef = false;
+                                    const sanitizedLines = [];
+
+                                    for (const l of lines) {
+                                        let line = l;
+                                        const trimmed = line.trim();
+                                        if (!trimmed || trimmed.startsWith('%%')) continue;
+
+                                        if (trimmed.startsWith('subgraph')) {
+                                            inSubgraph++;
+                                            sanitizedLines.push(line);
+                                            continue;
+                                        }
+
+                                        if (trimmed === 'end') {
+                                            if (inSubgraph > 0) {
+                                                inSubgraph--;
+                                                sanitizedLines.push(line);
+                                            } else {
+                                                sanitizedLines.push('    endNode(["End"])');
+                                                hasEndNodeDef = true;
+                                            }
+                                            continue;
+                                        }
+
+                                        if (trimmed.startsWith('classDef') || trimmed.startsWith('style')) {
+                                            sanitizedLines.push(line);
+                                            continue;
+                                        }
+
+                                        // Drop dangling incomplete lines from truncation
+                                        if (/^[a-zA-Z0-9_-]+\s*(?:-->|---|==>|-\.->)\s*$/.test(trimmed)) continue;
+                                        if (/^[a-zA-Z0-9_-]+\s*(?:\[|\(|\{|\(\[|\(\(|\{\{|\[\[|\[\()\s*"?$/.test(trimmed)) continue;
+
+                                        // A. Remove trailing semicolons after node definitions
+                                        line = line.replace(/\]\s*;\s*(?=(?:-->|---|==>|-\.->|\||\s*$))/g, '] ');
+                                        line = line.replace(/\)\s*;\s*(?=(?:-->|---|==>|-\.->|\||\s*$))/g, ') ');
+                                        line = line.replace(/\}\s*;\s*(?=(?:-->|---|==>|-\.->|\||\s*$))/g, '} ');
+                                        line = line.replace(/;\s*$/g, '');
+
+                                        // B. Replace illegal single dash arrow " -> " with valid flowchart arrow " --> "
+                                        line = line.replace(/(^|[^->=.])\s*->\s+([^->=.])/g, '$1 --> $2');
+
+                                        // C. Convert bare text arrow: A -- label --> B to A -->|"label"| B
+                                        line = line.replace(/\s+--\s+([^->\n|]+?)\s+-->\s+/g, (match, edgeLabel) => {
+                                            const cleanEdge = edgeLabel.trim().replace(/^"+|"+$/g, '').replace(/"/g, "'");
+                                            return ` -->|"${cleanEdge}"| `;
+                                        });
+
+                                        // D. Stash and safely quote pipe edge labels
+                                        const stashedEdgeLabels = [];
+                                        line = line.replace(/\|([^|\n]+)\|/g, (match, label) => {
+                                            let clean = label.trim();
+                                            if (clean.startsWith('"') && clean.endsWith('"') && clean.length >= 2) {
+                                                clean = clean.slice(1, -1);
+                                            }
+                                            clean = clean.replace(/"/g, "'").replace(/\$/g, '');
+                                            const token = `__MERMAID_EDGE_${stashedEdgeLabels.length}__`;
+                                            stashedEdgeLabels.push(`|"${clean}"|`);
+                                            return token;
+                                        });
+
+                                        // E. Replace reserved keyword "end" when used as a node ID or arrow target
+                                        line = line.replace(/(-->|---|==>|-\.->)\s*end\b/g, (m, arrow) => {
+                                            hasEndNodeUsage = true;
+                                            return `${arrow} endNode`;
+                                        });
+                                        line = line.replace(/(__MERMAID_EDGE_\d+__)\s*end\b/g, (m, edge) => {
+                                            hasEndNodeUsage = true;
+                                            return `${edge} endNode`;
+                                        });
+                                        line = line.replace(/\bend\s*(-->|---|==>|-\.->)/g, (m, arrow) => {
+                                            hasEndNodeUsage = true;
+                                            return `endNode ${arrow}`;
+                                        });
+                                        line = line.replace(/(^|\s|-->|---|==>|-\.->)(end)\s*([\[\(\{])/g, (m, p, _, op) => {
+                                            hasEndNodeDef = true;
+                                            return `${p}endNode${op}`;
+                                        });
+
+                                        if (/\bendNode\b/.test(line)) {
+                                            hasEndNodeUsage = true;
+                                            if (/endNode\s*[\[\(\{]/.test(line)) hasEndNodeDef = true;
+                                        }
+
+                                        // F. Deterministic Shape AST Tokenizer
+                                        let result = '';
+                                        let i = 0;
+                                        while (i < line.length) {
+                                            const idMatch = line.slice(i).match(/^([a-zA-Z0-9_-]+)/);
+                                            if (!idMatch) {
+                                                result += line[i];
+                                                i++;
+                                                continue;
+                                            }
+
+                                            const nodeId = idMatch[1];
+                                            let afterIdIndex = i + nodeId.length;
+                                            let wsCount = 0;
+                                            while (afterIdIndex + wsCount < line.length && (line[afterIdIndex + wsCount] === ' ' || line[afterIdIndex + wsCount] === '\t')) {
+                                                wsCount++;
+                                            }
+
+                                            const candidateSlice = line.slice(afterIdIndex + wsCount);
+                                            let matchOpener = null;
+                                            for (const shape of shapes) {
+                                                if (candidateSlice.startsWith(shape.open)) {
+                                                    if (!shape.isTwo) {
+                                                        if (shape.open === '[' && (candidateSlice.startsWith('[[') || candidateSlice.startsWith('[('))) continue;
+                                                        if (shape.open === '(' && (candidateSlice.startsWith('([') || candidateSlice.startsWith('(('))) continue;
+                                                        if (shape.open === '{' && candidateSlice.startsWith('{{')) continue;
+                                                    }
+                                                    matchOpener = shape;
+                                                    break;
+                                                }
+                                            }
+
+                                            if (!matchOpener) {
+                                                result += nodeId;
+                                                i += nodeId.length;
+                                                continue;
+                                            }
+
+                                            const contentStartIndex = afterIdIndex + wsCount + matchOpener.open.length;
+                                            let closeIndex = -1;
+
+                                            if (line[contentStartIndex] === '"') {
+                                                const endQuoteIndex = line.indexOf('"', contentStartIndex + 1);
+                                                if (endQuoteIndex !== -1 && line.slice(endQuoteIndex + 1).startsWith(matchOpener.close)) {
+                                                    closeIndex = endQuoteIndex + 1;
+                                                }
+                                            }
+
+                                            if (closeIndex === -1) {
+                                                let searchPos = contentStartIndex;
+                                                while (searchPos < line.length) {
+                                                    const foundPos = line.indexOf(matchOpener.close, searchPos);
+                                                    if (foundPos === -1) break;
+                                                    const afterClose = line.slice(foundPos + matchOpener.close.length);
+                                                    if (/^(?:\s*$|\s+(?:-->|---|==>|-\.->|&)|-->|---|==>|-\.->|&|;)/.test(afterClose)) {
+                                                        closeIndex = foundPos;
+                                                        break;
+                                                    }
+                                                    searchPos = foundPos + 1;
+                                                }
+                                            }
+
+                                            if (closeIndex === -1) {
+                                                closeIndex = line.lastIndexOf(matchOpener.close);
+                                            }
+
+                                            if (closeIndex !== -1 && closeIndex >= contentStartIndex) {
+                                                let rawLabel = line.slice(contentStartIndex, closeIndex).trim();
+                                                if (rawLabel.startsWith('"') && rawLabel.endsWith('"') && rawLabel.length >= 2) {
+                                                    rawLabel = rawLabel.slice(1, -1);
+                                                }
+                                                const safeLabel = `"${rawLabel.replace(/"/g, "'").replace(/\$/g, '')}"`;
+                                                result += `${nodeId}${matchOpener.open}${safeLabel}${matchOpener.close}`;
+                                                i = closeIndex + matchOpener.close.length;
+                                            } else {
+                                                result += nodeId;
+                                                i += nodeId.length;
+                                            }
+                                        }
+
+                                        // Restore stashed edge labels
+                                        result = result.replace(/__MERMAID_EDGE_(\d+)__/g, (_, idx) => stashedEdgeLabels[Number(idx)] || '');
+                                        sanitizedLines.push(result);
+                                    }
+
+                                    if (hasEndNodeUsage && !hasEndNodeDef) {
+                                        sanitizedLines.push('    endNode(["End"])');
+                                    }
+
+                                    let finalChart = sanitizedLines.join('\n').trim();
+                                    if (!/^\s*(flowchart|graph|sequenceDiagram|classDiagram|erDiagram|stateDiagram)/m.test(finalChart)) {
+                                        finalChart = `flowchart TD\n${finalChart}`;
+                                    }
+                                    return `\`\`\`mermaid\n${finalChart}\n\`\`\``;
+                                });
+                            } else {
+                                // Programming code blocks: strip any accidental $ delimiters
+                                processedCode = match.replace(/^```([a-zA-Z0-9_-]*\n)([\s\S]*?)```$/, (_, header, body) => {
+                                    const strippedBody = body.replace(/\$([^$\n]+?)\$/g, '$1');
+                                    return `\`\`\`${header}${strippedBody}\`\`\``;
+                                });
+                            }
+
+                            stashedCodeBlocks.push(processedCode);
+                            return token;
+                        });
+
+                        // 6. Restore JSON control characters that collided with LaTeX commands (\f, \t, \b, \r)
+                        s = s
                             .replace(/\x0c(rac|orall|lat|box|ootnotesize)/g, '\\f$1')
                             .replace(/\x09(imes|ext|extbf|extit|extrm|heta|an|anh|au|riangle|o\b|herefore|ilde|op\b|frac)/g, '\\t$1')
                             .replace(/\x08(eta|oxed|ar\b|f\b|inom|egin|ig|ullet|ot\b|ackslash|ecause)/g, '\\b$1')
@@ -3902,13 +4108,21 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                             .replace(/\\\[([\s\S]*?)\\\]/g, '$$$$$1$$$$')
                             .replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
 
-                        // Convert common plain-English math phrases into scientific LaTeX if not already inside $...$
+                        // 7. Convert common plain-English math phrases into scientific LaTeX if not already inside $...$
                         s = s
                             .replace(/\b([a-zA-Z])\s+squared\b/gi, '$$$1^2$$')
                             .replace(/\b([a-zA-Z])\s+cubed\b/gi, '$$$1^3$$')
                             .replace(/\bsquare\s+root\s+of\s+([a-zA-Z0-9_()+-]+)\b/gi, '$$\\sqrt{$1}$$')
                             .replace(/\bpi\s*\*\s*r\^2\b/gi, '\\pi r^2')
                             .replace(/\b1\/2\s*\*\s*([a-zA-Z0-9]+)\s*\*\s*([a-zA-Z0-9]+)\b/g, '\\frac{1}{2} \\cdot $1 \\cdot $2');
+
+                        // 8. Sanitize Time & Space Complexity notation in markdown text (e.g. O(V + E) -> $O(V + E)$ or $\mathcal{O}(V + E)$)
+                        s = s.replace(/(?:Time\s+Complexity|Space\s+Complexity|Time|Space)\s*:\s*(O\([a-zA-Z0-9_\s*+\-^/\\log]+\))/gi, (m, comp) => {
+                            return m.replace(comp, `$${comp}$`);
+                        });
+
+                        // 9. Restore stashed code blocks untouched
+                        s = s.replace(/@@SERVER_CODE_BLOCK_(\d+)@@/g, (_, idx) => stashedCodeBlocks[Number(idx)] || '');
 
                         return s;
                     };
@@ -3919,8 +4133,20 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                         parsed.solutionMarkdown = repairLatexAndStructure(parsed.speechResponse);
                     }
 
-                    // Ensure SchemDraw Python code is compiled and attached for electrical circuits
-                    if (mcpManager && typeof mcpManager.ensureSchemDrawCode === 'function') {
+                    // Strict Topic Isolation: For algorithm and flowchart queries, purge any math graphEquations or plottedPoints from previous turns
+                    if (isAlgorithmOrCsDiagram || /\b(algorithm|flowchart|flow\s*chart|binary\s*search|linear\s*search|bubble\s*sort|sorting|bfs|dfs|dijkstra|uml|erd)\b/i.test(text)) {
+                        parsed.graphEquations = [];
+                        parsed.plottedPoints = [];
+                    }
+
+                    // Ensure dynamic STEM domain vector SVG (Circuit SchemDraw, Chemistry RDKit, Biology PDB, Physics FBD/Optics, Math Geometry)
+                    if (mcpManager && typeof mcpManager.ensureDiagramForResponse === 'function') {
+                        try {
+                            await mcpManager.ensureDiagramForResponse(text, parsed);
+                        } catch (mcpErr) {
+                            console.warn('[AIService] Failed in ensureDiagramForResponse:', mcpErr.message);
+                        }
+                    } else if (mcpManager && typeof mcpManager.ensureSchemDrawCode === 'function') {
                         try {
                             await mcpManager.ensureSchemDrawCode(text, parsed);
                         } catch (mcpCodeErr) {
@@ -3928,7 +4154,7 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                         }
                     }
 
-                    // Package mathematical SVG diagram if produced by LLM or SchemDraw MCP
+                    // Package STEM SVG diagram if produced by LLM, SchemDraw, or STEM Synthesizer MCP
                     const rawSvg = parsed.diagram?.svg || parsed.svg;
                     const diagramCode = parsed.diagram?.code || parsed.schemdrawCode || null;
                     if (rawSvg && typeof rawSvg === 'string' && rawSvg.includes('<svg')) {
@@ -3938,12 +4164,18 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                                 diagramType: 'svg',
                                 svg: rawSvg,
                                 code: diagramCode,
+                                title: parsed.diagram?.title || 'Scientific Diagram',
                                 question: text,
                                 solutionMarkdown: parsed.solutionMarkdown,
                                 speechResponse: parsed.speechResponse
                             };
                         } else {
+                            parsed.canvasAction.diagramType = 'svg';
+                            parsed.canvasAction.svg = rawSvg;
+                            parsed.canvasAction.title = parsed.diagram?.title || parsed.canvasAction.title || 'Scientific Diagram';
                             parsed.canvasAction.code = diagramCode || parsed.canvasAction.code;
+                            if (!parsed.canvasAction.question) parsed.canvasAction.question = text;
+                            if (!parsed.canvasAction.solutionMarkdown) parsed.canvasAction.solutionMarkdown = parsed.solutionMarkdown;
                         }
                         if (!Array.isArray(parsed.actions)) parsed.actions = [];
                         const hasSvgAct = parsed.actions.some(a => a.type === 'CREATE_OBJECT' && (a.objectType === 'svg' || a.svg));
@@ -3953,13 +4185,15 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                                 objectType: 'svg',
                                 svg: rawSvg,
                                 code: diagramCode,
-                                title: parsed.diagram?.title || 'Mathematical Diagram',
+                                title: parsed.diagram?.title || 'Scientific Diagram',
                                 width: 380,
                                 height: 380
                             });
                         } else {
                             parsed.actions.forEach(a => {
                                 if (a.type === 'CREATE_OBJECT' && (a.objectType === 'svg' || a.svg)) {
+                                    a.svg = rawSvg;
+                                    a.title = parsed.diagram?.title || a.title || 'Scientific Diagram';
                                     a.code = diagramCode || a.code;
                                 }
                             });
@@ -4149,228 +4383,22 @@ MANDATORY FORMATTING & SCIENTIFIC NOTATION RULES FOR 'solutionMarkdown':
                         });
                     }
 
-                    // Deterministic Physics Action inference for all Class XI & XII chapters
-                    const inferPhysicsAction = (queryText = '', solMarkdown = '', existing = null) => {
-                        if (existing && existing.simulationType) {
-                            return {
-                                chapter: existing.chapter || 'projectile_motion',
-                                simulationType: existing.simulationType,
-                                parameters: existing.parameters || {}
-                            };
+                    // Validate physicsAction if provided by the LLM (No hardcoded regex fallbacks or assumptions)
+                    parsed.physicsAction = (parsed.physicsAction && typeof parsed.physicsAction === "object" && parsed.physicsAction.simulationType)
+                        ? {
+                            chapter: parsed.physicsAction.chapter || "projectile_motion",
+                            simulationType: parsed.physicsAction.simulationType,
+                            parameters: parsed.physicsAction.parameters || {}
                         }
+                        : null;
 
-                        const combined = `${queryText} ${solMarkdown}`.toLowerCase();
-
-                        const num = (regex, fallback) => {
-                            const m = combined.match(regex);
-                            if (m) {
-                                const v = parseFloat(m[1]);
-                                if (!isNaN(v)) return v;
-                            }
-                            return fallback;
-                        };
-
-                        // 1. Projectile Motion
-                        if (/\b(projectile|trajectory|launch(?:ed)?\s+at\s+angle|angle\s+of\s+projection|horizontal\s+range|maximum\s+height\s+of\s+projectile|flight\s+time)\b/i.test(combined)) {
-                            return {
-                                chapter: 'projectile_motion',
-                                simulationType: 'projectile',
-                                parameters: {
-                                    velocity: num(/(?:velocity|speed|v0?|u)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 25),
-                                    angle: num(/(?:angle|theta|θ)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 45),
-                                    gravity: num(/(?:gravity|g)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 9.8),
-                                    launchHeight: num(/(?:height|h0?)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 0)
-                                }
-                            };
-                        }
-
-                        // 2. Incline Plane & Friction / FBD
-                        if (/\b(inclined?\s*plane|incline|fbd|free\s*body\s*diagram|coefficient\s+of\s+friction|friction\s*force|sliding\s+down)\b/i.test(combined)) {
-                            return {
-                                chapter: 'newton_laws_fbd',
-                                simulationType: 'incline_fbd',
-                                parameters: {
-                                    angle: num(/(?:angle|theta|θ|incline)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 30),
-                                    mass: num(/(?:mass|m)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 5),
-                                    friction: num(/(?:friction|mu|μ)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 0.2),
-                                    gravity: 9.8
-                                }
-                            };
-                        }
-
-                        // 3. Pulley / Atwood Machine
-                        if (/\b(pulley|atwood|masses\s+connected\s+by|tension\s+in\s+string)\b/i.test(combined)) {
-                            return {
-                                chapter: 'newton_laws_fbd',
-                                simulationType: 'pulley',
-                                parameters: {
-                                    m1: num(/(?:m1|mass\s*1|first\s*mass)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 3),
-                                    m2: num(/(?:m2|mass\s*2|second\s*mass)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 5),
-                                    gravity: 9.8
-                                }
-                            };
-                        }
-
-                        // 4. SHM / Harmonic Oscillator / Pendulum
-                        if (/\b(simple\s*harmonic|shm|spring\s*mass|spring\s*constant|pendulum|oscillation|time\s*period\s+of\s+oscillation)\b/i.test(combined)) {
-                            const isPend = /\b(pendulum)\b/i.test(combined);
-                            return {
-                                chapter: 'simple_harmonic_motion',
-                                simulationType: 'shm_oscillator',
-                                parameters: {
-                                    mode: isPend ? 'pendulum' : 'spring',
-                                    mass: num(/(?:mass|m)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 1),
-                                    k: num(/(?:spring\s*constant|k)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 50),
-                                    amplitude: num(/(?:amplitude|a)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 1.5),
-                                    length: num(/(?:length|l)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 1.0)
-                                }
-                            };
-                        }
-
-                        // 5. Gravitation & Kepler Orbit
-                        if (/\b(kepler|planetary\s*orbit|gravitational\s*force|satellite\s*orbit|escape\s*velocity)\b/i.test(combined)) {
-                            return {
-                                chapter: 'gravitation',
-                                simulationType: 'gravity_orbit',
-                                parameters: {
-                                    orbitRadius: num(/(?:radius|r)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 1.5),
-                                    centralMass: num(/(?:mass|m)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 10),
-                                    speed: num(/(?:speed|velocity|v)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 2.5)
-                                }
-                            };
-                        }
-
-                        // 6. Carnot Engine & Thermodynamics
-                        if (/\b(carnot|heat\s*engine|efficiency\s+of\s+engine|thermal\s*reservoir|isothermal|adiabatic)\b/i.test(combined)) {
-                            return {
-                                chapter: 'thermodynamics',
-                                simulationType: 'carnot_engine',
-                                parameters: {
-                                    th: num(/(?:t_?h|hot|source)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 600),
-                                    tc: num(/(?:t_?c|cold|sink)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 300)
-                                }
-                            };
-                        }
-
-                        // 7. Coulomb Force & Electrostatic Field
-                        if (/\b(coulomb|electric\s*field|point\s*charge|electrostatic\s*force)\b/i.test(combined)) {
-                            return {
-                                chapter: 'electrostatics',
-                                simulationType: 'coulomb_field',
-                                parameters: {
-                                    q1: num(/(?:q_?1|first\s*charge)\s*(?:=|is|of)?\s*(-?\d+(?:\.\d+)?)/i, 5),
-                                    q2: num(/(?:q_?2|second\s*charge)\s*(?:=|is|of)?\s*(-?\d+(?:\.\d+)?)/i, -5),
-                                    distance: num(/(?:distance|r|separation)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 2)
-                                }
-                            };
-                        }
-
-                        // 8. DC Circuits & Ohm's Law
-                        if (/\b(ohm'?s?\s*law|resistor|series\s+parallel|kirchhoff|equivalent\s*resistance|circuit)\b/i.test(combined)) {
-                            return {
-                                chapter: 'current_electricity',
-                                simulationType: 'circuit_dc',
-                                parameters: {
-                                    voltage: num(/(?:voltage|v|emf)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 12),
-                                    r1: num(/(?:r_?1|resistor\s*1)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 10),
-                                    r2: num(/(?:r_?2|resistor\s*2)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 20),
-                                    connection: /\bparallel\b/i.test(combined) ? 'parallel' : 'series'
-                                }
-                            };
-                        }
-
-                        // 9. Lorentz Force & Magnetism
-                        if (/\b(lorentz|magnetic\s*force|charge\s+moving\s+in\s+magnetic|b-field|cyclotron)\b/i.test(combined)) {
-                            return {
-                                chapter: 'magnetism_lorentz',
-                                simulationType: 'lorentz_force',
-                                parameters: {
-                                    charge: num(/(?:charge|q)\s*(?:=|is|of)?\s*(-?\d+(?:\.\d+)?)/i, 1),
-                                    velocity: num(/(?:speed|velocity|v)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 30),
-                                    bField: num(/(?:b(?:field)?|magnetic\s*field)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 0.5)
-                                }
-                            };
-                        }
-
-                        // 10. AC Circuits / Series LCR
-                        if (/\b(lcr|resonant\s*frequency|impedance|alternating\s*current|inductor\s+and\s+capacitor|ac\s+circuit)\b/i.test(combined)) {
-                            return {
-                                chapter: 'emi_ac_circuits',
-                                simulationType: 'lcr_circuit',
-                                parameters: {
-                                    r: num(/(?:r|resistance)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 50),
-                                    l: num(/(?:l|inductance)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 0.2),
-                                    c: num(/(?:c|capacitance)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 100),
-                                    freq: num(/(?:frequency|f)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 50)
-                                }
-                            };
-                        }
-
-                        // 11. Ray Optics (Refraction, Lens, Mirror)
-                        if (/\b(ray\s*optics|snell|refraction|focal\s*length|convex\s*lens|concave\s*lens|lens\s*formula|mirror\s*formula)\b/i.test(combined)) {
-                            return {
-                                chapter: 'ray_optics',
-                                simulationType: 'ray_optics',
-                                parameters: {
-                                    f: num(/(?:focal\s*length|f)\s*(?:=|is|of)?\s*(-?\d+(?:\.\d+)?)/i, 100),
-                                    u: num(/(?:object\s*distance|u)\s*(?:=|is|of)?\s*(-?\d+(?:\.\d+)?)/i, -180),
-                                    height: num(/(?:height|h)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 50)
-                                }
-                            };
-                        }
-
-                        // 12. Wave Optics & YDSE
-                        if (/\b(young'?s?\s*double\s*slit|ydse|fringe\s*width|interference\s+of\s+light|slit\s*separation)\b/i.test(combined)) {
-                            return {
-                                chapter: 'wave_optics',
-                                simulationType: 'ydse_interference',
-                                parameters: {
-                                    wavelength: num(/(?:wavelength|lambda|λ)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 600),
-                                    d: num(/(?:slit\s*separation|d)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 0.5),
-                                    bigD: num(/(?:screen\s*distance|D)\s*(?:=|is|of)?\s*(\d+(?:\.\d+)?)/i, 1.5)
-                                }
-                            };
-                        }
-
-                        // 13. Modern Physics & Bohr Atom
-                        if (/\b(bohr|hydrogen\s*atom|energy\s*levels?|spectral\s*series|lyman|balmer|paschen|rydberg)\b/i.test(combined)) {
-                            return {
-                                chapter: 'modern_physics_bohr',
-                                simulationType: 'bohr_atom',
-                                parameters: {
-                                    initialN: Math.max(1, Math.min(6, Math.round(num(/(?:level|n1?|from\s+n\s*=?)\s*(\d+)/i, 3)))),
-                                    finalN: Math.max(1, Math.min(6, Math.round(num(/(?:to\s+n\s*=?|ground|n2?)\s*(\d+)/i, 1))))
-                                }
-                            };
-                        }
-
-                        // 14. Semiconductor & Logic Gates
-                        if (/\b(logic\s*gate|truth\s*table|nand|nor\b|xor\b|and\s+gate|or\s+gate|not\s+gate)\b/i.test(combined)) {
-                            let gate = 'AND';
-                            if (/\bnand\b/i.test(combined)) gate = 'NAND';
-                            else if (/\bnor\b/i.test(combined)) gate = 'NOR';
-                            else if (/\bxor\b/i.test(combined)) gate = 'XOR';
-                            else if (/\bor\s*gate\b/i.test(combined)) gate = 'OR';
-                            else if (/\bnot\s*gate\b/i.test(combined)) gate = 'NOT';
-                            return {
-                                chapter: 'semiconductor_logic',
-                                simulationType: 'logic_gates',
-                                parameters: { gate }
-                            };
-                        }
-
-                        return null;
-                    };
-
-                    const resolvedPhysics = inferPhysicsAction(text, parsed.solutionMarkdown || parsed.speechResponse, parsed.physicsAction);
-                    if (resolvedPhysics) {
-                        parsed.physicsAction = resolvedPhysics;
-                    }
+                    parsed.suggestedFollowUps = generateDynamicFollowUps(text, parsed.solutionMarkdown || parsed.speechResponse, parsed.suggestedFollowUps);
 
                     return {
                         ...parsed,
                         recognized: parsed.recognized !== false,
-                        diagram: parsed.diagram || (parsed.canvasAction?.svg ? { type: 'svg', svg: parsed.canvasAction.svg, title: parsed.diagram?.title || 'Mathematical Diagram' } : null),
+                        mcpUsed: parsed.mcpUsed || parsed.diagram?.mcpUsed || parsed.canvasAction?.mcpUsed || null,
+                        diagram: parsed.diagram || (parsed.canvasAction?.svg ? { type: 'svg', svg: parsed.canvasAction.svg, title: parsed.diagram?.title || 'Mathematical Diagram', mcpUsed: parsed.mcpUsed } : null),
                         canvasAction: parsed.canvasAction || null,
                         physicsAction: parsed.physicsAction || null,
                         modelUsed: completionRes.model,
@@ -10048,6 +10076,16 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
             });
         };
 
+        // Normalize quotes inside Mermaid diagram blocks so they do not break JSON string boundaries
+        const fixMermaidQuotes = (str) => {
+            if (!str || typeof str !== 'string') return str;
+            return str.replace(/(```mermaid[\s\S]*?```)/gi, (mermaidContent) => {
+                return mermaidContent
+                    .replace(/\\"/g, "'")
+                    .replace(/"/g, "'");
+            });
+        };
+
         // Protect single-backslash LaTeX commands that collide with JSON escape chars (\f, \t, \b, \r, \n)
         const preserveLatexBackslashes = (jsonStr) => {
             return jsonStr
@@ -10055,6 +10093,7 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
         };
 
         cleanText = fixSvgQuotes(cleanText);
+        cleanText = fixMermaidQuotes(cleanText);
         cleanText = preserveLatexBackslashes(cleanText);
 
         try {
@@ -10064,6 +10103,7 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
             try {
                 let fixed = sanitizeControlCharsInStrings(cleanText);
                 fixed = fixSvgQuotes(fixed);
+                fixed = fixMermaidQuotes(fixed);
                 fixed = fixed.replace(/,\s*([\]}])/g, '$1');
                 // Escape single backslashes that are not valid JSON escape characters (without corrupting existing \\)
                 fixed = fixed.replace(/(?<!\\)\\([^"\\/bfnrtu]|u(?![\da-fA-F]{4}))/g, '\\\\$1');
@@ -10073,6 +10113,7 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
                 try {
                     let repaired = sanitizeControlCharsInStrings(cleanText);
                     repaired = fixSvgQuotes(repaired);
+                    repaired = fixMermaidQuotes(repaired);
                     repaired = repaired.replace(/(?<!\\)\\([^"\\/bfnrtu]|u(?![\da-fA-F]{4}))/g, '\\\\$1');
                     // Check if truncated inside an open quote
                     const quoteMatches = repaired.match(/(^|[^\\])"/g);

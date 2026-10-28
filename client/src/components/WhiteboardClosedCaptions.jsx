@@ -28,10 +28,13 @@ import {
     History,
     Square,
     Trash2,
-    Sliders
+    Sliders,
+    Table,
+    Plus
 } from 'lucide-react';
 import katex from 'katex';
 import toast from 'react-hot-toast';
+import MermaidRenderer from './MermaidRenderer';
 import { aiAPI } from '@/lib/api';
 
 function transformOutsideMath(input, transformFn) {
@@ -198,6 +201,54 @@ function extractStepMathMetadata(text = '') {
     return { equations, points };
 }
 
+export function cleanLatexForSvg(svg) {
+    if (!svg || typeof svg !== 'string') return svg;
+    return svg.replace(/<text([^>]*)>([\s\S]*?)<\/text>/gi, (match, attrs, content) => {
+        let s = content;
+        s = s.replace(/\$\$?/g, '');
+        s = s.replace(/\\[ ,;!]/g, ' ');
+        s = s.replace(/\\frac\{1\}\{2\}/g, '½')
+             .replace(/\\frac\{1\}\{3\}/g, '⅓')
+             .replace(/\\frac\{1\}\{4\}/g, '¼')
+             .replace(/\\frac\{3\}\{4\}/g, '¾')
+             .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1 / $2)');
+        s = s.replace(/\\sqrt\{([^{}]+)\}/g, '√($1)')
+             .replace(/\\sqrt/g, '√');
+        s = s.replace(/\^\{\\circ\}|\^\\circ/g, '°')
+             .replace(/\^2|\^\{2\}/g, '²')
+             .replace(/\^3|\^\{3\}/g, '³')
+             .replace(/\^4|\^\{4\}/g, '⁴')
+             .replace(/\^n|\^\{n\}/g, 'ⁿ')
+             .replace(/\^\{-1\}/g, '⁻¹');
+        s = s.replace(/_0|_\{0\}/g, '₀')
+             .replace(/_1|_\{1\}/g, '₁')
+             .replace(/_2|_\{2\}/g, '₂')
+             .replace(/_3|_\{3\}/g, '₃')
+             .replace(/_4|_\{4\}/g, '₄')
+             .replace(/_x|_\{x\}/g, 'ₓ')
+             .replace(/_y|_\{y\}/g, 'ᵧ')
+             .replace(/_k|_\{k\}/g, 'ₖ')
+             .replace(/_\{max\}/g, 'ₘₐₓ')
+             .replace(/_\{min\}/g, 'ₘᵢₙ')
+             .replace(/_\{total\}/g, 'ₜₒₜₐₗ')
+             .replace(/_\{net\}/g, 'ₙₑₜ');
+        s = s.replace(/\\theta/g, 'θ')
+             .replace(/\\alpha/g, 'α')
+             .replace(/\\beta/g, 'β')
+             .replace(/\\gamma/g, 'γ')
+             .replace(/\\delta/g, 'δ')
+             .replace(/\\lambda/g, 'λ')
+             .replace(/\\mu/g, 'μ')
+             .replace(/\\pi/g, 'π')
+             .replace(/\\rho/g, 'ρ')
+             .replace(/\\sigma/g, 'σ')
+             .replace(/\\omega/g, 'ω')
+             .replace(/\\Delta/g, 'Δ')
+             .replace(/\\Omega/g, 'Ω');
+        return `<text${attrs}>${s}</text>`;
+    });
+}
+
 // Parse text into structured sections, formulas, steps, and statements as the SINGLE SOURCE OF TRUTH
 // for both visual display and step-by-step voice narration.
 export function parseContentBlocks(rawText) {
@@ -219,7 +270,101 @@ export function parseContentBlocks(rawText) {
             continue;
         }
 
-        // 1. Markdown Section Headings (e.g. ### 📌 Given & Concept, ### 📐 Formula, **Given:**, **Formula**)
+        // 0. Fenced Code Blocks (```lang ... ```)
+        if (trimmed.startsWith('```')) {
+            const fenceMatch = trimmed.match(/^```([a-zA-Z0-9_-]*)/);
+            const lang = (fenceMatch ? fenceMatch[1] : '').toLowerCase();
+            const codeLines = [];
+            let j = i + 1;
+            while (j < lines.length && !lines[j].trim().startsWith('```')) {
+                codeLines.push(lines[j]);
+                j++;
+            }
+            const fullCode = codeLines.join('\n');
+            const codeBlockLen = trimmed.length + 1 + fullCode.length + (j < lines.length ? lines[j].length + 1 : 0);
+
+            if (lang === 'mermaid') {
+                blocks.push({
+                    id: `blk_${blocks.length}`,
+                    index: blocks.length,
+                    type: 'mermaid',
+                    prefix: '📊',
+                    text: fullCode,
+                    spokenText: 'Here is the algorithmic flowchart.',
+                    equations: [],
+                    points: [],
+                    startChar: charOffset,
+                    endChar: charOffset + codeBlockLen
+                });
+            } else {
+                stepSequenceNum += 1;
+                const langTitle = lang ? lang.toUpperCase() : 'SOURCE CODE';
+                blocks.push({
+                    id: `blk_${blocks.length}`,
+                    index: blocks.length,
+                    stepNumber: stepSequenceNum,
+                    type: 'code',
+                    language: lang || 'text',
+                    prefix: '💻',
+                    text: fullCode,
+                    spokenText: `Here is the ${langTitle} implementation.`,
+                    equations: [],
+                    points: [],
+                    startChar: charOffset,
+                    endChar: charOffset + codeBlockLen
+                });
+            }
+
+            charOffset += codeBlockLen;
+            i = j; // Advance outer loop past closing fence
+            continue;
+        }
+
+        // 1. Markdown Table Parsing (| Col 1 | Col 2 |)
+        if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+            const nextLine = (lines[i + 1] || '').trim();
+            if (nextLine.startsWith('|') && nextLine.includes('---')) {
+                const headerLine = trimmed;
+                const headerCells = headerLine.split('|').map(c => c.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+
+                const tableRawLines = [trimmed, nextLine];
+                let j = i + 2;
+                const rows = [];
+                while (j < lines.length && lines[j].trim().startsWith('|') && lines[j].trim().endsWith('|')) {
+                    const rowLine = lines[j].trim();
+                    tableRawLines.push(rowLine);
+                    const rowCells = rowLine.split('|').map(c => c.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+                    if (rowCells.length > 0) {
+                        rows.push(rowCells);
+                    }
+                    j++;
+                }
+
+                const fullTableMarkdown = tableRawLines.join('\n');
+                stepSequenceNum += 1;
+                blocks.push({
+                    id: `blk_${blocks.length}`,
+                    index: blocks.length,
+                    stepNumber: stepSequenceNum,
+                    type: 'table',
+                    prefix: '📊',
+                    text: fullTableMarkdown,
+                    headers: headerCells,
+                    rows: rows,
+                    spokenText: `Here is the execution trace table with ${rows.length} rows.`,
+                    equations: [],
+                    points: [],
+                    startChar: charOffset,
+                    endChar: charOffset + fullTableMarkdown.length
+                });
+
+                charOffset += fullTableMarkdown.length;
+                i = j - 1; // Advance outer loop past the table
+                continue;
+            }
+        }
+
+        // 2. Markdown Section Headings (e.g. ### 📌 Given & Concept, ### 📐 Formula, **Given:**, **Formula**)
         const headingMatch = trimmed.match(/^(?:#{1,4}\s+)(.+)$/) ||
             (trimmed.match(/^\*\*([^*]{2,55}):?\*\*$/) ? [trimmed, trimmed.replace(/\*\*/g, '')] : null);
 
@@ -365,6 +510,7 @@ export default function WhiteboardClosedCaptions({
     onCreateStickyNote = () => {},
     onInsertAsText = () => {},
     onInsertDiagram = null,
+    onInsertTable = null,
     onInsertToBoard = null,
     onOpenAiSolution = () => {},
     onStopSpeaking = () => {},
@@ -1550,6 +1696,125 @@ export default function WhiteboardClosedCaptions({
                                                                 className="flex-1 min-w-0 leading-relaxed text-[12px] font-medium"
                                                                 dangerouslySetInnerHTML={{ __html: renderFormattedText(block.text) }}
                                                             />
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
+
+                                            if (block.type === 'mermaid') {
+                                                return (
+                                                    <div id={`cc-block-${idx}`} key={block.id || idx} className="my-1.5">
+                                                        <MermaidRenderer
+                                                            chart={block.text}
+                                                            title="Algorithmic / Architecture Flowchart"
+                                                            onInsertDiagram={onInsertDiagram}
+                                                        />
+                                                    </div>
+                                                );
+                                            }
+
+                                            if (block.type === 'code') {
+                                                const lang = (block.language || 'code').toUpperCase();
+                                                return (
+                                                    <div
+                                                        id={`cc-block-${idx}`}
+                                                        key={block.id || idx}
+                                                        className="my-2 rounded-xl border border-slate-700/80 bg-slate-950 overflow-hidden shadow-lg"
+                                                    >
+                                                        <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900 border-b border-slate-800 text-[11px] font-mono">
+                                                            <div className="flex items-center gap-1.5 text-indigo-400 font-bold">
+                                                                <span>💻</span>
+                                                                <span>{lang} Implementation</span>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    navigator.clipboard.writeText(block.text);
+                                                                    toast.success(`${lang} code copied!`, { icon: '📋' });
+                                                                }}
+                                                                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 text-[10px] font-sans transition cursor-pointer"
+                                                            >
+                                                                Copy Code
+                                                            </button>
+                                                        </div>
+                                                        <pre className="p-3.5 font-mono leading-relaxed text-emerald-300 overflow-x-auto select-text whitespace-pre bg-slate-950 text-xs">
+                                                            <code>{block.text}</code>
+                                                        </pre>
+                                                    </div>
+                                                );
+                                            }
+
+                                            if (block.type === 'table') {
+                                                return (
+                                                    <div
+                                                        id={`cc-block-${idx}`}
+                                                        key={block.id || idx}
+                                                        className="my-2.5 rounded-xl border border-slate-700/80 bg-slate-950 overflow-hidden shadow-lg"
+                                                    >
+                                                        <div className="flex items-center justify-between px-3 py-2 bg-slate-900 border-b border-slate-800 text-[11px]">
+                                                            <div className="flex items-center gap-1.5 text-amber-400 font-bold">
+                                                                <span>📊</span>
+                                                                <span>Dry-Run Trace Table</span>
+                                                                <span className="text-[10px] text-slate-400 font-normal font-sans">
+                                                                    ({block.rows?.length || 0} rows)
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5">
+                                                                {typeof onInsertTable === 'function' && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => onInsertTable(block.text, { fontSize: 12 })}
+                                                                        className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 active:scale-95 text-amber-300 border border-amber-500/40 text-[11px] font-medium transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                                                        title="Place this trace table directly onto the whiteboard with 12px font"
+                                                                    >
+                                                                        <span>📋</span>
+                                                                        <span>Place Table on Whiteboard</span>
+                                                                    </button>
+                                                                )}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        navigator.clipboard.writeText(block.text);
+                                                                        toast.success('Trace table Markdown copied!', { icon: '📋' });
+                                                                    }}
+                                                                    className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 text-[10px] transition cursor-pointer"
+                                                                    title="Copy raw table markdown"
+                                                                >
+                                                                    Copy
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        <div className="overflow-x-auto max-h-[380px] p-2 bg-slate-950">
+                                                            <table className="w-full text-xs text-left border-collapse">
+                                                                <thead>
+                                                                    <tr className="bg-slate-800/90 text-amber-300 font-semibold border-b border-slate-700">
+                                                                        {block.headers.map((h, hIdx) => (
+                                                                            <th key={hIdx} className="px-3 py-2 text-center whitespace-nowrap border-r border-slate-700/60 last:border-r-0">
+                                                                                <span dangerouslySetInnerHTML={{ __html: renderFormattedText(h) }} />
+                                                                            </th>
+                                                                        ))}
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody className="divide-y divide-slate-800 font-mono text-[11.5px]">
+                                                                    {block.rows.map((row, rIdx) => (
+                                                                        <tr
+                                                                            key={rIdx}
+                                                                            className={`transition ${
+                                                                                rIdx % 2 === 0 ? 'bg-slate-900/40 hover:bg-slate-800/40' : 'bg-slate-950 hover:bg-slate-800/40'
+                                                                            }`}
+                                                                        >
+                                                                            {row.map((cell, cIdx) => (
+                                                                                <td
+                                                                                    key={cIdx}
+                                                                                    className="px-3 py-2 text-center whitespace-nowrap text-slate-200 border-r border-slate-800/60 last:border-r-0"
+                                                                                >
+                                                                                    <span dangerouslySetInnerHTML={{ __html: renderFormattedText(cell) }} />
+                                                                                </td>
+                                                                            ))}
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
                                                         </div>
                                                     </div>
                                                 );

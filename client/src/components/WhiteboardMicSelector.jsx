@@ -37,7 +37,7 @@ export default function WhiteboardMicSelector({
     onOpenAiAssistantModal = () => {}
 }) {
     const router = useRouter();
-    const { voiceProfile, setVoiceProfile } = useVoiceStore();
+    const { voiceProfile, setVoiceProfile, volume: voiceVolume, setVolume: setVoiceVolume } = useVoiceStore();
     const [devices, setDevices] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [hasPermission, setHasPermission] = useState(false);
@@ -462,6 +462,31 @@ export default function WhiteboardMicSelector({
                             <span>Slower (0.7x)</span>
                             <span>Normal (1.0x)</span>
                             <span>Faster (1.4x)</span>
+                        </div>
+                    </div>
+
+                    {/* Master AI Audio Volume Slider */}
+                    <div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                            <span className="flex items-center gap-1 font-semibold">
+                                <Volume2 className="w-3 h-3 text-purple-400" />
+                                Master AI Volume
+                            </span>
+                            <span className="font-mono text-purple-300 font-bold">{Math.round((voiceVolume ?? 1.0) * 100)}%</span>
+                        </div>
+                        <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.05"
+                            value={voiceVolume ?? 1.0}
+                            onChange={(e) => setVoiceVolume?.(parseFloat(e.target.value))}
+                            className="w-full accent-purple-500 h-1.5 bg-neutral-800 rounded-lg cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[9px] text-slate-500 mt-1">
+                            <span>Mute (0%)</span>
+                            <span>50%</span>
+                            <span>100%</span>
                         </div>
                     </div>
 

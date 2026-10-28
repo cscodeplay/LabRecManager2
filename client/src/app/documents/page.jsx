@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive, Bot, Film, Video, Play, RefreshCw, Pencil, Grid, ArrowUpDown } from 'lucide-react';
+import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive, Bot, Film, Video, Play, RefreshCw, Pencil, Grid, ArrowUpDown, Sparkles, Presentation, Layers, Cloud } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { useAuthStore } from '@/lib/store';
@@ -19,6 +19,7 @@ import MediaPreviewModal from '@/components/MediaPreviewModal';
 import MoveCopyToDriveModal from '@/components/MoveCopyToDriveModal';
 import RecordingShareModal from '@/components/RecordingShareModal';
 import QRCode from 'qrcode';
+import OfficeThemeToggle from '@/components/OfficeThemeToggle';
 
 const CATEGORIES = [
     { value: '', label: 'All Categories' },
@@ -50,6 +51,57 @@ const FILE_ICONS = {
     aac: '🎵',
     audio: '🎵',
     file: '📁'
+};
+
+const getFolderIcon = (name, size = 'lg') => {
+    const sizeCls = size === 'lg' ? 'w-10 h-10' : 'w-6 h-6';
+    switch (name) {
+        case 'Office Media Files':
+            return <Cloud className={`${sizeCls} text-rose-500 fill-rose-100`} />;
+        case 'Word Documents':
+            return <FileText className={`${sizeCls} text-blue-500 fill-blue-100`} />;
+        case 'Excel Spreadsheets':
+            return <BarChart2 className={`${sizeCls} text-emerald-500 fill-emerald-100`} />;
+        case 'Presentations (Slides)':
+            return <Presentation className={`${sizeCls} text-amber-500 fill-amber-100`} />;
+        case 'PDF Documents':
+            return <File className={`${sizeCls} text-rose-500 fill-rose-100`} />;
+        case 'Images':
+            return <Sparkles className={`${sizeCls} text-purple-500 fill-purple-100`} />;
+        case 'Audio':
+            return <Film className={`${sizeCls} text-pink-500 fill-pink-100`} />;
+        case 'Video':
+            return <Video className={`${sizeCls} text-indigo-500 fill-indigo-100`} />;
+        default:
+            return <Folder className={`${sizeCls} text-yellow-400 fill-yellow-100`} />;
+    }
+};
+
+const openDocumentInApp = (doc, router) => {
+    if (!doc) return;
+    const type = (doc.fileType || doc.fileName?.split('.').pop() || doc.name?.split('.').pop() || '').toLowerCase();
+    const docId = doc.id;
+    const fileUrl = doc.url || '';
+    const title = doc.name || doc.fileName || 'Document';
+    const qs = new URLSearchParams({
+        ...(docId ? { docId, id: docId } : {}),
+        ...(fileUrl ? { fileUrl } : {}),
+        title
+    }).toString();
+
+    if (type === 'pdf') {
+        router.push(`/documents/pdf-studio?${qs}`);
+    } else if (['docx', 'doc', 'txt', 'rtf', 'odt'].includes(type)) {
+        router.push(`/documents/word-editor?${qs}`);
+    } else if (['xlsx', 'xls', 'csv', 'ods', 'sheet'].includes(type)) {
+        router.push(`/documents/excel-editor?${qs}`);
+    } else if (['pptx', 'ppt', 'odp'].includes(type)) {
+        router.push(`/documents/slides-editor?${qs}`);
+    } else if (['mp4', 'mov', 'webm', 'mkv', 'avi', 'mp3', 'wav', 'aac', 'ogg', 'm4a', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(type)) {
+        router.push(`/documents/media-studio?${qs}`);
+    } else {
+        router.push(`/documents/converter?${qs}`);
+    }
 };
 
 export default function DocumentsPage() {
@@ -261,6 +313,9 @@ export default function DocumentsPage() {
 
     const loadFolders = async () => {
         try {
+            // Guarantee Office Media Files and subfolders exist
+            api.post('/office/documents/ensure-media-folders').catch(() => {});
+
             const params = {};
             if (searchQuery) {
                 params.search = searchQuery;
@@ -1460,7 +1515,8 @@ export default function DocumentsPage() {
     const canUpload = ['admin', 'principal', 'lab_assistant', 'instructor', 'student'].includes(user?.role);
 
     return (
-        <div className="p-6 max-w-7xl mx-auto pb-24 relative">
+        <div className="flex h-full min-h-[calc(100vh-4rem)] overflow-hidden">
+            <div className="flex-1 p-6 max-w-7xl mx-auto pb-24 relative overflow-y-auto">
             {/* Bulk Action Toolbar */}
             {(selectedDocs.size > 0 || selectedFolders.size > 0 || (activeTab === 'recordings' && selectedRecordings.size > 0)) && (
                 <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-slate-900 shadow-2xl rounded-full px-4 sm:px-6 py-2.5 sm:py-3 flex items-center gap-2 sm:gap-3 border border-slate-200 dark:border-slate-700 animate-in slide-in-from-bottom-5 fade-in duration-300 max-w-[95vw] overflow-x-auto">
@@ -1544,32 +1600,64 @@ export default function DocumentsPage() {
                 </div>
             )}
 
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+            {/* Clean CloudVault Documents Header */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-slate-200 dark:border-slate-800">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900">Documents</h1>
-                    <p className="text-slate-500">Upload and manage PDFs, documents, and spreadsheets</p>
+                    <div className="flex items-center gap-2.5">
+                        <Cloud className="w-6 h-6 text-indigo-500" />
+                        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">CloudVault Documents</h1>
+                        <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                            Storage & Vault
+                        </span>
+                    </div>
+                    <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
+                        Securely organize, store, share, and manage institutional documents and whiteboard recordings
+                    </p>
                 </div>
-                <div className="flex items-center gap-4">
-                    {/* Storage Indicator */}
+
+                <div className="flex items-center flex-wrap gap-2 w-full sm:w-auto">
+                    {canUpload && (
+                        <>
+                            <button
+                                onClick={() => setShowCreateFolder(true)}
+                                className="h-9 px-3 rounded-xl flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold border border-slate-300 dark:border-slate-700 transition"
+                                title="Create New Folder"
+                            >
+                                <FolderPlus className="w-4 h-4 text-slate-500" />
+                                <span>New Folder</span>
+                            </button>
+                            <button
+                                onClick={() => setShowUpload(true)}
+                                className="h-9 px-3.5 rounded-xl flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold shadow-sm transition"
+                                title="Upload File"
+                            >
+                                <Upload className="w-4 h-4" />
+                                <span>Upload File</span>
+                            </button>
+                        </>
+                    )}
+
+                    {/* 5. Storage Indicator */}
                     {storageInfo && canUpload && (
-                        <div className="hidden sm:flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-2">
+                        <div className="hidden xl:flex items-center gap-2 bg-slate-100 dark:bg-slate-800/80 rounded-xl px-3 py-1.5 border border-slate-200 dark:border-slate-700">
                             <HardDrive className="w-4 h-4 text-slate-500" />
                             <div className="flex flex-col">
-                                <span className="text-xs text-slate-600">
+                                <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
                                     {storageInfo.usedFormatted} / {storageInfo.quotaFormatted}
                                 </span>
-                                <div className="w-24 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                <div className="w-20 h-1 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                                     <div
-                                        className={`h-full rounded-full transition-all ${storageInfo.percentUsed >= 90 ? 'bg-red-500' :
+                                        className={`h-full rounded-full transition-all ${
+                                            storageInfo.percentUsed >= 90 ? 'bg-red-500' :
                                             storageInfo.percentUsed >= 70 ? 'bg-yellow-500' : 'bg-emerald-500'
-                                            }`}
+                                        }`}
                                         style={{ width: `${Math.min(100, storageInfo.percentUsed)}%` }}
                                     />
                                 </div>
                             </div>
                         </div>
                     )}
+
                     {clipboard && canUpload && (
                         <button
                             onClick={handlePaste}
@@ -2457,7 +2545,7 @@ export default function DocumentsPage() {
                                 />
                                 <div className="flex items-start justify-between cursor-pointer" onClick={() => handleFolderClick(folder)}>
                                     <div className="flex items-center gap-3">
-                                        <Folder className="w-10 h-10 text-yellow-400 fill-yellow-100" />
+                                        {getFolderIcon(folder.name, 'lg')}
                                         <div className="overflow-hidden">
                                             <h3 className="font-semibold text-slate-800 truncate" title={folder.name}>{folder.name}</h3>
                                             <p className="text-xs text-slate-500">
@@ -2523,7 +2611,7 @@ export default function DocumentsPage() {
                                     />
                                     <div className="flex items-start gap-3">
                                         {['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(doc.fileType?.toLowerCase()) && doc.url ? (
-                                            <div className="w-12 h-12 rounded-lg bg-slate-100 flex-shrink-0 overflow-hidden border border-slate-200">
+                                            <div onClick={() => openDocumentInApp(doc, router)} className="w-12 h-12 rounded-lg bg-slate-100 flex-shrink-0 overflow-hidden border border-slate-200 cursor-pointer hover:opacity-90 transition" title="Open in Application">
                                                 <img
                                                     src={doc.url}
                                                     alt={doc.name}
@@ -2533,12 +2621,12 @@ export default function DocumentsPage() {
                                                 />
                                             </div>
                                         ) : (
-                                            <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-2xl flex-shrink-0">
+                                            <div onClick={() => openDocumentInApp(doc, router)} className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-2xl flex-shrink-0 cursor-pointer hover:bg-slate-200 transition" title="Open in Application">
                                                 {FILE_ICONS[doc.fileType] || FILE_ICONS.file}
                                             </div>
                                         )}
                                         <div className="flex-1 min-w-0">
-                                            <h3 className="font-semibold text-slate-900 truncate">{doc.name}</h3>
+                                            <h3 onClick={() => openDocumentInApp(doc, router)} className="font-semibold text-slate-900 truncate cursor-pointer hover:text-primary-600 transition" title="Open in Application">{doc.name}</h3>
                                             <p className="text-sm text-slate-500">{doc.fileType?.toUpperCase()} • {doc.fileSizeFormatted || ''}</p>
                                             {doc.category && (
                                                 <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full bg-primary-100 text-primary-700 capitalize">{doc.category}</span>
@@ -2590,6 +2678,9 @@ export default function DocumentsPage() {
 
                                     {/* Actions */}
                                     <div className="flex flex-wrap items-center gap-1.5 mt-4 pt-3 border-t border-slate-100">
+                                        <button title="Open in Application Editor" onClick={() => openDocumentInApp(doc, router)} className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition" aria-label="Open in App">
+                                            <ExternalLink className="w-4 h-4" />
+                                        </button>
                                         <button title="View Preview" onClick={() => setViewingDoc(doc)} className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition" aria-label="View">
                                             <Eye className="w-4 h-4" />
                                         </button>
@@ -2740,7 +2831,7 @@ export default function DocumentsPage() {
                                             </td>
                                             <td className="p-3" onClick={() => handleFolderClick(folder)}>
                                                 <div className="flex items-center gap-3">
-                                                    <Folder className="w-6 h-6 text-yellow-400 fill-yellow-100" />
+                                                    {getFolderIcon(folder.name, 'sm')}
                                                     <div>
                                                         <p className="font-medium text-slate-900 group-hover:text-primary-600 transition-colors">{folder.name}</p>
                                                     </div>
@@ -2823,7 +2914,7 @@ export default function DocumentsPage() {
                                                 <td className="p-3">
                                                     <div className="flex items-center gap-3">
                                                         {['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(doc.fileType?.toLowerCase()) && doc.url ? (
-                                                            <div className="w-8 h-8 rounded-md bg-slate-100 flex-shrink-0 overflow-hidden border border-slate-200">
+                                                            <div onClick={() => openDocumentInApp(doc, router)} className="w-8 h-8 rounded-md bg-slate-100 flex-shrink-0 overflow-hidden border border-slate-200 cursor-pointer hover:opacity-90 transition" title="Open in Application">
                                                                 <img
                                                                     src={doc.url}
                                                                     alt={doc.name}
@@ -2833,10 +2924,10 @@ export default function DocumentsPage() {
                                                                 />
                                                             </div>
                                                         ) : (
-                                                            <span className="text-xl">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                                            <span onClick={() => openDocumentInApp(doc, router)} className="text-xl cursor-pointer hover:scale-110 transition inline-block" title="Open in Application">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
                                                         )}
                                                         <div>
-                                                            <p className="font-medium text-slate-900">{doc.name}</p>
+                                                            <p onClick={() => openDocumentInApp(doc, router)} className="font-medium text-slate-900 cursor-pointer hover:text-primary-600 transition" title="Open in Application">{doc.name}</p>
                                                             {doc.description && <p className="text-xs text-slate-500 truncate max-w-xs">{doc.description}</p>}
                                                         </div>
                                                     </div>
@@ -2870,6 +2961,9 @@ export default function DocumentsPage() {
                                                 <td className="p-3 text-sm text-slate-500 hidden lg:table-cell">{formatDate(shareInfo ? shareInfo.sharedAt : doc.createdAt)}</td>
                                                 <td className="p-3">
                                                     <div className="flex items-center gap-1">
+                                                        <button onClick={() => openDocumentInApp(doc, router)} className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition" title="Open in Application Editor" aria-label="Open in App">
+                                                            <ExternalLink className="w-4 h-4" />
+                                                        </button>
                                                         <button onClick={() => setViewingDoc(doc)} className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition" title="View Preview" aria-label="View">
                                                             <Eye className="w-4 h-4" />
                                                         </button>
@@ -2959,7 +3053,7 @@ export default function DocumentsPage() {
                                                     onClick={(e) => e.stopPropagation()}
                                                     className="mt-1 rounded border-slate-300 text-primary-600 focus:ring-primary-500 shrink-0"
                                                 />
-                                                <Folder className="w-8 h-8 text-yellow-500 fill-yellow-100 shrink-0 mt-0.5" />
+                                                {getFolderIcon(folder.name, 'sm')}
                                                 <div className="min-w-0 flex-1">
                                                     <p className="font-semibold text-slate-900 truncate">{folder.name}</p>
                                                     <p className="text-xs text-slate-500 mt-0.5">
@@ -3063,6 +3157,12 @@ export default function DocumentsPage() {
                                         {/* Collapsible Action Tray */}
                                         {isExpanded && (
                                             <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap gap-2">
+                                                <button
+                                                    onClick={() => openDocumentInApp(doc, router)}
+                                                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 flex-1 min-w-[90px]"
+                                                >
+                                                    <ExternalLink className="w-3.5 h-3.5" /> Open in App
+                                                </button>
                                                 <button
                                                     onClick={() => setViewingDoc(doc)}
                                                     className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex-1 min-w-[90px]"
@@ -3862,14 +3962,24 @@ export default function DocumentsPage() {
                                         <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Files</p>
                                         <div className="space-y-1">
                                             {folderPreview.documents.map(doc => (
-                                                <div key={doc.id} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg hover:bg-slate-100 cursor-pointer"
+                                                <div key={doc.id} className="flex items-center justify-between gap-3 p-2 bg-slate-50 rounded-lg hover:bg-slate-100 cursor-pointer"
                                                     onClick={() => { setFolderPreview(null); setViewingDoc(doc); }}
                                                 >
-                                                    <span className="text-xl">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-medium text-slate-900 truncate">{doc.name}</p>
-                                                        <p className="text-xs text-slate-500">{doc.fileType?.toUpperCase()} • {doc.fileSizeFormatted || ''}</p>
+                                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                        <span className="text-xl shrink-0">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-sm font-medium text-slate-900 truncate">{doc.name}</p>
+                                                            <p className="text-xs text-slate-500">{doc.fileType?.toUpperCase()} • {doc.fileSizeFormatted || ''}</p>
+                                                        </div>
                                                     </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => { e.stopPropagation(); setFolderPreview(null); openDocumentInApp(doc, router); }}
+                                                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-lg transition shrink-0"
+                                                        title="Open in Application Editor"
+                                                    >
+                                                        <ExternalLink className="w-4 h-4" />
+                                                    </button>
                                                 </div>
                                             ))}
                                         </div>
@@ -4405,6 +4515,7 @@ export default function DocumentsPage() {
                 </div>
             )}
 
+            </div>
         </div>
     );
 }

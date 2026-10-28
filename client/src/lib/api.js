@@ -111,6 +111,25 @@ export const documentsAPI = {
     getTrash: () => api.get('/documents/trash'),
     restore: (id) => api.post(`/documents/${id}/restore`),
     permanentDelete: (id) => api.delete(`/documents/${id}/permanent`),
+    // Universal Document Converter
+    convertFile: (formData) => api.post('/documents/convert', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    }),
+    getConversionStatus: (jobId) => api.get(`/documents/convert/status/${jobId}`),
+    saveConvertedToDocs: (jobId, data) => api.post(`/documents/convert/save-to-documents/${jobId}`, data),
+    getRecentConversions: (limit) => api.get('/documents/convert/recent', { params: { limit } }),
+};
+
+// Office Suite API - Word Documents & Excel Spreadsheets
+export const officeAPI = {
+    getAll: (params) => api.get('/office/documents', { params }),
+    getById: (id) => api.get(`/office/documents/${id}`),
+    create: (data) => api.post('/office/documents', data),
+    update: (id, data) => api.put(`/office/documents/${id}`, data),
+    delete: (id) => api.delete(`/office/documents/${id}`),
+    exportDoc: (id, format) => api.post(`/office/documents/${id}/export`, { format }, { responseType: 'blob' }),
+    getRevisions: (id) => api.get(`/office/documents/${id}/revisions`),
+    createRevision: (id, summary) => api.post(`/office/documents/${id}/revisions`, { summary }),
 };
 
 // Storage API - Quota management

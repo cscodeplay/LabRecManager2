@@ -18,6 +18,7 @@ matplotlib.use('Agg')
 import schemdraw
 import schemdraw.elements as elm
 import schemdraw.logic as logic
+import schemdraw.flow as flow
 
 def sanitize_svg(svg_str):
     """Ensure clean self-contained SVG for Whiteboard canvas."""
@@ -37,6 +38,7 @@ def render_from_code(code_str):
         'schemdraw': schemdraw,
         'elm': elm,
         'logic': logic,
+        'flow': flow,
         'd': drawing,
         'Drawing': schemdraw.Drawing
     }
@@ -140,6 +142,25 @@ def generate_code_from_spec(spec):
 
         lines.append("d.add(elm.Line().down(3))")
         lines.append(f"d.add(elm.Line().left({bus_len}))")
+    elif topology == 'wheatstone':
+        lbl1 = components[0].get('label', 'R₁ = 10 Ω') if len(components) > 0 else 'R₁ = 10 Ω'
+        lbl2 = components[1].get('label', 'R₂ = 20 Ω') if len(components) > 1 else 'R₂ = 20 Ω'
+        lbl3 = components[2].get('label', 'R₃ = 30 Ω') if len(components) > 2 else 'R₃ = 30 Ω'
+        lbl4 = components[3].get('label', 'Rx = 60 Ω') if len(components) > 3 else 'Rx = 60 Ω'
+
+        lines.append("d.add(elm.Line().right(1.5))")
+        lines.append("d.push()")
+        lines.append(f"d.add(elm.Resistor().right().label('{lbl1}'))")
+        lines.append(f"d.add(elm.Resistor().right().label('{lbl2}'))")
+        lines.append("d.add(elm.Line().down().length(4))")
+        lines.append("d.add(elm.Line().left().tox(0))")
+        lines.append("d.pop()")
+        lines.append("d.add(elm.Line().down().length(4))")
+        lines.append(f"d.add(elm.Resistor().right().label('{lbl3}'))")
+        lines.append(f"d.add(elm.Resistor().right().label('{lbl4}'))")
+        lines.append("d.add(elm.Line().up().at((4.5, -4)).length(0.75))")
+        lines.append("d.add(elm.MeterAnalog().up().label('G (0 A)'))")
+        lines.append("d.add(elm.Line().up().length(0.75))")
     else:
         lines.append("d.add(elm.Line().right(2))")
         lines.append("d.add(elm.Resistor().down(2).label('Load'))")
@@ -170,6 +191,8 @@ def main():
             svg = render_from_code(code)
         elif 'circuit' in payload:
             svg, code = render_from_spec(payload['circuit'])
+        elif 'spec' in payload:
+            svg, code = render_from_spec(payload['spec'])
         else:
             print(json.dumps({'success': False, 'error': 'Missing code or circuit specification'}))
             sys.exit(1)

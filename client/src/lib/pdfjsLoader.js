@@ -24,8 +24,26 @@ export async function getPdfJs() {
                 const existing = document.querySelector('script[src*="pdf.min.js"]');
                 if (existing) {
                     if (window.pdfjsLib) return resolve();
-                    existing.addEventListener('load', resolve);
-                    existing.addEventListener('error', reject);
+                    // Poll briefly in case script already finished loading
+                    let checks = 0;
+                    const interval = setInterval(() => {
+                        checks++;
+                        if (window.pdfjsLib) {
+                            clearInterval(interval);
+                            resolve();
+                        } else if (checks > 20) {
+                            clearInterval(interval);
+                            resolve(); // proceed to next check
+                        }
+                    }, 50);
+                    existing.addEventListener('load', () => {
+                        clearInterval(interval);
+                        resolve();
+                    });
+                    existing.addEventListener('error', (e) => {
+                        clearInterval(interval);
+                        reject(e);
+                    });
                     return;
                 }
                 const script = document.createElement('script');
@@ -45,9 +63,10 @@ export async function getPdfJs() {
             console.warn('[pdfjsLoader] Local /pdfjs/pdf.min.js load failed, trying CDN:', scriptErr);
         }
 
-        // Strategy 2: CDN fallback
+        // Strategy 2: Bundled / CDN fallback
         try {
             await new Promise((resolve, reject) => {
+                if (window.pdfjsLib) return resolve();
                 const script = document.createElement('script');
                 script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
                 script.async = true;
@@ -64,7 +83,7 @@ export async function getPdfJs() {
             console.error('[pdfjsLoader] All PDF.js loading strategies failed:', cdnErr);
         }
 
-        return null;
+        return window.pdfjsLib || null;
     })();
 
     return loadPromise;

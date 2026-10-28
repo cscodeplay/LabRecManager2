@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
     Move, Lock, Unlock, Trash2, Copy, Plus, Minus, 
     Type, Calculator, Image as ImageIcon, Edit3, Palette, 
     X, Check, ChevronsUp, ChevronsDown, Maximize2, Sparkles,
     Undo2, RefreshCw, Bold, Italic, Underline, Strikethrough,
     AlignLeft, AlignCenter, AlignRight, WrapText, ChevronDown,
-    Clipboard, ClipboardCheck, Droplet, Sun, Moon
+    Clipboard, ClipboardCheck, Droplet, Sun, Moon, Search
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import MathRenderer from './MathRenderer';
@@ -24,6 +24,53 @@ const getColLabel = (index) => {
         num = Math.floor(num / 26) - 1;
     }
     return label;
+};
+
+const colLetterToIndex = (colStr) => {
+    if (!colStr) return 0;
+    const clean = colStr.toUpperCase().trim();
+    let index = 0;
+    for (let i = 0; i < clean.length; i++) {
+        index = index * 26 + (clean.charCodeAt(i) - 64);
+    }
+    return index - 1;
+};
+
+const REFERENCE_COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899', '#06b6d4'];
+
+const getReferencedCellsFromFormula = (formulaStr) => {
+    if (!formulaStr || typeof formulaStr !== 'string' || !formulaStr.startsWith('=')) {
+        return new Map();
+    }
+    const map = new Map();
+    const regex = /\b([A-Za-z]+)(\d+)(?::([A-Za-z]+)(\d+))?\b/g;
+    let match;
+    let colorIdx = 0;
+    while ((match = regex.exec(formulaStr)) !== null) {
+        const col1 = colLetterToIndex(match[1]);
+        const row1 = parseInt(match[2], 10) - 1;
+        const color = REFERENCE_COLORS[colorIdx % REFERENCE_COLORS.length];
+        colorIdx++;
+
+        if (match[3] && match[4]) {
+            const col2 = colLetterToIndex(match[3]);
+            const row2 = parseInt(match[4], 10) - 1;
+            const minR = Math.min(row1, row2);
+            const maxR = Math.max(row1, row2);
+            const minC = Math.min(col1, col2);
+            const maxC = Math.max(col1, col2);
+            for (let r = minR; r <= maxR; r++) {
+                for (let c = minC; c <= maxC; c++) {
+                    const key = `${r}-${c}`;
+                    if (!map.has(key)) map.set(key, color);
+                }
+            }
+        } else {
+            const key = `${row1}-${col1}`;
+            if (!map.has(key)) map.set(key, color);
+        }
+    }
+    return map;
 };
 
 // Comprehensive color families for cell backgrounds (soft pastels to deep tones)
@@ -171,6 +218,12 @@ export default function WhiteboardTableObject({
     const [selectedRow, setSelectedRow] = useState(null);
     const [selectedCol, setSelectedCol] = useState(null);
 
+    // Extract active selected cell data & label
+    const selectedCell = selectedCellKey ? (cells[selectedCellKey] || {}) : null;
+    const [selR, selC] = selectedCellKey ? selectedCellKey.split('-').map(Number) : [null, null];
+    const cellColLetter = selC !== null && selC !== undefined ? getColLabel(selC) : '';
+    const cellRefLabel = selR !== null && selR !== undefined ? `${cellColLetter}${selR + 1}` : '';
+
     // Inline Editing State
     const [isInlineEditing, setIsInlineEditing] = useState(false);
     const [inlineText, setInlineText] = useState('');
@@ -245,8 +298,55 @@ export default function WhiteboardTableObject({
     const [showBgMenu, setShowBgMenu] = useState(false);
     const [showSizeMenu, setShowSizeMenu] = useState(false);
     const [showOpacityMenu, setShowOpacityMenu] = useState(false);
+    const [showFunctionMenu, setShowFunctionMenu] = useState(false);
+    const [funcSearch, setFuncSearch] = useState('');
     const [bgOpacity, setBgOpacity] = useState(1); // 0.15, 0.35, 0.65, 1
     const [customHexInput, setCustomHexInput] = useState('');
+
+    const filteredFunctions = useMemo(() => {
+        if (!funcSearch.trim()) return STEM_FUNCTIONS_CATALOG.slice(0, 32);
+        const q = funcSearch.toLowerCase().trim();
+        return STEM_FUNCTIONS_CATALOG.filter(fn => 
+            fn.name.toLowerCase().includes(q) || 
+            (fn.category && fn.category.toLowerCase().includes(q)) ||
+            (fn.description && fn.description.toLowerCase().includes(q))
+        );
+    }, [funcSearch]);
+
+    const insertFunctionIntoActiveCell = (fnName) => {
+        const targetCellKey = selectedCellKey || '0-0';
+        const [r, c] = targetCellKey.split('-').map(Number);
+        
+        if (isInlineEditing) {
+            const clean = inlineText.trim();
+            let newText;
+            if (clean === '' || clean === '=') {
+                newText = `=${fnName}(`;
+            } else if (clean.endsWith('(') || clean.endsWith(',') || clean.endsWith('+') || clean.endsWith('-') || clean.endsWith('*') || clean.endsWith('/')) {
+                newText = `${clean}${fnName}(`;
+            } else {
+                newText = `${clean}+${fnName}(`;
+            }
+            setInlineText(newText);
+            setTimeout(() => {
+                if (inlineInputRef.current) {
+                    inlineInputRef.current.focus();
+                    inlineInputRef.current.setSelectionRange(newText.length, newText.length);
+                }
+            }, 30);
+        } else {
+            startInlineEdit(r, c, `=${fnName}(`);
+        }
+    };
+
+    // Calculate dynamic map of referenced cells for multi-color border outlines
+    const activeFormulaString = isInlineEditing && inlineText.startsWith('=')
+        ? inlineText
+        : (selectedCell?.text && String(selectedCell.text).startsWith('=') ? String(selectedCell.text) : '');
+
+    const referencedCellsMap = useMemo(() => {
+        return getReferencedCellsFromFormula(activeFormulaString);
+    }, [activeFormulaString]);
 
     // Modal Cell Editor (for advanced Doodle / Image / KaTeX formulas)
     const [activeCellKey, setActiveCellKey] = useState(null);
@@ -1129,12 +1229,6 @@ export default function WhiteboardTableObject({
         setIsDoodling(false);
     };
 
-    // Extract active selected cell data & label
-    const selectedCell = selectedCellKey ? (cells[selectedCellKey] || {}) : null;
-    const [selR, selC] = selectedCellKey ? selectedCellKey.split('-').map(Number) : [null, null];
-    const cellColLetter = selC !== null && selC !== undefined ? getColLabel(selC) : '';
-    const cellRefLabel = selR !== null && selR !== undefined ? `${cellColLetter}${selR + 1}` : '';
-
     return (
         <div
             data-table-id={tableId}
@@ -1641,7 +1735,7 @@ export default function WhiteboardTableObject({
                         <WrapText className="w-3.5 h-3.5" />
                     </button>
 
-                    {/* Formula / Math Mode Toggle */}
+                    {/* KaTeX Formula / Math Mode Toggle */}
                     <button
                         type="button"
                         onClick={() => {
@@ -1658,6 +1752,87 @@ export default function WhiteboardTableObject({
                     >
                         f(x)
                     </button>
+
+                    {/* Formula Function List Dropdown (Displays above sheet and opens downwards) */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowFunctionMenu(v => !v);
+                                setShowFontMenu(false);
+                                setShowSizeMenu(false);
+                                setShowColorMenu(false);
+                                setShowBgMenu(false);
+                                setShowOpacityMenu(false);
+                            }}
+                            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[10px] font-mono font-bold transition ${
+                                showFunctionMenu ? 'bg-indigo-600 text-white shadow-xs' : 'hover:bg-slate-800 text-indigo-300 hover:text-white'
+                            }`}
+                            title="Formula & Functions Catalog (Opens downwards above sheet)"
+                        >
+                            <span>fx</span>
+                            <ChevronDown className="w-3 h-3 text-slate-400" />
+                        </button>
+                        {showFunctionMenu && (
+                            <div 
+                                className="absolute top-full left-0 mt-1.5 bg-slate-950 border border-slate-700/80 rounded-xl shadow-2xl p-2.5 z-[100] w-80 max-w-[95vw] backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-2"
+                                onClick={e => e.stopPropagation()}
+                                onPointerDown={e => e.stopPropagation()}
+                            >
+                                <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
+                                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
+                                        <Calculator className="w-3.5 h-3.5 text-indigo-400" />
+                                        <span>Formula Functions Catalog</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowFunctionMenu(false)}
+                                        className="p-0.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+
+                                {/* Search Input */}
+                                <div className="relative">
+                                    <Search className="w-3.5 h-3.5 absolute left-2 top-2 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        value={funcSearch}
+                                        onChange={(e) => setFuncSearch(e.target.value)}
+                                        placeholder="Search SUM, AVERAGE, SIN, OHM..."
+                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-7 pr-2 py-1 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-indigo-500"
+                                        autoFocus
+                                    />
+                                </div>
+
+                                {/* Function list */}
+                                <div className="space-y-1 max-h-56 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-700">
+                                    {filteredFunctions.length === 0 ? (
+                                        <div className="text-[11px] text-slate-500 text-center py-3">No matching functions found</div>
+                                    ) : (
+                                        filteredFunctions.map((fn) => (
+                                            <button
+                                                key={fn.name}
+                                                type="button"
+                                                onClick={() => {
+                                                    insertFunctionIntoActiveCell(fn.name);
+                                                    setShowFunctionMenu(false);
+                                                }}
+                                                className="w-full flex flex-col text-left px-2 py-1.5 rounded-lg hover:bg-indigo-600/30 hover:border-indigo-500/50 border border-transparent transition group"
+                                            >
+                                                <div className="flex items-center justify-between">
+                                                    <span className="font-mono font-bold text-xs text-indigo-300 group-hover:text-white">{fn.name}</span>
+                                                    <span className="text-[9px] px-1 py-0.5 rounded bg-slate-800 text-slate-400 uppercase font-bold tracking-wider">{fn.category}</span>
+                                                </div>
+                                                <span className="text-[10px] text-slate-400 line-clamp-1">{fn.description || fn.signature}</span>
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
                     {/* Advanced Modal Editor Trigger (doodle, image) */}
                     <button
@@ -1753,42 +1928,55 @@ export default function WhiteboardTableObject({
                 }}
             >
                 <style>{`
+                    .whiteboard-table-viewport {
+                        scrollbar-width: none;
+                    }
+                    .whiteboard-table-viewport:hover {
+                        scrollbar-width: thin;
+                    }
                     .whiteboard-table-viewport::-webkit-scrollbar {
                         width: 9px;
                         height: 9px;
                     }
                     .whiteboard-table-viewport::-webkit-scrollbar-track {
-                        background: rgba(15, 23, 42, 0.85);
+                        background: transparent;
                         border-radius: 4px;
                     }
                     .whiteboard-table-viewport::-webkit-scrollbar-thumb {
-                        background: rgba(100, 116, 139, 0.85);
+                        background: transparent;
                         border-radius: 4px;
-                        border: 1px solid rgba(51, 65, 85, 0.6);
+                        transition: background 0.2s ease-in-out;
                     }
-                    .whiteboard-table-viewport::-webkit-scrollbar-thumb:hover {
+                    .whiteboard-table-viewport:hover::-webkit-scrollbar-track {
+                        background: rgba(15, 23, 42, 0.45);
+                    }
+                    .whiteboard-table-viewport:hover::-webkit-scrollbar-thumb {
+                        background: rgba(100, 116, 139, 0.75);
+                        border: 1px solid rgba(51, 65, 85, 0.4);
+                    }
+                    .whiteboard-table-viewport:hover::-webkit-scrollbar-thumb:hover {
                         background: rgba(99, 102, 241, 0.95);
                     }
                     .whiteboard-table-viewport::-webkit-scrollbar-corner {
-                        background: rgba(15, 23, 42, 0.95);
+                        background: transparent;
                     }
                 `}</style>
 
                 {/* Inner Content Sized to Full Grid Dimensions */}
                 <div style={{ width: gridWidth, minWidth: gridWidth, height: gridHeight, minHeight: gridHeight }}>
                     {/* Top Row: Corner Box (sticky top-0 left-0) + Column Headers (sticky top-0) */}
-                    <div className="flex sticky top-0 z-30 bg-slate-900" style={{ height: HEADER_HEIGHT, width: gridWidth }}>
+                    <div className="flex sticky top-0 z-30 bg-[#f8fafc]" style={{ height: HEADER_HEIGHT, width: gridWidth }}>
                         {/* Top-Left Corner Box (Selects All Cells / Drag to Move) */}
                         <div
                             className={`table-corner-box shrink-0 sticky left-0 z-40 flex items-center justify-center border-r border-b cursor-grab active:cursor-grabbing select-none transition ${
                                 selectionMode === 'ALL'
-                                    ? 'bg-indigo-600/40 text-indigo-200 border-indigo-500'
-                                    : 'bg-slate-900/95 hover:bg-slate-800 text-slate-400 hover:text-white'
+                                    ? 'bg-indigo-100 text-indigo-700 font-extrabold border-indigo-400'
+                                    : 'bg-[#f8fafc] hover:bg-slate-200 text-slate-600 hover:text-slate-900 border-[#cbd5e1]'
                             }`}
                             style={{
                                 width: CORNER_WIDTH,
                                 height: HEADER_HEIGHT,
-                                borderColor: borderColor
+                                borderColor: '#cbd5e1'
                             }}
                             onClick={handleSelectAll}
                             onPointerDown={handleMovePointerDown}
@@ -1809,14 +1997,14 @@ export default function WhiteboardTableObject({
                                         onClick={(e) => handleSelectCol(cIdx, e)}
                                         className={`table-header-col relative flex items-center justify-center text-[11px] font-bold border-r border-b select-none transition ${
                                             isColSel || isAllSel
-                                                ? 'bg-indigo-600/40 text-indigo-100 font-extrabold border-indigo-500'
-                                                : 'bg-slate-900/90 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                                                ? 'bg-indigo-100 text-indigo-700 font-extrabold border-indigo-400'
+                                                : 'bg-[#f8fafc] text-slate-600 hover:bg-slate-200 hover:text-slate-900 border-[#cbd5e1]'
                                         }`}
                                         style={{
                                             width: cWidth,
                                             minWidth: cWidth,
                                             height: HEADER_HEIGHT,
-                                            borderColor: borderColor
+                                            borderColor: '#cbd5e1'
                                         }}
                                         title={`Select Column ${getColLabel(cIdx)}`}
                                     >
@@ -1839,7 +2027,7 @@ export default function WhiteboardTableObject({
                     {/* Bottom Body: Row Headers (sticky left-0) + Cells Grid */}
                     <div className="flex" style={{ height: totalHeight, width: gridWidth }}>
                         {/* Row Headers Strip (1, 2, 3...) */}
-                        <div className="flex flex-col shrink-0 sticky left-0 z-20 bg-slate-900" style={{ width: CORNER_WIDTH, height: totalHeight }}>
+                        <div className="flex flex-col shrink-0 sticky left-0 z-20 bg-[#f8fafc]" style={{ width: CORNER_WIDTH, height: totalHeight }}>
                             {Array.from({ length: rows }).map((_, rIdx) => {
                                 const rHeight = rowHeights[rIdx] || 24;
                                 const isRowSel = selectionMode === 'ROW' && selectedRow === rIdx;
@@ -1850,14 +2038,14 @@ export default function WhiteboardTableObject({
                                         onClick={(e) => handleSelectRow(rIdx, e)}
                                         className={`table-header-row relative flex items-center justify-center text-[10px] font-mono font-bold border-r border-b select-none transition ${
                                             isRowSel || isAllSel
-                                                ? 'bg-indigo-600/40 text-indigo-100 font-extrabold border-indigo-500'
-                                                : 'bg-slate-900/90 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                                                ? 'bg-indigo-100 text-indigo-700 font-extrabold border-indigo-400'
+                                                : 'bg-[#f8fafc] text-slate-600 hover:bg-slate-200 hover:text-slate-900 border-[#cbd5e1]'
                                         }`}
                                         style={{
                                             width: CORNER_WIDTH,
                                             height: rHeight,
                                             minHeight: rHeight,
-                                            borderColor: borderColor
+                                            borderColor: '#cbd5e1'
                                         }}
                                         title={`Select Row ${rIdx + 1}`}
                                     >
@@ -1898,6 +2086,7 @@ export default function WhiteboardTableObject({
 
                                         const cellFontSize = cell.fontSize || (isHeader ? 12 : 11);
                                         const cellFontFamily = cell.fontFamily || 'sans';
+                                        const refHighlightColor = referencedCellsMap.get(cellKey);
                                         const cellBold = cell.bold !== undefined ? cell.bold : isHeader;
                                         const cellItalic = Boolean(cell.italic);
                                         const cellUnderline = Boolean(cell.underline);
@@ -1925,8 +2114,13 @@ export default function WhiteboardTableObject({
                                                         ? 'rgba(99, 102, 241, 0.22)'
                                                         : (cellCustomBg || (isHeader ? headerBg : cellBg)),
                                                     color: cellColor,
-                                                    outline: isEditingThisCell ? '2px solid #2563eb' : (isCurrentActiveCell ? '2px solid #818cf8' : 'none'),
-                                                    outlineOffset: '-1px'
+                                                    outline: isEditingThisCell 
+                                                        ? '2px solid #2563eb' 
+                                                        : (refHighlightColor 
+                                                            ? `2px dashed ${refHighlightColor}` 
+                                                            : (isCurrentActiveCell ? '2px solid #818cf8' : 'none')),
+                                                    outlineOffset: '-1px',
+                                                    boxShadow: refHighlightColor && !isEditingThisCell ? `inset 0 0 0 1px ${refHighlightColor}40` : undefined
                                                 }}
                                                 onClick={(e) => handleSelectCell(rIdx, cIdx, e)}
                                                 onDoubleClick={(e) => {
@@ -1990,7 +2184,7 @@ export default function WhiteboardTableObject({
                                                             style={{
                                                                 backgroundColor: 'transparent',
                                                                 fontSize: `${cellFontSize}px`,
-                                                                fontFamily: inlineText.startsWith('=') ? '"Fira Code", monospace' : getFontFamilyCss(cellFontFamily),
+                                                                fontFamily: getFontFamilyCss(cellFontFamily),
                                                                 fontWeight: cellBold ? 'bold' : 'normal',
                                                                 fontStyle: cellItalic ? 'italic' : 'normal',
                                                                 textDecoration: [cellUnderline ? 'underline' : '', cellStrikethrough ? 'line-through' : ''].filter(Boolean).join(' ') || 'none',
@@ -2098,11 +2292,11 @@ export default function WhiteboardTableObject({
                                                             return (
                                                                 <div 
                                                                     className={`w-full leading-tight ${cellWrap ? 'break-words whitespace-pre-wrap' : 'truncate whitespace-nowrap'} ${
-                                                                        isFormulaErr ? 'text-rose-400 font-mono font-bold' : (isFormula ? 'font-mono' : '')
+                                                                        isFormulaErr ? 'text-rose-400 font-bold' : ''
                                                                     }`}
                                                                     style={{
                                                                         fontSize: `${cellFontSize}px`,
-                                                                        fontFamily: isFormula ? '"Fira Code", monospace' : getFontFamilyCss(cellFontFamily),
+                                                                        fontFamily: getFontFamilyCss(cellFontFamily),
                                                                         fontWeight: cellBold ? 'bold' : 'normal',
                                                                         fontStyle: cellItalic ? 'italic' : 'normal',
                                                                         textDecoration: [cellUnderline ? 'underline' : '', cellStrikethrough ? 'line-through' : ''].filter(Boolean).join(' ') || 'none',
@@ -2115,13 +2309,6 @@ export default function WhiteboardTableObject({
                                                                 </div>
                                                             );
                                                         })()}
-
-                                                        {/* Empty Placeholder Hint */}
-                                                        {!cell.text && !cell.math && !cell.image && !cell.inkData && (
-                                                            <span className="text-[10px] text-slate-600 italic select-none">
-                                                                {isHeader ? `Header ${cIdx + 1}` : 'Empty'}
-                                                            </span>
-                                                        )}
                                                     </>
                                                 )}
                                             </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, Fragment, useMemo } from 'react';
 import {
     Ruler, Compass,
     Pencil, Eraser, Circle, Square, Minus, Type, Undo2, Redo2, Trash2, Download, Save,
@@ -17,7 +17,8 @@ import {
     Keyboard, HelpCircle, CheckSquare, ListTodo, Infinity as InfinityIcon, Box, Volume2, VolumeX,
     ChevronUp, ChevronsUp, ChevronsDown, FileText, Check, Pause, Play, RotateCcw, Globe, Music,
     Underline, Bold, Italic, Shapes, Database, MessageSquare, Sigma, Calculator, Layers, ScanText,
-    ZoomIn, ZoomOut, BookOpen, Gamepad2, Bot, Atom, MoreHorizontal, Hand, Table
+    ZoomIn, ZoomOut, BookOpen, Gamepad2, Bot, Atom, MoreHorizontal, Hand, Table,
+    FileSpreadsheet, Link as LinkIcon
 } from 'lucide-react';
 import fixWebmDuration from 'fix-webm-duration';
 import katex from 'katex';
@@ -77,6 +78,7 @@ import RadialToolbar from './RadialToolbar';
 import { BRUSH_TYPES, renderCalligraphy, renderCrayon, renderWatercolor, renderFountainPen, floodFill, sampleColor, resolveCanvasFillStyle } from './WhiteboardBrushEngine';
 import StickyNoteRenderer, { createStickyNoteObject, STICKY_COLORS } from './StickyNote';
 import ConnectorLine, { findNearestShape, getAnchorPoint, getConnectorPath, renderArrowhead, calculateAngle, getConnectorArrowAngle, getCurvedControlPoints, getConnectorMidpoint, NORM_ANCHOR_MAP } from './ConnectorLine';
+import { parseMermaidToWhiteboardElements } from '../lib/mermaidToWhiteboard';
 import TemplateGallery from './TemplateGallery';
 import ClassroomTimerModal from './ClassroomTimerModal';
 import WhiteboardImagePickerModal from './WhiteboardImagePickerModal';
@@ -85,7 +87,7 @@ import WhiteboardVoiceControlModal from './WhiteboardVoiceControlModal';
 import WhiteboardMinimap from './WhiteboardMinimap';
 import useSpeechSynthesis, { cleanTextForSpeech } from '../hooks/useSpeechSynthesis';
 import WhiteboardMicSelector from './WhiteboardMicSelector';
-import WhiteboardClosedCaptions from './WhiteboardClosedCaptions';
+import WhiteboardClosedCaptions, { cleanLatexForSvg } from './WhiteboardClosedCaptions';
 import WhiteboardGraphingPanel from './WhiteboardGraphingPanel';
 import WhiteboardAIAssistantModal from './WhiteboardAIAssistantModal';
 import DomainShapeLibraryModal, { DOMAIN_SHAPES } from './DomainShapeLibrary';
@@ -109,8 +111,12 @@ import WhiteboardAIPanel from './WhiteboardAIPanel';
 import WhiteboardAISlideShow from './WhiteboardAISlideShow';
 import WhiteboardPatterns, { PATTERN_PRESETS, GRADIENT_PRESETS } from './WhiteboardPatterns';
 import WhiteboardTableCreatorModal from './WhiteboardTableCreatorModal';
+import WhiteboardCustomIconsModal from './WhiteboardCustomIconsModal';
 import WhiteboardTableObject from './WhiteboardTableObject';
+import WhiteboardDocumentObject, { detectDocumentType } from './WhiteboardDocumentObject';
 import { GeometryInstrumentsOverlay, clampPointToInstrumentOuterEdge } from './geometryTools';
+import EstimatorCalculator from './EstimatorCalculator';
+import WhiteboardFlashcards from './WhiteboardFlashcards';
 import { getCustomToolbarIcon } from './geometryTools/CustomToolbarIcons';
 import api, { aiAPI } from '@/lib/api';
 import { toast } from 'react-hot-toast';
@@ -864,6 +870,7 @@ export default function Whiteboard({
     const [gradientType, setGradientType] = useState('linear');
     const lastPointerCanvasPosRef = useRef({ x: 960, y: 540 });
     const [showTableModal, setShowTableModal] = useState(false);
+    const [showCustomIconsModal, setShowCustomIconsModal] = useState(false);
     const [showAlignMenu, setShowAlignMenu] = useState(false);
     const [showRecorder, setShowRecorder] = useState(false);
     const [showSelectPicker, setShowSelectPicker] = useState(false);
@@ -1070,7 +1077,19 @@ export default function Whiteboard({
     const [showClipboard, setShowClipboard] = useState(false);
     // Laser pointer state & Teacher Live Demonstration state
     const [laserPos, setLaserPos] = useState(null);
+    const [laserTrail, setLaserTrail] = useState([]); // [{x, y, time}] for fading trail ribbon
     const latestLaserPosRef = useRef(null);
+    const laserTimeoutRef = useRef(null);
+
+    // Laser pointer tail fading / decay effect
+    useEffect(() => {
+        if (!laserTrail || laserTrail.length === 0) return;
+        const timer = setTimeout(() => {
+            const now = Date.now();
+            setLaserTrail(prev => prev.filter(p => now - p.time < 500));
+        }, 50);
+        return () => clearTimeout(timer);
+    }, [laserTrail]);
     const [teacherLaser, setTeacherLaser] = useState(null); // { x, y, active, label, isPointing, isDrawing, action }
     const [teacherLaserTrail, setTeacherLaserTrail] = useState([]);
     const [teacherLiveDrawing, setTeacherLiveDrawing] = useState(null); // { active, shapeType, x, y, width, height, color, strokeWidth, progress, currentPathD, title }
@@ -1137,7 +1156,6 @@ export default function Whiteboard({
     const [loadingRecordings, setLoadingRecordings] = useState(false);
     const [recordingFilter, setRecordingFilter] = useState('');
 
-    const laserTimeoutRef = useRef(null);
     const isRemoteUpdateRef = useRef(false);
     const isDrawingRef = useRef(false);
     const remotePathsRef = useRef({});
@@ -1205,6 +1223,28 @@ export default function Whiteboard({
     // Floating Selection & Canvas Context Menu (Cut, Copy, Paste, Duplicate, Delete, Z-Order)
     const [contextMenuPos, setContextMenuPos] = useState(null);
 
+    // Helper to close all floating tool context popovers & flyouts on the main toolbar
+    const closeAllToolContextOverlays = useCallback(() => {
+        setShowStrokePicker(false);
+        setShowStrokeStylePicker(false);
+        setShowEraserPicker(false);
+        setShowShapePicker(false);
+        setShowFillPicker(false);
+        setShowSelectPicker(false);
+        setShowHighlighterPicker(false);
+        setShowLinePicker(false);
+        setShowImagePicker(false);
+        setShowColorPicker(false);
+        setShowCustomColorPicker(false);
+        setShowTextBgPicker(false);
+        setShowBgPicker(false);
+        setShowMathFlyout(false);
+        setShowScienceFlyout(false);
+        setShowMediaFlyout(false);
+        setShowToolsFlyout(false);
+        setShowAlignMenu(false);
+    }, []);
+
     // Shape objects for manipulation
     const [pageShapeObjects, setPageShapeObjects] = useState({ 0: [] });
     const [shapeDragState, setShapeDragState] = useState(null);
@@ -1242,9 +1282,29 @@ export default function Whiteboard({
     const {
         rate: storeSpeechRate,
         autoReadAiResponses: storeAutoRead,
+        volume: storeSpeechVolume,
         setRate: setStoreSpeechRate,
-        setAutoReadAiResponses: setStoreAutoRead
+        setAutoReadAiResponses: setStoreAutoRead,
+        setVolume: setStoreSpeechVolume
     } = useVoiceStore();
+
+    // Whiteboard Canvas Display Brightness (%)
+    const [whiteboardBrightness, setWhiteboardBrightness] = useState(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                const saved = localStorage.getItem('wb_brightness');
+                if (saved) return Number(saved);
+            } catch {}
+        }
+        return 100;
+    });
+
+    const updateWhiteboardBrightness = (val) => {
+        setWhiteboardBrightness(val);
+        try { localStorage.setItem('wb_brightness', String(val)); } catch {}
+    };
+
+    const [showDisplayAudioControls, setShowDisplayAudioControls] = useState(false);
 
     const [aiSpeechEnabled, setAiSpeechEnabled] = useState(() => {
         if (storeAutoRead !== undefined) return storeAutoRead;
@@ -1270,7 +1330,13 @@ export default function Whiteboard({
     const [externalGraphEquations, setExternalGraphEquations] = useState([]);
     const [showGraphPanel, setShowGraphPanel] = useState(false);
     const [showAiAssistantModal, setShowAiAssistantModal] = useState(false);
-    const [whiteboardAiProvider, setWhiteboardAiProvider] = useState('auto');
+    const [whiteboardAiProvider, setWhiteboardAiProvider] = useState(() => {
+        try {
+            return localStorage.getItem('whiteboard_ai_provider') || 'auto';
+        } catch {
+            return 'auto';
+        }
+    });
     const [showPhysicsSpace, setShowPhysicsSpace] = useState(false);
     const [physicsSpaceConfig, setPhysicsSpaceConfig] = useState(null);
 
@@ -1898,12 +1964,28 @@ export default function Whiteboard({
         });
     }, [currentPage]);
 
+    // ─── Linked Office Documents State (Excel, Word, PDF - Link Badge or Inset Window) ───
+    const [pageDocumentObjects, setPageDocumentObjects] = useState({ 0: [] });
+    const documentObjects = pageDocumentObjects[currentPage] || [];
+    const [selectedDocumentId, setSelectedDocumentId] = useState(null);
+    const [docPresentationMode, setDocPresentationMode] = useState('inset'); // 'inset' | 'link'
+
+    const setDocumentObjects = useCallback((updater) => {
+        setPageDocumentObjects(prev => {
+            const current = prev[currentPage] || [];
+            const next = typeof updater === 'function' ? updater(current) : updater;
+            return { ...prev, [currentPage]: next };
+        });
+    }, [currentPage]);
+
     // ─── AI Quiz Attached Objects State & Sideroll Overlay States ───
     const [pageQuizObjects, setPageQuizObjects] = useState({ 0: [] });
     const quizObjects = pageQuizObjects[currentPage] || [];
     const [leftSiderollMode, setLeftSiderollMode] = useState('closed'); // 'closed' | 'partial' | 'full'
     const [rightSiderollMode, setRightSiderollMode] = useState('closed'); // 'closed' | 'partial' | 'full'
     const [showGeometryInstruments, setShowGeometryInstruments] = useState(false);
+    const [showEstimator, setShowEstimator] = useState(false);
+    const [showFlashcards, setShowFlashcards] = useState(false);
     const [activeTakingQuiz, setActiveTakingQuiz] = useState(null);
 
     const attachQuizToPage = useCallback((quiz, targetPage = currentPage) => {
@@ -3188,6 +3270,7 @@ export default function Whiteboard({
         const currentGraphs = pageGraphObjects[currentPage] ? [...pageGraphObjects[currentPage]] : [];
         const current3D = page3DObjects[currentPage] ? [...page3DObjects[currentPage]] : [];
         const currentTables = pageTableObjects[currentPage] ? [...pageTableObjects[currentPage]] : [];
+        const currentDocuments = pageDocumentObjects[currentPage] ? [...pageDocumentObjects[currentPage]] : [];
 
         setPageHistories(prev => {
             const currentHistory = prev[currentPage] || [];
@@ -3200,7 +3283,8 @@ export default function Whiteboard({
                 shapeObjects: currentShapes,
                 graphObjects: currentGraphs,
                 threeDObjects: current3D,
-                tableObjects: currentTables
+                tableObjects: currentTables,
+                documentObjects: currentDocuments
             });
             return {
                 ...prev,
@@ -3215,7 +3299,7 @@ export default function Whiteboard({
                 [currentPage]: Math.min(currentIndex + 1, 24)
             };
         });
-    }, [pageHistoryIndices, pageImageObjects, pageTextObjects, pageShapeObjects, pageGraphObjects, page3DObjects, pageTableObjects, currentPage]);
+    }, [pageHistoryIndices, pageImageObjects, pageTextObjects, pageShapeObjects, pageGraphObjects, page3DObjects, pageTableObjects, pageDocumentObjects, currentPage]);
 
     // Restore state from history
     const restoreFromHistory = useCallback((index) => {
@@ -3253,6 +3337,9 @@ export default function Whiteboard({
             }
             if (stateSnapshot.tableObjects) {
                 setPageTableObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.tableObjects || [] }));
+            }
+            if (stateSnapshot.documentObjects) {
+                setPageDocumentObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.documentObjects || [] }));
             }
             
             if (socket && sessionId) {
@@ -4309,6 +4396,14 @@ export default function Whiteboard({
             setSelectedTableId(null);
             hasDeleted = true;
         }
+        if (selectedDocumentId) {
+            setPageDocumentObjects(prev => ({
+                ...prev,
+                [currentPage]: (prev[currentPage] || []).filter(d => d.id !== selectedDocumentId)
+            }));
+            setSelectedDocumentId(null);
+            hasDeleted = true;
+        }
         if (selection) {
             handleDeleteSelection();
             hasDeleted = true;
@@ -4316,7 +4411,7 @@ export default function Whiteboard({
         if (hasDeleted) {
             saveToHistory();
         }
-    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DIds, selectedGraphId, selectedPdfId, selectedTableId, selection, handleDeleteSelection, saveToHistory, currentPage]);
+    }, [selectedImageIds, selectedTextIds, selectedShapeIds, selectedMediaId, selected3DIds, selectedGraphId, selectedPdfId, selectedTableId, selectedDocumentId, selection, handleDeleteSelection, saveToHistory, currentPage]);
 
     // Unified Copy
     const handleCopy = useCallback(() => {
@@ -4887,7 +4982,12 @@ export default function Whiteboard({
 
     // Grouping tools
     const moveGroup = useCallback((groupId, dx, dy) => {
-        setShapeObjects(prev => prev.map(s => s.groupId === groupId && !s.isLocked ? { ...s, x: s.x + dx, y: s.y + dy } : s));
+        setShapeObjects(prev => prev.map(s => s.groupId === groupId && !s.isLocked ? {
+            ...s,
+            x: s.x + dx,
+            y: s.y + dy,
+            points: s.points ? s.points.map(p => ({ x: p.x + dx, y: p.y + dy })) : s.points
+        } : s));
         setTextObjects(prev => prev.map(s => s.groupId === groupId && !s.isLocked ? { ...s, x: s.x + dx, y: s.y + dy } : s));
         setImageObjects(prev => prev.map(s => s.groupId === groupId && !s.isLocked ? { ...s, x: s.x + dx, y: s.y + dy } : s));
     }, []);
@@ -5300,6 +5400,7 @@ export default function Whiteboard({
                                     startY: shp.startY !== undefined ? shp.startY + dy : shp.startY,
                                     endX: shp.endX !== undefined ? shp.endX + dx : shp.endX,
                                     endY: shp.endY !== undefined ? shp.endY + dy : shp.endY,
+                                    points: shp.points ? shp.points.map(p => ({ x: p.x + dx, y: p.y + dy })) : shp.points,
                                     sourcePoint: shp.sourcePoint ? { x: shp.sourcePoint.x + dx, y: shp.sourcePoint.y + dy } : shp.sourcePoint,
                                     targetPoint: shp.targetPoint ? { x: shp.targetPoint.x + dx, y: shp.targetPoint.y + dy } : shp.targetPoint,
                                     waypoint: shp.waypoint ? { x: shp.waypoint.x + dx, y: shp.waypoint.y + dy } : shp.waypoint
@@ -6059,10 +6160,47 @@ export default function Whiteboard({
         const diagH = (isMetaObj && titleOrMeta.height) ? Number(titleOrMeta.height) : 380;
 
         const wrapper = canvasWrapperRef.current;
+        const visibleW = (wrapper?.clientWidth || 1000) / zoomLevel;
+        const visibleH = (wrapper?.clientHeight || 700) / zoomLevel;
+        const viewCenterX = Math.round(-panOffset.x + visibleW / 2);
+        const viewCenterY = Math.round(-panOffset.y + visibleH / 2);
         const cx = wrapper ? (wrapper.clientWidth / 2 - Math.round(diagW / 2)) : 250;
         const cy = wrapper ? (wrapper.clientHeight / 2 - Math.round(diagH / 2)) : 250;
         const spawnX = Math.round(-panOffset.x + cx / zoomLevel);
         const spawnY = Math.round(-panOffset.y + cy / zoomLevel);
+
+        // Check if diagram is a Mermaid flowchart that can be converted to native editable whiteboard shapes
+        const mermaidCodeCandidate = (code && typeof code === 'string' && /flowchart|graph/i.test(code))
+            ? code
+            : (aiSolutionData?.solutionMarkdown && typeof aiSolutionData.solutionMarkdown === 'string')
+                ? aiSolutionData.solutionMarkdown.match(/```(?:mermaid)?\s*\n([\s\S]*?)```/i)?.[1]
+                : null;
+
+        if (mermaidCodeCandidate && /flowchart|graph/i.test(mermaidCodeCandidate)) {
+            try {
+                // Ensure flowchart remains strictly within limits of the viewport with readable font and curved connectors
+                const parsed = parseMermaidToWhiteboardElements(
+                    mermaidCodeCandidate,
+                    viewCenterX,
+                    viewCenterY,
+                    visibleW,
+                    visibleH,
+                    { connectorType: 'curved' }
+                );
+                if (parsed && Array.isArray(parsed.shapes) && parsed.shapes.length > 0) {
+                    setShapeObjects(prev => [...prev, ...parsed.shapes]);
+                    setSelectedShapeIds(parsed.shapes.map(s => s.id));
+                    if (socket && sessionId) {
+                        parsed.shapes.forEach(shape => socket.emit('whiteboard:shape-add', { sessionId, shape }));
+                    }
+                    saveToHistory();
+                    toast.success(`Added editable flowchart (${parsed.nodeCount} shapes, ${parsed.edgeCount} curved connectors) to Whiteboard!`, { icon: '📊' });
+                    return;
+                }
+            } catch (err) {
+                console.warn('[Whiteboard] Failed to parse Mermaid diagram into native shapes, falling back to SVG:', err);
+            }
+        }
 
         const newDiagram = {
             id: `diag_${Date.now()}`,
@@ -6086,6 +6224,120 @@ export default function Whiteboard({
         saveToHistory();
         toast.success('Inserted diagram onto Whiteboard!', { icon: '📐' });
     }, [canvasWrapperRef, panOffset, zoomLevel, socket, sessionId, saveToHistory, setShapeObjects, setSelectedShapeIds, aiSolutionData]);
+
+    // Insert Structured Table (e.g. Dry-Run Trace Table) to Whiteboard Canvas with 12px Font
+    const handleInsertTableToCanvas = useCallback((markdownTableTextOrObj, options = {}) => {
+        let headers = [];
+        let rows = [];
+
+        if (typeof markdownTableTextOrObj === 'string') {
+            const lines = markdownTableTextOrObj.trim().split('\n');
+            const tableLines = lines.filter(l => l.trim().startsWith('|') && l.trim().endsWith('|'));
+            if (tableLines.length >= 2) {
+                headers = tableLines[0].split('|').map(c => c.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+                const dataLines = tableLines.slice(1).filter(l => !l.includes('---'));
+                rows = dataLines.map(l => l.split('|').map(c => c.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1));
+            }
+        } else if (markdownTableTextOrObj?.headers && Array.isArray(markdownTableTextOrObj?.rows)) {
+            headers = markdownTableTextOrObj.headers;
+            rows = markdownTableTextOrObj.rows;
+        }
+
+        if (headers.length === 0 && rows.length === 0) {
+            toast.error('No table data to insert');
+            return;
+        }
+
+        const numCols = Math.max(headers.length, ...rows.map(r => r.length));
+        const numRows = rows.length + (headers.length > 0 ? 1 : 0);
+
+        const wrapper = canvasWrapperRef.current;
+        const visibleW = (wrapper?.clientWidth || 1000) / zoomLevel;
+        const visibleH = (wrapper?.clientHeight || 700) / zoomLevel;
+        const viewCenterX = Math.round(-panOffset.x + visibleW / 2);
+        const viewCenterY = Math.round(-panOffset.y + visibleH / 2);
+
+        // Compute dynamic column widths with clamping so it fits comfortably within viewport
+        const maxAvailableW = Math.max(340, visibleW * 0.88);
+        const colWidths = Array(numCols).fill(110);
+        for (let c = 0; c < numCols; c++) {
+            let maxLen = (headers[c] || '').length;
+            rows.forEach(r => {
+                if (r[c]) maxLen = Math.max(maxLen, String(r[c]).length);
+            });
+            colWidths[c] = Math.max(90, Math.min(220, maxLen * 8.5 + 24));
+        }
+
+        const initialTotalW = colWidths.reduce((a, b) => a + b, 0);
+        if (initialTotalW > maxAvailableW) {
+            const fitFactor = maxAvailableW / initialTotalW;
+            for (let c = 0; c < numCols; c++) {
+                colWidths[c] = Math.max(75, Math.round(colWidths[c] * fitFactor));
+            }
+        }
+
+        const totalW = colWidths.reduce((a, b) => a + b, 0);
+        const rowH = 28;
+
+        const cells = {};
+        if (headers.length > 0) {
+            headers.forEach((h, c) => {
+                const cleanText = h.replace(/\$([^\$]+)\$/g, '$1').replace(/\*\*/g, '').trim();
+                cells[`0-${c}`] = {
+                    text: cleanText,
+                    bold: true,
+                    align: 'center',
+                    fontSize: 12, // Strict 12px font requirement
+                    bg: '#1e293b',
+                    color: '#fbbf24'
+                };
+            });
+        }
+
+        rows.forEach((row, r) => {
+            const actualRowIdx = headers.length > 0 ? r + 1 : r;
+            for (let c = 0; c < numCols; c++) {
+                const cellVal = row[c] !== undefined ? String(row[c]) : '';
+                const cleanVal = cellVal.replace(/\$([^\$]+)\$/g, '$1').replace(/\*\*/g, '').trim();
+                cells[`${actualRowIdx}-${c}`] = {
+                    text: cleanVal,
+                    bold: false,
+                    align: 'center',
+                    fontSize: 12, // Strict 12px font requirement
+                    bg: actualRowIdx % 2 === 0 ? '#0f172a' : '#1e1b4b',
+                    color: '#e2e8f0'
+                };
+            }
+        });
+
+        const newTable = {
+            id: `table_trace_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+            type: 'table',
+            x: Math.max(20, Math.round(viewCenterX - totalW / 2)),
+            y: Math.max(20, Math.round(viewCenterY - (numRows * rowH) / 2)),
+            rows: numRows,
+            cols: numCols,
+            rowHeights: Array(numRows).fill(rowH),
+            colWidths: colWidths,
+            hasHeaderRow: headers.length > 0,
+            headerBg: '#1e293b',
+            headerText: '#fbbf24',
+            cellBg: '#0f172a',
+            cellText: '#e2e8f0',
+            borderColor: '#3b82f6',
+            borderWidth: 2,
+            opacity: 1.0,
+            isLocked: false,
+            zIndex: 35,
+            cells
+        };
+
+        setTableObjects(prev => [...prev, newTable]);
+        setSelectedTableId(newTable.id);
+        setTool('select');
+        saveToHistory();
+        toast.success(`Inserted ${numRows}×${numCols} Dry-Run Trace Table to Whiteboard (12px font)!`, { icon: '📊' });
+    }, [canvasWrapperRef, panOffset, zoomLevel, setTableObjects, setSelectedTableId, setTool, saveToHistory]);
 
     // Insert Parametric Geometry Shape
     const handleInsertParametricShape = useCallback((shapeData) => {
@@ -6527,7 +6779,9 @@ export default function Whiteboard({
                     if (shapeDragState.startObjs && shapeDragState.startObjs.length > 0) {
                         setShapeObjects(prev => prev.map(shp => {
                             const sObj = shapeDragState.startObjs.find(s => s.id === shp.id);
-                            return sObj ? { ...shp, x: sObj.x + canvasDx, y: sObj.y + canvasDy } : shp;
+                            if (!sObj) return shp;
+                            const nextPoints = sObj.points ? sObj.points.map(p => ({ x: p.x + canvasDx, y: p.y + canvasDy })) : sObj.points;
+                            return { ...shp, x: sObj.x + canvasDx, y: sObj.y + canvasDy, points: nextPoints };
                         }));
                         if (shapeDragState.startTextObjs && shapeDragState.startTextObjs.length > 0) {
                             setTextObjects(prev => prev.map(txt => {
@@ -6548,11 +6802,11 @@ export default function Whiteboard({
                             }));
                         }
                     } else {
-                        setShapeObjects(prev => prev.map(shp =>
-                            shp.id === shapeDragState.id
-                                ? { ...shp, x: startObj.x + canvasDx, y: startObj.y + canvasDy }
-                                : shp
-                        ));
+                        setShapeObjects(prev => prev.map(shp => {
+                            if (shp.id !== shapeDragState.id) return shp;
+                            const nextPoints = startObj.points ? startObj.points.map(p => ({ x: p.x + canvasDx, y: p.y + canvasDy })) : startObj.points;
+                            return { ...shp, x: startObj.x + canvasDx, y: startObj.y + canvasDy, points: nextPoints };
+                        }));
                     }
                 }
             } else if (shapeDragState.action === 'line-endpoint-start' || shapeDragState.action === 'line-endpoint-end') {
@@ -6655,9 +6909,16 @@ export default function Whiteboard({
                     newHeight = size;
                 }
 
+                const scaleX = (startObj.width && startObj.width !== 0) ? newWidth / startObj.width : 1;
+                const scaleY = (startObj.height && startObj.height !== 0) ? newHeight / startObj.height : 1;
+                const nextPoints = startObj.points ? startObj.points.map(p => ({
+                    x: Math.round(newX + (p.x - startObj.x) * scaleX),
+                    y: Math.round(newY + (p.y - startObj.y) * scaleY)
+                })) : startObj.points;
+
                 setShapeObjects(prev => prev.map(shp =>
                     shp.id === shapeDragState.id
-                        ? { ...shp, x: newX, y: newY, width: newWidth, height: newHeight }
+                        ? { ...shp, x: newX, y: newY, width: newWidth, height: newHeight, points: nextPoints }
                         : shp
                 ));
             } else if (shapeDragState.action === 'skew') {
@@ -7854,11 +8115,126 @@ export default function Whiteboard({
         });
     }, [tool, isAutoShape, color, strokeWidth, isShiftDown]);
 
+    const isPointInPolygon = (px, py, vertices) => {
+        if (!vertices || vertices.length < 3) return false;
+        let inside = false;
+        for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+            const xi = vertices[i].x, yi = vertices[i].y;
+            const xj = vertices[j].x, yj = vertices[j].y;
+            const intersect = ((yi > py) !== (yj > py)) &&
+                (px < ((xj - xi) * (py - yi)) / (yj - yi + 0.0000001) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    };
+
+    const isPointInsideVectorShape = (p, s) => {
+        if (!p || !s || s.type === 'connector' || s.type === 'line' || s.type === 'arrow' || s.type === 'double_arrow' || s.type === 'dashed_line' || s.type === 'ruler' || s.type === 'protractor') {
+            return false;
+        }
+
+        // Freehand drawn closed loop check via Point-in-Polygon (Ray Casting) on absolute points
+        if (s.type === 'path' || s.type === 'sparkle_path') {
+            if (!s.points || s.points.length < 3) return false;
+            const pts = s.points;
+            const pFirst = pts[0];
+            const pLast = pts[pts.length - 1];
+            const gap = Math.hypot(pFirst.x - pLast.x, pFirst.y - pLast.y);
+            if (!s.isClosed && gap > 36) {
+                return false;
+            }
+            return isPointInPolygon(p.x, p.y, pts);
+        }
+
+        // Polygon with custom vertices (e.g. drawn with Drafting Triangle or Polygon tool)
+        if (s.type === 'polygon' && Array.isArray(s.points) && s.points.length >= 3) {
+            return isPointInPolygon(p.x, p.y, s.points);
+        }
+
+        const w = Math.max(s.width || 0, 1);
+        const h = Math.max(s.height || 0, 1);
+        const cx = (s.x || 0) + w / 2;
+        const cy = (s.y || 0) + h / 2;
+        const rad = -((s.rotation || 0) * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+
+        const dx = p.x - cx;
+        const dy = p.y - cy;
+        const lx = dx * cos - dy * sin + w / 2;
+        const ly = dx * sin + dy * cos + h / 2;
+
+        if (lx < 0 || lx > w || ly < 0 || ly > h) return false;
+
+        if (s.type === 'circle' || s.type === 'ellipse' || s.type === 'concentric_circles') {
+            const rx = w / 2;
+            const ry = h / 2;
+            if (rx <= 0 || ry <= 0) return false;
+            const normX = (lx - rx) / rx;
+            const normY = (ly - ry) / ry;
+            return (normX * normX + normY * normY) <= 1.0;
+        }
+
+        if (s.type === 'triangle') {
+            // Standard isosceles/equilateral: (w/2, 0), (0, h), (w, h)
+            const vertices = [{ x: w / 2, y: 0 }, { x: 0, y: h }, { x: w, y: h }];
+            return isPointInPolygon(lx, ly, vertices);
+        }
+
+        if (s.type === 'right_triangle') {
+            // Right triangle: (0, 0), (0, h), (w, h)
+            const vertices = [{ x: 0, y: 0 }, { x: 0, y: h }, { x: w, y: h }];
+            return isPointInPolygon(lx, ly, vertices);
+        }
+
+        if (s.type === 'diamond') {
+            const cxNorm = Math.abs(lx - w / 2) / (w / 2);
+            const cyNorm = Math.abs(ly - h / 2) / (h / 2);
+            return (cxNorm + cyNorm) <= 1.0;
+        }
+
+        if (s.type === 'hexagon') {
+            const vertices = Array.from({ length: 6 }, (_, i) => {
+                const a = -Math.PI / 2 + (2 * Math.PI * i) / 6;
+                return { x: w / 2 + (w / 2) * Math.cos(a), y: h / 2 + (h / 2) * Math.sin(a) };
+            });
+            return isPointInPolygon(lx, ly, vertices);
+        }
+
+        if (s.type === 'pentagon') {
+            const vertices = Array.from({ length: 5 }, (_, i) => {
+                const a = -Math.PI / 2 + (2 * Math.PI * i) / 5;
+                return { x: w / 2 + (w / 2) * Math.cos(a), y: h / 2 + (h / 2) * Math.sin(a) };
+            });
+            return isPointInPolygon(lx, ly, vertices);
+        }
+
+        if (s.type === 'star') {
+            const cX = w / 2, cY = h / 2, outR = Math.min(cX, cY), inR = outR / 2.5;
+            const vertices = Array.from({ length: 10 }, (_, i) => {
+                const r = i % 2 === 0 ? outR : inR;
+                const a = -Math.PI / 2 + (i * Math.PI) / 5;
+                return { x: cX + r * Math.cos(a), y: cY + r * Math.sin(a) };
+            });
+            return isPointInPolygon(lx, ly, vertices);
+        }
+
+        if (s.type === 'parallelogram') {
+            const skew = Math.abs(s.skew ?? (w * 0.25));
+            const vertices = [
+                { x: skew, y: 0 },
+                { x: w, y: 0 },
+                { x: w - skew, y: h },
+                { x: 0, y: h }
+            ];
+            return isPointInPolygon(lx, ly, vertices);
+        }
+
+        return true; // Rectangles, rounded rects, cards etc.
+    };
+
     const startDrawing = useCallback((e) => {
-        setShowMathFlyout(false);
-        setShowScienceFlyout(false);
-        setShowMediaFlyout(false);
-        setShowToolsFlyout(false);
+        closeAllToolContextOverlays();
         if (!canUserDraw) return;
         e.preventDefault();
         let pos = getPosition(e);
@@ -7878,54 +8254,6 @@ export default function Whiteboard({
 
         // Handle fill bucket tool
         if (tool === 'fill') {
-            const isPointInsideVectorShape = (p, s) => {
-                if (!s || s.type === 'connector' || s.type === 'line' || s.type === 'arrow') return false;
-                const w = s.width || 100;
-                const h = s.height || 100;
-                const cx = (s.x || 0) + w / 2;
-                const cy = (s.y || 0) + h / 2;
-                const rad = -((s.rotation || 0) * Math.PI) / 180;
-                const cos = Math.cos(rad);
-                const sin = Math.sin(rad);
-
-                const dx = p.x - cx;
-                const dy = p.y - cy;
-                const lx = dx * cos - dy * sin + w / 2;
-                const ly = dx * sin + dy * cos + h / 2;
-
-                if (lx < 0 || lx > w || ly < 0 || ly > h) return false;
-
-                if (s.type === 'circle' || s.type === 'ellipse') {
-                    const rx = w / 2;
-                    const ry = h / 2;
-                    if (rx <= 0 || ry <= 0) return false;
-                    const normX = (lx - rx) / rx;
-                    const normY = (ly - ry) / ry;
-                    return (normX * normX + normY * normY) <= 1.05;
-                }
-
-                if (s.type === 'triangle') {
-                    const p1 = { x: w / 2, y: 0 };
-                    const p2 = { x: 0, y: h };
-                    const p3 = { x: w, y: h };
-                    const sign = (pa, pb, pc) => (pa.x - pc.x) * (pb.y - pc.y) - (pb.x - pc.x) * (pa.y - pc.y);
-                    const d1 = sign({ x: lx, y: ly }, p1, p2);
-                    const d2 = sign({ x: lx, y: ly }, p2, p3);
-                    const d3 = sign({ x: lx, y: ly }, p3, p1);
-                    const hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
-                    const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
-                    return !(hasNeg && hasPos);
-                }
-
-                if (s.type === 'diamond') {
-                    const cxNorm = Math.abs(lx - w / 2) / (w / 2);
-                    const cyNorm = Math.abs(ly - h / 2) / (h / 2);
-                    return (cxNorm + cyNorm) <= 1.05;
-                }
-
-                return true;
-            };
-
             // 1. Check if user clicked inside any vector shape on the whiteboard
             const hitShape = [...shapeObjects].reverse().find(s => isPointInsideVectorShape(pos, s));
             if (hitShape) {
@@ -7939,6 +8267,7 @@ export default function Whiteboard({
                 setShapeObjects(prev => prev.map(s => s.id === hitShape.id ? {
                     ...s,
                     fillColor: resolvedFill,
+                    isClosed: true,
                     fillType: fillMode,
                     fillPatternId: fillMode === 'pattern' ? fillPatternId : undefined,
                     fillGradientId: fillMode === 'gradient' ? fillGradientId : undefined
@@ -7966,8 +8295,12 @@ export default function Whiteboard({
                     gradientType
                 }, 32);
 
-                if (res && res.success === false && res.reason === 'leaked') {
-                    toast.error('Cannot fill: Shape boundary is open. Please close all gaps before filling.', { icon: '⚠️' });
+                if (res && res.success === false) {
+                    if (res.reason === 'leaked') {
+                        toast.error('Cannot fill: Shape boundary is open. Please close all gaps before filling.', { icon: '⚠️' });
+                    } else {
+                        toast.error('No closed area detected to fill.', { icon: '⚠️' });
+                    }
                     return;
                 }
 
@@ -8760,8 +9093,8 @@ export default function Whiteboard({
                 const p2 = { x: snapped.endX, y: snapped.endY };
                 const minX = Math.min(p1.x, p2.x);
                 const minY = Math.min(p1.y, p2.y);
-                const w = Math.max(Math.abs(p1.x - p2.x), 2);
-                const h = Math.max(Math.abs(p1.y - p2.y), 2);
+                const w = Math.max(Math.abs(p1.x - p2.x), strokeWidth || 3, 4);
+                const h = Math.max(Math.abs(p1.y - p2.y), strokeWidth || 3, 4);
                 committedShape = {
                     id: Date.now().toString(),
                     type: 'path',
@@ -8878,8 +9211,8 @@ export default function Whiteboard({
                         const p2 = { x: autoSnapped.endX, y: autoSnapped.endY };
                         const minX = Math.min(p1.x, p2.x);
                         const minY = Math.min(p1.y, p2.y);
-                        const w = Math.max(Math.abs(p1.x - p2.x), 2);
-                        const h = Math.max(Math.abs(p1.y - p2.y), 2);
+                        const w = Math.max(Math.abs(p1.x - p2.x), strokeWidth || 3, 4);
+                        const h = Math.max(Math.abs(p1.y - p2.y), strokeWidth || 3, 4);
                         committedShape = {
                             id: Date.now().toString(),
                             type: 'path',
@@ -8948,15 +9281,18 @@ export default function Whiteboard({
                         x: p.x - minX,
                         y: p.y - minY
                     }));
+                    const spSw = strokeWidth || 3;
+                    const spW = Math.max(maxX - minX, spSw, 4);
+                    const spH = Math.max(maxY - minY, spSw, 4);
                     const newSparkleObj = {
                         id: `sparkle-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
                         type: 'sparkle_path',
                         x: minX,
                         y: minY,
-                        width: Math.max(maxX - minX, 1),
-                        height: Math.max(maxY - minY, 1),
-                        originalWidth: Math.max(maxX - minX, 1),
-                        originalHeight: Math.max(maxY - minY, 1),
+                        width: spW,
+                        height: spH,
+                        originalWidth: spW,
+                        originalHeight: spH,
                         points: relPoints,
                         particles: relParticles,
                         rotation: 0,
@@ -8985,15 +9321,19 @@ export default function Whiteboard({
                         y: p.y - minY
                     }));
                     
+                    const sw = strokeWidth || 3;
+                    const pathW = Math.max(maxX - minX, sw, 4);
+                    const pathH = Math.max(maxY - minY, sw, 4);
+
                     const newShapeObj = {
                         id: Date.now().toString(),
                         type: 'path',
                         x: minX,
                         y: minY,
-                        width: maxX - minX,
-                        height: maxY - minY,
-                        originalWidth: maxX - minX,
-                        originalHeight: maxY - minY,
+                        width: pathW,
+                        height: pathH,
+                        originalWidth: pathW,
+                        originalHeight: pathH,
                         points: relPoints,
                         rotation: 0,
                         color: tool === 'highlighter' ? highlighterColor : color,
@@ -9492,16 +9832,17 @@ export default function Whiteboard({
     const handlePointerDown = useCallback((e) => {
         if (!canUserDraw) return;
         
-        // Dismiss floating context menu if open
+        // Dismiss floating context menu and toolbar context overlays if open
         if (contextMenuPos) {
             setContextMenuPos(null);
         }
+        closeAllToolContextOverlays();
 
         // Ignore events on interactive canvas elements, controls, tools, overlays, media, 3D, and handles
         if (
             e.target?.closest?.(
                 'button, input, textarea, select, video, audio, ' +
-                '[data-interactive="true"], [data-handle], ' +
+                '[data-interactive="true"], [data-handle], [data-geometry-tool], [data-instrument="true"], .geometry-instrument, ' +
                 '.whiteboard-media-player, .whiteboard-3d-object, ' +
                 '.whiteboard-clipboard-panel, .whiteboard-minimap, ' +
                 '.whiteboard-tasks-panel, .radial-toolbar-container, ' +
@@ -9675,6 +10016,32 @@ export default function Whiteboard({
             lastPointerCanvasPosRef.current = movePos;
         }
 
+        // Laser pointer hovering: continuously tracks and renders fading tail on hover without requiring mouse press
+        if (tool === 'laser') {
+            const pos = movePos;
+            if (pos && !isNaN(pos.x) && !isNaN(pos.y)) {
+                setLaserPos(pos);
+                latestLaserPosRef.current = pos;
+                const now = Date.now();
+                setLaserTrail(prev => [...prev, { x: pos.x, y: pos.y, time: now }].filter(p => now - p.time < 500).slice(-25));
+                if (laserTimeoutRef.current) {
+                    clearTimeout(laserTimeoutRef.current);
+                }
+                laserTimeoutRef.current = setTimeout(() => {
+                    setLaserPos(null);
+                    setLaserTrail([]);
+                }, 1200);
+
+                if (socket && sessionId && Date.now() - cursorLastEmitRef.current > 50) {
+                    cursorLastEmitRef.current = Date.now();
+                    socket.emit('whiteboard:laser-update', {
+                        sessionId,
+                        laserPos: pos
+                    });
+                }
+            }
+        }
+
         if (!isDrawing) {
             if (socket && sessionId && Date.now() - cursorLastEmitRef.current > 60) {
                 cursorLastEmitRef.current = Date.now();
@@ -9775,10 +10142,14 @@ export default function Whiteboard({
     }, [stopDrawing]);
 
     const handlePointerLeave = useCallback((e) => {
+        if (tool === 'laser') {
+            setLaserPos(null);
+            setLaserTrail([]);
+        }
         if (isDrawing && (!e.currentTarget?.hasPointerCapture || !e.currentTarget.hasPointerCapture(e.pointerId))) {
             handlePointerUp(e);
         }
-    }, [isDrawing, handlePointerUp]);
+    }, [isDrawing, handlePointerUp, tool]);
 
     // Prevent iOS/browser rubber-band bounce on canvas touchmove without breaking touch/pencil clicks
     useEffect(() => {
@@ -11758,14 +12129,17 @@ export default function Whiteboard({
                     ? (color || '#3b82f6')
                     : (fillMode === 'pattern' ? (patternFgColor || '#ffffff') : (gradientFrom || '#ff512f'))
             );
-            return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="%23ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z" fill="${activeFill}"/><path d="m5 2 5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z" fill="${activeFill}"/></svg>') 4 20, crosshair`;
+            return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z" fill="%23ffffff" stroke="%230f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="m5 2 5 5" stroke="%230f172a" stroke-width="2" stroke-linecap="round"/><path d="M2 13h15" stroke="%230f172a" stroke-width="2"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z" fill="${activeFill}" stroke="%230f172a" stroke-width="1.5"/></svg>') 2 13, crosshair`;
         }
         if (tool === 'eraser') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${eraserSize}" height="${eraserSize}" viewBox="0 0 ${eraserSize} ${eraserSize}"><rect width="${eraserSize}" height="${eraserSize}" fill="white" stroke="black" stroke-width="1"/></svg>') ${eraserSize / 2} ${eraserSize / 2}, auto`;
         if (tool === 'text') return 'text';
         if (tool === 'laser') return 'none';
         if (tool === 'highlighter') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${encodeURIComponent(highlighterColor)}" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>') 2 22, auto`;
-        // Pen cursor - solid circle matching size and color
-        if (tool === 'pen') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${strokeWidth + 2}" height="${strokeWidth + 2}" viewBox="0 0 ${strokeWidth + 2} ${strokeWidth + 2}"><circle cx="${(strokeWidth + 2) / 2}" cy="${(strokeWidth + 2) / 2}" r="${strokeWidth / 2}" fill="${encodeURIComponent(color)}" /></svg>') ${(strokeWidth + 2) / 2} ${(strokeWidth + 2) / 2}, crosshair`;
+        // Pen cursor - crisp angled fountain pen with nib color matching active stroke
+        if (tool === 'pen') {
+            const penColor = encodeURIComponent(color || '#000000');
+            return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" fill="%23ffffff" stroke="%230f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="m14 6 4 4" stroke="%230f172a" stroke-width="2" stroke-linecap="round"/><polygon points="2,22 6.5,20.5 3.5,17.5" fill="${penColor}" stroke="%230f172a" stroke-width="1"/><circle cx="2" cy="22" r="1.2" fill="%230f172a"/></svg>') 2 22, crosshair`;
+        }
         if (tool === 'arrow') return 'crosshair';
         return 'crosshair';
     };
@@ -12409,6 +12783,41 @@ export default function Whiteboard({
         const dropX = Math.round((e.clientX - rect.left) * scaleX);
         const dropY = Math.round((e.clientY - rect.top) * scaleY);
 
+        // 0. Native Dropped Files (Office Documents: Excel, Word, PDF or Images)
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            const files = Array.from(e.dataTransfer.files);
+            for (const file of files) {
+                const name = file.name.toLowerCase();
+                const isDoc = name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.csv') ||
+                              name.endsWith('.docx') || name.endsWith('.doc') || name.endsWith('.pdf');
+                if (isDoc) {
+                    const detectedType = detectDocumentType(file.name, file.type);
+                    const blobUrl = URL.createObjectURL(file);
+                    const newDoc = {
+                        id: `doc_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                        fileName: file.name,
+                        title: file.name,
+                        docType: detectedType,
+                        url: blobUrl,
+                        presentationMode: 'inset', // default to resizable inset window, can be toggled to link badge
+                        x: Math.max(20, dropX - 160),
+                        y: Math.max(20, dropY - 100),
+                        width: 640,
+                        height: 480,
+                        isLocked: false
+                    };
+                    setPageDocumentObjects(prev => ({
+                        ...prev,
+                        [currentPage]: [...(prev[currentPage] || []), newDoc]
+                    }));
+                    setSelectedDocumentId(newDoc.id);
+                    saveToHistory();
+                    toast.success(`Linked ${file.name} to whiteboard!`, { icon: '📎' });
+                    return;
+                }
+            }
+        }
+
         // 1. Whiteboard Image payload
         const imagePayload = e.dataTransfer.getData('application/x-whiteboard-image');
         if (imagePayload) {
@@ -12487,14 +12896,14 @@ export default function Whiteboard({
                 insertImageFromSrc(rawUri);
             }
         }
-    }, [insertImageFromSrc, currentPage]);
+    }, [insertImageFromSrc, saveToHistory, currentPage]);
 
     // ─── Geometry Instruments Stamping Callbacks (myViewBoard Inspired) ───
     const handleGeometryDrawLine = useCallback(({ startX, startY, endX, endY, lengthCm, angleDeg }) => {
         const minX = Math.min(startX, endX);
         const minY = Math.min(startY, endY);
-        const w = Math.max(Math.abs(endX - startX), 2);
-        const h = Math.max(Math.abs(endY - startY), 2);
+        const w = Math.max(Math.abs(endX - startX), strokeWidth || 3, 4);
+        const h = Math.max(Math.abs(endY - startY), strokeWidth || 3, 4);
         const newLine = {
             id: `geom_line_${Date.now()}`,
             type: 'line',
@@ -12512,6 +12921,7 @@ export default function Whiteboard({
             absEndY: endY,
             color,
             strokeWidth: strokeWidth || 3,
+            zIndex: 70,
             isLocked: false
         };
         setShapeObjects(prev => [...prev, newLine]);
@@ -12669,7 +13079,11 @@ export default function Whiteboard({
         toast.success(`Drawn ${minorDegStr} angle rays & minor arc`, { icon: '📐' });
     }, [color, strokeWidth, setShapeObjects, setTextObjects, saveToHistory]);
 
-    const handleGeometryDrawPerpendicular = useCallback(({ corner, baseEnd, heightEnd }) => {
+    const handleGeometryDrawPerpendicular = useCallback((param) => {
+        if (!param) return;
+        const corner = param.corner || { x: param.cornerX ?? param.x ?? 0, y: param.cornerY ?? param.y ?? 0 };
+        const baseEnd = param.baseEnd || { x: param.baseEndX ?? (corner.x + 100), y: param.baseEndY ?? corner.y };
+        const heightEnd = param.heightEnd || { x: param.perpEndX ?? corner.x, y: param.perpEndY ?? (corner.y - 100) };
         const timestamp = Date.now();
         const minX1 = Math.min(corner.x, baseEnd.x);
         const minY1 = Math.min(corner.y, baseEnd.y);
@@ -12722,7 +13136,10 @@ export default function Whiteboard({
         toast.success('Drawn 90° perpendicular construction', { icon: '📐' });
     }, [color, strokeWidth, setShapeObjects, saveToHistory]);
 
-    const handleGeometryDrawTriangle = useCallback(({ p1, p2, p3, squareType }) => {
+    const handleGeometryDrawTriangle = useCallback((param) => {
+        const points = param?.points || (param?.p1 ? [param.p1, param.p2, param.p3] : []);
+        if (!points || points.length < 3) return;
+        const [p1, p2, p3] = points;
         const minX = Math.min(p1.x, p2.x, p3.x);
         const minY = Math.min(p1.y, p2.y, p3.y);
         const maxX = Math.max(p1.x, p2.x, p3.x);
@@ -12733,17 +13150,18 @@ export default function Whiteboard({
             points: [p1, p2, p3],
             x: minX,
             y: minY,
-            width: maxX - minX,
-            height: maxY - minY,
+            width: Math.max(maxX - minX, 10),
+            height: Math.max(maxY - minY, 10),
             color,
             strokeWidth: strokeWidth || 3,
             fillColor: 'transparent',
             isLocked: false
         };
         setShapeObjects(prev => [...prev, newPoly]);
+        setSelectedShapeIds([newPoly.id]);
         saveToHistory();
-        toast.success(`Drawn ${squareType === '45' ? '45°-45°-90°' : '30°-60°-90°'} triangle`, { icon: '📐' });
-    }, [color, strokeWidth, setShapeObjects, saveToHistory]);
+        toast.success(`Drawn ${param?.squareType === '45' ? '45°-45°-90°' : '30°-60°-90°'} triangle`, { icon: '📐' });
+    }, [color, strokeWidth, setShapeObjects, setSelectedShapeIds, saveToHistory]);
 
     const handleGeometryMarkDistance = useCallback(({ startX, startY, endX, endY, distanceCm }) => {
         const minX = Math.min(startX, endX);
@@ -12772,6 +13190,57 @@ export default function Whiteboard({
         setShapeObjects(prev => [...prev, markLine]);
         saveToHistory();
         toast.success(`Marked distance: ${distanceCm.toFixed(1)} cm`, { icon: '📍' });
+    }, [setShapeObjects, saveToHistory]);
+
+    // ─── Estimator Calculator & STEM Flashcards Callbacks ───
+    const handleInsertCalculatorEquation = useCallback(({ latex, text }) => {
+        const timestamp = Date.now();
+        const estWidth = Math.max(220, Math.min(600, (latex || '').length * 15 + 40));
+        const newEquation = {
+            id: `eq_est_${timestamp}`,
+            type: 'equation',
+            x: 280,
+            y: 220,
+            width: estWidth,
+            height: 64,
+            latex: latex || '',
+            text: text || '',
+            color: color || '#0f172a',
+            fontSize: 22,
+            bgColor: 'rgba(255, 255, 255, 0.95)',
+            zIndex: 25,
+            isLocked: false
+        };
+        setShapeObjects(prev => [...prev, newEquation]);
+        saveToHistory();
+        toast.success('Inserted equation from Estimator!', { icon: '🖩' });
+    }, [color, setShapeObjects, saveToHistory]);
+
+    const handleStampFlashcard = useCallback(({ title, question, answer, hint, subject }) => {
+        const timestamp = Date.now();
+        const cleanQ = (question || '').replace(/\$+/g, '');
+        const cleanA = (answer || '').replace(/\$+/g, '');
+        const cardText = `🃏 ${title || 'STEM Card'}\n\nQ: ${cleanQ}\n\nA: ${cleanA}${hint ? `\n\n💡 Hint: ${hint}` : ''}`;
+        const newCardShape = {
+            id: `flashcard_${timestamp}`,
+            type: 'rectangle',
+            x: 300,
+            y: 200,
+            width: 320,
+            height: 180,
+            color: '#6366f1',
+            fillColor: '#f8fafc',
+            strokeWidth: 2,
+            text: cardText,
+            textColor: '#0f172a',
+            fontSize: 13,
+            verticalAlign: 'top',
+            zIndex: 25,
+            isLocked: false
+        };
+        setShapeObjects(prev => [...prev, newCardShape]);
+        saveToHistory();
+        toast.success('Stamped flashcard onto canvas!', { icon: '🃏' });
     }, [setShapeObjects, saveToHistory]);
 
     // Whiteboard text context helper for AI Slide Show
@@ -13664,6 +14133,7 @@ export default function Whiteboard({
             else if (combined.includes('capsule')) dType = 'capsule';
             else if (combined.includes('circle') || combined.includes('radius') || combined.includes('diameter')) dType = 'circle';
             else if (combined.includes('graph')) dType = 'graph';
+            else if (/\b(circuit|resistor|capacitor|battery|wheatstone|schematic|aspirin|benzene|acid|ester|reaction|chemical|molecule|hemoglobin|protein|enzyme|cell|biology|physics|optics|lens|fbd|free body|mechanics|inscribed|shaded|curve)\b/i.test(combined)) dType = 'svg';
             else dType = 'cartesian_plane';
         }
 
@@ -13710,17 +14180,9 @@ export default function Whiteboard({
                 title: data.title || 'Cartesian Coordinate System',
                 equation: data.equation || (data.curves && data.curves[0]?.label) || null,
                 color: '#000000',
-                curves: (data.curves || [
-                    { type: 'circle', cx: -1.5, cy: -2, r: 4.92, color: '#000000', label: 'x² + y² + 3x + 4y - 18 = 0', centerLabel: 'C(-1.5, -2)' },
-                    { type: 'line', slope: 3, intercept: 1, color: '#000000', label: 'y = 3x + 1' }
-                ]).map(c => ({ ...c, color: '#000000' })),
-                intersectionPoints: data.intersectionPoints || [
-                    { x: 0.5, y: 2.5, label: 'P₁(0.5, 2.5)' },
-                    { x: -2.6, y: -6.8, label: 'P₂(-2.6, -6.8)' }
-                ],
-                plottedPoints: data.plottedPoints || [
-                    { x: -1.5, y: -2, label: 'C(-1.5, -2)' }
-                ],
+                curves: (data.curves || []).map(c => ({ ...c, color: '#000000' })),
+                intersectionPoints: data.intersectionPoints || [],
+                plottedPoints: data.plottedPoints || [],
                 unitScale: data.unitScale || 20
             };
         } else if (dType === 'sector') {
@@ -17196,6 +17658,17 @@ export default function Whiteboard({
         if (!isAiRetry && (!isExactLocalCommand || hasImage)) {
             setVoiceFeedback(hasImage ? `🤖 Analyzing image question...` : `🤖 Asking AI: "${effectiveText}"...`);
             setIsAiThinking(true);
+            setAiSolutionData({
+                question: effectiveText || rawText,
+                isThinking: true,
+                speechResponse: 'Thinking...',
+                solutionMarkdown: `### 💭 Processing...\n\nAnalyzing "${effectiveText || rawText}"...`,
+                graphEquations: [],
+                plottedPoints: [],
+                suggestedFollowUps: []
+            });
+            setExternalGraphEquations([]);
+            setActiveSolutionStep(null);
             setShowAiAssistantModal(true);
             setShowClosedCaptions(true);
             if (!conversationHistoryRef.current) {
@@ -17205,8 +17678,8 @@ export default function Whiteboard({
                 role: 'user',
                 content: effectiveText || rawText
             });
-            if (conversationHistoryRef.current.length > 12) {
-                conversationHistoryRef.current = conversationHistoryRef.current.slice(-12);
+            if (conversationHistoryRef.current.length > 40) {
+                conversationHistoryRef.current = conversationHistoryRef.current.slice(-40);
             }
             setAiChatHistory(prev => [...prev, {
                 id: `msg_u_${Date.now()}`,
@@ -17222,7 +17695,9 @@ export default function Whiteboard({
                         module: 'whiteboard',
                         currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard',
                         preferredProvider: whiteboardAiProvider !== 'auto' ? whiteboardAiProvider : undefined,
-                        conversationHistory: conversationHistoryRef.current ? conversationHistoryRef.current.slice(-8) : [],
+                        conversationHistory: (Array.isArray(options?.conversationHistory) && options.conversationHistory.length > 0)
+                            ? options.conversationHistory
+                            : (conversationHistoryRef.current ? conversationHistoryRef.current.slice(-20) : []),
                         verbosity: options?.verbosity || aiResponseVerbosity || 'normal',
                         ...(options?.imageDataUrl ? { imageDataUrl: options.imageDataUrl } : {}),
                         ...getWhiteboardSpatialContext()
@@ -17292,13 +17767,31 @@ export default function Whiteboard({
                             ],
                             suggestedFollowUps: data.suggestedFollowUps || [],
                             canvasAction: data.canvasAction || coordAction || null,
+                            diagram: data.diagram || null,
+                            diagramProps: data.diagramProps || null,
+                            code: data.code || data.diagram?.code || data.canvasAction?.code || data.schemdrawCode || null,
+                            schemdrawCode: data.schemdrawCode || data.diagram?.code || data.canvasAction?.code || null,
                             curves: data.canvasAction?.curves || data.curves || coordAction?.curves,
                             intersectionPoints: data.canvasAction?.intersectionPoints || data.intersectionPoints || coordAction?.intersectionPoints,
                             plottedPoints: data.canvasAction?.plottedPoints || data.plottedPoints || coordAction?.plottedPoints,
                             physicsAction: data.physicsAction || null,
                             modelUsed: data.modelUsed,
-                            providerUsed: data.providerUsed
+                            providerUsed: data.providerUsed,
+                            mcpUsed: data.mcpUsed || data.canvasAction?.mcpUsed || data.diagram?.mcpUsed || null
                         });
+
+                        // Auto-place table onto whiteboard if requested by user
+                        const promptLowerVoice = (effectiveText || rawText || '').toLowerCase();
+                        if (
+                            (/(?:place|add|put|insert).*(?:trace|table|dry[- ]run).*whiteboard/i.test(promptLowerVoice) ||
+                             /(?:trace table|dry[- ]run trace).*whiteboard/i.test(promptLowerVoice)) &&
+                            data?.solutionMarkdown &&
+                            /\|.+\|\n\|(?:\s*:?---+:?\s*\|)+/.test(data.solutionMarkdown)
+                        ) {
+                            setTimeout(() => {
+                                handleInsertTableToCanvas(data.solutionMarkdown, { fontSize: 12 });
+                            }, 400);
+                        }
 
                         setAiChatHistory(prev => [...prev, {
                             id: `msg_a_${Date.now()}`,
@@ -17308,9 +17801,13 @@ export default function Whiteboard({
                             speechResponse: speech,
                             solutionMarkdown: data.solutionMarkdown || speech,
                             canvasAction: data.canvasAction || coordAction || null,
+                            diagram: data.diagram || null,
+                            code: data.code || data.diagram?.code || data.canvasAction?.code || data.schemdrawCode || null,
+                            schemdrawCode: data.schemdrawCode || data.diagram?.code || data.canvasAction?.code || null,
                             actions: actionsToRun,
                             modelUsed: data.modelUsed,
                             providerUsed: data.providerUsed,
+                            mcpUsed: data.mcpUsed || data.canvasAction?.mcpUsed || data.diagram?.mcpUsed || null,
                             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                         }]);
 
@@ -18188,6 +18685,17 @@ export default function Whiteboard({
                     toast.error(quotaMsg, { id: 'ai-voice-quota', duration: 7000 });
                     return;
                 }
+
+                if (!data?.recognized) {
+                    setAiSolutionData({
+                        question: effectiveText || rawText,
+                        speechResponse: data?.speechResponse || `I could not process "${effectiveText || rawText}". Please ask for an algorithm flowchart or specific STEM problem.`,
+                        solutionMarkdown: data?.solutionMarkdown || `### ❓ Unrecognized Command\n\nCould not process: "${effectiveText || rawText}".\n\nPlease try asking for an algorithm flowchart (e.g. *"draw binary search flowchart"*), a circuit diagram, or a math problem.`,
+                        graphEquations: [],
+                        plottedPoints: [],
+                        suggestedFollowUps: ['🔄 Binary Search Flowchart', '📊 BFS Algorithm Flowchart', '📐 Solve System of Equations']
+                    });
+                }
             } catch (err) {
                 console.warn('[Whiteboard Voice AI] Translation error:', err.message);
                 setIsAiThinking(false);
@@ -18481,12 +18989,18 @@ export default function Whiteboard({
             let reqError = null;
 
             try {
+                const effectiveHistory = (Array.isArray(options?.conversationHistory) && options.conversationHistory.length > 0)
+                    ? options.conversationHistory
+                    : (conversationHistoryRef.current ? conversationHistoryRef.current.slice(-20) : []);
+
                 const response = await aiAPI.voiceCommand({
                     speechText: rawText,
                     context: {
                         module: 'whiteboard',
                         currentRoute: typeof window !== 'undefined' ? window.location.pathname : '/whiteboard',
                         preferredProvider: whiteboardAiProvider !== 'auto' ? whiteboardAiProvider : undefined,
+                        conversationHistory: effectiveHistory,
+                        verbosity: options?.verbosity || aiResponseVerbosity || 'normal',
                         ...getWhiteboardSpatialContext()
                     }
                 });
@@ -18505,15 +19019,48 @@ export default function Whiteboard({
                     executeAiCanvasAction(data.canvasAction);
                 }
                 const speech = data.speechResponse || data.spokenFeedback || 'Here is the step-by-step solution.';
+                if (!conversationHistoryRef.current) conversationHistoryRef.current = [];
+                conversationHistoryRef.current.push({ role: 'assistant', content: speech });
                 setAiSolutionData({
                     question: rawText,
                     speechResponse: speech,
                     solutionMarkdown: data.solutionMarkdown || speech,
                     graphEquations: data.graphEquations || data.canvasAction?.graphEquations || [],
+                    suggestedFollowUps: data.suggestedFollowUps || [],
+                    diagram: data.diagram || null,
+                    physicsAction: data.physicsAction || null,
                     canvasAction: data.canvasAction,
                     modelUsed: data.modelUsed,
                     providerUsed: data.providerUsed
                 });
+
+                // Auto-place table onto whiteboard if requested by user
+                const promptLowerChat = (rawText || '').toLowerCase();
+                if (
+                    (/(?:place|add|put|insert).*(?:trace|table|dry[- ]run).*whiteboard/i.test(promptLowerChat) ||
+                     /(?:trace table|dry[- ]run trace).*whiteboard/i.test(promptLowerChat)) &&
+                    data?.solutionMarkdown &&
+                    /\|.+\|\n\|(?:\s*:?---+:?\s*\|)+/.test(data.solutionMarkdown)
+                ) {
+                    setTimeout(() => {
+                        handleInsertTableToCanvas(data.solutionMarkdown, { fontSize: 12 });
+                    }, 400);
+                }
+                setAiChatHistory(prev => [...prev, {
+                    id: `msg_u_${Date.now()}`,
+                    role: 'user',
+                    content: rawText,
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                }, {
+                    id: `msg_a_${Date.now() + 1}`,
+                    role: 'assistant',
+                    question: rawText,
+                    content: data.solutionMarkdown || speech,
+                    speechResponse: speech,
+                    modelUsed: data.modelUsed,
+                    suggestedFollowUps: data.suggestedFollowUps || [],
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                }]);
                 setVoiceFeedback(data.spokenFeedback || '🧠 AI Explanation Ready');
                 return;
             }
@@ -20407,6 +20954,749 @@ export default function Whiteboard({
         };
     }, []);
 
+    const PX_PER_CM = 37.795;
+    const toCm = (px) => (Math.abs(px) / PX_PER_CM).toFixed(1);
+
+    const getShapeMeasurementDetails = (shpObj) => {
+        const isLineLike = ['line', 'arrow', 'double_arrow', 'dashed_line'].includes(shpObj.type);
+        const localStartX = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+        const localStartY = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+        const localEndX = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+        const localEndY = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+        const w = Math.max(1, Math.abs(shpObj.width || 100));
+        const h = Math.max(1, Math.abs(shpObj.height || 100));
+
+        if (isLineLike) {
+            const dx = localEndX - localStartX;
+            const dy = localEndY - localStartY;
+            const len = Math.hypot(dx, dy) || w;
+            let deg = Math.round((Math.atan2(dy, dx) * 180) / Math.PI);
+            if (deg < 0) deg += 360;
+            return {
+                title: 'Vector / Line Segment AB',
+                items: [
+                    `Length: ${toCm(len)}cm (${Math.round(len)}px)`,
+                    `Direction: θ = ${deg}°`,
+                    `Δx = ${toCm(Math.abs(dx))}cm`,
+                    `Δy = ${toCm(Math.abs(dy))}cm`
+                ]
+            };
+        }
+
+        if (shpObj.type === 'circle' || shpObj.type === 'concentric_circles') {
+            const r = w / 2;
+            const d = w;
+            const circ = Math.PI * d;
+            const area = Math.PI * r * r;
+            return {
+                title: '⊙O (Circle)',
+                items: [
+                    `Radius: r = ${toCm(r)}cm`,
+                    `Diameter: d = 2r = ${toCm(d)}cm`,
+                    `Central Angle: 360°`,
+                    `Circumference: C = 2πr = ${toCm(circ)}cm`,
+                    `Area: A = πr² = ${(area / (PX_PER_CM * PX_PER_CM)).toFixed(1)}cm²`
+                ]
+            };
+        }
+
+        if (shpObj.type === 'right_triangle') {
+            const legBase = w;
+            const legPerp = h;
+            const hyp = Math.hypot(w, h);
+            const angleBaseDeg = Math.round((Math.atan2(h, w) * 180) / Math.PI);
+            const angleTopDeg = 90 - angleBaseDeg;
+            const area = (w * h) / 2;
+            return {
+                title: '△ABC (Right Triangle, ∠B=90°)',
+                items: [
+                    `Legs: a = ${toCm(legBase)}cm, b = ${toCm(legPerp)}cm`,
+                    `Hypotenuse: c = ${toCm(hyp)}cm (a²+b²=c²)`,
+                    `Inscribed Angles: ∠B = 90°, ∠A = ${angleTopDeg}°, ∠C = ${angleBaseDeg}° (Σ 180°)`,
+                    `Area: ${(area / (PX_PER_CM * PX_PER_CM)).toFixed(1)}cm²`
+                ]
+            };
+        }
+
+        if (shpObj.type === 'triangle') {
+            const base = w;
+            const leg = Math.hypot(w / 2, h);
+            const cosApex = Math.max(-1, Math.min(1, (2 * leg * leg - base * base) / (2 * leg * leg)));
+            const apexDeg = Math.round((Math.acos(cosApex) * 180) / Math.PI);
+            const baseAngleDeg = Math.round((180 - apexDeg) / 2);
+            const baseAngleDeg2 = 180 - apexDeg - baseAngleDeg;
+            const area = (w * h) / 2;
+            return {
+                title: '△ABC (Triangle)',
+                items: [
+                    `Base: a = ${toCm(base)}cm`,
+                    `Legs: b = c = ${toCm(leg)}cm`,
+                    `Altitude: h = ${toCm(h)}cm`,
+                    `Inscribed Angles: ∠A = ${apexDeg}°, ∠B = ${baseAngleDeg}°, ∠C = ${baseAngleDeg2}° (Σ 180°)`,
+                    `Area: ${(area / (PX_PER_CM * PX_PER_CM)).toFixed(1)}cm²`
+                ]
+            };
+        }
+
+        if (shpObj.type === 'polygon' && Array.isArray(shpObj.points) && shpObj.points.length >= 3) {
+            const pts = shpObj.points;
+            if (pts.length === 3) {
+                const sideA = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+                const sideB = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y);
+                const sideC = Math.hypot(pts[0].x - pts[2].x, pts[0].y - pts[2].y);
+                const cosA = Math.max(-1, Math.min(1, (sideB * sideB + sideC * sideC - sideA * sideA) / (2 * sideB * sideC)));
+                const cosB = Math.max(-1, Math.min(1, (sideA * sideA + sideC * sideC - sideB * sideB) / (2 * sideA * sideC)));
+                const angA = Math.round((Math.acos(cosA) * 180) / Math.PI);
+                const angB = Math.round((Math.acos(cosB) * 180) / Math.PI);
+                const angC = 180 - angA - angB;
+                const perim = sideA + sideB + sideC;
+                return {
+                    title: '△ABC (Polygon Triangle)',
+                    items: [
+                        `Sides: a = ${toCm(sideA)}cm, b = ${toCm(sideB)}cm, c = ${toCm(sideC)}cm`,
+                        `Inscribed Angles: ∠A = ${angA}°, ∠B = ${angB}°, ∠C = ${angC}° (Σ 180°)`,
+                        `Perimeter: ${toCm(perim)}cm`
+                    ]
+                };
+            }
+            let perim = 0;
+            const sideLengths = [];
+            for (let i = 0; i < pts.length; i++) {
+                const next = pts[(i + 1) % pts.length];
+                const d = Math.hypot(next.x - pts[i].x, next.y - pts[i].y);
+                perim += d;
+                sideLengths.push(toCm(d));
+            }
+            return {
+                title: `${pts.length}-gon (Interior Angle Sum: ${(pts.length - 2) * 180}°)`,
+                items: [
+                    `Perimeter: ${toCm(perim)}cm`,
+                    `Sides: ${sideLengths.slice(0, 5).join(', ')}${sideLengths.length > 5 ? '...' : ''} cm`
+                ]
+            };
+        }
+
+        if (shpObj.type === 'hexagon') {
+            const r = w / 2;
+            const side = r;
+            const perim = 6 * side;
+            return {
+                title: 'Regular Hexagon',
+                items: [
+                    `Side: s = ${toCm(side)}cm`,
+                    `Perimeter: ${toCm(perim)}cm`,
+                    `Inscribed Angles: 6×120° (Σ 720°)`
+                ]
+            };
+        }
+
+        if (shpObj.type === 'pentagon') {
+            const r = w / 2;
+            const side = 2 * r * Math.sin(Math.PI / 5);
+            const perim = 5 * side;
+            return {
+                title: 'Regular Pentagon',
+                items: [
+                    `Side: s = ${toCm(side)}cm`,
+                    `Perimeter: ${toCm(perim)}cm`,
+                    `Inscribed Angles: 5×108° (Σ 540°)`
+                ]
+            };
+        }
+
+        if (shpObj.type === 'diamond') {
+            const d1 = w;
+            const d2 = h;
+            const side = Math.hypot(w / 2, h / 2);
+            const ang1 = Math.round((2 * Math.atan2(w / 2, h / 2) * 180) / Math.PI);
+            const ang2 = 180 - ang1;
+            const area = (d1 * d2) / 2;
+            return {
+                title: 'Rhombus ABCD',
+                items: [
+                    `Sides: 4×${toCm(side)}cm`,
+                    `Diagonals: d₁ = ${toCm(d1)}cm, d₂ = ${toCm(d2)}cm`,
+                    `Inscribed Angles: 2×${ang1}°, 2×${ang2}° (Σ 360°)`,
+                    `Area: ${(area / (PX_PER_CM * PX_PER_CM)).toFixed(1)}cm²`
+                ]
+            };
+        }
+
+        if (shpObj.type === 'parallelogram') {
+            const skew = Math.abs(shpObj.skew ?? (w * 0.25));
+            const base = Math.max(10, w - skew);
+            const side = Math.hypot(skew, h);
+            const alpha = Math.round((Math.atan2(h, skew || 1) * 180) / Math.PI);
+            const beta = 180 - alpha;
+            const area = base * h;
+            return {
+                title: 'Parallelogram ABCD',
+                items: [
+                    `Bases: 2×${toCm(base)}cm, Sides: 2×${toCm(side)}cm`,
+                    `Height: h = ${toCm(h)}cm`,
+                    `Inscribed Angles: 2×${alpha}°, 2×${beta}° (Σ 360°)`,
+                    `Area: ${(area / (PX_PER_CM * PX_PER_CM)).toFixed(1)}cm²`
+                ]
+            };
+        }
+
+        if (shpObj.type === 'incline_plane' || shpObj.type === 'ramp') {
+            const hyp = Math.hypot(w, h);
+            const angDeg = Math.round((Math.atan2(h, w) * 180) / Math.PI);
+            return {
+                title: 'Inclined Plane (Ramp)',
+                items: [
+                    `Base = ${toCm(w)}cm, Height = ${toCm(h)}cm`,
+                    `Incline Length: ${toCm(hyp)}cm`,
+                    `Incline Angle: θ = ${angDeg}°, Right Angle: 90°`
+                ]
+            };
+        }
+
+        if (shpObj.type === 'arc' || shpObj.type === 'curved_line') {
+            const r = shpObj.radius || Math.min(w, h) / 2;
+            const sA = shpObj.startAngle || 0;
+            const eA = shpObj.endAngle !== undefined ? shpObj.endAngle : (sA + Math.PI);
+            let diff = Math.abs(eA - sA);
+            const deg = Math.round((diff * 180) / Math.PI);
+            const arcLen = r * diff;
+            return {
+                title: 'Circular Arc',
+                items: [
+                    `Radius: r = ${toCm(r)}cm`,
+                    `Subtended Angle: θ = ${deg}°`,
+                    `Arc Length: s = rθ = ${toCm(arcLen)}cm`
+                ]
+            };
+        }
+
+        // Default rectangle / box-like
+        const diag = Math.hypot(w, h);
+        const perim = 2 * (w + h);
+        const area = w * h;
+        return {
+            title: 'Rectangle ABCD (4×90°)',
+            items: [
+                `Sides: AB = CD = ${toCm(w)}cm, BC = DA = ${toCm(h)}cm`,
+                `Diagonal: AC = BD = ${toCm(diag)}cm`,
+                `Inscribed: 4×90° Right Angles`,
+                `Perimeter: ${toCm(perim)}cm`,
+                `Area: ${(area / (PX_PER_CM * PX_PER_CM)).toFixed(1)}cm²`
+            ]
+        };
+    };
+
+    const renderMathematicalDimensionsOverlay = (shpObj) => {
+        if (!shpObj || shpObj.type === 'ruler' || shpObj.type === 'protractor') return null;
+
+        const w = Math.max(1, Math.abs(shpObj.width || 100));
+        const h = Math.max(1, Math.abs(shpObj.height || 100));
+        const mainColor = shpObj.color || '#4f46e5';
+
+        // Helper: Inscribed angle arc or 90° square marker between edges meeting at vertex v
+        const renderInscribedAngleArc = (v, pPrev, pNext, key, customLabel = null, forceRight = false) => {
+            const ux = pPrev.x - v.x;
+            const uy = pPrev.y - v.y;
+            const vx = pNext.x - v.x;
+            const vy = pNext.y - v.y;
+            const lenU = Math.hypot(ux, uy);
+            const lenV = Math.hypot(vx, vy);
+            if (lenU < 2 || lenV < 2) return null;
+
+            const uHatX = ux / lenU;
+            const uHatY = uy / lenU;
+            const vHatX = vx / lenV;
+            const vHatY = vy / lenV;
+
+            const dot = Math.max(-1, Math.min(1, uHatX * vHatX + uHatY * vHatY));
+            const angleRad = Math.acos(dot);
+            const angleDeg = Math.round((angleRad * 180) / Math.PI);
+
+            const cross = uHatX * vHatY - uHatY * vHatX;
+            const sweepFlag = cross > 0 ? 1 : 0;
+
+            const bRawX = uHatX + vHatX;
+            const bRawY = uHatY + vHatY;
+            const bLen = Math.hypot(bRawX, bRawY);
+            const bHatX = bLen > 0.001 ? bRawX / bLen : -uHatY;
+            const bHatY = bLen > 0.001 ? bRawY / bLen : uHatX;
+
+            const isPerp = forceRight || Math.abs(angleDeg - 90) <= 1;
+
+            if (isPerp) {
+                const sq = Math.min(18, Math.max(9, Math.min(lenU, lenV) * 0.18));
+                const p1x = v.x + sq * uHatX;
+                const p1y = v.y + sq * uHatY;
+                const p2x = v.x + sq * uHatX + sq * vHatX;
+                const p2y = v.y + sq * uHatY + sq * vHatY;
+                const p3x = v.x + sq * vHatX;
+                const p3y = v.y + sq * vHatY;
+
+                const labelDist = sq * 1.5 + 4;
+                const lx = v.x + labelDist * bHatX;
+                const ly = v.y + labelDist * bHatY;
+                const text = customLabel || '90°';
+
+                return (
+                    <g key={key} className="math-angle-overlay pointer-events-none select-none">
+                        <path
+                            d={`M ${p1x} ${p1y} L ${p2x} ${p2y} L ${p3x} ${p3y}`}
+                            fill="none"
+                            stroke={mainColor}
+                            strokeWidth={1.5}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        />
+                        <text
+                            x={lx}
+                            y={ly + 3.5}
+                            textAnchor="middle"
+                            fill={mainColor}
+                            stroke="rgba(255, 255, 255, 0.95)"
+                            strokeWidth={3}
+                            paintOrder="stroke fill"
+                            fontSize={10}
+                            fontWeight="bold"
+                            fontFamily="Inter, system-ui, sans-serif"
+                        >
+                            {text}
+                        </text>
+                    </g>
+                );
+            }
+
+            const arcR = Math.min(26, Math.max(12, Math.min(lenU, lenV) * 0.22));
+            const startX = v.x + arcR * uHatX;
+            const startY = v.y + arcR * uHatY;
+            const endX = v.x + arcR * vHatX;
+            const endY = v.y + arcR * vHatY;
+
+            const labelDist = arcR + 10;
+            const lx = v.x + labelDist * bHatX;
+            const ly = v.y + labelDist * bHatY;
+            const text = customLabel || `${angleDeg}°`;
+
+            return (
+                <g key={key} className="math-angle-overlay pointer-events-none select-none">
+                    <path
+                        d={`M ${startX} ${startY} A ${arcR} ${arcR} 0 0 ${sweepFlag} ${endX} ${endY}`}
+                        fill="rgba(99, 102, 241, 0.15)"
+                        stroke={mainColor}
+                        strokeWidth={1.5}
+                        strokeLinecap="round"
+                    />
+                    <text
+                        x={lx}
+                        y={ly + 3.5}
+                        textAnchor="middle"
+                        fill={mainColor}
+                        stroke="rgba(255, 255, 255, 0.95)"
+                        strokeWidth={3}
+                        paintOrder="stroke fill"
+                        fontSize={10}
+                        fontWeight="bold"
+                        fontFamily="Inter, system-ui, sans-serif"
+                    >
+                        {text}
+                    </text>
+                </g>
+            );
+        };
+
+        // Helper: Side length label offset perpendicularly from edge midpoint
+        const renderEdgeDim = (p1, p2, key, customLabel = null, centerRef = null) => {
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const lenPx = Math.hypot(dx, dy);
+            if (lenPx < 10) return null;
+
+            const lenCm = (lenPx / PX_PER_CM).toFixed(1);
+            const text = customLabel || `${lenCm}cm`;
+
+            const mx = (p1.x + p2.x) / 2;
+            const my = (p1.y + p2.y) / 2;
+
+            const tx = dx / lenPx;
+            const ty = dy / lenPx;
+
+            let nx = -ty;
+            let ny = tx;
+
+            if (centerRef) {
+                const toMidX = mx - centerRef.x;
+                const toMidY = my - centerRef.y;
+                if (nx * toMidX + ny * toMidY < 0) {
+                    nx = -nx;
+                    ny = -ny;
+                }
+            }
+
+            const offset = 15;
+            const lx = mx + nx * offset;
+            const ly = my + ny * offset;
+
+            return (
+                <g key={key} className="math-edge-overlay pointer-events-none select-none">
+                    <text
+                        x={lx}
+                        y={ly + 3.5}
+                        textAnchor="middle"
+                        fill={mainColor}
+                        stroke="rgba(255, 255, 255, 0.95)"
+                        strokeWidth={3}
+                        paintOrder="stroke fill"
+                        fontSize={11}
+                        fontWeight="600"
+                        fontFamily="Inter, system-ui, sans-serif"
+                    >
+                        {text}
+                    </text>
+                </g>
+            );
+        };
+
+        // Helper: Vertex dot and letter (A, B, C...)
+        const renderVertex = (v, letter, key, centerRef = null) => {
+            let nx = 0, ny = -1;
+            if (centerRef) {
+                const dx = v.x - centerRef.x;
+                const dy = v.y - centerRef.y;
+                const len = Math.hypot(dx, dy);
+                if (len > 0.001) {
+                    nx = dx / len;
+                    ny = dy / len;
+                }
+            }
+            const offset = 14;
+            const lx = v.x + nx * offset;
+            const ly = v.y + ny * offset;
+
+            return (
+                <g key={key} className="math-vertex-overlay pointer-events-none select-none">
+                    <circle cx={v.x} cy={v.y} r={2.5} fill={mainColor} />
+                    <text
+                        x={lx}
+                        y={ly + 4}
+                        textAnchor="middle"
+                        fill={mainColor}
+                        stroke="rgba(255, 255, 255, 0.95)"
+                        strokeWidth={3}
+                        paintOrder="stroke fill"
+                        fontSize={12}
+                        fontWeight="bold"
+                        fontFamily="Inter, system-ui, sans-serif"
+                    >
+                        {letter}
+                    </text>
+                </g>
+            );
+        };
+
+        if (shpObj.type === 'right_triangle') {
+            const A = { x: 0, y: 0 };
+            const B = { x: 0, y: h };
+            const C = { x: w, y: h };
+            const center = { x: w / 3, y: (2 * h) / 3 };
+            const hyp = Math.hypot(w, h);
+            const angleBase = Math.round((Math.atan2(h, w) * 180) / Math.PI);
+            const angleTop = 90 - angleBase;
+
+            return (
+                <g className="math-right-triangle-overlay pointer-events-none">
+                    {renderInscribedAngleArc(B, A, C, 'ang-B', '90°', true)}
+                    {renderInscribedAngleArc(A, B, C, 'ang-A', `${angleTop}°`)}
+                    {renderInscribedAngleArc(C, B, A, 'ang-C', `${angleBase}°`)}
+
+                    {renderEdgeDim(A, B, 'edge-AB', `b = ${toCm(h)}cm`, center)}
+                    {renderEdgeDim(B, C, 'edge-BC', `a = ${toCm(w)}cm`, center)}
+                    {renderEdgeDim(A, C, 'edge-AC', `c = ${toCm(hyp)}cm`, center)}
+
+                    {renderVertex(A, 'A', 'v-A', center)}
+                    {renderVertex(B, 'B', 'v-B', center)}
+                    {renderVertex(C, 'C', 'v-C', center)}
+                </g>
+            );
+        }
+
+        if (shpObj.type === 'triangle') {
+            const A = { x: w / 2, y: 0 };
+            const B = { x: 0, y: h };
+            const C = { x: w, y: h };
+            const center = { x: w / 2, y: (2 * h) / 3 };
+            const base = w;
+            const leg = Math.hypot(w / 2, h);
+            const cosApex = Math.max(-1, Math.min(1, (2 * leg * leg - base * base) / (2 * leg * leg)));
+            const apexDeg = Math.round((Math.acos(cosApex) * 180) / Math.PI);
+            const baseAngleDeg = Math.round((180 - apexDeg) / 2);
+            const baseAngleDeg2 = 180 - apexDeg - baseAngleDeg;
+
+            return (
+                <g className="math-triangle-overlay pointer-events-none">
+                    {renderInscribedAngleArc(A, B, C, 'ang-A', `${apexDeg}°`)}
+                    {renderInscribedAngleArc(B, C, A, 'ang-B', `${baseAngleDeg}°`)}
+                    {renderInscribedAngleArc(C, A, B, 'ang-C', `${baseAngleDeg2}°`)}
+
+                    {renderEdgeDim(B, C, 'edge-BC', `a = ${toCm(base)}cm`, center)}
+                    {renderEdgeDim(A, B, 'edge-AB', `c = ${toCm(leg)}cm`, center)}
+                    {renderEdgeDim(A, C, 'edge-AC', `b = ${toCm(leg)}cm`, center)}
+
+                    {renderVertex(A, 'A', 'v-A', center)}
+                    {renderVertex(B, 'B', 'v-B', center)}
+                    {renderVertex(C, 'C', 'v-C', center)}
+
+                    <line x1={w / 2} y1={0} x2={w / 2} y2={h} stroke={mainColor} strokeWidth={1.2} strokeDasharray="3,3" opacity="0.65" />
+                    <text x={w / 2 + 5} y={h / 2} fill={mainColor} stroke="rgba(255,255,255,0.95)" strokeWidth={3} paintOrder="stroke fill" fontSize={10} fontWeight="bold">
+                        {`h = ${toCm(h)}cm`}
+                    </text>
+                </g>
+            );
+        }
+
+        if (shpObj.type === 'rectangle' || shpObj.type === 'rounded_rect') {
+            const A = { x: 0, y: 0 };
+            const B = { x: w, y: 0 };
+            const C = { x: w, y: h };
+            const D = { x: 0, y: h };
+            const center = { x: w / 2, y: h / 2 };
+            const diag = Math.hypot(w, h);
+
+            return (
+                <g className="math-rectangle-overlay pointer-events-none">
+                    {renderInscribedAngleArc(A, D, B, 'ang-A', '90°', true)}
+                    {renderInscribedAngleArc(B, A, C, 'ang-B', '90°', true)}
+                    {renderInscribedAngleArc(C, B, D, 'ang-C', '90°', true)}
+                    {renderInscribedAngleArc(D, C, A, 'ang-D', '90°', true)}
+
+                    {renderEdgeDim(A, B, 'edge-AB', `AB = ${toCm(w)}cm`, center)}
+                    {renderEdgeDim(B, C, 'edge-BC', `BC = ${toCm(h)}cm`, center)}
+                    {renderEdgeDim(D, C, 'edge-DC', `CD = ${toCm(w)}cm`, center)}
+                    {renderEdgeDim(A, D, 'edge-AD', `DA = ${toCm(h)}cm`, center)}
+
+                    {renderVertex(A, 'A', 'v-A', center)}
+                    {renderVertex(B, 'B', 'v-B', center)}
+                    {renderVertex(C, 'C', 'v-C', center)}
+                    {renderVertex(D, 'D', 'v-D', center)}
+
+                    <line x1={0} y1={0} x2={w} y2={h} stroke={mainColor} strokeWidth={1} strokeDasharray="3,3" opacity="0.45" />
+                    <text x={w / 2 + 6} y={h / 2 - 6} fill={mainColor} stroke="rgba(255,255,255,0.95)" strokeWidth={3} paintOrder="stroke fill" fontSize={10} fontWeight="bold">
+                        {`d = ${toCm(diag)}cm`}
+                    </text>
+                </g>
+            );
+        }
+
+        if (shpObj.type === 'circle' || shpObj.type === 'concentric_circles') {
+            const cx = w / 2;
+            const cy = h / 2;
+            const r = w / 2;
+            const d = w;
+
+            return (
+                <g className="math-circle-overlay pointer-events-none">
+                    <circle cx={cx} cy={cy} r={3} fill={mainColor} />
+                    <text x={cx - 10} y={cy - 6} fill={mainColor} stroke="rgba(255,255,255,0.95)" strokeWidth={3} paintOrder="stroke fill" fontSize={12} fontWeight="bold">
+                        O
+                    </text>
+
+                    <line x1={cx} y1={cy} x2={cx + r} y2={cy} stroke={mainColor} strokeWidth={1.5} strokeDasharray="4,3" />
+                    <circle cx={cx + r} cy={cy} r={2.5} fill={mainColor} />
+                    <text x={cx + r / 2} y={cy - 7} textAnchor="middle" fill={mainColor} stroke="rgba(255,255,255,0.95)" strokeWidth={3} paintOrder="stroke fill" fontSize={11} fontWeight="bold">
+                        {`r = ${toCm(r)}cm`}
+                    </text>
+
+                    <line x1={cx - r} y1={cy} x2={cx} y2={cy} stroke={mainColor} strokeWidth={1} strokeDasharray="2,2" opacity="0.6" />
+                    <circle cx={cx - r} cy={cy} r={2.5} fill={mainColor} />
+                    <text x={cx} y={cy + 18} textAnchor="middle" fill={mainColor} stroke="rgba(255,255,255,0.95)" strokeWidth={3} paintOrder="stroke fill" fontSize={10} fontWeight="bold">
+                        {`⌀ d = ${toCm(d)}cm • 360°`}
+                    </text>
+                </g>
+            );
+        }
+
+        if (shpObj.type === 'diamond') {
+            const A = { x: w / 2, y: 0 };
+            const B = { x: w, y: h / 2 };
+            const C = { x: w / 2, y: h };
+            const D = { x: 0, y: h / 2 };
+            const center = { x: w / 2, y: h / 2 };
+            const side = Math.hypot(w / 2, h / 2);
+            const ang1 = Math.round((2 * Math.atan2(w / 2, h / 2) * 180) / Math.PI);
+            const ang2 = 180 - ang1;
+
+            return (
+                <g className="math-diamond-overlay pointer-events-none">
+                    {renderInscribedAngleArc(A, D, B, 'ang-A', `${ang1}°`)}
+                    {renderInscribedAngleArc(B, A, C, 'ang-B', `${ang2}°`)}
+                    {renderInscribedAngleArc(C, B, D, 'ang-C', `${ang1}°`)}
+                    {renderInscribedAngleArc(D, C, A, 'ang-D', `${ang2}°`)}
+
+                    {renderEdgeDim(A, B, 'edge-AB', `${toCm(side)}cm`, center)}
+                    {renderEdgeDim(B, C, 'edge-BC', `${toCm(side)}cm`, center)}
+                    {renderEdgeDim(C, D, 'edge-CD', `${toCm(side)}cm`, center)}
+                    {renderEdgeDim(D, A, 'edge-DA', `${toCm(side)}cm`, center)}
+
+                    {renderVertex(A, 'A', 'v-A', center)}
+                    {renderVertex(B, 'B', 'v-B', center)}
+                    {renderVertex(C, 'C', 'v-C', center)}
+                    {renderVertex(D, 'D', 'v-D', center)}
+
+                    <line x1={0} y1={h / 2} x2={w} y2={h / 2} stroke={mainColor} strokeWidth={1} strokeDasharray="3,3" opacity="0.4" />
+                    <line x1={w / 2} y1={0} x2={w / 2} y2={h} stroke={mainColor} strokeWidth={1} strokeDasharray="3,3" opacity="0.4" />
+                </g>
+            );
+        }
+
+        if (shpObj.type === 'parallelogram') {
+            const sk = Math.max(5, Math.min(w - 5, shpObj.skew !== undefined ? shpObj.skew : w * 0.25));
+            const A = { x: sk, y: 0 };
+            const B = { x: w, y: 0 };
+            const C = { x: w - sk, y: h };
+            const D = { x: 0, y: h };
+            const center = { x: w / 2, y: h / 2 };
+            const base = w - sk;
+            const side = Math.hypot(sk, h);
+            const alpha = Math.round((Math.atan2(h, sk || 1) * 180) / Math.PI);
+            const beta = 180 - alpha;
+
+            return (
+                <g className="math-parallelogram-overlay pointer-events-none">
+                    {renderInscribedAngleArc(A, D, B, 'ang-A', `${beta}°`)}
+                    {renderInscribedAngleArc(B, A, C, 'ang-B', `${alpha}°`)}
+                    {renderInscribedAngleArc(C, B, D, 'ang-C', `${beta}°`)}
+                    {renderInscribedAngleArc(D, C, A, 'ang-D', `${alpha}°`)}
+
+                    {renderEdgeDim(A, B, 'edge-AB', `b = ${toCm(base)}cm`, center)}
+                    {renderEdgeDim(B, C, 'edge-BC', `s = ${toCm(side)}cm`, center)}
+                    {renderEdgeDim(D, C, 'edge-DC', `b = ${toCm(base)}cm`, center)}
+                    {renderEdgeDim(A, D, 'edge-AD', `s = ${toCm(side)}cm`, center)}
+
+                    {renderVertex(A, 'A', 'v-A', center)}
+                    {renderVertex(B, 'B', 'v-B', center)}
+                    {renderVertex(C, 'C', 'v-C', center)}
+                    {renderVertex(D, 'D', 'v-D', center)}
+
+                    <line x1={sk} y1={0} x2={sk} y2={h} stroke={mainColor} strokeWidth={1} strokeDasharray="3,3" opacity="0.5" />
+                    <text x={sk + 5} y={h / 2} fill={mainColor} stroke="rgba(255,255,255,0.95)" strokeWidth={3} paintOrder="stroke fill" fontSize={10} fontWeight="bold">
+                        {`h = ${toCm(h)}cm`}
+                    </text>
+                </g>
+            );
+        }
+
+        if (shpObj.type === 'polygon' && Array.isArray(shpObj.points) && shpObj.points.length >= 3) {
+            const rawPts = shpObj.points;
+            const pts = rawPts.map(p => ({
+                x: p.x - (shpObj.x || 0),
+                y: p.y - (shpObj.y || 0)
+            }));
+            const n = pts.length;
+            const avgX = pts.reduce((sum, p) => sum + p.x, 0) / n;
+            const avgY = pts.reduce((sum, p) => sum + p.y, 0) / n;
+            const center = { x: avgX, y: avgY };
+
+            return (
+                <g className="math-polygon-overlay pointer-events-none">
+                    {pts.map((v, i) => {
+                        const prev = pts[(i - 1 + n) % n];
+                        const next = pts[(i + 1) % n];
+                        const letter = String.fromCharCode(65 + (i % 26));
+                        return (
+                            <Fragment key={`poly-elem-${i}`}>
+                                {renderInscribedAngleArc(v, prev, next, `poly-ang-${i}`)}
+                                {renderEdgeDim(v, next, `poly-edge-${i}`, null, center)}
+                                {renderVertex(v, letter, `poly-v-${i}`, center)}
+                            </Fragment>
+                        );
+                    })}
+                </g>
+            );
+        }
+
+        const isLineLike = ['line', 'arrow', 'double_arrow', 'dashed_line'].includes(shpObj.type);
+        if (isLineLike) {
+            const norm = (val, maxCoord, basePos) => {
+                if (val === undefined) return 0;
+                if (basePos !== undefined && val >= (basePos - 2) && val > (maxCoord + 5)) return val - basePos;
+                return val;
+            };
+            const rawSx = shpObj.startX !== undefined ? shpObj.startX : (shpObj.width < 0 ? Math.abs(shpObj.width) : 0);
+            const rawSy = shpObj.startY !== undefined ? shpObj.startY : (shpObj.height < 0 ? Math.abs(shpObj.height) : 0);
+            const rawEx = shpObj.endX !== undefined ? shpObj.endX : (shpObj.width < 0 ? 0 : (shpObj.width || 0));
+            const rawEy = shpObj.endY !== undefined ? shpObj.endY : (shpObj.height < 0 ? 0 : (shpObj.height || 0));
+            const sx = norm(rawSx, shpObj.width, shpObj.x);
+            const sy = norm(rawSy, shpObj.height, shpObj.y);
+            const ex = norm(rawEx, shpObj.width, shpObj.x);
+            const ey = norm(rawEy, shpObj.height, shpObj.y);
+
+            const dx = ex - sx;
+            const dy = ey - sy;
+            const len = Math.hypot(dx, dy);
+            let deg = Math.round((Math.atan2(dy, dx) * 180) / Math.PI);
+            if (deg < 0) deg += 360;
+
+            const mx = (sx + ex) / 2;
+            const my = (sy + ey) / 2;
+
+            return (
+                <g className="math-line-overlay pointer-events-none">
+                    <text
+                        x={mx}
+                        y={my - 12}
+                        textAnchor="middle"
+                        fill={mainColor}
+                        stroke="rgba(255, 255, 255, 0.95)"
+                        strokeWidth={3}
+                        paintOrder="stroke fill"
+                        fontSize={11}
+                        fontWeight="bold"
+                    >
+                        {`L = ${toCm(len)}cm (${Math.round(len)}px) • θ = ${deg}°`}
+                    </text>
+                    {Math.abs(dy) > 4 && Math.abs(dx) > 4 && (
+                        <g>
+                            <line x1={sx} y1={sy} x2={sx + 35} y2={sy} stroke={mainColor} strokeWidth={1} strokeDasharray="2,2" opacity="0.6" />
+                            <text x={sx + 38} y={sy + 3} fill={mainColor} fontSize={9} fontWeight="bold">0°</text>
+                        </g>
+                    )}
+                    <circle cx={sx} cy={sy} r={2.5} fill={mainColor} />
+                    <circle cx={ex} cy={ey} r={2.5} fill={mainColor} />
+                </g>
+            );
+        }
+
+        if (shpObj.type === 'incline_plane' || shpObj.type === 'ramp') {
+            const A = { x: 0, y: h };
+            const B = { x: w, y: h };
+            const C = { x: w, y: 0 };
+            const center = { x: (2 * w) / 3, y: (2 * h) / 3 };
+            const hyp = Math.hypot(w, h);
+            const angleRad = Math.atan2(h, w);
+            const angleDeg = Math.round((angleRad * 180) / Math.PI);
+
+            return (
+                <g className="math-ramp-overlay pointer-events-none">
+                    {renderInscribedAngleArc(B, A, C, 'ramp-ang-B', '90°', true)}
+                    {renderInscribedAngleArc(A, B, C, 'ramp-ang-A', `θ = ${angleDeg}°`)}
+
+                    {renderEdgeDim(A, B, 'ramp-base', `Base = ${toCm(w)}cm`, center)}
+                    {renderEdgeDim(B, C, 'ramp-height', `Height = ${toCm(h)}cm`, center)}
+                    {renderEdgeDim(A, C, 'ramp-hyp', `Incline = ${toCm(hyp)}cm`, center)}
+
+                    {renderVertex(A, 'A', 'v-A', center)}
+                    {renderVertex(B, 'B', 'v-B', center)}
+                    {renderVertex(C, 'C', 'v-C', center)}
+                </g>
+            );
+        }
+
+        return (
+            <g className="math-general-overlay pointer-events-none">
+                {renderEdgeDim({ x: 0, y: 0 }, { x: w, y: 0 }, 'gen-w', `${toCm(w)}cm`, { x: w / 2, y: h / 2 })}
+                {renderEdgeDim({ x: 0, y: 0 }, { x: 0, y: h }, 'gen-h', `${toCm(h)}cm`, { x: w / 2, y: h / 2 })}
+            </g>
+        );
+    };
+
     const hasSelection = Boolean(
         selection ||
         selectedShapeIds.length > 0 ||
@@ -20628,6 +21918,15 @@ export default function Whiteboard({
                     >
                         {isToolbarCollapsed ? <Maximize2 className="w-3.5 h-3.5 text-amber-400" /> : <Minimize2 className="w-3.5 h-3.5" />}
                     </button>
+                    {/* Customize Toolbar Icons Trigger */}
+                    <button
+                        type="button"
+                        onClick={() => setShowCustomIconsModal(true)}
+                        className="p-1 hover:bg-slate-800 text-slate-400 hover:text-indigo-400 rounded-full transition flex items-center justify-center shrink-0"
+                        title="Customize Toolbar Icons (Custom SVG, Images, Packs)"
+                    >
+                        <Palette className="w-3.5 h-3.5" />
+                    </button>
                     <div className={`w-px ${isVertical ? 'h-0.5 w-5 my-0.5' : 'h-4 mx-0.5'} bg-slate-700 shrink-0`} />
 
                     {/* Tools */}
@@ -20762,14 +22061,8 @@ export default function Whiteboard({
                                             if (t.id === 'image') setShowImagePicker(!showImagePicker);
                                         } else {
                                             setTool(t.id);
-                                            setShowStrokePicker(false);
-                                            setShowEraserPicker(false);
-                                            setShowFillPicker(false);
-                                            setShowSelectPicker(false);
-                                            setShowShapePicker(false);
-                                            setShowHighlighterPicker(false);
-                                            setShowLinePicker(false);
-                                            setShowImagePicker(t.id === 'image');
+                                            closeAllToolContextOverlays();
+                                            if (t.id === 'image') setShowImagePicker(true);
                                         }
                                     }}
                                     className={`p-1.5 rounded-xl transition-all flex items-center justify-center relative ${
@@ -21757,14 +23050,16 @@ export default function Whiteboard({
                                             showParametricModal ||
                                             showMathTablet ||
                                             showMathSolver ||
-                                            showEquationModal
+                                            showEquationModal ||
+                                            showEstimator ||
+                                            showFlashcards
                                                 ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-200 scale-105'
                                                 : 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/30 hover:text-cyan-200 hover:scale-105'
                                         }`}
-                                        title="Math & Geometry Suite (Instruments, Graph, Solver, MIP)"
+                                        title="Math & Geometry Suite (Instruments, Calculator, Flashcards, Graph, Solver)"
                                     >
                                         <Calculator className="w-4 h-4" />
-                                        {(showGeometryInstruments || showParametricModal || showMathTablet || showMathSolver || showEquationModal) && (
+                                        {(showGeometryInstruments || showParametricModal || showMathTablet || showMathSolver || showEquationModal || showEstimator || showFlashcards) && (
                                             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-cyan-400 border border-slate-900 animate-pulse" />
                                         )}
                                     </button>
@@ -21897,6 +23192,44 @@ export default function Whiteboard({
                                                 <div className="flex flex-col">
                                                     <span className="font-semibold text-xs">LaTeX Equation Editor</span>
                                                     <span className="text-[10px] text-slate-400 font-normal">Insert custom math formula</span>
+                                                </div>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowEstimator(prev => !prev);
+                                                    setShowMathFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showEstimator ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                                                    <Calculator className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-xs">Estimator (Sci-Calc)</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">Trig, logs, roots, fractions & board insert</span>
+                                                </div>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowFlashcards(prev => !prev);
+                                                    setShowMathFlyout(false);
+                                                }}
+                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                                                    showFlashcards ? 'bg-sky-600 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
+                                                    <Layers className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-xs">STEM Flashcards</span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">3D flip cards & spaced repetition</span>
                                                 </div>
                                             </button>
                                         </div>
@@ -22324,6 +23657,20 @@ export default function Whiteboard({
                                                     <Keyboard className="w-3.5 h-3.5" />
                                                 </div>
                                                 <span>Shortcuts (Cmd+/)</span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowCustomIconsModal(true);
+                                                    setShowToolsFlyout(false);
+                                                }}
+                                                className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                            >
+                                                <div className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                                                    <Palette className="w-3.5 h-3.5" />
+                                                </div>
+                                                <span>Customize Toolbar Icons</span>
                                             </button>
 
                                             {isInstructor && (
@@ -22908,6 +24255,109 @@ export default function Whiteboard({
                         />
                     </div>
 
+                    {/* Start New Problem / AI Chat Icon Button (No Text Label) */}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setAiSolutionData(null);
+                            setAiSpeakingText('');
+                            setVoiceTranscript('');
+                            setInterimVoiceTranscript('');
+                            setVoiceFeedback('');
+                            if (stopAiSpeech) stopAiSpeech();
+                            setShowClosedCaptions(true);
+                            setShowAiAssistantModal(true);
+                        }}
+                        className="p-1.5 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition flex items-center justify-center shadow-md hover:shadow-indigo-500/30 border border-indigo-400/40 cursor-pointer"
+                        title="Start New Chat / Ask Question"
+                    >
+                        <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+                    </button>
+
+                    {/* Whiteboard Display Brightness & Audio Volume Controls Popover */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => setShowDisplayAudioControls(prev => !prev)}
+                            className={`p-1.5 rounded-full transition cursor-pointer ${
+                                showDisplayAudioControls ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+                            }`}
+                            title="Whiteboard Display Brightness & Audio Volume"
+                        >
+                            <Sliders className="w-3.5 h-3.5" />
+                        </button>
+                        {showDisplayAudioControls && (
+                            <div
+                                className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3.5 z-50 flex flex-col gap-3 min-w-[220px] text-xs text-slate-200 animate-in fade-in duration-100"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
+                                    <span className="font-bold text-[11.5px] text-white flex items-center gap-1.5">
+                                        <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                                        Display &amp; Sound
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowDisplayAudioControls(false)}
+                                        className="text-slate-400 hover:text-white"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+
+                                {/* Whiteboard Canvas Brightness */}
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                        <span className="flex items-center gap-1.5 text-amber-300 font-semibold">
+                                            <Sun className="w-3.5 h-3.5 text-amber-400" />
+                                            Brightness
+                                        </span>
+                                        <span className="font-mono text-slate-300 font-bold">{whiteboardBrightness}%</span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="40"
+                                        max="160"
+                                        step="5"
+                                        value={whiteboardBrightness}
+                                        onChange={(e) => updateWhiteboardBrightness(Number(e.target.value))}
+                                        className="w-full h-1.5 accent-amber-400 bg-slate-800 rounded-lg cursor-pointer"
+                                    />
+                                    <div className="flex justify-between text-[9px] text-slate-500 font-medium">
+                                        <button type="button" onClick={() => updateWhiteboardBrightness(60)} className="hover:text-slate-300">Dim</button>
+                                        <button type="button" onClick={() => updateWhiteboardBrightness(100)} className="hover:text-slate-300">Default (100%)</button>
+                                        <button type="button" onClick={() => updateWhiteboardBrightness(140)} className="hover:text-slate-300">Bright</button>
+                                    </div>
+                                </div>
+
+                                {/* Master Audio Volume */}
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                        <span className="flex items-center gap-1.5 text-purple-300 font-semibold">
+                                            <Volume2 className="w-3.5 h-3.5 text-purple-400" />
+                                            AI Volume
+                                        </span>
+                                        <span className="font-mono text-slate-300 font-bold">{Math.round((storeSpeechVolume ?? 1.0) * 100)}%</span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="1"
+                                        step="0.05"
+                                        value={storeSpeechVolume ?? 1.0}
+                                        onChange={(e) => setStoreSpeechVolume?.(Number(e.target.value))}
+                                        className="w-full h-1.5 accent-purple-500 bg-slate-800 rounded-lg cursor-pointer"
+                                    />
+                                    <div className="flex justify-between text-[9px] text-slate-500 font-medium">
+                                        <button type="button" onClick={() => setStoreSpeechVolume?.(0)} className="hover:text-slate-300">Mute</button>
+                                        <button type="button" onClick={() => setStoreSpeechVolume?.(0.5)} className="hover:text-slate-300">50%</button>
+                                        <button type="button" onClick={() => setStoreSpeechVolume?.(1.0)} className="hover:text-slate-300">100%</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                     {/* Divider */}
                     <div className={`${isVertical ? 'w-6 h-px my-0.5' : 'w-px h-4 mx-1'} bg-slate-700/60 shrink-0`} />
 
@@ -23259,6 +24709,7 @@ export default function Whiteboard({
                 className={`flex-1 overflow-hidden p-0 flex items-center justify-center relative touch-none select-none overscroll-none whiteboard-canvas-wrapper ${isFullscreen ? 'h-full' : ''}`}
                 style={{
                     backgroundColor: bgColor,
+                    filter: `brightness(${whiteboardBrightness}%)`,
                     backgroundImage: (() => {
                         switch (bgPattern) {
                             case 'dotted':
@@ -24917,7 +26368,7 @@ export default function Whiteboard({
                                     )}
 
                                     {/* Magnetic Connection Hooks (N, E, S, W, C) for linking diagrams & connectors to text fields */}
-                                    {(isSelected || tool === 'line' || hoveredHook?.shapeId === txtObj.id) && !isEditing && (
+                                    {(tool === 'select' && (isSelected || hoveredHook?.shapeId === txtObj.id)) && !isEditing && (
                                         <>
                                             {[
                                                 { anchor: 'top', label: 'N', style: { left: '50%', top: 0 } },
@@ -25941,9 +27392,9 @@ export default function Whiteboard({
                                 const ptsStr = shpObj.points.map(p => `${p.x - (shpObj.x || 0)},${p.y - (shpObj.y || 0)}`).join(' ');
                                 return (
                                     <polygon
-                                        style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}
+                                        style={{ pointerEvents: (tool === 'select' || isSelected || tool === 'fill') ? 'all' : 'none' }}
                                         points={ptsStr}
-                                        fill={fill}
+                                        fill={fill === 'transparent' ? 'rgba(0,0,0,0.001)' : fill}
                                         stroke={shpObj.color}
                                         strokeWidth={shpObj.strokeWidth}
                                         strokeLinejoin="round"
@@ -26022,26 +27473,31 @@ export default function Whiteboard({
                                 const minPx = Math.min(...pts.map(p => p.x));
                                 const maxPy = Math.max(...pts.map(p => p.y));
                                 const minPy = Math.min(...pts.map(p => p.y));
-                                const origW = shpObj.originalWidth || (maxPx - minPx) || 1;
-                                const origH = shpObj.originalHeight || (maxPy - minPy) || 1;
-                                const scaleX = shpObj.width / origW;
-                                const scaleY = shpObj.height / origH;
+                                const origW = (shpObj.originalWidth && shpObj.originalWidth > 0) ? shpObj.originalWidth : Math.max(maxPx - minPx, 1);
+                                const origH = (shpObj.originalHeight && shpObj.originalHeight > 0) ? shpObj.originalHeight : Math.max(maxPy - minPy, 1);
+                                let scaleX = (shpObj.width > 0 && origW > 0) ? (shpObj.width / origW) : 1;
+                                let scaleY = (shpObj.height > 0 && origH > 0) ? (shpObj.height / origH) : 1;
+                                if (isNaN(scaleX) || !isFinite(scaleX) || scaleX <= 0) scaleX = 1;
+                                if (isNaN(scaleY) || !isFinite(scaleY) || scaleY <= 0) scaleY = 1;
+                                const pathFill = shpObj.fillColor && shpObj.fillColor !== 'transparent' ? shpObj.fillColor : 'none';
+                                const isPathClosed = shpObj.isClosed || (pathFill !== 'none' && pathFill !== 'transparent');
+                                const renderedD = isPathClosed ? `${d} Z` : d;
                                 return (
                                     <g>
                                         {/* Invisible wide hit-test path for easier clicking */}
                                         <path 
-                                            d={d} 
-                                            fill="none" 
+                                            d={renderedD} 
+                                            fill={pathFill !== 'none' ? pathFill : 'transparent'} 
                                             stroke="transparent" 
                                             strokeWidth={Math.max(shpObj.strokeWidth + 16, 20)} 
                                             strokeLinecap="round" 
                                             strokeLinejoin="round" 
                                             transform={`scale(${scaleX}, ${scaleY})`}
-                                            style={{ pointerEvents: (tool === 'select') ? 'stroke' : 'none' }}
+                                            style={{ pointerEvents: (tool === 'select' || tool === 'fill') ? 'all' : 'none' }}
                                         />
                                         <path 
-                                            d={d} 
-                                            fill="none" 
+                                            d={renderedD} 
+                                            fill={pathFill} 
                                             stroke={shpObj.color} 
                                             strokeWidth={shpObj.strokeWidth} 
                                             strokeLinecap="round" 
@@ -27390,6 +28846,7 @@ export default function Whiteboard({
                                     svgContent = getBuiltinIllustrationSvg(shpObj.title, shpObj.color);
                                 }
                                 if (svgContent) {
+                                    svgContent = cleanLatexForSvg(svgContent);
                                     const vbMatch = svgContent.match(/viewBox=["']([^"']+)["']/i);
                                     const viewBox = vbMatch ? vbMatch[1] : `0 0 ${shpObj.width || 280} ${shpObj.height || 280}`;
                                     const innerMatch = svgContent.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
@@ -27481,15 +28938,18 @@ export default function Whiteboard({
                                 style={{
                                     left: shpObj.x,
                                     top: shpObj.y,
-                                    width: shpObj.width,
-                                    height: shpObj.height,
+                                    width: Math.max(shpObj.width || 0, shpObj.strokeWidth || 3, 4),
+                                    height: Math.max(shpObj.height || 0, shpObj.strokeWidth || 3, 4),
+                                    overflow: 'visible',
                                     transform: `rotate(${shpObj.rotation || 0}deg) ${shpObj.flipX ? 'scaleX(-1)' : ''} ${shpObj.flipY ? 'scaleY(-1)' : ''}`,
                                     transformOrigin: 'center center',
-                                    cursor: isSelected ? 'move' : 'crosshair',
+                                    cursor: isSelected ? 'move' : ((tool === 'fill' || tool === 'pen') ? getCursor() : (tool === 'select' ? 'pointer' : 'crosshair')),
                                     zIndex: shpObj.zIndex || ((shpObj.type === 'ruler' || shpObj.type === 'protractor') ? 60 : (isSelected ? 20 : 10)),
-                                    pointerEvents: (tool === 'select' || tool === 'line' || tool === 'fill' || isSelected) ? 'auto' : 'none',
+                                    pointerEvents: (tool === 'fill') ? 'none' : ((tool === 'select' || tool === 'line' || isSelected) ? 'auto' : 'none'),
                                 }}
-                                onMouseEnter={() => setHoveredShapeId(shpObj.id)}
+                                onMouseEnter={() => {
+                                    if (tool === 'select') setHoveredShapeId(shpObj.id);
+                                }}
                                 onMouseLeave={() => setHoveredShapeId(null)}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -27507,6 +28967,10 @@ export default function Whiteboard({
                                 onPointerDown={(e) => {
                                     if (!canUserDraw) return;
                                     if (tool === 'fill') {
+                                        const canvasPos = getPosition(e);
+                                        if (!isPointInsideVectorShape(canvasPos, shpObj)) {
+                                            return;
+                                        }
                                         e.stopPropagation();
                                         let appliedFill = color || '#3b82f6';
                                         if (fillMode === 'pattern') {
@@ -27601,7 +29065,8 @@ export default function Whiteboard({
                             >
                                 <svg width="100%" height="100%" style={{ overflow: 'visible', pointerEvents: 'none' }}>
                                     {renderShapeSVG()}
-                                    </svg>
+                                    {shpObj.showUnits && renderMathematicalDimensionsOverlay(shpObj)}
+                                </svg>
 
                         {/* Infinite Cloner Interactive Toggle / Badge */}
                         {isSelected ? (
@@ -27857,7 +29322,7 @@ export default function Whiteboard({
                                 )}
 
                                 {/* Magnetic Connection Hooks (N, E, S, W) for linking diagrams & connectors */}
-                                {(isSelected || tool === 'line' || hoveredShapeId === shpObj.id) && 
+                                {(tool === 'select' && (isSelected || hoveredShapeId === shpObj.id)) && 
                                  !['line', 'arrow', 'double_arrow', 'dashed_line', 'arc', 'curved_line', 'path', 'freehand'].includes(shpObj.type) && 
                                  shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && shpObj.type !== 'connector' && (
                                     <>
@@ -27938,23 +29403,22 @@ export default function Whiteboard({
                                     </>
                                 )}
                                 {/* Display Units & Dimensions Overlay */}
-                                {shpObj.showUnits && shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && (
-                                    <div
-                                        className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/95 text-indigo-300 border border-indigo-500/50 px-2 py-0.5 rounded-full text-[10px] font-mono whitespace-nowrap shadow-lg pointer-events-none z-35 flex items-center gap-1.5 backdrop-blur-xs select-none"
-                                    >
-                                        {isLineLike ? (
-                                            <span>L: {Math.round(Math.hypot((localEndX || 0) - (localStartX || 0), (localEndY || 0) - (localStartY || 0)) || shapeW)}px ({((Math.hypot((localEndX || 0) - (localStartX || 0), (localEndY || 0) - (localStartY || 0)) || shapeW) / 37.795).toFixed(1)}cm)</span>
-                                        ) : (shpObj.type === 'circle' || shpObj.type === 'concentric_circles') ? (
-                                            <span>⌀ {Math.round(shapeW)}px ({(shapeW / 37.795).toFixed(1)}cm) • R: {Math.round(shapeW / 2)}px</span>
-                                        ) : (
-                                            <>
-                                                <span>↔ {Math.round(shapeW)}px ({(shapeW / 37.795).toFixed(1)}cm)</span>
-                                                <span className="text-slate-500">•</span>
-                                                <span>↕ {Math.round(shapeH)}px ({(shapeH / 37.795).toFixed(1)}cm)</span>
-                                            </>
-                                        )}
-                                    </div>
-                                )}
+                                {shpObj.showUnits && shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && (() => {
+                                    const meas = getShapeMeasurementDetails(shpObj);
+                                    return (
+                                        <div
+                                            className="absolute -bottom-7 left-1/2 -translate-x-1/2 bg-slate-900/95 text-indigo-300 border border-indigo-500/60 px-2.5 py-0.5 rounded-full text-[10px] font-mono whitespace-nowrap shadow-xl pointer-events-none z-35 flex items-center gap-1.5 backdrop-blur-md select-none"
+                                        >
+                                            <span className="font-semibold text-indigo-400">{meas.title}:</span>
+                                            {meas.items.map((item, idx) => (
+                                                <Fragment key={idx}>
+                                                    {idx > 0 && <span className="text-slate-500">•</span>}
+                                                    <span>{item}</span>
+                                                </Fragment>
+                                            ))}
+                                        </div>
+                                    );
+                                })()}
 
                                 {/* Collapsible SchemDraw Python Code in 10px font under the diagram */}
                                 {(shpObj.code || shpObj.schemdrawCode) && (
@@ -29073,18 +30537,52 @@ export default function Whiteboard({
                         </div>
                     ))}
 
+                    {/* User Laser Pointer Fading Tail & Glowing Nib */}
+                    {laserTrail && laserTrail.length > 1 && (
+                        <svg className="absolute inset-0 w-full h-full pointer-events-none z-50 overflow-visible">
+                            <defs>
+                                <filter id="laserTailGlow" x="-50%" y="-50%" width="200%" height="200%">
+                                    <feGaussianBlur stdDeviation="3" result="blur" />
+                                    <feMerge>
+                                        <feMergeNode in="blur" />
+                                        <feMergeNode in="SourceGraphic" />
+                                    </feMerge>
+                                </filter>
+                            </defs>
+                            {laserTrail.slice(0, -1).map((pt, i) => {
+                                const nextPt = laserTrail[i + 1];
+                                const ratio = (i + 1) / laserTrail.length;
+                                return (
+                                    <line
+                                        key={`laser-trail-${i}`}
+                                        x1={pt.x}
+                                        y1={pt.y}
+                                        x2={nextPt.x}
+                                        y2={nextPt.y}
+                                        stroke="#ef4444"
+                                        strokeWidth={Math.max(1.5, ratio * 7)}
+                                        strokeLinecap="round"
+                                        opacity={ratio * 0.85}
+                                        filter="url(#laserTailGlow)"
+                                    />
+                                );
+                            })}
+                        </svg>
+                    )}
+
                     {laserPos && (
                         <div
-                            className="absolute pointer-events-none z-10"
+                            className="absolute pointer-events-none z-50"
                             style={{
-                                left: laserPos.x - 10,
-                                top: laserPos.y - 10,
-                                width: 20,
-                                height: 20,
+                                left: laserPos.x - 12,
+                                top: laserPos.y - 12,
+                                width: 24,
+                                height: 24,
                             }}
                         >
                             <div className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-75" />
-                            <div className="absolute inset-1 rounded-full bg-red-500 shadow-lg shadow-red-500/50" />
+                            <div className="absolute inset-1 rounded-full bg-red-600 shadow-lg shadow-red-500/80 border border-white/60" />
+                            <div className="absolute inset-2 rounded-full bg-white" />
                         </div>
                     )}
 
@@ -29486,86 +30984,7 @@ export default function Whiteboard({
                         )}
                     </svg>
 
-                    {/* Floating Draggable Radial Ball */}
-                    <div
-                        style={{
-                            position: 'absolute',
-                            left: `${floatingBallPos.x}px`,
-                            top: `${floatingBallPos.y}px`,
-                            touchAction: 'none',
-                            transform: `scale(${invZoom})`,
-                            transformOrigin: 'top left'
-                        }}
-                        className="z-[90] pointer-events-auto select-none"
-                    >
-                        <button
-                            type="button"
-                            onPointerDown={(e) => {
-                                e.stopPropagation();
-                                const clientX = e.clientX !== undefined ? e.clientX : (e.touches?.[0]?.clientX ?? 0);
-                                const clientY = e.clientY !== undefined ? e.clientY : (e.touches?.[0]?.clientY ?? 0);
-                                ballDragStartRef.current = {
-                                    startX: clientX,
-                                    startY: clientY,
-                                    initialX: floatingBallPos.x,
-                                    initialY: floatingBallPos.y,
-                                    moved: false
-                                };
-                                setIsDraggingBall(true);
 
-                                const onMove = (me) => {
-                                    if (!ballDragStartRef.current) return;
-                                    const cx = me.clientX !== undefined ? me.clientX : (me.touches?.[0]?.clientX ?? 0);
-                                    const cy = me.clientY !== undefined ? me.clientY : (me.touches?.[0]?.clientY ?? 0);
-                                    const dx = cx - ballDragStartRef.current.startX;
-                                    const dy = cy - ballDragStartRef.current.startY;
-                                    if (Math.hypot(dx, dy) > 4) {
-                                        ballDragStartRef.current.moved = true;
-                                    }
-                                    const maxX = (canvasWrapperRef.current?.clientWidth || window.innerWidth) - 50;
-                                    const maxY = (canvasWrapperRef.current?.clientHeight || window.innerHeight) - 50;
-                                    const newX = Math.max(10, Math.min(maxX, ballDragStartRef.current.initialX + dx));
-                                    const newY = Math.max(10, Math.min(maxY, ballDragStartRef.current.initialY + dy));
-                                    setFloatingBallPos({ x: newX, y: newY });
-                                };
-
-                                const onUp = () => {
-                                    window.removeEventListener('pointermove', onMove);
-                                    window.removeEventListener('pointerup', onUp);
-                                    window.removeEventListener('touchmove', onMove);
-                                    window.removeEventListener('touchend', onUp);
-                                    setIsDraggingBall(false);
-                                    if (ballDragStartRef.current && !ballDragStartRef.current.moved) {
-                                        setRadialMenuPos({ x: floatingBallPos.x + 22, y: floatingBallPos.y + 22 });
-                                        setShowRadialMenu(prev => !prev);
-                                    }
-                                    ballDragStartRef.current = null;
-                                };
-
-                                window.addEventListener('pointermove', onMove);
-                                window.addEventListener('pointerup', onUp);
-                                window.addEventListener('touchmove', onMove, { passive: false });
-                                window.addEventListener('touchend', onUp);
-                            }}
-                            className={`radial-fab-button w-11 h-11 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl shadow-indigo-500/40 border-2 border-white/30 flex items-center justify-center text-white transition-transform duration-150 cursor-grab active:cursor-grabbing hover:scale-105 active:scale-95 ${
-                                isDraggingBall ? 'opacity-80 scale-105' : ''
-                            }`}
-                            title="Quick Radial Toolbar (Drag ball anywhere, tap to open)"
-                        >
-                            <Plus className={`w-5 h-5 transition-transform duration-200 ${showRadialMenu ? 'rotate-45' : ''}`} />
-                        </button>
-                    </div>
-
-                    {/* Circular Radial Toolbar Centered on Floating Ball */}
-                    <RadialToolbar
-                        isOpen={showRadialMenu}
-                        position={{ x: floatingBallPos.x + 22, y: floatingBallPos.y + 22 }}
-                        currentTool={tool}
-                        currentBrushType={brushType}
-                        onToolSelect={handleRadialToolSelect}
-                        onClose={() => setShowRadialMenu(false)}
-                        canvasBounds={canvasWrapperRef.current ? { width: canvasWrapperRef.current.clientWidth, height: canvasWrapperRef.current.clientHeight } : { width: 1920, height: 1080 }}
-                    />
 
                     {/* 360-Degree Rotation Protractor & Angle Dial Overlay */}
                     {activeRotatingObject && <RotationDial obj={activeRotatingObject} />}
@@ -29658,7 +31077,8 @@ export default function Whiteboard({
                                                     startX: s.startX !== undefined ? s.startX + stepDx : s.startX,
                                                     startY: s.startY !== undefined ? s.startY + stepDy : s.startY,
                                                     endX: s.endX !== undefined ? s.endX + stepDx : s.endX,
-                                                    endY: s.endY !== undefined ? s.endY + stepDy : s.endY
+                                                    endY: s.endY !== undefined ? s.endY + stepDy : s.endY,
+                                                    points: s.points ? s.points.map(p => ({ x: p.x + stepDx, y: p.y + stepDy })) : s.points
                                                 };
                                             }
                                             return s;
@@ -29926,6 +31346,51 @@ export default function Whiteboard({
                         />
                     ))}
 
+                    {/* Linked Office Documents Layer (Excel Workbooks, Word Documents, PDFs - Link Badge or Inset Window) */}
+                    {(pageDocumentObjects[currentPage] || []).filter(Boolean).map((docObj) => (
+                        <WhiteboardDocumentObject
+                            key={docObj.id}
+                            doc={docObj}
+                            isSelected={selectedDocumentId === docObj.id}
+                            scale={currentZoom}
+                            onSelect={(id) => {
+                                setSelectedDocumentId(id);
+                                setSelectedTableId(null);
+                                setSelectedGraphId(null);
+                                setSelected3DId(null);
+                                setSelectedPdfId(null);
+                                setSelectedShapeIds([]);
+                                setSelectedTextIds([]);
+                                setSelectedImageId(null);
+                                setSelectedImageIds([]);
+                                setSelectedMediaId(null);
+                            }}
+                            onUpdate={(updates) => {
+                                setDocumentObjects(prev => prev.map(d => d.id === docObj.id ? { ...d, ...updates } : d));
+                            }}
+                            onDelete={(id) => {
+                                setDocumentObjects(prev => prev.filter(d => d.id !== id));
+                                if (selectedDocumentId === id) setSelectedDocumentId(null);
+                                saveToHistory();
+                            }}
+                            onDuplicate={(id) => {
+                                const orig = (pageDocumentObjects[currentPage] || []).find(d => d.id === id);
+                                if (!orig) return;
+                                const clone = {
+                                    ...orig,
+                                    id: `doc_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                    x: (orig.x || 0) + 30,
+                                    y: (orig.y || 0) + 30
+                                };
+                                setDocumentObjects(prev => [...prev, clone]);
+                                setSelectedDocumentId(clone.id);
+                                saveToHistory();
+                            }}
+                            onBringForward={() => handleBringForward(docObj.id)}
+                            onSendBackward={() => handleSendBackward(docObj.id)}
+                        />
+                    ))}
+
                     {/* Interactive Classroom Geometry Instruments (myViewBoard Inspired) */}
                     <GeometryInstrumentsOverlay
                         isOpen={showGeometryInstruments}
@@ -29939,8 +31404,114 @@ export default function Whiteboard({
                         onDrawTriangle={handleGeometryDrawTriangle}
                         onMarkDistance={handleGeometryMarkDistance}
                         onInstrumentBoundsChange={handleInstrumentBoundsChange}
+                        onToggleEstimator={() => setShowEstimator(prev => !prev)}
+                        onToggleFlashcards={() => setShowFlashcards(prev => !prev)}
+                        isEstimatorOpen={showEstimator}
+                        isFlashcardsOpen={showFlashcards}
                     />
+
                 </div>
+
+                {/* Fixed Viewport Overlays Layer (Independent of Canvas Drag/Pan/Zoom) */}
+                {/* Floating Draggable Quick Ball */}
+                <div
+                    style={{
+                        position: 'fixed',
+                        left: `${floatingBallPos.x}px`,
+                        top: `${floatingBallPos.y}px`,
+                        touchAction: 'none'
+                    }}
+                    className="z-[90] pointer-events-auto select-none"
+                >
+                    <button
+                        type="button"
+                        onPointerDown={(e) => {
+                            e.stopPropagation();
+                            const clientX = e.clientX !== undefined ? e.clientX : (e.touches?.[0]?.clientX ?? 0);
+                            const clientY = e.clientY !== undefined ? e.clientY : (e.touches?.[0]?.clientY ?? 0);
+                            ballDragStartRef.current = {
+                                startX: clientX,
+                                startY: clientY,
+                                initialX: floatingBallPos.x,
+                                initialY: floatingBallPos.y,
+                                moved: false
+                            };
+                            setIsDraggingBall(true);
+
+                            const onMove = (me) => {
+                                if (!ballDragStartRef.current) return;
+                                const cx = me.clientX !== undefined ? me.clientX : (me.touches?.[0]?.clientX ?? 0);
+                                const cy = me.clientY !== undefined ? me.clientY : (me.touches?.[0]?.clientY ?? 0);
+                                const dx = cx - ballDragStartRef.current.startX;
+                                const dy = cy - ballDragStartRef.current.startY;
+                                if (Math.hypot(dx, dy) > 4) {
+                                    ballDragStartRef.current.moved = true;
+                                }
+                                const maxX = window.innerWidth - 60;
+                                const maxY = window.innerHeight - 60;
+                                const newX = Math.max(10, Math.min(maxX, ballDragStartRef.current.initialX + dx));
+                                const newY = Math.max(10, Math.min(maxY, ballDragStartRef.current.initialY + dy));
+                                setFloatingBallPos({ x: newX, y: newY });
+                            };
+
+                            const onUp = () => {
+                                window.removeEventListener('pointermove', onMove);
+                                window.removeEventListener('pointerup', onUp);
+                                window.removeEventListener('touchmove', onMove);
+                                window.removeEventListener('touchend', onUp);
+                                setIsDraggingBall(false);
+                                if (ballDragStartRef.current && !ballDragStartRef.current.moved) {
+                                    setRadialMenuPos({ x: floatingBallPos.x + 22, y: floatingBallPos.y + 22 });
+                                    setShowRadialMenu(prev => !prev);
+                                }
+                                ballDragStartRef.current = null;
+                            };
+
+                            window.addEventListener('pointermove', onMove);
+                            window.addEventListener('pointerup', onUp);
+                            window.addEventListener('touchmove', onMove, { passive: false });
+                            window.addEventListener('touchend', onUp);
+                        }}
+                        className={`radial-fab-button w-11 h-11 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl shadow-indigo-500/40 border-2 border-white/30 flex items-center justify-center text-white transition-transform duration-150 cursor-grab active:cursor-grabbing hover:scale-105 active:scale-95 ${
+                            isDraggingBall ? 'opacity-80 scale-105' : ''
+                        }`}
+                        title="Quick Radial Toolbar (Drag ball anywhere, tap to open)"
+                    >
+                        <Plus className={`w-5 h-5 transition-transform duration-200 ${showRadialMenu ? 'rotate-45' : ''}`} />
+                    </button>
+                </div>
+
+                {/* Circular Radial Toolbar Centered on Floating Ball */}
+                <RadialToolbar
+                    isOpen={showRadialMenu}
+                    position={{ x: floatingBallPos.x + 22, y: floatingBallPos.y + 22 }}
+                    currentTool={tool}
+                    currentBrushType={brushType}
+                    onToolSelect={handleRadialToolSelect}
+                    onClose={() => setShowRadialMenu(false)}
+                    canvasBounds={{ width: typeof window !== 'undefined' ? window.innerWidth : 1920, height: typeof window !== 'undefined' ? window.innerHeight : 1080 }}
+                />
+
+                {/* Estimator Scientific Calculator */}
+                {showEstimator && (
+                    <EstimatorCalculator
+                        isOpen={showEstimator}
+                        onClose={() => setShowEstimator(false)}
+                        onInsertToBoard={handleInsertCalculatorEquation}
+                        initialPosition={{ x: 140, y: 120 }}
+                    />
+                )}
+
+                {/* STEM Flashcards (Spaced Repetition & KaTeX) */}
+                {showFlashcards && (
+                    <WhiteboardFlashcards
+                        isOpen={showFlashcards}
+                        onClose={() => setShowFlashcards(false)}
+                        onStampToBoard={handleStampFlashcard}
+                        boardEquations={shapeObjects.filter(s => s.type === 'equation' || s.latex)}
+                        initialPosition={{ x: 220, y: 110 }}
+                    />
+                )}
 
                 {/* Full-Screen Spotlight Focus Tool with Inline Context Controls (BenQ EZWrite & ViewSonic myViewBoard) */}
                 {isSpotlightActive && (
@@ -30322,6 +31893,12 @@ export default function Whiteboard({
                 onCreateTable={handleCreateTable}
             />
 
+            {/* Custom Toolbar Icons Management Modal */}
+            <WhiteboardCustomIconsModal
+                isOpen={showCustomIconsModal}
+                onClose={() => setShowCustomIconsModal(false)}
+            />
+
             {/* Domain-Specific Shape Library Modal */}
             <DomainShapeLibraryModal
                 isOpen={showDomainLibrary}
@@ -30618,6 +32195,7 @@ export default function Whiteboard({
                 onCreateStickyNote={handleInsertAiStickyNote}
                 onInsertAsText={handleInsertAiTextObject}
                 onInsertDiagram={handleInsertDiagramToCanvas}
+                onInsertTable={handleInsertTableToCanvas}
                 onInsertToBoard={(sol) => handleInsertAiSolutionToBoard(sol || aiSolutionData)}
                 onOpenAiSolution={() => setShowAiAssistantModal(true)}
                 onOpenPhysicsSpace={() => setShowPhysicsSpace(true)}
@@ -30648,6 +32226,10 @@ export default function Whiteboard({
                     }
                 }}
                 preferredProvider={whiteboardAiProvider}
+                onChangePreferredProvider={(p) => {
+                    setWhiteboardAiProvider(p);
+                    try { localStorage.setItem('whiteboard_ai_provider', p); } catch {}
+                }}
                 chatHistory={aiChatHistory}
                 onClearChat={() => setAiChatHistory([])}
                 onSelectHistoryItem={handleSelectChatHistoryItem}
@@ -30669,6 +32251,15 @@ export default function Whiteboard({
                 }}
                 onExecuteCommand={(cmd, options) => executeVoiceCommand(cmd, false, options)}
                 audioLevel={audioInputLevel}
+                onNewChat={() => {
+                    setAiSolutionData(null);
+                    setAiSpeakingText('');
+                    setVoiceTranscript('');
+                    setInterimVoiceTranscript('');
+                    setVoiceFeedback('');
+                    if (stopAiSpeech) stopAiSpeech();
+                    setShowAiAssistantModal(true);
+                }}
             />
 
             {/* Interactive AI Assistant & Problem Solving Modal - Fully unified into WhiteboardClosedCaptions above */}
@@ -30728,9 +32319,10 @@ export default function Whiteboard({
                             </button>
                         </div>
 
-                        {/* Tabs: Record Clip, YouTube, Whiteboard Recordings, PDF, Local File, Web Embed */}
+                        {/* Tabs: Office Documents, Record Clip, YouTube, Whiteboard Recordings, PDF, Local File, Web Embed */}
                         <div className="flex bg-slate-800/80 p-1 rounded-xl gap-1">
                             {[
+                                { id: 'document', icon: FileSpreadsheet, tooltip: 'Link Office Document (Excel, Word, PDF)' },
                                 { id: 'record', icon: Camera, tooltip: 'Record Video / Audio Clip (Webcam & Mic)' },
                                 { id: 'youtube', icon: YoutubeIcon, tooltip: 'YouTube Video' },
                                 { id: 'recordings', icon: Film, tooltip: 'Saved Whiteboard Recordings' },
@@ -30765,13 +32357,85 @@ export default function Whiteboard({
                                     type="text"
                                     value={mediaInputTitle}
                                     onChange={e => setMediaInputTitle(e.target.value)}
-                                    placeholder={mediaInputTab === 'record' ? 'e.g. My Presentation, Voice Memo' : 'e.g. Lecture Video, Lab Simulation, Audio Demo'}
+                                    placeholder={mediaInputTab === 'document' ? 'e.g. Financial_Report.xlsx, Research.docx, Paper.pdf' : mediaInputTab === 'record' ? 'e.g. My Presentation, Voice Memo' : 'e.g. Lecture Video, Lab Simulation, Audio Demo'}
                                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                                 />
                             </div>
                         )}
 
                         {/* Content by tab */}
+                        {mediaInputTab === 'document' && (
+                            <div className="flex flex-col gap-3">
+                                {/* Presentation Mode Toggle (Link Badge vs Inset Window) */}
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Presentation Mode</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setDocPresentationMode('inset')}
+                                            className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-semibold transition ${
+                                                docPresentationMode === 'inset'
+                                                    ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-xs'
+                                                    : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:text-white'
+                                            }`}
+                                        >
+                                            <Maximize2 className="w-3.5 h-3.5 text-indigo-400" />
+                                            <span>Resizable Inset Window</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setDocPresentationMode('link')}
+                                            className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-semibold transition ${
+                                                docPresentationMode === 'link'
+                                                    ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-xs'
+                                                    : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:text-white'
+                                            }`}
+                                        >
+                                            <LinkIcon className="w-3.5 h-3.5 text-emerald-400" />
+                                            <span>Compact Link Badge</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* File Upload */}
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-400 mb-1">Select Excel, Word, or PDF File</label>
+                                    <input
+                                        type="file"
+                                        accept=".xlsx,.xls,.csv,.docx,.doc,.pdf"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                const blobUrl = URL.createObjectURL(file);
+                                                setMediaInputUrl(blobUrl);
+                                                if (!mediaInputTitle) setMediaInputTitle(file.name);
+                                            }
+                                        }}
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer"
+                                    />
+                                    <p className="text-[11px] text-slate-400 mt-1">Autodetects Excel (.xlsx, .csv), Word (.docx), and PDF documents with formatting and fonts preserved.</p>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    <div className="h-px bg-slate-800 flex-1" />
+                                    <span className="text-[10px] uppercase font-bold text-slate-500">OR</span>
+                                    <div className="h-px bg-slate-800 flex-1" />
+                                </div>
+
+                                {/* Or Direct URL */}
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-400 mb-1">Online Document Web URL</label>
+                                    <input
+                                        type="url"
+                                        value={mediaInputUrl}
+                                        onChange={e => setMediaInputUrl(e.target.value)}
+                                        placeholder="https://example.com/document.xlsx or .docx"
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
                         {mediaInputTab === 'record' && (
                             <div className="flex flex-col gap-3">
                                 {/* Mode Selector (Video / Audio / Photo) */}
@@ -31154,6 +32818,38 @@ export default function Whiteboard({
                                             return;
                                         }
                                         const wrapper = canvasWrapperRef.current;
+
+                                        if (mediaInputTab === 'document') {
+                                            const cx = wrapper ? (wrapper.clientWidth / 2 - 320) : 150;
+                                            const cy = wrapper ? (wrapper.clientHeight / 2 - 240) : 100;
+                                            const detectedType = detectDocumentType(mediaInputTitle || mediaInputUrl, '', mediaInputUrl);
+                                            const isLink = docPresentationMode === 'link';
+                                            const newDoc = {
+                                                id: `doc_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                                title: mediaInputTitle.trim() || 'Document',
+                                                fileName: mediaInputTitle.trim() || 'Document',
+                                                docType: detectedType,
+                                                src: mediaInputUrl,
+                                                url: mediaInputUrl,
+                                                presentationMode: docPresentationMode,
+                                                x: Math.max(20, cx),
+                                                y: Math.max(20, cy),
+                                                width: isLink ? 320 : 640,
+                                                height: isLink ? 54 : 480,
+                                                isLocked: false
+                                            };
+                                            setPageDocumentObjects(prev => ({
+                                                ...prev,
+                                                [currentPage]: [...(prev[currentPage] || []), newDoc]
+                                            }));
+                                            setSelectedDocumentId(newDoc.id);
+                                            setShowMediaModal(false);
+                                            setMediaInputUrl('');
+                                            setMediaInputTitle('');
+                                            saveToHistory();
+                                            toast.success(`Linked "${newDoc.title}" as ${isLink ? 'Link Badge' : 'Inset Window'}!`, { icon: '📎' });
+                                            return;
+                                        }
 
                                         if (mediaInputTab === 'pdf') {
                                             const cx = wrapper ? (wrapper.clientWidth / 2 - 250) : 150;

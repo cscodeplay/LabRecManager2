@@ -3,6 +3,7 @@
 import React, { useMemo } from 'react';
 import katex from 'katex';
 import 'katex/contrib/mhchem';
+import MermaidRenderer from './MermaidRenderer';
 
 // Ensure \ce macro is registered in KaTeX (even across different bundler environments)
 try {
@@ -28,7 +29,8 @@ export default function MathRenderer({
     className = '',
     inline = false,
     textClassName = '',
-    size = 'base' // 'sm' | 'base' | 'lg' | 'xl'
+    size = 'base', // 'sm' | 'base' | 'lg' | 'xl'
+    onInsertDiagram = null
 }) {
     const normalizedContent = useMemo(() => {
         if (!content || typeof content !== 'string') return '';
@@ -37,8 +39,8 @@ export default function MathRenderer({
 
     const renderedElements = useMemo(() => {
         if (!normalizedContent) return null;
-        return parseContent(normalizedContent, textClassName, size, inline);
-    }, [normalizedContent, textClassName, size, inline]);
+        return parseContent(normalizedContent, textClassName, size, inline, onInsertDiagram);
+    }, [normalizedContent, textClassName, size, inline, onInsertDiagram]);
 
     if (!normalizedContent) return null;
 
@@ -181,7 +183,7 @@ function escapeHtml(str) {
 /**
  * Parses markdown blocks and LaTeX formulas into React elements.
  */
-function parseContent(text, textClassName = '', size = 'base', inline = false) {
+function parseContent(text, textClassName = '', size = 'base', inline = false, onInsertDiagram = null) {
     if (inline) {
         return renderInlineFormattedText(text, size, textClassName);
     }
@@ -229,6 +231,18 @@ function parseContent(text, textClassName = '', size = 'base', inline = false) {
     // Render each block
     return blocks.map((block, bIdx) => {
         if (block.type === 'code_block') {
+            const lang = (block.language || '').toLowerCase().trim();
+            const isMermaid = lang === 'mermaid' || /^\s*(?:flowchart|graph|sequenceDiagram|classDiagram|erDiagram|stateDiagram)/.test(block.content);
+            if (isMermaid) {
+                return (
+                    <MermaidRenderer
+                        key={`mermaid-${bIdx}`}
+                        chart={block.content}
+                        title="Architecture / Flowchart Diagram"
+                        onInsertDiagram={onInsertDiagram}
+                    />
+                );
+            }
             return (
                 <div key={`cb-${bIdx}`} className="my-3.5 rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950 shadow-md">
                     {block.language && (

@@ -6,7 +6,9 @@ import {
     X,
     Check,
     Triangle as TriangleIcon,
-    FlipHorizontal
+    FlipHorizontal,
+    Minus,
+    Plus
 } from 'lucide-react';
 import {
     PX_PER_CM,
@@ -31,7 +33,7 @@ export default function SetSquareTool({
     // Right-angle vertex position (Origin at 90° corner) in Canvas Coordinates
     const [pos, setPos] = useState({ x: initialX, y: initialY });
     const [squareType, setSquareType] = useState(initialType);
-    const [sizeCm, setSizeCm] = useState(initialSizeCm);
+    const [sizeCm, setSizeCm] = useState(Math.min(18.0, Math.max(6.0, initialSizeCm)));
     const [angle, setAngle] = useState(initialAngle);
     const [isFlipped, setIsFlipped] = useState(false);
 
@@ -149,13 +151,20 @@ export default function SetSquareTool({
         const perpEndX = pos.x + heightPx * Math.cos(perpRad);
         const perpEndY = pos.y + heightPx * Math.sin(perpRad);
 
+        const c = { x: Math.round(pos.x), y: Math.round(pos.y) };
+        const bEnd = { x: Math.round(baseEndX), y: Math.round(baseEndY) };
+        const hEnd = { x: Math.round(perpEndX), y: Math.round(perpEndY) };
+
         onDrawPerpendicular({
-            cornerX: Math.round(pos.x),
-            cornerY: Math.round(pos.y),
-            baseEndX: Math.round(baseEndX),
-            baseEndY: Math.round(baseEndY),
-            perpEndX: Math.round(perpEndX),
-            perpEndY: Math.round(perpEndY),
+            corner: c,
+            baseEnd: bEnd,
+            heightEnd: hEnd,
+            cornerX: c.x,
+            cornerY: c.y,
+            baseEndX: bEnd.x,
+            baseEndY: bEnd.y,
+            perpEndX: hEnd.x,
+            perpEndY: hEnd.y,
             baseLenCm: sizeCm,
             heightLenCm: heightPx / PX_PER_CM,
             angleDeg: angle
@@ -178,6 +187,9 @@ export default function SetSquareTool({
         };
 
         onDrawTriangle({
+            p1,
+            p2,
+            p3,
             points: [p1, p2, p3],
             squareType,
             baseCm: sizeCm,
@@ -185,13 +197,8 @@ export default function SetSquareTool({
         });
     }, [onDrawTriangle, pos, basePx, heightPx, squareType, sizeCm, angle, isFlipped]);
 
-    // Cutout margins for realistic hollow triangle center
-    const innerMargin = 32;
-    const innerBase = Math.max(20, basePx - innerMargin * 2.2);
-    const innerHeight = Math.max(20, heightPx - innerMargin * 2.2);
-
     return (
-        <div className="absolute inset-0 pointer-events-none select-none z-[66]">
+        <div data-geometry-tool="true" className="geometry-instrument absolute inset-0 pointer-events-none select-none z-[75]">
             {/* SVG Acrylic Drafting Triangle */}
             <svg
                 style={{
@@ -210,24 +217,14 @@ export default function SetSquareTool({
                     </filter>
                 </defs>
 
-                {/* Outer Transparent Acrylic Triangle with Inner Cutout */}
+                {/* Solid Transparent Acrylic Triangle (No Hollow Cutout - Draggable from anywhere on surface) */}
                 <path
-                    d={`
-                        M 0 0 
-                        L ${basePx} 0 
-                        L 0 ${heightPx} 
-                        Z
-                        M ${innerMargin} ${innerMargin}
-                        L 0 ${innerHeight}
-                        L ${innerBase} 0
-                        Z
-                    `}
-                    fill="rgba(255, 255, 255, 0.22)"
-                    fillRule="evenodd"
+                    d={`M 0 0 L ${basePx} 0 L 0 ${heightPx} Z`}
+                    fill="rgba(241, 245, 249, 0.40)"
                     stroke="#475569"
                     strokeWidth="1.2"
                     filter="url(#setSquareShadow)"
-                    className="cursor-grab active:cursor-grabbing pointer-events-auto transition hover:fill-white/30 backdrop-blur-[2px]"
+                    className="cursor-grab active:cursor-grabbing pointer-events-auto transition hover:fill-slate-100/55 backdrop-blur-[2px]"
                     onPointerDown={handleBodyPointerDown}
                 />
 
@@ -309,10 +306,10 @@ export default function SetSquareTool({
                     );
                 })}
 
-                {/* Type Label in Cutout */}
+                {/* Type Label on Solid Acrylic Face */}
                 <text
-                    x={innerMargin + 12}
-                    y={innerMargin + 24}
+                    x={28}
+                    y={38}
                     fill="#0f172a"
                     fontSize="9.5"
                     fontFamily="sans-serif"
@@ -321,6 +318,42 @@ export default function SetSquareTool({
                 >
                     {squareType === '45' ? '45° / 45° / 90°' : '30° / 60° / 90°'}
                 </text>
+
+                {/* ─── Control 2: Integrated Rotation Grip (Directly Attached to Triangle Base, Never Detached) ─── */}
+                <g
+                    data-handle="true"
+                    onPointerDown={handleRotatePointerDown}
+                    className="pointer-events-auto cursor-grab active:cursor-grabbing group/rot"
+                >
+                    {/* Connecting physical stem from base corner */}
+                    <line
+                        x1={basePx}
+                        y1={0}
+                        x2={basePx + 18}
+                        y2={0}
+                        stroke="#f43f5e"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                    />
+                    {/* Rotation Dial Badge */}
+                    <circle
+                        cx={basePx + 18}
+                        cy={0}
+                        r="12"
+                        fill="#0f172a"
+                        stroke="#f43f5e"
+                        strokeWidth="2"
+                        filter="url(#setSquareShadow)"
+                    />
+                    <path
+                        d={`M ${basePx + 15} -3 L ${basePx + 21} -3 L ${basePx + 21} 3 M ${basePx + 21} -3 C ${basePx + 18} -5 ${basePx + 14} -5 ${basePx + 13} -3 C ${basePx + 11} -1 ${basePx + 11} 2 ${basePx + 13} 4`}
+                        fill="none"
+                        stroke="#fda4af"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    />
+                </g>
             </svg>
 
             {/* ─── Control 1: 90° Corner Vertex Crosshair ─── */}
@@ -339,24 +372,7 @@ export default function SetSquareTool({
                 <div className="w-2 h-2 rounded-full bg-rose-400 ring-2 ring-rose-500/40" />
             </div>
 
-            {/* ─── Control 2: Rotation Dial Handle ─── */}
-            <div
-                data-handle="true"
-                style={{
-                    position: 'absolute',
-                    left: `${pos.x + (basePx + 24) * Math.cos(degToRad(angle))}`,
-                    top: `${pos.y + (basePx + 24) * Math.sin(degToRad(angle))}`,
-                    transform: 'translate(-50%, -50%)',
-                    pointerEvents: 'auto'
-                }}
-                onPointerDown={handleRotatePointerDown}
-                className="w-7 h-7 rounded-full bg-slate-900 border-2 border-rose-400 shadow-xl flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-rose-500 hover:text-white text-rose-300 transition"
-                title="Drag to rotate set square (Hold Shift for 15° snap)"
-            >
-                <RotateCw className="w-3.5 h-3.5" />
-            </div>
-
-            {/* ─── Control 3: Top Action HUD ─── */}
+            {/* ─── Control 3: Top Action HUD (All Icon-Only with Tooltips & Resizing) ─── */}
             <div
                 style={{
                     position: 'absolute',
@@ -366,53 +382,80 @@ export default function SetSquareTool({
                 }}
                 className="bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full px-2 py-0.5 shadow-2xl flex items-center gap-1.5 h-7"
             >
-                {/* Type Switcher */}
+                {/* Resizing Stepper Minus */}
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setSizeCm(s => +(Math.max(6.0, s - 1.0)).toFixed(1));
+                    }}
+                    className="w-4 h-4 rounded-full bg-slate-800 hover:bg-rose-500 text-slate-300 hover:text-white flex items-center justify-center transition"
+                    title="Shrink set square (-1 cm, min 6 cm)"
+                >
+                    <Minus className="w-2.5 h-2.5" />
+                </button>
+
+                {/* Type Switcher Icon Badge */}
                 <button
                     type="button"
                     onClick={() => setSquareType(squareType === '45' ? '30_60' : '45')}
-                    className="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] font-bold text-rose-300 hover:text-white transition"
-                    title="Switch between 45°-45°-90° and 30°-60°-90° set squares"
+                    className="px-1.5 py-0.5 rounded-full bg-slate-800 text-[10px] font-mono font-bold text-rose-300 hover:text-white transition flex items-center gap-1"
+                    title={squareType === '45' ? '45°-45°-90° Triangle (Click to switch to 30°-60°-90°)' : '30°-60°-90° Triangle (Click to switch to 45°-45°-90°)'}
                 >
-                    {squareType === '45' ? '45° Triangle' : '30°/60° Triangle'}
+                    <TriangleIcon className="w-2.5 h-2.5" />
+                    <span>{squareType === '45' ? '45°' : '30/60°'}</span>
                 </button>
 
-                {/* Flip Triangle */}
+                {/* Resizing Stepper Plus */}
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setSizeCm(s => +(Math.min(18.0, s + 1.0)).toFixed(1));
+                    }}
+                    className="w-4 h-4 rounded-full bg-slate-800 hover:bg-rose-500 text-slate-300 hover:text-white flex items-center justify-center transition"
+                    title="Enlarge set square (+1 cm, max 18 cm)"
+                >
+                    <Plus className="w-2.5 h-2.5" />
+                </button>
+
+                <div className="w-px h-3 bg-slate-700" />
+
+                {/* Flip Triangle (Icon Only) */}
                 <button
                     type="button"
                     onClick={() => setIsFlipped(!isFlipped)}
-                    className="p-1 rounded-full bg-slate-800 text-slate-300 hover:text-white transition"
+                    className="w-5 h-5 rounded-full bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center transition"
                     title="Flip horizontally"
                 >
                     <FlipHorizontal className="w-3 h-3" />
                 </button>
 
-                {/* Draw 90° Perpendicular */}
+                {/* Draw 90° Perpendicular (Icon Only) */}
                 <button
                     type="button"
                     onClick={handleDrawPerpendicular}
-                    className="flex items-center gap-1 px-2.5 py-0.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] rounded-full shadow transition active:scale-95"
+                    className="w-5 h-5 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center shadow transition active:scale-95"
                     title="Draw true 90° perpendicular lines onto whiteboard"
                 >
-                    <Check className="w-2.5 h-2.5 stroke-[3]" />
-                    <span>Perpendicular (90°)</span>
+                    <Check className="w-3 h-3 stroke-[3]" />
                 </button>
 
-                {/* Draw Full Triangle */}
+                {/* Draw Full Triangle (Icon Only) */}
                 <button
                     type="button"
                     onClick={handleDrawFullTriangle}
-                    className="flex items-center gap-1 px-2.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-[10px] rounded-full shadow transition active:scale-95"
+                    className="w-5 h-5 rounded-full bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center shadow transition active:scale-95"
                     title="Stamp complete drafting triangle onto whiteboard"
                 >
                     <TriangleIcon className="w-2.5 h-2.5" />
-                    <span>Triangle</span>
                 </button>
 
-                {/* Close Button */}
+                {/* Close Button (Icon Only) */}
                 <button
                     type="button"
                     onClick={onClose}
-                    className="p-1 rounded-full bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white transition"
+                    className="w-5 h-5 rounded-full bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white flex items-center justify-center transition"
                     title="Close Set Square"
                 >
                     <X className="w-3 h-3" />

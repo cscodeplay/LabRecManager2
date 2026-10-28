@@ -214,11 +214,24 @@ export function clampPointToInstrumentOuterEdge(p, instrument) {
     if (!instrument || !p) return p;
 
     if (Array.isArray(instrument)) {
-        let currentP = p;
+        let bestP = p;
+        let minDelta = Infinity;
         for (const inst of instrument) {
-            currentP = clampPointToInstrumentOuterEdge(currentP, inst);
+            if (!inst) continue;
+            const candidateP = clampPointToInstrumentOuterEdge(p, inst);
+            const delta = Math.hypot(candidateP.x - p.x, candidateP.y - p.y);
+            if (delta > 0.001 && delta < minDelta) {
+                minDelta = delta;
+                bestP = candidateP;
+            }
         }
-        return currentP;
+        return bestP;
+    }
+
+    if (typeof instrument === 'object' && !instrument.type) {
+        const list = Object.values(instrument).filter(inst => inst && inst.type);
+        if (list.length === 0) return p;
+        return clampPointToInstrumentOuterEdge(p, list);
     }
 
     if (instrument.type === 'ruler') {
@@ -310,8 +323,12 @@ export function clampPointToInstrumentOuterEdge(p, instrument) {
         const localY = (dx * sin + dy * cos) * flipSign;
 
         // Triangle vertices in local coords: (0, 0), (basePx, 0), (0, heightPx)
-        const margin = 14;
-        if (localX >= -margin && localY >= -margin && (localX / basePx + localY / heightPx) <= 1 + margin / basePx) {
+        // Physical Barrier: Pen cannot draw underneath triangle body, but snaps along all 3 outer edges
+        const snapMargin = 24;
+        const isInsideOrNear = localX >= -snapMargin && localY >= -snapMargin &&
+            (localX / basePx + localY / heightPx) <= (1 + snapMargin / Math.min(basePx, heightPx));
+
+        if (isInsideOrNear) {
             const dBase = Math.abs(localY);
             const dVert = Math.abs(localX);
             const hypA = heightPx;

@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import {
     HardDrive, Folder, FileText, FileSpreadsheet, File, Search, RefreshCw,
     Download, Eye, ExternalLink, ChevronRight, CornerUpLeft, Grid3X3, List,
     FolderPlus, Loader2, Check, AlertCircle, X, Clock, Database, Sparkles,
     Upload, LogOut, Settings, Key, ShieldCheck, User, Bot, CheckSquare, Square,
-    ChevronDown
+    ChevronDown, FileEdit
 } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { googleDriveAPI, foldersAPI } from '@/lib/api';
@@ -15,6 +16,7 @@ import MediaPreviewModal from './MediaPreviewModal';
 import { useDriveImport } from '@/context/DriveImportContext';
 
 export default function GoogleDriveBrowser({ onImportSuccess, availableFolders = [], onLocalFolderCreated }) {
+    const router = useRouter();
     const [status, setStatus] = useState(null);
     const [loading, setLoading] = useState(true);
     const [files, setFiles] = useState([]);
@@ -580,6 +582,36 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     // Open Preview (Rich Instant Preview)
     const handlePreview = (file) => {
         setPreviewFile(file);
+    };
+
+    // Open in In-House Office Suite
+    const handleOpenInOffice = (file) => {
+        if (!file) return;
+        const name = file.name || file.fileName || 'Untitled';
+        const mime = (file.mimeType || '').toLowerCase();
+        const ext = name.split('.').pop().toLowerCase();
+
+        const isSheet = mime.includes('spreadsheet') || mime.includes('excel') || ['xlsx', 'xls', 'csv', 'gsheet'].includes(ext);
+        const isDoc = mime.includes('document') || mime.includes('word') || ['docx', 'doc', 'odt', 'txt', 'gdoc'].includes(ext);
+        const isPresentation = mime.includes('presentation') || mime.includes('powerpoint') || ['pptx', 'ppt', 'odp', 'gslides'].includes(ext);
+        const isPdf = mime.includes('pdf') || ext === 'pdf';
+        const isMedia = mime.includes('video') || mime.includes('audio') || ['mp4', 'mov', 'webm', 'mkv', 'avi', 'mp3', 'wav', 'aac', 'ogg', 'm4a'].includes(ext);
+
+        toast.loading(`Opening ${name} in LOMS Suite...`, { id: 'office-open', duration: 1500 });
+
+        if (isSheet) {
+            router.push(`/documents/excel-editor?driveFileId=${encodeURIComponent(file.id)}&title=${encodeURIComponent(name)}`);
+        } else if (isPresentation) {
+            router.push(`/documents/slides-editor?driveFileId=${encodeURIComponent(file.id)}&title=${encodeURIComponent(name)}`);
+        } else if (isDoc) {
+            router.push(`/documents/word-editor?driveFileId=${encodeURIComponent(file.id)}&title=${encodeURIComponent(name)}`);
+        } else if (isPdf) {
+            router.push(`/documents/pdf-studio?driveFileId=${encodeURIComponent(file.id)}&title=${encodeURIComponent(name)}`);
+        } else if (isMedia) {
+            router.push(`/documents/media-studio?driveFileId=${encodeURIComponent(file.id)}&title=${encodeURIComponent(name)}`);
+        } else {
+            router.push(`/documents/converter?driveFileId=${encodeURIComponent(file.id)}&title=${encodeURIComponent(name)}`);
+        }
     };
 
     // 1-Click Import to ULRMS Documents
@@ -1296,6 +1328,14 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                             </button>
                                             <button
                                                 type="button"
+                                                onClick={() => handleOpenInOffice(file)}
+                                                className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"
+                                                title="Open in Office Suite (Word/Sheets)"
+                                            >
+                                                <FileEdit className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                type="button"
                                                 onClick={() => handleAttachFileToBot(file)}
                                                 className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition"
                                                 title="Attach to AI Bot"
@@ -1455,6 +1495,14 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                                     title="Preview document"
                                                 >
                                                     <Eye className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleOpenInOffice(file)}
+                                                    className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"
+                                                    title="Open in Office Suite (Word/Sheets)"
+                                                >
+                                                    <FileEdit className="w-3.5 h-3.5" />
                                                 </button>
                                                 <button
                                                     type="button"

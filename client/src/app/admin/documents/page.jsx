@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive, Bot, Film, Video, Play, RefreshCw, Pencil, ArrowUpDown } from 'lucide-react';
+import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive, Bot, Film, Video, Play, RefreshCw, Pencil, ArrowUpDown, Grid, Sparkles, Presentation, Layers } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { useAuthStore } from '@/lib/store';
@@ -1501,30 +1501,126 @@ export default function DocumentsPage() {
                 </div>
             )}
 
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+            {/* Header with Prominent Office Suite Controls */}
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6 pb-4 border-b border-slate-200 dark:border-slate-800">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900">Documents</h1>
-                    <p className="text-slate-500">Upload and manage PDFs, documents, and spreadsheets</p>
+                    <div className="flex items-center gap-2.5">
+                        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Documents</h1>
+                        <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                            Office Suite Active
+                        </span>
+                    </div>
+                    <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
+                        Create, edit, convert, and manage documents, spreadsheets, and lab reports
+                    </p>
                 </div>
-                <div className="flex items-center gap-4">
+
+                <div className="flex items-center flex-wrap gap-2 w-full lg:w-auto">
+                    {/* 1. New LabDocs (Word) */}
+                    <button
+                        onClick={() => router.push('/documents/word-editor')}
+                        className="h-9 px-3 rounded-xl flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition"
+                        title="Create New Word Document (Paginated A4 Canvas & KaTeX Equations)"
+                    >
+                        <FileText className="w-4 h-4" />
+                        <span>New LabDocs</span>
+                    </button>
+
+                    {/* 2. New LabSheets (Excel) */}
+                    <button
+                        onClick={() => router.push('/documents/excel-editor')}
+                        className="h-9 px-3 rounded-xl flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition"
+                        title="Create New Excel Spreadsheet (100+ Formulas & Embedded Charts)"
+                    >
+                        <Grid className="w-4 h-4" />
+                        <span>New LabSheets</span>
+                    </button>
+
+                    {/* 3. New LabSlides (PPT) */}
+                    <button
+                        onClick={() => router.push('/documents/slides-editor')}
+                        className="h-9 px-3 rounded-xl flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-sm transition"
+                        title="Create New Presentation Slide Deck (16:9 Widescreen & Slideshow Mode)"
+                    >
+                        <Presentation className="w-4 h-4" />
+                        <span>New LabSlides</span>
+                    </button>
+
+                    {/* 4. Universal File Converter */}
+                    <button
+                        onClick={() => router.push('/documents/converter')}
+                        className="h-9 px-3 rounded-xl flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition"
+                        title="Universal File Converter (Word ↔ PDF, Excel ↔ PDF, Images ↔ PDF)"
+                    >
+                        <RefreshCw className="w-4 h-4" />
+                        <span>File Converter</span>
+                    </button>
+
+                    {/* 5. LabPDF Studio */}
+                    <button
+                        onClick={() => router.push('/documents/pdf-studio')}
+                        className="h-9 px-3 rounded-xl flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-sm transition"
+                        title="LabPDF Studio (Merge PDFs, Reorder Pages, Rotate, Split & Watermark)"
+                    >
+                        <Layers className="w-4 h-4" />
+                        <span>LabPDF Studio</span>
+                    </button>
+
+                    {/* 6. LOMS Media Studio */}
+                    <button
+                        onClick={() => router.push('/documents/media-studio')}
+                        className="h-9 px-3 rounded-xl flex items-center gap-2 bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shadow-sm transition"
+                        title="LOMS Media Studio (Video/Audio/Image Converter, Compressor & Timeline Clipper)"
+                    >
+                        <Film className="w-4 h-4" />
+                        <span>Media Studio</span>
+                    </button>
+
+                    {/* 7. Standalone Interactive Suite Preview */}
+                    <a
+                        href="/office-suite-preview.html"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="h-9 px-3 rounded-xl flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-semibold shadow-sm transition"
+                        title="Open Detailed Standalone HTML/JS/CSS Office Suite UI/UX Preview in New Tab"
+                    >
+                        <Sparkles className="w-4 h-4" />
+                        <span>Interactive Suite Preview</span>
+                    </a>
+
+                    {/* 4. Upload File */}
+                    {canUpload && (
+                        <button
+                            onClick={() => setShowUpload(true)}
+                            className="h-9 px-3 rounded-xl flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold border border-slate-300 dark:border-slate-700 transition"
+                            title="Upload Document"
+                        >
+                            <Upload className="w-4 h-4 text-slate-500" />
+                            <span>Upload</span>
+                        </button>
+                    )}
+
+                    {/* 5. Storage Indicator */}
                     {storageInfo && canUpload && (
-                        <div className="hidden sm:flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-2">
+                        <div className="hidden xl:flex items-center gap-2 bg-slate-100 dark:bg-slate-800/80 rounded-xl px-3 py-1.5 border border-slate-200 dark:border-slate-700">
                             <HardDrive className="w-4 h-4 text-slate-500" />
                             <div className="flex flex-col">
-                                <span className="text-xs text-slate-600">
+                                <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
                                     {storageInfo.usedFormatted} / {storageInfo.quotaFormatted}
                                 </span>
-                                <div className="w-24 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                <div className="w-20 h-1 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                                     <div
-                                        className={`h-full rounded-full transition-all ${storageInfo.percentUsed >= 90 ? 'bg-red-500' :
+                                        className={`h-full rounded-full transition-all ${
+                                            storageInfo.percentUsed >= 90 ? 'bg-red-500' :
                                             storageInfo.percentUsed >= 70 ? 'bg-yellow-500' : 'bg-emerald-500'
-                                            }`}
+                                        }`}
                                         style={{ width: `${Math.min(100, storageInfo.percentUsed)}%` }}
                                     />
                                 </div>
                             </div>
                         </div>
                     )}
+
                     {clipboard && canUpload && (
                         <button
                             onClick={handlePaste}

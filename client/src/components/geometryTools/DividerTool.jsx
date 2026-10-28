@@ -6,7 +6,10 @@ import {
     X,
     Check,
     Lock,
-    Unlock
+    Unlock,
+    Minus,
+    Plus,
+    MoveHorizontal
 } from 'lucide-react';
 import {
     PX_PER_CM,
@@ -29,7 +32,7 @@ export default function DividerTool({
 }) {
     // Primary Needle Tip (Point A) in pure Canvas Coordinates
     const [pointA, setPointA] = useState({ x: initialX, y: initialY });
-    const [spanCm, setSpanCm] = useState(initialSpanCm);
+    const [spanCm, setSpanCm] = useState(Math.min(14.0, Math.max(0.5, initialSpanCm)));
     const [angle, setAngle] = useState(initialAngle);
     const [isLocked, setIsLocked] = useState(false);
 
@@ -44,10 +47,11 @@ export default function DividerTool({
 
     // Needle B drag ref (adjusting span / rotation)
     const isAdjustingPointBRef = useRef(false);
+    const isScalingSpanRef = useRef(false);
 
     // ─── 1. Reposition entire divider (Bender / Handles / Needle A) ───
     const handlePointAPointerDown = (e) => {
-        if (e.target.closest('button')) return;
+        if (e.target.closest('button') || e.target.closest('[data-handle="true"]')) return;
         e.stopPropagation();
         e.preventDefault();
         isDraggingPointARef.current = true;
@@ -81,7 +85,38 @@ export default function DividerTool({
         window.addEventListener('pointerup', onPointerUp);
     };
 
-    // ─── 2. Secondary Needle B Drag (Extend / Retract span or rotate angle) ───
+    // ─── 2. Continuous Scaling Handle along Arm B (0 to Maximum Reach) ───
+    const handleSpanScalePointerDown = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        isScalingSpanRef.current = true;
+
+        const onPointerMove = (moveEvt) => {
+            if (!isScalingSpanRef.current) return;
+            const curCoords = screenToCanvasCoords(moveEvt.clientX, moveEvt.clientY);
+            const dx = curCoords.x - pointA.x;
+            const dy = curCoords.y - pointA.y;
+
+            const distPx = Math.hypot(dx, dy);
+            // Continuous scaling from 0.2 cm to 18.0 cm (maximum physical reach)
+            const minPx = PX_PER_CM * 0.2;
+            const maxPx = PX_PER_CM * 18.0;
+            const clampedPx = Math.max(minPx, Math.min(maxPx, distPx));
+            const newCm = Math.round((clampedPx / PX_PER_CM) * 10) / 10;
+            setSpanCm(newCm);
+        };
+
+        const onPointerUp = () => {
+            isScalingSpanRef.current = false;
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+    };
+
+    // ─── 3. Secondary Needle B Drag (Extend / Retract span or rotate angle) ───
     const handlePointBPointerDown = (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -102,10 +137,11 @@ export default function DividerTool({
             setAngle(snappedAngle);
 
             if (!isLocked) {
-                // Limit span by maximum physical opening of arms (up to 1.85 * ARM_LENGTH)
-                const maxPx = ARM_LENGTH * 1.85;
-                const clampedPx = Math.max(PX_PER_CM * 1.5, Math.min(maxPx, distPx));
-                const cm = Math.round((clampedPx / PX_PER_CM) * 2) / 2;
+                // Continuous scaling from 0.2 cm to 18.0 cm (maximum physical opening)
+                const minPx = PX_PER_CM * 0.2;
+                const maxPx = PX_PER_CM * 18.0;
+                const clampedPx = Math.max(minPx, Math.min(maxPx, distPx));
+                const cm = Math.round((clampedPx / PX_PER_CM) * 10) / 10;
                 setSpanCm(cm);
             }
         };
@@ -162,7 +198,7 @@ export default function DividerTool({
     const midY = (hinge.y + (pointA.y + pointB.y) / 2) / 2;
 
     return (
-        <div className="absolute inset-0 pointer-events-none select-none z-[66]">
+        <div className="geometry-instrument absolute inset-0 pointer-events-none select-none z-[75]" data-geometry-tool="true">
             {/* SVG Dual-Needle Steel Caliper Divider Render */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                 <defs>
@@ -336,6 +372,7 @@ export default function DividerTool({
 
             {/* ─── Control 2: Secondary Needle B Tip Grip (Hand tool cursor for span adjust) ─── */}
             <div
+                data-handle="true"
                 style={{
                     position: 'absolute',
                     left: `${pointB.x}px`,
@@ -348,6 +385,24 @@ export default function DividerTool({
                 title="Needle Tip B (Drag to extend or retract divider legs)"
             >
                 <div className="w-3 h-3 rounded-full bg-cyan-400 border border-slate-900 shadow group-hover:scale-125 group-hover:ring-2 group-hover:ring-cyan-300 transition-all" />
+            </div>
+
+            {/* ─── Control 2.1: Double-Headed Arrow Scaling Handle along Needle Arm B (Continuous Scaling 0 to Maximum) ─── */}
+            <div
+                data-handle="true"
+                style={{
+                    position: 'absolute',
+                    left: `${(hinge.x + pointB.x) / 2}px`,
+                    top: `${(hinge.y + pointB.y) / 2}px`,
+                    transform: 'translate(-50%, -50%)',
+                    pointerEvents: 'auto'
+                }}
+                onPointerDown={handleSpanScalePointerDown}
+                className="px-2 py-0.5 rounded-full bg-slate-900 border-2 border-purple-400 shadow-xl flex items-center gap-1 cursor-ew-resize hover:bg-purple-500 hover:text-slate-950 text-purple-300 transition group/scaler"
+                title="Continuous Span Scaling — Drag along arm to continuously adjust divider span from 0 to maximum"
+            >
+                <MoveHorizontal className="w-3.5 h-3.5 group-hover/scaler:scale-110 transition-transform" />
+                <span className="text-[9.5px] font-mono font-bold">{spanCm.toFixed(1)} cm</span>
             </div>
 
             {/* ─── Control 3: Distance Measurement Display Badge (Mid-Height, Transparent, Readout Only) ─── */}
@@ -370,7 +425,7 @@ export default function DividerTool({
                 </span>
             </div>
 
-            {/* ─── Top Control HUD: Mark Distance, Lock, Close ─── */}
+            {/* ─── Top Control HUD: Mark Distance, Resizing Steppers, Lock, Close ─── */}
             <div
                 style={{
                     position: 'absolute',
@@ -379,36 +434,63 @@ export default function DividerTool({
                     transform: 'translate(-50%, -100%)',
                     pointerEvents: 'auto'
                 }}
-                className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full px-2.5 py-1 shadow-2xl"
+                className="flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full px-2 py-0.5 shadow-2xl h-7"
             >
-                {/* Lock Span Toggle */}
+                {/* Resizing Stepper Minus */}
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setSpanCm(s => +(Math.max(0.5, s - 0.5)).toFixed(1));
+                    }}
+                    className="w-4 h-4 rounded-full bg-slate-800 hover:bg-purple-500 text-slate-300 hover:text-white flex items-center justify-center transition"
+                    title="Narrow divider span (-0.5 cm, min 0.5 cm)"
+                >
+                    <Minus className="w-2.5 h-2.5" />
+                </button>
+
+                {/* Resizing Stepper Plus */}
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setSpanCm(s => +(Math.min(14.0, s + 0.5)).toFixed(1));
+                    }}
+                    className="w-4 h-4 rounded-full bg-slate-800 hover:bg-purple-500 text-slate-300 hover:text-white flex items-center justify-center transition"
+                    title="Widen divider span (+0.5 cm, max 14 cm)"
+                >
+                    <Plus className="w-2.5 h-2.5" />
+                </button>
+
+                <div className="w-px h-3 bg-slate-700" />
+
+                {/* Lock Span Toggle (Icon Only) */}
                 <button
                     type="button"
                     onClick={() => setIsLocked(!isLocked)}
-                    className={`p-1 rounded-full transition ${
+                    className={`w-5 h-5 rounded-full flex items-center justify-center transition ${
                         isLocked ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                     }`}
-                    title={isLocked ? 'Unlock span' : 'Lock span distance'}
+                    title={isLocked ? 'Unlock span distance' : 'Lock span distance'}
                 >
-                    {isLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                    {isLocked ? <Lock className="w-2.5 h-2.5" /> : <Unlock className="w-2.5 h-2.5" />}
                 </button>
 
-                {/* Mark Distance onto Whiteboard */}
+                {/* Mark Distance onto Whiteboard (Icon Only) */}
                 <button
                     type="button"
                     onClick={handleMarkDistance}
-                    className="flex items-center gap-1 px-2.5 py-0.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-[10px] rounded-full shadow transition active:scale-95"
+                    className="w-5 h-5 rounded-full bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center shadow transition active:scale-95"
                     title="Mark exact distance between needle tips onto canvas"
                 >
-                    <Check className="w-2.5 h-2.5 stroke-[3]" />
-                    <span>Mark Distance</span>
+                    <Check className="w-3 h-3 stroke-[3]" />
                 </button>
 
-                {/* Close Divider */}
+                {/* Close Divider (Icon Only) */}
                 <button
                     type="button"
                     onClick={onClose}
-                    className="p-1 rounded-full bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white transition"
+                    className="w-5 h-5 rounded-full bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white flex items-center justify-center transition"
                     title="Close Divider"
                 >
                     <X className="w-3 h-3" />

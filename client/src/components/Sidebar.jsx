@@ -8,7 +8,7 @@ import {
     Home, BookOpen, FileText, Award, Users, GraduationCap,
     Video, BarChart3, Settings, LogOut, Menu, X, ChevronLeft,
     Beaker, ClipboardList, Activity, ClipboardCheck, Send, ListChecks, UserPlus, Monitor, FolderOpen, Pencil, Ticket, Building, Film, HardDrive,
-    Clock, CalendarDays, Presentation, BookMarked, ListTodo, HelpCircle, Shield
+    Clock, CalendarDays, Presentation, BookMarked, ListTodo, HelpCircle, Shield, Table, RefreshCw, Layers, AppWindow
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import LanguageSelector from './LanguageSelector';
@@ -24,7 +24,7 @@ const navItems = {
         { href: '/training', labelKey: 'Training', icon: GraduationCap },
         { href: '/assigned-work', labelKey: 'nav.assignedWork', icon: ListChecks },
         { href: '/submissions', labelKey: 'nav.reviewSubmissions', icon: ClipboardList },
-        { href: '/admin/documents', labelKey: 'nav.documents', icon: FolderOpen },
+        { href: '/documents', labelKey: 'Documents & Office Suite', icon: AppWindow },
         { href: '/admin/storage', labelKey: 'nav.storage', icon: HardDrive },
         { href: '/grades', labelKey: 'nav.grades', icon: Award },
         { href: '/meetings', labelKey: 'Meetings', icon: Video },
@@ -46,7 +46,7 @@ const navItems = {
         { href: '/dashboard', labelKey: 'nav.dashboard', icon: Home },
         { href: '/classes', labelKey: 'nav.classes', icon: Users },
         { href: '/users', labelKey: 'nav.manageUsers', icon: UserPlus },
-        { href: '/admin/documents', labelKey: 'nav.documents', icon: FolderOpen },
+        { href: '/documents', labelKey: 'Documents & Office Suite', icon: AppWindow },
         { href: '/admin/storage', labelKey: 'nav.storage', icon: HardDrive },
         { href: '/training', labelKey: 'Training', icon: GraduationCap },
         { href: '/quiz', labelKey: 'AI Quiz Maker', icon: HelpCircle },
@@ -71,7 +71,7 @@ const navItems = {
         { href: '/training', labelKey: 'Training', icon: GraduationCap },
         { href: '/assigned-work', labelKey: 'nav.assignedWork', icon: ListChecks },
         { href: '/submissions', labelKey: 'nav.review', icon: ClipboardList },
-        { href: '/documents', labelKey: 'nav.sharedDocs', icon: FolderOpen },
+        { href: '/documents', labelKey: 'Documents & Office Suite', icon: AppWindow },
         { href: '/grades', labelKey: 'nav.grades', icon: Award },
         { href: '/meetings', labelKey: 'Meetings', icon: Video },
         { href: '/whiteboard', labelKey: 'nav.whiteboard', icon: Pencil },
@@ -91,7 +91,7 @@ const navItems = {
         { href: '/quiz', labelKey: 'AI Quiz Maker', icon: HelpCircle },
         { href: '/assigned-work', labelKey: 'nav.assignedWork', icon: ListChecks },
         { href: '/submissions', labelKey: 'nav.reviewSubmissions', icon: FileText },
-        { href: '/documents', labelKey: 'nav.sharedDocs', icon: FolderOpen },
+        { href: '/documents', labelKey: 'Documents & Office Suite', icon: AppWindow },
         { href: '/tickets', labelKey: 'nav.tickets', icon: Ticket },
         { href: '/settings', labelKey: 'nav.settings', icon: Settings },
     ],
@@ -101,7 +101,7 @@ const navItems = {
         { href: '/submissions', labelKey: 'nav.mySubmissions', icon: FileText },
         { href: '/training', labelKey: 'Training', icon: GraduationCap },
         { href: '/quiz', labelKey: 'Quizzes & Tests', icon: HelpCircle },
-        { href: '/documents', labelKey: 'nav.sharedDocs', icon: FolderOpen },
+        { href: '/documents', labelKey: 'Documents & Office Suite', icon: AppWindow },
         { href: '/grades', labelKey: 'nav.myGrades', icon: Award },
         { href: '/meetings', labelKey: 'Meetings', icon: Video },
         { href: '/live-board', labelKey: 'nav.liveBoard', icon: Pencil },

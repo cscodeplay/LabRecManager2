@@ -263,6 +263,41 @@ export default function MediaPreviewModal({
         if (audioRef.current) audioRef.current.playbackRate = speed;
     };
 
+    const handleOpenInEditor = () => {
+        const cat = category;
+        const fileId = file.driveFileId || file.id || '';
+        const fileName = file.fileName || file.name || 'document';
+        const fileUrl = file.url || file.filePath || '';
+        const isDrive = Boolean(file.isGoogleDrive || file.driveFileId || file.source === 'google_drive' || file.webViewLink);
+
+        const params = new URLSearchParams();
+        if (isDrive) {
+            params.set('driveFileId', fileId);
+        } else {
+            if (fileId) {
+                params.set('docId', fileId);
+                params.set('id', fileId);
+            }
+            if (fileUrl) params.set('fileUrl', fileUrl);
+        }
+        params.set('title', fileName);
+        const qs = params.toString();
+
+        if (cat === 'pdf') {
+            window.location.href = `/documents/pdf-studio?${qs}`;
+        } else if (cat === 'word') {
+            window.location.href = `/documents/word-editor?${qs}`;
+        } else if (cat === 'spreadsheet') {
+            window.location.href = `/documents/excel-editor?${qs}`;
+        } else if (cat === 'presentation') {
+            window.location.href = `/documents/slides-editor?${qs}`;
+        } else if (cat === 'image' || cat === 'audio' || cat === 'video') {
+            window.location.href = `/documents/media-studio?${qs}`;
+        } else {
+            window.location.href = `/documents/converter?${qs}`;
+        }
+    };
+
     return (
         <div className="fixed inset-0 z-[99999] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
             <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-6xl h-[92vh] shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
@@ -318,6 +353,24 @@ export default function MediaPreviewModal({
                             title="Attach file to AI Copilot"
                         >
                             <Bot className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                        </button>
+
+                        {/* Open in In-House Office Suite */}
+                        <button
+                            type="button"
+                            onClick={handleOpenInEditor}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition"
+                            title="Open directly in In-House Office Editor"
+                        >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>Open in {
+                                category === 'pdf' ? 'PDF Studio' :
+                                category === 'word' ? 'LabDocs (Word)' :
+                                category === 'spreadsheet' ? 'LabSheets (Excel)' :
+                                category === 'presentation' ? 'LabSlides (PPT)' :
+                                (category === 'image' || category === 'audio' || category === 'video') ? 'Media Studio' :
+                                'Converter'
+                            }</span>
                         </button>
 
                         {/* Import to Documents */}
@@ -714,6 +767,24 @@ export default function MediaPreviewModal({
                                 <span>Import to Documents</span>
                             </button>
                         )}
+
+                        {/* Open in Dedicated Editor */}
+                        <button
+                            type="button"
+                            onClick={handleOpenInEditor}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+                            title="Open directly in In-House Editor"
+                        >
+                            <FileText className="w-4 h-4" />
+                            <span>Open in {
+                                category === 'pdf' ? 'PDF Studio' :
+                                category === 'word' ? 'LabDocs (Word)' :
+                                category === 'spreadsheet' ? 'LabSheets (Excel)' :
+                                category === 'presentation' ? 'LabSlides (PPT)' :
+                                (category === 'image' || category === 'audio' || category === 'video') ? 'Media Studio' :
+                                'Editor'
+                            }</span>
+                        </button>
 
                         {/* Download File */}
                         <button
