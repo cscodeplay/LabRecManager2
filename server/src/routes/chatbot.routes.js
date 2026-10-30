@@ -661,7 +661,7 @@ router.post('/load-data', authenticate, authorize('admin', 'principal', 'instruc
                 // Ensure email is unique: if two names generate same email, add 3-digit rand number.
                 const cleanFirst = String(rec.firstName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
                 const cleanLast = (rec.lastName && String(rec.lastName).toLowerCase() !== 'student' ? String(rec.lastName) : '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                const domain = customEmailDomain || 'student.school.edu';
+                const domain = customEmailDomain || 'mslabs.com';
                 const basePrefix = cleanLast ? `${cleanFirst}.${cleanLast}` : cleanFirst;
 
                 let email = `${basePrefix}@${domain}`;

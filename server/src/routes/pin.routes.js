@@ -176,15 +176,15 @@ async function getEffectiveSchool(schoolId) {
     if (schoolId) {
         const sc = await prisma.school.findUnique({
             where: { id: schoolId },
-            select: { id: true, name: true, code: true }
+            select: { id: true, name: true, code: true, logoUrl: true }
         });
         if (sc?.name) return sc;
     }
     const defaultSchool = await prisma.school.findFirst({
         orderBy: { updatedAt: 'desc' },
-        select: { id: true, name: true, code: true }
+        select: { id: true, name: true, code: true, logoUrl: true }
     });
-    return defaultSchool || { name: 'School', code: 'LAB' };
+    return defaultSchool || { name: 'School', code: 'LAB', logoUrl: null };
 }
 
 /**
@@ -215,7 +215,7 @@ router.post('/backup-codes/:id/generate', authenticate, authorize('admin', 'prin
         where: { id },
         include: {
             school: {
-                select: { id: true, name: true, code: true }
+                select: { id: true, name: true, code: true, logoUrl: true }
             }
         }
     });
@@ -292,6 +292,7 @@ router.post('/backup-codes/:id/generate', authenticate, authorize('admin', 'prin
             admissionNumber: user.admissionNumber || user.employeeId || user.studentId || null,
             schoolName: schoolProfile.name,
             schoolCode: schoolProfile.code || 'LAB',
+            schoolLogo: schoolProfile.logoUrl || null,
             generatedAt: new Date(),
             firstTimePin,
             totalTurns: 10,
@@ -324,7 +325,7 @@ router.post('/backup-codes/bulk-generate', authenticate, authorize('admin', 'pri
         },
         include: {
             school: {
-                select: { id: true, name: true, code: true }
+                select: { id: true, name: true, code: true, logoUrl: true }
             }
         }
     });
@@ -417,6 +418,7 @@ router.post('/backup-codes/bulk-generate', authenticate, authorize('admin', 'pri
         admissionNumber: p.target.admissionNumber || p.target.employeeId || p.target.studentId || null,
         schoolName: p.schoolProfile.name,
         schoolCode: p.schoolProfile.code || 'LAB',
+        schoolLogo: p.schoolProfile.logoUrl || null,
         generatedAt: new Date(),
         firstTimePin: p.firstTimePin,
         totalTurns: 10,

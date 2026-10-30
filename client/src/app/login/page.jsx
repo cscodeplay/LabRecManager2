@@ -566,7 +566,7 @@ export default function LoginPage() {
                             <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
                                 <div>
                                     <label className="label">{t('auth.email')}</label>
-                                    <input type="email" className="input" placeholder="you@school.edu" {...register('email', { required: true })} />
+                                    <input type="email" className="input" placeholder="you@mslabs.com" {...register('email', { required: true })} />
                                 </div>
                                 <div>
                                     <label className="label">{t('auth.password')}</label>
@@ -612,7 +612,7 @@ export default function LoginPage() {
                                     <input
                                         type="email"
                                         className="input"
-                                        placeholder="you@school.edu"
+                                        placeholder="you@mslabs.com"
                                         value={pinEmail}
                                         onChange={(e) => { setPinEmail(e.target.value); setFirstTimeAlert(null); }}
                                     />

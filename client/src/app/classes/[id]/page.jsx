@@ -291,7 +291,7 @@ export default function ClassDetailPage() {
 
         setSubmitting(true);
         try {
-            const emailToUse = newStudent.email.trim() || `${newStudent.firstName.toLowerCase().trim()}.${newStudent.lastName.toLowerCase().trim()}@student.school.edu`;
+            const emailToUse = newStudent.email.trim() || `${newStudent.firstName.toLowerCase().trim()}.${newStudent.lastName.toLowerCase().trim()}@mslabs.com`;
             const res = await api.post('/users/bulk', {
                 users: [{
                     firstName: newStudent.firstName.trim(),

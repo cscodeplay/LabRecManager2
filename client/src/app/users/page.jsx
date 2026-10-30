@@ -9,6 +9,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import api, { adminAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import BackupCodesPrintModal from '@/components/BackupCodesPrintModal';
+import SlipGenerationProgressModal from '@/components/SlipGenerationProgressModal';
 
 export default function UsersPage() {
     const router = useRouter();
@@ -49,6 +50,13 @@ export default function UsersPage() {
     const [backupChips, setBackupChips] = useState([]);
     const [generatingBackupId, setGeneratingBackupId] = useState(null);
     const [bulkBackupLoading, setBulkBackupLoading] = useState(false);
+
+    // Slip Generation Progress Animation Modal State
+    const [showGenProgress, setShowGenProgress] = useState(false);
+    const [genProgress, setGenProgress] = useState(0);
+    const [genStatusText, setGenStatusText] = useState('Initializing credential generation...');
+    const [genTargetName, setGenTargetName] = useState('');
+    const [genCount, setGenCount] = useState(1);
 
     // Debounce search input by 300ms
     useEffect(() => {
@@ -134,14 +142,40 @@ export default function UsersPage() {
     // Generate 10-turn emergency backup codes for a single user
     const handleGenerateBackupCodes = async (u) => {
         setGeneratingBackupId(u.id);
+        setGenTargetName(`${u.firstName} ${u.lastName}`);
+        setGenCount(1);
+        setGenProgress(20);
+        setGenStatusText('Validating security access & credentials...');
+        setShowGenProgress(true);
+
+        const timer1 = setTimeout(() => {
+            setGenProgress(55);
+            setGenStatusText('Generating 6-digit PIN & 10 emergency turns...');
+        }, 300);
+
+        const timer2 = setTimeout(() => {
+            setGenProgress(80);
+            setGenStatusText('Hashing with bcrypt & formatting paper slip...');
+        }, 700);
+
         try {
             const res = await adminAPI.generateBackupCodes(u.id);
+            clearTimeout(timer1);
+            clearTimeout(timer2);
             if (res.data.success) {
-                setBackupChips([res.data.data]);
-                setShowBackupPrintModal(true);
-                toast.success(`Generated 10 backup codes for ${u.firstName} ${u.lastName}`);
+                setGenProgress(100);
+                setGenStatusText('Slip generated successfully!');
+                setTimeout(() => {
+                    setShowGenProgress(false);
+                    setBackupChips([res.data.data]);
+                    setShowBackupPrintModal(true);
+                    toast.success(`Generated 10 backup codes for ${u.firstName} ${u.lastName}`);
+                }, 400);
             }
         } catch (error) {
+            clearTimeout(timer1);
+            clearTimeout(timer2);
+            setShowGenProgress(false);
             toast.error(error.response?.data?.message || 'Failed to generate backup codes');
         } finally {
             setGeneratingBackupId(null);
@@ -151,9 +185,10 @@ export default function UsersPage() {
     // Bulk generate 10-turn backup codes for all selected users
     const handleBulkGenerateBackupCodes = async () => {
         if (selectedUserIds.size === 0) return;
+        const count = selectedUserIds.size;
         const ok = await confirm({
-            title: `Print Backup Slips for ${selectedUserIds.size} Users`,
-            message: `This will generate 10 fresh emergency backup codes for ${selectedUserIds.size} selected users and prepare the A4 print sheet with cutting guides. Any older backup codes for these users will be refreshed. Continue?`,
+            title: `Print Backup Slips for ${count} Users`,
+            message: `This will generate 10 fresh emergency backup codes and 1st-time login PINs for ${count} selected users and prepare the A4 print sheet with cutting guides. Continue?`,
             confirmText: 'Generate & Print Slips',
             cancelText: 'Cancel',
             type: 'primary'
@@ -161,16 +196,50 @@ export default function UsersPage() {
         if (!ok) return;
 
         setBulkBackupLoading(true);
+        setGenTargetName('');
+        setGenCount(count);
+        setGenProgress(15);
+        setGenStatusText(`Fetching user roster for ${count} students...`);
+        setShowGenProgress(true);
+
+        const timer1 = setTimeout(() => {
+            setGenProgress(40);
+            setGenStatusText(`Generating PINs & 10-turn backup codes for ${count} users...`);
+        }, 400);
+
+        const timer2 = setTimeout(() => {
+            setGenProgress(70);
+            setGenStatusText(`Hashing credentials with bcrypt & batch updating database...`);
+        }, 900);
+
+        const timer3 = setTimeout(() => {
+            setGenProgress(90);
+            setGenStatusText(`Formatting A4 printable cut-sheets & scissor guides...`);
+        }, 1500);
+
         try {
             const res = await adminAPI.bulkGenerateBackupCodes(Array.from(selectedUserIds));
+            clearTimeout(timer1);
+            clearTimeout(timer2);
+            clearTimeout(timer3);
             if (res.data.success && res.data.data?.length > 0) {
-                setBackupChips(res.data.data);
-                setShowBackupPrintModal(true);
-                toast.success(`Generated backup slips for ${res.data.data.length} users`);
+                setGenProgress(100);
+                setGenStatusText(`Ready! ${res.data.data.length} slips generated successfully.`);
+                setTimeout(() => {
+                    setShowGenProgress(false);
+                    setBackupChips(res.data.data);
+                    setShowBackupPrintModal(true);
+                    toast.success(`Generated backup slips for ${res.data.data.length} users`);
+                }, 450);
             } else {
+                setShowGenProgress(false);
                 toast.error(res.data.message || 'No slips generated');
             }
         } catch (error) {
+            clearTimeout(timer1);
+            clearTimeout(timer2);
+            clearTimeout(timer3);
+            setShowGenProgress(false);
             toast.error(error.response?.data?.message || 'Failed to bulk generate backup codes');
         } finally {
             setBulkBackupLoading(false);
@@ -790,6 +859,15 @@ export default function UsersPage() {
                 </div>
             )}
 
+            {/* Slip Generation Loading Animation & Progress Modal */}
+            <SlipGenerationProgressModal
+                isOpen={showGenProgress}
+                progress={genProgress}
+                statusText={genStatusText}
+                userCount={genCount}
+                targetName={genTargetName}
+            />
+
             {/* 10-Turn Emergency Backup Codes A4 Printable Modal */}
             <BackupCodesPrintModal
                 isOpen={showBackupPrintModal}
@@ -799,6 +877,7 @@ export default function UsersPage() {
                 }}
                 chips={backupChips}
                 defaultSchoolName={user?.school?.name || user?.schoolName || ''}
+                defaultSchoolLogo={user?.school?.logoUrl || user?.schoolLogo || ''}
             />
         </div>
     );

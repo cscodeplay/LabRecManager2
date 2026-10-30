@@ -109,11 +109,11 @@ function generateRandom3Digit() {
 /**
  * Generate unique student email from first and last names with 3-digit random number collision avoidance
  */
-function generateUniqueStudentEmail(firstName, lastName, domain = 'student.school.edu', usedEmails = new Set()) {
+function generateUniqueStudentEmail(firstName, lastName, domain = 'mslabs.com', usedEmails = new Set()) {
     const cleanFirst = String(firstName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
     const cleanLast = (lastName && String(lastName).toLowerCase() !== 'student' ? String(lastName) : '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const basePrefix = cleanLast ? `${cleanFirst}.${cleanLast}` : cleanFirst;
-    const cleanDomain = String(domain).replace(/^@/, '').trim().toLowerCase() || 'student.school.edu';
+    const cleanDomain = String(domain).replace(/^@/, '').trim().toLowerCase() || 'mslabs.com';
 
     let candidate = `${basePrefix}@${cleanDomain}`;
     if (usedEmails.has(candidate)) {
@@ -296,7 +296,7 @@ function applyMapping(records = [], columnMapping = {}, targetTable = 'users', o
             // Internal Email Generation:
             // Do not map email as it is internally generated from name.
             // If two names generate same email, add 3-digit random number to make unique.
-            const domain = customEmailDomain || 'student.school.edu';
+            const domain = customEmailDomain || 'mslabs.com';
             item.email = generateUniqueStudentEmail(item.firstName, item.lastName, domain, usedEmailsInBatch);
 
             // Normalize gender

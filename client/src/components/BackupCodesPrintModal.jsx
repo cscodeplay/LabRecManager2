@@ -12,7 +12,7 @@ import { Printer, X, Scissors, KeyRound, AlertCircle, CheckSquare } from 'lucide
  * @param {Function} onClose
  * @param {Array} chips - Array of { userId, userName, role, email, admissionNumber, schoolName, schoolCode, generatedAt, codes }
  */
-export default function BackupCodesPrintModal({ isOpen, onClose, chips = [], defaultSchoolName = '' }) {
+export default function BackupCodesPrintModal({ isOpen, onClose, chips = [], defaultSchoolName = '', defaultSchoolLogo = '' }) {
     if (!isOpen || !chips || chips.length === 0) return null;
 
     const handlePrint = () => {
@@ -140,25 +140,69 @@ export default function BackupCodesPrintModal({ isOpen, onClose, chips = [], def
                                     </span>
                                 </div>
 
-                                {/* Chip Header */}
+                                {/* Chip Header: School Logo on Left, Centered Wrapped School Name, Role on Right */}
                                 <div>
-                                    <div className="flex items-start justify-between gap-1.5 pb-1 border-b border-slate-200">
-                                        <div className="min-w-0">
-                                            <div className="text-[10px] font-extrabold uppercase tracking-tight text-slate-900 truncate">
-                                                {chip.schoolName || defaultSchoolName || ''}
-                                            </div>
-                                            <div className="text-xs font-black text-slate-950 flex items-center gap-1.5 mt-0.5">
-                                                <span>{chip.userName}</span>
+                                    <div className="flex items-center justify-between gap-1.5 pb-1 border-b border-slate-300">
+                                        {/* Left: School Logo */}
+                                        <div className="w-8 h-8 rounded bg-slate-50 border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
+                                            {(chip.schoolLogo || defaultSchoolLogo) ? (
+                                                <img
+                                                    src={chip.schoolLogo || defaultSchoolLogo}
+                                                    alt="Logo"
+                                                    className="w-full h-full object-contain p-0.5"
+                                                    onError={(e) => {
+                                                        e.currentTarget.style.display = 'none';
+                                                        if (e.currentTarget.nextSibling) {
+                                                            e.currentTarget.nextSibling.style.display = 'flex';
+                                                        }
+                                                    }}
+                                                />
+                                            ) : null}
+                                            <span
+                                                className={`text-[9px] font-black text-slate-800 ${
+                                                    (chip.schoolLogo || defaultSchoolLogo) ? 'hidden' : 'flex'
+                                                } items-center justify-center w-full h-full`}
+                                            >
+                                                {chip.schoolCode || 'LAB'}
+                                            </span>
+                                        </div>
+
+                                        {/* Center: Complete School Name (Centered & Wrapped, Never Truncated) */}
+                                        <div className="flex-1 min-w-0 text-center px-1">
+                                            <div className="text-[10px] font-black uppercase tracking-tight text-slate-950 leading-snug break-words whitespace-normal text-center">
+                                                {chip.schoolName || defaultSchoolName || 'LAB RECORD MANAGER'}
                                             </div>
                                         </div>
 
-                                        <div className="text-right shrink-0">
-                                            <span className="inline-block text-[9px] font-bold uppercase px-1.5 py-0.2 rounded bg-slate-900 text-white border border-slate-900">
+                                        {/* Right: Role Badge */}
+                                        <div className="shrink-0 text-right">
+                                            <span className="inline-block text-[8.5px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-900 text-white border border-slate-900 shadow-2xs">
                                                 {chip.role}
                                             </span>
-                                            <div className="text-[9px] font-mono text-slate-600 mt-0.5">
-                                                {chip.admissionNumber ? `ID: ${chip.admissionNumber}` : chip.email}
+                                        </div>
+                                    </div>
+
+                                    {/* Student Credentials Row: Name, Darkened ID, Underlined Email */}
+                                    <div className="py-1 border-b border-slate-200 space-y-0.5">
+                                        <div className="flex items-center justify-between gap-1">
+                                            <div className="text-xs font-black text-slate-950 uppercase tracking-tight truncate">
+                                                {chip.userName}
                                             </div>
+                                            {/* Darkened ID */}
+                                            <div className="text-[9.5px] font-mono text-right shrink-0">
+                                                <span className="text-slate-600 font-sans text-[8.5px] mr-1">ID:</span>
+                                                <span className="font-black text-slate-950 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300 shadow-2xs text-[10px]">
+                                                    {chip.admissionNumber || chip.studentId || 'N/A'}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Underlined Email ID */}
+                                        <div className="text-[9px] text-slate-700 flex items-center gap-1 min-w-0">
+                                            <span className="text-slate-500 font-medium text-[8px] uppercase tracking-wider shrink-0">Email:</span>
+                                            <span className="font-bold text-slate-950 font-mono underline decoration-slate-900 decoration-1 underline-offset-2 truncate">
+                                                {chip.email}
+                                            </span>
                                         </div>
                                     </div>
 

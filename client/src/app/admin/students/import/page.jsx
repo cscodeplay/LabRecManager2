@@ -117,7 +117,7 @@ export default function ImportStudentsPage() {
 
             const studentId = getVal('epunjab_id', 'student_id', 'studentid', 'admission_number', 'admission_no', 'reg_no');
             const rollNo = getVal('class_roll_no', 'roll_number', 'roll_no', 'roll', 'sr_no');
-            const email = getVal('email', 'email_address') || (studentId ? `${studentId}@epunjab.edu` : `${firstName.toLowerCase().replace(/[^a-z0-9]/g, '')}.${lastName.toLowerCase().replace(/[^a-z0-9]/g, '')}@student.school.edu`);
+            const email = getVal('email', 'email_address') || (studentId ? `${studentId}@epunjab.edu` : `${firstName.toLowerCase().replace(/[^a-z0-9]/g, '')}.${lastName.toLowerCase().replace(/[^a-z0-9]/g, '')}@mslabs.com`);
             const phone = getVal('phone', 'mobile', 'mobile_no', 'contact', 'contact_no');
             
             const rawGender = getVal('gender', 'sex');
@@ -247,13 +247,13 @@ export default function ImportStudentsPage() {
             const cleanFirst = String(row.firstName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '');
             const cleanLast = String(row.lastName && row.lastName !== 'Student' ? row.lastName : '').toLowerCase().replace(/[^a-z0-9]/g, '');
             const basePrefix = cleanLast ? `${cleanFirst}.${cleanLast}` : cleanFirst;
-            let emailCandidate = `${basePrefix}@student.school.edu`;
+            let emailCandidate = `${basePrefix}@mslabs.com`;
 
             if (usedEmails.has(emailCandidate)) {
                 let attempts = 0;
                 while (attempts < 50) {
                     const rand3 = Math.floor(100 + Math.random() * 900);
-                    const uniq = `${basePrefix}.${rand3}@student.school.edu`;
+                    const uniq = `${basePrefix}.${rand3}@mslabs.com`;
                     if (!usedEmails.has(uniq)) {
                         emailCandidate = uniq;
                         break;

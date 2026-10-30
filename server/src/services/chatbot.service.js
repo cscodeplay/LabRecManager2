@@ -2900,7 +2900,7 @@ Generate the 2-chapter curriculum JSON following the exact schema. Ensure the ex
                             // Internal Email Generation:
                             // Do not map email as it is internally generated from name.
                             // If two names generate same email, add 3-digit random number to make unique.
-                            const domain = customEmailDomain || 'student.school.edu';
+                            const domain = customEmailDomain || 'mslabs.com';
                             rec.email = generateUniqueStudentEmail(firstName, lastName, domain, usedEmails);
                         });
 
@@ -5000,7 +5000,7 @@ Return JSON ONLY in this format:
                 if (!email) {
                     const cleanFirst = firstName.toLowerCase().replace(/[^a-z0-9]/g, '');
                     const cleanLast = lastName.toLowerCase().replace(/[^a-z0-9]/g, '');
-                    email = `${cleanFirst}.${cleanLast}${Math.floor(100 + Math.random() * 900)}@school.edu`;
+                    email = `${cleanFirst}.${cleanLast}${Math.floor(100 + Math.random() * 900)}@mslabs.com`;
                 }
 
                 const userAction = {
