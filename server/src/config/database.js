@@ -15,6 +15,11 @@ if (process.env.ACTIVE_DB === 'new' && process.env.DATABASE_URL_NEW) {
     console.log('[DB Config] Using fallback database URL');
 }
 
+// Sanitize dbUrl: Neon pgBouncer pooler drops connections when channel_binding=require is present
+if (dbUrl) {
+    dbUrl = dbUrl.replace(/([?&])channel_binding=[^&]+(&|$)/, '$1').replace(/[?&]$/, '');
+}
+
 // Create a single instance of Prisma Client with query logging
 const prisma = new PrismaClient({
     datasources: dbUrl ? {

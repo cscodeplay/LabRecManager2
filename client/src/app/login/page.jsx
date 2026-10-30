@@ -219,6 +219,20 @@ export default function LoginPage() {
             }
         } catch (error) {
             console.error('Could not load academic years:', error.message);
+            // Automatic retry after 2.5s for Render/Neon backend cold start
+            setTimeout(async () => {
+                try {
+                    const retryRes = await axios.get('/api/schools/academic-years');
+                    const retryYears = retryRes.data?.data?.academicYears || [];
+                    if (retryYears.length > 0) {
+                        setAcademicYears(retryYears);
+                        const cur = retryYears.find(y => y.isCurrent) || retryYears[0];
+                        if (cur) setSelectedYear(cur.id);
+                    }
+                } catch (retryErr) {
+                    console.warn('Academic years retry failed:', retryErr.message);
+                }
+            }, 2500);
         } finally {
             setLoadingYears(false);
         }

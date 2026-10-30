@@ -226,11 +226,11 @@ router.post('/register', registerValidation, asyncHandler(async (req, res) => {
 
 /**
  * @route   POST /api/auth/refresh
- * @desc    Refresh access token
+ * @desc    Refresh access token & rotate refresh token
  * @access  Public
  */
 router.post('/refresh', asyncHandler(async (req, res) => {
-    const { refreshToken } = req.body;
+    const refreshToken = req.body?.refreshToken || req.cookies?.refreshToken || req.headers['x-refresh-token'];
 
     if (!refreshToken) {
         return res.status(400).json({
@@ -240,13 +240,36 @@ router.post('/refresh', asyncHandler(async (req, res) => {
         });
     }
 
+    let decoded;
     try {
-        const decoded = jwt.verify(refreshToken, jwtConfig.secret);
+        decoded = jwt.verify(refreshToken, jwtConfig.secret);
 
         if (decoded.type !== 'refresh') {
-            throw new Error('Invalid token type');
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid token type',
+                messageHindi: 'अमान्य टोकन प्रकार'
+            });
         }
+    } catch (jwtError) {
+        console.warn('[Auth Refresh] JWT verification failed:', jwtError.message);
+        return res.status(401).json({
+            success: false,
+            message: 'Invalid or expired refresh token',
+            messageHindi: 'अमान्य या समाप्त रिफ्रेश टोकन'
+        });
+    }
 
+    // Validate that decoded.userId is a valid format before querying Prisma
+    if (!decoded.userId || typeof decoded.userId !== 'string') {
+        return res.status(401).json({
+            success: false,
+            message: 'Invalid refresh token payload',
+            messageHindi: 'अमान्य टोकन सामग्री'
+        });
+    }
+
+    try {
         const user = await prisma.user.findUnique({
             where: { id: decoded.userId },
             select: { id: true, role: true, isActive: true }
@@ -255,8 +278,8 @@ router.post('/refresh', asyncHandler(async (req, res) => {
         if (!user || !user.isActive) {
             return res.status(401).json({
                 success: false,
-                message: 'Invalid refresh token',
-                messageHindi: 'अमान्य रिफ्रेश टोकन'
+                message: 'Invalid refresh token or inactive account',
+                messageHindi: 'अमान्य रिफ्रेश टोकन या खाता निष्क्रिय है'
             });
         }
 
@@ -266,15 +289,34 @@ router.post('/refresh', asyncHandler(async (req, res) => {
             { expiresIn: jwtConfig.expiresIn }
         );
 
+        // Renew refresh token (token rotation) to keep active user sessions alive
+        const newRefreshToken = jwt.sign(
+            { userId: user.id, type: 'refresh' },
+            jwtConfig.secret,
+            { expiresIn: jwtConfig.refreshExpiresIn }
+        );
+
         res.json({
             success: true,
-            data: { accessToken }
+            data: {
+                accessToken,
+                refreshToken: newRefreshToken
+            }
         });
-    } catch (error) {
-        return res.status(401).json({
+    } catch (dbError) {
+        console.error('[Auth Refresh DB Error]:', dbError.message);
+        // If Prisma threw inconsistent column data (e.g. invalid UUID format), treat as 401
+        if (dbError.message?.includes('Inconsistent column data') || dbError.code === 'P2023') {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid refresh token',
+                messageHindi: 'अमान्य रिफ्रेश टोकन'
+            });
+        }
+        return res.status(503).json({
             success: false,
-            message: 'Invalid or expired refresh token',
-            messageHindi: 'अमान्य या समाप्त रिफ्रेश टोकन'
+            message: 'Database connection error during token refresh. Please retry.',
+            messageHindi: 'टोकन नवीनीकरण के दौरान डेटाबेस कनेक्शन त्रुटि।'
         });
     }
 }));

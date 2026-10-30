@@ -7,10 +7,35 @@ const api = axios.create({
     timeout: 120000,
 });
 
+// Concurrency state for token refresh queue
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+    failedQueue.forEach(prom => {
+        if (error) {
+            prom.reject(error);
+        } else {
+            prom.resolve(token);
+        }
+    });
+    failedQueue = [];
+};
+
 // Request interceptor to add auth token and session header
 api.interceptors.request.use((config) => {
     const { accessToken, selectedSessionId } = useAuthStore.getState();
-    if (accessToken) {
+    const url = config.url || '';
+
+    // Do not attach stale Authorization headers to public/auth endpoints
+    const isPublicAuthEndpoint =
+        url.includes('/auth/login') ||
+        url.includes('/auth/register') ||
+        url.includes('/auth/login-with-pin') ||
+        url.includes('/auth/reset-admin-password') ||
+        url.includes('/auth/refresh');
+
+    if (accessToken && !isPublicAuthEndpoint) {
         config.headers.Authorization = `Bearer ${accessToken}`;
     }
     // Include selected academic session for session-scoped data
@@ -26,25 +51,87 @@ api.interceptors.response.use(
     async (error) => {
         const originalRequest = error.config;
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        if (!originalRequest) {
+            return Promise.reject(error);
+        }
+
+        const url = originalRequest.url || '';
+
+        // NEVER attempt token refresh on auth endpoints (login, register, pin-login, refresh itself, logout)
+        const isAuthEndpoint =
+            url.includes('/auth/login') ||
+            url.includes('/auth/refresh') ||
+            url.includes('/auth/register') ||
+            url.includes('/auth/login-with-pin') ||
+            url.includes('/auth/reset-admin-password') ||
+            url.includes('/auth/logout');
+
+        if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
             originalRequest._retry = true;
 
+            const refreshToken = useAuthStore.getState().refreshToken;
+
+            // If no refresh token exists, do not attempt to call refresh
+            if (!refreshToken) {
+                if (typeof window !== 'undefined' && window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+                    useAuthStore.getState().logout();
+                    window.location.href = '/login';
+                }
+                return Promise.reject(error);
+            }
+
+            if (isRefreshing) {
+                // If refresh is already in-flight, queue this request
+                return new Promise((resolve, reject) => {
+                    failedQueue.push({ resolve, reject });
+                })
+                    .then((token) => {
+                        if (originalRequest.headers) {
+                            originalRequest.headers.Authorization = `Bearer ${token}`;
+                        }
+                        return api(originalRequest);
+                    })
+                    .catch((err) => Promise.reject(err));
+            }
+
+            isRefreshing = true;
+
             try {
-                const refreshToken = useAuthStore.getState().refreshToken;
-                const { data } = await axios.post('/api/auth/refresh', { refreshToken });
+                const { data } = await axios.post('/api/auth/refresh', { refreshToken }, {
+                    headers: { 'Content-Type': 'application/json' },
+                    timeout: 30000
+                });
+
+                const newAccessToken = data?.data?.accessToken;
+                const newRefreshToken = data?.data?.refreshToken || refreshToken;
+
+                if (!newAccessToken) {
+                    throw new Error('No access token returned from refresh');
+                }
 
                 useAuthStore.getState().setAuth(
                     useAuthStore.getState().user,
-                    data.data.accessToken,
-                    refreshToken
+                    newAccessToken,
+                    newRefreshToken
                 );
 
-                originalRequest.headers.Authorization = `Bearer ${data.data.accessToken}`;
+                if (originalRequest.headers) {
+                    originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+                }
+
+                processQueue(null, newAccessToken);
                 return api(originalRequest);
             } catch (refreshError) {
+                processQueue(refreshError, null);
                 useAuthStore.getState().logout();
-                window.location.href = '/login';
+
+                // Only redirect to login if not already on the login or register page
+                if (typeof window !== 'undefined' && window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+                    window.location.href = '/login';
+                }
                 return Promise.reject(refreshError);
+            } finally {
+                isRefreshing = false;
             }
         }
 
