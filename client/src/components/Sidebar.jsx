@@ -8,7 +8,7 @@ import {
     Home, BookOpen, FileText, Award, Users, GraduationCap,
     Video, BarChart3, Settings, LogOut, Menu, X, ChevronLeft,
     Beaker, ClipboardList, Activity, ClipboardCheck, Send, ListChecks, UserPlus, Monitor, FolderOpen, Pencil, Ticket, Building, Film, HardDrive,
-    Clock, CalendarDays, Presentation, BookMarked, ListTodo, HelpCircle, Shield, Table, RefreshCw, Layers, AppWindow
+    Clock, CalendarDays, Presentation, BookMarked, ListTodo, HelpCircle, Shield, Table, RefreshCw, Layers, AppWindow, Code2
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import LanguageSelector from './LanguageSelector';
@@ -19,6 +19,7 @@ const navItems = {
         { href: '/dashboard', labelKey: 'nav.dashboard', icon: Home },
         { href: '/classes', labelKey: 'nav.classes', icon: Users },
         { href: '/users', labelKey: 'nav.manageUsers', icon: UserPlus },
+        { href: '/practice-ide', labelKey: 'Code Practice IDE', icon: Code2 },
         { href: '/admin/labs', labelKey: 'nav.labsPCs', icon: Monitor },
         { href: '/assignments', labelKey: 'nav.assignments', icon: BookOpen },
         { href: '/training', labelKey: 'Training', icon: GraduationCap },
@@ -46,6 +47,7 @@ const navItems = {
         { href: '/dashboard', labelKey: 'nav.dashboard', icon: Home },
         { href: '/classes', labelKey: 'nav.classes', icon: Users },
         { href: '/users', labelKey: 'nav.manageUsers', icon: UserPlus },
+        { href: '/practice-ide', labelKey: 'Code Practice IDE', icon: Code2 },
         { href: '/documents', labelKey: 'Documents & Office Suite', icon: AppWindow },
         { href: '/admin/storage', labelKey: 'nav.storage', icon: HardDrive },
         { href: '/training', labelKey: 'Training', icon: GraduationCap },
@@ -65,6 +67,7 @@ const navItems = {
     instructor: [
         { href: '/dashboard', labelKey: 'nav.dashboard', icon: Home },
         { href: '/classes', labelKey: 'nav.myClasses', icon: Users },
+        { href: '/practice-ide', labelKey: 'Code Practice IDE', icon: Code2 },
         { href: '/teaching', labelKey: 'nav.teachingDashboard', icon: Presentation },
         { href: '/teaching/plans', labelKey: 'nav.lecturePlans', icon: BookMarked },
         { href: '/assignments', labelKey: 'nav.assignments', icon: BookOpen },
@@ -86,6 +89,7 @@ const navItems = {
         { href: '/dashboard', labelKey: 'nav.dashboard', icon: Home },
         { href: '/classes', labelKey: 'nav.classes', icon: Users },
         { href: '/admin/labs', labelKey: 'nav.labsPCs', icon: Monitor },
+        { href: '/practice-ide', labelKey: 'Code Practice IDE', icon: Code2 },
         { href: '/assignments', labelKey: 'nav.assignments', icon: BookOpen },
         { href: '/training', labelKey: 'Training', icon: GraduationCap },
         { href: '/quiz', labelKey: 'AI Quiz Maker', icon: HelpCircle },
@@ -98,6 +102,7 @@ const navItems = {
     student: [
         { href: '/dashboard', labelKey: 'nav.dashboard', icon: Home },
         { href: '/my-work', labelKey: 'nav.myWork', icon: ClipboardCheck },
+        { href: '/practice-ide', labelKey: 'Code Practice IDE', icon: Code2 },
         { href: '/submissions', labelKey: 'nav.mySubmissions', icon: FileText },
         { href: '/training', labelKey: 'Training', icon: GraduationCap },
         { href: '/quiz', labelKey: 'Quizzes & Tests', icon: HelpCircle },

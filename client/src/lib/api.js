@@ -274,9 +274,10 @@ export const devicesAPI = {
     testAll: (data) => api.post('/devices/test-all', data),
 };
 
-// Assignments API
+// Compiler API
 export const compilerAPI = {
     execute: (data) => api.post('/compiler/execute', data),
+    generateDiagram: (data) => api.post('/compiler/generate-diagram', data),
     getLanguages: () => api.get('/compiler/languages')
 };
 
