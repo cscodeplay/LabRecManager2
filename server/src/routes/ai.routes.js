@@ -814,13 +814,13 @@ router.post('/sheets-copilot', optionalAuth, asyncHandler(async (req, res) => {
     const usedRange = sheetContext.usedRange || '';
     const activeColDataRange = sheetContext.activeColumnDataRange || '';
 
-    const systemPrompt = `You are LabIntel AI, an advanced scientific and laboratory spreadsheet intelligence assistant for LabSheets in LabRecManager.
-Your goal is to assist students, instructors, and lab researchers with data calculations, scientific analysis, formula generation, and table creation.
+    const systemPrompt = `You are LabIntel AI, an intelligent scientific, academic, and laboratory spreadsheet assistant for LabSheets in LabRecManager.
+Your goal is to inspect the spreadsheet data context, infer the scientific or academic domain, select the mathematically and scientifically appropriate formulas, determine the correct cell coordinates and ranges, and provide clear suggestions that the user can review and apply.
 
 CURRENT SPREADSHEET CONTEXT:
 - Sheet Title: ${sheetContext.title || 'Untitled Sheet'}
 - Active Sheet: ${activeSheetName}
-- Target Active Cell: ${activeCell}
+- Target Active Cell (Focused by user): ${activeCell}
 - User Selected Range: ${selectedRange}
 ${Object.keys(selectedRangeValues).length > 0 ? `- Selected Cell Values: ${JSON.stringify(selectedRangeValues)}` : ''}
 ${activeColDataRange ? `- Data in Active Column above target cell (${activeCell}): Range ${activeColDataRange}` : ''}
@@ -835,55 +835,83 @@ ${headers.length > 0 ? JSON.stringify(headers, null, 2) : 'No explicit headers d
 ACTUAL SHEET DATA ROWS:
 ${sampleRows.length > 0 ? JSON.stringify(sampleRows, null, 2) : 'Sheet is currently empty.'}
 
-CRITICAL RULES FOR ACCURATE CELL REFERENCES:
-1. NEVER guess or default to column B or range B2:B12 unless column B is explicitly where the user has data!
-2. Inspect DETECTED COLUMNS, SHEET DATA ROWS, and User Selected Range above to find the EXACT column and row coordinates where the user's data lives.
-3. If the user has selected a range (e.g. ${selectedRange}), or if data is located in a specific column (e.g. column D from row 2 to 4 -> D2:D4), reference THAT exact range.
-4. When the user asks to calculate multiple statistics at once (e.g., "calculate mean median mode" or "mean, median, and mode"):
-   - Calculate all of them!
-   - Set "formula" to the first/primary metric (e.g. Mean: =AVERAGE(range)).
-   - Set "targetCell" to ${activeCell}.
-   - Provide "batchUpdates" mapping consecutive cells (e.g. ${activeCell} for Mean, the next row down for Median, and the next row down for Mode).
-   - For example, if target is D5 and range is D2:D4:
-     "batchUpdates": {
-       "D5": "=AVERAGE(D2:D4)",
-       "D6": "=MEDIAN(D2:D4)",
-       "D7": "=MODE(D2:D4)"
-     }
-   - In "explanation", explicitly explain the formulas and values for Mean, Median, and Mode.
-5. FORMULA SYNTAX:
-   - Mean / Average: =AVERAGE(range)
-   - Median: =MEDIAN(range)
-   - Mode: =MODE(range)
-   - Standard Deviation: =STDEV(range)
-   - Minimum: =MIN(range)
-   - Maximum: =MAX(range)
-   - Sum: =SUM(range)
-   - Count: =COUNT(range)
+CRITICAL INSTRUCTIONS & INTELLIGENCE RULES (DO NOT HARDCODE - ANALYZE THE CONTEXT DYNAMICALLY):
+1. SEMANTIC DOMAIN INFERENCE:
+   - Carefully analyze the detected headers and sample data rows to recognize the subject domain:
+     * Chemistry Periodic Table (e.g. Element Name, Atomic Number Z, Mass Number A):
+       -> Suggest calculating Number of Neutrons: Neutrons = Mass Number - Atomic Number.
+          For each row r, the formula is =C{r}-B{r} in a new column "Neutrons" (e.g. Col D).
+     * Chemistry Solutions & Titrations (e.g. Solute Moles, Solution Volume, Concentration, Absorbance):
+       -> Suggest Molarity (=MOLARITY(moles, volume) or =moles/volume), Dilution (=DILUTION(c1, v1, c2)), or pH (=PH(h_ion)).
+     * Physics Kinematics & Linear Calibration (e.g. Concentration vs Absorbance):
+       -> Suggest calibration curve slope (=SLOPE(y_range, x_range)) and intercept (=INTERCEPT(y_range, x_range)).
+     * Academic Grading / Marksheets (e.g. Student Name, Subject marks):
+       -> Suggest Total (=SUM(range)), Percentage (=(Total/Max)*100), Class Average (=AVERAGE(col_range)), or Grade (=IF(...)).
+     * General Statistical Analysis:
+       -> When asked to analyze data or calculate statistics (Mean, Median, Mode, StDev, Min, Max), identify the numeric columns and compute appropriate formulas with exact ranges.
+
+2. WHERE TO APPLY (SPATIAL DECISION MAKING):
+   - Row-by-Row Metrics (e.g. Neutrons per element, Total marks per student, Price*Qty):
+     * action: "insert_column"
+     * targetColLetter: the next available empty column immediately to the right of the existing data (e.g. if columns A, B, C have data, use column D).
+     * columnData:
+       {
+         "header": "Neutrons",
+         "targetColLetter": "D",
+         "startRow": 2,
+         "formulas": ["=C2-B2", "=C3-B3", "=C4-B4", ...]
+       }
+   - Column Aggregations & Summary Statistics (e.g. Mean, Median, Mode, Average, Sum, Min, Max):
+     * If a single statistic is requested/suggested:
+       action: "insert_formula"
+       targetCell: the cell immediately below the column data (or ${activeCell} if focused there).
+       formula: the exact formula (e.g. =AVERAGE(D2:D10)).
+     * If multiple statistics are requested/suggested (e.g. "calculate mean, median, mode"):
+       action: "batch_update"
+       batchUpdates: mapping consecutive cells (e.g. ${activeCell} for Mean, the next row down for Median, and the next row down for Mode).
+       Example:
+       "batchUpdates": {
+         "D11": "=AVERAGE(D2:D10)",
+         "D12": "=MEDIAN(D2:D10)",
+         "D13": "=MODE(D2:D10)"
+       }
+   - If user explicitly focused or requested cell ${activeCell}:
+     * Set targetCell to ${activeCell} and bind formula arguments to the appropriate data range.
+
+3. ACCURATE RANGE BINDING:
+   - Use the EXACT column letters and row numbers present in DETECTED COLUMNS and ACTUAL SHEET DATA ROWS.
+   - NEVER assume column B or arbitrary rows B2:B12 if the user's data is in other columns or row numbers.
+
+4. USER PROMPT & SUGGESTION INTERACTION:
+   - Provide a clear, actionable suggestion with:
+     * "suggestionTitle": A concise, descriptive headline for the suggested calculation (e.g. "Calculate Number of Neutrons (Mass Number - Atomic Number)").
+     * "explanation": A clear explanation of the scientific/domain rationale and formula syntax.
+     * The appropriate action, formula, targetCell, columnData, or batchUpdates matching the schema below.
 
 STRICT OUTPUT JSON SCHEMA:
 {
+  "suggestionTitle": "Descriptive Title of Suggested Calculation",
   "explanation": "Clear explanation of what was analyzed or calculated (Markdown supported)",
-  "action": "insert_formula" | "batch_update" | "insert_column" | "generate_table" | "insights",
-  "formula": "=AVERAGE(...)",
+  "action": "insert_column" | "insert_formula" | "batch_update" | "generate_table" | "insights",
+  "formula": "=C2-B2",
   "targetCell": "${activeCell}",
+  "columnData": {
+    "header": "Neutrons",
+    "targetColLetter": "D",
+    "startRow": 2,
+    "formulas": ["=C2-B2", "=C3-B3", "=C4-B4"]
+  },
   "batchUpdates": {
     "${activeCell}": "=AVERAGE(...)"
-  },
-  "columnData": {
-    "header": "Column Header",
-    "targetColLetter": "E",
-    "formulas": ["=..."]
   },
   "tableData": {
     "startCell": "A1",
     "headers": ["Metric", "Value"],
-    "rows": [
-      ["Mean", "=AVERAGE(...)"]
-    ]
+    "rows": [["Mean", "=AVERAGE(...)"]]
   },
   "insights": [
-    "Insight description..."
+    "Domain observation or insight 1...",
+    "Domain observation 2..."
   ]
 }`;
 
@@ -917,119 +945,9 @@ STRICT OUTPUT JSON SCHEMA:
         });
     } catch (err) {
         console.error('[LabIntel Route Error]:', err.message);
-
-        // Smart Heuristic Fallback if AI provider is offline or rate-limited
-        const query = prompt.toLowerCase();
-        const parseCoord = (coord) => {
-            const match = String(coord).trim().toUpperCase().match(/^([A-Z]+)([0-9]+)$/);
-            if (!match) return { col: 'A', row: 1 };
-            return { col: match[1], row: parseInt(match[2], 10) };
-        };
-        const offsetRow = (coordStr, delta) => {
-            const { col, row } = parseCoord(coordStr);
-            return `${col}${row + delta}`;
-        };
-
-        // Determine target data range
-        let targetRange = (selectedRange && selectedRange.includes(':') && selectedRange !== activeCell) ? selectedRange : null;
-        if (!targetRange && activeColDataRange) {
-            targetRange = activeColDataRange;
-        }
-        if (!targetRange && columns.length > 0) {
-            const numCol = columns.find(c => c.dataType === 'number' && c.dataRange);
-            if (numCol) targetRange = numCol.dataRange;
-        }
-        if (!targetRange) {
-            const { col, row } = parseCoord(activeCell);
-            targetRange = row > 2 ? `${col}2:${col}${row - 1}` : `${col}1:${col}10`;
-        }
-
-        // 1. Mean, Median, Mode combined request
-        if ((query.includes('mean') || query.includes('average')) && (query.includes('median') || query.includes('mode'))) {
-            const cell1 = activeCell;
-            const cell2 = offsetRow(activeCell, 1);
-            const cell3 = offsetRow(activeCell, 2);
-            return res.json({
-                success: true,
-                provider: 'heuristic-engine',
-                model: 'labintel-rule-v1',
-                data: {
-                    explanation: `Calculated statistical summary for range **${targetRange}**:\n- **Mean**: \`=AVERAGE(${targetRange})\` (Cell ${cell1})\n- **Median**: \`=MEDIAN(${targetRange})\` (Cell ${cell2})\n- **Mode**: \`=MODE(${targetRange})\` (Cell ${cell3})`,
-                    action: 'batch_update',
-                    formula: `=AVERAGE(${targetRange})`,
-                    targetCell: cell1,
-                    batchUpdates: {
-                        [cell1]: `=AVERAGE(${targetRange})`,
-                        [cell2]: `=MEDIAN(${targetRange})`,
-                        [cell3]: `=MODE(${targetRange})`
-                    }
-                }
-            });
-        }
-
-        // 2. Individual Mean / Average
-        if (query.includes('mean') || query.includes('average')) {
-            return res.json({
-                success: true,
-                provider: 'heuristic-engine',
-                model: 'labintel-rule-v1',
-                data: {
-                    explanation: `Calculated arithmetic mean (average) for range **${targetRange}**.`,
-                    action: 'insert_formula',
-                    formula: `=AVERAGE(${targetRange})`,
-                    targetCell: activeCell
-                }
-            });
-        }
-
-        // 3. Individual Median
-        if (query.includes('median')) {
-            return res.json({
-                success: true,
-                provider: 'heuristic-engine',
-                model: 'labintel-rule-v1',
-                data: {
-                    explanation: `Calculated median for range **${targetRange}**.`,
-                    action: 'insert_formula',
-                    formula: `=MEDIAN(${targetRange})`,
-                    targetCell: activeCell
-                }
-            });
-        }
-
-        // 4. Individual Mode
-        if (query.includes('mode')) {
-            return res.json({
-                success: true,
-                provider: 'heuristic-engine',
-                model: 'labintel-rule-v1',
-                data: {
-                    explanation: `Calculated mode for range **${targetRange}**.`,
-                    action: 'insert_formula',
-                    formula: `=MODE(${targetRange})`,
-                    targetCell: activeCell
-                }
-            });
-        }
-
-        // 5. Sum
-        if (query.includes('sum') || query.includes('total')) {
-            return res.json({
-                success: true,
-                provider: 'heuristic-engine',
-                model: 'labintel-rule-v1',
-                data: {
-                    explanation: `Calculated total sum for range **${targetRange}**.`,
-                    action: 'insert_formula',
-                    formula: `=SUM(${targetRange})`,
-                    targetCell: activeCell
-                }
-            });
-        }
-
         res.status(502).json({
             success: false,
-            message: err.message || 'LabIntel AI service encountered an error'
+            message: err.message || 'LabIntel AI service encountered an error while analyzing spreadsheet context'
         });
     }
 }));

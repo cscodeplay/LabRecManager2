@@ -21,6 +21,11 @@ import api from '@/lib/api';
 
 const QUICK_PROMPT_CHIPS = [
     {
+        icon: <Sparkles size={13} className="text-cyan-400" />,
+        label: 'Analyze & Suggest Formulas',
+        prompt: 'Analyze this sheet data context and recommend the most appropriate formulas, calculations, or new columns for this data'
+    },
+    {
         icon: <Calculator size={13} className="text-cyan-400" />,
         label: 'Total & Percentage',
         prompt: 'Add a total marks column and a percentage column based on practical and theory scores'
@@ -28,7 +33,7 @@ const QUICK_PROMPT_CHIPS = [
     {
         icon: <TrendingUp size={13} className="text-emerald-400" />,
         label: 'Summarize Statistics',
-        prompt: 'Calculate Mean, Median, and Standard Deviation for all test marks in this sheet'
+        prompt: 'Calculate Mean, Median, and Standard Deviation for all numeric columns in this sheet'
     },
     {
         icon: <FlaskConical size={13} className="text-purple-400" />,
@@ -172,6 +177,14 @@ export default function LabIntelSidebar({
                                 <div className={`mt-2.5 p-2.5 rounded-xl border text-[11px] ${
                                     isDark ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-200'
                                 }`}>
+                                    {/* Suggested Action Title / Headline */}
+                                    {msg.data.suggestionTitle && (
+                                        <div className="flex items-center gap-1.5 font-bold text-cyan-400 mb-2 text-xs border-b border-cyan-500/20 pb-1.5">
+                                            <Sparkles size={13} className="shrink-0 text-cyan-400" />
+                                            <span>{msg.data.suggestionTitle}</span>
+                                        </div>
+                                    )}
+
                                     {/* Batch updates preview (e.g. Mean, Median, Mode across multiple cells) */}
                                     {(msg.data.batchUpdates || msg.data.updates) && (
                                         <div className="space-y-1.5 mb-2">
@@ -187,8 +200,9 @@ export default function LabIntelSidebar({
                                         </div>
                                     )}
 
-                                    {msg.data.formula && !(msg.data.batchUpdates || msg.data.updates) && (
-                                        <div className="space-y-1">
+                                    {/* Single formula preview */}
+                                    {msg.data.formula && !(msg.data.batchUpdates || msg.data.updates) && !msg.data.columnData && (
+                                        <div className="space-y-1 mb-2">
                                             <span className="text-[10px] uppercase font-bold text-slate-400">Target Cell: {msg.data.targetCell || 'Active'}</span>
                                             <div className="p-1.5 rounded bg-cyan-500/10 text-cyan-400 font-mono font-semibold text-xs border border-cyan-500/20 truncate">
                                                 {msg.data.formula}
@@ -196,17 +210,33 @@ export default function LabIntelSidebar({
                                         </div>
                                     )}
 
+                                    {/* New Column preview */}
                                     {msg.data.columnData && (
-                                        <div className="space-y-1">
-                                            <span className="text-[10px] uppercase font-bold text-slate-400">New Column: {msg.data.columnData.header}</span>
-                                            <div className="text-[10px] text-slate-400 font-mono">
-                                                Col {msg.data.columnData.targetColLetter || 'Auto'}: {msg.data.columnData.formulas?.[0] || 'Computed formulas'}
+                                        <div className="space-y-1 mb-2">
+                                            <span className="text-[10px] uppercase font-bold text-slate-400">Suggested Column:</span>
+                                            <div className="p-2 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 space-y-1">
+                                                <div className="flex items-center justify-between font-bold text-slate-200">
+                                                    <span>Header: {msg.data.columnData.header}</span>
+                                                    <span className="font-mono text-cyan-400 text-[10px] bg-cyan-500/20 px-1.5 py-0.5 rounded">
+                                                        Col {msg.data.columnData.targetColLetter || 'Next'}
+                                                    </span>
+                                                </div>
+                                                {msg.data.columnData.formulas?.[0] && (
+                                                    <div className="font-mono text-[11px] text-slate-300">
+                                                        Formula: <span className="text-emerald-400 font-semibold">{msg.data.columnData.formulas[0]}</span>
+                                                        {msg.data.columnData.formulas.length > 1 && (
+                                                          <span className="text-slate-400 text-[10px] ml-1.5">
+                                                              ({msg.data.columnData.formulas.length} rows)
+                                                          </span>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     )}
 
                                     {msg.data.tableData && (
-                                        <div className="space-y-1">
+                                        <div className="space-y-1 mb-2">
                                             <span className="text-[10px] uppercase font-bold text-slate-400">Generated Table ({msg.data.tableData.rows?.length || 0} rows)</span>
                                             <div className="text-[10px] text-slate-400 truncate font-mono">
                                                 Headers: {msg.data.tableData.headers?.join(', ')}
@@ -215,7 +245,7 @@ export default function LabIntelSidebar({
                                     )}
 
                                     {msg.data.insights && Array.isArray(msg.data.insights) && (
-                                        <ul className="list-disc pl-4 space-y-1 text-slate-300">
+                                        <ul className="list-disc pl-4 space-y-1 text-slate-300 mb-2">
                                             {msg.data.insights.map((pt, i) => (
                                                 <li key={i}>{pt}</li>
                                             ))}
@@ -227,10 +257,10 @@ export default function LabIntelSidebar({
                                         <button
                                             type="button"
                                             onClick={() => handleApply(msg.data)}
-                                            className="mt-2.5 w-full py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-xs"
+                                            className="mt-2.5 w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer"
                                         >
-                                            <Check size={13} />
-                                            <span>Apply to Sheet</span>
+                                            <Check size={14} />
+                                            <span>Apply Suggestion to Sheet</span>
                                         </button>
                                     )}
                                 </div>

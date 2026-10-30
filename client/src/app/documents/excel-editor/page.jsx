@@ -1160,13 +1160,22 @@ export default function ExcelEditorPage() {
                 const next = [...prev];
                 const sh = { ...next[activeSheetIndex] };
                 const nCells = { ...sh.cells };
-                const targetColLetter = colData.targetColLetter || colToLetter(colCount);
+                let targetColLetter = colData.targetColLetter;
+                if (!targetColLetter) {
+                    let maxUsedCol = -1;
+                    Object.keys(nCells).forEach(k => {
+                        const c = parseCellCoord(k);
+                        if (c) maxUsedCol = Math.max(maxUsedCol, c.col);
+                    });
+                    targetColLetter = colToLetter(maxUsedCol >= 0 ? maxUsedCol + 1 : 0);
+                }
                 if (colData.header) {
                     nCells[`${targetColLetter}1`] = { ...(nCells[`${targetColLetter}1`] || {}), val: colData.header, bold: true, bg: '#f1f5f9' };
                 }
+                const startRow = colData.startRow || 2;
                 if (colData.formulas && Array.isArray(colData.formulas)) {
                     colData.formulas.forEach((f, idx) => {
-                        const r = idx + 2;
+                        const r = startRow + idx;
                         const key = `${targetColLetter}${r}`;
                         const isF = String(f).startsWith('=');
                         nCells[key] = {
@@ -1175,6 +1184,18 @@ export default function ExcelEditorPage() {
                             val: isF ? evaluateCellFormula(f, nCells) : f
                         };
                     });
+                } else if (colData.formula && typeof colData.formula === 'string') {
+                    const numRows = colData.rowCount || 10;
+                    for (let idx = 0; idx < numRows; idx++) {
+                        const r = startRow + idx;
+                        const adjusted = adjustFormulaReferences(colData.formula, 0, idx);
+                        const key = `${targetColLetter}${r}`;
+                        nCells[key] = {
+                            ...(nCells[key] || {}),
+                            formula: adjusted,
+                            val: evaluateCellFormula(adjusted, nCells)
+                        };
+                    }
                 }
                 sh.cells = nCells;
                 next[activeSheetIndex] = sh;
