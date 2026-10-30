@@ -93,6 +93,20 @@ router.post('/login', loginValidation, asyncHandler(async (req, res) => {
         });
     }
 
+    // Check if user must set a new password before accessing the application
+    if (user.mustChangePassword) {
+        return res.status(403).json({
+            success: false,
+            requiresPasswordSetup: true,
+            message: 'You must set a new password before using the application. Please use your first-time login code.',
+            messageHindi: 'एप्लिकेशन का उपयोग करने से पहले आपको एक नया पासवर्ड सेट करना होगा।',
+            data: {
+                email: user.email,
+                firstName: user.firstName
+            }
+        });
+    }
+
     // Generate tokens
     const accessToken = jwt.sign(
         { userId: user.id, role: user.role },

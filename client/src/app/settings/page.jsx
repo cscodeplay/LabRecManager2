@@ -34,6 +34,9 @@ export default function SettingsPage() {
     const { theme, setTheme } = useThemeStore();
     const { language, setLanguage } = useLanguageStore();
     const [passwords, setPasswords] = useState({ current: '', newPass: '', confirm: '' });
+    const [securityQuestion, setSecurityQuestion] = useState("What was the name of your first elementary/primary school?");
+    const [securityAnswer, setSecurityAnswer] = useState('');
+    const [savingSecurityQuestion, setSavingSecurityQuestion] = useState(false);
 
     // Grade scales state
     const [gradeScales, setGradeScales] = useState([]);
@@ -513,6 +516,26 @@ export default function SettingsPage() {
             setPasswords({ current: '', newPass: '', confirm: '' });
         } catch (e) { toast.error(e.response?.data?.message || 'Failed to change password'); }
         finally { setSaving(false); }
+    };
+
+    const handleSaveSecurityQuestion = async () => {
+        if (!securityAnswer || securityAnswer.trim().length < 2) {
+            toast.error('Answer must be at least 2 characters');
+            return;
+        }
+        setSavingSecurityQuestion(true);
+        try {
+            await api.post('/pin/security-questions/setup', {
+                question: securityQuestion,
+                answer: securityAnswer
+            });
+            toast.success('Security question configured successfully!');
+            setSecurityAnswer('');
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to save security question');
+        } finally {
+            setSavingSecurityQuestion(false);
+        }
     };
 
     const handleSaveGradeScale = async () => {
@@ -1451,13 +1474,67 @@ export default function SettingsPage() {
                         )}
 
                         {activeTab === 'security' && (
-                            <div className="card p-6">
-                                <h2 className="text-lg font-semibold text-slate-900 mb-4">Change Password</h2>
-                                <div className="space-y-4 max-w-md">
-                                    <div><label className="label">Current Password</label><input type="password" className="input" value={passwords.current} onChange={(e) => setPasswords({ ...passwords, current: e.target.value })} /></div>
-                                    <div><label className="label">New Password</label><input type="password" className="input" value={passwords.newPass} onChange={(e) => setPasswords({ ...passwords, newPass: e.target.value })} /></div>
-                                    <div><label className="label">Confirm Password</label><input type="password" className="input" value={passwords.confirm} onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })} /></div>
-                                    <button onClick={handleChangePassword} disabled={saving} className="btn btn-primary"><Shield className="w-4 h-4" />{saving ? 'Updating...' : 'Update Password'}</button>
+                            <div className="space-y-6">
+                                <div className="card p-6">
+                                    <h2 className="text-lg font-semibold text-slate-900 mb-4">Change Password</h2>
+                                    <div className="space-y-4 max-w-md">
+                                        <div><label className="label">Current Password</label><input type="password" className="input" value={passwords.current} onChange={(e) => setPasswords({ ...passwords, current: e.target.value })} /></div>
+                                        <div><label className="label">New Password</label><input type="password" className="input" value={passwords.newPass} onChange={(e) => setPasswords({ ...passwords, newPass: e.target.value })} /></div>
+                                        <div><label className="label">Confirm Password</label><input type="password" className="input" value={passwords.confirm} onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })} /></div>
+                                        <button onClick={handleChangePassword} disabled={saving} className="btn btn-primary"><Shield className="w-4 h-4" />{saving ? 'Updating...' : 'Update Password'}</button>
+                                    </div>
+                                </div>
+
+                                <div className="card p-6">
+                                    <div className="flex items-start gap-3 mb-4">
+                                        <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-600 shrink-0">
+                                            <Shield className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-lg font-semibold text-slate-900">Security Question (Phone-Free Password Recovery)</h2>
+                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                In lab setups where phones and Google 2FA are restricted, you can reset your password anytime by answering this question.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4 max-w-md">
+                                        <div>
+                                            <label className="label">Select Security Question</label>
+                                            <select
+                                                className="input text-sm"
+                                                value={securityQuestion}
+                                                onChange={(e) => setSecurityQuestion(e.target.value)}
+                                            >
+                                                <option value="What was the name of your first elementary/primary school?">What was the name of your first elementary/primary school?</option>
+                                                <option value="What is your mother's maiden name?">What is your mother&apos;s maiden name?</option>
+                                                <option value="What city or town was your birthplace?">What city or town was your birthplace?</option>
+                                                <option value="What was the name of your first childhood pet?">What was the name of your first childhood pet?</option>
+                                                <option value="What is the name of your favorite subject teacher?">What is the name of your favorite subject teacher?</option>
+                                                <option value="What was your childhood nickname?">What was your childhood nickname?</option>
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <label className="label">Your Secret Answer</label>
+                                            <input
+                                                type="text"
+                                                className="input text-sm"
+                                                placeholder="Answer is case-insensitive (min 2 chars)"
+                                                value={securityAnswer}
+                                                onChange={(e) => setSecurityAnswer(e.target.value)}
+                                            />
+                                        </div>
+
+                                        <button
+                                            onClick={handleSaveSecurityQuestion}
+                                            disabled={savingSecurityQuestion}
+                                            className="btn btn-primary bg-teal-600 hover:bg-teal-700"
+                                        >
+                                            <Shield className="w-4 h-4" />
+                                            {savingSecurityQuestion ? 'Saving Question...' : 'Save Security Question'}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         )}

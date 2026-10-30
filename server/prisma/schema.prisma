@@ -150,6 +150,10 @@ model User {
   pinExpiresAt                                   DateTime?                  @map("pin_expires_at") @db.Timestamp(6)
   storageQuotaMb                                 Int?                       @default(500) @map("storage_quota_mb")
   storageUsedBytes                               BigInt?                    @default(0) @map("storage_used_bytes")
+  securityQuestion                               String?                    @map("security_question") @db.VarChar(255)
+  securityAnswerHash                             String?                    @map("security_answer_hash") @db.VarChar(255)
+  mustChangePassword                             Boolean?                   @default(false) @map("must_change_password")
+  backupCodes                                    BackupCode[]
   activityLogs                                   ActivityLog[]
   assignmentsAssigned                            AssignmentTarget[]
   assignmentsCreated                             Assignment[]
@@ -2533,4 +2537,20 @@ model QuestionBank {
   @@index([questionType], map: "idx_question_bank_type")
   @@index([examType, examYear, topic], map: "idx_question_bank_lookup")
   @@map("question_bank")
+}
+
+model BackupCode {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  codeHash   String    @map("code_hash") @db.VarChar(255)
+  turnIndex  Int       @map("turn_index")
+  isUsed     Boolean   @default(false) @map("is_used")
+  usedAt     DateTime? @map("used_at") @db.Timestamp(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "idx_backup_codes_user_id")
+  @@index([codeHash], map: "idx_backup_codes_code_hash")
+  @@index([userId, isUsed], map: "idx_backup_codes_user_unused")
+  @@map("backup_codes")
 }

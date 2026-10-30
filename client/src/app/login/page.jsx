@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
@@ -159,6 +160,8 @@ export default function LoginPage() {
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [firstName, setFirstName] = useState('');
+    const [codeType, setCodeType] = useState('pin'); // 'pin' | 'backup-code'
+    const [firstTimeAlert, setFirstTimeAlert] = useState(null);
 
     const { register, handleSubmit, formState: { errors } } = useForm();
 
@@ -260,6 +263,12 @@ export default function LoginPage() {
             toast.success(t('auth.welcome'));
             setTimeout(() => router.replace('/dashboard'), 100);
         } catch (error) {
+            if (error.response?.data?.requiresPasswordSetup) {
+                toast.error(error.response.data.message || 'You must set a new password before accessing the application.');
+                setLoginMode('pin');
+                if (data.email) setPinEmail(data.email);
+                return;
+            }
             toast.error(error.response?.data?.message || 'Login failed');
         } finally {
             setIsLoading(false);
@@ -268,28 +277,61 @@ export default function LoginPage() {
 
     const handlePinVerify = async () => {
         if (!pinEmail || !pinValue) {
-            toast.error('Enter email and PIN');
+            toast.error('Enter email and verification code');
             return;
         }
-        if (pinValue.length !== 6) {
-            toast.error('PIN must be 6 digits');
-            return;
-        }
-
+        setFirstTimeAlert(null);
         setIsLoading(true);
-        try {
-            const response = await axios.post('/api/auth/login-with-pin', {
-                email: pinEmail,
-                pin: pinValue
-            });
 
-            if (response.data.requiresPasswordSetup) {
-                setPinVerified(true);
-                setFirstName(response.data.data.firstName);
-                toast.success(t('auth.pinVerified'));
+        const cleanVal = pinValue.trim().replace(/[-\s]/g, '');
+        const isBackup = cleanVal.length > 6 || pinValue.includes('-');
+
+        try {
+            if (isBackup) {
+                setCodeType('backup-code');
+                const response = await axios.post('/api/pin/login-with-backup-code', {
+                    email: pinEmail,
+                    backupCode: pinValue
+                });
+                if (response.data.requiresPasswordSetup) {
+                    setPinVerified(true);
+                    setFirstName(response.data.data.firstName || 'Student');
+                    toast.success(response.data.message || 'Backup code verified! Please set your password.');
+                }
+            } else {
+                setCodeType('pin');
+                if (cleanVal.length !== 6) {
+                    toast.error('PIN must be 6 digits or enter an 8-character backup code');
+                    setIsLoading(false);
+                    return;
+                }
+                const response = await axios.post('/api/auth/login-with-pin', {
+                    email: pinEmail,
+                    pin: cleanVal
+                });
+                if (response.data.requiresPasswordSetup) {
+                    setPinVerified(true);
+                    setFirstName(response.data.data.firstName);
+                    toast.success(t('auth.pinVerified'));
+                }
             }
         } catch (error) {
-            toast.error(error.response?.data?.message || 'PIN verification failed');
+            const errData = error.response?.data;
+            if (errData?.code === 'BACKUP_CODE_ALREADY_USED') {
+                setFirstTimeAlert({
+                    type: 'used',
+                    message: errData.message
+                });
+                toast.error(errData.message, { duration: 6000 });
+            } else if (errData?.code === 'INVALID_CODE') {
+                setFirstTimeAlert({
+                    type: 'invalid',
+                    message: errData.message || 'Invalid code. Please check your paper slip and try again.'
+                });
+                toast.error(errData.message || 'Invalid code');
+            } else {
+                toast.error(errData?.message || 'Verification failed');
+            }
         } finally {
             setIsLoading(false);
         }
@@ -304,18 +346,27 @@ export default function LoginPage() {
             toast.error('Password must be at least 6 characters');
             return;
         }
-        if (!selectedYear) {
+        if (academicYears.length > 0 && !selectedYear) {
             toast.error(t('auth.academicSession'));
             return;
         }
 
         setIsLoading(true);
         try {
-            const response = await axios.post('/api/auth/login-with-pin', {
-                email: pinEmail,
-                pin: pinValue,
-                newPassword
-            });
+            let response;
+            if (codeType === 'backup-code') {
+                response = await axios.post('/api/pin/login-with-backup-code', {
+                    email: pinEmail,
+                    backupCode: pinValue,
+                    newPassword
+                });
+            } else {
+                response = await axios.post('/api/auth/login-with-pin', {
+                    email: pinEmail,
+                    pin: pinValue.trim().replace(/[-\s]/g, ''),
+                    newPassword
+                });
+            }
 
             const { user, accessToken, refreshToken } = response.data.data;
             setAuth(user, accessToken, refreshToken);
@@ -529,23 +580,62 @@ export default function LoginPage() {
                                 <button type="submit" disabled={isLoading} className="btn btn-primary w-full py-3">
                                     {isLoading ? t('auth.signingIn') : <><LogIn className="w-5 h-5 inline mr-2" />{t('auth.login')}</>}
                                 </button>
+                                <div className="text-center pt-2">
+                                    <Link
+                                        href="/reset-password-pin"
+                                        className="text-xs text-primary-600 hover:text-primary-700 font-medium underline inline-flex items-center gap-1"
+                                    >
+                                        Forgot Password / Use 10-Turn Emergency Slip
+                                    </Link>
+                                </div>
                             </form>
                         )}
 
-                        {/* PIN MODE */}
+                        {/* PIN / BACKUP CODE FIRST-TIME LOGIN MODE */}
                         {loginMode === 'pin' && !pinVerified && (
-                            <div className="space-y-5">
+                            <div className="space-y-4">
+                                {firstTimeAlert && (
+                                    <div className={`p-3.5 rounded-xl text-xs ${
+                                        firstTimeAlert.type === 'used'
+                                            ? 'bg-amber-50 border-2 border-amber-400 text-amber-950'
+                                            : 'bg-rose-50 border border-rose-300 text-rose-950'
+                                    }`}>
+                                        <div className="font-bold mb-0.5">
+                                            {firstTimeAlert.type === 'used' ? '⚠️ Backup Code Already Used!' : '❌ Invalid Code'}
+                                        </div>
+                                        <div>{firstTimeAlert.message}</div>
+                                    </div>
+                                )}
+
                                 <div>
                                     <label className="label">{t('auth.email')}</label>
-                                    <input type="email" className="input" placeholder="you@school.edu" value={pinEmail} onChange={(e) => setPinEmail(e.target.value)} />
+                                    <input
+                                        type="email"
+                                        className="input"
+                                        placeholder="you@school.edu"
+                                        value={pinEmail}
+                                        onChange={(e) => { setPinEmail(e.target.value); setFirstTimeAlert(null); }}
+                                    />
                                 </div>
                                 <div>
-                                    <label className="label">{t('auth.pin')}</label>
-                                    <input type="text" className="input text-center tracking-widest font-mono text-lg" placeholder="000000" maxLength={6} value={pinValue} onChange={(e) => setPinValue(e.target.value.replace(/\D/g, ''))} />
-                                    <p className="text-xs text-slate-500 mt-1">{t('auth.enterPinFromTeacher')}</p>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="label mb-0">First-Time Code (PIN or 10-Turn Backup Code)</label>
+                                        <span className="text-[10px] text-indigo-600 font-mono font-semibold">6-digit PIN or XXXX-XXXX</span>
+                                    </div>
+                                    <input
+                                        type="text"
+                                        className="input text-center tracking-widest font-mono text-base uppercase"
+                                        placeholder="000000 or 4812-9214"
+                                        maxLength={10}
+                                        value={pinValue}
+                                        onChange={(e) => { setPinValue(e.target.value); setFirstTimeAlert(null); }}
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        Enter the 6-digit PIN from teacher OR any unused code from your 10-turn paper slip.
+                                    </p>
                                 </div>
                                 <button type="button" onClick={handlePinVerify} disabled={isLoading} className="btn btn-primary w-full py-3 bg-amber-500 hover:bg-amber-600">
-                                    {isLoading ? t('auth.verifying') : <><KeyRound className="w-5 h-5 inline mr-2" />{t('auth.verifyPin')}</>}
+                                    {isLoading ? t('auth.verifying') : <><KeyRound className="w-5 h-5 inline mr-2" />Verify Code & Continue</>}
                                 </button>
                             </div>
                         )}

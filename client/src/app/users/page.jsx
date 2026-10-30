@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Users, Search, Plus, Book, BarChart3, Mail, KeyRound, ToggleLeft, ToggleRight, Trash2, Copy, X, ChevronLeft, ChevronRight, CheckSquare } from 'lucide-react';
+import { Users, Search, Plus, Book, BarChart3, Mail, KeyRound, ToggleLeft, ToggleRight, Trash2, Copy, X, ChevronLeft, ChevronRight, CheckSquare, Printer, Scissors, Ticket } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { useConfirm } from '@/components/ConfirmDialog';
 import api, { adminAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import BackupCodesPrintModal from '@/components/BackupCodesPrintModal';
 
 export default function UsersPage() {
     const router = useRouter();
@@ -42,6 +43,12 @@ export default function UsersPage() {
     const [showPinModal, setShowPinModal] = useState(false);
     const [pinData, setPinData] = useState(null);
     const [generatingPin, setGeneratingPin] = useState(null);
+
+    // 10-Turn Backup Codes Modal state
+    const [showBackupPrintModal, setShowBackupPrintModal] = useState(false);
+    const [backupChips, setBackupChips] = useState([]);
+    const [generatingBackupId, setGeneratingBackupId] = useState(null);
+    const [bulkBackupLoading, setBulkBackupLoading] = useState(false);
 
     // Debounce search input by 300ms
     useEffect(() => {
@@ -121,6 +128,52 @@ export default function UsersPage() {
             toast.error(error.response?.data?.message || 'Failed to generate PIN');
         } finally {
             setGeneratingPin(null);
+        }
+    };
+
+    // Generate 10-turn emergency backup codes for a single user
+    const handleGenerateBackupCodes = async (u) => {
+        setGeneratingBackupId(u.id);
+        try {
+            const res = await adminAPI.generateBackupCodes(u.id);
+            if (res.data.success) {
+                setBackupChips([res.data.data]);
+                setShowBackupPrintModal(true);
+                toast.success(`Generated 10 backup codes for ${u.firstName} ${u.lastName}`);
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to generate backup codes');
+        } finally {
+            setGeneratingBackupId(null);
+        }
+    };
+
+    // Bulk generate 10-turn backup codes for all selected users
+    const handleBulkGenerateBackupCodes = async () => {
+        if (selectedUserIds.size === 0) return;
+        const ok = await confirm({
+            title: `Print Backup Slips for ${selectedUserIds.size} Users`,
+            message: `This will generate 10 fresh emergency backup codes for ${selectedUserIds.size} selected users and prepare the A4 print sheet with cutting guides. Any older backup codes for these users will be refreshed. Continue?`,
+            confirmText: 'Generate & Print Slips',
+            cancelText: 'Cancel',
+            type: 'primary'
+        });
+        if (!ok) return;
+
+        setBulkBackupLoading(true);
+        try {
+            const res = await adminAPI.bulkGenerateBackupCodes(Array.from(selectedUserIds));
+            if (res.data.success && res.data.data?.length > 0) {
+                setBackupChips(res.data.data);
+                setShowBackupPrintModal(true);
+                toast.success(`Generated backup slips for ${res.data.data.length} users`);
+            } else {
+                toast.error(res.data.message || 'No slips generated');
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to bulk generate backup codes');
+        } finally {
+            setBulkBackupLoading(false);
         }
     };
 
@@ -374,6 +427,15 @@ export default function UsersPage() {
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
                             <button
+                                onClick={handleBulkGenerateBackupCodes}
+                                disabled={bulkLoading || bulkBackupLoading}
+                                className="btn btn-sm bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-1.5 px-3 rounded-lg shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                                title="Generate 10-turn backup slips for selected users and open A4 print sheet"
+                            >
+                                <Printer className="w-3.5 h-3.5 text-white" />
+                                {bulkBackupLoading ? 'Preparing Slips...' : 'Print Backup Slips (A4)'}
+                            </button>
+                            <button
                                 onClick={handleBulkActivate}
                                 disabled={bulkLoading}
                                 className="btn btn-sm bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 text-xs font-semibold py-1.5 px-3 rounded-lg shadow-2xs"
@@ -486,6 +548,14 @@ export default function UsersPage() {
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-1">
+                                                    <button
+                                                        onClick={() => handleGenerateBackupCodes(u)}
+                                                        disabled={generatingBackupId === u.id}
+                                                        className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded"
+                                                        title={`Generate 10-Turn Emergency Backup Codes (${u.role})`}
+                                                    >
+                                                        <Ticket className="w-4 h-4" />
+                                                    </button>
                                                     {u.role === 'student' && (
                                                         <button
                                                             onClick={() => handleGeneratePin(u)}
@@ -564,7 +634,15 @@ export default function UsersPage() {
                                 </div>
 
                                 {/* Touch Actions Bar */}
-                                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-100">
+                                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-100 flex-wrap">
+                                    <button
+                                        onClick={() => handleGenerateBackupCodes(u)}
+                                        disabled={generatingBackupId === u.id}
+                                        className="py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 flex items-center justify-center gap-1.5 transition"
+                                        title="10-Turn Backup Codes"
+                                    >
+                                        <Ticket className="w-3.5 h-3.5" /> 10 Codes
+                                    </button>
                                     {u.role === 'student' && (
                                         <button
                                             onClick={() => handleGeneratePin(u)}
@@ -711,6 +789,17 @@ export default function UsersPage() {
                     </div>
                 </div>
             )}
+
+            {/* 10-Turn Emergency Backup Codes A4 Printable Modal */}
+            <BackupCodesPrintModal
+                isOpen={showBackupPrintModal}
+                onClose={() => {
+                    setShowBackupPrintModal(false);
+                    setBackupChips([]);
+                }}
+                chips={backupChips}
+                defaultSchoolName={user?.school?.name || user?.schoolName || ''}
+            />
         </div>
     );
 }

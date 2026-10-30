@@ -147,6 +147,13 @@ export const authAPI = {
     getMe: () => api.get('/auth/me'),
     changePassword: (data) => api.put('/auth/password', data),
     updateProfile: (data) => api.put('/auth/profile', data),
+    resetWithPin: (data) => api.post('/pin/reset-with-pin', data),
+    resetWithBackupCode: (data) => api.post('/pin/reset-with-backup-code', data),
+    loginWithBackupCode: (data) => api.post('/pin/login-with-backup-code', data),
+    getSecurityQuestionsList: () => api.get('/pin/security-questions/list'),
+    lookupSecurityQuestion: (email) => api.post('/pin/security-questions/lookup', { email }),
+    setupSecurityQuestion: (data) => api.post('/pin/security-questions/setup', data),
+    resetWithSecurityQuestion: (data) => api.post('/pin/reset-with-security-question', data),
 };
 
 // Files API - Cloudinary uploads
@@ -570,6 +577,9 @@ export const adminAPI = {
         studentIds, classId
     }),
     generatePin: (userId) => api.post(`/pin/${userId}/generate-pin`),
+    generateBackupCodes: (userId) => api.post(`/pin/backup-codes/${userId}/generate`),
+    bulkGenerateBackupCodes: (userIds) => api.post('/pin/backup-codes/bulk-generate', { userIds }),
+    getBackupCodesStatus: (userId) => api.get(`/pin/backup-codes/${userId}/status`),
 };
 
 // Audit Logs API

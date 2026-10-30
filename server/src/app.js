@@ -54,6 +54,7 @@ const quizRoutes = require('./routes/quiz.routes');
 const browserRoutes = require('./routes/browser.routes');
 const mathSolverRoutes = require('./routes/mathSolver.routes');
 const initQuizTables = require('./scripts/init-quiz-tables');
+const initBackupCodeTables = require('./scripts/init-backup-code-tables');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -202,8 +203,9 @@ app.use('/api/quiz', quizRoutes);
 app.use('/api/browser', browserRoutes);
 app.use('/api/whiteboard/math-solver', mathSolverRoutes);
 
-// Initialize quiz tables
+// Initialize quiz & backup code tables
 initQuizTables().catch(err => console.warn('[App] Quiz tables init warning:', err.message));
+initBackupCodeTables().catch(err => console.warn('[App] Backup code tables init warning:', err.message));
 
 const prisma = require('./config/database');
 
