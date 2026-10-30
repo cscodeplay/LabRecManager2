@@ -1026,18 +1026,46 @@ router.post('/:id/export', optionalAuth, asyncHandler(async (req, res) => {
         const sheets = content.sheets || [{ name: 'Sheet1', cells: {} }];
 
         sheets.forEach(sh => {
-            const aoa = [];
-            for (let r = 0; r < (sh.rows || 30); r++) {
-                const rowArr = [];
-                for (let c = 0; c < (sh.cols || 20); c++) {
-                    const colLetter = String.fromCharCode(65 + c);
-                    const cellKey = `${colLetter}${r + 1}`;
-                    const cellData = sh.cells ? sh.cells[cellKey] : null;
-                    rowArr.push(cellData && cellData.val !== undefined ? cellData.val : '');
+            const ws = {};
+            let maxR = 0;
+            let maxC = 0;
+            const cells = sh.cells || {};
+
+            Object.entries(cells).forEach(([key, cellData]) => {
+                if (!cellData) return;
+                const match = String(key).match(/^([A-Z]+)([0-9]+)$/);
+                if (!match) return;
+
+                let col = 0;
+                for (let i = 0; i < match[1].length; i++) {
+                    col = col * 26 + (match[1].charCodeAt(i) - 64);
                 }
-                aoa.push(rowArr);
-            }
-            const ws = XLSX.utils.aoa_to_sheet(aoa);
+                const cIdx = col - 1;
+                const rIdx = parseInt(match[2], 10) - 1;
+                maxR = Math.max(maxR, rIdx);
+                maxC = Math.max(maxC, cIdx);
+
+                const cellObj = {};
+                const val = cellData.val;
+                if (typeof val === 'number') {
+                    cellObj.t = 'n';
+                    cellObj.v = val;
+                } else if (typeof val === 'boolean') {
+                    cellObj.t = 'b';
+                    cellObj.v = val;
+                } else {
+                    cellObj.t = 's';
+                    cellObj.v = String(val ?? '');
+                }
+
+                if (cellData.formula && String(cellData.formula).startsWith('=')) {
+                    cellObj.f = String(cellData.formula).substring(1);
+                }
+
+                ws[key] = cellObj;
+            });
+
+            ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(maxR, 9), c: Math.max(maxC, 5) } });
             XLSX.utils.book_append_sheet(wb, ws, sh.name || 'Sheet1');
         });
 

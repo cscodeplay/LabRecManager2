@@ -60,8 +60,10 @@ import {
     HelpCircle,
     CheckSquare,
     Undo,
-    Redo
+    Redo,
+    Atom
 } from 'lucide-react';
+import * as xlsx from 'xlsx';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import OfficeThemeToggle from '@/components/OfficeThemeToggle';
@@ -69,6 +71,9 @@ import VersionHistoryDrawer from '@/components/VersionHistoryDrawer';
 import OfficeAppBlurLoader from '@/components/OfficeAppBlurLoader';
 import OfficeOpenImportMenu from '@/components/OfficeOpenImportMenu';
 import { useThemeStore } from '@/lib/store';
+import { evaluateCellFormula, SheetDependencyGraph, normalizeKey } from '@/lib/excelFormulaEngine';
+import LabIntelSidebar from './components/LabIntelSidebar';
+import InlineLabIntelBar from './components/InlineLabIntelBar';
 import {
     ResponsiveContainer,
     BarChart,
@@ -133,7 +138,12 @@ const FORMULA_SUGGESTIONS = [
     { name: 'LOWER', syntax: '=LOWER(text)', desc: 'Converts text to all lowercase letters' },
     { name: 'TRIM', syntax: '=TRIM(text)', desc: 'Removes all spaces from text except single spaces between words' },
     { name: 'TODAY', syntax: '=TODAY()', desc: 'Returns current date' },
-    { name: 'NOW', syntax: '=NOW()', desc: 'Returns current date and time timestamp' }
+    { name: 'NOW', syntax: '=NOW()', desc: 'Returns current date and time timestamp' },
+    { name: 'SLOPE', syntax: '=SLOPE(known_y_range, known_x_range)', desc: 'Calculates the slope of the linear regression calibration line' },
+    { name: 'INTERCEPT', syntax: '=INTERCEPT(known_y_range, known_x_range)', desc: 'Calculates the intercept of the linear regression line' },
+    { name: 'MOLARITY', syntax: '=MOLARITY(moles, volume_liters)', desc: 'Calculates molarity (mol/L) of a chemical solution' },
+    { name: 'DILUTION', syntax: '=DILUTION(c1, v1, c2)', desc: 'Calculates required final volume v2 = (c1*v1)/c2 in solution dilution' },
+    { name: 'PH', syntax: '=PH(h_concentration)', desc: 'Calculates pH from hydronium ion concentration: -log10[H+]' }
 ];
 
 // Worksheet tab color palette options
@@ -378,328 +388,9 @@ function matchesCriteria(val, criteria) {
     return strVal.toLowerCase() === strCrit.toLowerCase();
 }
 
-// Evaluate spreadsheet formulas in a cell (VLOOKUP, INDEX, MATCH, COUNTIF, SUMIF, AVERAGEIF, IFERROR, IFS, IF, SUM, AVERAGE, MIN, MAX, PRODUCT, MEDIAN, STDEV, ROUND, ROUNDUP, ROUNDDOWN, ABS, SQRT, INT, POWER, UPPER, LOWER, LEN, TRIM, CONCATENATE, LEFT, RIGHT, MID, arithmetic)
+// Evaluate spreadsheet formulas in a cell using comprehensive AST parser & engine
 function evaluateFormula(formulaStr, cells) {
-    if (!formulaStr || !String(formulaStr).startsWith('=')) return formulaStr;
-    const raw = String(formulaStr).substring(1).trim();
-    const cleanFormula = raw.toUpperCase();
-
-    try {
-        if (cleanFormula === 'TODAY()') return new Date().toLocaleDateString('en-IN');
-        if (cleanFormula === 'NOW()') return new Date().toLocaleString('en-IN');
-
-        // IFERROR(expr, fallback)
-        const ifErrorMatch = raw.match(/^IFERROR\s*\((.+)\)$/i);
-        if (ifErrorMatch) {
-            const args = splitTopLevelArgs(ifErrorMatch[1]);
-            if (args.length >= 2) {
-                let expr = args[0].trim();
-                if (!expr.startsWith('=')) expr = '=' + expr;
-                const fallback = args[1].trim().replace(/^["']|["']$/g, '');
-                const res = evaluateFormula(expr, cells);
-                if (String(res).startsWith('#')) return fallback;
-                return res;
-            }
-        }
-
-        // VLOOKUP(lookupVal, A1:C10, colIndex, [exact])
-        const vlookupMatch = raw.match(/^VLOOKUP\s*\((.+)\)$/i);
-        if (vlookupMatch) {
-            const args = splitTopLevelArgs(vlookupMatch[1]);
-            if (args.length >= 3) {
-                let lookup = args[0].trim().replace(/^["']|["']$/g, '');
-                if (parseCellCoord(lookup)) lookup = cells[lookup.toUpperCase()]?.val;
-                const rangeParts = args[1].trim().split(':');
-                if (rangeParts.length === 2) {
-                    const startC = rangeParts[0].trim().toUpperCase();
-                    const endC = rangeParts[1].trim().toUpperCase();
-                    const colIdx = parseInt(args[2].trim(), 10);
-                    const matrix = getRangeMatrix(startC, endC, cells);
-                    const target = String(lookup ?? '').toLowerCase();
-                    for (const row of matrix) {
-                        if (String(row[0] ?? '').toLowerCase() === target) {
-                            return row[colIdx - 1] !== undefined ? row[colIdx - 1] : '#REF!';
-                        }
-                    }
-                    return '#N/A';
-                }
-            }
-        }
-
-        // HLOOKUP(lookupVal, A1:Z4, rowIndex, [exact])
-        const hlookupMatch = raw.match(/^HLOOKUP\s*\((.+)\)$/i);
-        if (hlookupMatch) {
-            const args = splitTopLevelArgs(hlookupMatch[1]);
-            if (args.length >= 3) {
-                let lookup = args[0].trim().replace(/^["']|["']$/g, '');
-                if (parseCellCoord(lookup)) lookup = cells[lookup.toUpperCase()]?.val;
-                const rangeParts = args[1].trim().split(':');
-                if (rangeParts.length === 2) {
-                    const matrix = getRangeMatrix(rangeParts[0].trim().toUpperCase(), rangeParts[1].trim().toUpperCase(), cells);
-                    const rowIdx = parseInt(args[2].trim(), 10) - 1;
-                    const target = String(lookup ?? '').toLowerCase();
-                    if (matrix.length > 0) {
-                        for (let col = 0; col < matrix[0].length; col++) {
-                            if (String(matrix[0][col] ?? '').toLowerCase() === target) {
-                                return matrix[rowIdx] && matrix[rowIdx][col] !== undefined ? matrix[rowIdx][col] : '#REF!';
-                            }
-                        }
-                    }
-                    return '#N/A';
-                }
-            }
-        }
-
-        // INDEX(range, row, [col])
-        const indexMatch = raw.match(/^INDEX\s*\((.+)\)$/i);
-        if (indexMatch) {
-            const args = splitTopLevelArgs(indexMatch[1]);
-            if (args.length >= 2) {
-                const rangeParts = args[0].trim().split(':');
-                if (rangeParts.length === 2) {
-                    const matrix = getRangeMatrix(rangeParts[0].trim().toUpperCase(), rangeParts[1].trim().toUpperCase(), cells);
-                    const rowIdx = parseInt(args[1].trim(), 10) - 1;
-                    const colIdx = args[2] ? parseInt(args[2].trim(), 10) - 1 : 0;
-                    if (matrix[rowIdx] && matrix[rowIdx][colIdx] !== undefined) {
-                        return matrix[rowIdx][colIdx];
-                    }
-                    return '#REF!';
-                }
-            }
-        }
-
-        // MATCH(val, range, [type])
-        const matchMatch = raw.match(/^MATCH\s*\((.+)\)$/i);
-        if (matchMatch) {
-            const args = splitTopLevelArgs(matchMatch[1]);
-            if (args.length >= 2) {
-                let lookup = args[0].trim().replace(/^["']|["']$/g, '');
-                if (parseCellCoord(lookup)) lookup = cells[lookup.toUpperCase()]?.val;
-                const rangeParts = args[1].trim().split(':');
-                if (rangeParts.length === 2) {
-                    const vals = getRangeValues(rangeParts[0].trim().toUpperCase(), rangeParts[1].trim().toUpperCase(), cells);
-                    const target = String(lookup ?? '').toLowerCase();
-                    for (let i = 0; i < vals.length; i++) {
-                        if (String(vals[i] ?? '').toLowerCase() === target) {
-                            return i + 1;
-                        }
-                    }
-                    return '#N/A';
-                }
-            }
-        }
-
-        // COUNTIF(range, criteria)
-        const countifMatch = raw.match(/^COUNTIF\s*\(([A-Za-z]+[0-9]+):([A-Za-z]+[0-9]+)\s*,\s*(.+)\)$/i);
-        if (countifMatch) {
-            const vals = getRangeValues(countifMatch[1].toUpperCase(), countifMatch[2].toUpperCase(), cells);
-            let crit = countifMatch[3].trim().replace(/^["']|["']$/g, '');
-            if (parseCellCoord(crit)) crit = cells[crit.toUpperCase()]?.val;
-            return vals.filter(v => matchesCriteria(v, crit)).length;
-        }
-
-        // SUMIF(range, criteria, [sum_range])
-        const sumifMatch = raw.match(/^SUMIF\s*\(([A-Za-z]+[0-9]+):([A-Za-z]+[0-9]+)\s*,\s*(.+?)(?:\s*,\s*([A-Za-z]+[0-9]+):([A-Za-z]+[0-9]+))?\)$/i);
-        if (sumifMatch) {
-            const vals = getRangeValues(sumifMatch[1].toUpperCase(), sumifMatch[2].toUpperCase(), cells);
-            let crit = sumifMatch[3].trim().replace(/^["']|["']$/g, '');
-            if (parseCellCoord(crit)) crit = cells[crit.toUpperCase()]?.val;
-            const sumVals = sumifMatch[4] ? getRangeValues(sumifMatch[4].toUpperCase(), sumifMatch[5].toUpperCase(), cells) : vals;
-            let sum = 0;
-            vals.forEach((v, idx) => {
-                if (matchesCriteria(v, crit)) {
-                    const n = Number(sumVals[idx]);
-                    if (!isNaN(n)) sum += n;
-                }
-            });
-            return sum;
-        }
-
-        // AVERAGEIF(range, criteria, [avg_range])
-        const avgifMatch = raw.match(/^AVERAGEIF\s*\(([A-Za-z]+[0-9]+):([A-Za-z]+[0-9]+)\s*,\s*(.+?)(?:\s*,\s*([A-Za-z]+[0-9]+):([A-Za-z]+[0-9]+))?\)$/i);
-        if (avgifMatch) {
-            const vals = getRangeValues(avgifMatch[1].toUpperCase(), avgifMatch[2].toUpperCase(), cells);
-            let crit = avgifMatch[3].trim().replace(/^["']|["']$/g, '');
-            if (parseCellCoord(crit)) crit = cells[crit.toUpperCase()]?.val;
-            const avgVals = avgifMatch[4] ? getRangeValues(avgifMatch[4].toUpperCase(), avgifMatch[5].toUpperCase(), cells) : vals;
-            let sum = 0, count = 0;
-            vals.forEach((v, idx) => {
-                if (matchesCriteria(v, crit)) {
-                    const n = Number(avgVals[idx]);
-                    if (!isNaN(n)) { sum += n; count++; }
-                }
-            });
-            return count ? Number((sum / count).toFixed(2)) : 0;
-        }
-
-        // Range functions: SUM, AVERAGE, COUNT, COUNTA, MIN, MAX, PRODUCT, MEDIAN, STDEV
-        const rangeFnMatch = cleanFormula.match(/^(SUM|AVERAGE|COUNT|COUNTA|MIN|MAX|PRODUCT|MEDIAN|STDEV)\(([A-Z]+[0-9]+):([A-Z]+[0-9]+)\)$/);
-        if (rangeFnMatch) {
-            const fn = rangeFnMatch[1];
-            const vals = getRangeValues(rangeFnMatch[2], rangeFnMatch[3], cells);
-            const numVals = vals.map(v => Number(v)).filter(v => !isNaN(v) && v !== null && v !== '');
-
-            if (fn === 'SUM') return numVals.reduce((a, b) => a + b, 0);
-            if (fn === 'AVERAGE') return numVals.length ? Number((numVals.reduce((a, b) => a + b, 0) / numVals.length).toFixed(2)) : 0;
-            if (fn === 'COUNT') return numVals.length;
-            if (fn === 'COUNTA') return vals.filter(v => v !== undefined && v !== null && v !== '').length;
-            if (fn === 'MIN') return numVals.length ? Math.min(...numVals) : 0;
-            if (fn === 'MAX') return numVals.length ? Math.max(...numVals) : 0;
-            if (fn === 'PRODUCT') return numVals.length ? numVals.reduce((a, b) => a * b, 1) : 0;
-            if (fn === 'MEDIAN') {
-                if (!numVals.length) return 0;
-                const sorted = [...numVals].sort((a, b) => a - b);
-                const mid = Math.floor(sorted.length / 2);
-                return sorted.length % 2 !== 0 ? sorted[mid] : Number(((sorted[mid - 1] + sorted[mid]) / 2).toFixed(2));
-            }
-            if (fn === 'STDEV') {
-                if (numVals.length <= 1) return 0;
-                const avg = numVals.reduce((a, b) => a + b, 0) / numVals.length;
-                const variance = numVals.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / (numVals.length - 1);
-                return Number(Math.sqrt(variance).toFixed(2));
-            }
-        }
-
-        // IF(cond, trueVal, falseVal)
-        const ifMatch = raw.match(/^IF\s*\((.+)\)$/i);
-        if (ifMatch) {
-            const args = splitTopLevelArgs(ifMatch[1]);
-            if (args.length >= 3) {
-                let cond = args[0].trim();
-                const trueVal = args[1].trim().replace(/^["']|["']$/g, '');
-                const falseVal = args[2].trim().replace(/^["']|["']$/g, '');
-
-                cond = cond.replace(/([A-Z]+[0-9]+)/gi, (m) => {
-                    const cVal = cells[m.toUpperCase()]?.val;
-                    return !isNaN(Number(cVal)) ? Number(cVal) : JSON.stringify(cVal || '');
-                });
-                cond = cond.replace(/(?<![<>!=])=(?!=)/g, '===');
-                // eslint-disable-next-line no-new-func
-                const evalCond = Function(`return Boolean(${cond})`)();
-                return evalCond ? trueVal : falseVal;
-            }
-        }
-
-        // IFS(cond1, val1, cond2, val2, ...)
-        const ifsMatch = raw.match(/^IFS\s*\((.+)\)$/i);
-        if (ifsMatch) {
-            const args = splitTopLevelArgs(ifsMatch[1]);
-            for (let i = 0; i < args.length; i += 2) {
-                if (i + 1 < args.length) {
-                    let cond = args[i].trim();
-                    const val = args[i + 1].trim().replace(/^["']|["']$/g, '');
-                    cond = cond.replace(/([A-Z]+[0-9]+)/gi, (m) => {
-                        const cVal = cells[m.toUpperCase()]?.val;
-                        return !isNaN(Number(cVal)) ? Number(cVal) : JSON.stringify(cVal || '');
-                    });
-                    cond = cond.replace(/(?<![<>!=])=(?!=)/g, '===');
-                    // eslint-disable-next-line no-new-func
-                    const evalCond = Function(`return Boolean(${cond})`)();
-                    if (evalCond) return val;
-                }
-            }
-            return '#N/A';
-        }
-
-        // String functions: LEFT, RIGHT, MID
-        const leftMatch = raw.match(/^LEFT\s*\((.+?)(?:\s*,\s*(\d+))?\)$/i);
-        if (leftMatch) {
-            let str = leftMatch[1].trim().replace(/^["']|["']$/g, '');
-            if (parseCellCoord(str)) str = String(cells[str.toUpperCase()]?.val ?? '');
-            const len = leftMatch[2] ? parseInt(leftMatch[2], 10) : 1;
-            return str.substring(0, len);
-        }
-        const rightMatch = raw.match(/^RIGHT\s*\((.+?)(?:\s*,\s*(\d+))?\)$/i);
-        if (rightMatch) {
-            let str = rightMatch[1].trim().replace(/^["']|["']$/g, '');
-            if (parseCellCoord(str)) str = String(cells[str.toUpperCase()]?.val ?? '');
-            const len = rightMatch[2] ? parseInt(rightMatch[2], 10) : 1;
-            return str.substring(Math.max(0, str.length - len));
-        }
-        const midMatch = raw.match(/^MID\s*\((.+?)\s*,\s*(\d+)\s*,\s*(\d+)\)$/i);
-        if (midMatch) {
-            let str = midMatch[1].trim().replace(/^["']|["']$/g, '');
-            if (parseCellCoord(str)) str = String(cells[str.toUpperCase()]?.val ?? '');
-            const start = parseInt(midMatch[2], 10) - 1;
-            const len = parseInt(midMatch[3], 10);
-            return str.substring(start, start + len);
-        }
-
-        // ROUND, ROUNDUP, ROUNDDOWN
-        const roundMatch = cleanFormula.match(/^(ROUND|ROUNDUP|ROUNDDOWN)\(([A-Z]+[0-9]+|\d+(?:\.\d+)?)\s*,\s*(\d+)\)$/);
-        if (roundMatch) {
-            const fn = roundMatch[1];
-            let val = roundMatch[2];
-            if (parseCellCoord(val)) val = cells[val]?.val;
-            const digits = parseInt(roundMatch[3], 10);
-            const factor = Math.pow(10, digits);
-            const n = Number(val);
-            if (fn === 'ROUNDUP') return Number((Math.ceil(n * factor) / factor).toFixed(digits));
-            if (fn === 'ROUNDDOWN') return Number((Math.floor(n * factor) / factor).toFixed(digits));
-            return Number(n.toFixed(digits));
-        }
-
-        // ABS, SQRT, INT
-        const singleMathMatch = cleanFormula.match(/^(ABS|SQRT|INT)\(([A-Z]+[0-9]+|\d+(?:\.\d+)?)\)$/);
-        if (singleMathMatch) {
-            const fn = singleMathMatch[1];
-            let val = singleMathMatch[2];
-            if (parseCellCoord(val)) val = cells[val]?.val;
-            const n = Number(val);
-            if (fn === 'ABS') return Math.abs(n);
-            if (fn === 'SQRT') return n >= 0 ? Number(Math.sqrt(n).toFixed(2)) : '#NUM!';
-            if (fn === 'INT') return Math.floor(n);
-        }
-
-        // POWER(val, exp)
-        const powerMatch = cleanFormula.match(/^POWER\(([A-Z]+[0-9]+|\d+(?:\.\d+)?)\s*,\s*([A-Z]+[0-9]+|\d+(?:\.\d+)?)\)$/);
-        if (powerMatch) {
-            let base = powerMatch[1];
-            let exp = powerMatch[2];
-            if (parseCellCoord(base)) base = cells[base]?.val;
-            if (parseCellCoord(exp)) exp = cells[exp]?.val;
-            return Number(Math.pow(Number(base), Number(exp)).toFixed(2));
-        }
-
-        // String Functions: UPPER, LOWER, LEN, TRIM
-        const strFnMatch = raw.match(/^(UPPER|LOWER|LEN|TRIM)\((.+?)\)$/i);
-        if (strFnMatch) {
-            const fn = strFnMatch[1].toUpperCase();
-            let arg = strFnMatch[2].trim().replace(/^["']|["']$/g, '');
-            if (parseCellCoord(arg)) arg = String(cells[arg.toUpperCase()]?.val ?? '');
-            if (fn === 'UPPER') return arg.toUpperCase();
-            if (fn === 'LOWER') return arg.toLowerCase();
-            if (fn === 'LEN') return arg.length;
-            if (fn === 'TRIM') return arg.trim();
-        }
-
-        // CONCATENATE(a, b, ...)
-        const concatMatch = raw.match(/^CONCATENATE\((.+?)\)$/i);
-        if (concatMatch) {
-            const parts = concatMatch[1].split(',').map(p => {
-                let s = p.trim().replace(/^["']|["']$/g, '');
-                if (parseCellCoord(s)) s = String(cells[s.toUpperCase()]?.val ?? '');
-                return s;
-            });
-            return parts.join('');
-        }
-
-        // Simple arithmetic expression with cell coordinates replacement: e.g. B2*C2 or (A1+B1)/2
-        let expression = cleanFormula.replace(/([A-Z]+[0-9]+)/g, (match) => {
-            const cVal = cells[match]?.val;
-            return !isNaN(Number(cVal)) && cVal !== '' && cVal !== null ? Number(cVal) : 0;
-        });
-
-        if (/^[0-9+\-*/().\s%]+$/.test(expression)) {
-            expression = expression.replace(/(\d+(?:\.\d+)?)%/g, '($1/100)');
-            // eslint-disable-next-line no-new-func
-            const computed = Function(`return (${expression})`)();
-            return typeof computed === 'number' ? Number(computed.toFixed(2)) : computed;
-        }
-    } catch (err) {
-        return '#VALUE!';
-    }
-    return formulaStr;
+    return evaluateCellFormula(formulaStr, cells);
 }
 
 export default function ExcelEditorPage() {
@@ -792,6 +483,12 @@ export default function ExcelEditorPage() {
     const [activeSuggestionIdx, setActiveSuggestionIdx] = useState(0);
     const [hoveredSuggestionIdx, setHoveredSuggestionIdx] = useState(null);
     const [isFormulaBarFocused, setIsFormulaBarFocused] = useState(false);
+
+    // LabIntel AI State & Formula Drag Tracking
+    const [showLabIntel, setShowLabIntel] = useState(false);
+    const [showInlineAi, setShowInlineAi] = useState(false);
+    const [formulaDragStartKey, setFormulaDragStartKey] = useState(null);
+    const sheetDagRef = useRef(new SheetDependencyGraph());
 
     // Initial Loading & Error Resilience
     const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -1149,6 +846,202 @@ export default function ExcelEditorPage() {
         });
         triggerAutoSave();
     }, [pushUndoSnapshot, getSelectedCellKeys, activeSheetIndex, triggerAutoSave]);
+
+    // Robust cell edit commit with formula parsing, parentheses auto-closing and DAG dependency recalculation
+    const commitCellEdit = useCallback((cellKey, inputVal) => {
+        if (!cellKey) return;
+        const text = inputVal !== undefined ? inputVal : formulaInput;
+        const cleanText = String(text ?? '').trim();
+        pushUndoSnapshot();
+
+        setSheets(prevSheets => {
+            const nextSheets = [...prevSheets];
+            const targetSheet = { ...nextSheets[activeSheetIndex] };
+            const nextCells = { ...targetSheet.cells };
+
+            const isFormula = cleanText.startsWith('=');
+            let formula = isFormula ? cleanText : null;
+
+            // Auto-close open parentheses if unbalanced e.g. =SUM(B2:B4 -> =SUM(B2:B4)
+            if (formula) {
+                const openCount = (formula.match(/\(/g) || []).length;
+                const closeCount = (formula.match(/\)/g) || []).length;
+                if (openCount > closeCount) {
+                    formula += ')'.repeat(openCount - closeCount);
+                }
+            }
+
+            const val = formula ? evaluateCellFormula(formula, nextCells) : cleanText;
+            nextCells[cellKey] = {
+                ...(nextCells[cellKey] || {}),
+                val,
+                formula
+            };
+
+            // Recalculate downstream dependent cells in topological order
+            try {
+                sheetDagRef.current.rebuild(nextCells);
+                const affected = sheetDagRef.current.getRecalculationOrder(cellKey);
+                affected.forEach(depKey => {
+                    const depCell = nextCells[depKey];
+                    if (depCell && depCell.formula) {
+                        nextCells[depKey] = {
+                            ...depCell,
+                            val: evaluateCellFormula(depCell.formula, nextCells)
+                        };
+                    }
+                });
+            } catch (err) {
+                console.error('DAG recalculation error:', err);
+            }
+
+            targetSheet.cells = nextCells;
+            nextSheets[activeSheetIndex] = targetSheet;
+            return nextSheets;
+        });
+
+        setEditingCell(null);
+        setFormulaSuggestions([]);
+        triggerAutoSave();
+    }, [formulaInput, activeSheetIndex, pushUndoSnapshot, triggerAutoSave]);
+
+    // Structured LabIntel AI Context Extraction
+    const sheetContext = useMemo(() => {
+        const sample = {};
+        for (let r = 1; r <= 15; r++) {
+            for (let c = 0; c < 8; c++) {
+                const k = `${colToLetter(c)}${r}`;
+                if (cells[k]) {
+                    sample[k] = cells[k].formula || cells[k].val;
+                }
+            }
+        }
+        return {
+            sheetName: currentSheet?.name || 'Sheet1',
+            activeCell: selectedCell,
+            selectionRange: `${colToLetter(selectionRange.startCol)}${selectionRange.startRow}:${colToLetter(selectionRange.endCol)}${selectionRange.endRow}`,
+            sampleData: sample
+        };
+    }, [currentSheet, selectedCell, selectionRange, cells]);
+
+    // Apply LabIntel Actions (Formula, Reagent Table, Batch Calculation)
+    const handleApplyLabIntelAction = useCallback((action) => {
+        if (!action) return;
+        pushUndoSnapshot();
+
+        if (action.type === 'formula') {
+            const target = action.targetCell || selectedCell;
+            commitCellEdit(target, action.formula);
+            toast.success(`Applied formula ${action.formula} to ${target}`);
+        } else if (action.type === 'table') {
+            const start = parseCellCoord(action.startCell || selectedCell) || { col: 0, row: 1 };
+            setSheets(prev => {
+                const next = [...prev];
+                const sh = { ...next[activeSheetIndex] };
+                const nCells = { ...sh.cells };
+                
+                // Write headers
+                if (action.headers && Array.isArray(action.headers)) {
+                    action.headers.forEach((h, cIdx) => {
+                        const key = `${colToLetter(start.col + cIdx)}${start.row}`;
+                        nCells[key] = { ...(nCells[key] || {}), val: h, bold: true, bg: '#f1f5f9' };
+                    });
+                }
+                // Write rows
+                if (action.rows && Array.isArray(action.rows)) {
+                    const rOffset = action.headers ? 1 : 0;
+                    action.rows.forEach((row, rIdx) => {
+                        const rNum = start.row + rOffset + rIdx;
+                        if (Array.isArray(row)) {
+                            row.forEach((cellVal, cIdx) => {
+                                const key = `${colToLetter(start.col + cIdx)}${rNum}`;
+                                const isF = String(cellVal).startsWith('=');
+                                nCells[key] = {
+                                    ...(nCells[key] || {}),
+                                    formula: isF ? cellVal : null,
+                                    val: isF ? evaluateCellFormula(cellVal, nCells) : cellVal
+                                };
+                            });
+                        }
+                    });
+                }
+                sh.cells = nCells;
+                next[activeSheetIndex] = sh;
+                return next;
+            });
+            toast.success('Generated scientific table applied to sheet!');
+            triggerAutoSave();
+        } else if (action.type === 'batch_update' && action.updates) {
+            setSheets(prev => {
+                const next = [...prev];
+                const sh = { ...next[activeSheetIndex] };
+                const nCells = { ...sh.cells };
+                Object.entries(action.updates).forEach(([k, v]) => {
+                    const isF = String(v).startsWith('=');
+                    nCells[k] = {
+                        ...(nCells[k] || {}),
+                        formula: isF ? v : null,
+                        val: isF ? evaluateCellFormula(v, nCells) : v
+                    };
+                });
+                sh.cells = nCells;
+                next[activeSheetIndex] = sh;
+                return next;
+            });
+            toast.success('Applied AI spreadsheet updates');
+            triggerAutoSave();
+        }
+    }, [selectedCell, activeSheetIndex, commitCellEdit, pushUndoSnapshot, triggerAutoSave]);
+
+    // Native Excel (.xlsx, .csv) File Upload Handler
+    const handleNativeFileUpload = useCallback(async (file) => {
+        if (!file) return;
+        try {
+            setIsInitialLoading(true);
+            toast.loading(`Importing ${file.name}...`, { id: 'excel-import' });
+            const data = await file.arrayBuffer();
+            const workbook = xlsx.read(data, { cellFormula: true, cellStyles: true });
+
+            const importedSheets = workbook.SheetNames.map(sheetName => {
+                const worksheet = workbook.Sheets[sheetName];
+                const newCells = {};
+
+                Object.keys(worksheet).forEach(cellKey => {
+                    if (cellKey.startsWith('!')) return;
+                    const c = worksheet[cellKey];
+                    if (!c) return;
+
+                    const formula = c.f ? `=${c.f}` : null;
+                    const val = c.v !== undefined ? c.v : (c.w || '');
+
+                    newCells[cellKey.toUpperCase()] = {
+                        val: formula ? evaluateCellFormula(formula, newCells) : val,
+                        formula: formula,
+                        bold: c.s?.font?.bold || false,
+                        italic: c.s?.font?.italic || false
+                    };
+                });
+
+                return {
+                    name: sheetName,
+                    cells: newCells
+                };
+            });
+
+            if (importedSheets.length > 0) {
+                pushUndoSnapshot();
+                setSheets(importedSheets);
+                setActiveSheetIndex(0);
+                setTitle(file.name.replace(/\.[^/.]+$/, ''));
+                toast.success(`Successfully imported ${file.name}!`, { id: 'excel-import' });
+            }
+        } catch (err) {
+            console.error('Failed to parse spreadsheet file:', err);
+            toast.error('Failed to import file. Please check format.', { id: 'excel-import' });
+        } finally {
+            setIsInitialLoading(false);
+        }
+    }, [pushUndoSnapshot]);
 
     // Start Column Width Resizing
     const handleStartColResize = (e, colLetter) => {
@@ -2347,7 +2240,7 @@ export default function ExcelEditorPage() {
         toast.success('Cleared selected cells');
     }, [getSelectionBoundingBox, activeSheetIndex, multiSelectedCells]);
 
-    // Formula Input and Autocomplete logic
+    // Formula Input and Autocomplete logic (Standard MS Excel & Google Sheets Behavior)
     const handleFormulaInputChange = (text) => {
         // Prevent duplicate equals signs (e.g. "==" -> "=")
         let cleanText = text;
@@ -2355,34 +2248,56 @@ export default function ExcelEditorPage() {
             cleanText = cleanText.replace(/^=+/, '=');
         }
         setFormulaInput(cleanText);
-        updateCell(selectedCell, {
-            val: cleanText.startsWith('=') ? evaluateFormula(cleanText, cells) : cleanText,
-            formula: cleanText.startsWith('=') ? cleanText : null
-        });
 
-        if (cleanText.startsWith('=')) {
-            const tokenMatch = cleanText.match(/([A-Z0-9_]+)$/i);
-            if (tokenMatch) {
-                const query = tokenMatch[1].toUpperCase();
-                const matches = FORMULA_SUGGESTIONS.filter(item => 
-                    item.name.startsWith(query) || item.name.includes(query)
-                );
+        // Only search for formula suggestions if text starts with '='
+        if (!cleanText.startsWith('=')) {
+            setFormulaSuggestions([]);
+            return;
+        }
+
+        // Suppress suggestions strictly inside quotes (string literals)
+        const quoteCount = (cleanText.match(/"/g) || []).length;
+        if (quoteCount % 2 !== 0) {
+            setFormulaSuggestions([]);
+            return;
+        }
+
+        // Suppress suggestions when typing numbers, closing brackets, commas, quotes, colons or spaces
+        if (/[\)\]":\s0-9]$/.test(cleanText)) {
+            setFormulaSuggestions([]);
+            return;
+        }
+
+        // Match unquoted function name token after '=', '(', comma, or operator
+        const tokenMatch = cleanText.match(/(?:^=|[(\,+\-*\/^&<>=]\s*)([A-Za-z]{1,15})$/);
+        if (tokenMatch) {
+            const query = tokenMatch[1].toUpperCase();
+
+            // Suppress if the token is a valid cell coordinate (e.g. A1, B2, C10, AA5)
+            if (/^[A-Z]{1,3}[0-9]+$/i.test(query) || (/^[A-Z]{1,2}$/i.test(query) && query.length <= 2 && /[0-9]/.test(cleanText.slice(-3)))) {
+                setFormulaSuggestions([]);
+                return;
+            }
+
+            const prefixMatches = FORMULA_SUGGESTIONS.filter(item => item.name.startsWith(query));
+            const containsMatches = FORMULA_SUGGESTIONS.filter(item => !item.name.startsWith(query) && item.name.includes(query));
+            const matches = [...prefixMatches, ...containsMatches];
+
+            if (matches.length > 0) {
                 setFormulaSuggestions(matches);
                 setActiveSuggestionIdx(0);
             } else {
-                // When only "=", show popular standard functions
-                const popular = ['SUM', 'AVERAGE', 'COUNT', 'MIN', 'MAX', 'IF', 'VLOOKUP'];
-                setFormulaSuggestions(FORMULA_SUGGESTIONS.filter(item => popular.includes(item.name)));
-                setActiveSuggestionIdx(0);
+                setFormulaSuggestions([]);
             }
         } else {
+            // Do not pop up suggestions when just "=" or inside empty parentheses unless user types letters
             setFormulaSuggestions([]);
         }
     };
 
-    const handleSelectFormulaSuggestion = (item) => {
+    const handleSelectFormulaSuggestion = useCallback((item) => {
         if (!item) return;
-        const tokenMatch = formulaInput.match(/([A-Z_]+)$/i);
+        const tokenMatch = formulaInput.match(/(?:^=|[(\,+\-*\/^&<>=]\s*)([A-Za-z]{1,15})$/);
         let newFormula = formulaInput;
         if (tokenMatch) {
             newFormula = formulaInput.slice(0, -tokenMatch[1].length) + item.name + '(';
@@ -2393,12 +2308,8 @@ export default function ExcelEditorPage() {
         }
 
         setFormulaInput(newFormula);
-        updateCell(selectedCell, {
-            formula: newFormula,
-            val: evaluateFormula(newFormula, cells)
-        });
         setFormulaSuggestions([]);
-    };
+    }, [formulaInput]);
 
     // Interactive formula cell selection on grid click
     const handleFormulaCellClick = (cellCoord) => {
@@ -2417,16 +2328,12 @@ export default function ExcelEditorPage() {
         }
 
         setFormulaInput(f);
-        updateCell(editingCell || selectedCell, {
-            formula: f,
-            val: evaluateFormula(f, cells)
-        });
     };
 
     // Interactive formula range drag (e.g. dragging across A1:A10 while editing =SUM() )
     const handleFormulaRangeDrag = (startKey, endKey) => {
         let f = formulaInput || '';
-        const rangeText = startKey === endKey ? startKey : `${startKey}:${endKey}`;
+        const rangeText = (!endKey || startKey === endKey) ? startKey : `${startKey}:${endKey}`;
         const trailingRange = f.match(/([A-Z]+[0-9]+(?::[A-Z]+[0-9]+)?)$/);
         if (trailingRange) {
             f = f.slice(0, -trailingRange[1].length) + rangeText;
@@ -2437,10 +2344,6 @@ export default function ExcelEditorPage() {
         }
 
         setFormulaInput(f);
-        updateCell(editingCell || selectedCell, {
-            formula: f,
-            val: evaluateFormula(f, cells)
-        });
     };
 
     // Apply Chart Data Range from Current Sheet Selection
@@ -2487,6 +2390,13 @@ export default function ExcelEditorPage() {
     // Comprehensive Keyboard Navigation & Shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {
+            // LabIntel AI Inline shortcut (Ctrl+K / Cmd+K)
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                setShowInlineAi(prev => !prev);
+                return;
+            }
+
             // Formula autocomplete popup keyboard navigation
             if (formulaSuggestions.length > 0) {
                 if (e.key === 'ArrowDown') {
@@ -2497,11 +2407,12 @@ export default function ExcelEditorPage() {
                     e.preventDefault();
                     setActiveSuggestionIdx(prev => (prev - 1 + formulaSuggestions.length) % formulaSuggestions.length);
                     return;
-                } else if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                } else if (e.key === 'Tab') {
                     e.preventDefault();
                     handleSelectFormulaSuggestion(formulaSuggestions[activeSuggestionIdx]);
                     return;
                 } else if (e.key === 'Escape') {
+                    e.preventDefault();
                     setFormulaSuggestions([]);
                     return;
                 }
@@ -2554,8 +2465,7 @@ export default function ExcelEditorPage() {
             if (isEditingActive) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    setEditingCell(null);
-                    setFormulaSuggestions([]);
+                    commitCellEdit(editingCell, formulaInput);
                     const cur = parseCellCoord(editingCell);
                     if (cur && cur.row < rowCount) {
                         const nextKey = `${colToLetter(cur.col)}${cur.row + 1}`;
@@ -2575,6 +2485,7 @@ export default function ExcelEditorPage() {
                 if (activeId === 'spreadsheet-formula-bar') {
                     if (e.key === 'Enter') {
                         e.preventDefault();
+                        commitCellEdit(selectedCell, formulaInput);
                         document.activeElement.blur();
                         const cur = parseCellCoord(selectedCell);
                         if (cur && cur.row < rowCount) {
@@ -2748,13 +2659,11 @@ export default function ExcelEditorPage() {
                 e.preventDefault();
                 setEditingCell(selectedCell);
                 setFormulaInput('=');
-                updateCell(selectedCell, { formula: '=', val: '' });
                 handleFormulaInputChange('=');
             } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) {
                 // Printable character starts editing directly
                 setEditingCell(selectedCell);
                 setFormulaInput(e.key);
-                updateCell(selectedCell, { val: e.key, formula: null });
             }
         };
 
@@ -2762,7 +2671,7 @@ export default function ExcelEditorPage() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [
         formulaSuggestions, activeSuggestionIdx, editingCell, selectedCell, rowCount, colCount, cells,
-        selectionAnchor, selectionEndpoint, scrollCellIntoView,
+        selectionAnchor, selectionEndpoint, scrollCellIntoView, formulaInput, commitCellEdit,
         handleCopy, handleCut, handlePaste, handleClearSelectedCells, handleSelectFormulaSuggestion, handleUndo, handleRedo
     ]);
 
@@ -3021,7 +2930,10 @@ export default function ExcelEditorPage() {
             setFontColorMenuOpen(false);
             setShowExportMenu(false);
         };
-        const handleMouseUp = () => setIsDraggingRange(false);
+        const handleMouseUp = () => {
+            setIsDraggingRange(false);
+            setFormulaDragStartKey(null);
+        };
         window.addEventListener('click', closeMenu);
         window.addEventListener('mouseup', handleMouseUp);
         return () => {
@@ -3058,6 +2970,7 @@ export default function ExcelEditorPage() {
                             currentApp="excel"
                             accept=".xlsx,.xls,.csv"
                             onOpenOfficeDoc={handleOpenOfficeDoc}
+                            onFileSelected={handleNativeFileUpload}
                         />
                         <div className={`h-4 w-px ${isDark ? 'bg-slate-800' : 'bg-slate-200'}`} />
 
@@ -3149,6 +3062,23 @@ export default function ExcelEditorPage() {
                         >
                             <History size={13} className="text-emerald-500" />
                             <span className="hidden md:inline">History</span>
+                        </button>
+
+                        {/* LabIntel AI Assistant Toggle Button */}
+                        <button
+                            type="button"
+                            onClick={() => setShowLabIntel(!showLabIntel)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                                showLabIntel
+                                    ? 'bg-emerald-600 text-white shadow-sm'
+                                    : isDark
+                                    ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                            }`}
+                            title="Toggle LabIntel AI Assistant (Copilot for Scientific Spreadsheets)"
+                        >
+                            <Atom size={14} className={showLabIntel ? 'text-white' : 'text-emerald-500'} />
+                            <span className="hidden sm:inline font-medium">LabIntel AI</span>
                         </button>
 
                         {/* Chart Inspector Toggle Button */}
@@ -3951,8 +3881,16 @@ export default function ExcelEditorPage() {
                         {selectedCell}
                     </div>
 
-                    <div className="text-slate-400 font-serif italic text-xs font-bold px-1 select-none">
-                        fx
+                    <div className="text-slate-400 font-serif italic text-xs font-bold px-1 select-none flex items-center gap-1.5">
+                        <span>fx</span>
+                        <button
+                            type="button"
+                            onClick={() => setShowInlineAi(prev => !prev)}
+                            className="p-1 rounded hover:bg-emerald-500/15 text-emerald-500 transition"
+                            title="Ask LabIntel AI to write formula (Cmd+K)"
+                        >
+                            <Atom size={13} />
+                        </button>
                     </div>
 
                     <input
@@ -3961,7 +3899,43 @@ export default function ExcelEditorPage() {
                         value={formulaInput}
                         onChange={(e) => handleFormulaInputChange(e.target.value)}
                         onFocus={() => setIsFormulaBarFocused(true)}
-                        onBlur={() => setTimeout(() => setIsFormulaBarFocused(false), 200)}
+                        onBlur={() => {
+                            commitCellEdit(selectedCell, formulaInput);
+                            setTimeout(() => setIsFormulaBarFocused(false), 200);
+                        }}
+                        onKeyDown={(e) => {
+                            if (formulaSuggestions.length > 0) {
+                                if (e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                    setActiveSuggestionIdx(prev => (prev + 1) % formulaSuggestions.length);
+                                    return;
+                                } else if (e.key === 'ArrowUp') {
+                                    e.preventDefault();
+                                    setActiveSuggestionIdx(prev => (prev - 1 + formulaSuggestions.length) % formulaSuggestions.length);
+                                    return;
+                                } else if (e.key === 'Tab') {
+                                    e.preventDefault();
+                                    handleSelectFormulaSuggestion(formulaSuggestions[activeSuggestionIdx]);
+                                    return;
+                                } else if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    setFormulaSuggestions([]);
+                                    return;
+                                }
+                            }
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                commitCellEdit(selectedCell, formulaInput);
+                                const cur = parseCellCoord(selectedCell);
+                                if (cur && cur.row < rowCount) {
+                                    const nextKey = `${colToLetter(cur.col)}${cur.row + 1}`;
+                                    setSelectedCell(nextKey);
+                                    setSelectionRange({ startCol: cur.col, startRow: cur.row + 1, endCol: cur.col, endRow: cur.row + 1 });
+                                    const nextData = cells[nextKey] || {};
+                                    setFormulaInput(nextData.formula || (nextData.val !== undefined ? String(nextData.val) : ''));
+                                }
+                            }
+                        }}
                         placeholder="Enter value or formula (e.g. =SUM(B2:B4) or =B2+C2 or 150000)"
                         className={`flex-1 border rounded px-3 py-1 text-xs font-mono focus:outline-none transition ${
                             isDark ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-white border-slate-300 text-slate-900 focus:border-emerald-600'
@@ -4272,6 +4246,7 @@ export default function ExcelEditorPage() {
                                                                             // 2. Interactive formula cell selection if typing formula
                                                                             const isTypingFormula = formulaInput.startsWith('=') && (isFormulaBarFocused || editingCell);
                                                                             if (isTypingFormula && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+                                                                                setFormulaDragStartKey(cellKey);
                                                                                 handleFormulaCellClick(cellKey);
                                                                                 setIsDraggingRange(true);
                                                                                 return;
@@ -4335,7 +4310,7 @@ export default function ExcelEditorPage() {
                                                                             // 2. If typing formula and dragging across cells to form a range reference
                                                                             const isTypingFormula = formulaInput.startsWith('=') && (isFormulaBarFocused || editingCell);
                                                                             if (isTypingFormula && isDraggingRange) {
-                                                                                handleFormulaRangeDrag(cellKey);
+                                                                                handleFormulaRangeDrag(formulaDragStartKey || cellKey, cellKey);
                                                                                 return;
                                                                             }
 
@@ -4421,14 +4396,7 @@ export default function ExcelEditorPage() {
                                                                                     value={formulaInput}
                                                                                     onChange={(e) => handleFormulaInputChange(e.target.value)}
                                                                                     onBlur={() => {
-                                                                                        setTimeout(() => {
-                                                                                            updateCell(cellKey, {
-                                                                                                val: formulaInput.startsWith('=') ? evaluateFormula(formulaInput, cells) : formulaInput,
-                                                                                                formula: formulaInput.startsWith('=') ? formulaInput : null
-                                                                                            });
-                                                                                            setEditingCell(null);
-                                                                                            setFormulaSuggestions([]);
-                                                                                        }, 150);
+                                                                                        commitCellEdit(cellKey, formulaInput);
                                                                                     }}
                                                                                     onKeyDown={(e) => {
                                                                                         if (formulaSuggestions.length > 0) {
@@ -4440,7 +4408,7 @@ export default function ExcelEditorPage() {
                                                                                                 e.preventDefault();
                                                                                                 setActiveSuggestionIdx(prev => (prev - 1 + formulaSuggestions.length) % formulaSuggestions.length);
                                                                                                 return;
-                                                                                            } else if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                                                                                            } else if (e.key === 'Tab') {
                                                                                                 e.preventDefault();
                                                                                                 handleSelectFormulaSuggestion(formulaSuggestions[activeSuggestionIdx]);
                                                                                                 return;
@@ -4452,12 +4420,7 @@ export default function ExcelEditorPage() {
                                                                                         }
                                                                                         if (e.key === 'Enter') {
                                                                                             e.preventDefault();
-                                                                                            updateCell(cellKey, {
-                                                                                                val: formulaInput.startsWith('=') ? evaluateFormula(formulaInput, cells) : formulaInput,
-                                                                                                formula: formulaInput.startsWith('=') ? formulaInput : null
-                                                                                            });
-                                                                                            setEditingCell(null);
-                                                                                            setFormulaSuggestions([]);
+                                                                                            commitCellEdit(cellKey, formulaInput);
                                                                                             const cur = parseCellCoord(cellKey);
                                                                                             if (cur && cur.row < rowCount) {
                                                                                                 const nextKey = `${colToLetter(cur.col)}${cur.row + 1}`;
@@ -4465,15 +4428,12 @@ export default function ExcelEditorPage() {
                                                                                                 setSelectionAnchor({ col: cur.col, row: cur.row + 1 });
                                                                                                 setSelectionEndpoint({ col: cur.col, row: cur.row + 1 });
                                                                                                 setSelectionRange({ startCol: cur.col, startRow: cur.row + 1, endCol: cur.col, endRow: cur.row + 1 });
+                                                                                                const nextData = cells[nextKey] || {};
+                                                                                                setFormulaInput(nextData.formula || (nextData.val !== undefined ? String(nextData.val) : ''));
                                                                                             }
                                                                                         } else if (e.key === 'Tab') {
                                                                                             e.preventDefault();
-                                                                                            updateCell(cellKey, {
-                                                                                                val: formulaInput.startsWith('=') ? evaluateFormula(formulaInput, cells) : formulaInput,
-                                                                                                formula: formulaInput.startsWith('=') ? formulaInput : null
-                                                                                            });
-                                                                                            setEditingCell(null);
-                                                                                            setFormulaSuggestions([]);
+                                                                                            commitCellEdit(cellKey, formulaInput);
                                                                                             const cur = parseCellCoord(cellKey);
                                                                                             if (cur && cur.col < colCount - 1) {
                                                                                                 const nextKey = `${colToLetter(cur.col + 1)}${cur.row}`;
@@ -4481,10 +4441,14 @@ export default function ExcelEditorPage() {
                                                                                                 setSelectionAnchor({ col: cur.col + 1, row: cur.row });
                                                                                                 setSelectionEndpoint({ col: cur.col + 1, row: cur.row });
                                                                                                 setSelectionRange({ startCol: cur.col + 1, startRow: cur.row, endCol: cur.col + 1, endRow: cur.row });
+                                                                                                const nextData = cells[nextKey] || {};
+                                                                                                setFormulaInput(nextData.formula || (nextData.val !== undefined ? String(nextData.val) : ''));
                                                                                             }
                                                                                         } else if (e.key === 'Escape') {
                                                                                             setEditingCell(null);
                                                                                             setFormulaSuggestions([]);
+                                                                                            const curData = cells[cellKey] || {};
+                                                                                            setFormulaInput(curData.formula || (curData.val !== undefined ? String(curData.val) : ''));
                                                                                         }
                                                                                     }}
                                                                                     className={`w-full h-full font-mono text-xs px-2 outline-none shadow-md ${
@@ -4588,9 +4552,9 @@ export default function ExcelEditorPage() {
                                         if (rect.bottom + 240 > window.innerHeight) {
                                             top = Math.max(10, rect.top - 230);
                                         } else {
-                                            top = rect.bottom + 4;
+                                            top = rect.bottom + 2;
                                         }
-                                        left = Math.max(10, Math.min(rect.left, window.innerWidth - 480));
+                                        left = Math.max(10, Math.min(rect.left, window.innerWidth - 240));
                                     }
                                 }
 
@@ -4612,7 +4576,7 @@ export default function ExcelEditorPage() {
                                         >
                                             <div className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-700/30 flex justify-between">
                                                 <span>Function</span>
-                                                <span>Tab / ↵</span>
+                                                <span>Tab</span>
                                             </div>
                                             <div className="py-0.5 flex flex-col gap-0.5">
                                                 {formulaSuggestions.map((item, idx) => {
@@ -4666,7 +4630,7 @@ export default function ExcelEditorPage() {
                                                     {displayedDetailItem.desc}
                                                 </div>
                                                 <div className="text-[9px] text-slate-400 italic pt-1 border-t border-slate-500/10">
-                                                    Press <kbd className="px-1 py-0.5 rounded bg-slate-800 text-slate-200 font-mono text-[9px] border border-slate-700">Tab</kbd> or <kbd className="px-1 py-0.5 rounded bg-slate-800 text-slate-200 font-mono text-[9px] border border-slate-700">Enter</kbd> to insert
+                                                    Press <kbd className="px-1 py-0.5 rounded bg-slate-800 text-slate-200 font-mono text-[9px] border border-slate-700">Tab</kbd> to insert
                                                 </div>
                                             </div>
                                         )}
@@ -5135,6 +5099,29 @@ export default function ExcelEditorPage() {
                         </div>
                     </footer>
                 </main>
+
+                {/* LabIntel AI Scientific Copilot Sidebar */}
+                <LabIntelSidebar
+                    isOpen={showLabIntel}
+                    onClose={() => setShowLabIntel(false)}
+                    isDark={isDark}
+                    sheetContext={sheetContext}
+                    onApplyAction={handleApplyLabIntelAction}
+                />
+
+                {/* Inline LabIntel AI Bar (Cmd+K) */}
+                <InlineLabIntelBar
+                    isOpen={showInlineAi}
+                    onClose={() => setShowInlineAi(false)}
+                    isDark={isDark}
+                    activeCell={selectedCell}
+                    sheetContext={sheetContext}
+                    onApplyFormula={(formula) => {
+                        commitCellEdit(selectedCell, formula);
+                        setShowInlineAi(false);
+                        toast.success(`Formula ${formula} applied to ${selectedCell}`);
+                    }}
+                />
 
                 {/* 3. Right-Side Collapsible Chart Configuration Inspector Panel */}
                 {showChartInspector && (

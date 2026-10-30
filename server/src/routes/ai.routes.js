@@ -792,6 +792,97 @@ router.post('/scan-question-image', optionalAuth, safeImageUpload, asyncHandler(
     }
 }));
 
+/**
+ * @route   POST /api/ai/sheets-copilot
+ * @desc    LabIntel AI Assistant for LabSheets (powered by Gemini / AI Engine)
+ * @access  OptionalAuth
+ */
+router.post('/sheets-copilot', optionalAuth, asyncHandler(async (req, res) => {
+    const { prompt, sheetContext = {}, actionType = 'auto' } = req.body;
+
+    if (!prompt || !prompt.trim()) {
+        return res.status(400).json({ success: false, message: 'Prompt instruction is required' });
+    }
+
+    const systemPrompt = `You are LabIntel AI, an advanced scientific and laboratory spreadsheet intelligence assistant for LabSheets in LabRecManager.
+Your goal is to assist students, instructors, and lab researchers with data calculations, scientific analysis, formula generation, and table creation.
+
+SPREADSHEET CONTEXT:
+Sheet Title: ${sheetContext.title || 'Untitled Sheet'}
+Active Sheet: ${sheetContext.activeSheet || 'Sheet1'}
+Available Headers: ${JSON.stringify(sheetContext.headers || [])}
+Active Cell / Selection: ${sheetContext.activeCell || 'A1'} (Range: ${sheetContext.selectedRange || 'A1'})
+Sample Sheet Data (first few rows):
+${JSON.stringify(sheetContext.sampleRows || [], null, 2)}
+
+INSTRUCTIONS & CAPABILITIES:
+1. Always output valid JSON adhering strictly to this schema:
+{
+  "explanation": "Clear explanation of what was analyzed or calculated (Markdown supported)",
+  "action": "insert_formula" | "insert_column" | "generate_table" | "format_cells" | "insights",
+  "formula": "=SUM(B2:B10)",
+  "targetCell": "D2",
+  "columnData": {
+    "header": "Total Marks",
+    "targetColLetter": "E",
+    "formulas": ["=B2+C2", "=B3+C3"]
+  },
+  "tableData": {
+    "startCell": "A1",
+    "headers": ["Reagent", "CAS", "Molarity", "pH"],
+    "rows": [
+      ["Sodium Chloride", "7647-14-5", "0.1 M", "7.0"],
+      ["Hydrochloric Acid", "7647-01-0", "0.1 M", "1.0"]
+    ]
+  },
+  "insights": [
+    "Key finding 1...",
+    "Key finding 2..."
+  ]
+}
+
+2. FORMULA SYNTAX RULES:
+- Use standard Excel syntax: SUM, AVERAGE, MIN, MAX, COUNT, COUNTIF, SUMIF, IF, VLOOKUP, INDEX, MATCH, SLOPE, INTERCEPT, STDEV, ROUND, DILUTION, MOLARITY, PH.
+- Never output markdown code fences (\`\`\`json) outside the JSON object; return valid JSON only.
+- Ensure cell references correctly match the column letters and row numbers provided in the context.`;
+
+    try {
+        const aiResponse = await aiService.executeChatCompletion({
+            messages: [{ role: 'user', content: prompt.trim() }],
+            systemPrompt,
+            preferredProvider: 'gemini',
+            temperature: 0.1,
+            jsonMode: true
+        });
+
+        const rawText = aiResponse.text || aiResponse.content || '';
+        let parsedData = null;
+        try {
+            const cleanContent = rawText.replace(/^```json/i, '').replace(/```$/i, '').trim();
+            parsedData = JSON.parse(cleanContent);
+        } catch {
+            parsedData = {
+                explanation: rawText,
+                action: 'insights',
+                insights: [rawText]
+            };
+        }
+
+        res.json({
+            success: true,
+            provider: aiResponse.provider || 'gemini',
+            model: aiResponse.model || 'gemini-2.5-flash',
+            data: parsedData
+        });
+    } catch (err) {
+        console.error('[LabIntel Route Error]:', err.message);
+        res.status(502).json({
+            success: false,
+            message: err.message || 'LabIntel AI service encountered an error'
+        });
+    }
+}));
+
 module.exports = router;
 
 
