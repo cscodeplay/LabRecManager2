@@ -14,7 +14,7 @@ const { createStudentProfileExtras, createBulkProfileExtras } = require('../util
  * @access  Private (Admin, Principal)
  */
 router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
-    const { page = 1, limit = 20, role, search, isActive, classId, all } = req.query;
+    const { page = 1, limit = 20, role, search, isActive, classId, accessStatus, all } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     // Get academic session from header (skip if 'all' is passed for sharing across sessions)
@@ -24,6 +24,19 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
 
     if (role) where.role = role;
     if (isActive !== undefined) where.isActive = isActive === 'true';
+
+    // Access & Password status filtering
+    if (accessStatus === 'password_set') {
+        where.mustChangePassword = false;
+    } else if (accessStatus === 'pending_first_login') {
+        where.mustChangePassword = true;
+    } else if (accessStatus === 'has_backup_codes') {
+        where.backupCodes = { some: {} };
+    } else if (accessStatus === 'used_backup_codes') {
+        where.backupCodes = { some: { isUsed: true } };
+    } else if (accessStatus === 'no_backup_codes') {
+        where.backupCodes = { none: {} };
+    }
 
     if (search) {
         where.OR = [
@@ -58,9 +71,9 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
         };
     }
 
-    const schoolWhere = { ...(req.user.schoolId && { schoolId: req.user.schoolId }) };
+    const schoolIdParam = req.user.schoolId || null;
 
-    const [users, total, totalSchoolUsers, activeSchoolUsers, inactiveSchoolUsers, studentCount, instructorCount] = await Promise.all([
+    const [users, total, statsRows, backupStatsRows] = await Promise.all([
         prisma.user.findMany({
             where,
             skip,
@@ -82,6 +95,19 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
                 isActive: true,
                 lastLogin: true,
                 createdAt: true,
+                mustChangePassword: true,
+                resetPin: true,
+                pinExpiresAt: true,
+                securityQuestion: true,
+                backupCodes: {
+                    select: {
+                        id: true,
+                        turnIndex: true,
+                        isUsed: true,
+                        usedAt: true
+                    },
+                    orderBy: { turnIndex: 'asc' }
+                },
                 classEnrollments: {
                     where: { status: 'active' },
                     include: {
@@ -93,17 +119,61 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
             }
         }),
         prisma.user.count({ where }),
-        prisma.user.count({ where: schoolWhere }),
-        prisma.user.count({ where: { ...schoolWhere, isActive: true } }),
-        prisma.user.count({ where: { ...schoolWhere, isActive: false } }),
-        prisma.user.count({ where: { ...schoolWhere, role: 'student' } }),
-        prisma.user.count({ where: { ...schoolWhere, role: 'instructor' } })
+        prisma.$queryRaw`
+            SELECT 
+                COUNT(*)::int as "total",
+                COUNT(*) FILTER (WHERE role = 'student')::int as "students",
+                COUNT(*) FILTER (WHERE role = 'instructor')::int as "instructors",
+                COUNT(*) FILTER (WHERE is_active = true)::int as "active",
+                COUNT(*) FILTER (WHERE is_active = false)::int as "inactive",
+                COUNT(*) FILTER (WHERE role = 'student' AND (must_change_password = false OR must_change_password IS NULL))::int as "studentsPasswordSet",
+                COUNT(*) FILTER (WHERE role = 'student' AND must_change_password = true)::int as "studentsPendingPassword"
+            FROM users
+            WHERE (${schoolIdParam}::uuid IS NULL OR school_id = ${schoolIdParam}::uuid)
+        `,
+        prisma.$queryRaw`
+            SELECT
+                COUNT(b.id)::int as "totalTurns",
+                COUNT(b.id) FILTER (WHERE b.is_used = true)::int as "usedTurns",
+                COUNT(DISTINCT b.user_id)::int as "usersWithCodes",
+                COUNT(DISTINCT CASE WHEN b.is_used = true THEN b.user_id END)::int as "usersUsedCodes"
+            FROM backup_codes b
+            JOIN users u ON b.user_id = u.id
+            WHERE (${schoolIdParam}::uuid IS NULL OR u.school_id = ${schoolIdParam}::uuid)
+        `
     ]);
+
+    const s = statsRows[0] || {};
+    const b = backupStatsRows[0] || {};
+
+    const formattedUsers = users.map(u => {
+        const totalBackupTurns = u.backupCodes?.length || 0;
+        const usedBackupTurns = u.backupCodes?.filter(code => code.isUsed).length || 0;
+        const remainingBackupTurns = totalBackupTurns - usedBackupTurns;
+        const hasPinGenerated = !!u.resetPin;
+        const isPinExpired = u.pinExpiresAt ? new Date() > new Date(u.pinExpiresAt) : false;
+        const hasSecurityQuestion = !!u.securityQuestion;
+        const { resetPin, ...safeUser } = u;
+
+        return {
+            ...safeUser,
+            hasPinGenerated,
+            isPinExpired,
+            hasSecurityQuestion,
+            backupStats: {
+                totalTurns: totalBackupTurns,
+                usedTurns: usedBackupTurns,
+                remainingTurns: remainingBackupTurns,
+                hasCodes: totalBackupTurns > 0,
+                hasUsedAny: usedBackupTurns > 0
+            }
+        };
+    });
 
     res.json({
         success: true,
         data: {
-            users,
+            users: formattedUsers,
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
@@ -111,11 +181,17 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
                 pages: Math.ceil(total / parseInt(limit))
             },
             stats: {
-                total: totalSchoolUsers,
-                active: activeSchoolUsers,
-                inactive: inactiveSchoolUsers,
-                students: studentCount,
-                instructors: instructorCount
+                total: s.total ?? 0,
+                active: s.active ?? 0,
+                inactive: s.inactive ?? 0,
+                students: s.students ?? 0,
+                instructors: s.instructors ?? 0,
+                studentsPasswordSet: s.studentsPasswordSet ?? s.studentspasswordset ?? 0,
+                studentsPendingPassword: s.studentsPendingPassword ?? s.studentspendingpassword ?? 0,
+                totalTurns: b.totalTurns ?? b.totalturns ?? 0,
+                usedTurns: b.usedTurns ?? b.usedturns ?? 0,
+                usersWithCodes: b.usersWithCodes ?? b.userswithcodes ?? 0,
+                usersUsedCodes: b.usersUsedCodes ?? b.usersusedcodes ?? 0
             }
         }
     });

@@ -3,13 +3,14 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Users, Search, Plus, Book, BarChart3, Mail, KeyRound, ToggleLeft, ToggleRight, Trash2, Copy, X, ChevronLeft, ChevronRight, CheckSquare, Printer, Scissors, Ticket } from 'lucide-react';
+import { Users, Search, Plus, Book, BarChart3, Mail, KeyRound, ToggleLeft, ToggleRight, Trash2, Copy, X, ChevronLeft, ChevronRight, CheckSquare, Printer, Scissors, Ticket, CheckCircle2, Clock, Eye, ShieldCheck, HelpCircle } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { useConfirm } from '@/components/ConfirmDialog';
 import api, { adminAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import BackupCodesPrintModal from '@/components/BackupCodesPrintModal';
 import SlipGenerationProgressModal from '@/components/SlipGenerationProgressModal';
+import BackupTurnHistoryModal from '@/components/BackupTurnHistoryModal';
 
 export default function UsersPage() {
     const router = useRouter();
@@ -20,6 +21,8 @@ export default function UsersPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [roleFilter, setRoleFilter] = useState('all');
+    const [accessFilter, setAccessFilter] = useState('all'); // 'all' | 'password_set' | 'pending_first_login' | 'has_backup_codes' | 'used_backup_codes' | 'no_backup_codes'
+    const [turnDetailUser, setTurnDetailUser] = useState(null);
 
     // School-wide scoreboard stats
     const [stats, setStats] = useState({
@@ -27,7 +30,13 @@ export default function UsersPage() {
         active: 0,
         inactive: 0,
         students: 0,
-        instructors: 0
+        instructors: 0,
+        studentsPasswordSet: 0,
+        studentsPendingPassword: 0,
+        totalTurns: 0,
+        usedTurns: 0,
+        usersWithCodes: 0,
+        usersUsedCodes: 0
     });
 
     // Bulk selection state
@@ -69,7 +78,7 @@ export default function UsersPage() {
     // Reset page to 1 on filter or search change
     useEffect(() => {
         setCurrentPage(1);
-    }, [roleFilter, debouncedSearch]);
+    }, [roleFilter, accessFilter, debouncedSearch]);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -82,7 +91,7 @@ export default function UsersPage() {
             return;
         }
         loadUsers();
-    }, [isAuthenticated, _hasHydrated, roleFilter, selectedSessionId, currentPage, itemsPerPage, debouncedSearch]);
+    }, [isAuthenticated, _hasHydrated, roleFilter, accessFilter, selectedSessionId, currentPage, itemsPerPage, debouncedSearch]);
 
     const loadUsers = async () => {
         setLoading(true);
@@ -91,6 +100,7 @@ export default function UsersPage() {
                 page: currentPage,
                 limit: itemsPerPage,
                 ...(roleFilter !== 'all' && { role: roleFilter }),
+                ...(accessFilter !== 'all' && { accessStatus: accessFilter }),
                 ...(debouncedSearch && { search: debouncedSearch })
             };
             const res = await api.get('/users', { params });
@@ -418,12 +428,12 @@ export default function UsersPage() {
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Filters */}
                 <div className="card p-4 mb-6">
-                    <div className="flex flex-col md:flex-row gap-4">
+                    <div className="flex flex-col md:flex-row gap-3">
                         <div className="flex-1 relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                             <input
                                 type="text"
-                                placeholder="Search users..."
+                                placeholder="Search users by name, email, admission/student ID..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 className="input pl-10"
@@ -432,7 +442,7 @@ export default function UsersPage() {
                         <select
                             value={roleFilter}
                             onChange={(e) => setRoleFilter(e.target.value)}
-                            className="input w-full md:w-48"
+                            className="input w-full md:w-44"
                         >
                             <option value="all">All Roles</option>
                             <option value="admin">Admin</option>
@@ -442,38 +452,81 @@ export default function UsersPage() {
                             <option value="lab_assistant">Lab Assistant</option>
                             <option value="accountant">Accountant</option>
                         </select>
+                        <select
+                            value={accessFilter}
+                            onChange={(e) => setAccessFilter(e.target.value)}
+                            className="input w-full md:w-56 font-medium text-slate-700"
+                        >
+                            <option value="all">All Password Status</option>
+                            <option value="password_set">✓ Password Configured</option>
+                            <option value="pending_first_login">⏳ Pending 1st Login / Reset</option>
+                            <option value="has_backup_codes">🎟 Has Backup Codes</option>
+                            <option value="used_backup_codes">⚠️ Used Backup Codes</option>
+                            <option value="no_backup_codes">No Slips Issued</option>
+                        </select>
                     </div>
                 </div>
 
                 {/* Scoreboard Stats */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
-                    <div className="card p-4 text-center">
-                        <p className="text-2xl font-bold text-primary-600">{stats.total || totalUsers || users.length}</p>
-                        <p className="text-sm text-slate-500">Total Users</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+                    {/* 1. Total Users */}
+                    <div className="card p-3.5 text-center bg-white border border-slate-200">
+                        <p className="text-xl sm:text-2xl font-black text-slate-900">{stats.total || totalUsers || users.length}</p>
+                        <p className="text-xs font-semibold text-slate-600 mt-0.5">Total Users</p>
+                        <p className="text-[10px] text-slate-400 font-medium">{stats.active ?? 0} active accounts</p>
                     </div>
-                    <div className="card p-4 text-center">
-                        <p className="text-2xl font-bold text-emerald-600">
+
+                    {/* 2. Total Students */}
+                    <div className="card p-3.5 text-center bg-white border border-slate-200">
+                        <p className="text-xl sm:text-2xl font-black text-primary-600">
                             {stats.students ?? users.filter(u => u.role === 'student').length}
                         </p>
-                        <p className="text-sm text-slate-500">Students</p>
+                        <p className="text-xs font-semibold text-slate-600 mt-0.5">Total Students</p>
+                        <p className="text-[10px] text-primary-600 font-medium">Registered Roster</p>
                     </div>
-                    <div className="card p-4 text-center">
-                        <p className="text-2xl font-bold text-blue-600">
-                            {stats.instructors ?? users.filter(u => u.role === 'instructor').length}
+
+                    {/* 3. Passwords Configured / Set */}
+                    <div className="card p-3.5 text-center bg-emerald-50/60 border border-emerald-200 shadow-2xs">
+                        <div className="flex items-center justify-center gap-1">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <p className="text-xl sm:text-2xl font-black text-emerald-700">{stats.studentsPasswordSet ?? 0}</p>
+                        </div>
+                        <p className="text-xs font-bold text-emerald-900 mt-0.5">Passwords Set</p>
+                        <p className="text-[10px] text-emerald-700 font-semibold">
+                            {stats.students > 0 ? `${Math.round(((stats.studentsPasswordSet || 0) / stats.students) * 100)}% Activated` : 'Ready'}
                         </p>
-                        <p className="text-sm text-slate-500">Instructors</p>
                     </div>
-                    <div className="card p-4 text-center">
-                        <p className="text-2xl font-bold text-teal-600">
-                            {stats.active ?? users.filter(u => u.isActive).length}
-                        </p>
-                        <p className="text-sm text-slate-500">Active</p>
+
+                    {/* 4. Pending 1st Login / Reset */}
+                    <div className="card p-3.5 text-center bg-amber-50/60 border border-amber-200 shadow-2xs">
+                        <div className="flex items-center justify-center gap-1">
+                            <Clock className="w-4 h-4 text-amber-600" />
+                            <p className="text-xl sm:text-2xl font-black text-amber-700">{stats.studentsPendingPassword ?? 0}</p>
+                        </div>
+                        <p className="text-xs font-bold text-amber-900 mt-0.5">Pending 1st Login</p>
+                        <p className="text-[10px] text-amber-700 font-semibold">Needs PIN / Slip</p>
                     </div>
-                    <div className="card p-4 text-center">
-                        <p className="text-2xl font-bold text-rose-600">
-                            {stats.inactive ?? users.filter(u => !u.isActive).length}
+
+                    {/* 5. Backup Slips Issued */}
+                    <div className="card p-3.5 text-center bg-indigo-50/60 border border-indigo-200 shadow-2xs">
+                        <div className="flex items-center justify-center gap-1">
+                            <Ticket className="w-4 h-4 text-indigo-600" />
+                            <p className="text-xl sm:text-2xl font-black text-indigo-700">{stats.usersWithCodes ?? 0}</p>
+                        </div>
+                        <p className="text-xs font-bold text-indigo-900 mt-0.5">Slips Printed</p>
+                        <p className="text-[10px] text-indigo-700 font-semibold">{stats.totalTurns ?? 0} turns total</p>
+                    </div>
+
+                    {/* 6. Turns Burned / Consumed */}
+                    <div className="card p-3.5 text-center bg-rose-50/60 border border-rose-200 shadow-2xs">
+                        <div className="flex items-center justify-center gap-1">
+                            <AlertTriangle className="w-4 h-4 text-rose-600" />
+                            <p className="text-xl sm:text-2xl font-black text-rose-700">{stats.usedTurns ?? 0}</p>
+                        </div>
+                        <p className="text-xs font-bold text-rose-900 mt-0.5">Turns Used</p>
+                        <p className="text-[10px] text-rose-700 font-semibold">
+                            {stats.usersUsedCodes ? `${stats.usersUsedCodes} student(s)` : '0 burned'}
                         </p>
-                        <p className="text-sm text-slate-500">Inactive</p>
                     </div>
                 </div>
 
@@ -567,6 +620,8 @@ export default function UsersPage() {
                                     <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Email</th>
                                     <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Role</th>
                                     <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">ID</th>
+                                    <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Password Status</th>
+                                    <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Backup Slips</th>
                                     <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Status</th>
                                     <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Actions</th>
                                 </tr>
@@ -608,6 +663,76 @@ export default function UsersPage() {
                                             </td>
                                             <td className="px-6 py-4 text-slate-600 font-mono text-sm">
                                                 {u.studentId || u.admissionNumber || u.employeeId || '-'}
+                                            </td>
+                                            {/* Password Status */}
+                                            <td className="px-6 py-4">
+                                                {u.role === 'student' ? (
+                                                    u.mustChangePassword ? (
+                                                        <div className="flex flex-col items-start gap-0.5">
+                                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs">
+                                                                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                                                Pending 1st Login
+                                                            </span>
+                                                            <span className="text-[10px] text-amber-700 font-medium">
+                                                                {u.hasPinGenerated ? 'PIN / Slip Issued' : 'No PIN Set'}
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex flex-col items-start gap-0.5">
+                                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-2xs">
+                                                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                                                Password Set
+                                                            </span>
+                                                            {u.lastLogin ? (
+                                                                <span className="text-[10px] text-slate-400 font-mono">
+                                                                    Active {new Date(u.lastLogin).toLocaleDateString()}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-[10px] text-emerald-600 font-medium">
+                                                                    Configured
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
+                                                        <CheckCircle2 className="w-3 h-3 text-slate-500" />
+                                                        Configured
+                                                    </span>
+                                                )}
+                                            </td>
+                                            {/* Emergency Backup Codes */}
+                                            <td className="px-6 py-4">
+                                                {u.backupStats?.hasCodes ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setTurnDetailUser(u)}
+                                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border shadow-2xs group text-left ${
+                                                            u.backupStats.usedTurns > 0
+                                                                ? 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100'
+                                                                : 'bg-indigo-50 border-indigo-200 text-indigo-900 hover:bg-indigo-100'
+                                                        }`}
+                                                        title="Click to view turn-by-turn audit history"
+                                                    >
+                                                        <Ticket className={`w-3.5 h-3.5 ${u.backupStats.usedTurns > 0 ? 'text-amber-600' : 'text-indigo-600'}`} />
+                                                        <span>
+                                                            {u.backupStats.usedTurns > 0 ? (
+                                                                <span className="font-extrabold text-amber-800">
+                                                                    {u.backupStats.usedTurns}/10 Used
+                                                                </span>
+                                                            ) : (
+                                                                <span className="font-semibold text-indigo-800">
+                                                                    10 Available
+                                                                </span>
+                                                            )}
+                                                        </span>
+                                                        <Eye className="w-3 h-3 text-slate-400 opacity-60 group-hover:opacity-100 transition" />
+                                                    </button>
+                                                ) : (
+                                                    <span className="text-xs text-slate-400 italic">
+                                                        No slips issued
+                                                    </span>
+                                                )}
                                             </td>
                                             <td className="px-6 py-4">
                                                 <span className={`flex items-center gap-1 text-sm ${u.isActive ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -694,12 +819,44 @@ export default function UsersPage() {
                                 <div className="flex items-center justify-between text-xs text-slate-500 mt-3 pt-2.5 border-t border-slate-100">
                                     <div>
                                         <span className="text-slate-400">ID: </span>
-                                        <span className="font-mono text-slate-700">{u.studentId || u.admissionNumber || u.employeeId || '-'}</span>
+                                        <span className="font-mono text-slate-700 font-bold">{u.studentId || u.admissionNumber || u.employeeId || '-'}</span>
                                     </div>
                                     <span className={`flex items-center gap-1.5 font-medium ${u.isActive ? 'text-emerald-600' : 'text-red-500'}`}>
                                         <span className={`w-2 h-2 rounded-full ${u.isActive ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
                                         {u.isActive ? 'Active' : 'Inactive'}
                                     </span>
+                                </div>
+
+                                {/* Mobile Password & Backup Badges */}
+                                <div className="flex items-center justify-between text-xs mt-2 pt-2 border-t border-slate-100 flex-wrap gap-1.5">
+                                    <div className="flex items-center gap-1">
+                                        {u.role === 'student' ? (
+                                            u.mustChangePassword ? (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                                                    <Clock className="w-3 h-3 text-amber-600" /> Pending 1st Login
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300">
+                                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Password Set
+                                                </span>
+                                            )
+                                        ) : (
+                                            <span className="text-slate-500 text-[11px]">Password Configured</span>
+                                        )}
+                                    </div>
+                                    {u.backupStats?.hasCodes ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => setTurnDetailUser(u)}
+                                            className={`text-[11px] font-bold px-2 py-0.5 rounded border ${
+                                                u.backupStats.usedTurns > 0
+                                                    ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                                    : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                            }`}
+                                        >
+                                            {u.backupStats.usedTurns > 0 ? `${u.backupStats.usedTurns}/10 Used` : '10 Turns Ready'}
+                                        </button>
+                                    ) : null}
                                 </div>
 
                                 {/* Touch Actions Bar */}
@@ -878,6 +1035,14 @@ export default function UsersPage() {
                 chips={backupChips}
                 defaultSchoolName={user?.school?.name || user?.schoolName || ''}
                 defaultSchoolLogo={user?.school?.logoUrl || user?.schoolLogo || ''}
+            />
+
+            {/* Turn History & Password Audit Modal */}
+            <BackupTurnHistoryModal
+                isOpen={!!turnDetailUser}
+                user={turnDetailUser}
+                onClose={() => setTurnDetailUser(null)}
+                onRegenerate={(u) => handleGenerateBackupCodes(u)}
             />
         </div>
     );
