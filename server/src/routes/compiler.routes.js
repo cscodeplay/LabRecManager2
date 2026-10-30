@@ -10,6 +10,28 @@ const { authenticate } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { synthesizeDiagram } = require('../utils/diagramSynthesizer');
 
+const WORKSPACES_ROOT = path.join(__dirname, '../../storage/workspaces/students');
+
+/**
+ * Returns safe workspace directory for a user
+ */
+function getStudentWorkspaceDir(userId) {
+    const safeUserId = (userId || 'guest').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const dir = path.join(WORKSPACES_ROOT, safeUserId);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+    return dir;
+}
+
+/**
+ * Returns path to student's persistent SQLite database
+ */
+function getStudentDbPath(userId) {
+    const dir = getStudentWorkspaceDir(userId);
+    return path.join(dir, 'practice.sqlite');
+}
+
 /**
  * Maps common language names to Wandbox compiler identifiers and versions
  */
@@ -72,50 +94,63 @@ function runPythonLocally(code, stdin = '') {
 }
 
 /**
- * Executes SQL in an in-memory SQLite database locally with structured JSON parsing
+ * Executes SQL on a student's persistent SQLite database file
+ * Preserves all CREATE TABLE, INSERT, and schema changes across sessions and logins!
  */
-function runSqlLocally(code) {
+function runSqlLocally(code, dbPath = ':memory:') {
     return new Promise((resolve, reject) => {
         const start = Date.now();
 
-        // Run with -header -column
-        const child = execFile('sqlite3', [':memory:', '-header', '-column'], { timeout: 8000, maxBuffer: 1024 * 1024 * 4 }, (err, stdout, stderr) => {
+        // 1. Run with -header -column on the student's persistent sqlite file!
+        const child = execFile('sqlite3', [dbPath, '-header', '-column'], { timeout: 8000, maxBuffer: 1024 * 1024 * 4 }, (err, stdout, stderr) => {
             const duration = Date.now() - start;
 
             if (err && err.code === 'ENOENT') {
                 return reject(new Error('sqlite3 executable not found on host system'));
             }
 
-            // Check if there is an error in execution
-            if (err) {
-                return resolve({
-                    stdout: stdout || '',
-                    stderr: stderr || err.message,
-                    exitCode: 1,
-                    durationMs: duration,
-                    isLocal: true,
-                    tables: []
-                });
-            }
-
-            // If SELECT statements are in the query, attempt to parse structured JSON output
-            execFile('sqlite3', [':memory:', '-json'], { timeout: 5000, maxBuffer: 1024 * 1024 * 4 }, (jErr, jStdout) => {
-                let jsonData = null;
+            // Query existing database tables
+            execFile('sqlite3', [dbPath, '-json', 'SELECT name FROM sqlite_master WHERE type="table" AND name NOT LIKE "sqlite_%";'], (tErr, tStdout) => {
+                let existingTables = [];
                 try {
-                    if (jStdout && jStdout.trim().startsWith('[')) {
-                        jsonData = JSON.parse(jStdout);
+                    if (tStdout && tStdout.trim().startsWith('[')) {
+                        const parsed = JSON.parse(tStdout);
+                        existingTables = parsed.map(p => p.name);
                     }
                 } catch (e) {}
 
-                resolve({
-                    stdout: stdout || '',
-                    stderr: stderr || '',
-                    exitCode: 0,
-                    durationMs: duration,
-                    isLocal: true,
-                    tables: jsonData && Array.isArray(jsonData) && jsonData.length > 0 ? jsonData : null
-                });
-            }).stdin.end(code);
+                if (err) {
+                    return resolve({
+                        stdout: stdout || '',
+                        stderr: stderr || err.message,
+                        exitCode: 1,
+                        durationMs: duration,
+                        isLocal: true,
+                        tables: [],
+                        existingTables
+                    });
+                }
+
+                // If SELECT statements are in the query, extract structured JSON data
+                execFile('sqlite3', [dbPath, '-json'], { timeout: 5000, maxBuffer: 1024 * 1024 * 4 }, (jErr, jStdout) => {
+                    let jsonData = null;
+                    try {
+                        if (jStdout && jStdout.trim().startsWith('[')) {
+                            jsonData = JSON.parse(jStdout);
+                        }
+                    } catch (e) {}
+
+                    resolve({
+                        stdout: stdout || '',
+                        stderr: stderr || '',
+                        exitCode: 0,
+                        durationMs: duration,
+                        isLocal: true,
+                        tables: jsonData && Array.isArray(jsonData) && jsonData.length > 0 ? jsonData : null,
+                        existingTables
+                    });
+                }).stdin.end(code);
+            });
         });
 
         child.stdin.write(code);
@@ -125,7 +160,7 @@ function runSqlLocally(code) {
 
 /**
  * @route   POST /api/compiler/execute
- * @desc    Compile and execute code (Fast Local Execution + Wandbox Fallback)
+ * @desc    Compile and execute code (Fast Local Execution with Persistent Student DB + Wandbox Fallback)
  * @access  Private
  */
 router.post('/execute', authenticate, [
@@ -140,6 +175,7 @@ router.post('/execute', authenticate, [
 
     const { language, code, stdin = '' } = req.body;
     const langNormalized = (language || '').toLowerCase().trim();
+    const userId = req.user?.id || 'guest';
 
     // 1. Try local execution for Python
     if (langNormalized === 'python' || langNormalized === 'python3') {
@@ -160,10 +196,11 @@ router.post('/execute', authenticate, [
         }
     }
 
-    // 2. Try local execution for SQL
+    // 2. Try persistent local execution for SQL
     if (langNormalized === 'sql' || langNormalized === 'sqlite') {
         try {
-            const localResult = await runSqlLocally(code);
+            const studentDbPath = getStudentDbPath(userId);
+            const localResult = await runSqlLocally(code, studentDbPath);
             return res.json({
                 success: true,
                 data: {
@@ -172,6 +209,8 @@ router.post('/execute', authenticate, [
                     durationMs: localResult.durationMs,
                     exitCode: localResult.exitCode,
                     tables: localResult.tables,
+                    existingTables: localResult.existingTables || [],
+                    isPersistent: true,
                     runner: 'local-sqlite3'
                 }
             });
@@ -225,15 +264,149 @@ router.post('/execute', authenticate, [
 }));
 
 /**
- * @route   POST /api/compiler/generate-diagram
- * @desc    Generate conventional Flowcharts (Python) or ER Diagrams (SQL) using ANSI/Chen standard shapes
+ * @route   GET /api/compiler/workspace
+ * @desc    Retrieve saved student code, custom designed diagrams, settings, and persistent tables
  * @access  Private
+ */
+router.get('/workspace', authenticate, asyncHandler(async (req, res) => {
+    const userId = req.user?.id || 'guest';
+    const dir = getStudentWorkspaceDir(userId);
+    const workspaceFile = path.join(dir, 'workspace.json');
+    const studentDbPath = getStudentDbPath(userId);
+
+    let workspaceData = {
+        pythonCode: null,
+        sqlCode: null,
+        pythonFlowchart: null,
+        sqlErDiagram: null,
+        editorTheme: 'vs-dark',
+        outputTheme: 'classic'
+    };
+
+    if (fs.existsSync(workspaceFile)) {
+        try {
+            const raw = fs.readFileSync(workspaceFile, 'utf8');
+            workspaceData = { ...workspaceData, ...JSON.parse(raw) };
+        } catch (e) {}
+    }
+
+    // Query tables created in student's persistent database
+    let existingTables = [];
+    if (fs.existsSync(studentDbPath)) {
+        try {
+            await new Promise((resolve) => {
+                execFile('sqlite3', [studentDbPath, '-json', 'SELECT name FROM sqlite_master WHERE type="table" AND name NOT LIKE "sqlite_%";'], (err, stdout) => {
+                    if (!err && stdout && stdout.trim().startsWith('[')) {
+                        try {
+                            const parsed = JSON.parse(stdout);
+                            existingTables = parsed.map(p => p.name);
+                        } catch (e) {}
+                    }
+                    resolve();
+                });
+            });
+        } catch (e) {}
+    }
+
+    return res.json({
+        success: true,
+        data: {
+            ...workspaceData,
+            existingTables
+        }
+    });
+}));
+
+/**
+ * @route   POST /api/compiler/workspace
+ * @desc    Persist student practice code, designed diagrams, and theme preferences to server
+ * @access  Private
+ */
+router.post('/workspace', authenticate, asyncHandler(async (req, res) => {
+    const userId = req.user?.id || 'guest';
+    const dir = getStudentWorkspaceDir(userId);
+    const workspaceFile = path.join(dir, 'workspace.json');
+
+    const {
+        pythonCode,
+        sqlCode,
+        pythonFlowchart,
+        sqlErDiagram,
+        editorTheme = 'vs-dark',
+        outputTheme = 'classic'
+    } = req.body;
+
+    let current = {};
+    if (fs.existsSync(workspaceFile)) {
+        try {
+            current = JSON.parse(fs.readFileSync(workspaceFile, 'utf8'));
+        } catch (e) {}
+    }
+
+    const updated = {
+        ...current,
+        pythonCode: pythonCode !== undefined ? pythonCode : current.pythonCode,
+        sqlCode: sqlCode !== undefined ? sqlCode : current.sqlCode,
+        pythonFlowchart: pythonFlowchart !== undefined ? pythonFlowchart : current.pythonFlowchart,
+        sqlErDiagram: sqlErDiagram !== undefined ? sqlErDiagram : current.sqlErDiagram,
+        editorTheme: editorTheme || current.editorTheme || 'vs-dark',
+        outputTheme: outputTheme || current.outputTheme || 'classic',
+        updatedAt: new Date().toISOString()
+    };
+
+    fs.writeFileSync(workspaceFile, JSON.stringify(updated, null, 2), 'utf8');
+
+    return res.json({
+        success: true,
+        message: 'Student workspace saved successfully',
+        data: updated
+    });
+}));
+
+/**
+ * @route   POST /api/compiler/reset-db
+ * @desc    Reset student's persistent database to a blank state
+ * @access  Private
+ */
+router.post('/reset-db', authenticate, asyncHandler(async (req, res) => {
+    const userId = req.user?.id || 'guest';
+    const studentDbPath = getStudentDbPath(userId);
+
+    if (fs.existsSync(studentDbPath)) {
+        try {
+            fs.unlinkSync(studentDbPath);
+        } catch (e) {
+            console.error('Failed to unlink student DB:', e);
+        }
+    }
+
+    return res.json({
+        success: true,
+        message: 'Persistent practice database reset successfully'
+    });
+}));
+
+/**
+ * @route   POST /api/compiler/generate-diagram
+ * @desc    Auto-generate Flowchart or ER diagram (RESTRICTED to Instructors & Admins)
+ * @access  Private (Admin, Instructor, Principal only)
  */
 router.post('/generate-diagram', authenticate, [
     body('language').notEmpty().withMessage('Language is required'),
     body('code').notEmpty().withMessage('Code is required'),
     body('notation').optional().isIn(['conventional', 'relational'])
 ], asyncHandler(async (req, res) => {
+    // Access control: Auto-generation is limited to Admins, Instructors, and Principals!
+    const userRole = req.user?.role;
+    const isInstructorOrAdmin = userRole === 'admin' || userRole === 'instructor' || userRole === 'principal';
+
+    if (!isInstructorOrAdmin) {
+        return res.status(403).json({
+            success: false,
+            message: 'Diagram auto-generation is currently reserved for Instructors and Administrators. Students can design and customize diagrams directly using the Visual Designer.'
+        });
+    }
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ success: false, errors: errors.array() });

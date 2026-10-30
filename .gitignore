@@ -52,6 +52,11 @@ coverage/
 # Prisma
 server/prisma/migrations/.DS_Store
 
+# Student workspaces & local databases
+server/storage/workspaces/students/*
+*.sqlite
+*.sqlite-journal
+
 # Misc
 *.log
 *.tsbuildinfo

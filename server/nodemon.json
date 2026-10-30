@@ -1,0 +1,14 @@
+{
+  "watch": ["src/"],
+  "ext": "js,mjs,cjs",
+  "ignore": [
+    "storage/*",
+    "storage/**/*",
+    "*.sqlite",
+    "*.sqlite-journal",
+    "*.json",
+    "node_modules",
+    "prisma/seed.js"
+  ],
+  "delay": "1000"
+}

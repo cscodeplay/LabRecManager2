@@ -278,7 +278,10 @@ export const devicesAPI = {
 export const compilerAPI = {
     execute: (data) => api.post('/compiler/execute', data),
     generateDiagram: (data) => api.post('/compiler/generate-diagram', data),
-    getLanguages: () => api.get('/compiler/languages')
+    getLanguages: () => api.get('/compiler/languages'),
+    getWorkspace: () => api.get('/compiler/workspace'),
+    saveWorkspace: (data) => api.post('/compiler/workspace', data),
+    resetDatabase: () => api.post('/compiler/reset-db')
 };
 
 export const assignmentsAPI = {
