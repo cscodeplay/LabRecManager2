@@ -592,6 +592,7 @@ router.post('/login-with-pin', asyncHandler(async (req, res) => {
             passwordHash,
             resetPin: null,
             pinExpiresAt: null,
+            mustChangePassword: false,
             lastLogin: new Date()
         }
     });

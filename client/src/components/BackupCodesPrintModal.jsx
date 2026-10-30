@@ -162,8 +162,26 @@ export default function BackupCodesPrintModal({ isOpen, onClose, chips = [], def
                                         </div>
                                     </div>
 
+                                    {/* 1st-Time Login PIN Box */}
+                                    <div className="my-1.5 px-2.5 py-1 bg-amber-50/90 border border-amber-300 rounded flex items-center justify-between">
+                                        <div className="min-w-0">
+                                            <div className="text-[8.5px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1">
+                                                <KeyRound className="w-3 h-3 text-amber-700" />
+                                                1ST-TIME LOGIN PIN
+                                            </div>
+                                            <div className="text-[7.5px] text-amber-800 leading-tight">
+                                                Use on 1st login or password reset
+                                            </div>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                            <span className="font-mono font-black text-sm text-slate-950 tracking-widest bg-white px-2 py-0.5 rounded border border-amber-400 shadow-2xs inline-block">
+                                                {chip.firstTimePin || chip.pin || '------'}
+                                            </span>
+                                        </div>
+                                    </div>
+
                                     {/* Chip Title Pill */}
-                                    <div className="my-1.5 px-2 py-0.5 bg-slate-100 border border-slate-300 rounded flex items-center justify-between text-[9px]">
+                                    <div className="my-1 px-2 py-0.5 bg-slate-100 border border-slate-300 rounded flex items-center justify-between text-[8.5px]">
                                         <span className="font-extrabold text-slate-900 tracking-wide">
                                             EMERGENCY BACKUP CODES
                                         </span>
@@ -221,7 +239,7 @@ export default function BackupCodesPrintModal({ isOpen, onClose, chips = [], def
                                         </span>
                                     </div>
                                     <div className="text-[7.5px] text-slate-500 mt-0.5 text-center font-sans">
-                                        Keep slip inside Lab Record Notebook. Enter at login → &quot;Reset with Backup Code&quot;.
+                                        Keep slip inside Lab Record Notebook. Enter PIN or Backup Code at login or password reset.
                                     </div>
                                 </div>
 

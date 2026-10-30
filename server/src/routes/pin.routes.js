@@ -157,7 +157,8 @@ router.post('/reset-with-pin', asyncHandler(async (req, res) => {
         data: {
             passwordHash,
             resetPin: null,
-            pinExpiresAt: null
+            pinExpiresAt: null,
+            mustChangePassword: false
         }
     });
 
@@ -191,17 +192,20 @@ async function getEffectiveSchool(schoolId) {
  */
 function canManageBackupCodes(requester, target) {
     if (requester.role === 'admin' || requester.role === 'principal') {
+        if (!requester.schoolId || !target.schoolId) return true;
         return requester.schoolId === target.schoolId;
     }
     if (requester.role === 'instructor') {
-        return target.role === 'student' && requester.schoolId === target.schoolId;
+        if (target.role !== 'student') return false;
+        if (!requester.schoolId || !target.schoolId) return true;
+        return requester.schoolId === target.schoolId;
     }
     return false;
 }
 
 /**
  * @route   POST /api/pin/backup-codes/:id/generate
- * @desc    Generate 10 single-use emergency backup codes for a student, instructor, or staff member
+ * @desc    Generate 10 single-use emergency backup codes + 1st-time login PIN for a user
  * @access  Private (Admin, Principal, Instructor)
  */
 router.post('/backup-codes/:id/generate', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
@@ -230,40 +234,56 @@ router.post('/backup-codes/:id/generate', authenticate, authorize('admin', 'prin
         });
     }
 
+    // Generate 6-digit first-time login PIN
+    const firstTimePin = generatePin();
+    const pinSalt = await bcrypt.genSalt(10);
+    const hashedPin = await bcrypt.hash(firstTimePin, pinSalt);
+    const pinExpiresAt = new Date();
+    pinExpiresAt.setFullYear(pinExpiresAt.getFullYear() + 1); // Valid for 1 year for lab access
+
+    // Generate 10 emergency single-use backup codes
     const generated = generate10BackupCodes();
 
-    // In a transaction, remove any older backup codes and insert the new 10 hashes
-    await prisma.$transaction(async (tx) => {
-        await tx.backupCode.deleteMany({
-            where: { userId: user.id }
-        });
-
-        await tx.backupCode.createMany({
-            data: generated.map((g) => ({
-                userId: user.id,
-                codeHash: g.codeHash,
-                turnIndex: g.turnIndex,
-                isUsed: false
-            }))
-        });
-
-        await tx.activityLog.create({
-            data: {
-                userId: req.user.id,
-                schoolId: req.user.schoolId,
-                actionType: 'other',
-                entityType: 'user',
-                entityId: id,
-                description: `Generated 10 emergency backup codes for ${user.firstName} ${user.lastName} (${user.role})`
-            }
-        });
+    // Remove any older backup codes and insert the new 10 hashes
+    await prisma.backupCode.deleteMany({
+        where: { userId: user.id }
     });
+
+    await prisma.backupCode.createMany({
+        data: generated.map((g) => ({
+            userId: user.id,
+            codeHash: g.codeHash,
+            turnIndex: g.turnIndex,
+            isUsed: false
+        }))
+    });
+
+    // Update user with the 1st-time login PIN and require password change
+    await prisma.user.update({
+        where: { id: user.id },
+        data: {
+            resetPin: hashedPin,
+            pinExpiresAt,
+            mustChangePassword: true
+        }
+    });
+
+    await prisma.activityLog.create({
+        data: {
+            userId: req.user.id,
+            schoolId: req.user.schoolId || null,
+            actionType: 'other',
+            entityType: 'user',
+            entityId: id,
+            description: `Generated 10 emergency backup codes and 1st-time login PIN for ${user.firstName} ${user.lastName} (${user.role})`
+        }
+    }).catch(err => console.warn('Activity log error:', err.message));
 
     const schoolProfile = user.school?.name ? user.school : await getEffectiveSchool(user.schoolId || req.user.schoolId);
 
     res.json({
         success: true,
-        message: '10 single-use backup codes generated successfully.',
+        message: '10 single-use backup codes and first-time PIN generated successfully.',
         data: {
             userId: user.id,
             userName: `${user.firstName} ${user.lastName}`,
@@ -273,6 +293,7 @@ router.post('/backup-codes/:id/generate', authenticate, authorize('admin', 'prin
             schoolName: schoolProfile.name,
             schoolCode: schoolProfile.code || 'LAB',
             generatedAt: new Date(),
+            firstTimePin,
             totalTurns: 10,
             codes: generated.map(g => ({
                 turn: g.turnIndex,
@@ -284,7 +305,7 @@ router.post('/backup-codes/:id/generate', authenticate, authorize('admin', 'prin
 
 /**
  * @route   POST /api/pin/backup-codes/bulk-generate
- * @desc    Bulk generate 10 backup codes for multiple selected users (for A4 grid printing)
+ * @desc    Bulk generate 10 backup codes + 1st-time login PINs for multiple selected users (for A4 grid printing)
  * @access  Private (Admin, Principal, Instructor)
  */
 router.post('/backup-codes/bulk-generate', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
@@ -317,60 +338,97 @@ router.post('/backup-codes/bulk-generate', authenticate, authorize('admin', 'pri
         });
     }
 
-    const printChips = [];
+    // Resolve default school profile once to avoid repeated DB lookups
+    const defaultSchoolProfile = await getEffectiveSchool(req.user.schoolId);
 
-    // Process each authorized user
-    await prisma.$transaction(async (tx) => {
-        for (const target of authorizedUsers) {
-            const generated = generate10BackupCodes();
+    // Prepare in-memory codes and PINs for all authorized users
+    const pinSalt = await bcrypt.genSalt(10);
+    const pinExpiresAt = new Date();
+    pinExpiresAt.setFullYear(pinExpiresAt.getFullYear() + 1);
 
-            await tx.backupCode.deleteMany({
-                where: { userId: target.id }
-            });
+    const preparedUsers = await Promise.all(authorizedUsers.map(async (target) => {
+        const firstTimePin = generatePin();
+        const hashedPin = await bcrypt.hash(firstTimePin, pinSalt);
+        const generated = generate10BackupCodes();
 
-            await tx.backupCode.createMany({
-                data: generated.map(g => ({
-                    userId: target.id,
-                    codeHash: g.codeHash,
-                    turnIndex: g.turnIndex,
-                    isUsed: false
-                }))
-            });
+        const schoolProfile = target.school?.name ? target.school : defaultSchoolProfile;
 
-            const schoolProfile = target.school?.name ? target.school : await getEffectiveSchool(target.schoolId || req.user.schoolId);
+        return {
+            target,
+            firstTimePin,
+            hashedPin,
+            pinExpiresAt,
+            generatedCodes: generated,
+            schoolProfile
+        };
+    }));
 
-            printChips.push({
-                userId: target.id,
-                userName: `${target.firstName} ${target.lastName}`,
-                role: target.role,
-                email: target.email,
-                admissionNumber: target.admissionNumber || target.employeeId || target.studentId || null,
-                schoolName: schoolProfile.name,
-                schoolCode: schoolProfile.code || 'LAB',
-                generatedAt: new Date(),
-                totalTurns: 10,
-                codes: generated.map(g => ({
-                    turn: g.turnIndex,
-                    code: g.rawCode
-                }))
+    const targetIds = preparedUsers.map(p => p.target.id);
+
+    // 1. Batch delete previous backup codes for all targets
+    await prisma.backupCode.deleteMany({
+        where: { userId: { in: targetIds } }
+    });
+
+    // 2. Batch insert all new backup codes in a single query
+    const allBackupRows = [];
+    for (const p of preparedUsers) {
+        for (const g of p.generatedCodes) {
+            allBackupRows.push({
+                userId: p.target.id,
+                codeHash: g.codeHash,
+                turnIndex: g.turnIndex,
+                isUsed: false
             });
         }
-
-        await tx.activityLog.create({
-            data: {
-                userId: req.user.id,
-                schoolId: req.user.schoolId,
-                actionType: 'other',
-                entityType: 'user',
-                entityId: req.user.id,
-                description: `Bulk generated 10-turn emergency backup codes for ${authorizedUsers.length} users`
-            }
-        });
+    }
+    await prisma.backupCode.createMany({
+        data: allBackupRows
     });
+
+    // 3. Batch update users with new PINs in parallel
+    await Promise.all(preparedUsers.map(p => prisma.user.update({
+        where: { id: p.target.id },
+        data: {
+            resetPin: p.hashedPin,
+            pinExpiresAt: p.pinExpiresAt,
+            mustChangePassword: true
+        }
+    })));
+
+    // 4. Create activity log
+    await prisma.activityLog.create({
+        data: {
+            userId: req.user.id,
+            schoolId: req.user.schoolId || null,
+            actionType: 'other',
+            entityType: 'user',
+            entityId: req.user.id,
+            description: `Bulk generated 10-turn backup codes and 1st-time login PINs for ${preparedUsers.length} users`
+        }
+    }).catch(err => console.warn('Activity log error:', err.message));
+
+    // 5. Construct print chips payload
+    const printChips = preparedUsers.map(p => ({
+        userId: p.target.id,
+        userName: `${p.target.firstName} ${p.target.lastName}`,
+        role: p.target.role,
+        email: p.target.email,
+        admissionNumber: p.target.admissionNumber || p.target.employeeId || p.target.studentId || null,
+        schoolName: p.schoolProfile.name,
+        schoolCode: p.schoolProfile.code || 'LAB',
+        generatedAt: new Date(),
+        firstTimePin: p.firstTimePin,
+        totalTurns: 10,
+        codes: p.generatedCodes.map(g => ({
+            turn: g.turnIndex,
+            code: g.rawCode
+        }))
+    }));
 
     res.json({
         success: true,
-        message: `Successfully generated 10-turn backup codes for ${printChips.length} users.`,
+        message: `Successfully generated 10-turn backup codes and PINs for ${printChips.length} users.`,
         data: printChips
     });
 }));
