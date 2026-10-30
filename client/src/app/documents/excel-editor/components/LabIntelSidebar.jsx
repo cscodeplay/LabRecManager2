@@ -172,7 +172,22 @@ export default function LabIntelSidebar({
                                 <div className={`mt-2.5 p-2.5 rounded-xl border text-[11px] ${
                                     isDark ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-200'
                                 }`}>
-                                    {msg.data.formula && (
+                                    {/* Batch updates preview (e.g. Mean, Median, Mode across multiple cells) */}
+                                    {(msg.data.batchUpdates || msg.data.updates) && (
+                                        <div className="space-y-1.5 mb-2">
+                                            <span className="text-[10px] uppercase font-bold text-slate-400">Calculated Statistics:</span>
+                                            <div className="space-y-1 font-mono text-[11px]">
+                                                {Object.entries(msg.data.batchUpdates || msg.data.updates).map(([k, v]) => (
+                                                    <div key={k} className="p-1.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center justify-between">
+                                                        <span className="font-bold text-slate-300">{k}</span>
+                                                        <span className="truncate max-w-[200px]">{v}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {msg.data.formula && !(msg.data.batchUpdates || msg.data.updates) && (
                                         <div className="space-y-1">
                                             <span className="text-[10px] uppercase font-bold text-slate-400">Target Cell: {msg.data.targetCell || 'Active'}</span>
                                             <div className="p-1.5 rounded bg-cyan-500/10 text-cyan-400 font-mono font-semibold text-xs border border-cyan-500/20 truncate">
@@ -208,14 +223,16 @@ export default function LabIntelSidebar({
                                     )}
 
                                     {/* Action Apply Button */}
-                                    <button
-                                        type="button"
-                                        onClick={() => handleApply(msg.data)}
-                                        className="mt-2.5 w-full py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-xs"
-                                    >
-                                        <Check size={13} />
-                                        <span>Apply to Sheet</span>
-                                    </button>
+                                    {(msg.data.formula || msg.data.batchUpdates || msg.data.updates || msg.data.columnData || msg.data.tableData) && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleApply(msg.data)}
+                                            className="mt-2.5 w-full py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-xs"
+                                        >
+                                            <Check size={13} />
+                                            <span>Apply to Sheet</span>
+                                        </button>
+                                    )}
                                 </div>
                             )}
                         </div>

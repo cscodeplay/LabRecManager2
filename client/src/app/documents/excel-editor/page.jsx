@@ -109,7 +109,10 @@ const FORMULA_SUGGESTIONS = [
     { name: 'MIN', syntax: '=MIN(number1, [number2], ...)', desc: 'Returns the smallest number in a set of values' },
     { name: 'MAX', syntax: '=MAX(number1, [number2], ...)', desc: 'Returns the largest number in a set of values' },
     { name: 'PRODUCT', syntax: '=PRODUCT(number1, [number2], ...)', desc: 'Multiplies all the numbers given as arguments' },
+    { name: 'MEAN', syntax: '=MEAN(number1, [number2], ...)', desc: 'Returns the arithmetic mean of its arguments (alias for AVERAGE)' },
     { name: 'MEDIAN', syntax: '=MEDIAN(number1, [number2], ...)', desc: 'Returns the median of the given numbers' },
+    { name: 'MODE', syntax: '=MODE(number1, [number2], ...)', desc: 'Returns the most frequently occurring value in an array or range' },
+    { name: 'MODE.SNGL', syntax: '=MODE.SNGL(number1, [number2], ...)', desc: 'Returns the most frequently occurring value in an array or range' },
     { name: 'STDEV', syntax: '=STDEV(number1, [number2], ...)', desc: 'Estimates standard deviation based on a sample' },
     { name: 'ROUND', syntax: '=ROUND(number, num_digits)', desc: 'Rounds a number to a specified number of digits' },
     { name: 'ROUNDUP', syntax: '=ROUNDUP(number, num_digits)', desc: 'Rounds a number up, away from zero' },
@@ -201,14 +204,17 @@ const REFERENCE_COLORS = [
 // Extracts all cell & range references from an Excel formula string
 function extractFormulaReferences(formula) {
     if (!formula || typeof formula !== 'string' || !formula.startsWith('=')) return [];
-    const regex = /(?:([A-Za-z0-9_]+)!)?(\$?[A-Z]+)(\$?[0-9]+)(?::(\$?[A-Z]+)(\$?[0-9]+))?/g;
+    // Mask string literals inside quotes so coordinates in text are not highlighted
+    const cleanFormula = formula.replace(/"(?:[^"\\]|\\.)*"/g, m => ' '.repeat(m.length));
+    // Case-insensitive regex matching single cells (e.g. D2, d3, $A$1) and ranges (e.g. D2:D10, d2:d4), excluding function names like LOG10(
+    const regex = /(?:([A-Za-z0-9_]+)!)?(?<![A-Za-z0-9_])(\$?[A-Za-z]+)(\$?[0-9]+)(?::(\$?[A-Za-z]+)(\$?[0-9]+))?(?!\w|\()/gi;
     const refs = [];
     let match;
     let colorIdx = 0;
-    while ((match = regex.exec(formula)) !== null) {
-        const col1Str = match[2].replace(/\$/g, '');
+    while ((match = regex.exec(cleanFormula)) !== null) {
+        const col1Str = match[2].replace(/\$/g, '').toUpperCase();
         const row1Str = match[3].replace(/\$/g, '');
-        const col2Str = match[4] ? match[4].replace(/\$/g, '') : null;
+        const col2Str = match[4] ? match[4].replace(/\$/g, '').toUpperCase() : null;
         const row2Str = match[5] ? match[5].replace(/\$/g, '') : null;
 
         const startCol = letterToCol(col1Str);
@@ -237,18 +243,22 @@ function extractFormulaReferences(formula) {
 // Adjusts relative references in formula when dragging/autofilling
 function adjustFormulaReferences(formula, deltaCol, deltaRow) {
     if (!formula || typeof formula !== 'string' || !formula.startsWith('=')) return formula;
-    return formula.replace(/(\$?[A-Z]+)(\$?[0-9]+)/g, (match, colPart, rowPart) => {
+    return formula.replace(/(?<![A-Za-z0-9_])(\$?[A-Za-z]+)(\$?[0-9]+)(?!\w|\()/gi, (match, colPart, rowPart) => {
         let newColPart = colPart;
         let newRowPart = rowPart;
-        if (!colPart.startsWith('$')) {
-            const colIdx = letterToCol(colPart) + deltaCol;
+        const isColAbs = colPart.startsWith('$');
+        const cleanCol = colPart.replace(/\$/g, '').toUpperCase();
+        if (!isColAbs) {
+            const colIdx = letterToCol(cleanCol) + deltaCol;
             if (colIdx >= 0) newColPart = colToLetter(colIdx);
         }
-        if (!rowPart.startsWith('$')) {
-            const rowNum = parseInt(rowPart, 10) + deltaRow;
+        const isRowAbs = rowPart.startsWith('$');
+        const cleanRow = rowPart.replace(/\$/g, '');
+        if (!isRowAbs) {
+            const rowNum = parseInt(cleanRow, 10) + deltaRow;
             if (rowNum >= 1) newRowPart = String(rowNum);
         }
-        return `${newColPart}${newRowPart}`;
+        return `${isColAbs ? '$' : ''}${newColPart}${isRowAbs ? '$' : ''}${newRowPart}`;
     });
 }
 
@@ -907,50 +917,219 @@ export default function ExcelEditorPage() {
 
     // Structured LabIntel AI Context Extraction
     const sheetContext = useMemo(() => {
-        const sample = {};
-        for (let r = 1; r <= 15; r++) {
-            for (let c = 0; c < 8; c++) {
-                const k = `${colToLetter(c)}${r}`;
-                if (cells[k]) {
-                    sample[k] = cells[k].formula || cells[k].val;
+        const cellKeys = Object.keys(cells || {});
+        let minC = 0, maxC = 0, minR = 1, maxR = 1;
+        let hasAnyCell = false;
+
+        for (const key of cellKeys) {
+            const cell = cells[key];
+            if (cell && ((cell.val !== undefined && cell.val !== '' && cell.val !== null) || cell.formula)) {
+                const coord = parseCellCoord(key);
+                if (coord) {
+                    if (!hasAnyCell) {
+                        minC = maxC = coord.col;
+                        minR = maxR = coord.row;
+                        hasAnyCell = true;
+                    } else {
+                        minC = Math.min(minC, coord.col);
+                        maxC = Math.max(maxC, coord.col);
+                        minR = Math.min(minR, coord.row);
+                        maxR = Math.max(maxR, coord.row);
+                    }
                 }
             }
         }
+
+        const activeCoord = parseCellCoord(selectedCell) || { col: 0, row: 1 };
+        const selStartCol = Math.min(selectionRange.startCol, selectionRange.endCol);
+        const selEndCol = Math.max(selectionRange.startCol, selectionRange.endCol);
+        const selStartRow = Math.min(selectionRange.startRow, selectionRange.endRow);
+        const selEndRow = Math.max(selectionRange.startRow, selectionRange.endRow);
+        const isRangeSelection = selStartCol !== selEndCol || selStartRow !== selEndRow;
+        const selectedRangeStr = `${colToLetter(selStartCol)}${selStartRow}:${colToLetter(selEndCol)}${selEndRow}`;
+
+        // Selected Range Cell Values
+        const selectedRangeValues = {};
+        for (let r = selStartRow; r <= selEndRow; r++) {
+            for (let c = selStartCol; c <= selEndCol; c++) {
+                const k = `${colToLetter(c)}${r}`;
+                if (cells[k]?.val !== undefined || cells[k]?.formula) {
+                    selectedRangeValues[k] = cells[k].formula || cells[k].val;
+                }
+            }
+        }
+
+        // Column Metadata & Summaries
+        const columnsSummary = [];
+        const maxScanCol = Math.max(maxC, activeCoord.col, 3);
+        const maxScanRow = Math.max(maxR, 20);
+
+        for (let c = 0; c <= maxScanCol; c++) {
+            const colLetter = colToLetter(c);
+            const headerCell = cells[`${colLetter}1`];
+            const header = headerCell ? String(headerCell.val || headerCell.formula || '').trim() : '';
+
+            let minDataRow = null;
+            let maxDataRow = null;
+            const sampleVals = [];
+            let numCount = 0;
+            let textCount = 0;
+
+            for (let r = (header ? 2 : 1); r <= maxScanRow; r++) {
+                const cell = cells[`${colLetter}${r}`];
+                if (cell && cell.val !== undefined && cell.val !== '' && cell.val !== null) {
+                    if (minDataRow === null) minDataRow = r;
+                    maxDataRow = r;
+                    if (!isNaN(Number(cell.val))) {
+                        numCount++;
+                    } else {
+                        textCount++;
+                    }
+                    if (sampleVals.length < 10) {
+                        sampleVals.push(cell.val);
+                    }
+                }
+            }
+
+            if (minDataRow !== null || header) {
+                columnsSummary.push({
+                    col: colLetter,
+                    header: header || `Column ${colLetter}`,
+                    dataType: numCount >= textCount ? 'number' : 'text',
+                    dataRange: minDataRow !== null ? `${colLetter}${minDataRow}:${colLetter}${maxDataRow}` : null,
+                    count: numCount + textCount,
+                    sampleValues: sampleVals
+                });
+            }
+        }
+
+        // Active Column Context (Continuous data located directly above the active cell)
+        const activeColLetter = colToLetter(activeCoord.col);
+        let activeColMinRow = null;
+        let activeColMaxRow = null;
+        const activeColVals = [];
+
+        for (let r = 1; r < activeCoord.row; r++) {
+            const cell = cells[`${activeColLetter}${r}`];
+            if (cell && cell.val !== undefined && cell.val !== '' && cell.val !== null) {
+                if (r === 1 && isNaN(Number(cell.val))) continue; // Skip header label in row 1
+                if (activeColMinRow === null) activeColMinRow = r;
+                activeColMaxRow = r;
+                activeColVals.push(cell.val);
+            }
+        }
+
+        const activeColumnDataRange = activeColMinRow !== null
+            ? `${activeColLetter}${activeColMinRow}:${activeColLetter}${activeColMaxRow}`
+            : null;
+
+        const headers = columnsSummary
+            .filter(c => c.header)
+            .map(c => ({ col: c.col, header: c.header }));
+
+        // 2D Sheet Data Rows array for LLM context
+        const sampleRows = [];
+        const rowLimit = Math.min(Math.max(maxR, 15), 30);
+        const colLimit = Math.min(Math.max(maxC, 5), 10);
+
+        for (let r = 1; r <= rowLimit; r++) {
+            const rowObj = { _row: r };
+            let hasRowData = false;
+            for (let c = 0; c <= colLimit; c++) {
+                const k = `${colToLetter(c)}${r}`;
+                if (cells[k]?.val !== undefined || cells[k]?.formula) {
+                    rowObj[colToLetter(c)] = cells[k].formula || cells[k].val;
+                    hasRowData = true;
+                }
+            }
+            if (hasRowData) sampleRows.push(rowObj);
+        }
+
+        const legacySample = sampleRows.reduce((acc, row) => {
+            const r = row._row;
+            Object.keys(row).forEach(cLetter => {
+                if (cLetter !== '_row') acc[`${cLetter}${r}`] = row[cLetter];
+            });
+            return acc;
+        }, {});
+
         return {
+            title: title || 'Untitled Sheet',
+            activeSheet: currentSheet?.name || 'Sheet1',
             sheetName: currentSheet?.name || 'Sheet1',
             activeCell: selectedCell,
-            selectionRange: `${colToLetter(selectionRange.startCol)}${selectionRange.startRow}:${colToLetter(selectionRange.endCol)}${selectionRange.endRow}`,
-            sampleData: sample
+            targetCell: selectedCell,
+            selectedRange: selectedRangeStr,
+            selectionRange: selectedRangeStr,
+            isRangeSelection,
+            selectedRangeValues,
+            activeColumn: activeColLetter,
+            activeColumnDataRange,
+            activeColumnValues: activeColVals,
+            usedRange: hasAnyCell ? `${colToLetter(minC)}${minR}:${colToLetter(maxC)}${maxR}` : 'A1:A1',
+            headers,
+            columns: columnsSummary,
+            sampleRows,
+            sampleData: legacySample
         };
-    }, [currentSheet, selectedCell, selectionRange, cells]);
+    }, [title, currentSheet, selectedCell, selectionRange, cells]);
 
-    // Apply LabIntel Actions (Formula, Reagent Table, Batch Calculation)
+    // Apply LabIntel Actions (Batch Updates, Formula, Reagent Table, Column Insert)
     const handleApplyLabIntelAction = useCallback((action) => {
         if (!action) return;
         pushUndoSnapshot();
 
-        if (action.type === 'formula') {
-            const target = action.targetCell || selectedCell;
-            commitCellEdit(target, action.formula);
-            toast.success(`Applied formula ${action.formula} to ${target}`);
-        } else if (action.type === 'table') {
-            const start = parseCellCoord(action.startCell || selectedCell) || { col: 0, row: 1 };
+        // 1. Batch Updates (e.g. Mean, Median, Mode across consecutive cells)
+        const updates = action.batchUpdates || action.updates;
+        if (updates && typeof updates === 'object' && Object.keys(updates).length > 0) {
             setSheets(prev => {
                 const next = [...prev];
                 const sh = { ...next[activeSheetIndex] };
                 const nCells = { ...sh.cells };
-                
-                // Write headers
-                if (action.headers && Array.isArray(action.headers)) {
-                    action.headers.forEach((h, cIdx) => {
+                Object.entries(updates).forEach(([k, v]) => {
+                    const isF = String(v).startsWith('=');
+                    nCells[k] = {
+                        ...(nCells[k] || {}),
+                        formula: isF ? v : null,
+                        val: isF ? evaluateCellFormula(v, nCells) : v
+                    };
+                });
+                sh.cells = nCells;
+                next[activeSheetIndex] = sh;
+                return next;
+            });
+            toast.success(`Applied calculated statistics to sheet`);
+            triggerAutoSave();
+            return;
+        }
+
+        // 2. Single Formula
+        const formula = action.formula;
+        if (formula && (action.action === 'insert_formula' || action.type === 'formula' || (!action.tableData && !action.columnData))) {
+            const target = action.targetCell || selectedCell;
+            commitCellEdit(target, formula);
+            toast.success(`Applied formula ${formula} to ${target}`);
+            return;
+        }
+
+        // 3. Generated Table
+        const tbl = action.tableData || (action.type === 'table' ? action : null);
+        if (tbl) {
+            const start = parseCellCoord(tbl.startCell || action.startCell || selectedCell) || { col: 0, row: 1 };
+            setSheets(prev => {
+                const next = [...prev];
+                const sh = { ...next[activeSheetIndex] };
+                const nCells = { ...sh.cells };
+
+                if (tbl.headers && Array.isArray(tbl.headers)) {
+                    tbl.headers.forEach((h, cIdx) => {
                         const key = `${colToLetter(start.col + cIdx)}${start.row}`;
                         nCells[key] = { ...(nCells[key] || {}), val: h, bold: true, bg: '#f1f5f9' };
                     });
                 }
-                // Write rows
-                if (action.rows && Array.isArray(action.rows)) {
-                    const rOffset = action.headers ? 1 : 0;
-                    action.rows.forEach((row, rIdx) => {
+                if (tbl.rows && Array.isArray(tbl.rows)) {
+                    const rOffset = tbl.headers ? 1 : 0;
+                    tbl.rows.forEach((row, rIdx) => {
                         const rNum = start.row + rOffset + rIdx;
                         if (Array.isArray(row)) {
                             row.forEach((cellVal, cIdx) => {
@@ -969,29 +1148,43 @@ export default function ExcelEditorPage() {
                 next[activeSheetIndex] = sh;
                 return next;
             });
-            toast.success('Generated scientific table applied to sheet!');
+            toast.success('Generated table applied to sheet!');
             triggerAutoSave();
-        } else if (action.type === 'batch_update' && action.updates) {
+            return;
+        }
+
+        // 4. Insert Column
+        const colData = action.columnData;
+        if (colData) {
             setSheets(prev => {
                 const next = [...prev];
                 const sh = { ...next[activeSheetIndex] };
                 const nCells = { ...sh.cells };
-                Object.entries(action.updates).forEach(([k, v]) => {
-                    const isF = String(v).startsWith('=');
-                    nCells[k] = {
-                        ...(nCells[k] || {}),
-                        formula: isF ? v : null,
-                        val: isF ? evaluateCellFormula(v, nCells) : v
-                    };
-                });
+                const targetColLetter = colData.targetColLetter || colToLetter(colCount);
+                if (colData.header) {
+                    nCells[`${targetColLetter}1`] = { ...(nCells[`${targetColLetter}1`] || {}), val: colData.header, bold: true, bg: '#f1f5f9' };
+                }
+                if (colData.formulas && Array.isArray(colData.formulas)) {
+                    colData.formulas.forEach((f, idx) => {
+                        const r = idx + 2;
+                        const key = `${targetColLetter}${r}`;
+                        const isF = String(f).startsWith('=');
+                        nCells[key] = {
+                            ...(nCells[key] || {}),
+                            formula: isF ? f : null,
+                            val: isF ? evaluateCellFormula(f, nCells) : f
+                        };
+                    });
+                }
                 sh.cells = nCells;
                 next[activeSheetIndex] = sh;
                 return next;
             });
-            toast.success('Applied AI spreadsheet updates');
+            toast.success(`Inserted column ${colData.header || targetColLetter} into sheet`);
             triggerAutoSave();
+            return;
         }
-    }, [selectedCell, activeSheetIndex, commitCellEdit, pushUndoSnapshot, triggerAutoSave]);
+    }, [selectedCell, activeSheetIndex, commitCellEdit, pushUndoSnapshot, triggerAutoSave, colCount]);
 
     // Native Excel (.xlsx, .csv) File Upload Handler
     const handleNativeFileUpload = useCallback(async (file) => {
@@ -2319,7 +2512,7 @@ export default function ExcelEditorPage() {
         } else if (f.endsWith('(') || f.endsWith(',') || f.endsWith('+') || f.endsWith('-') || f.endsWith('*') || f.endsWith('/') || f.endsWith('=')) {
             f += cellCoord;
         } else {
-            const trailingRef = f.match(/([A-Z]+[0-9]+)$/);
+            const trailingRef = f.match(/([A-Za-z]+[0-9]+)$/i);
             if (trailingRef) {
                 f = f.slice(0, -trailingRef[1].length) + cellCoord;
             } else {
@@ -2334,7 +2527,7 @@ export default function ExcelEditorPage() {
     const handleFormulaRangeDrag = (startKey, endKey) => {
         let f = formulaInput || '';
         const rangeText = (!endKey || startKey === endKey) ? startKey : `${startKey}:${endKey}`;
-        const trailingRange = f.match(/([A-Z]+[0-9]+(?::[A-Z]+[0-9]+)?)$/);
+        const trailingRange = f.match(/([A-Za-z]+[0-9]+(?::[A-Za-z]+[0-9]+)?)$/i);
         if (trailingRange) {
             f = f.slice(0, -trailingRange[1].length) + rangeText;
         } else if (f.endsWith('(') || f.endsWith(',') || f.endsWith('+') || f.endsWith('-') || f.endsWith('*') || f.endsWith('/') || f.endsWith('=')) {
@@ -4172,6 +4365,7 @@ export default function ExcelEditorPage() {
 
                                                                 // Dynamic Formula Reference Highlights
                                                                 const activeFormulaRef = formulaRefs.find(r => 
+                                                                    (!r.sheetName || r.sheetName.toLowerCase() === currentSheet?.name?.toLowerCase()) &&
                                                                     cIdx >= r.startCol && cIdx <= r.endCol && rowNum >= r.startRow && rowNum <= r.endRow
                                                                 );
 

@@ -804,47 +804,88 @@ router.post('/sheets-copilot', optionalAuth, asyncHandler(async (req, res) => {
         return res.status(400).json({ success: false, message: 'Prompt instruction is required' });
     }
 
+    const activeSheetName = sheetContext.activeSheet || sheetContext.sheetName || 'Sheet1';
+    const activeCell = sheetContext.activeCell || 'A1';
+    const selectedRange = sheetContext.selectedRange || sheetContext.selectionRange || activeCell;
+    const selectedRangeValues = sheetContext.selectedRangeValues || {};
+    const columns = sheetContext.columns || [];
+    const headers = sheetContext.headers || [];
+    const sampleRows = sheetContext.sampleRows || [];
+    const usedRange = sheetContext.usedRange || '';
+    const activeColDataRange = sheetContext.activeColumnDataRange || '';
+
     const systemPrompt = `You are LabIntel AI, an advanced scientific and laboratory spreadsheet intelligence assistant for LabSheets in LabRecManager.
 Your goal is to assist students, instructors, and lab researchers with data calculations, scientific analysis, formula generation, and table creation.
 
-SPREADSHEET CONTEXT:
-Sheet Title: ${sheetContext.title || 'Untitled Sheet'}
-Active Sheet: ${sheetContext.activeSheet || 'Sheet1'}
-Available Headers: ${JSON.stringify(sheetContext.headers || [])}
-Active Cell / Selection: ${sheetContext.activeCell || 'A1'} (Range: ${sheetContext.selectedRange || 'A1'})
-Sample Sheet Data (first few rows):
-${JSON.stringify(sheetContext.sampleRows || [], null, 2)}
+CURRENT SPREADSHEET CONTEXT:
+- Sheet Title: ${sheetContext.title || 'Untitled Sheet'}
+- Active Sheet: ${activeSheetName}
+- Target Active Cell: ${activeCell}
+- User Selected Range: ${selectedRange}
+${Object.keys(selectedRangeValues).length > 0 ? `- Selected Cell Values: ${JSON.stringify(selectedRangeValues)}` : ''}
+${activeColDataRange ? `- Data in Active Column above target cell (${activeCell}): Range ${activeColDataRange}` : ''}
+- Sheet Bounding Box (Used Range): ${usedRange || 'A1:H10'}
 
-INSTRUCTIONS & CAPABILITIES:
-1. Always output valid JSON adhering strictly to this schema:
+DETECTED COLUMNS & DATA RANGES:
+${columns.length > 0 ? JSON.stringify(columns, null, 2) : 'No explicit column summary available.'}
+
+DETECTED COLUMN HEADERS:
+${headers.length > 0 ? JSON.stringify(headers, null, 2) : 'No explicit headers detected.'}
+
+ACTUAL SHEET DATA ROWS:
+${sampleRows.length > 0 ? JSON.stringify(sampleRows, null, 2) : 'Sheet is currently empty.'}
+
+CRITICAL RULES FOR ACCURATE CELL REFERENCES:
+1. NEVER guess or default to column B or range B2:B12 unless column B is explicitly where the user has data!
+2. Inspect DETECTED COLUMNS, SHEET DATA ROWS, and User Selected Range above to find the EXACT column and row coordinates where the user's data lives.
+3. If the user has selected a range (e.g. ${selectedRange}), or if data is located in a specific column (e.g. column D from row 2 to 4 -> D2:D4), reference THAT exact range.
+4. When the user asks to calculate multiple statistics at once (e.g., "calculate mean median mode" or "mean, median, and mode"):
+   - Calculate all of them!
+   - Set "formula" to the first/primary metric (e.g. Mean: =AVERAGE(range)).
+   - Set "targetCell" to ${activeCell}.
+   - Provide "batchUpdates" mapping consecutive cells (e.g. ${activeCell} for Mean, the next row down for Median, and the next row down for Mode).
+   - For example, if target is D5 and range is D2:D4:
+     "batchUpdates": {
+       "D5": "=AVERAGE(D2:D4)",
+       "D6": "=MEDIAN(D2:D4)",
+       "D7": "=MODE(D2:D4)"
+     }
+   - In "explanation", explicitly explain the formulas and values for Mean, Median, and Mode.
+5. FORMULA SYNTAX:
+   - Mean / Average: =AVERAGE(range)
+   - Median: =MEDIAN(range)
+   - Mode: =MODE(range)
+   - Standard Deviation: =STDEV(range)
+   - Minimum: =MIN(range)
+   - Maximum: =MAX(range)
+   - Sum: =SUM(range)
+   - Count: =COUNT(range)
+
+STRICT OUTPUT JSON SCHEMA:
 {
   "explanation": "Clear explanation of what was analyzed or calculated (Markdown supported)",
-  "action": "insert_formula" | "insert_column" | "generate_table" | "format_cells" | "insights",
-  "formula": "=SUM(B2:B10)",
-  "targetCell": "D2",
+  "action": "insert_formula" | "batch_update" | "insert_column" | "generate_table" | "insights",
+  "formula": "=AVERAGE(...)",
+  "targetCell": "${activeCell}",
+  "batchUpdates": {
+    "${activeCell}": "=AVERAGE(...)"
+  },
   "columnData": {
-    "header": "Total Marks",
+    "header": "Column Header",
     "targetColLetter": "E",
-    "formulas": ["=B2+C2", "=B3+C3"]
+    "formulas": ["=..."]
   },
   "tableData": {
     "startCell": "A1",
-    "headers": ["Reagent", "CAS", "Molarity", "pH"],
+    "headers": ["Metric", "Value"],
     "rows": [
-      ["Sodium Chloride", "7647-14-5", "0.1 M", "7.0"],
-      ["Hydrochloric Acid", "7647-01-0", "0.1 M", "1.0"]
+      ["Mean", "=AVERAGE(...)"]
     ]
   },
   "insights": [
-    "Key finding 1...",
-    "Key finding 2..."
+    "Insight description..."
   ]
-}
-
-2. FORMULA SYNTAX RULES:
-- Use standard Excel syntax: SUM, AVERAGE, MIN, MAX, COUNT, COUNTIF, SUMIF, IF, VLOOKUP, INDEX, MATCH, SLOPE, INTERCEPT, STDEV, ROUND, DILUTION, MOLARITY, PH.
-- Never output markdown code fences (\`\`\`json) outside the JSON object; return valid JSON only.
-- Ensure cell references correctly match the column letters and row numbers provided in the context.`;
+}`;
 
     try {
         const aiResponse = await aiService.executeChatCompletion({
@@ -876,6 +917,116 @@ INSTRUCTIONS & CAPABILITIES:
         });
     } catch (err) {
         console.error('[LabIntel Route Error]:', err.message);
+
+        // Smart Heuristic Fallback if AI provider is offline or rate-limited
+        const query = prompt.toLowerCase();
+        const parseCoord = (coord) => {
+            const match = String(coord).trim().toUpperCase().match(/^([A-Z]+)([0-9]+)$/);
+            if (!match) return { col: 'A', row: 1 };
+            return { col: match[1], row: parseInt(match[2], 10) };
+        };
+        const offsetRow = (coordStr, delta) => {
+            const { col, row } = parseCoord(coordStr);
+            return `${col}${row + delta}`;
+        };
+
+        // Determine target data range
+        let targetRange = (selectedRange && selectedRange.includes(':') && selectedRange !== activeCell) ? selectedRange : null;
+        if (!targetRange && activeColDataRange) {
+            targetRange = activeColDataRange;
+        }
+        if (!targetRange && columns.length > 0) {
+            const numCol = columns.find(c => c.dataType === 'number' && c.dataRange);
+            if (numCol) targetRange = numCol.dataRange;
+        }
+        if (!targetRange) {
+            const { col, row } = parseCoord(activeCell);
+            targetRange = row > 2 ? `${col}2:${col}${row - 1}` : `${col}1:${col}10`;
+        }
+
+        // 1. Mean, Median, Mode combined request
+        if ((query.includes('mean') || query.includes('average')) && (query.includes('median') || query.includes('mode'))) {
+            const cell1 = activeCell;
+            const cell2 = offsetRow(activeCell, 1);
+            const cell3 = offsetRow(activeCell, 2);
+            return res.json({
+                success: true,
+                provider: 'heuristic-engine',
+                model: 'labintel-rule-v1',
+                data: {
+                    explanation: `Calculated statistical summary for range **${targetRange}**:\n- **Mean**: \`=AVERAGE(${targetRange})\` (Cell ${cell1})\n- **Median**: \`=MEDIAN(${targetRange})\` (Cell ${cell2})\n- **Mode**: \`=MODE(${targetRange})\` (Cell ${cell3})`,
+                    action: 'batch_update',
+                    formula: `=AVERAGE(${targetRange})`,
+                    targetCell: cell1,
+                    batchUpdates: {
+                        [cell1]: `=AVERAGE(${targetRange})`,
+                        [cell2]: `=MEDIAN(${targetRange})`,
+                        [cell3]: `=MODE(${targetRange})`
+                    }
+                }
+            });
+        }
+
+        // 2. Individual Mean / Average
+        if (query.includes('mean') || query.includes('average')) {
+            return res.json({
+                success: true,
+                provider: 'heuristic-engine',
+                model: 'labintel-rule-v1',
+                data: {
+                    explanation: `Calculated arithmetic mean (average) for range **${targetRange}**.`,
+                    action: 'insert_formula',
+                    formula: `=AVERAGE(${targetRange})`,
+                    targetCell: activeCell
+                }
+            });
+        }
+
+        // 3. Individual Median
+        if (query.includes('median')) {
+            return res.json({
+                success: true,
+                provider: 'heuristic-engine',
+                model: 'labintel-rule-v1',
+                data: {
+                    explanation: `Calculated median for range **${targetRange}**.`,
+                    action: 'insert_formula',
+                    formula: `=MEDIAN(${targetRange})`,
+                    targetCell: activeCell
+                }
+            });
+        }
+
+        // 4. Individual Mode
+        if (query.includes('mode')) {
+            return res.json({
+                success: true,
+                provider: 'heuristic-engine',
+                model: 'labintel-rule-v1',
+                data: {
+                    explanation: `Calculated mode for range **${targetRange}**.`,
+                    action: 'insert_formula',
+                    formula: `=MODE(${targetRange})`,
+                    targetCell: activeCell
+                }
+            });
+        }
+
+        // 5. Sum
+        if (query.includes('sum') || query.includes('total')) {
+            return res.json({
+                success: true,
+                provider: 'heuristic-engine',
+                model: 'labintel-rule-v1',
+                data: {
+                    explanation: `Calculated total sum for range **${targetRange}**.`,
+                    action: 'insert_formula',
+                    formula: `=SUM(${targetRange})`,
+                    targetCell: activeCell
+                }
+            });
+        }
+
         res.status(502).json({
             success: false,
             message: err.message || 'LabIntel AI service encountered an error'

@@ -125,11 +125,37 @@ export const EXCEL_FUNCTIONS = {
         const mid = Math.floor(nums.length / 2);
         return nums.length % 2 !== 0 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
     },
+    MODE: (...args) => {
+        const nums = args.flat(Infinity).map(v => parseFloat(v)).filter(n => !isNaN(n));
+        if (!nums.length) return '#N/A';
+        const counts = new Map();
+        let maxCount = 0;
+        let modeVal = nums[0];
+        for (const n of nums) {
+            const count = (counts.get(n) || 0) + 1;
+            counts.set(n, count);
+            if (count > maxCount) {
+                maxCount = count;
+                modeVal = n;
+            }
+        }
+        return modeVal;
+    },
+    'MODE.SNGL': (...args) => EXCEL_FUNCTIONS.MODE(...args),
+    MEAN: (...args) => EXCEL_FUNCTIONS.AVERAGE(...args),
     STDEV: (...args) => {
         const nums = args.flat(Infinity).map(v => parseFloat(v)).filter(n => !isNaN(n));
         if (nums.length <= 1) return 0;
         const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
         const variance = nums.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / (nums.length - 1);
+        return Number(Math.sqrt(variance).toFixed(4));
+    },
+    'STDEV.S': (...args) => EXCEL_FUNCTIONS.STDEV(...args),
+    'STDEV.P': (...args) => {
+        const nums = args.flat(Infinity).map(v => parseFloat(v)).filter(n => !isNaN(n));
+        if (!nums.length) return 0;
+        const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+        const variance = nums.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / nums.length;
         return Number(Math.sqrt(variance).toFixed(4));
     },
     ROUND: (num, digits = 0) => {
