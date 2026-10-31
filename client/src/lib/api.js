@@ -287,7 +287,15 @@ export const compilerAPI = {
     getWorkspace: (params) => api.get('/compiler/workspace', { params }),
     saveWorkspace: (data) => api.post('/compiler/workspace', data),
     resetDatabase: () => api.post('/compiler/reset-db'),
-    getStudents: () => api.get('/compiler/students')
+    getStudents: () => api.get('/compiler/students'),
+    getEngineConfig: () => api.get('/compiler/engine/config'),
+    updateEngineConfig: (data) => api.post('/compiler/engine/config', data),
+    getStudentsInspection: () => api.get('/compiler/students-inspection'),
+    getStudentWorkspace: (studentId) => api.get(`/compiler/student-workspace/${studentId}`),
+    submitStudentReview: (studentId, data) => api.post(`/compiler/student-workspace/${studentId}/review`, data),
+    generateStudentAiReview: (studentId, data) => api.post(`/compiler/student-workspace/${studentId}/ai-review`, data),
+    bulkAiReview: (data) => api.post('/compiler/students-bulk-ai-review', data),
+    getMyReview: () => api.get('/compiler/my-review')
 };
 
 export const assignmentsAPI = {

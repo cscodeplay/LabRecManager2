@@ -10,6 +10,8 @@ const prisma = require('../config/database');
 const { authenticate } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { synthesizeDiagram } = require('../utils/diagramSynthesizer');
+const practiceDatabaseService = require('../services/practiceDatabase.service');
+const studentCodeReviewService = require('../services/studentCodeReview.service');
 
 const WORKSPACES_ROOT = path.join(__dirname, '../../storage/workspaces/students');
 
@@ -90,6 +92,9 @@ function runPythonLocally(code, stdin = '', userId = 'guest') {
             return reject(e);
         }
 
+        const dbConfig = practiceDatabaseService.config;
+        const cleanDbName = practiceDatabaseService.getSanitizedDbName(userId);
+
         const child = execFile('python3', [tmpFile], {
             cwd: studentDir,
             timeout: 10000,
@@ -98,6 +103,12 @@ function runPythonLocally(code, stdin = '', userId = 'guest') {
                 ...process.env,
                 PYTHONUNBUFFERED: '1',
                 PYTHONIOENCODING: 'utf-8',
+                PRACTICE_DB_ENGINE: dbConfig.activeEngine,
+                MYSQL_HOST: dbConfig.mysql.host,
+                MYSQL_PORT: String(dbConfig.mysql.port),
+                MYSQL_USER: dbConfig.mysql.user,
+                MYSQL_PASSWORD: dbConfig.mysql.password || '',
+                MYSQL_DATABASE: cleanDbName,
                 PRACTICE_DB_PATH: dbPath,
                 SQLITE_DB: dbPath
             }
@@ -247,11 +258,11 @@ router.post('/execute', authenticate, [
         }
     }
 
-    // 2. Try persistent local execution for SQL
-    if (langNormalized === 'sql' || langNormalized === 'sqlite') {
+    // 2. Try persistent execution for SQL (using admin-preselected engine: MySQL or SQLite3)
+    if (langNormalized === 'sql' || langNormalized === 'sqlite' || langNormalized === 'mysql') {
         try {
             const studentDbPath = getStudentDbPath(userId);
-            const localResult = await runSqlLocally(code, studentDbPath);
+            const localResult = await practiceDatabaseService.executeSql(code, userId, studentDbPath);
             return res.json({
                 success: true,
                 data: {
@@ -262,11 +273,13 @@ router.post('/execute', authenticate, [
                     tables: localResult.tables,
                     existingTables: localResult.existingTables || [],
                     isPersistent: true,
-                    runner: 'local-sqlite3'
+                    runner: localResult.runner || 'local-sql',
+                    engine: localResult.engine || practiceDatabaseService.config.activeEngine,
+                    databaseName: localResult.databaseName || null
                 }
             });
         } catch (localErr) {
-            console.warn('Local SQLite execution failed, falling back to Wandbox:', localErr.message);
+            console.warn('Practice SQL execution failed:', localErr.message);
         }
     }
 
@@ -435,29 +448,18 @@ router.get('/workspace', authenticate, asyncHandler(async (req, res) => {
         } catch (e) {}
     }
 
-    // Query tables created in student's persistent database
-    let existingTables = [];
-    if (fs.existsSync(studentDbPath)) {
-        try {
-            await new Promise((resolve) => {
-                execFile('sqlite3', [studentDbPath, '-json', 'SELECT name FROM sqlite_master WHERE type="table" AND name NOT LIKE "sqlite_%";'], (err, stdout) => {
-                    if (!err && stdout && stdout.trim().startsWith('[')) {
-                        try {
-                            const parsed = JSON.parse(stdout);
-                            existingTables = parsed.map(p => p.name);
-                        } catch (e) {}
-                    }
-                    resolve();
-                });
-            });
-        } catch (e) {}
-    }
+    // Query tables created in student's persistent database under active engine (MySQL or SQLite)
+    const existingTables = await practiceDatabaseService.getExistingTables(targetUserId, studentDbPath);
+
+    // Fetch student review data
+    const reviewData = studentCodeReviewService.getStudentReviewData(targetUserId);
 
     return res.json({
         success: true,
         data: {
             ...workspaceData,
             existingTables,
+            reviewData,
             studentInfo: targetStudentInfo,
             isInspecting: Boolean(targetStudentInfo)
         }
@@ -520,24 +522,19 @@ router.post('/workspace', authenticate, asyncHandler(async (req, res) => {
 
 /**
  * @route   POST /api/compiler/reset-db
- * @desc    Reset student's persistent database to a blank state
+ * @desc    Reset student's persistent database to a blank state (MySQL or SQLite)
  * @access  Private
  */
 router.post('/reset-db', authenticate, asyncHandler(async (req, res) => {
     const userId = req.user?.id || 'guest';
     const studentDbPath = getStudentDbPath(userId);
 
-    if (fs.existsSync(studentDbPath)) {
-        try {
-            fs.unlinkSync(studentDbPath);
-        } catch (e) {
-            console.error('Failed to unlink student DB:', e);
-        }
-    }
+    const resetResult = await practiceDatabaseService.resetStudentDatabase(userId, studentDbPath);
 
     return res.json({
         success: true,
-        message: 'Persistent practice database reset successfully'
+        message: resetResult.message || 'Persistent practice database reset successfully',
+        data: resetResult
     });
 }));
 
@@ -594,6 +591,346 @@ router.post('/generate-diagram', authenticate, [
             error: err.message
         });
     }
+}));
+
+/**
+ * =========================================================================
+ * PRACTICE DATABASE ENGINE CONFIGURATION ENDPOINTS (Option B Preselection)
+ * =========================================================================
+ */
+
+/**
+ * @route   GET /api/compiler/engine/config
+ * @desc    Get current practice SQL engine configuration and live status
+ * @access  Private (All authenticated users)
+ */
+router.get('/engine/config', authenticate, asyncHandler(async (req, res) => {
+    const config = await practiceDatabaseService.getEngineConfig();
+    return res.json({
+        success: true,
+        data: config
+    });
+}));
+
+/**
+ * @route   POST /api/compiler/engine/config
+ * @desc    Update practice SQL engine preselection globally across the app
+ * @access  Private (Admins, Principals, and Instructors only)
+ */
+router.post('/engine/config', authenticate, asyncHandler(async (req, res) => {
+    const userRole = req.user?.role;
+    const isInstructorOrAdmin = userRole === 'admin' || userRole === 'instructor' || userRole === 'principal';
+
+    if (!isInstructorOrAdmin) {
+        return res.status(403).json({
+            success: false,
+            message: 'Access denied. Only administrators and instructors can configure the practice database engine.'
+        });
+    }
+
+    const { activeEngine, fallbackToSqlite, mysql: mysqlUpdates } = req.body;
+
+    try {
+        const updatedConfig = await practiceDatabaseService.updateEngineConfig({
+            activeEngine,
+            fallbackToSqlite,
+            mysql: mysqlUpdates
+        }, req.user);
+
+        return res.json({
+            success: true,
+            message: `Practice SQL engine updated to ${updatedConfig.activeEngine.toUpperCase()}`,
+            data: updatedConfig
+        });
+    } catch (err) {
+        return res.status(400).json({
+            success: false,
+            message: err.message || 'Failed to update database engine configuration'
+        });
+    }
+}));
+
+/**
+ * =========================================================================
+ * STUDENT WORK INSPECTION, CODE REVIEWS & BULK AI FEEDBACK ENDPOINTS
+ * =========================================================================
+ */
+
+/**
+ * @route   GET /api/compiler/students-inspection
+ * @desc    Get enriched list of students with last active datetime, workspace stats & review badges
+ * @access  Private (Instructors, Admins, Principals only)
+ */
+router.get('/students-inspection', authenticate, asyncHandler(async (req, res) => {
+    const userRole = req.user?.role;
+    const isInstructorOrAdmin = userRole === 'admin' || userRole === 'instructor' || userRole === 'principal';
+
+    if (!isInstructorOrAdmin) {
+        return res.status(403).json({
+            success: false,
+            message: 'Access denied. Only instructors and administrators can inspect student work.'
+        });
+    }
+
+    const schoolId = req.user?.schoolId;
+    const inspectionList = await studentCodeReviewService.getStudentsInspectionList({ schoolId });
+
+    return res.json({
+        success: true,
+        data: inspectionList
+    });
+}));
+
+/**
+ * @route   GET /api/compiler/student-workspace/:studentId
+ * @desc    Retrieve full workspace and review history for a specific student
+ * @access  Private (Instructors, Admins, Principals only)
+ */
+router.get('/student-workspace/:studentId', authenticate, asyncHandler(async (req, res) => {
+    const userRole = req.user?.role;
+    const isInstructorOrAdmin = userRole === 'admin' || userRole === 'instructor' || userRole === 'principal';
+
+    if (!isInstructorOrAdmin) {
+        return res.status(403).json({
+            success: false,
+            message: 'Access denied. Only instructors and administrators can inspect student workspaces.'
+        });
+    }
+
+    const { studentId } = req.params;
+
+    const studentRecord = await prisma.user.findUnique({
+        where: { id: studentId },
+        select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            admissionNumber: true,
+            studentId: true,
+            classEnrollments: {
+                select: {
+                    rollNumber: true,
+                    class: { select: { id: true, name: true, section: true } }
+                },
+                take: 1
+            }
+        }
+    });
+
+    if (!studentRecord) {
+        return res.status(404).json({
+            success: false,
+            message: 'Student record not found.'
+        });
+    }
+
+    const dir = getStudentWorkspaceDir(studentId);
+    const workspaceFile = path.join(dir, 'workspace.json');
+    const studentDbPath = getStudentDbPath(studentId);
+
+    let workspaceData = {
+        pythonCode: null,
+        sqlCode: null,
+        pythonFlowchart: null,
+        sqlErDiagram: null,
+        flowchartCanvasData: null,
+        tabs: null,
+        activeTabId: null,
+        updatedAt: null
+    };
+
+    if (fs.existsSync(workspaceFile)) {
+        try {
+            const raw = fs.readFileSync(workspaceFile, 'utf8');
+            workspaceData = { ...workspaceData, ...JSON.parse(raw) };
+        } catch (_) {}
+    }
+
+    const existingTables = await practiceDatabaseService.getExistingTables(studentId, studentDbPath);
+    const reviewData = studentCodeReviewService.getStudentReviewData(studentId);
+
+    const enrollment = studentRecord.classEnrollments[0];
+    const className = enrollment?.class?.name 
+        ? `${enrollment.class.name}${enrollment.class.section ? ` - ${enrollment.class.section}` : ''}`
+        : 'General';
+
+    return res.json({
+        success: true,
+        data: {
+            ...workspaceData,
+            existingTables,
+            reviewData,
+            studentInfo: {
+                id: studentRecord.id,
+                name: `${studentRecord.firstName} ${studentRecord.lastName || ''}`.trim(),
+                email: studentRecord.email,
+                admissionNumber: studentRecord.admissionNumber || studentRecord.studentId || 'N/A',
+                rollNumber: enrollment?.rollNumber || 'N/A',
+                className
+            }
+        }
+    });
+}));
+
+/**
+ * @route   POST /api/compiler/student-workspace/:studentId/review
+ * @desc    Save an instructor manual code review or edited AI suggestions
+ * @access  Private (Instructors, Admins, Principals only)
+ */
+router.post('/student-workspace/:studentId/review', authenticate, [
+    body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
+    body('status').isIn(['reviewed', 'needs_improvement', 'excellent']).withMessage('Invalid review status'),
+    body('comments').optional().isString(),
+    body('suggestions').optional().isArray()
+], asyncHandler(async (req, res) => {
+    const userRole = req.user?.role;
+    const isInstructorOrAdmin = userRole === 'admin' || userRole === 'instructor' || userRole === 'principal';
+
+    if (!isInstructorOrAdmin) {
+        return res.status(403).json({
+            success: false,
+            message: 'Access denied. Only instructors and administrators can submit code reviews.'
+        });
+    }
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { studentId } = req.params;
+    const { rating, status, comments, suggestions } = req.body;
+
+    const savedReview = studentCodeReviewService.saveStudentReview(studentId, {
+        rating,
+        status,
+        comments,
+        suggestions,
+        isAiGenerated: false
+    }, req.user);
+
+    return res.json({
+        success: true,
+        message: 'Review saved and delivered to student successfully',
+        data: savedReview
+    });
+}));
+
+/**
+ * @route   POST /api/compiler/student-workspace/:studentId/ai-review
+ * @desc    Generate AI Code Review with Big-O Complexity, Suggestions & Rating
+ * @access  Private (Instructors, Admins, Principals only)
+ */
+router.post('/student-workspace/:studentId/ai-review', authenticate, asyncHandler(async (req, res) => {
+    const userRole = req.user?.role;
+    const isInstructorOrAdmin = userRole === 'admin' || userRole === 'instructor' || userRole === 'principal';
+
+    if (!isInstructorOrAdmin) {
+        return res.status(403).json({
+            success: false,
+            message: 'Access denied. Only instructors and administrators can request AI code reviews.'
+        });
+    }
+
+    const { studentId } = req.params;
+    const { autoSave = false } = req.body;
+
+    const studentRecord = await prisma.user.findUnique({
+        where: { id: studentId },
+        select: { firstName: true, lastName: true }
+    });
+
+    const studentName = studentRecord ? `${studentRecord.firstName} ${studentRecord.lastName || ''}`.trim() : 'Student';
+
+    const dir = getStudentWorkspaceDir(studentId);
+    const workspaceFile = path.join(dir, 'workspace.json');
+    const studentDbPath = getStudentDbPath(studentId);
+
+    let files = [];
+    if (fs.existsSync(workspaceFile)) {
+        try {
+            const ws = JSON.parse(fs.readFileSync(workspaceFile, 'utf8'));
+            if (Array.isArray(ws.tabs) && ws.tabs.length > 0) {
+                files = ws.tabs.map(t => ({ name: t.name, language: t.language, code: t.code }));
+            } else {
+                if (ws.pythonCode) files.push({ name: 'main.py', language: 'python', code: ws.pythonCode });
+                if (ws.sqlCode) files.push({ name: 'schema.sql', language: 'sql', code: ws.sqlCode });
+            }
+        } catch (_) {}
+    }
+
+    const existingTables = await practiceDatabaseService.getExistingTables(studentId, studentDbPath);
+
+    const aiReview = await studentCodeReviewService.generateAiReview({
+        studentName,
+        files,
+        existingTables
+    });
+
+    let savedReview = null;
+    if (autoSave) {
+        savedReview = studentCodeReviewService.saveStudentReview(studentId, {
+            ...aiReview,
+            reviewedBy: req.user ? `AI Review (Approved by ${req.user.firstName || 'Instructor'})` : 'AI Code Mentor'
+        }, req.user);
+    }
+
+    return res.json({
+        success: true,
+        data: {
+            ...aiReview,
+            savedReview
+        }
+    });
+}));
+
+/**
+ * @route   POST /api/compiler/students-bulk-ai-review
+ * @desc    Trigger Bulk AI Code Review for selected students or entire class
+ * @access  Private (Instructors, Admins, Principals only)
+ */
+router.post('/students-bulk-ai-review', authenticate, [
+    body('studentIds').isArray({ min: 1 }).withMessage('Array of studentIds is required')
+], asyncHandler(async (req, res) => {
+    const userRole = req.user?.role;
+    const isInstructorOrAdmin = userRole === 'admin' || userRole === 'instructor' || userRole === 'principal';
+
+    if (!isInstructorOrAdmin) {
+        return res.status(403).json({
+            success: false,
+            message: 'Access denied. Only instructors and administrators can perform bulk AI code reviews.'
+        });
+    }
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { studentIds } = req.body;
+    const bulkResults = await studentCodeReviewService.runBulkAiReview(studentIds, req.user);
+
+    return res.json({
+        success: true,
+        message: `Bulk AI review complete: ${bulkResults.successCount} succeeded, ${bulkResults.failedCount} failed`,
+        data: bulkResults
+    });
+}));
+
+/**
+ * @route   GET /api/compiler/my-review
+ * @desc    Get current student's latest code review and suggestions
+ * @access  Private (Student)
+ */
+router.get('/my-review', authenticate, asyncHandler(async (req, res) => {
+    const userId = req.user?.id || 'guest';
+    const reviewData = studentCodeReviewService.getStudentReviewData(userId);
+
+    return res.json({
+        success: true,
+        data: reviewData
+    });
 }));
 
 module.exports = router;

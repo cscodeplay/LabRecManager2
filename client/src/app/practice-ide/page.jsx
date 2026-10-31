@@ -52,6 +52,9 @@ import IDEMenuBar from '@/components/IDEMenuBar';
 import FlowchartVisualCanvas from '@/components/FlowchartVisualCanvas';
 import DocumentCodeBrowserModal from '@/components/DocumentCodeBrowserModal';
 import SaveAsDialogModal from '@/components/SaveAsDialogModal';
+import DatabaseEngineModal from '@/components/DatabaseEngineModal';
+import StudentWorkInspectorModal from '@/components/StudentWorkInspectorModal';
+import StudentFeedbackDrawer from '@/components/StudentFeedbackDrawer';
 import MermaidRenderer from '@/components/MermaidRenderer';
 
 // Dynamically load Monaco Editor to avoid SSR conflicts
@@ -238,16 +241,36 @@ export function PracticeIDEPage() {
     const [fontSize, setFontSize] = useState(14);
     const isLightMode = outputThemeId === 'light' || editorTheme === 'vs' || editorTheme === 'light';
 
-    // Persistent student SQLite DB info
+    // Persistent student Database Engine (MySQL or SQLite)
+    const [activeEngine, setActiveEngine] = useState('mysql');
+    const [showEngineModal, setShowEngineModal] = useState(false);
     const [existingTables, setExistingTables] = useState([]);
     const [isResettingDb, setIsResettingDb] = useState(false);
 
-    // Instructor/Admin Student Inspection
+    // Student Work Inspection & Review Studio
+    const [showInspectorModal, setShowInspectorModal] = useState(false);
     const [studentsList, setStudentsList] = useState([]);
     const [inspectingStudentId, setInspectingStudentId] = useState(null);
     const [inspectingStudentInfo, setInspectingStudentInfo] = useState(null);
 
+    // Student Review Feedback Drawer & Badge
+    const [showFeedbackDrawer, setShowFeedbackDrawer] = useState(false);
+    const [latestStudentReview, setLatestStudentReview] = useState(null);
+
     const editorRef = useRef(null);
+
+    // Fetch initial SQL engine configuration
+    useEffect(() => {
+        let isMounted = true;
+        compilerAPI.getEngineConfig()
+            .then(res => {
+                if (res.data?.success && res.data?.data && isMounted) {
+                    setActiveEngine(res.data.data.activeEngine || 'mysql');
+                }
+            })
+            .catch(() => {});
+        return () => { isMounted = false; };
+    }, []);
 
     // 2. Initial Workspace Loading (Server + Local Storage)
     useEffect(() => {
@@ -275,6 +298,7 @@ export function PracticeIDEPage() {
                     if (ws.outputTheme) setOutputThemeId(ws.outputTheme);
                     if (ws.existingTables) setExistingTables(ws.existingTables);
                     if (ws.isAutosaveEnabled !== undefined) setIsAutosaveEnabled(ws.isAutosaveEnabled);
+                    if (ws.reviewData?.latestReview) setLatestStudentReview(ws.reviewData.latestReview);
 
                     if (ws.studentInfo) {
                         setInspectingStudentInfo(ws.studentInfo);
@@ -991,6 +1015,11 @@ Date:          ${dateStr}
                     toast('Returned to your own studio workspace');
                 }}
                 isInspecting={Boolean(inspectingStudentId)}
+                activeEngine={activeEngine}
+                onOpenEngineModal={() => setShowEngineModal(true)}
+                onOpenInspectorStudio={() => setShowInspectorModal(true)}
+                latestStudentReview={latestStudentReview}
+                onOpenFeedbackDrawer={() => setShowFeedbackDrawer(true)}
             />
 
             {/* Inspection Alert Banner (If Instructor reviewing a student) */}
@@ -1270,7 +1299,7 @@ Date:          ${dateStr}
                             </div>
                             <span className="text-slate-400 hidden sm:inline">•</span>
                             <span className={`text-[11px] hidden sm:inline ${isLightMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                                {activeTab.language === 'python' ? 'Python 3.13 Sandbox' : 'Persistent SQLite Engine'}
+                                {activeTab.language === 'python' ? 'Python 3.13 Sandbox' : (activeEngine === 'mysql' ? 'Persistent MySQL 9.3 Engine' : 'Persistent SQLite 3 Engine')}
                             </span>
                         </div>
 
@@ -1562,7 +1591,9 @@ Date:          ${dateStr}
                                             <FileSpreadsheet className="w-4 h-4 text-sky-500" />
                                             <span>Query Result Set ({activeTab.output.tables.length} rows)</span>
                                         </h3>
-                                        <span className="text-[11px] text-slate-400 font-mono">SQLite 3 Engine</span>
+                                        <span className="text-[11px] text-slate-400 font-mono">
+                                            {activeEngine === 'mysql' ? 'MySQL 9.3 Engine' : 'SQLite 3 Engine'}
+                                        </span>
                                     </div>
 
                                     <div className={`flex-1 overflow-auto rounded-lg border shadow-xs ${isLightMode ? 'border-slate-200 bg-white' : 'border-slate-800 bg-slate-950 shadow-inner'}`}>
@@ -1613,10 +1644,10 @@ Date:          ${dateStr}
                                         <Database className="w-6 h-6" />
                                     </div>
                                     <h3 className={`text-sm font-bold mb-1 ${isLightMode ? 'text-slate-800' : 'text-slate-200'}`}>
-                                        Persistent SQLite Database
+                                        Persistent {activeEngine === 'mysql' ? 'MySQL' : 'SQLite'} Database
                                     </h3>
                                     <p className="text-xs text-slate-500 max-w-sm mb-4">
-                                        Tables created in this studio are saved permanently in your private SQLite database file.
+                                        Tables created in this studio are saved permanently in your private {activeEngine === 'mysql' ? 'MySQL schema' : 'SQLite database file'}.
                                     </p>
 
                                     {existingTables.length > 0 ? (
@@ -1705,6 +1736,36 @@ Date:          ${dateStr}
                 currentDescription={activeTab.metadata?.description || ''}
                 studentIdentifier={studentIdentifier}
                 existingDocs={existingDocs}
+            />
+
+            {/* Practice SQL Database Engine Modal */}
+            <DatabaseEngineModal
+                isOpen={showEngineModal}
+                onClose={() => setShowEngineModal(false)}
+                isDarkMode={!isLightMode}
+                onEngineChanged={(newCfg) => {
+                    setActiveEngine(newCfg.activeEngine || 'mysql');
+                }}
+            />
+
+            {/* Student Work Inspector & Review Studio Modal */}
+            <StudentWorkInspectorModal
+                isOpen={showInspectorModal}
+                onClose={() => setShowInspectorModal(false)}
+                isDarkMode={!isLightMode}
+                initialStudentId={inspectingStudentId}
+                onOpenInIDE={(stId) => {
+                    setInspectingStudentId(stId);
+                    setShowInspectorModal(false);
+                }}
+            />
+
+            {/* Student Feedback & AI Suggestions Drawer */}
+            <StudentFeedbackDrawer
+                isOpen={showFeedbackDrawer}
+                onClose={() => setShowFeedbackDrawer(false)}
+                reviewData={{ latestReview: latestStudentReview }}
+                isDarkMode={!isLightMode}
             />
         </div>
     );

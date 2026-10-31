@@ -23,7 +23,8 @@ import {
     FileText,
     HelpCircle,
     Info,
-    Shapes
+    Shapes,
+    Star
 } from 'lucide-react';
 
 /**
@@ -57,7 +58,12 @@ export default function IDEMenuBar({
     selectedStudentId,
     onSelectStudent,
     onCloseInspection,
-    isInspecting
+    isInspecting,
+    activeEngine = 'mysql',
+    onOpenEngineModal,
+    onOpenInspectorStudio,
+    latestStudentReview,
+    onOpenFeedbackDrawer
 }) {
     const [openMenu, setOpenMenu] = useState(null); // 'file' | 'edit' | 'view' | 'run' | 'inspect' | null
     const menuRef = useRef(null);
@@ -424,81 +430,75 @@ export default function IDEMenuBar({
                     )}
                 </div>
 
-                {/* Instructor / Admin Student Inspection Dropdown */}
+                {/* SQL Engine Preselection Pill */}
+                {isInstructorOrAdmin ? (
+                    <button
+                        onClick={onOpenEngineModal}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border transition cursor-pointer ${
+                            isLightMode
+                                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                        }`}
+                        title="Configure and Preselect SQL Database Engine globally (MySQL or SQLite)"
+                    >
+                        <span>{activeEngine === 'mysql' ? '🐬' : '🗄️'}</span>
+                        <span className="font-bold">
+                            {activeEngine === 'mysql' ? 'MySQL 9.3' : 'SQLite 3'}
+                        </span>
+                        <ChevronDown className="w-3 h-3 text-slate-400" />
+                    </button>
+                ) : (
+                    <div
+                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                            isLightMode
+                                ? 'bg-slate-100 border-slate-200 text-slate-600'
+                                : 'bg-slate-800/80 border-slate-700 text-slate-300'
+                        }`}
+                        title="Active SQL engine preselected by school administrator"
+                    >
+                        <span>{activeEngine === 'mysql' ? '🐬' : '🗄️'}</span>
+                        <span>Engine: {activeEngine === 'mysql' ? 'MySQL' : 'SQLite'}</span>
+                    </div>
+                )}
+
+                {/* Student Feedback Badge (When review is available for current user) */}
+                {latestStudentReview && (
+                    <button
+                        onClick={onOpenFeedbackDrawer}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 transition cursor-pointer animate-pulse"
+                        title="Click to view instructor comments and code improvement suggestions"
+                    >
+                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                        <span>Review: {latestStudentReview.rating || 5}/5</span>
+                    </button>
+                )}
+
+                {/* Instructor / Admin Inspection Studio Button */}
                 {isInstructorOrAdmin && (
-                    <div className="relative">
+                    <div className="flex items-center gap-1.5">
+                        {isInspecting ? (
+                            <button
+                                onClick={onCloseInspection}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition cursor-pointer"
+                                title="Click to return to your personal workspace"
+                            >
+                                <span>Inspecting Student</span>
+                                <X className="w-3 h-3" />
+                            </button>
+                        ) : null}
+
                         <button
-                            onClick={() => toggleMenu('inspect')}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border transition cursor-pointer ${
-                                isInspecting
-                                    ? 'bg-amber-50 border-amber-300 text-amber-800'
-                                    : isLightMode
-                                    ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-                                    : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                            onClick={onOpenInspectorStudio}
+                            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                                isLightMode
+                                    ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-300 text-amber-900'
+                                    : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/30 text-amber-300'
                             }`}
+                            title="Open convenient Student Coding Work Inspection Studio & AI Reviews"
                         >
-                            <UserCheck className="w-3.5 h-3.5 text-amber-500" />
-                            <span>
-                                {isInspecting ? 'Inspecting Student' : 'Inspect Student Work'}
-                            </span>
-                            <ChevronDown className="w-3 h-3" />
+                            <UserCheck className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Inspect Student Work</span>
                         </button>
-
-                        {openMenu === 'inspect' && (
-                            <div className={`absolute right-0 top-full mt-1 w-72 p-2 z-50 animate-in fade-in slide-in-from-top-1 ${dropdownClass}`}>
-                                <div className={`flex items-center justify-between pb-1.5 border-b mb-1.5 ${isLightMode ? 'border-slate-200' : 'border-slate-800'}`}>
-                                    <span className="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400">
-                                        Student Practice Audits
-                                    </span>
-                                    {isInspecting && (
-                                        <button
-                                            onClick={() => handleAction(onCloseInspection)}
-                                            className="text-[10px] text-primary-600 dark:text-primary-400 hover:underline cursor-pointer"
-                                        >
-                                            Return to My Studio
-                                        </button>
-                                    )}
-                                </div>
-
-                                <div className="max-h-60 overflow-y-auto space-y-1">
-                                    <button
-                                        onClick={() => handleAction(onCloseInspection)}
-                                        className={`w-full text-left px-2.5 py-1.5 rounded text-xs flex items-center justify-between cursor-pointer ${
-                                            !selectedStudentId
-                                                ? 'bg-primary-50 text-primary-700 font-bold border border-primary-200'
-                                                : isLightMode
-                                                ? 'text-slate-700 hover:bg-slate-100'
-                                                : 'text-slate-300 hover:bg-slate-800'
-                                        }`}
-                                    >
-                                        <span>My Workspace (Instructor)</span>
-                                        {!selectedStudentId && <Check className="w-3.5 h-3.5 text-primary-600" />}
-                                    </button>
-
-                                    {studentsList.map((st) => (
-                                        <button
-                                            key={st.id}
-                                            onClick={() => handleAction(() => onSelectStudent(st.id))}
-                                            className={`w-full text-left px-2.5 py-1.5 rounded text-xs flex items-center justify-between cursor-pointer ${
-                                                selectedStudentId === st.id
-                                                    ? 'bg-amber-50 text-amber-800 font-bold border border-amber-200'
-                                                    : isLightMode
-                                                    ? 'text-slate-700 hover:bg-slate-100'
-                                                    : 'text-slate-300 hover:bg-slate-800'
-                                            }`}
-                                        >
-                                            <div className="flex flex-col truncate">
-                                                <span className="truncate font-medium">{st.name}</span>
-                                                <span className="text-[10px] text-slate-400">{st.studentId || st.email}</span>
-                                            </div>
-                                            {selectedStudentId === st.id && (
-                                                <Check className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-                                            )}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
                     </div>
                 )}
             </div>
