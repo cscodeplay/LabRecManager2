@@ -160,7 +160,7 @@ export default function IDEMenuBar({
                                     <FileCode className="w-3.5 h-3.5 text-indigo-400" />
                                     Save As...
                                 </span>
-                                <span className="text-[10px] text-slate-500">&lt;id&gt;_&lt;date&gt;</span>
+                                <kbd className="text-[10px] text-slate-500 font-mono">Ctrl+Shift+S</kbd>
                             </button>
 
                             <div className="my-1 border-t border-slate-800" />

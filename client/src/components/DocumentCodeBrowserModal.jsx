@@ -100,13 +100,23 @@ export default function DocumentCodeBrowserModal({
     const handleSelectDocument = async (doc, asNewTab = false) => {
         setOpeningDocId(doc.id);
         try {
-            // Fetch raw file text
-            const downloadUrl = `/api/documents/${doc.id}/file`;
-            const response = await fetch(downloadUrl);
-            if (!response.ok) {
-                throw new Error('Failed to download document content');
+            // Fetch raw file text via authenticated api
+            let codeText = '';
+            try {
+                const response = await documentsAPI.getFileContent(doc.id);
+                codeText = typeof response.data === 'string' ? response.data : String(response.data || '');
+            } catch (apiErr) {
+                // Fallback: if document has a direct accessible URL
+                if (doc.url && doc.url.startsWith('http')) {
+                    const directRes = await fetch(doc.url);
+                    if (!directRes.ok) {
+                        throw new Error(apiErr.response?.data?.message || apiErr.message || 'Failed to fetch document file');
+                    }
+                    codeText = await directRes.text();
+                } else {
+                    throw apiErr;
+                }
             }
-            const codeText = await response.text();
 
             const isSql = doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.sql');
             const lang = isSql ? 'sql' : 'python';
@@ -123,7 +133,7 @@ export default function DocumentCodeBrowserModal({
             onClose();
         } catch (err) {
             console.error('Error opening doc:', err);
-            toast.error('Failed to read code document content: ' + err.message);
+            toast.error('Failed to read code document content: ' + (err.response?.data?.message || err.message));
         } finally {
             setOpeningDocId(null);
         }

@@ -194,6 +194,7 @@ export const documentsAPI = {
     update: (id, data) => api.put(`/documents/${id}`, data),
     delete: (id) => api.delete(`/documents/${id}`),
     getPublic: (id) => api.get(`/documents/${id}/public`),
+    getFileContent: (id) => api.get(`/documents/${id}/file`, { responseType: 'text', transformResponse: [(data) => data] }),
     // Document sharing
     share: (id, data) => api.post(`/documents/${id}/share`, data),
     getShared: (params) => api.get('/documents/shared', { params }),

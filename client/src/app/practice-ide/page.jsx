@@ -51,6 +51,7 @@ import { compilerAPI, documentsAPI, foldersAPI } from '@/lib/api';
 import IDEMenuBar from '@/components/IDEMenuBar';
 import FlowchartVisualCanvas from '@/components/FlowchartVisualCanvas';
 import DocumentCodeBrowserModal from '@/components/DocumentCodeBrowserModal';
+import SaveAsDialogModal from '@/components/SaveAsDialogModal';
 import MermaidRenderer from '@/components/MermaidRenderer';
 
 // Dynamically load Monaco Editor to avoid SSR conflicts
@@ -196,8 +197,9 @@ export default function PracticeIDEPage() {
     // Problem Details / Metadata Drawer
     const [showMetadataDrawer, setShowMetadataDrawer] = useState(true);
 
-    // Document Browser Modal
+    // Document Browser & Save As Modals
     const [showDocBrowserModal, setShowDocBrowserModal] = useState(false);
+    const [showSaveAsModal, setShowSaveAsModal] = useState(false);
 
     // Execution state
     const [isExecuting, setIsExecuting] = useState(false);
@@ -510,32 +512,13 @@ Date:          ${dateStr}
         }
     };
 
-    // 6. Save to Documents (Defaulting to <studentId>_<YYYY-MM-DD>.<ext> in Python/SQL folder)
-    const handleSaveToDocuments = async (promptCustomName = false) => {
-        // Enforce Mandatory Title
-        const problemTitle = activeTab.metadata?.title?.trim();
-        if (!problemTitle) {
-            toast.error('Mandatory Field Required: Please enter a Problem Title in the header panel before saving.');
-            setShowMetadataDrawer(true);
-            return;
-        }
-
-        const dateStr = new Date().toISOString().split('T')[0];
-        const ext = activeTab.language === 'sql' ? 'sql' : 'py';
-        let defaultFileName = `${studentIdentifier}_${dateStr}.${ext}`;
-
-        let finalFileName = defaultFileName;
-        if (promptCustomName) {
-            const custom = prompt('Enter filename to save in Documents:', defaultFileName);
-            if (!custom) return;
-            finalFileName = custom.endsWith(`.${ext}`) ? custom : `${custom}.${ext}`;
-        }
-
-        const toastId = toast.loading(`Saving "${finalFileName}" to Documents...`);
+    // 6. Save to Documents
+    const executeSaveToDocuments = async ({ fileName, folderName, language, problemTitle, problemDescription }) => {
+        const toastId = toast.loading(`Saving "${fileName}" to Documents...`);
 
         try {
             // 1. Resolve or Create Folder
-            const targetFolderName = activeTab.language === 'sql' ? 'SQL' : 'Python';
+            const targetFolderName = folderName || (language === 'sql' ? 'SQL' : 'Python');
             const foldersRes = await foldersAPI.getAll();
             const rawFolders = foldersRes.data?.data;
             const foldersList = Array.isArray(rawFolders)
@@ -550,36 +533,69 @@ Date:          ${dateStr}
             if (!targetFolder) {
                 const createFolderRes = await foldersAPI.create({
                     name: targetFolderName,
-                    color: activeTab.language === 'sql' ? '#0284c7' : '#f59e0b'
+                    color: language === 'sql' ? '#0284c7' : '#f59e0b'
                 });
                 targetFolder = createFolderRes.data?.data?.folder || createFolderRes.data?.data;
             }
 
             // 2. Upload file
             const fileBlob = new Blob([activeTab.code], { type: 'text/plain;charset=utf-8' });
-            const fileObj = new File([fileBlob], finalFileName, { type: 'text/plain' });
+            const fileObj = new File([fileBlob], fileName, { type: 'text/plain' });
 
             await documentsAPI.upload(fileObj, {
-                name: finalFileName,
-                description: `${problemTitle} - ${activeTab.metadata?.description || ''}`,
+                name: fileName,
+                description: `${problemTitle || ''} - ${problemDescription || ''}`.trim(),
                 category: 'code',
                 folderId: targetFolder?.id
             });
 
-            // Mark active tab clean
+            // 3. Mark active tab clean and update metadata
             setTabs((prevTabs) =>
                 prevTabs.map((t) =>
                     t.id === activeTabId
-                        ? { ...t, filename: finalFileName, isDirty: false }
+                        ? {
+                              ...t,
+                              filename: fileName,
+                              language: language || t.language,
+                              title: problemTitle || t.title,
+                              metadata: {
+                                  ...t.metadata,
+                                  title: problemTitle || t.metadata?.title || '',
+                                  description: problemDescription !== undefined ? problemDescription : t.metadata?.description || ''
+                              },
+                              isDirty: false
+                          }
                         : t
                 )
             );
 
-            toast.success(`Saved to Documents / ${targetFolderName} / ${finalFileName}!`, { id: toastId });
+            toast.success(`Saved to Documents / ${targetFolderName} / ${fileName}!`, { id: toastId });
         } catch (err) {
             console.error('Save to documents error:', err);
             toast.error('Failed to save to Documents: ' + (err.response?.data?.message || err.message), { id: toastId });
+            throw err;
         }
+    };
+
+    const handleSaveToDocuments = (openAsDialog = false) => {
+        // If explicitly requested via Save As, or if the active tab has never been saved yet (no filename), or if mandatory problem title is missing:
+        if (openAsDialog || !activeTab.filename || !activeTab.metadata?.title?.trim()) {
+            setShowSaveAsModal(true);
+            return;
+        }
+
+        // Direct quick-save with existing filename and metadata
+        const ext = activeTab.language === 'sql' ? 'sql' : 'py';
+        const folder = activeTab.language === 'sql' ? 'SQL' : 'Python';
+        const fileName = activeTab.filename.endsWith(`.${ext}`) ? activeTab.filename : `${activeTab.filename}.${ext}`;
+
+        executeSaveToDocuments({
+            fileName,
+            folderName: folder,
+            language: activeTab.language,
+            problemTitle: activeTab.metadata?.title?.trim() || activeTab.title,
+            problemDescription: activeTab.metadata?.description || ''
+        });
     };
 
     // 7. Open Document from Browser into Tab
@@ -646,9 +662,13 @@ Date:          ${dateStr}
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.ctrlKey || e.metaKey) {
-                if (e.key === 's') {
+                if (e.key === 's' || e.key === 'S') {
                     e.preventDefault();
-                    handleSaveToDocuments(false);
+                    if (e.shiftKey) {
+                        handleSaveToDocuments(true);
+                    } else {
+                        handleSaveToDocuments(false);
+                    }
                 } else if (e.key === 'o') {
                     e.preventDefault();
                     setShowDocBrowserModal(true);
@@ -1218,6 +1238,18 @@ Date:          ${dateStr}
                 onClose={() => setShowDocBrowserModal(false)}
                 onOpenFile={handleOpenDocumentContent}
                 defaultLanguage={activeTab.language}
+            />
+
+            {/* Traditional Save As Dialog Modal */}
+            <SaveAsDialogModal
+                isOpen={showSaveAsModal}
+                onClose={() => setShowSaveAsModal(false)}
+                onSave={executeSaveToDocuments}
+                currentFileName={activeTab.filename || ''}
+                currentLanguage={activeTab.language}
+                currentTitle={activeTab.metadata?.title || ''}
+                currentDescription={activeTab.metadata?.description || ''}
+                studentIdentifier={studentIdentifier}
             />
         </div>
     );
