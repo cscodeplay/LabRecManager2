@@ -263,6 +263,11 @@ export default function LoginPage() {
             toast.success(t('auth.welcome'));
             setTimeout(() => router.replace('/dashboard'), 100);
         } catch (error) {
+            if (error.response?.data?.isAdminRestricted) {
+                toast.error(error.response.data.message || 'Administrative accounts must log in via /adminmoslogin', { duration: 6000 });
+                setTimeout(() => router.push('/adminmoslogin'), 1200);
+                return;
+            }
             if (error.response?.data?.requiresPasswordSetup) {
                 toast.error(error.response.data.message || 'You must set a new password before accessing the application.');
                 setLoginMode('pin');

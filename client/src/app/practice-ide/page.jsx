@@ -200,6 +200,22 @@ export default function PracticeIDEPage() {
     // Document Browser & Save As Modals
     const [showDocBrowserModal, setShowDocBrowserModal] = useState(false);
     const [showSaveAsModal, setShowSaveAsModal] = useState(false);
+    const [existingDocs, setExistingDocs] = useState([]);
+
+    // Inline Tab Rename State
+    const [editingTabId, setEditingTabId] = useState(null);
+    const [editingTabTitle, setEditingTabTitle] = useState('');
+
+    // Fetch existing documents to detect filename duplicates in same folder
+    const loadExistingDocs = useCallback(async () => {
+        try {
+            const res = await documentsAPI.getAll({ category: 'code' });
+            const list = res.data?.documents || res.data || [];
+            setExistingDocs(Array.isArray(list) ? list : []);
+        } catch (err) {
+            console.warn('Failed to load documents list:', err.message);
+        }
+    }, []);
 
     // Execution state
     const [isExecuting, setIsExecuting] = useState(false);
@@ -277,11 +293,12 @@ export default function PracticeIDEPage() {
         }
 
         loadWorkspace();
+        loadExistingDocs();
 
         return () => {
             isMounted = false;
         };
-    }, [inspectingStudentId, isInstructorOrAdmin, studentIdentifier, studentDisplayName]);
+    }, [inspectingStudentId, isInstructorOrAdmin, studentIdentifier, studentDisplayName, loadExistingDocs]);
 
     // 3. Debounced Autosave (saves tabs, active tab, and output to server and local)
     const triggerSaveWorkspace = useCallback(
@@ -459,6 +476,37 @@ Date:          ${dateStr}
         toast.success(`Switched active tab to ${newLang.toUpperCase()}`);
     };
 
+    // Inline Tab Rename: updates title, synchronized filename, and saves
+    const handleCommitTabRename = (tabId) => {
+        const trimmed = (editingTabTitle || '').trim();
+        if (!trimmed) {
+            setEditingTabId(null);
+            return;
+        }
+
+        setTabs((prevTabs) => {
+            const nextTabs = prevTabs.map((t) => {
+                if (t.id !== tabId) return t;
+                const ext = t.language === 'sql' ? '.sql' : '.py';
+                let newFilename = trimmed;
+                if (!newFilename.toLowerCase().endsWith(ext)) {
+                    newFilename = `${newFilename.replace(/\.[^/.]+$/, '')}${ext}`;
+                }
+                return {
+                    ...t,
+                    title: trimmed,
+                    filename: newFilename,
+                    isDirty: true
+                };
+            });
+            triggerSaveWorkspace(nextTabs);
+            return nextTabs;
+        });
+
+        setEditingTabId(null);
+        toast.success(`Renamed tab to "${trimmed}"`);
+    };
+
     // 5. Execute Code (Coordinated with Active Tab Output)
     const handleExecuteCode = async () => {
         if (!activeTab?.code?.trim()) {
@@ -570,6 +618,7 @@ Date:          ${dateStr}
             );
 
             toast.success(`Saved to Documents / ${targetFolderName} / ${fileName}!`, { id: toastId });
+            loadExistingDocs();
         } catch (err) {
             console.error('Save to documents error:', err);
             toast.error('Failed to save to Documents: ' + (err.response?.data?.message || err.message), { id: toastId });
@@ -578,6 +627,7 @@ Date:          ${dateStr}
     };
 
     const handleSaveToDocuments = (openAsDialog = false) => {
+        loadExistingDocs();
         // If explicitly requested via Save As, or if the active tab has never been saved yet (no filename), or if mandatory problem title is missing:
         if (openAsDialog || !activeTab.filename || !activeTab.metadata?.title?.trim()) {
             setShowSaveAsModal(true);
@@ -780,12 +830,18 @@ Date:          ${dateStr}
                             <div
                                 key={tab.id}
                                 onClick={() => setActiveTabId(tab.id)}
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-t-2 text-xs font-medium cursor-pointer transition max-w-[180px] group ${
+                                onDoubleClick={(e) => {
+                                    if (inspectingStudentId) return;
+                                    e.stopPropagation();
+                                    setEditingTabId(tab.id);
+                                    setEditingTabTitle(tab.title);
+                                }}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-t-2 text-xs font-medium cursor-pointer transition max-w-[200px] group ${
                                     isActive
                                         ? 'bg-slate-950 border-primary-500 text-white shadow-xs'
                                         : 'bg-slate-900 border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                                 }`}
-                                title={`${tab.title} (${tab.filename})`}
+                                title={`${tab.title} (${tab.filename}) - Double click to rename tab`}
                             >
                                 <span
                                     className={`text-[9px] font-bold px-1 py-0.2 rounded font-mono ${
@@ -797,9 +853,26 @@ Date:          ${dateStr}
                                     {isSql ? 'SQL' : 'PY'}
                                 </span>
 
-                                <span className="truncate flex-1 font-mono text-[11px]">
-                                    {tab.title || `Tab ${idx + 1}`}
-                                </span>
+                                {editingTabId === tab.id ? (
+                                    <input
+                                        autoFocus
+                                        type="text"
+                                        value={editingTabTitle}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onPointerDown={(e) => e.stopPropagation()}
+                                        onChange={(e) => setEditingTabTitle(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleCommitTabRename(tab.id);
+                                            if (e.key === 'Escape') setEditingTabId(null);
+                                        }}
+                                        onBlur={() => handleCommitTabRename(tab.id)}
+                                        className="w-24 px-1 py-0.2 bg-slate-900 border border-primary-500 rounded text-[11px] font-mono text-white focus:outline-none"
+                                    />
+                                ) : (
+                                    <span className="truncate flex-1 font-mono text-[11px] cursor-text" title="Double click to rename">
+                                        {tab.title || `Tab ${idx + 1}`}
+                                    </span>
+                                )}
 
                                 {tab.isDirty && !isAutosaveEnabled && (
                                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="Unsaved changes" />
@@ -1250,6 +1323,7 @@ Date:          ${dateStr}
                 currentTitle={activeTab.metadata?.title || ''}
                 currentDescription={activeTab.metadata?.description || ''}
                 studentIdentifier={studentIdentifier}
+                existingDocs={existingDocs}
             />
         </div>
     );

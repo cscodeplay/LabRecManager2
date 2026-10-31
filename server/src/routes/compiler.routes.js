@@ -53,20 +53,55 @@ const getWandboxCompiler = (language) => {
 };
 
 /**
- * Executes Python 3 code locally in an isolated sub-process with stdin and timeout
+ * Executes Python 3 code locally in an isolated student workspace with standard IO, file IO, and persistent SQLite database connectivity
  */
-function runPythonLocally(code, stdin = '') {
+function runPythonLocally(code, stdin = '', userId = 'guest') {
     return new Promise((resolve, reject) => {
         const start = Date.now();
-        const tmpFile = path.join(os.tmpdir(), `ulrms_py_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.py`);
-        
+        const studentDir = getStudentWorkspaceDir(userId);
+        const dbPath = getStudentDbPath(userId);
+
+        // Ensure practice.sqlite exists and provide common database aliases in the student directory
+        if (!fs.existsSync(dbPath)) {
+            try {
+                // Initialize clean SQLite database file
+                execFile('sqlite3', [dbPath, 'VACUUM;'], () => {});
+            } catch (e) {}
+        }
+
+        // Link convenience aliases: practice.db and school.db pointing to practice.sqlite
+        const aliases = ['practice.db', 'school.db'];
+        for (const alias of aliases) {
+            const aliasPath = path.join(studentDir, alias);
+            if (!fs.existsSync(aliasPath) && fs.existsSync(dbPath)) {
+                try {
+                    fs.linkSync(dbPath, aliasPath);
+                } catch (e) {
+                    try { fs.copyFileSync(dbPath, aliasPath); } catch (e2) {}
+                }
+            }
+        }
+
+        const tmpFile = path.join(studentDir, `ulrms_py_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.py`);
+
         try {
             fs.writeFileSync(tmpFile, code, 'utf8');
         } catch (e) {
             return reject(e);
         }
 
-        const child = execFile('python3', [tmpFile], { timeout: 8000, maxBuffer: 1024 * 1024 * 4 }, (err, stdout, stderr) => {
+        const child = execFile('python3', [tmpFile], {
+            cwd: studentDir,
+            timeout: 10000,
+            maxBuffer: 1024 * 1024 * 4,
+            env: {
+                ...process.env,
+                PYTHONUNBUFFERED: '1',
+                PYTHONIOENCODING: 'utf-8',
+                PRACTICE_DB_PATH: dbPath,
+                SQLITE_DB: dbPath
+            }
+        }, (err, stdout, stderr) => {
             const duration = Date.now() - start;
             try { fs.unlinkSync(tmpFile); } catch (e) {}
 
@@ -74,18 +109,32 @@ function runPythonLocally(code, stdin = '') {
                 return reject(new Error('python3 executable not found on host system'));
             }
 
-            resolve({
-                stdout: stdout || '',
-                stderr: stderr || '',
-                exitCode: err ? (err.code || 1) : 0,
-                durationMs: duration,
-                isLocal: true
+            // Check if any sqlite tables exist or were modified by the Python script
+            execFile('sqlite3', [dbPath, '-json', 'SELECT name FROM sqlite_master WHERE type="table" AND name NOT LIKE "sqlite_%";'], (tErr, tStdout) => {
+                let existingTables = [];
+                try {
+                    if (tStdout && tStdout.trim().startsWith('[')) {
+                        const parsed = JSON.parse(tStdout);
+                        existingTables = parsed.map(p => p.name);
+                    }
+                } catch (e) {}
+
+                resolve({
+                    stdout: stdout || '',
+                    stderr: stderr || (err ? err.message : ''),
+                    exitCode: err ? (err.code || 1) : 0,
+                    durationMs: duration,
+                    isLocal: true,
+                    existingTables
+                });
             });
         });
 
-        if (stdin) {
+        // Ensure newline for stdin so input() in Python consumes without hanging
+        const formattedStdin = (stdin && !stdin.endsWith('\n')) ? (stdin + '\n') : stdin;
+        if (formattedStdin) {
             try {
-                child.stdin.write(stdin);
+                child.stdin.write(formattedStdin);
                 child.stdin.end();
             } catch (e) {}
         } else {
@@ -181,7 +230,7 @@ router.post('/execute', authenticate, [
     // 1. Try local execution for Python
     if (langNormalized === 'python' || langNormalized === 'python3') {
         try {
-            const localResult = await runPythonLocally(code, stdin);
+            const localResult = await runPythonLocally(code, stdin, userId);
             return res.json({
                 success: true,
                 data: {
@@ -189,7 +238,8 @@ router.post('/execute', authenticate, [
                     stderr: localResult.stderr,
                     durationMs: localResult.durationMs,
                     exitCode: localResult.exitCode,
-                    runner: 'local-python3'
+                    runner: 'local-python3',
+                    existingTables: localResult.existingTables || []
                 }
             });
         } catch (localErr) {

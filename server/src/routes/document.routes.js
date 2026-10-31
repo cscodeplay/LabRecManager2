@@ -259,13 +259,38 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
     const { name, description, category, isPublic, folderId } = req.body;
 
     // Validate folder if provided
-    if (folderId && folderId !== 'null' && folderId !== 'undefined') {
+    const targetFolderId = (folderId && folderId !== 'null' && folderId !== 'undefined') ? folderId : null;
+    if (targetFolderId) {
         const folder = await prisma.documentFolder.findFirst({
-            where: { id: folderId, schoolId: req.user.schoolId, deletedAt: null }
+            where: { id: targetFolderId, schoolId: req.user.schoolId, deletedAt: null }
         });
         if (!folder) {
             return res.status(404).json({ success: false, message: 'Target folder not found' });
         }
+    }
+
+    const resolvedName = name || req.file.originalname.replace(/\.[^.]+$/, '');
+    const resolvedFileName = req.file.originalname;
+
+    // Enforce uniqueness: Do not allow same file name in the same folder
+    const existingDoc = await prisma.document.findFirst({
+        where: {
+            schoolId: req.user.schoolId,
+            folderId: targetFolderId,
+            deletedAt: null,
+            OR: [
+                { name: { equals: resolvedName, mode: 'insensitive' } },
+                { fileName: { equals: resolvedFileName, mode: 'insensitive' } }
+            ]
+        }
+    });
+
+    if (existingDoc) {
+        return res.status(409).json({
+            success: false,
+            message: `A file named "${resolvedFileName}" already exists in this folder. Please choose a unique name.`,
+            messageHindi: `इस फ़ोल्डर में "${resolvedFileName}" नाम की फ़ाइल पहले से मौजूद है। कृपया एक अद्वितीय नाम चुनें।`
+        });
     }
 
     // Save file locally to /uploads to guarantee file is never lost and allow local serving

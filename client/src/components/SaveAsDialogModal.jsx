@@ -25,7 +25,8 @@ export default function SaveAsDialogModal({
     currentTitle = '',
     currentDescription = '',
     studentIdentifier = 'student',
-    availableFolders = []
+    availableFolders = [],
+    existingDocs = []
 }) {
     const [fileNameWithoutExt, setFileNameWithoutExt] = useState('');
     const [fileType, setFileType] = useState(currentLanguage === 'sql' ? 'sql' : 'python');
@@ -48,7 +49,20 @@ export default function SaveAsDialogModal({
         setTitleError('');
 
         const dateStr = new Date().toISOString().split('T')[0];
-        const defaultBase = `${studentIdentifier}_${dateStr}`;
+        let defaultBase = `${studentIdentifier}_${dateStr}`;
+        const targetExt = defaultLang === 'sql' ? 'sql' : 'py';
+
+        // Auto-increment default filename if `<studentId>_<date>.<ext>` already exists
+        const safeDocs = Array.isArray(existingDocs) ? existingDocs : [];
+        let counter = 1;
+        let candidateName = `${defaultBase}.${targetExt}`;
+        while (safeDocs.some(d => (d.name || d.fileName || '').toLowerCase() === candidateName.toLowerCase())) {
+            candidateName = `${defaultBase}_${counter}.${targetExt}`;
+            counter++;
+        }
+        if (counter > 1) {
+            defaultBase = `${defaultBase}_${counter - 1}`;
+        }
 
         if (currentFileName) {
             // Strip .py or .sql if already present
@@ -65,11 +79,20 @@ export default function SaveAsDialogModal({
                 inputRef.current.select();
             }
         }, 100);
-    }, [isOpen, currentFileName, currentLanguage, currentTitle, currentDescription, studentIdentifier]);
+    }, [isOpen, currentFileName, currentLanguage, currentTitle, currentDescription, studentIdentifier, existingDocs]);
 
     if (!isOpen) return null;
 
     const extension = fileType === 'sql' ? 'sql' : 'py';
+    const cleanProposedName = (fileNameWithoutExt || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fullProposedFileName = `${cleanProposedName}.${extension}`;
+
+    // Duplicate check in existing documents for this folder
+    const safeDocs = Array.isArray(existingDocs) ? existingDocs : [];
+    const isDuplicate = safeDocs.some((d) => {
+        const dName = (d.name || d.fileName || '').toLowerCase();
+        return dName === fullProposedFileName.toLowerCase();
+    });
 
     const handleTypeChange = (newType) => {
         setFileType(newType);
@@ -85,6 +108,11 @@ export default function SaveAsDialogModal({
         const cleanTitle = problemTitle.trim();
         if (!cleanTitle) {
             setTitleError('Problem Title is mandatory before saving.');
+            return;
+        }
+
+        if (isDuplicate) {
+            setTitleError(`A file named "${fullProposedFileName}" already exists in the ${targetFolder} folder. Please choose a unique name.`);
             return;
         }
 
@@ -189,7 +217,7 @@ export default function SaveAsDialogModal({
                                 Default: &lt;studentId&gt;_&lt;date&gt;
                             </span>
                         </label>
-                        <div className="flex items-center rounded-xl border border-slate-700 bg-slate-800/90 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500 overflow-hidden">
+                        <div className={`flex items-center rounded-xl border ${isDuplicate ? 'border-rose-500' : 'border-slate-700'} bg-slate-800/90 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500 overflow-hidden`}>
                             <input
                                 ref={inputRef}
                                 type="text"
@@ -203,6 +231,12 @@ export default function SaveAsDialogModal({
                                 .{extension}
                             </div>
                         </div>
+                        {isDuplicate && (
+                            <p className="mt-1 text-[11px] text-rose-400 flex items-center gap-1 font-medium">
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                <span>A file named "{fullProposedFileName}" already exists in the {targetFolder} folder.</span>
+                            </p>
+                        )}
                     </div>
 
                     {/* Save as Type Dropdown */}
@@ -281,7 +315,7 @@ export default function SaveAsDialogModal({
                         </button>
                         <button
                             type="submit"
-                            disabled={isSaving}
+                            disabled={isSaving || isDuplicate || !fileNameWithoutExt.trim()}
                             className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-linear-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-lg shadow-emerald-700/30 flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
                         >
                             {isSaving ? (
