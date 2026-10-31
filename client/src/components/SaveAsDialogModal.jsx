@@ -87,10 +87,13 @@ export default function SaveAsDialogModal({
     const cleanProposedName = (fileNameWithoutExt || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
     const fullProposedFileName = `${cleanProposedName}.${extension}`;
 
-    // Duplicate check in existing documents for this folder
+    // Duplicate check in existing documents for this folder (excluding the current tab's active file if overwriting)
     const safeDocs = Array.isArray(existingDocs) ? existingDocs : [];
     const isDuplicate = safeDocs.some((d) => {
         const dName = (d.name || d.fileName || '').toLowerCase();
+        if (currentFileName && currentFileName.toLowerCase() === fullProposedFileName.toLowerCase()) {
+            return false;
+        }
         return dName === fullProposedFileName.toLowerCase();
     });
 

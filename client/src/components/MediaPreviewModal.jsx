@@ -283,7 +283,14 @@ export default function MediaPreviewModal({
         params.set('title', fileName);
         const qs = params.toString();
 
-        if (cat === 'pdf') {
+        const isCode = file.category === 'code' ||
+            fileName.endsWith('.py') ||
+            fileName.endsWith('.sql') ||
+            cat === 'code';
+
+        if (isCode) {
+            window.location.href = `/practice-ide?${qs}`;
+        } else if (cat === 'pdf') {
             window.location.href = `/documents/pdf-studio?${qs}`;
         } else if (cat === 'word') {
             window.location.href = `/documents/word-editor?${qs}`;

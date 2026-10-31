@@ -89,7 +89,16 @@ const openDocumentInApp = (doc, router) => {
         title
     }).toString();
 
-    if (type === 'pdf') {
+    const isCode = doc.category === 'code' ||
+        ['py', 'sql'].includes(type) ||
+        doc.fileName?.endsWith('.py') ||
+        doc.fileName?.endsWith('.sql') ||
+        doc.name?.endsWith('.py') ||
+        doc.name?.endsWith('.sql');
+
+    if (isCode) {
+        router.push(`/practice-ide?${qs}`);
+    } else if (type === 'pdf') {
         router.push(`/documents/pdf-studio?${qs}`);
     } else if (['docx', 'doc', 'txt', 'rtf', 'odt'].includes(type)) {
         router.push(`/documents/word-editor?${qs}`);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive, Bot, Film, Video, Play, RefreshCw, Pencil, ArrowUpDown, Grid, Sparkles, Presentation, Layers } from 'lucide-react';
+import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive, Bot, Film, Video, Play, RefreshCw, Pencil, ArrowUpDown, Grid, Sparkles, Presentation, Layers, Code2 } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { useAuthStore } from '@/lib/store';
@@ -1574,6 +1574,16 @@ export default function DocumentsPage() {
                     >
                         <Film className="w-4 h-4" />
                         <span>Media Studio</span>
+                    </button>
+
+                    {/* 7. Code Studio (Python & SQL) */}
+                    <button
+                        onClick={() => router.push('/practice-ide')}
+                        className="h-9 px-3 rounded-xl flex items-center gap-2 bg-gradient-to-r from-amber-600 to-sky-600 hover:from-amber-700 hover:to-sky-700 text-white text-xs font-semibold shadow-sm transition"
+                        title="Code Practice Studio (Python 3.13 & Persistent SQLite Database Engine)"
+                    >
+                        <Code2 className="w-4 h-4" />
+                        <span>Code Studio (Py & SQL)</span>
                     </button>
 
                     {/* 7. Standalone Interactive Suite Preview */}

@@ -118,8 +118,8 @@ export default function IDEMenuBar({
             <div className="flex items-center gap-1">
                 {/* Brand / Logo Icon */}
                 <div className={`flex items-center gap-1.5 pr-2 mr-1 border-r ${isLightMode ? 'border-slate-200' : 'border-slate-800'}`}>
-                    <span className="font-extrabold text-primary-600 dark:text-primary-400 text-xs tracking-wider font-mono">
-                        STUDIO
+                    <span className="font-extrabold bg-gradient-to-r from-amber-500 to-sky-500 bg-clip-text text-transparent text-xs tracking-wider font-mono">
+                        PYTHON & SQL STUDIO
                     </span>
                 </div>
 
@@ -131,14 +131,25 @@ export default function IDEMenuBar({
                     {openMenu === 'file' && (
                         <div className={`w-64 ${dropdownClass}`}>
                             <button
-                                onClick={() => handleAction(onNewTab)}
+                                onClick={() => handleAction(() => onNewTab('python'))}
                                 className={itemBtnClass}
                             >
                                 <span className="flex items-center gap-2">
-                                    <Plus className="w-3.5 h-3.5 text-primary-500" />
-                                    New Script Tab
+                                    <Plus className="w-3.5 h-3.5 text-amber-500" />
+                                    New Python Script (.py)
                                 </span>
                                 <kbd className="text-[10px] text-slate-400 font-mono">Ctrl+N</kbd>
+                            </button>
+
+                            <button
+                                onClick={() => handleAction(() => onNewTab('sql'))}
+                                className={itemBtnClass}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Database className="w-3.5 h-3.5 text-sky-500" />
+                                    New SQL Query (.sql)
+                                </span>
+                                <kbd className="text-[10px] text-slate-400 font-mono">Ctrl+Alt+S</kbd>
                             </button>
 
                             <button

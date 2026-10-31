@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import dynamic from 'next/dynamic';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
     Play,
     Sparkles,
@@ -171,8 +171,11 @@ SELECT * FROM students;
     };
 };
 
-export default function PracticeIDEPage() {
+export function PracticeIDEPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const urlDocId = searchParams?.get('docId') || searchParams?.get('id');
+    const urlLang = searchParams?.get('lang');
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
 
     const isInstructorOrAdmin =
@@ -183,12 +186,18 @@ export default function PracticeIDEPage() {
     const studentDisplayName =
         `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Student';
 
-    // 1. MULTI-TAB SYSTEM (Max 5 tabs)
+    // 1. MULTI-TAB SYSTEM (Max 5 tabs) - Initial tabs default to both Python and SQL for immediate visibility
     const [tabs, setTabs] = useState(() => [
-        createDefaultTab('tab_1', 'python', studentIdentifier, studentDisplayName)
+        createDefaultTab('tab_py', 'python', studentIdentifier, studentDisplayName),
+        createDefaultTab('tab_sql', 'sql', studentIdentifier, studentDisplayName)
     ]);
-    const [activeTabId, setActiveTabId] = useState('tab_1');
+    const [activeTabId, setActiveTabId] = useState(urlLang === 'sql' ? 'tab_sql' : 'tab_py');
     const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
+
+    const tabsRef = useRef(tabs);
+    tabsRef.current = tabs;
+    const activeTabIdRef = useRef(activeTabId);
+    activeTabIdRef.current = activeTabId;
 
     // Autosave Toggle (ON / OFF)
     const [isAutosaveEnabled, setIsAutosaveEnabled] = useState(true);
@@ -275,18 +284,64 @@ export default function PracticeIDEPage() {
 
                     // Restore tabs if present
                     if (ws.tabs && Array.isArray(ws.tabs) && ws.tabs.length > 0) {
-                        setTabs(ws.tabs);
-                        if (ws.activeTabId && ws.tabs.some((t) => t.id === ws.activeTabId)) {
+                        // Refresh code for any tab that has a documentId to guarantee actual saved content is displayed
+                        const refreshedTabs = await Promise.all(
+                            ws.tabs.map(async (tab) => {
+                                if (tab.documentId) {
+                                    try {
+                                        const docRes = await documentsAPI.getFileContent(tab.documentId);
+                                        const fileContent = typeof docRes.data === 'string' ? docRes.data : String(docRes.data || '');
+                                        if (fileContent && fileContent.trim().length > 0) {
+                                            return { ...tab, code: fileContent, isDirty: false };
+                                        }
+                                    } catch (fetchErr) {
+                                        console.warn(`Could not refresh doc ${tab.documentId}:`, fetchErr.message);
+                                    }
+                                }
+                                return tab;
+                            })
+                        );
+
+                        // Ensure at least one SQL tab is present if the user had none
+                        let finalTabs = refreshedTabs;
+                        const hasSql = finalTabs.some((t) => t.language === 'sql');
+                        if (!hasSql && finalTabs.length < 5) {
+                            finalTabs = [
+                                ...finalTabs,
+                                createDefaultTab(`tab_sql_${Date.now()}`, 'sql', studentIdentifier, studentDisplayName)
+                            ];
+                        }
+
+                        setTabs(finalTabs);
+                        if (urlLang === 'sql') {
+                            const sqlTab = finalTabs.find((t) => t.language === 'sql');
+                            if (sqlTab) setActiveTabId(sqlTab.id);
+                        } else if (ws.activeTabId && finalTabs.some((t) => t.id === ws.activeTabId)) {
                             setActiveTabId(ws.activeTabId);
                         } else {
-                            setActiveTabId(ws.tabs[0].id);
+                            setActiveTabId(finalTabs[0].id);
                         }
                     } else if (ws.pythonCode || ws.sqlCode) {
                         // Legacy single-code upgrade
-                        const upgradedTab = createDefaultTab('tab_1', ws.sqlCode ? 'sql' : 'python', studentIdentifier, studentDisplayName);
-                        if (ws.pythonCode) upgradedTab.code = ws.pythonCode;
-                        if (ws.sqlCode) upgradedTab.code = ws.sqlCode;
-                        setTabs([upgradedTab]);
+                        const upgradedTabs = [];
+                        if (ws.pythonCode) {
+                            const pyTab = createDefaultTab('tab_py', 'python', studentIdentifier, studentDisplayName);
+                            pyTab.code = ws.pythonCode;
+                            upgradedTabs.push(pyTab);
+                        }
+                        if (ws.sqlCode) {
+                            const sqlTab = createDefaultTab('tab_sql', 'sql', studentIdentifier, studentDisplayName);
+                            sqlTab.code = ws.sqlCode;
+                            upgradedTabs.push(sqlTab);
+                        }
+                        if (upgradedTabs.length === 0) {
+                            upgradedTabs.push(
+                                createDefaultTab('tab_py', 'python', studentIdentifier, studentDisplayName),
+                                createDefaultTab('tab_sql', 'sql', studentIdentifier, studentDisplayName)
+                            );
+                        }
+                        setTabs(upgradedTabs);
+                        setActiveTabId(urlLang === 'sql' ? (upgradedTabs.find(t => t.language === 'sql')?.id || upgradedTabs[0].id) : upgradedTabs[0].id);
                     }
                 }
             } catch (err) {
@@ -300,15 +355,47 @@ export default function PracticeIDEPage() {
         return () => {
             isMounted = false;
         };
-    }, [inspectingStudentId, isInstructorOrAdmin, studentIdentifier, studentDisplayName, loadExistingDocs]);
+    }, [inspectingStudentId, isInstructorOrAdmin, studentIdentifier, studentDisplayName, loadExistingDocs, urlLang]);
+
+    // Auto-load document if opened with ?docId=...
+    useEffect(() => {
+        if (!urlDocId) return;
+        let isMounted = true;
+        async function fetchUrlDoc() {
+            try {
+                const docRes = await documentsAPI.getById(urlDocId);
+                const docData = docRes.data?.data?.document || docRes.data?.data || docRes.data;
+                const fileRes = await documentsAPI.getFileContent(urlDocId);
+                const codeText = typeof fileRes.data === 'string' ? fileRes.data : String(fileRes.data || '');
+                const fileName = docData?.fileName || docData?.name || 'practice.py';
+                const isSql = fileName.endsWith('.sql') || docData?.category === 'sql';
+                const lang = isSql ? 'sql' : 'python';
+
+                if (isMounted && codeText) {
+                    handleOpenDocumentContent({
+                        name: fileName,
+                        code: codeText,
+                        language: lang,
+                        documentId: urlDocId,
+                        asNewTab: false
+                    });
+                    toast.success(`Loaded saved code: ${fileName}`, { icon: '📄' });
+                }
+            } catch (err) {
+                console.warn('URL doc load failed:', err.message);
+            }
+        }
+        fetchUrlDoc();
+        return () => { isMounted = false; };
+    }, [urlDocId]);
 
     // 3. Debounced Autosave (saves tabs, active tab, and output to server and local)
     const triggerSaveWorkspace = useCallback(
         async (updatedTabs, updatedActiveId, autosaveState) => {
             if (inspectingStudentId) return; // Do not overwrite when inspecting another student
 
-            const tabsToSave = updatedTabs || tabs;
-            const activeIdToSave = updatedActiveId || activeTabId;
+            const tabsToSave = updatedTabs || tabsRef.current || tabs;
+            const activeIdToSave = updatedActiveId || activeTabIdRef.current || activeTabId;
             const isAuto = autosaveState !== undefined ? autosaveState : isAutosaveEnabled;
 
             if (typeof window !== 'undefined') {
@@ -328,7 +415,7 @@ export default function PracticeIDEPage() {
                 setAutosaveStatus('saved');
             }
         },
-        [tabs, activeTabId, isAutosaveEnabled, editorTheme, outputThemeId, user?.id, inspectingStudentId]
+        [isAutosaveEnabled, editorTheme, outputThemeId, user?.id, inspectingStudentId]
     );
 
     // Code change handler
@@ -336,17 +423,17 @@ export default function PracticeIDEPage() {
         if (inspectingStudentId) return;
         const val = newCode || '';
 
-        setTabs((prevTabs) =>
-            prevTabs.map((t) => (t.id === activeTabId ? { ...t, code: val, isDirty: true } : t))
-        );
-
-        if (isAutosaveEnabled) {
-            setAutosaveStatus('saving');
-            if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-            autosaveTimerRef.current = setTimeout(() => {
-                triggerSaveWorkspace();
-            }, 800);
-        }
+        setTabs((prevTabs) => {
+            const nextTabs = prevTabs.map((t) => (t.id === activeTabId ? { ...t, code: val, isDirty: true } : t));
+            if (isAutosaveEnabled) {
+                setAutosaveStatus('saving');
+                if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+                autosaveTimerRef.current = setTimeout(() => {
+                    triggerSaveWorkspace(nextTabs, activeTabId);
+                }, 800);
+            }
+            return nextTabs;
+        });
     };
 
     // Update metadata for active tab
@@ -413,39 +500,42 @@ Date:          ${dateStr}
 
     // 4. Tab Actions: Add Tab (Max 5), Close Tab, Switch Tab
     const handleAddTab = (forcedLang) => {
-        if (tabs.length >= 5) {
+        const currentTabs = tabsRef.current || tabs;
+        if (currentTabs.length >= 5) {
             toast.error('Maximum 5 editor tabs allowed. Please close a tab first.');
             return;
         }
 
         const newId = `tab_${Date.now()}`;
         const newLang = forcedLang || (activeTab?.language === 'sql' ? 'sql' : 'python');
+        const isSql = newLang === 'sql';
         const newTab = createDefaultTab(newId, newLang, studentIdentifier, studentDisplayName);
-        newTab.title = `Problem ${tabs.length + 1}`;
-        newTab.filename = `${studentIdentifier}_${new Date().toISOString().split('T')[0]}_p${tabs.length + 1}.${newLang === 'sql' ? 'sql' : 'py'}`;
+        newTab.title = isSql ? `SQL Query ${currentTabs.length + 1}` : `Python ${currentTabs.length + 1}`;
+        newTab.filename = `${studentIdentifier}_${new Date().toISOString().split('T')[0]}_p${currentTabs.length + 1}.${isSql ? 'sql' : 'py'}`;
 
-        const updatedTabs = [...tabs, newTab];
+        const updatedTabs = [...currentTabs, newTab];
         setTabs(updatedTabs);
         setActiveTabId(newId);
         triggerSaveWorkspace(updatedTabs, newId);
-        toast.success(`Created Tab ${updatedTabs.length} of 5`);
+        toast.success(`Created ${isSql ? 'SQL Database' : 'Python'} Tab (${updatedTabs.length} of 5)`);
     };
 
     const handleCloseTab = (tabIdToClose, e) => {
         if (e) e.stopPropagation();
-        if (tabs.length <= 1) {
+        const currentTabs = tabsRef.current || tabs;
+        if (currentTabs.length <= 1) {
             toast.error('At least one tab must remain open.');
             return;
         }
 
-        const tabToClose = tabs.find((t) => t.id === tabIdToClose);
+        const tabToClose = currentTabs.find((t) => t.id === tabIdToClose);
         if (tabToClose?.isDirty && !isAutosaveEnabled) {
             if (!confirm(`Tab "${tabToClose.title}" has unsaved changes. Close anyway?`)) {
                 return;
             }
         }
 
-        const updatedTabs = tabs.filter((t) => t.id !== tabIdToClose);
+        const updatedTabs = currentTabs.filter((t) => t.id !== tabIdToClose);
         let nextActiveId = activeTabId;
         if (activeTabId === tabIdToClose) {
             nextActiveId = updatedTabs[0].id;
@@ -461,21 +551,47 @@ Date:          ${dateStr}
     const handleSwitchLanguage = (newLang) => {
         if (activeTab.language === newLang) return;
         const dateStr = new Date().toISOString().split('T')[0];
-        const newFilename = `${studentIdentifier}_${dateStr}.${newLang === 'sql' ? 'sql' : 'py'}`;
+        const newExt = newLang === 'sql' ? '.sql' : '.py';
+        const defaultFilename = `${studentIdentifier}_${dateStr}${newExt}`;
+        const updatedFilename = activeTab.filename
+            ? (activeTab.filename.includes('.') ? activeTab.filename.replace(/\.(py|sql)$/i, newExt) : `${activeTab.filename}${newExt}`)
+            : defaultFilename;
 
-        setTabs((prevTabs) =>
-            prevTabs.map((t) =>
-                t.id === activeTabId
-                    ? {
-                          ...t,
-                          language: newLang,
-                          filename: newFilename,
-                          output: null
+        // Check if code is default or empty
+        const isDefaultCode = !activeTab.code || activeTab.code.trim().length === 0 ||
+            activeTab.code.includes('Python Practice Script') ||
+            activeTab.code.includes('SQL Practice Script') ||
+            activeTab.code.includes('Calculate Factorial & Sum');
+
+        const pyStarter = `# Python Practice Script\n# Calculate Factorial & Sum of 1..N\n\nn = int(input("Enter positive number N: "))\ntotal_sum = 0\nfactorial = 1\ni = 1\n\nwhile i <= n:\n    total_sum = total_sum + i\n    factorial = factorial * i\n    i = i + 1\n\nprint("Sum of 1 to", n, "is:", total_sum)\nprint("Factorial of", n, "is:", factorial)\n`;
+
+        const sqlStarter = `-- SQL Practice Script\n-- Tables created here are stored permanently in your personal database!\n\nCREATE TABLE IF NOT EXISTS students (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL,\n    department TEXT\n);\n\nINSERT OR IGNORE INTO students VALUES \n(101, 'Aarav Sharma', 'Computer Science'),\n(102, 'Priya Patel', 'Data Science');\n\nSELECT * FROM students;\n`;
+
+        const newCode = isDefaultCode
+            ? (newLang === 'sql' ? sqlStarter : pyStarter)
+            : activeTab.code;
+
+        const currentTabs = tabsRef.current || tabs;
+        const updatedTabs = currentTabs.map((t) =>
+            t.id === activeTabId
+                ? {
+                      ...t,
+                      language: newLang,
+                      filename: updatedFilename,
+                      title: isDefaultCode ? (newLang === 'sql' ? 'Student Schema' : 'Factorial & Sum') : t.title,
+                      code: newCode,
+                      output: null,
+                      metadata: {
+                          ...t.metadata,
+                          title: isDefaultCode ? (newLang === 'sql' ? 'Student Database Schema' : 'Factorial & Sum Calculation') : t.metadata?.title,
+                          subject: newLang === 'sql' ? 'Database Management' : 'Python Programming'
                       }
-                    : t
-            )
+                  }
+                : t
         );
-        toast.success(`Switched active tab to ${newLang.toUpperCase()}`);
+        setTabs(updatedTabs);
+        triggerSaveWorkspace(updatedTabs, activeTabId);
+        toast.success(`Switched active tab to ${newLang === 'sql' ? 'SQL Database' : 'Python 3'}`);
     };
 
     // Inline Tab Rename: updates title, synchronized filename, auto-creates or overwrites in Documents
@@ -673,25 +789,26 @@ Date:          ${dateStr}
             const newDocId = savedDoc?.id || activeTab.documentId;
 
             // 3. Mark active tab clean and update metadata
-            setTabs((prevTabs) =>
-                prevTabs.map((t) =>
-                    t.id === activeTabId
-                        ? {
-                              ...t,
-                              filename: fileName,
-                              language: language || t.language,
-                              title: problemTitle || t.title,
-                              documentId: newDocId,
-                              metadata: {
-                                  ...t.metadata,
-                                  title: problemTitle || t.metadata?.title || '',
-                                  description: problemDescription !== undefined ? problemDescription : t.metadata?.description || ''
-                              },
-                              isDirty: false
-                          }
-                        : t
-                )
+            const currentTabs = tabsRef.current || tabs;
+            const nextTabs = currentTabs.map((t) =>
+                t.id === activeTabId
+                    ? {
+                          ...t,
+                          filename: fileName,
+                          language: language || t.language,
+                          title: problemTitle || t.title,
+                          documentId: newDocId,
+                          metadata: {
+                              ...t.metadata,
+                              title: problemTitle || t.metadata?.title || '',
+                              description: problemDescription !== undefined ? problemDescription : t.metadata?.description || ''
+                          },
+                          isDirty: false
+                      }
+                    : t
             );
+            setTabs(nextTabs);
+            triggerSaveWorkspace(nextTabs, activeTabId);
 
             toast.success(`Saved to Documents / ${targetFolderName} / ${fileName}!`, { id: toastId });
             loadExistingDocs();
@@ -727,8 +844,9 @@ Date:          ${dateStr}
     // 7. Open Document from Browser into Tab
     const handleOpenDocumentContent = ({ name, code, language: docLang, asNewTab, docId, documentId }) => {
         const resolvedDocId = docId || documentId || null;
+        const currentTabs = tabsRef.current || tabs;
         if (asNewTab) {
-            if (tabs.length >= 5) {
+            if (currentTabs.length >= 5) {
                 toast.error('Cannot open as new tab: Maximum 5 tabs reached.');
                 return;
             }
@@ -740,32 +858,31 @@ Date:          ${dateStr}
             newTab.documentId = resolvedDocId;
             newTab.metadata.title = newTab.title;
 
-            const updatedTabs = [...tabs, newTab];
+            const updatedTabs = [...currentTabs, newTab];
             setTabs(updatedTabs);
             setActiveTabId(newId);
             triggerSaveWorkspace(updatedTabs, newId);
         } else {
             // Replace in active tab
-            setTabs((prevTabs) =>
-                prevTabs.map((t) =>
-                    t.id === activeTabId
-                        ? {
-                              ...t,
-                              title: name.replace(/\.(py|sql)$/i, ''),
-                              filename: name,
-                              language: docLang,
-                              code: code,
-                              documentId: resolvedDocId || t.documentId,
-                              isDirty: false,
-                              metadata: {
-                                  ...t.metadata,
-                                  title: name.replace(/\.(py|sql)$/i, '')
-                              }
+            const updatedTabs = currentTabs.map((t) =>
+                t.id === activeTabId
+                    ? {
+                          ...t,
+                          title: name.replace(/\.(py|sql)$/i, ''),
+                          filename: name,
+                          language: docLang,
+                          code: code,
+                          documentId: resolvedDocId || t.documentId,
+                          isDirty: false,
+                          metadata: {
+                              ...t.metadata,
+                              title: name.replace(/\.(py|sql)$/i, '')
                           }
-                        : t
-                )
+                      }
+                    : t
             );
-            triggerSaveWorkspace();
+            setTabs(updatedTabs);
+            triggerSaveWorkspace(updatedTabs, activeTabId);
         }
     };
 
@@ -982,57 +1099,74 @@ Date:          ${dateStr}
                         );
                     })}
 
-                    {/* Add New Tab Button (Max 5) */}
+                    {/* Add New Tab Buttons (Python and SQL) */}
                     {tabs.length < 5 ? (
-                        <button
-                            onClick={() => handleAddTab()}
-                            className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition ml-1 cursor-pointer ${
-                                isLightMode
-                                    ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-300/60'
-                                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                            }`}
-                            title="Open New Tab (Max 5)"
-                        >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Tab</span>
-                        </button>
+                        <div className="flex items-center gap-1.5 ml-2">
+                            <button
+                                onClick={() => handleAddTab('python')}
+                                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer border ${
+                                    isLightMode
+                                        ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300 shadow-xs'
+                                        : 'bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border-amber-700/60'
+                                }`}
+                                title="Open New Python Script (.py)"
+                            >
+                                <Plus className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                <span>+ Python</span>
+                            </button>
+
+                            <button
+                                onClick={() => handleAddTab('sql')}
+                                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer border ${
+                                    isLightMode
+                                        ? 'bg-sky-100 hover:bg-sky-200 text-sky-900 border-sky-300 shadow-xs'
+                                        : 'bg-sky-950/60 hover:bg-sky-900/80 text-sky-300 border-sky-700/60'
+                                }`}
+                                title="Open New SQL Database Query (.sql)"
+                            >
+                                <Plus className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                                <span>+ SQL</span>
+                            </button>
+                        </div>
                     ) : (
                         <span className="text-[10px] text-slate-400 ml-2 italic">Max 5 Tabs Open</span>
                     )}
                 </div>
 
                 {/* Right controls: Language toggle for active tab */}
-                <div className="flex items-center gap-1 text-xs">
-                    <div className={`flex items-center p-0.5 rounded border ${isLightMode ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'}`}>
+                <div className="flex items-center gap-2 text-xs">
+                    <div className={`flex items-center p-0.5 rounded-lg border shadow-xs ${isLightMode ? 'bg-white border-slate-300' : 'bg-slate-800 border-slate-700'}`}>
                         <button
                             onClick={() => handleSwitchLanguage('python')}
-                            className={`px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
+                            className={`flex items-center gap-1 px-2.5 py-0.8 rounded-md text-[11px] font-bold transition cursor-pointer ${
                                 activeTab.language === 'python'
                                     ? 'bg-amber-500 text-slate-950 shadow-xs'
                                     : isLightMode
                                     ? 'text-slate-600 hover:text-slate-900'
                                     : 'text-slate-400 hover:text-white'
                             }`}
+                            title="Switch active tab to Python 3"
                         >
-                            Py
+                            <span>🐍 Python</span>
                         </button>
                         <button
                             onClick={() => handleSwitchLanguage('sql')}
-                            className={`px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
+                            className={`flex items-center gap-1 px-2.5 py-0.8 rounded-md text-[11px] font-bold transition cursor-pointer ${
                                 activeTab.language === 'sql'
                                     ? 'bg-sky-500 text-slate-950 shadow-xs'
                                     : isLightMode
                                     ? 'text-slate-600 hover:text-slate-900'
                                     : 'text-slate-400 hover:text-white'
                             }`}
+                            title="Switch active tab to SQLite Database Query"
                         >
-                            SQL
+                            <span>🗄️ SQL</span>
                         </button>
                     </div>
 
                     <button
                         onClick={() => setShowMetadataDrawer(!showMetadataDrawer)}
-                        className={`p-1 rounded border text-xs transition cursor-pointer ${
+                        className={`p-1.5 rounded-lg border text-xs transition cursor-pointer ${
                             showMetadataDrawer
                                 ? isLightMode
                                     ? 'bg-primary-50 border-primary-300 text-primary-700'
@@ -1107,13 +1241,35 @@ Date:          ${dateStr}
                 <section className={`flex flex-col h-full border-r overflow-hidden ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'}`}>
                     {/* ERGONOMIC SUB-TOOLBAR DIRECTLY ABOVE EDITOR */}
                     <div className={`flex items-center justify-between px-3 py-2 border-b flex-shrink-0 ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
-                        {/* Left: Active filename & Runtime info */}
+                        {/* Left: Active filename & Language switcher */}
                         <div className="flex items-center gap-2">
                             <span className={`font-mono text-xs font-bold ${isLightMode ? 'text-primary-700' : 'text-emerald-400'}`}>
                                 {activeTab.filename}
                             </span>
-                            <span className="text-slate-400">•</span>
-                            <span className={`text-[11px] ${isLightMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                            <div className="flex items-center p-0.5 rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                                <button
+                                    onClick={() => handleSwitchLanguage('python')}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition cursor-pointer ${
+                                        activeTab.language === 'python'
+                                            ? 'bg-amber-500 text-slate-950 shadow-xs'
+                                            : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                                    }`}
+                                >
+                                    🐍 Python
+                                </button>
+                                <button
+                                    onClick={() => handleSwitchLanguage('sql')}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition cursor-pointer ${
+                                        activeTab.language === 'sql'
+                                            ? 'bg-sky-500 text-slate-950 shadow-xs'
+                                            : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                                    }`}
+                                >
+                                    🗄️ SQL
+                                </button>
+                            </div>
+                            <span className="text-slate-400 hidden sm:inline">•</span>
+                            <span className={`text-[11px] hidden sm:inline ${isLightMode ? 'text-slate-500' : 'text-slate-400'}`}>
                                 {activeTab.language === 'python' ? 'Python 3.13 Sandbox' : 'Persistent SQLite Engine'}
                             </span>
                         </div>
@@ -1123,12 +1279,24 @@ Date:          ${dateStr}
                             <button
                                 onClick={handleExecuteCode}
                                 disabled={isExecuting}
-                                className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-black bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-md shadow-emerald-500/25 transition disabled:opacity-50 cursor-pointer active:scale-95"
-                                title="Run active script (Ctrl+Enter / Cmd+Enter)"
+                                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-black shadow-md transition disabled:opacity-50 cursor-pointer active:scale-95 ${
+                                    activeTab.language === 'sql'
+                                        ? 'bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white shadow-sky-500/25'
+                                        : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
+                                }`}
+                                title={activeTab.language === 'sql' ? 'Execute SQL queries against your SQLite database (Ctrl+Enter)' : 'Run active Python script (Ctrl+Enter)'}
                             >
                                 <Play className={`w-3.5 h-3.5 fill-current ${isExecuting ? 'animate-spin' : ''}`} />
-                                <span>{isExecuting ? 'Running...' : 'Run Code'}</span>
-                                <kbd className="text-[9px] bg-emerald-700/30 text-slate-950 px-1 py-0.2 rounded font-mono font-normal hidden sm:inline">
+                                <span>
+                                    {isExecuting
+                                        ? 'Running...'
+                                        : activeTab.language === 'sql'
+                                        ? 'Run SQL Query'
+                                        : 'Run Python Code'}
+                                </span>
+                                <kbd className={`text-[9px] px-1 py-0.2 rounded font-mono font-normal hidden sm:inline ${
+                                    activeTab.language === 'sql' ? 'bg-sky-800/40 text-white' : 'bg-emerald-700/30 text-slate-950'
+                                }`}>
                                     Ctrl+↵
                                 </kbd>
                             </button>
@@ -1245,7 +1413,7 @@ Date:          ${dateStr}
                             </button>
 
                             {/* SQL Structured Data Table Tab */}
-                            {activeTab.language === 'sql' && activeTab.output?.tables && activeTab.output.tables.length > 0 && (
+                            {activeTab.language === 'sql' && (
                                 <button
                                     onClick={() => setRightPanelMode('table')}
                                     className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${
@@ -1258,11 +1426,17 @@ Date:          ${dateStr}
                                             : 'border-transparent text-slate-400 hover:text-slate-200'
                                     }`}
                                 >
-                                    <FileSpreadsheet className="w-3.5 h-3.5" />
-                                    <span>Query Results</span>
-                                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-sky-500/20 text-sky-600 dark:text-sky-300 font-mono">
-                                        {activeTab.output.tables.length} rows
-                                    </span>
+                                    <FileSpreadsheet className="w-3.5 h-3.5 text-sky-500" />
+                                    <span>Database Tables & Results</span>
+                                    {activeTab.output?.tables && activeTab.output.tables.length > 0 ? (
+                                        <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-sky-500/20 text-sky-600 dark:text-sky-300 font-mono">
+                                            {activeTab.output.tables.length} rows
+                                        </span>
+                                    ) : existingTables.length > 0 ? (
+                                        <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 font-mono">
+                                            {existingTables.length} tables
+                                        </span>
+                                    ) : null}
                                 </button>
                             )}
 
@@ -1377,56 +1551,116 @@ Date:          ${dateStr}
                         </div>
                     )}
 
-                    {/* CONTENT 2: SQL STRUCTURED DATA TABLE */}
-                    {rightPanelMode === 'table' && activeTab.output?.tables && (
+                    {/* CONTENT 2: SQL STRUCTURED DATA TABLE & PERSISTENT DATABASE VIEWER */}
+                    {rightPanelMode === 'table' && (
                         <div className="flex-1 flex flex-col p-4 overflow-auto">
-                            <div className="flex items-center justify-between mb-3">
-                                <h3 className={`text-xs font-bold flex items-center gap-2 ${isLightMode ? 'text-slate-800' : 'text-slate-200'}`}>
-                                    <FileSpreadsheet className="w-4 h-4 text-sky-500" />
-                                    <span>Query Result Set ({activeTab.output.tables.length} rows)</span>
-                                </h3>
-                            </div>
+                            {/* If query returned result rows */}
+                            {activeTab.output?.tables && activeTab.output.tables.length > 0 ? (
+                                <>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h3 className={`text-xs font-bold flex items-center gap-2 ${isLightMode ? 'text-slate-800' : 'text-slate-200'}`}>
+                                            <FileSpreadsheet className="w-4 h-4 text-sky-500" />
+                                            <span>Query Result Set ({activeTab.output.tables.length} rows)</span>
+                                        </h3>
+                                        <span className="text-[11px] text-slate-400 font-mono">SQLite 3 Engine</span>
+                                    </div>
 
-                            <div className={`flex-1 overflow-auto rounded-lg border shadow-xs ${isLightMode ? 'border-slate-200 bg-white' : 'border-slate-800 bg-slate-950 shadow-inner'}`}>
-                                <table className="w-full text-left text-xs border-collapse">
-                                    <thead>
-                                        <tr className={`border-b ${isLightMode ? 'bg-slate-100 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
-                                            <th className="p-2.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-10 text-center">
-                                                #
-                                            </th>
-                                            {Object.keys(activeTab.output.tables[0] || {}).map((col) => (
-                                                <th
-                                                    key={col}
-                                                    className={`p-2.5 text-[11px] font-bold font-mono tracking-wider border-l ${isLightMode ? 'border-slate-200 text-sky-700' : 'border-slate-800 text-sky-400'}`}
-                                                >
-                                                    {col}
-                                                </th>
-                                            ))}
-                                        </tr>
-                                    </thead>
-                                    <tbody className={`divide-y font-mono ${isLightMode ? 'divide-slate-200 text-slate-800' : 'divide-slate-800 text-slate-200'}`}>
-                                        {activeTab.output.tables.map((row, idx) => (
-                                            <tr key={idx} className={`transition ${isLightMode ? 'hover:bg-slate-50' : 'hover:bg-slate-900/60'}`}>
-                                                <td className="p-2.5 text-[10px] text-slate-400 text-center select-none">
-                                                    {idx + 1}
-                                                </td>
-                                                {Object.keys(row).map((col) => (
-                                                    <td
-                                                        key={col}
-                                                        className={`p-2.5 border-l whitespace-nowrap ${isLightMode ? 'border-slate-200' : 'border-slate-800'}`}
-                                                    >
-                                                        {row[col] !== null && row[col] !== undefined ? (
-                                                            String(row[col])
-                                                        ) : (
-                                                            <span className="text-slate-400 italic">NULL</span>
-                                                        )}
-                                                    </td>
+                                    <div className={`flex-1 overflow-auto rounded-lg border shadow-xs ${isLightMode ? 'border-slate-200 bg-white' : 'border-slate-800 bg-slate-950 shadow-inner'}`}>
+                                        <table className="w-full text-left text-xs border-collapse">
+                                            <thead>
+                                                <tr className={`border-b ${isLightMode ? 'bg-slate-100 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
+                                                    <th className="p-2.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-10 text-center">
+                                                        #
+                                                    </th>
+                                                    {Object.keys(activeTab.output.tables[0] || {}).map((col) => (
+                                                        <th
+                                                            key={col}
+                                                            className={`p-2.5 text-[11px] font-bold font-mono tracking-wider border-l ${isLightMode ? 'border-slate-200 text-sky-700' : 'border-slate-800 text-sky-400'}`}
+                                                        >
+                                                            {col}
+                                                        </th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody className={`divide-y font-mono ${isLightMode ? 'divide-slate-200 text-slate-800' : 'divide-slate-800 text-slate-200'}`}>
+                                                {activeTab.output.tables.map((row, idx) => (
+                                                    <tr key={idx} className={`transition ${isLightMode ? 'hover:bg-slate-50' : 'hover:bg-slate-900/60'}`}>
+                                                        <td className="p-2.5 text-[10px] text-slate-400 text-center select-none">
+                                                            {idx + 1}
+                                                        </td>
+                                                        {Object.keys(row).map((col) => (
+                                                            <td
+                                                                key={col}
+                                                                className={`p-2.5 border-l whitespace-nowrap ${isLightMode ? 'border-slate-200' : 'border-slate-800'}`}
+                                                            >
+                                                                {row[col] !== null && row[col] !== undefined ? (
+                                                                    String(row[col])
+                                                                ) : (
+                                                                    <span className="text-slate-400 italic">NULL</span>
+                                                                )}
+                                                            </td>
+                                                        ))}
+                                                    </tr>
                                                 ))}
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </>
+                            ) : (
+                                /* Database Overview & Created Tables */
+                                <div className="flex-1 flex flex-col justify-center items-center text-center p-6">
+                                    <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-500 mb-3">
+                                        <Database className="w-6 h-6" />
+                                    </div>
+                                    <h3 className={`text-sm font-bold mb-1 ${isLightMode ? 'text-slate-800' : 'text-slate-200'}`}>
+                                        Persistent SQLite Database
+                                    </h3>
+                                    <p className="text-xs text-slate-500 max-w-sm mb-4">
+                                        Tables created in this studio are saved permanently in your private SQLite database file.
+                                    </p>
+
+                                    {existingTables.length > 0 ? (
+                                        <div className="w-full max-w-md text-left">
+                                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                                                Your Created Tables ({existingTables.length})
+                                            </h4>
+                                            <div className="space-y-1.5 mb-4">
+                                                {existingTables.map((tbl) => (
+                                                    <div
+                                                        key={tbl}
+                                                        className={`flex items-center justify-between p-2.5 rounded-lg border text-xs font-mono ${
+                                                            isLightMode
+                                                                ? 'bg-slate-50 border-slate-200 text-slate-800'
+                                                                : 'bg-slate-900 border-slate-800 text-slate-200'
+                                                        }`}
+                                                    >
+                                                        <span className="font-semibold text-sky-600 dark:text-sky-400">{tbl}</span>
+                                                        <button
+                                                            onClick={() => {
+                                                                handleCodeChange(`SELECT * FROM ${tbl};`);
+                                                                setTimeout(handleExecuteCode, 100);
+                                                            }}
+                                                            className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 transition cursor-pointer"
+                                                        >
+                                                            SELECT *
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => {
+                                                handleCodeChange(`-- Create sample students table\nCREATE TABLE IF NOT EXISTS students (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL,\n    department TEXT\n);\n\nINSERT OR IGNORE INTO students VALUES \n(101, 'Aarav Sharma', 'Computer Science'),\n(102, 'Priya Patel', 'Data Science');\n\nSELECT * FROM students;`);
+                                                setTimeout(handleExecuteCode, 100);
+                                            }}
+                                            className="px-4 py-2 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white shadow-md transition cursor-pointer"
+                                        >
+                                            Create Sample Students Table
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -1473,5 +1707,19 @@ Date:          ${dateStr}
                 existingDocs={existingDocs}
             />
         </div>
+    );
+}
+
+export default function PracticeIDEPageWrapper() {
+    return (
+        <Suspense
+            fallback={
+                <div className="h-screen w-screen flex items-center justify-center bg-slate-900 text-slate-300 font-mono text-xs">
+                    Loading Python & SQL Practice Studio...
+                </div>
+            }
+        >
+            <PracticeIDEPage />
+        </Suspense>
     );
 }
