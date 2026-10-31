@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { body, validationResult } = require('express-validator');
+const prisma = require('../config/database');
 const { authenticate } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { synthesizeDiagram } = require('../utils/diagramSynthesizer');
@@ -264,21 +265,115 @@ router.post('/execute', authenticate, [
 }));
 
 /**
+ * @route   GET /api/compiler/students
+ * @desc    Get student list for Instructor/Admin Practice Inspection Dropdown
+ * @access  Private (Instructors, Admins, Principals only)
+ */
+router.get('/students', authenticate, asyncHandler(async (req, res) => {
+    const userRole = req.user?.role;
+    const isInstructorOrAdmin = userRole === 'admin' || userRole === 'instructor' || userRole === 'principal';
+
+    if (!isInstructorOrAdmin) {
+        return res.status(403).json({
+            success: false,
+            message: 'Access denied. Only instructors and administrators can list students for inspection.'
+        });
+    }
+
+    const schoolId = req.user?.schoolId;
+    const students = await prisma.user.findMany({
+        where: {
+            role: 'student',
+            isActive: true,
+            ...(schoolId ? { schoolId } : {})
+        },
+        select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            admissionNumber: true,
+            studentId: true,
+            classEnrollments: {
+                select: {
+                    class: {
+                        select: { name: true, section: true }
+                    }
+                },
+                take: 1
+            }
+        },
+        orderBy: { firstName: 'asc' },
+        take: 100
+    });
+
+    const formatted = students.map((s) => ({
+        id: s.id,
+        name: `${s.firstName} ${s.lastName || ''}`.trim(),
+        email: s.email,
+        admissionNumber: s.admissionNumber || s.studentId || 'N/A',
+        className: s.classEnrollments[0]?.class?.name || 'Class'
+    }));
+
+    return res.json({
+        success: true,
+        data: formatted
+    });
+}));
+
+/**
  * @route   GET /api/compiler/workspace
- * @desc    Retrieve saved student code, custom designed diagrams, settings, and persistent tables
+ * @desc    Retrieve saved student code, tabs, custom diagrams, settings, and persistent tables
+ *          Allows Instructors/Admins to inspect a student via ?studentId=<id>
  * @access  Private
  */
 router.get('/workspace', authenticate, asyncHandler(async (req, res) => {
-    const userId = req.user?.id || 'guest';
-    const dir = getStudentWorkspaceDir(userId);
+    const requestingUserId = req.user?.id || 'guest';
+    const userRole = req.user?.role;
+    const requestedStudentId = req.query.studentId;
+
+    let targetUserId = requestingUserId;
+    let targetStudentInfo = null;
+
+    if (requestedStudentId && requestedStudentId !== requestingUserId) {
+        const isInstructorOrAdmin = userRole === 'admin' || userRole === 'instructor' || userRole === 'principal';
+        if (!isInstructorOrAdmin) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied. You do not have permission to view other students\' private workspaces.'
+            });
+        }
+        targetUserId = requestedStudentId;
+
+        // Fetch student profile info
+        const studentRecord = await prisma.user.findUnique({
+            where: { id: requestedStudentId },
+            select: { id: true, firstName: true, lastName: true, admissionNumber: true, email: true }
+        });
+
+        if (studentRecord) {
+            targetStudentInfo = {
+                id: studentRecord.id,
+                name: `${studentRecord.firstName} ${studentRecord.lastName || ''}`.trim(),
+                admissionNumber: studentRecord.admissionNumber || 'N/A',
+                email: studentRecord.email
+            };
+        }
+    }
+
+    const dir = getStudentWorkspaceDir(targetUserId);
     const workspaceFile = path.join(dir, 'workspace.json');
-    const studentDbPath = getStudentDbPath(userId);
+    const studentDbPath = getStudentDbPath(targetUserId);
 
     let workspaceData = {
         pythonCode: null,
         sqlCode: null,
         pythonFlowchart: null,
         sqlErDiagram: null,
+        flowchartCanvasData: null,
+        tabs: null,
+        activeTabId: null,
+        isAutosaveEnabled: true,
         editorTheme: 'vs-dark',
         outputTheme: 'classic'
     };
@@ -312,14 +407,16 @@ router.get('/workspace', authenticate, asyncHandler(async (req, res) => {
         success: true,
         data: {
             ...workspaceData,
-            existingTables
+            existingTables,
+            studentInfo: targetStudentInfo,
+            isInspecting: Boolean(targetStudentInfo)
         }
     });
 }));
 
 /**
  * @route   POST /api/compiler/workspace
- * @desc    Persist student practice code, designed diagrams, and theme preferences to server
+ * @desc    Persist student practice code, multi-tabs, designed diagrams, and theme preferences to server
  * @access  Private
  */
 router.post('/workspace', authenticate, asyncHandler(async (req, res) => {
@@ -332,6 +429,10 @@ router.post('/workspace', authenticate, asyncHandler(async (req, res) => {
         sqlCode,
         pythonFlowchart,
         sqlErDiagram,
+        flowchartCanvasData,
+        tabs,
+        activeTabId,
+        isAutosaveEnabled,
         editorTheme = 'vs-dark',
         outputTheme = 'classic'
     } = req.body;
@@ -349,6 +450,10 @@ router.post('/workspace', authenticate, asyncHandler(async (req, res) => {
         sqlCode: sqlCode !== undefined ? sqlCode : current.sqlCode,
         pythonFlowchart: pythonFlowchart !== undefined ? pythonFlowchart : current.pythonFlowchart,
         sqlErDiagram: sqlErDiagram !== undefined ? sqlErDiagram : current.sqlErDiagram,
+        flowchartCanvasData: flowchartCanvasData !== undefined ? flowchartCanvasData : current.flowchartCanvasData,
+        tabs: tabs !== undefined ? tabs : current.tabs,
+        activeTabId: activeTabId !== undefined ? activeTabId : current.activeTabId,
+        isAutosaveEnabled: isAutosaveEnabled !== undefined ? isAutosaveEnabled : (current.isAutosaveEnabled !== undefined ? current.isAutosaveEnabled : true),
         editorTheme: editorTheme || current.editorTheme || 'vs-dark',
         outputTheme: outputTheme || current.outputTheme || 'classic',
         updatedAt: new Date().toISOString()

@@ -279,9 +279,10 @@ export const compilerAPI = {
     execute: (data) => api.post('/compiler/execute', data),
     generateDiagram: (data) => api.post('/compiler/generate-diagram', data),
     getLanguages: () => api.get('/compiler/languages'),
-    getWorkspace: () => api.get('/compiler/workspace'),
+    getWorkspace: (params) => api.get('/compiler/workspace', { params }),
     saveWorkspace: (data) => api.post('/compiler/workspace', data),
-    resetDatabase: () => api.post('/compiler/reset-db')
+    resetDatabase: () => api.post('/compiler/reset-db'),
+    getStudents: () => api.get('/compiler/students')
 };
 
 export const assignmentsAPI = {
